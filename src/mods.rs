@@ -1,5 +1,5 @@
-use crate::Result;
 use crate::errors::Error;
+use crate::Result;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -13,7 +13,10 @@ use std::path::Path;
 pub struct InstalledMod {
     pub name: String,
     pub id: u64,
+    /// Mod author's timestamp from meta.cpp
     pub timestamp: i64,
+    /// Local install/update time (filesystem mtime of meta.cpp)
+    pub local_updated: i64,
     pub size: u64,
     pub managed: bool,
 }
@@ -75,6 +78,15 @@ pub fn scan_workshop_dir(workshop_path: &Path) -> Result<Vec<InstalledMod>> {
             .and_then(|c| c.get(1))
             .and_then(|m| m.as_str().parse::<i64>().ok())
             .unwrap_or(0);
+
+        // Local install/update time: use meta.cpp mtime (rewritten by steamcmd on each download)
+        let local_updated = fs::metadata(&meta_path)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+
         let size = du_dir(&path).unwrap_or(0);
         let managed = path.join(".dayz-ctl").exists();
 
@@ -82,6 +94,7 @@ pub fn scan_workshop_dir(workshop_path: &Path) -> Result<Vec<InstalledMod>> {
             name,
             id,
             timestamp,
+            local_updated,
             size,
             managed,
         });

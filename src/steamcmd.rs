@@ -85,6 +85,8 @@ pub enum ModProgress {
         ok: usize,
         failed: usize,
         total: usize,
+        /// Optional hint for the user (e.g. steamcmd re-login command)
+        hint: Option<String>,
     },
 }
 
@@ -175,8 +177,12 @@ impl SteamCmd {
     /// Internal: run steamcmd workshop_download_item with validate.
     /// Matches the bash script's command:
     /// `steamcmd +@ShutdownOnFailedCommand 1 +login <user> +workshop_download_item 221100 <id> validate +quit`
+    ///
+    /// Streams stdout to detect "Cached credentials not found" -- if seen,
+    /// kills the process immediately (it would hang waiting for password)
+    /// and returns an error telling the user how to re-login.
     async fn workshop_download_item(&self, workshop_id: u64) -> Result<()> {
-        let output = Command::new(&self.steamcmd_path)
+        let mut child = Command::new(&self.steamcmd_path)
             .arg("+@ShutdownOnFailedCommand")
             .arg("1")
             .arg("+login")
@@ -188,18 +194,32 @@ impl SteamCmd {
             .arg("+quit")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .output()
-            .await?;
+            .spawn()?;
 
-        if output.status.success() {
+        // Stream stdout to catch credential issues early
+        if let Some(stdout) = child.stdout.take() {
+            let reader = BufReader::new(stdout);
+            let mut lines = reader.lines();
+
+            while let Ok(Some(line)) = lines.next_line().await {
+                if line.contains("Cached credentials not found") {
+                    let _ = child.kill().await;
+                    return Err(Error::SteamCmd(format!(
+                        "Cached credentials not found. Log in from another terminal:\n  \
+                         steamcmd +login {} +quit",
+                        self.login
+                    )));
+                }
+            }
+        }
+
+        let status = child.wait().await?;
+        if status.success() {
             Ok(())
         } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let stdout = String::from_utf8_lossy(&output.stdout);
             Err(Error::SteamCmd(format!(
-                "steamcmd failed for mod {}:\nstderr: {}\nstdout: {}\n\
-                 Hint: Try re-logging: steamcmd +login {} +quit",
-                workshop_id, stderr, stdout, self.login
+                "steamcmd failed for mod {}. Try re-logging:\n  steamcmd +login {} +quit",
+                workshop_id, self.login
             )))
         }
     }
@@ -273,6 +293,7 @@ impl SteamCmd {
                 ok: 0,
                 failed: 0,
                 total: 0,
+                hint: None,
             });
             return Vec::new();
         }
@@ -287,6 +308,9 @@ impl SteamCmd {
                 ok: 0,
                 failed: total,
                 total,
+                hint: Some(format!(
+                    "Set your Steam login in the profile, then run:\n  steamcmd +login YOUR_USERNAME +quit"
+                )),
             });
             return results;
         }
@@ -338,6 +362,7 @@ impl SteamCmd {
                     ok: 0,
                     failed: total,
                     total,
+                    hint: None,
                 });
                 return results;
             }
@@ -353,6 +378,7 @@ impl SteamCmd {
         // Track which mods completed successfully
         let mut succeeded: std::collections::HashSet<u64> = std::collections::HashSet::new();
         let mut current_mod_idx: usize = 0;
+        let mut credentials_not_found = false;
 
         // Stream stdout line by line to detect per-mod progress
         if let Some(stdout) = child.stdout.take() {
@@ -360,14 +386,22 @@ impl SteamCmd {
             let mut lines = reader.lines();
 
             while let Ok(Some(line)) = lines.next_line().await {
+                // Detect expired/missing login: steamcmd prints this then
+                // hangs waiting for interactive password input on stdin.
+                if line.contains("Cached credentials not found") {
+                    credentials_not_found = true;
+                    let _ = child.kill().await;
+                    break;
+                }
+
                 // SteamCMD prints lines like:
                 //   "Downloading item 1559212036 ..."
                 //   "Success. Downloaded item 1559212036 to ..."
                 //   "ERROR! Download item 1559212036 failed (..."
 
-                if line.contains("Success. Downloaded item") || line.contains("already up to date")
+                if line.contains("Success. Downloaded item")
+                    || line.contains("already up to date")
                 {
-                    // Extract mod ID from the line
                     if let Some(id) = extract_mod_id_from_line(&line) {
                         succeeded.insert(id);
                         if let Some((idx, name)) = mod_lookup.get(&id) {
@@ -378,7 +412,6 @@ impl SteamCmd {
                                 name: name.clone(),
                             });
 
-                            // Send Starting for the next mod
                             let next_idx = idx + 1;
                             if next_idx < total {
                                 let next = &mods_info[next_idx];
@@ -417,7 +450,6 @@ impl SteamCmd {
                         }
                     }
                 } else if line.contains("Downloading item") {
-                    // Starting a new download - extract ID and report
                     if let Some(id) = extract_mod_id_from_line(&line) {
                         if let Some((idx, name)) = mod_lookup.get(&id) {
                             if *idx != current_mod_idx || *idx > 0 {
@@ -433,6 +465,34 @@ impl SteamCmd {
                     }
                 }
             }
+        }
+
+        // If credentials not found, kill process and report with re-login hint
+        if credentials_not_found {
+            let hint = format!(
+                "Cached credentials not found. Log in from another terminal:\n  steamcmd +login {} +quit",
+                self.login
+            );
+            let results: Vec<(u64, Result<()>)> = mods_info
+                .iter()
+                .map(|(id, name)| {
+                    let _ = tx.send(ModProgress::Failed {
+                        current: 1,
+                        total,
+                        mod_id: *id,
+                        name: name.clone(),
+                        error: hint.clone(),
+                    });
+                    (*id, Err(Error::SteamCmd(hint.clone())))
+                })
+                .collect();
+            let _ = tx.send(ModProgress::Finished {
+                ok: 0,
+                failed: total,
+                total,
+                hint: Some(hint),
+            });
+            return results;
         }
 
         // Wait for process to finish
@@ -473,7 +533,20 @@ impl SteamCmd {
 
         let ok = results.iter().filter(|(_, r)| r.is_ok()).count();
         let failed = results.iter().filter(|(_, r)| r.is_err()).count();
-        let _ = tx.send(ModProgress::Finished { ok, failed, total });
+        let hint = if failed > 0 {
+            Some(format!(
+                "Some downloads failed. If steamcmd login expired, run:\n  steamcmd +login {} +quit",
+                self.login
+            ))
+        } else {
+            None
+        };
+        let _ = tx.send(ModProgress::Finished {
+            ok,
+            failed,
+            total,
+            hint,
+        });
 
         results
     }

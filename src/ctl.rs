@@ -461,6 +461,7 @@ pub fn spawn_mod_operation(
                         ok: 0,
                         failed: 0,
                         total: 0,
+                        hint: None,
                     });
                     return ModOpResult::InstallDone(InstallResult {
                         installed: Vec::new(),

@@ -46,10 +46,14 @@ struct App {
     current_a2s_details: Option<a2s_query::ServerDetails>,
     detailed_server_index: Option<usize>,
     show_server_details: bool,
+    details_scroll_offset: u16,
     // Search
     search_query: String,
     search_active: bool,
     filtered_indices: Option<Vec<usize>>,
+    // Option value editing
+    option_edit_active: bool,
+    option_edit_value: String,
     // Popup
     popup: Option<Popup>,
     // Terminal size
@@ -78,7 +82,11 @@ struct ProgressState {
 #[derive(Clone, PartialEq)]
 enum ProgressPhase {
     Downloading,
-    Finished { ok: usize, failed: usize },
+    Finished {
+        ok: usize,
+        failed: usize,
+        hint: Option<String>,
+    },
 }
 
 /// Action to perform after a background mod operation completes.
@@ -123,6 +131,8 @@ enum ConfirmAction {
     CleanupMods,
     InstallMods(Vec<u64>),
     RemoveFavorite(String, u16),
+    RemoveHistoryEntry(String, u16),
+    ClearHistory,
     UpdateThenLaunch(dayzsa_ml::Server, Option<String>),
     LaunchDirect(dayzsa_ml::Server, Option<String>),
 }
@@ -195,9 +205,12 @@ impl App {
             current_a2s_details: None,
             detailed_server_index: None,
             show_server_details: false,
+            details_scroll_offset: 0,
             search_query: String::new(),
             search_active: false,
             filtered_indices: None,
+            option_edit_active: false,
+            option_edit_value: String::new(),
             popup: None,
             term_height: 24,
             loading: false,
@@ -408,6 +421,41 @@ impl App {
         }
     }
 
+    fn remove_history_entry_at_index(&mut self) {
+        if self.tab != Tab::History {
+            return;
+        }
+        let idx = self.selected_index();
+        if let Some(entry) = self.ctl.profile().history.get(idx).cloned() {
+            self.popup = Some(Popup::Confirm {
+                title: "Remove History Entry".to_string(),
+                message: format!(
+                    "Remove '{}' ({}:{}) from history?",
+                    entry.name, entry.ip, entry.port
+                ),
+                action: ConfirmAction::RemoveHistoryEntry(entry.ip.clone(), entry.port),
+            });
+        }
+    }
+
+    fn clear_history(&mut self) {
+        if self.tab != Tab::History {
+            return;
+        }
+        if self.ctl.profile().history.is_empty() {
+            self.set_info("History is already empty");
+            return;
+        }
+        self.popup = Some(Popup::Confirm {
+            title: "Clear History".to_string(),
+            message: format!(
+                "Clear all {} history entries?",
+                self.ctl.profile().history.len()
+            ),
+            action: ConfirmAction::ClearHistory,
+        });
+    }
+
     fn connect_to_selected(&mut self) {
         if self.tab == Tab::DirectConnect {
             self.handle_direct_connect();
@@ -501,6 +549,26 @@ impl App {
             ModOperation::InstallOnly { server },
             Some(PendingAfterOp::RefreshMods),
         );
+    }
+
+    // ─── Server List Refresh ───
+
+    fn refresh_server_list(&mut self) {
+        self.set_info("Refreshing server list...");
+        match tokio::task::block_in_place(|| Handle::current().block_on(self.ctl.fetch_servers())) {
+            Ok(list) => {
+                let count = list.result.len();
+                self.servers = list.result.clone();
+                // Re-apply search filter if active
+                if self.filtered_indices.is_some() {
+                    self.update_search_filter();
+                }
+                self.set_success(format!("Refreshed: {} servers loaded", count));
+            }
+            Err(e) => {
+                self.set_error(format!("Refresh failed: {}", e));
+            }
+        }
     }
 
     // ─── A2S Query ───
@@ -798,6 +866,60 @@ impl App {
         let _ = self.ctl.save_profile();
     }
 
+    fn start_option_edit(&mut self) {
+        if self.tab != Tab::Options {
+            return;
+        }
+        let idx = self.selected_index();
+        let current_value = {
+            let options = &self.ctl.profile().options;
+            let all = options.all_options();
+            all.get(idx)
+                .and_then(|(_, opt)| opt.value.clone())
+                .unwrap_or_default()
+        };
+        self.option_edit_active = true;
+        self.option_edit_value = current_value;
+        self.set_info("Edit value: type new value, Enter to save, Esc to cancel");
+    }
+
+    fn apply_option_edit(&mut self) {
+        let idx = self.selected_index();
+        let (name, new_value) = {
+            let value = if self.option_edit_value.trim().is_empty() {
+                None
+            } else {
+                Some(self.option_edit_value.trim().to_string())
+            };
+            let options = &mut self.ctl.profile_mut().options;
+            let mut all = options.all_options_mut();
+            if let Some((name, opt)) = all.get_mut(idx) {
+                let n = name.to_string();
+                opt.value = value.clone();
+                // Auto-enable when setting a value
+                if value.is_some() {
+                    opt.enabled = true;
+                }
+                (n, value)
+            } else {
+                return;
+            }
+        };
+        self.option_edit_active = false;
+        self.option_edit_value.clear();
+        match new_value {
+            Some(v) => self.set_success(format!("{} = {}", name, v)),
+            None => self.set_info(format!("{}: value cleared", name)),
+        }
+        let _ = self.ctl.save_profile();
+    }
+
+    fn cancel_option_edit(&mut self) {
+        self.option_edit_active = false;
+        self.option_edit_value.clear();
+        self.set_info("Edit cancelled");
+    }
+
     fn execute_confirm_action(&mut self, action: ConfirmAction) {
         match action {
             ConfirmAction::DeleteMod(id) => match self.ctl.delete_mod(id, false) {
@@ -819,21 +941,8 @@ impl App {
                 }
                 Err(e) => self.set_error(format!("Cleanup failed: {}", e)),
             },
-            ConfirmAction::InstallMods(_mod_ids) => {
-                // Get the server for the install
-                let server = self
-                    .direct_server_found
-                    .clone()
-                    .or_else(|| self.get_selected_server());
-                if let Some(server) = server {
-                    self.set_info(format!("Installing mods for {}...", server.name));
-                    self.start_background_mod_op(
-                        ModOperation::InstallOnly { server },
-                        Some(PendingAfterOp::RefreshMods),
-                    );
-                } else {
-                    self.set_error("No server selected");
-                }
+            ConfirmAction::InstallMods(mod_ids) => {
+                self.install_mods_for_server(mod_ids);
             }
             ConfirmAction::RemoveFavorite(ip, port) => {
                 self.ctl.remove_favorite(&ip, port);
@@ -841,6 +950,32 @@ impl App {
                     self.set_error(format!("Save failed: {}", e));
                 } else {
                     self.set_success("Removed from favorites");
+                }
+            }
+            ConfirmAction::RemoveHistoryEntry(ip, port) => {
+                self.ctl
+                    .profile_mut()
+                    .history
+                    .retain(|h| h.ip != ip || h.port != port);
+                if let Err(e) = self.ctl.save_profile() {
+                    self.set_error(format!("Save failed: {}", e));
+                } else {
+                    self.set_success("Removed from history");
+                    // Adjust selection if needed
+                    let len = self.ctl.profile().history.len();
+                    if len > 0 && self.selected_index() >= len {
+                        *self.selected_index_mut() = len - 1;
+                    }
+                }
+            }
+            ConfirmAction::ClearHistory => {
+                self.ctl.profile_mut().history.clear();
+                if let Err(e) = self.ctl.save_profile() {
+                    self.set_error(format!("Save failed: {}", e));
+                } else {
+                    self.set_success("History cleared");
+                    *self.selected_index_mut() = 0;
+                    *self.offset_mut() = 0;
                 }
             }
             ConfirmAction::UpdateThenLaunch(server, pw) => {
@@ -888,6 +1023,17 @@ impl App {
                 self.loading = true;
             }
             Err(e) => {
+                // Show re-login hint for steamcmd errors
+                let msg = format!("{}", e);
+                if msg.contains("login") || msg.contains("SteamCMD") {
+                    if let Some(login) = self.ctl.steamcmd_login() {
+                        self.set_error(format!(
+                            "{}. Try: steamcmd +login {} +quit",
+                            msg, login
+                        ));
+                        return;
+                    }
+                }
                 self.set_error(format!("Failed to start: {}", e));
             }
         }
@@ -950,16 +1096,27 @@ impl App {
                                 state.completed.push((mod_id, name, false));
                             }
                         }
-                        ModProgress::Finished { ok, failed, total } => {
+                        ModProgress::Finished {
+                            ok,
+                            failed,
+                            total,
+                            hint,
+                        } => {
                             if let Some(state) = &mut self.progress_state {
-                                state.phase = ProgressPhase::Finished { ok, failed };
+                                state.phase = ProgressPhase::Finished {
+                                    ok,
+                                    failed,
+                                    hint: hint.clone(),
+                                };
                                 state.total = total;
                             }
                             // Operation is done
                             self.loading = false;
                             self.progress_rx = None;
 
-                            if failed == 0 {
+                            if let Some(ref hint) = hint {
+                                self.set_error(hint.clone());
+                            } else if failed == 0 {
                                 if total == 0 {
                                     self.set_success("All mods already up to date");
                                 } else {
@@ -1215,6 +1372,26 @@ async fn main() -> Result<()> {
                 break;
             }
 
+            // Option value editing mode
+            if app.option_edit_active {
+                match key {
+                    Key::Esc => {
+                        app.cancel_option_edit();
+                    }
+                    Key::Char('\n') => {
+                        app.apply_option_edit();
+                    }
+                    Key::Backspace => {
+                        app.option_edit_value.pop();
+                    }
+                    Key::Char(c) => {
+                        app.option_edit_value.push(c);
+                    }
+                    _ => {}
+                }
+                break;
+            }
+
             // Search mode
             if app.search_active {
                 match key {
@@ -1292,9 +1469,17 @@ async fn main() -> Result<()> {
                         app.show_server_details = false;
                         app.current_a2s_details = None;
                         app.detailed_server_index = None;
+                        app.details_scroll_offset = 0;
                     } else {
                         app.status_message = None;
                     }
+                }
+                // Details panel scrolling
+                Key::Ctrl('d') if app.show_server_details => {
+                    app.details_scroll_offset = app.details_scroll_offset.saturating_add(5);
+                }
+                Key::Ctrl('u') if app.show_server_details => {
+                    app.details_scroll_offset = app.details_scroll_offset.saturating_sub(5);
                 }
                 Key::Char('j') | Key::Down => app.move_selection(1),
                 Key::Char('k') | Key::Up => app.move_selection(-1),
@@ -1341,17 +1526,35 @@ async fn main() -> Result<()> {
                         app.connect_to_selected();
                     }
                 }
+                Key::Char('e') if app.tab == Tab::Options => {
+                    app.start_option_edit();
+                }
                 Key::Char('f') if app.tab == Tab::Servers || app.tab == Tab::History => {
                     app.add_favorite();
                 }
                 Key::Char('x') if app.tab == Tab::Favorites => {
                     app.remove_favorite_at_index();
                 }
-                Key::Char('i') if app.tab == Tab::Servers => {
+                Key::Char('x') if app.tab == Tab::History => {
+                    app.remove_history_entry_at_index();
+                }
+                Key::Char('c') if app.tab == Tab::History => {
+                    app.clear_history();
+                }
+                Key::Char('i')
+                    if app.tab == Tab::Servers
+                        || app.tab == Tab::Favorites
+                        || app.tab == Tab::History =>
+                {
                     app.fetch_a2s_info();
                 }
-                Key::Char('m') if app.tab == Tab::Servers => {
+                Key::Char('m')
+                    if app.tab == Tab::Servers
+                        || app.tab == Tab::Favorites
+                        || app.tab == Tab::History =>
+                {
                     app.show_server_details = !app.show_server_details;
+                    app.details_scroll_offset = 0;
                     if app.show_server_details {
                         app.detailed_server_index = Some(app.selected_index());
                     }
@@ -1360,6 +1563,9 @@ async fn main() -> Result<()> {
                     app.search_active = true;
                     app.search_query.clear();
                     app.set_info("Type to search, Enter to confirm, Esc to cancel");
+                }
+                Key::Char('r') if app.tab == Tab::Servers => {
+                    app.refresh_server_list();
                 }
                 // Mod actions
                 Key::Char('r') if app.tab == Tab::Mods => app.refresh_installed_mods(),
@@ -1518,15 +1724,19 @@ fn draw_tab_bar(f: &mut Frame, app: &App, area: Rect) {
 fn keybinds_for_tab(tab: Tab) -> &'static str {
     match tab {
         Tab::Servers => {
-            "j/k:Nav | Enter:Connect | f:Fav | i:A2S | m:Details | /:Search | Tab/S-Tab:Tabs | q:Quit"
+            "j/k:Nav | Enter:Connect | f:Fav | i:A2S | m:Details | /:Search | r:Refresh | Tab/S-Tab:Tabs | q:Quit"
         }
-        Tab::Favorites => "j/k:Nav | Enter:Connect | x:Remove | Tab/S-Tab:Tabs | q:Quit",
-        Tab::History => "j/k:Nav | Enter:Connect | f:Fav | Tab/S-Tab:Tabs | q:Quit",
+        Tab::Favorites => {
+            "j/k:Nav | Enter:Connect | i:A2S | x:Remove | Tab/S-Tab:Tabs | q:Quit"
+        }
+        Tab::History => {
+            "j/k:Nav | Enter:Connect | i:A2S | f:Fav | x:Remove | c:Clear | Tab/S-Tab:Tabs | q:Quit"
+        }
         Tab::Mods => {
             "j/k:Nav | u:Update | U:All | d:Del | m:Managed | c:Cleanup | r:Refresh | q:Quit"
         }
         Tab::DirectConnect => "Up/Down:Fields | Enter:Connect | Tab/S-Tab:Tabs | Esc:Back",
-        Tab::Options => "j/k:Nav | Enter:Toggle | Tab/S-Tab:Tabs | q:Quit",
+        Tab::Options => "j/k:Nav | Enter:Toggle | e:Edit Value | Tab/S-Tab:Tabs | q:Quit",
     }
 }
 
@@ -1545,6 +1755,123 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
 
     let widget = Paragraph::new(line).block(Block::default().borders(Borders::ALL));
     f.render_widget(widget, area);
+}
+
+// ─── Shared Helpers ───────────────────────────────────────────────────────
+
+/// Color for player count based on server fill.
+fn player_color(players: i64, max_players: i64) -> Color {
+    if players == 0 {
+        Color::DarkGray
+    } else if players >= max_players {
+        Color::Red
+    } else if players > max_players / 2 {
+        Color::Yellow
+    } else {
+        Color::Green
+    }
+}
+
+/// Build a two-line ListItem for a server entry.
+/// Used by Servers, Favorites, and History tabs for consistent layout.
+fn make_server_list_item<'a>(
+    index: usize,
+    server: &'a dayzsa_ml::Server,
+    is_selected: bool,
+    is_favorite: bool,
+    prefix: Option<Span<'a>>,
+    suffix: Option<Span<'a>>,
+) -> ListItem<'a> {
+    let style = if is_selected {
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+    };
+
+    let name_style = if is_selected {
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::White)
+    };
+
+    let fav_marker = if is_favorite {
+        Span::styled("* ", Style::default().fg(Color::Yellow))
+    } else {
+        Span::raw("  ")
+    };
+
+    let pc = player_color(server.players, server.max_players);
+
+    let env_tag = if server.environment == "w" {
+        Span::styled("W", Style::default().fg(Color::Blue))
+    } else {
+        Span::styled("L", Style::default().fg(Color::Green))
+    };
+    let lock_tag = if server.password {
+        Span::styled(" P", Style::default().fg(Color::Red))
+    } else {
+        Span::styled("  ", Style::default().fg(Color::DarkGray))
+    };
+    let fp_tag = if server.first_person_only {
+        Span::styled(" 1P", Style::default().fg(Color::Yellow))
+    } else {
+        Span::styled("   ", Style::default().fg(Color::DarkGray))
+    };
+
+    // Line 1: index + prefix (optional status) + fav + name + suffix (optional time)
+    let mut line1 = vec![
+        Span::styled(
+            format!("{:>5}. ", index + 1),
+            Style::default().fg(Color::DarkGray),
+        ),
+    ];
+    if let Some(pfx) = prefix {
+        line1.push(pfx);
+    }
+    line1.push(fav_marker);
+    line1.push(Span::styled(server.name.as_str(), name_style));
+    if let Some(sfx) = suffix {
+        line1.push(Span::styled("  ", Style::default()));
+        line1.push(sfx);
+    }
+
+    // Line 2: IP:port | players | map | mods | version | flags | time
+    let line2 = vec![
+        Span::styled("        ", Style::default()),
+        Span::styled(
+            format!("{:<22}", format!("{}:{}", server.endpoint.ip, server.game_port)),
+            Style::default().fg(Color::Green),
+        ),
+        Span::styled(
+            format!("{:>3}/{:<3}", server.players, server.max_players),
+            Style::default().fg(pc),
+        ),
+        Span::styled(" | ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            format!("{:<14}", server.map),
+            Style::default().fg(Color::Cyan),
+        ),
+        Span::styled(
+            format!("{:>2} mods", server.mods.len()),
+            Style::default().fg(Color::Magenta),
+        ),
+        Span::styled(" | ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            format!("{:<12}", server.version),
+            Style::default().fg(Color::DarkGray),
+        ),
+        env_tag,
+        lock_tag,
+        fp_tag,
+        Span::styled(" | ", Style::default().fg(Color::DarkGray)),
+        Span::styled(&server.time, Style::default().fg(Color::DarkGray)),
+    ];
+
+    ListItem::new(vec![Line::from(line1), Line::from(line2)]).style(style)
 }
 
 // ─── Tab Renderers ────────────────────────────────────────────────────────
@@ -1582,85 +1909,11 @@ fn render_servers_tab(f: &mut Frame, app: &App, area: Rect) {
     let items: Vec<ListItem> = server_iter
         .map(|(display_idx, server)| {
             let is_sel = display_idx == selected;
-            let style = if is_sel {
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-            };
-
-            let player_color = if server.players == 0 {
-                Color::DarkGray
-            } else if server.players >= server.max_players {
-                Color::Red
-            } else if server.players > server.max_players / 2 {
-                Color::Yellow
-            } else {
-                Color::Green
-            };
-
-            let fav_marker = if app
+            let is_fav = app
                 .ctl
                 .profile()
-                .is_favorite(&server.endpoint.ip, server.endpoint.port as u16)
-            {
-                Span::styled("* ", Style::default().fg(Color::Yellow))
-            } else {
-                Span::raw("  ")
-            };
-
-            let env_icon = if server.environment == "w" { "W" } else { "L" };
-            let lock = if server.password { "P" } else { " " };
-            let fp = if server.first_person_only { "1P" } else { "  " };
-
-            let content = vec![
-                Line::from(vec![
-                    Span::styled(
-                        format!("{:>5}. ", display_idx + 1),
-                        Style::default().fg(Color::DarkGray),
-                    ),
-                    fav_marker,
-                    Span::styled(
-                        &server.name,
-                        if is_sel {
-                            Style::default()
-                                .fg(Color::White)
-                                .add_modifier(Modifier::BOLD)
-                        } else {
-                            Style::default().fg(Color::White)
-                        },
-                    ),
-                ]),
-                Line::from(vec![
-                    Span::styled("       ", Style::default()),
-                    Span::styled(
-                        format!("{}:{}", server.endpoint.ip, server.game_port),
-                        Style::default().fg(Color::Green),
-                    ),
-                    Span::styled(" | ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(
-                        format!("{:>3}/{}", server.players, server.max_players),
-                        Style::default().fg(player_color),
-                    ),
-                    Span::styled(" | ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(&server.map, Style::default().fg(Color::Cyan)),
-                    Span::styled(" | ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(
-                        format!("{}mods", server.mods.len()),
-                        Style::default().fg(Color::Magenta),
-                    ),
-                    Span::styled(" | ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(
-                        format!("{} {} {}", env_icon, lock, fp),
-                        Style::default().fg(Color::DarkGray),
-                    ),
-                    Span::styled(" | ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(&server.time, Style::default().fg(Color::DarkGray)),
-                ]),
-            ];
-
-            ListItem::new(content).style(style)
+                .is_favorite(&server.endpoint.ip, server.endpoint.port as u16);
+            make_server_list_item(display_idx, server, is_sel, is_fav, None, None)
         })
         .collect();
 
@@ -1801,14 +2054,27 @@ fn render_server_details(f: &mut Frame, app: &App, server: &dayzsa_ml::Server, a
         }
     }
 
+    let total_lines = lines.len();
+    let visible_height = area.height.saturating_sub(2) as usize; // account for borders
+    let scroll_indicator = if total_lines > visible_height {
+        format!(
+            " [{}-{}/{}] [Ctrl+d/Ctrl+u:Scroll]",
+            app.details_scroll_offset + 1,
+            (app.details_scroll_offset as usize + visible_height).min(total_lines),
+            total_lines
+        )
+    } else {
+        String::new()
+    };
+
     let text = Text::from(lines);
     let widget = Paragraph::new(text)
         .block(
             Block::default()
-                .title("Server Details [Esc to close]")
+                .title(format!("Server Details [Esc to close]{}", scroll_indicator))
                 .borders(Borders::ALL),
         )
-        .wrap(Wrap { trim: true });
+        .scroll((app.details_scroll_offset, 0));
     f.render_widget(widget, area);
 }
 
@@ -1824,6 +2090,17 @@ fn render_favorites_tab(f: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
+    // Split for details panel
+    let (list_area, details_area) = if app.show_server_details {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+            .split(area);
+        (chunks[0], Some(chunks[1]))
+    } else {
+        (area, None)
+    };
+
     let items: Vec<ListItem> = favorites
         .iter()
         .enumerate()
@@ -1834,47 +2111,40 @@ fn render_favorites_tab(f: &mut Frame, app: &App, area: Rect) {
                     && (s.endpoint.port as u16 == fav.port || s.game_port as u16 == fav.port)
             });
 
-            let (status, player_info) = match server {
-                Some(s) => (
-                    Span::styled(" ONLINE  ", Style::default().fg(Color::Green)),
-                    Span::styled(
-                        format!("{}/{}", s.players, s.max_players),
-                        Style::default().fg(Color::Yellow),
-                    ),
-                ),
-                None => (
-                    Span::styled(" OFFLINE ", Style::default().fg(Color::Red)),
-                    Span::raw(""),
-                ),
-            };
-
-            let style = if is_sel {
-                Style::default().add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-            };
-
-            let content = vec![
-                Line::from(vec![
-                    Span::styled(
-                        format!("{:>3}. ", i + 1),
-                        Style::default().fg(Color::DarkGray),
-                    ),
-                    status,
-                    Span::styled(&fav.name, Style::default().fg(Color::White)),
-                ]),
-                Line::from(vec![
-                    Span::styled("       ", Style::default()),
-                    Span::styled(
-                        format!("{}:{}", fav.ip, fav.port),
-                        Style::default().fg(Color::Green),
-                    ),
-                    Span::styled("  ", Style::default()),
-                    player_info,
-                ]),
-            ];
-
-            ListItem::new(content).style(style)
+            match server {
+                Some(s) => {
+                    let prefix =
+                        Span::styled(" ON  ", Style::default().fg(Color::Green));
+                    make_server_list_item(i, s, is_sel, true, Some(prefix), None)
+                }
+                None => {
+                    // Offline: simple two-line display
+                    let style = if is_sel {
+                        Style::default().add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default()
+                    };
+                    let content = vec![
+                        Line::from(vec![
+                            Span::styled(
+                                format!("{:>5}. ", i + 1),
+                                Style::default().fg(Color::DarkGray),
+                            ),
+                            Span::styled(" OFF ", Style::default().fg(Color::Red)),
+                            Span::styled("* ", Style::default().fg(Color::Yellow)),
+                            Span::styled(&fav.name, Style::default().fg(Color::DarkGray)),
+                        ]),
+                        Line::from(vec![
+                            Span::styled("        ", Style::default()),
+                            Span::styled(
+                                format!("{}:{}", fav.ip, fav.port),
+                                Style::default().fg(Color::DarkGray),
+                            ),
+                        ]),
+                    ];
+                    ListItem::new(content).style(style)
+                }
+            }
         })
         .collect();
 
@@ -1885,7 +2155,14 @@ fn render_favorites_tab(f: &mut Frame, app: &App, area: Rect) {
                 .borders(Borders::ALL),
         )
         .highlight_symbol(">> ");
-    f.render_widget(list, area);
+    f.render_widget(list, list_area);
+
+    // Details panel
+    if let Some(details_area) = details_area {
+        if let Some(server) = app.get_selected_server() {
+            render_server_details(f, app, &server, details_area);
+        }
+    }
 }
 
 fn render_history_tab(f: &mut Frame, app: &App, area: Rect) {
@@ -1900,16 +2177,22 @@ fn render_history_tab(f: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
+    // Split for details panel
+    let (list_area, details_area) = if app.show_server_details {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+            .split(area);
+        (chunks[0], Some(chunks[1]))
+    } else {
+        (area, None)
+    };
+
     let items: Vec<ListItem> = history
         .iter()
         .enumerate()
         .map(|(i, entry)| {
             let is_sel = i == selected;
-            let style = if is_sel {
-                Style::default().add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-            };
 
             // Look up live server info by IP match
             let server = app.servers.iter().find(|s| {
@@ -1917,77 +2200,66 @@ fn render_history_tab(f: &mut Frame, app: &App, area: Rect) {
                     && (s.endpoint.port as u16 == entry.port || s.game_port as u16 == entry.port)
             });
 
-            // Use live server name if available (enriches "Manual: IP:PORT" entries)
-            let display_name = match &server {
-                Some(s) => s.name.as_str(),
-                None => entry.name.as_str(),
-            };
+            let is_fav = app.ctl.profile().is_favorite(&entry.ip, entry.port);
+            let time_suffix = Span::styled(
+                entry.relative_time(),
+                Style::default().fg(Color::DarkGray),
+            );
 
-            let (status, details_spans) = match &server {
+            match server {
                 Some(s) => {
-                    let player_color = if s.players == 0 {
-                        Color::DarkGray
-                    } else if s.players >= s.max_players {
-                        Color::Red
+                    let prefix =
+                        Span::styled(" ON  ", Style::default().fg(Color::Green));
+                    make_server_list_item(
+                        i,
+                        s,
+                        is_sel,
+                        is_fav,
+                        Some(prefix),
+                        Some(time_suffix),
+                    )
+                }
+                None => {
+                    // Offline: simple display with relative time
+                    let style = if is_sel {
+                        Style::default().add_modifier(Modifier::BOLD)
                     } else {
-                        Color::Green
+                        Style::default()
                     };
-                    (
-                        Span::styled(" ONLINE  ", Style::default().fg(Color::Green)),
-                        vec![
+                    let fav_marker = if is_fav {
+                        Span::styled("* ", Style::default().fg(Color::Yellow))
+                    } else {
+                        Span::raw("  ")
+                    };
+                    let content = vec![
+                        Line::from(vec![
+                            Span::styled(
+                                format!("{:>5}. ", i + 1),
+                                Style::default().fg(Color::DarkGray),
+                            ),
+                            Span::styled(" OFF ", Style::default().fg(Color::Red)),
+                            fav_marker,
+                            Span::styled(
+                                entry.name.as_str(),
+                                Style::default().fg(Color::DarkGray),
+                            ),
+                        ]),
+                        Line::from(vec![
+                            Span::styled("        ", Style::default()),
                             Span::styled(
                                 format!("{}:{}", entry.ip, entry.port),
-                                Style::default().fg(Color::Green),
-                            ),
-                            Span::styled(" | ", Style::default().fg(Color::DarkGray)),
-                            Span::styled(
-                                format!("{}/{}", s.players, s.max_players),
-                                Style::default().fg(player_color),
-                            ),
-                            Span::styled(" | ", Style::default().fg(Color::DarkGray)),
-                            Span::styled(&s.map, Style::default().fg(Color::Cyan)),
-                            Span::styled(" | ", Style::default().fg(Color::DarkGray)),
-                            Span::styled(
-                                format!("{}mods", s.mods.len()),
-                                Style::default().fg(Color::Magenta),
+                                Style::default().fg(Color::DarkGray),
                             ),
                             Span::styled("  ", Style::default()),
                             Span::styled(
                                 entry.relative_time(),
-                                Style::default().fg(Color::DarkGray),
+                                Style::default().fg(Color::Magenta),
                             ),
-                        ],
-                    )
+                        ]),
+                    ];
+                    ListItem::new(content).style(style)
                 }
-                None => (
-                    Span::styled(" OFFLINE ", Style::default().fg(Color::Red)),
-                    vec![
-                        Span::styled(
-                            format!("{}:{}", entry.ip, entry.port),
-                            Style::default().fg(Color::Green),
-                        ),
-                        Span::styled("  ", Style::default()),
-                        Span::styled(entry.relative_time(), Style::default().fg(Color::Magenta)),
-                    ],
-                ),
-            };
-
-            let mut line2 = vec![Span::styled("       ", Style::default())];
-            line2.extend(details_spans);
-
-            let content = vec![
-                Line::from(vec![
-                    Span::styled(
-                        format!("{:>3}. ", i + 1),
-                        Style::default().fg(Color::DarkGray),
-                    ),
-                    status,
-                    Span::styled(display_name, Style::default().fg(Color::White)),
-                ]),
-                Line::from(line2),
-            ];
-
-            ListItem::new(content).style(style)
+            }
         })
         .collect();
 
@@ -1998,7 +2270,14 @@ fn render_history_tab(f: &mut Frame, app: &App, area: Rect) {
                 .borders(Borders::ALL),
         )
         .highlight_symbol(">> ");
-    f.render_widget(list, area);
+    f.render_widget(list, list_area);
+
+    // Details panel
+    if let Some(details_area) = details_area {
+        if let Some(server) = app.get_selected_server() {
+            render_server_details(f, app, &server, details_area);
+        }
+    }
 }
 
 fn render_mods_tab(f: &mut Frame, app: &App, area: Rect) {
@@ -2061,10 +2340,23 @@ fn render_mods_tab(f: &mut Frame, app: &App, area: Rect) {
                     Span::styled(format!("ID: {}", m.id), Style::default().fg(Color::Cyan)),
                     Span::styled("  Size: ", Style::default().fg(Color::Gray)),
                     Span::styled(mods::format_size(m.size), Style::default().fg(Color::Green)),
-                    Span::styled("  Updated: ", Style::default().fg(Color::Gray)),
+                    Span::styled("  Installed: ", Style::default().fg(Color::Gray)),
                     Span::styled(
-                        utils::format_relative_time(m.timestamp),
+                        if m.local_updated > 0 {
+                            utils::format_relative_time(m.local_updated)
+                        } else {
+                            "unknown".to_string()
+                        },
                         Style::default().fg(Color::Magenta),
+                    ),
+                    Span::styled("  Mod updated: ", Style::default().fg(Color::Gray)),
+                    Span::styled(
+                        if m.timestamp > 0 {
+                            utils::format_relative_time(m.timestamp)
+                        } else {
+                            "unknown".to_string()
+                        },
+                        Style::default().fg(Color::DarkGray),
                     ),
                 ]),
             ];
@@ -2226,6 +2518,7 @@ fn render_options_tab(f: &mut Frame, app: &App, area: Rect) {
         .enumerate()
         .map(|(i, (name, opt))| {
             let is_sel = i == selected;
+            let is_editing = is_sel && app.option_edit_active;
             let style = if is_sel {
                 Style::default().add_modifier(Modifier::BOLD)
             } else {
@@ -2238,11 +2531,22 @@ fn render_options_tab(f: &mut Frame, app: &App, area: Rect) {
                 Span::styled("[ ] ", Style::default().fg(Color::DarkGray))
             };
 
-            let value_str = opt
-                .value
-                .as_ref()
-                .map(|v| format!(" = {}", v))
-                .unwrap_or_default();
+            let value_str = if is_editing {
+                format!(" = {}|", app.option_edit_value)
+            } else {
+                opt.value
+                    .as_ref()
+                    .map(|v| format!(" = {}", v))
+                    .unwrap_or_default()
+            };
+
+            let value_color = if is_editing {
+                Color::Green
+            } else if is_sel {
+                Color::Yellow
+            } else {
+                Color::White
+            };
 
             let content = vec![
                 Line::from(vec![
@@ -2251,14 +2555,8 @@ fn render_options_tab(f: &mut Frame, app: &App, area: Rect) {
                         Style::default().fg(Color::DarkGray),
                     ),
                     check,
-                    Span::styled(
-                        format!("-{}{}", name, value_str),
-                        if is_sel {
-                            Style::default().fg(Color::Yellow)
-                        } else {
-                            Style::default().fg(Color::White)
-                        },
-                    ),
+                    Span::styled(format!("-{}", name), Style::default().fg(value_color)),
+                    Span::styled(value_str, Style::default().fg(value_color)),
                 ]),
                 Line::from(vec![
                     Span::styled("         ", Style::default()),
@@ -2288,9 +2586,21 @@ fn render_options_tab(f: &mut Frame, app: &App, area: Rect) {
 
 fn draw_progress_overlay(f: &mut Frame, progress: &ProgressState, area: Rect) {
     let popup_width = (area.width as f32 * 0.7).min(70.0).max(40.0) as u16;
-    // Height: title(1) + border(2) + gauge(1) + status(1) + completed list (up to 8) + padding
+
+    // Check if there's a hint to display
+    let hint = match &progress.phase {
+        ProgressPhase::Finished { hint, .. } => hint.clone(),
+        _ => None,
+    };
+    let hint_lines = hint
+        .as_ref()
+        .map(|h| h.lines().count() as u16 + 1) // +1 for spacing
+        .unwrap_or(0);
+
+    // Height: title(1) + border(2) + gauge(1) + status(1) + completed list (up to 8) + hint + padding
     let completed_lines = progress.completed.len().min(8) as u16;
-    let popup_height = (6 + completed_lines).min(area.height.saturating_sub(4));
+    let popup_height =
+        (6 + completed_lines + hint_lines).min(area.height.saturating_sub(4));
 
     let x = (area.width.saturating_sub(popup_width)) / 2;
     let y = (area.height.saturating_sub(popup_height)) / 2;
@@ -2298,13 +2608,24 @@ fn draw_progress_overlay(f: &mut Frame, progress: &ProgressState, area: Rect) {
 
     f.render_widget(Clear, popup_area);
 
-    let inner = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
+    let constraints = if hint.is_some() {
+        vec![
+            Constraint::Length(1),          // Status text
+            Constraint::Length(1),          // Progress gauge
+            Constraint::Length(hint_lines), // Hint text
+            Constraint::Min(0),            // Completed list
+        ]
+    } else {
+        vec![
             Constraint::Length(1), // Status text
             Constraint::Length(1), // Progress gauge
             Constraint::Min(0),    // Completed list
-        ])
+        ]
+    };
+
+    let inner = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
         .margin(1)
         .split(popup_area);
 
@@ -2315,10 +2636,14 @@ fn draw_progress_overlay(f: &mut Frame, progress: &ProgressState, area: Rect) {
         " Mod Operation ".to_string()
     };
 
+    let border_color = match &progress.phase {
+        ProgressPhase::Finished { hint, .. } if hint.is_some() => Color::Red,
+        _ => Color::Cyan,
+    };
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
-        .style(Style::default().fg(Color::Cyan));
+        .style(Style::default().fg(border_color));
     f.render_widget(block, popup_area);
 
     // Status text: what's currently happening
@@ -2329,8 +2654,12 @@ fn draw_progress_overlay(f: &mut Frame, progress: &ProgressState, area: Rect) {
                 progress.current_mod_name, progress.current_mod_id
             )
         }
-        ProgressPhase::Finished { ok, failed } => {
-            if *failed == 0 {
+        ProgressPhase::Finished {
+            ok, failed, hint, ..
+        } => {
+            if hint.is_some() {
+                "Login failed or expired".to_string()
+            } else if *failed == 0 {
                 format!("Done! {} mods completed successfully", ok)
             } else {
                 format!("Done: {} OK, {} failed", ok, failed)
@@ -2339,6 +2668,7 @@ fn draw_progress_overlay(f: &mut Frame, progress: &ProgressState, area: Rect) {
     };
     let status_color = match &progress.phase {
         ProgressPhase::Downloading => Color::Yellow,
+        ProgressPhase::Finished { hint, .. } if hint.is_some() => Color::Red,
         ProgressPhase::Finished { failed, .. } if *failed > 0 => Color::Red,
         _ => Color::Green,
     };
@@ -2365,9 +2695,28 @@ fn draw_progress_overlay(f: &mut Frame, progress: &ProgressState, area: Rect) {
         .label(gauge_label);
     f.render_widget(gauge, inner[1]);
 
+    // Hint text (shown between gauge and completed list)
+    let list_area_idx = if hint.is_some() {
+        if let Some(ref hint_text) = hint {
+            let hint_lines: Vec<Line> = hint_text
+                .lines()
+                .map(|l| {
+                    Line::from(Span::styled(
+                        l.to_string(),
+                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                    ))
+                })
+                .collect();
+            f.render_widget(Paragraph::new(hint_lines), inner[2]);
+        }
+        3
+    } else {
+        2
+    };
+
     // Completed list (show last N items)
-    if !progress.completed.is_empty() {
-        let max_show = inner[2].height as usize;
+    if !progress.completed.is_empty() && list_area_idx < inner.len() {
+        let max_show = inner[list_area_idx].height as usize;
         let skip = progress.completed.len().saturating_sub(max_show);
         let lines: Vec<Line> = progress
             .completed
@@ -2383,7 +2732,7 @@ fn draw_progress_overlay(f: &mut Frame, progress: &ProgressState, area: Rect) {
                 ])
             })
             .collect();
-        f.render_widget(Paragraph::new(lines), inner[2]);
+        f.render_widget(Paragraph::new(lines), inner[list_area_idx]);
     }
 }
 
