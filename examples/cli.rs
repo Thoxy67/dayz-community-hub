@@ -1437,7 +1437,7 @@ fn draw_title_bar(f: &mut Frame, app: &App, area: Rect) {
 
     let title = Line::from(vec![
         Span::styled(
-            " DayZ Manager ",
+            " DayZ-SA Multi Launcher ",
             Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
