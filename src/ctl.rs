@@ -1,0 +1,583 @@
+use crate::{
+    Result,
+    api::{self, Server, ServerList},
+    config::Profile,
+    errors::Error,
+    launch,
+    mods::{self, InstalledMod, ModManagementStats},
+    steamcmd::{ModProgress, SteamClient, SteamCmd, find_steam_root, find_steamcmd},
+};
+use reqwest::Client;
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::sync::Arc;
+use tokio::process::Command;
+use tokio::sync::mpsc;
+
+pub struct DayzCtl {
+    profile: Profile,
+    steamcmd: Option<Arc<SteamCmd>>,
+    client: Client,
+    server_list: Option<ServerList>,
+}
+
+impl DayzCtl {
+    pub async fn new(profile_path: impl AsRef<Path>) -> Result<Self> {
+        let profile = Profile::load(profile_path)?;
+        let steamcmd = if profile.steamcmd_enabled {
+            if let Some(steamcmd_path) = find_steamcmd() {
+                let steam_root = profile
+                    .steam_root
+                    .as_ref()
+                    .filter(|s| !s.is_empty()) // Treat empty string as None
+                    .map(|s| PathBuf::from(s))
+                    .or_else(find_steam_root)
+                    .unwrap_or_else(|| {
+                        let home = std::env::var("HOME").unwrap_or_default();
+                        PathBuf::from(home).join(".steam/steam/steamapps")
+                    });
+                let login = profile
+                    .steam_login
+                    .clone()
+                    .unwrap_or_else(|| "anonymous".to_string());
+                Some(Arc::new(SteamCmd::new(
+                    steamcmd_path,
+                    steam_root,
+                    Some(login),
+                )))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let client = Client::new();
+        Ok(Self {
+            profile,
+            steamcmd,
+            client,
+            server_list: None,
+        })
+    }
+
+    // --- Server list ---
+
+    pub async fn fetch_servers(&mut self) -> Result<&ServerList> {
+        let list = api::fetch_servers(&self.client).await?;
+        self.server_list = Some(list);
+        Ok(self.server_list.as_ref().unwrap())
+    }
+
+    pub fn get_server_list(&self) -> Option<&ServerList> {
+        self.server_list.as_ref()
+    }
+
+    pub fn find_server(&self, ip: &str, port: u16) -> Option<&Server> {
+        self.server_list
+            .as_ref()
+            .and_then(|sl| sl.find_server(ip, port))
+    }
+
+    pub fn find_server_by_game_port(&self, ip: &str, game_port: u16) -> Option<&Server> {
+        self.server_list
+            .as_ref()
+            .and_then(|sl| sl.find_server_by_game_port(ip, game_port))
+    }
+
+    /// Find a server by IP, trying both endpoint port and game port.
+    pub fn find_server_flexible(&self, ip: &str, port: u16) -> Option<&Server> {
+        self.find_server(ip, port)
+            .or_else(|| self.find_server_by_game_port(ip, port))
+    }
+
+    // --- Profile ---
+
+    pub fn profile(&self) -> &Profile {
+        &self.profile
+    }
+
+    pub fn profile_mut(&mut self) -> &mut Profile {
+        &mut self.profile
+    }
+
+    pub fn save_profile(&self) -> Result<()> {
+        self.profile.save()
+    }
+
+    pub fn add_favorite(&mut self, name: String, ip: String, port: u16) {
+        self.profile.add_favorite(name, ip, port);
+    }
+
+    pub fn remove_favorite(&mut self, ip: &str, port: u16) {
+        self.profile.remove_favorite(ip, port);
+    }
+
+    pub fn add_history(&mut self, name: String, ip: String, port: u16) {
+        self.profile.add_history(name, ip, port);
+    }
+
+    pub fn get_favorites_with_status(&self) -> Vec<crate::config::FavoriteStatus<'_>> {
+        let servers = self
+            .server_list
+            .as_ref()
+            .map(|sl| sl.result.as_slice())
+            .unwrap_or(&[]);
+        self.profile.get_favorites_with_status(servers)
+    }
+
+    // --- Paths ---
+
+    pub fn workshop_path(&self) -> Result<PathBuf> {
+        self.steamcmd
+            .as_ref()
+            .map(|sc| sc.workshop_path())
+            .ok_or_else(|| Error::Config("SteamCMD not configured".to_string()))
+    }
+
+    pub fn dayz_path(&self) -> Result<PathBuf> {
+        self.steamcmd
+            .as_ref()
+            .map(|sc| sc.dayz_path())
+            .ok_or_else(|| Error::Config("SteamCMD not configured".to_string()))
+    }
+
+    pub fn has_steamcmd(&self) -> bool {
+        self.steamcmd.is_some()
+    }
+
+    /// Get a shared reference to steamcmd for background operations.
+    pub fn steamcmd_arc(&self) -> Option<Arc<SteamCmd>> {
+        self.steamcmd.clone()
+    }
+
+    /// Start a background mod operation with progress reporting.
+    /// Returns (progress_receiver, join_handle) or an error if steamcmd is not configured.
+    pub fn start_mod_operation(
+        &self,
+        op: ModOperation,
+    ) -> Result<(
+        mpsc::UnboundedReceiver<ModProgress>,
+        tokio::task::JoinHandle<ModOpResult>,
+    )> {
+        let steamcmd = self
+            .steamcmd
+            .clone()
+            .ok_or_else(|| Error::Config("SteamCMD not configured".to_string()))?;
+        let workshop_path = self.workshop_path()?;
+        let dayz_path = self.dayz_path()?;
+        let installed = self.get_installed_mods().unwrap_or_default();
+        Ok(spawn_mod_operation(
+            steamcmd,
+            workshop_path,
+            dayz_path,
+            op,
+            installed,
+        ))
+    }
+
+    pub fn steamcmd_login(&self) -> Option<&str> {
+        self.steamcmd.as_ref().map(|sc| sc.login())
+    }
+
+    pub fn has_real_login(&self) -> bool {
+        self.steamcmd
+            .as_ref()
+            .map(|sc| sc.has_real_login())
+            .unwrap_or(false)
+    }
+
+    // --- Mod management ---
+
+    pub fn get_installed_mods(&self) -> Result<Vec<InstalledMod>> {
+        let workshop_path = self.workshop_path()?;
+        mods::scan_workshop_dir(&workshop_path)
+    }
+
+    /// Get the list of mod IDs required by a server that are not installed.
+    pub fn get_missing_mod_ids(&self, server: &Server) -> Result<Vec<u64>> {
+        let installed = self.get_installed_mods()?;
+        let server_mod_ids: Vec<u64> = server
+            .mods
+            .iter()
+            .map(|m| m.steam_workshop_id as u64)
+            .collect();
+        Ok(mods::get_missing_mods(&server_mod_ids, &installed))
+    }
+
+    /// Install missing mods for a server using SteamCMD.
+    /// This is the main workflow matching the bash script's `getNotInstalledMods()`.
+    ///
+    /// 1. Determine which mods are missing
+    /// 2. Download each via steamcmd
+    /// 3. Mark each as managed (`.dayz-ctl` marker)
+    /// 4. Create symlinks in the DayZ directory
+    /// 5. Verify all mods are present
+    pub async fn install_missing_mods(&self, server: &Server) -> Result<InstallResult> {
+        let steamcmd = self
+            .steamcmd
+            .as_ref()
+            .ok_or_else(|| Error::Config("SteamCMD not configured".to_string()))?;
+
+        if !steamcmd.has_real_login() {
+            return Err(Error::SteamCmd(
+                "Workshop downloads require a non-anonymous Steam login".to_string(),
+            ));
+        }
+
+        let installed = self.get_installed_mods()?;
+        let server_mod_ids: Vec<u64> = server
+            .mods
+            .iter()
+            .map(|m| m.steam_workshop_id as u64)
+            .collect();
+        let missing = mods::get_missing_mods(&server_mod_ids, &installed);
+
+        if missing.is_empty() {
+            // Still create symlinks for all server mods
+            let workshop_path = self.workshop_path()?;
+            let dayz_path = self.dayz_path()?;
+            mods::create_mod_symlinks(&workshop_path, &dayz_path, &server_mod_ids)?;
+
+            return Ok(InstallResult {
+                installed: Vec::new(),
+                failed: Vec::new(),
+                total_server_mods: server_mod_ids.len(),
+            });
+        }
+
+        let mut installed_ids = Vec::new();
+        let mut failed = Vec::new();
+
+        for &mod_id in &missing {
+            match steamcmd.download_mod(mod_id).await {
+                Ok(_) => {
+                    // Mark as managed
+                    let workshop_path = self.workshop_path()?;
+                    let _ = mods::mark_mod_as_managed(&workshop_path, mod_id);
+                    installed_ids.push(mod_id);
+                }
+                Err(e) => {
+                    failed.push((mod_id, format!("{}", e)));
+                }
+            }
+        }
+
+        // Create symlinks for ALL server mods (not just newly installed ones)
+        let workshop_path = self.workshop_path()?;
+        let dayz_path = self.dayz_path()?;
+        mods::create_mod_symlinks(&workshop_path, &dayz_path, &server_mod_ids)?;
+
+        // Verify all mods exist
+        let still_missing = mods::verify_mods(&workshop_path, &server_mod_ids);
+        if !still_missing.is_empty() && failed.is_empty() {
+            for id in still_missing {
+                failed.push((id, "Mod directory not found after download".to_string()));
+            }
+        }
+
+        Ok(InstallResult {
+            installed: installed_ids,
+            failed,
+            total_server_mods: server_mod_ids.len(),
+        })
+    }
+
+    /// Download and install a specific mod by ID.
+    pub async fn download_mod(&self, workshop_id: u64) -> Result<()> {
+        let steamcmd = self
+            .steamcmd
+            .as_ref()
+            .ok_or_else(|| Error::Config("SteamCMD not configured".to_string()))?;
+        steamcmd.download_mod(workshop_id).await?;
+        let workshop_path = self.workshop_path()?;
+        mods::mark_mod_as_managed(&workshop_path, workshop_id)?;
+        Ok(())
+    }
+
+    /// Update a single mod.
+    pub async fn update_mod(&self, workshop_id: u64) -> Result<()> {
+        let steamcmd = self
+            .steamcmd
+            .as_ref()
+            .ok_or_else(|| Error::Config("SteamCMD not configured".to_string()))?;
+        steamcmd.update_mod(workshop_id).await
+    }
+
+    /// Update all installed mods. Returns results per mod.
+    pub async fn update_all_mods(&self) -> Result<Vec<(u64, Result<()>)>> {
+        let steamcmd = self
+            .steamcmd
+            .as_ref()
+            .ok_or_else(|| Error::Config("SteamCMD not configured".to_string()))?;
+        let installed = self.get_installed_mods()?;
+        let ids: Vec<u64> = installed.iter().map(|m| m.id).collect();
+        Ok(steamcmd.update_all_mods(&ids).await)
+    }
+
+    /// Update all mods required by a specific server.
+    pub async fn update_server_mods(&self, server: &Server) -> Result<Vec<(u64, Result<()>)>> {
+        let steamcmd = self
+            .steamcmd
+            .as_ref()
+            .ok_or_else(|| Error::Config("SteamCMD not configured".to_string()))?;
+        let ids: Vec<u64> = server
+            .mods
+            .iter()
+            .map(|m| m.steam_workshop_id as u64)
+            .collect();
+        Ok(steamcmd.update_all_mods(&ids).await)
+    }
+
+    pub fn delete_mod(&self, mod_id: u64, only_managed: bool) -> Result<()> {
+        let workshop_path = self.workshop_path()?;
+        mods::delete_mod(&workshop_path, mod_id, only_managed)
+    }
+
+    pub fn toggle_mod_managed(&self, mod_id: u64) -> Result<bool> {
+        let workshop_path = self.workshop_path()?;
+        mods::toggle_mod_managed(&workshop_path, mod_id)
+    }
+
+    pub fn cleanup_mods(&self) -> Result<ModManagementStats> {
+        let workshop_path = self.workshop_path()?;
+        let dayz_path = self.dayz_path()?;
+        mods::cleanup_mods(&workshop_path, &dayz_path)
+    }
+
+    /// Create symlinks for a server's mods.
+    pub fn setup_mod_symlinks(&self, server: &Server) -> Result<Vec<u64>> {
+        let workshop_path = self.workshop_path()?;
+        let dayz_path = self.dayz_path()?;
+        let mod_ids: Vec<u64> = server
+            .mods
+            .iter()
+            .map(|m| m.steam_workshop_id as u64)
+            .collect();
+        mods::create_mod_symlinks(&workshop_path, &dayz_path, &mod_ids)
+    }
+
+    // --- Launch ---
+
+    /// Build DayZ launch arguments for a server (without Steam wrapper).
+    pub fn build_launch_args(&self, server: &Server, password: Option<&str>) -> Vec<String> {
+        let mod_ids: Vec<u64> = server
+            .mods
+            .iter()
+            .map(|m| m.steam_workshop_id as u64)
+            .collect();
+        launch::build_launch_args(server, &mod_ids, password, &self.profile.options, &[])
+    }
+
+    /// Build full Steam launch command arguments.
+    pub fn build_steam_launch_args(&self, server: &Server, password: Option<&str>) -> Vec<String> {
+        let args = self.build_launch_args(server, password);
+        launch::build_steam_applaunch_args(
+            crate::steamcmd::DAYZ_GAME_ID,
+            &args,
+            self.profile.player.as_deref(),
+        )
+    }
+
+    /// Full launch workflow matching the bash script's flow:
+    /// 1. Ensure Steam is running
+    /// 2. Build launch args
+    /// 3. Launch via `steam -applaunch`
+    /// 4. Record in history
+    pub async fn launch_game(&mut self, server: &Server, password: Option<&str>) -> Result<()> {
+        // Ensure Steam is running
+        SteamClient::start()?;
+
+        // Build launch arguments
+        let args = self.build_steam_launch_args(server, password);
+
+        // If Steam is already running, just run steam with args in background
+        let mut cmd = Command::new("steam");
+        cmd.args(&args).stdout(Stdio::null()).stderr(Stdio::null());
+
+        cmd.spawn()?;
+
+        // Record in history
+        self.add_history(
+            server.name.clone(),
+            server.endpoint.ip.clone(),
+            server.game_port as u16,
+        );
+        self.save_profile()?;
+
+        Ok(())
+    }
+}
+
+/// Describes what kind of background mod operation to perform.
+#[derive(Clone)]
+pub enum ModOperation {
+    /// Install missing mods for a server, then launch
+    InstallThenLaunch {
+        server: Server,
+        password: Option<String>,
+    },
+    /// Install missing mods (no launch)
+    InstallOnly { server: Server },
+    /// Update all server mods, then launch
+    UpdateThenLaunch {
+        server: Server,
+        password: Option<String>,
+    },
+    /// Update all installed mods
+    UpdateAll,
+    /// Update a single mod
+    UpdateOne { mod_id: u64, name: String },
+}
+
+/// Spawn a background mod operation with progress reporting.
+/// Returns a (receiver, join_handle). The caller polls the receiver for progress messages.
+/// When the operation completes, the final message is `ModProgress::Finished`.
+pub fn spawn_mod_operation(
+    steamcmd: Arc<SteamCmd>,
+    workshop_path: PathBuf,
+    dayz_path: PathBuf,
+    op: ModOperation,
+    installed_mods: Vec<InstalledMod>,
+) -> (
+    mpsc::UnboundedReceiver<ModProgress>,
+    tokio::task::JoinHandle<ModOpResult>,
+) {
+    let (tx, rx) = mpsc::unbounded_channel();
+
+    let handle = tokio::spawn(async move {
+        match op {
+            ModOperation::InstallOnly { server }
+            | ModOperation::InstallThenLaunch { server, .. } => {
+                let server_mod_ids: Vec<u64> = server
+                    .mods
+                    .iter()
+                    .map(|m| m.steam_workshop_id as u64)
+                    .collect();
+                let missing = mods::get_missing_mods(&server_mod_ids, &installed_mods);
+
+                if missing.is_empty() {
+                    let _ = mods::create_mod_symlinks(&workshop_path, &dayz_path, &server_mod_ids);
+                    let _ = tx.send(ModProgress::Finished {
+                        ok: 0,
+                        failed: 0,
+                        total: 0,
+                    });
+                    return ModOpResult::InstallDone(InstallResult {
+                        installed: Vec::new(),
+                        failed: Vec::new(),
+                        total_server_mods: server_mod_ids.len(),
+                    });
+                }
+
+                // Build (id, name) pairs for progress display
+                let mods_info: Vec<(u64, String)> = missing
+                    .iter()
+                    .map(|&id| {
+                        let name = server
+                            .mods
+                            .iter()
+                            .find(|m| m.steam_workshop_id as u64 == id)
+                            .map(|m| m.name.clone())
+                            .unwrap_or_else(|| id.to_string());
+                        (id, name)
+                    })
+                    .collect();
+
+                let results = steamcmd.download_mods_with_progress(&mods_info, &tx).await;
+
+                let mut installed_ids = Vec::new();
+                let mut failed = Vec::new();
+                for (mod_id, result) in &results {
+                    match result {
+                        Ok(_) => {
+                            let _ = mods::mark_mod_as_managed(&workshop_path, *mod_id);
+                            installed_ids.push(*mod_id);
+                        }
+                        Err(e) => {
+                            failed.push((*mod_id, format!("{}", e)));
+                        }
+                    }
+                }
+
+                let _ = mods::create_mod_symlinks(&workshop_path, &dayz_path, &server_mod_ids);
+
+                ModOpResult::InstallDone(InstallResult {
+                    installed: installed_ids,
+                    failed,
+                    total_server_mods: server_mod_ids.len(),
+                })
+            }
+
+            ModOperation::UpdateThenLaunch { server, .. } => {
+                let mods_info: Vec<(u64, String)> = server
+                    .mods
+                    .iter()
+                    .map(|m| (m.steam_workshop_id as u64, m.name.clone()))
+                    .collect();
+
+                let results = steamcmd.download_mods_with_progress(&mods_info, &tx).await;
+
+                let server_mod_ids: Vec<u64> = server
+                    .mods
+                    .iter()
+                    .map(|m| m.steam_workshop_id as u64)
+                    .collect();
+                let _ = mods::create_mod_symlinks(&workshop_path, &dayz_path, &server_mod_ids);
+
+                let per_mod: Vec<(u64, Result<()>)> = results;
+                ModOpResult::UpdateDone(per_mod)
+            }
+
+            ModOperation::UpdateAll => {
+                let mods_info: Vec<(u64, String)> = installed_mods
+                    .iter()
+                    .map(|m| (m.id, m.name.clone()))
+                    .collect();
+
+                let results = steamcmd.download_mods_with_progress(&mods_info, &tx).await;
+                ModOpResult::UpdateDone(results)
+            }
+
+            ModOperation::UpdateOne { mod_id, name } => {
+                let mods_info = vec![(mod_id, name)];
+                let results = steamcmd.download_mods_with_progress(&mods_info, &tx).await;
+                ModOpResult::UpdateDone(results)
+            }
+        }
+    });
+
+    (rx, handle)
+}
+
+/// Result from a completed background mod operation.
+pub enum ModOpResult {
+    InstallDone(InstallResult),
+    UpdateDone(Vec<(u64, Result<()>)>),
+}
+
+/// Result of installing missing mods for a server.
+pub struct InstallResult {
+    pub installed: Vec<u64>,
+    pub failed: Vec<(u64, String)>,
+    pub total_server_mods: usize,
+}
+
+impl InstallResult {
+    pub fn all_success(&self) -> bool {
+        self.failed.is_empty()
+    }
+
+    pub fn summary(&self) -> String {
+        if self.installed.is_empty() && self.failed.is_empty() {
+            "All mods already installed".to_string()
+        } else if self.failed.is_empty() {
+            format!("Successfully installed {} mods", self.installed.len())
+        } else {
+            format!(
+                "Installed {} mods, {} failed",
+                self.installed.len(),
+                self.failed.len()
+            )
+        }
+    }
+}

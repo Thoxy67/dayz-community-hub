@@ -1,0 +1,24 @@
+[package]
+name = "dayzsa-ml"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+a2s = { version = "0.6.1", features = ["async"] }
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+regex = "1"
+which = "8.0.0"
+sysinfo = "0.38.2"
+flate2 = "1"
+tar = "0.4"
+chrono = { version = "0.4", optional = true }
+ratatui = { version = "0.30.0", default-features = false, features = ["termion"] }
+termion = "4"
+
+[features]
+default = []
+chrono = ["dep:chrono"]
