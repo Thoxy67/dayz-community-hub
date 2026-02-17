@@ -312,7 +312,7 @@ impl App {
 
     fn visible_items(&self) -> usize {
         // Overhead: tab bar (3) + title bar (1) + status bar (1) + list borders (2) = 7
-        let overhead = 7u16;
+        let overhead = 9u16;
         let available = self.term_height.saturating_sub(overhead);
         // Mods and News list use single-line rows; server tabs use 2 lines per item.
         let lines_per_item: u16 = match self.tab {
