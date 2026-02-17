@@ -1,6 +1,6 @@
 use crate::Result;
 use flate2::read::GzDecoder;
-use reqwest;
+use reqwest::Client;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tar::Archive;
@@ -10,12 +10,15 @@ const MISSIONS_DIR: &str = "Missions";
 
 pub struct OfflineMode {
     dayz_path: PathBuf,
+    client: Client,
 }
 
 impl OfflineMode {
-    pub fn new(dayz_path: impl AsRef<Path>) -> Self {
+    /// Create a new `OfflineMode` using a shared HTTP client.
+    pub fn new(dayz_path: impl AsRef<Path>, client: Client) -> Self {
         Self {
             dayz_path: dayz_path.as_ref().to_path_buf(),
+            client,
         }
     }
 
@@ -56,8 +59,8 @@ impl OfflineMode {
     }
 
     async fn get_latest_tag(&self) -> Result<String> {
-        let client = reqwest::Client::new();
-        let resp = client
+        let resp = self
+            .client
             .get(&format!(
                 "https://github.com/{}/releases/latest",
                 COMMUNITY_OFFLINE_REPO
@@ -97,8 +100,7 @@ impl OfflineMode {
             )
         };
 
-        let client = reqwest::Client::new();
-        let response = client.get(&tarball_url).send().await?;
+        let response = self.client.get(&tarball_url).send().await?;
         let bytes = response.bytes().await?;
 
         let missions_path = self.missions_path();

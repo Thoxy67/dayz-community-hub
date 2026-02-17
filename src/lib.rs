@@ -32,6 +32,7 @@ pub mod ctl;
 pub mod errors;
 pub mod launch;
 pub mod mods;
+pub mod news;
 pub mod offline;
 pub mod steamcmd;
 pub mod system;

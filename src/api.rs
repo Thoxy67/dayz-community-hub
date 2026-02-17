@@ -54,6 +54,71 @@ pub struct Mod {
 
 pub type Server = Results;
 
+/// Response from the Steam GetNumberOfCurrentPlayers endpoint.
+#[derive(Debug, Deserialize)]
+struct SteamPlayerCountResponse {
+    response: SteamPlayerCountInner,
+}
+
+#[derive(Debug, Deserialize)]
+struct SteamPlayerCountInner {
+    player_count: Option<u32>,
+}
+
+/// Fetch the number of players currently in-game on Steam for DayZ (appid 221100).
+/// Matches the bash script's `getPlayersOnline()`.
+pub async fn fetch_steam_player_count(client: &reqwest::Client) -> Result<u32> {
+    let resp = client
+        .get("https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/")
+        .query(&[("appid", "221100")])
+        .send()
+        .await?
+        .json::<SteamPlayerCountResponse>()
+        .await?;
+    Ok(resp.response.player_count.unwrap_or(0))
+}
+
+/// On-disk cache envelope for the server list.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ServerListCache {
+    /// Unix timestamp (seconds) when the list was fetched.
+    pub fetched_at: u64,
+    pub list: ServerList,
+}
+
+impl ServerListCache {
+    /// Returns true if the cache is younger than `max_age_secs`.
+    pub fn is_fresh(&self, max_age_secs: u64) -> bool {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        now.saturating_sub(self.fetched_at) < max_age_secs
+    }
+}
+
+/// Try to load a cached server list from disk.
+/// Returns `None` if the file doesn't exist or is unreadable.
+pub fn load_server_list_cache(cache_path: &std::path::Path) -> Option<ServerListCache> {
+    let data = std::fs::read(cache_path).ok()?;
+    serde_json::from_slice(&data).ok()
+}
+
+/// Persist a freshly-fetched server list to disk.
+pub fn save_server_list_cache(cache_path: &std::path::Path, list: &ServerList) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let cache = ServerListCache {
+        fetched_at: now,
+        list: list.clone(),
+    };
+    if let Ok(data) = serde_json::to_vec(&cache) {
+        let _ = std::fs::write(cache_path, data);
+    }
+}
+
 /// Fetch the full server list from the DayZSA Launcher API.
 pub async fn fetch_servers(client: &reqwest::Client) -> Result<ServerList> {
     let resp = client

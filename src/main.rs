@@ -1,7 +1,7 @@
 use dayzsa_ml::{
-    Result, a2s_query, config,
+    Result, a2s_query, api, config,
     ctl::{DayzCtl, ModOpResult, ModOperation},
-    mods, steamcmd,
+    mods, news, steamcmd,
     steamcmd::ModProgress,
     system, utils,
 };
@@ -13,6 +13,7 @@ use ratatui::{
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, Gauge, List, ListItem, Paragraph, Wrap},
 };
+use std::collections::HashMap;
 use std::io;
 use std::io::Write;
 use termion::input::TermRead;
@@ -38,10 +39,6 @@ struct App {
     direct_server_found: Option<dayzsa_ml::Server>,
     // Mods
     installed_mods: Option<Vec<mods::InstalledMod>>,
-    #[allow(dead_code)]
-    pending_deletion: Option<u64>,
-    #[allow(dead_code)]
-    pending_cleanup: bool,
     // Server details
     current_a2s_details: Option<a2s_query::ServerDetails>,
     detailed_server_index: Option<usize>,
@@ -66,6 +63,22 @@ struct App {
     progress_state: Option<ProgressState>,
     // What to do after a background operation finishes
     pending_after_op: Option<PendingAfterOp>,
+    // Ping cache: "ip:query_port" -> ping_ms
+    ping_cache: HashMap<String, u32>,
+    // Background ping receiver
+    ping_rx: Option<mpsc::UnboundedReceiver<(String, u32)>>,
+    // Background result receiver (A2S, server refresh)
+    bg_rx: Option<mpsc::UnboundedReceiver<BackgroundResult>>,
+    // Persistent background channel for fire-and-forget tasks (stats, news)
+    // These senders are kept alive so multiple results can arrive.
+    misc_tx: Option<mpsc::UnboundedSender<BackgroundResult>>,
+    misc_rx: Option<mpsc::UnboundedReceiver<BackgroundResult>>,
+    // Player counts shown in title bar
+    steam_players: Option<u32>,
+    // News tab
+    news_articles: Option<Vec<news::Article>>,
+    news_fetched_at: Option<std::time::Instant>,
+    news_detail_scroll: u16,
 }
 
 /// Tracks the live progress of a background mod operation.
@@ -81,12 +94,25 @@ struct ProgressState {
 
 #[derive(Clone, PartialEq)]
 enum ProgressPhase {
+    /// Steam is being shut down before steamcmd can start
+    ShuttingDownSteam,
     Downloading,
     Finished {
         ok: usize,
         failed: usize,
         hint: Option<String>,
     },
+}
+
+/// Results sent back from non-blocking background tasks (A2S query, server refresh, stats, news).
+enum BackgroundResult {
+    A2sDetails(Box<a2s_query::ServerDetails>, usize),
+    A2sError(String),
+    ServerListRefreshed(api::ServerList),
+    ServerListError(String),
+    SteamPlayerCount(u32),
+    NewsRefreshed(Vec<news::Article>),
+    NewsError(String),
 }
 
 /// Action to perform after a background mod operation completes.
@@ -102,6 +128,7 @@ enum Tab {
     Favorites,
     History,
     Mods,
+    News,
     DirectConnect,
     Options,
 }
@@ -111,6 +138,7 @@ enum DirectConnectField {
     Address,
     Port,
     Password,
+    ServerInfo,
     Connect,
 }
 
@@ -144,8 +172,9 @@ impl Tab {
             Tab::Favorites => 1,
             Tab::History => 2,
             Tab::Mods => 3,
-            Tab::DirectConnect => 4,
-            Tab::Options => 5,
+            Tab::News => 4,
+            Tab::DirectConnect => 5,
+            Tab::Options => 6,
         }
     }
 
@@ -155,6 +184,7 @@ impl Tab {
             Tab::Favorites => "Favorites",
             Tab::History => "History",
             Tab::Mods => "Mods",
+            Tab::News => "News",
             Tab::DirectConnect => "Connect",
             Tab::Options => "Options",
         }
@@ -166,6 +196,7 @@ impl Tab {
             Tab::Favorites,
             Tab::History,
             Tab::Mods,
+            Tab::News,
             Tab::DirectConnect,
             Tab::Options,
         ]
@@ -200,8 +231,6 @@ impl App {
             direct_cursor: DirectConnectField::Address,
             direct_server_found: None,
             installed_mods: None,
-            pending_deletion: None,
-            pending_cleanup: false,
             current_a2s_details: None,
             detailed_server_index: None,
             show_server_details: false,
@@ -218,6 +247,15 @@ impl App {
             progress_handle: None,
             progress_state: None,
             pending_after_op: None,
+            ping_cache: HashMap::new(),
+            ping_rx: None,
+            bg_rx: None,
+            misc_tx: None,
+            misc_rx: None,
+            steam_players: None,
+            news_articles: None,
+            news_fetched_at: None,
+            news_detail_scroll: 0,
         }
     }
 
@@ -273,11 +311,14 @@ impl App {
     }
 
     fn visible_items(&self) -> usize {
-        // Account for borders, tabs, title, status bar
-        let overhead = 12u16;
+        // Overhead: tab bar (3) + title bar (1) + status bar (1) + list borders (2) = 7
+        let overhead = 7u16;
         let available = self.term_height.saturating_sub(overhead);
-        // Each server item takes ~2 lines, mods ~2 lines
-        let lines_per_item = 2;
+        // Mods and News list use single-line rows; server tabs use 2 lines per item.
+        let lines_per_item: u16 = match self.tab {
+            Tab::Mods | Tab::News => 1,
+            _ => 2,
+        };
         (available / lines_per_item).max(3) as usize
     }
 
@@ -294,19 +335,21 @@ impl App {
             Tab::History => self.ctl.profile().history.len(),
             Tab::Mods => self.installed_mods.as_ref().map(|v| v.len()).unwrap_or(0),
             Tab::Options => self.ctl.profile().options.all_options().len(),
-            Tab::DirectConnect => 4,
+            Tab::DirectConnect => 5,
+            Tab::News => self.news_articles.as_ref().map(|a| a.len()).unwrap_or(0),
         }
     }
 
     fn move_selection(&mut self, delta: i32) {
         if self.tab == Tab::DirectConnect {
             let current = self.direct_cursor as u8;
-            let new = (current as i32 + delta).rem_euclid(4) as u8;
+            let new = (current as i32 + delta).rem_euclid(5) as u8;
             self.direct_cursor = match new {
                 0 => DirectConnectField::Address,
                 1 => DirectConnectField::Port,
                 2 => DirectConnectField::Password,
-                3 => DirectConnectField::Connect,
+                3 => DirectConnectField::ServerInfo,
+                4 => DirectConnectField::Connect,
                 _ => DirectConnectField::Address,
             };
             return;
@@ -555,20 +598,22 @@ impl App {
 
     fn refresh_server_list(&mut self) {
         self.set_info("Refreshing server list...");
-        match tokio::task::block_in_place(|| Handle::current().block_on(self.ctl.fetch_servers())) {
-            Ok(list) => {
-                let count = list.result.len();
-                self.servers = list.result.clone();
-                // Re-apply search filter if active
-                if self.filtered_indices.is_some() {
-                    self.update_search_filter();
+        // Spawn a background task so the TUI stays responsive during the fetch.
+        let client = self.ctl.http_client().clone();
+        let cache_path = config::default_data_dir().join("server_list_cache.json");
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.bg_rx = Some(rx);
+        tokio::spawn(async move {
+            match api::fetch_servers(&client).await {
+                Ok(list) => {
+                    api::save_server_list_cache(&cache_path, &list);
+                    let _ = tx.send(BackgroundResult::ServerListRefreshed(list));
                 }
-                self.set_success(format!("Refreshed: {} servers loaded", count));
+                Err(e) => {
+                    let _ = tx.send(BackgroundResult::ServerListError(format!("{}", e)));
+                }
             }
-            Err(e) => {
-                self.set_error(format!("Refresh failed: {}", e));
-            }
-        }
+        });
     }
 
     // ─── A2S Query ───
@@ -578,24 +623,25 @@ impl App {
             Some(s) => s,
             None => return,
         };
-
+        let selected_idx = self.selected_index();
         self.set_info(format!("Querying {}...", server.name));
 
-        match tokio::task::block_in_place(|| {
-            Handle::current().block_on(a2s_query::get_server_details(&server))
-        }) {
-            Ok(details) => {
-                self.current_a2s_details = Some(details);
-                self.detailed_server_index = Some(self.selected_index());
-                self.show_server_details = true;
-                self.set_success("A2S info loaded");
+        // Spawn a background task so the TUI stays responsive during the query.
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.bg_rx = Some(rx);
+        tokio::spawn(async move {
+            match a2s_query::get_server_details(&server).await {
+                Ok(details) => {
+                    let _ = tx.send(BackgroundResult::A2sDetails(
+                        Box::new(details),
+                        selected_idx,
+                    ));
+                }
+                Err(e) => {
+                    let _ = tx.send(BackgroundResult::A2sError(format!("{}", e)));
+                }
             }
-            Err(e) => {
-                self.set_error(format!("A2S query failed: {}", e));
-                self.current_a2s_details = None;
-                self.show_server_details = false;
-            }
-        }
+        });
     }
 
     // ─── Direct Connect ───
@@ -736,6 +782,55 @@ impl App {
         }
     }
 
+    /// Query A2S info for the address typed in the Direct Connect tab.
+    fn fetch_direct_server_info(&mut self) {
+        let mut ip = self.direct_address.trim().to_string();
+        let mut port_str = self.direct_port.trim().to_string();
+
+        // Handle IP:PORT format
+        if let Some(colon_idx) = ip.find(':') {
+            let after = &ip[colon_idx + 1..];
+            if after.parse::<u16>().is_ok() {
+                port_str = after.to_string();
+                ip = ip[..colon_idx].to_string();
+                self.direct_address = ip.clone();
+                self.direct_port = port_str.clone();
+            }
+        }
+
+        if ip.is_empty() {
+            self.set_error("Enter a server address first");
+            return;
+        }
+
+        let port = port_str.parse::<u16>().unwrap_or(2302);
+
+        // Build a minimal Server so we can pass it to query_server_info
+        let server = dayzsa_ml::Server {
+            name: format!("{}:{}", ip, port),
+            endpoint: dayzsa_ml::Endpoint {
+                ip: ip.clone(),
+                port: port as i64,
+            },
+            game_port: port as i64,
+            ..Default::default()
+        };
+
+        self.set_info(format!("Querying {}:{}...", ip, port));
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        self.bg_rx = Some(rx);
+        tokio::spawn(async move {
+            match a2s_query::get_server_details(&server).await {
+                Ok(details) => {
+                    let _ = tx.send(BackgroundResult::A2sDetails(Box::new(details), usize::MAX));
+                }
+                Err(e) => {
+                    let _ = tx.send(BackgroundResult::A2sError(format!("{}", e)));
+                }
+            }
+        });
+    }
+
     fn handle_direct_input(&mut self, key: char) {
         match self.direct_cursor {
             DirectConnectField::Address => self.direct_address.push(key),
@@ -745,7 +840,7 @@ impl App {
                 }
             }
             DirectConnectField::Password => self.direct_password.push(key),
-            DirectConnectField::Connect => {}
+            DirectConnectField::ServerInfo | DirectConnectField::Connect => {}
         }
     }
 
@@ -760,7 +855,7 @@ impl App {
             DirectConnectField::Password => {
                 self.direct_password.pop();
             }
-            DirectConnectField::Connect => {}
+            DirectConnectField::ServerInfo | DirectConnectField::Connect => {}
         }
     }
 
@@ -844,6 +939,25 @@ impl App {
             message: "Remove all managed mods and symlinks?".to_string(),
             action: ConfirmAction::CleanupMods,
         });
+    }
+
+    fn open_selected_news_url(&mut self) {
+        let articles = match self.news_articles.as_deref() {
+            Some(a) => a,
+            None => return,
+        };
+        let idx = self.selected_index();
+        if let Some(article) = articles.get(idx) {
+            let url = article.url();
+            match std::process::Command::new("xdg-open")
+                .arg(&url)
+                .stderr(std::process::Stdio::null())
+                .spawn()
+            {
+                Ok(_) => self.set_info(format!("Opening: {}", url)),
+                Err(e) => self.set_error(format!("Failed to open browser: {}", e)),
+            }
+        }
     }
 
     fn toggle_option_at_index(&mut self) {
@@ -1051,6 +1165,18 @@ impl App {
             match rx.try_recv() {
                 Ok(msg) => {
                     match msg {
+                        ModProgress::ShuttingDownSteam => {
+                            // Show shutdown message in the progress overlay
+                            let state = self.progress_state.get_or_insert(ProgressState {
+                                current: 0,
+                                total: 0,
+                                current_mod_name: String::new(),
+                                current_mod_id: 0,
+                                phase: ProgressPhase::ShuttingDownSteam,
+                                completed: Vec::new(),
+                            });
+                            state.phase = ProgressPhase::ShuttingDownSteam;
+                        }
                         ModProgress::Starting {
                             current,
                             total,
@@ -1115,7 +1241,28 @@ impl App {
                             self.progress_rx = None;
 
                             if let Some(ref hint) = hint {
-                                self.set_error(hint.clone());
+                                // Show a prominent popup for credential failures
+                                // so the user knows exactly what command to run
+                                if hint.contains("Cached credentials not found") {
+                                    // Extract the re-login command from the hint (last line)
+                                    let cmd = hint
+                                        .lines()
+                                        .last()
+                                        .map(|l| l.trim())
+                                        .unwrap_or("steamcmd +login <user> +quit");
+                                    self.popup = Some(Popup::Info {
+                                        title: "SteamCMD Login Required".to_string(),
+                                        message: format!(
+                                            "Your steamcmd credentials are missing or expired.\n\
+                                             No mods were downloaded.\n\n\
+                                             Run this command in a terminal, then try again:\n\n\
+                                             {}\n\n\
+                                             Press any key to dismiss.",
+                                            cmd
+                                        ),
+                                    });
+                                }
+                                self.set_error("steamcmd credentials expired — see popup");
                             } else if failed == 0 {
                                 if total == 0 {
                                     self.set_success("All mods already up to date");
@@ -1129,7 +1276,12 @@ impl App {
                             // Execute pending after-op action
                             let after = self.pending_after_op.take();
                             self.refresh_installed_mods();
-                            if let Some(pending) = after {
+
+                            // Don't launch if credentials failed -- the mods
+                            // didn't download so launching would be pointless.
+                            if hint.is_some() {
+                                // Drop pending launch, user needs to fix login first
+                            } else if let Some(pending) = after {
                                 match pending {
                                     PendingAfterOp::LaunchServer(server, pw) => {
                                         if let Err(e) = self.ctl.setup_mod_symlinks(&server) {
@@ -1167,6 +1319,211 @@ impl App {
     /// Returns true if a background operation is currently in progress.
     fn is_busy(&self) -> bool {
         self.progress_rx.is_some()
+    }
+
+    // ─── Ping ───
+
+    /// Start background pinging of visible/relevant servers.
+    /// Pings all servers concurrently (with concurrency limit) and sends results
+    /// back through a channel.
+    fn start_background_ping(&mut self) {
+        let servers: Vec<dayzsa_ml::Server> = self.servers.clone();
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.ping_rx = Some(rx);
+
+        tokio::spawn(async move {
+            // Ping servers concurrently with a semaphore to limit open sockets
+            let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(50));
+            let mut handles = Vec::new();
+
+            for server in servers {
+                let tx = tx.clone();
+                let sem = semaphore.clone();
+                let handle = tokio::spawn(async move {
+                    let _permit = sem.acquire().await;
+                    let key = format!("{}:{}", server.endpoint.ip, server.endpoint.port);
+                    if let Ok(ping_ms) = a2s_query::ping_server(&server).await {
+                        let _ = tx.send((key, ping_ms));
+                    }
+                });
+                handles.push(handle);
+            }
+
+            // Wait for all to complete (or timeout)
+            for handle in handles {
+                let _ = handle.await;
+            }
+        });
+    }
+
+    /// Poll background ping results into the cache.
+    fn poll_pings(&mut self) {
+        let rx = match &mut self.ping_rx {
+            Some(rx) => rx,
+            None => return,
+        };
+
+        loop {
+            match rx.try_recv() {
+                Ok((key, ping_ms)) => {
+                    self.ping_cache.insert(key, ping_ms);
+                }
+                Err(mpsc::error::TryRecvError::Empty) => break,
+                Err(mpsc::error::TryRecvError::Disconnected) => {
+                    // All pings finished
+                    self.ping_rx = None;
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Poll background results (A2S query, server list refresh).
+    fn poll_background(&mut self) {
+        let rx = match &mut self.bg_rx {
+            Some(rx) => rx,
+            None => return,
+        };
+
+        loop {
+            match rx.try_recv() {
+                Ok(result) => {
+                    match result {
+                        BackgroundResult::A2sDetails(details, idx) => {
+                            self.current_a2s_details = Some(*details);
+                            self.detailed_server_index = Some(idx);
+                            self.show_server_details = true;
+                            self.set_success("A2S info loaded");
+                            self.bg_rx = None;
+                        }
+                        BackgroundResult::A2sError(e) => {
+                            self.set_error(format!("A2S query failed: {}", e));
+                            self.current_a2s_details = None;
+                            self.show_server_details = false;
+                            self.bg_rx = None;
+                        }
+                        BackgroundResult::ServerListRefreshed(list) => {
+                            let count = list.result.len();
+                            self.servers = list.result.clone();
+                            // Re-apply search filter if active
+                            if self.filtered_indices.is_some() {
+                                self.update_search_filter();
+                            }
+                            // Re-ping all servers with fresh list
+                            self.ping_cache.clear();
+                            self.start_background_ping();
+                            self.set_success(format!("Refreshed: {} servers loaded", count));
+                            self.bg_rx = None;
+                        }
+                        BackgroundResult::ServerListError(e) => {
+                            self.set_error(format!("Refresh failed: {}", e));
+                            self.bg_rx = None;
+                        }
+                        // These should arrive via misc_rx, but handle gracefully if they don't
+                        BackgroundResult::SteamPlayerCount(n) => {
+                            self.steam_players = Some(n);
+                            self.bg_rx = None;
+                        }
+                        BackgroundResult::NewsRefreshed(articles) => {
+                            self.news_articles = Some(articles);
+                            self.news_fetched_at = Some(std::time::Instant::now());
+                            self.bg_rx = None;
+                        }
+                        BackgroundResult::NewsError(e) => {
+                            self.set_error(format!("News fetch failed: {}", e));
+                            self.bg_rx = None;
+                        }
+                    }
+                    break;
+                }
+                Err(mpsc::error::TryRecvError::Empty) => break,
+                Err(mpsc::error::TryRecvError::Disconnected) => {
+                    self.bg_rx = None;
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Ensure the persistent misc channel exists and return a clone of the sender.
+    fn misc_sender(&mut self) -> mpsc::UnboundedSender<BackgroundResult> {
+        if self.misc_tx.is_none() {
+            let (tx, rx) = mpsc::unbounded_channel();
+            self.misc_tx = Some(tx);
+            self.misc_rx = Some(rx);
+        }
+        self.misc_tx.as_ref().unwrap().clone()
+    }
+
+    /// Poll the persistent misc channel for stats / news results.
+    fn poll_misc(&mut self) {
+        loop {
+            let result = match self.misc_rx.as_mut() {
+                Some(rx) => match rx.try_recv() {
+                    Ok(r) => r,
+                    Err(mpsc::error::TryRecvError::Empty) => break,
+                    Err(mpsc::error::TryRecvError::Disconnected) => {
+                        self.misc_rx = None;
+                        self.misc_tx = None;
+                        break;
+                    }
+                },
+                None => break,
+            };
+            match result {
+                BackgroundResult::SteamPlayerCount(n) => {
+                    self.steam_players = Some(n);
+                }
+                BackgroundResult::NewsRefreshed(articles) => {
+                    self.news_articles = Some(articles);
+                    self.news_fetched_at = Some(std::time::Instant::now());
+                }
+                BackgroundResult::NewsError(e) => {
+                    self.set_error(format!("News fetch failed: {}", e));
+                }
+                // Other variants handled in poll_background
+                _ => {}
+            }
+        }
+    }
+
+    /// Fire-and-forget: fetch Steam player count in background.
+    fn fetch_steam_players(&mut self) {
+        let tx = self.misc_sender();
+        let client = self.ctl.http_client().clone();
+        tokio::spawn(async move {
+            if let Ok(count) = api::fetch_steam_player_count(&client).await {
+                let _ = tx.send(BackgroundResult::SteamPlayerCount(count));
+            }
+        });
+    }
+
+    /// Fire-and-forget: fetch DayZ news in background (respects TTL).
+    fn fetch_news_if_needed(&mut self) {
+        // Check TTL — don't refetch if recent enough
+        if let Some(fetched_at) = self.news_fetched_at {
+            if fetched_at.elapsed().as_secs() < news::NEWS_CACHE_TTL_SECS {
+                return;
+            }
+        }
+        let tx = self.misc_sender();
+        let client = self.ctl.http_client().clone();
+        tokio::spawn(async move {
+            match news::fetch_news(&client).await {
+                Ok(articles) => {
+                    let _ = tx.send(BackgroundResult::NewsRefreshed(articles));
+                }
+                Err(e) => {
+                    let _ = tx.send(BackgroundResult::NewsError(format!("{}", e)));
+                }
+            }
+        });
+    }
+
+    /// Get cached ping for a server, if available.
+    fn get_ping(&self, server: &dayzsa_ml::Server) -> Option<u32> {
+        let key = format!("{}:{}", server.endpoint.ip, server.endpoint.port);
+        self.ping_cache.get(&key).copied()
     }
 
     fn update_search_filter(&mut self) {
@@ -1293,9 +1650,35 @@ async fn main() -> Result<()> {
     run_setup_if_needed(&profile_path)?;
 
     // Initialize
-    println!("Fetching server list...");
     let mut ctl = DayzCtl::new(&profile_path).await?;
-    let servers_list = ctl.fetch_servers().await?;
+
+    // Use cached server list if it's less than 5 minutes old, otherwise fetch fresh.
+    let cache_path = config::default_data_dir().join("server_list_cache.json");
+    const CACHE_TTL: u64 = 300; // 5 minutes
+    let servers_list = if let Some(cache) = api::load_server_list_cache(&cache_path) {
+        if cache.is_fresh(CACHE_TTL) {
+            println!(
+                "Using cached server list ({} servers, cached {}s ago)...",
+                cache.list.result.len(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs()
+                    .saturating_sub(cache.fetched_at)
+            );
+            cache.list
+        } else {
+            println!("Cache expired, fetching server list...");
+            let list = ctl.fetch_servers().await?.clone();
+            api::save_server_list_cache(&cache_path, &list);
+            list
+        }
+    } else {
+        println!("Fetching server list...");
+        let list = ctl.fetch_servers().await?.clone();
+        api::save_server_list_cache(&cache_path, &list);
+        list
+    };
     let server_count = servers_list.result.len();
     let servers = servers_list.result.clone();
     println!("Loaded {} servers. Starting TUI...", server_count);
@@ -1310,6 +1693,15 @@ async fn main() -> Result<()> {
 
     // Load installed mods in background
     app.refresh_installed_mods();
+
+    // Start background ping of all servers
+    app.start_background_ping();
+
+    // Fetch Steam player count in background (shown in title bar)
+    app.fetch_steam_players();
+
+    // Pre-fetch news in background so it's ready when the user opens the tab
+    app.fetch_news_if_needed();
 
     // System check status
     match system::check_max_map_count() {
@@ -1333,6 +1725,15 @@ async fn main() -> Result<()> {
         // Poll background operation progress
         app.poll_progress();
 
+        // Poll background ping results
+        app.poll_pings();
+
+        // Poll background A2S / server list results
+        app.poll_background();
+
+        // Poll background stats / news results
+        app.poll_misc();
+
         terminal.draw(|f| draw_ui(f, &app))?;
 
         // Process available input (non-blocking)
@@ -1344,6 +1745,11 @@ async fn main() -> Result<()> {
 
             // Popup handling takes priority
             if app.popup.is_some() {
+                // Info popups are dismissed by any key
+                if matches!(app.popup, Some(Popup::Info { .. })) {
+                    app.popup = None;
+                    break;
+                }
                 match key {
                     Key::Char('y') | Key::Char('Y') => {
                         if let Some(Popup::Confirm { action, .. }) = app.popup.take() {
@@ -1446,6 +1852,8 @@ async fn main() -> Result<()> {
                     Key::Char('\n') => {
                         if app.direct_cursor == DirectConnectField::Connect {
                             app.handle_direct_connect();
+                        } else if app.direct_cursor == DirectConnectField::ServerInfo {
+                            app.fetch_direct_server_info();
                         } else {
                             app.move_selection(1);
                         }
@@ -1481,8 +1889,21 @@ async fn main() -> Result<()> {
                 Key::Ctrl('u') if app.show_server_details => {
                     app.details_scroll_offset = app.details_scroll_offset.saturating_sub(5);
                 }
-                Key::Char('j') | Key::Down => app.move_selection(1),
-                Key::Char('k') | Key::Up => app.move_selection(-1),
+                // News detail panel scrolling
+                Key::Ctrl('d') if app.tab == Tab::News => {
+                    app.news_detail_scroll = app.news_detail_scroll.saturating_add(3);
+                }
+                Key::Ctrl('u') if app.tab == Tab::News => {
+                    app.news_detail_scroll = app.news_detail_scroll.saturating_sub(3);
+                }
+                Key::Char('j') | Key::Down => {
+                    app.news_detail_scroll = 0;
+                    app.move_selection(1);
+                }
+                Key::Char('k') | Key::Up => {
+                    app.news_detail_scroll = 0;
+                    app.move_selection(-1);
+                }
                 Key::Char('G') => {
                     let len = app.current_list_len();
                     if len > 0 {
@@ -1507,6 +1928,9 @@ async fn main() -> Result<()> {
                     if app.tab == Tab::Mods && app.installed_mods.is_none() {
                         app.refresh_installed_mods();
                     }
+                    if app.tab == Tab::News {
+                        app.fetch_news_if_needed();
+                    }
                     app.status_message = None;
                 }
                 Key::BackTab | Key::Ctrl('p') => {
@@ -1515,6 +1939,9 @@ async fn main() -> Result<()> {
                     if app.tab == Tab::Mods && app.installed_mods.is_none() {
                         app.refresh_installed_mods();
                     }
+                    if app.tab == Tab::News {
+                        app.fetch_news_if_needed();
+                    }
                     app.status_message = None;
                 }
 
@@ -1522,6 +1949,8 @@ async fn main() -> Result<()> {
                 Key::Char('\n') => {
                     if app.tab == Tab::Options {
                         app.toggle_option_at_index();
+                    } else if app.tab == Tab::News {
+                        app.open_selected_news_url();
                     } else {
                         app.connect_to_selected();
                     }
@@ -1613,6 +2042,7 @@ fn draw_ui(f: &mut Frame, app: &App) {
         Tab::Favorites => render_favorites_tab(f, app, chunks[2]),
         Tab::History => render_history_tab(f, app, chunks[2]),
         Tab::Mods => render_mods_tab(f, app, chunks[2]),
+        Tab::News => render_news_tab(f, app, chunks[2]),
         Tab::DirectConnect => render_direct_connect_tab(f, app, chunks[2]),
         Tab::Options => render_options_tab(f, app, chunks[2]),
     }
@@ -1637,10 +2067,22 @@ fn draw_title_bar(f: &mut Frame, app: &App, area: Rect) {
         format!("{}", app.servers.len())
     };
 
-    let login_info = app.ctl.steamcmd_login().unwrap_or("no steamcmd");
+    // Total players online across all listed servers
+    let sa_players: i64 = app.servers.iter().map(|s| s.players).sum();
 
+    let steam_str = app
+        .steam_players
+        .map(|n| format!("{}", n))
+        .unwrap_or_else(|| "…".to_string());
+
+    let login_info = app.ctl.steamcmd_login().unwrap_or("no steamcmd");
     let player = app.ctl.profile().player.as_deref().unwrap_or("unnamed");
 
+    // Title layout (colors match the spec):
+    //  DayZ-SA Multi Launcher | steam: 38825 | sa: 23538 | 16046 servers | Thoxy | thi67860
+    //  Yellow                 W Gray   Blue  W Gr  Green W Red   Gray     W Cyan  W Magenta
+    //  (W = White separator)
+    let sep = || Span::styled(" | ", Style::default().fg(Color::White));
     let title = Line::from(vec![
         Span::styled(
             " DayZ-SA Multi Launcher ",
@@ -1648,15 +2090,19 @@ fn draw_title_bar(f: &mut Frame, app: &App, area: Rect) {
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(
-            format!("| {} servers ", server_count),
-            Style::default().fg(Color::Green),
-        ),
-        Span::styled(format!("| {} ", player), Style::default().fg(Color::Cyan)),
-        Span::styled(
-            format!("| {} ", login_info),
-            Style::default().fg(Color::Gray),
-        ),
+        sep(),
+        Span::styled("Steam: ", Style::default().fg(Color::Gray)),
+        Span::styled(steam_str, Style::default().fg(Color::Blue)),
+        sep(),
+        Span::styled("DzSA: ", Style::default().fg(Color::Gray)),
+        Span::styled(format!("{}", sa_players), Style::default().fg(Color::Green)),
+        sep(),
+        Span::styled("Servers: ", Style::default().fg(Color::Gray)),
+        Span::styled(format!("{}", server_count), Style::default().fg(Color::Red)),
+        sep(),
+        Span::styled(player, Style::default().fg(Color::Cyan)),
+        sep(),
+        Span::styled(format!("{} ", login_info), Style::default().fg(Color::Magenta)),
     ]);
 
     f.render_widget(Paragraph::new(title), area);
@@ -1735,7 +2181,8 @@ fn keybinds_for_tab(tab: Tab) -> &'static str {
         Tab::Mods => {
             "j/k:Nav | u:Update | U:All | d:Del | m:Managed | c:Cleanup | r:Refresh | q:Quit"
         }
-        Tab::DirectConnect => "Up/Down:Fields | Enter:Connect | Tab/S-Tab:Tabs | Esc:Back",
+        Tab::News => "j/k:Nav | Enter:Open in browser | Ctrl+d/u:Scroll content | Tab/S-Tab:Tabs | q:Quit",
+        Tab::DirectConnect => "Up/Down:Fields | Enter:Activate | Tab/S-Tab:Tabs | Esc:Back",
         Tab::Options => "j/k:Nav | Enter:Toggle | e:Edit Value | Tab/S-Tab:Tabs | q:Quit",
     }
 }
@@ -1759,6 +2206,21 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
 
 // ─── Shared Helpers ───────────────────────────────────────────────────────
 
+/// Split an area into a list area and an optional details panel area.
+/// When `show` is true the area is split 55/45 vertically; otherwise the
+/// full area is returned as the list area with no details panel.
+fn split_list_details(area: Rect, show: bool) -> (Rect, Option<Rect>) {
+    if show {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+            .split(area);
+        (chunks[0], Some(chunks[1]))
+    } else {
+        (area, None)
+    }
+}
+
 /// Color for player count based on server fill.
 fn player_color(players: i64, max_players: i64) -> Color {
     if players == 0 {
@@ -1774,6 +2236,9 @@ fn player_color(players: i64, max_players: i64) -> Color {
 
 /// Build a two-line ListItem for a server entry.
 /// Used by Servers, Favorites, and History tabs for consistent layout.
+///
+/// Line 1 — glanceable:  idx  ★  ping  players/max  name  [flags]
+/// Line 2 — secondary:       ip:port  map  mods  version  time
 fn make_server_list_item<'a>(
     index: usize,
     server: &'a dayzsa_ml::Server,
@@ -1781,97 +2246,127 @@ fn make_server_list_item<'a>(
     is_favorite: bool,
     prefix: Option<Span<'a>>,
     suffix: Option<Span<'a>>,
+    ping_ms: Option<u32>,
 ) -> ListItem<'a> {
-    let style = if is_selected {
-        Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default()
-    };
-
-    let name_style = if is_selected {
-        Style::default()
-            .fg(Color::White)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(Color::White)
-    };
-
-    let fav_marker = if is_favorite {
-        Span::styled("* ", Style::default().fg(Color::Yellow))
-    } else {
-        Span::raw("  ")
-    };
+    // Selected: black on cyan for both lines
+    let bg = if is_selected { Color::Cyan } else { Color::Reset };
+    let sel_fg = |c: Color| if is_selected { Color::Black } else { c };
+    let dim = |c: Color| if is_selected { Color::Black } else { c };
 
     let pc = player_color(server.players, server.max_players);
 
-    let env_tag = if server.environment == "w" {
-        Span::styled("W", Style::default().fg(Color::Blue))
-    } else {
-        Span::styled("L", Style::default().fg(Color::Green))
-    };
-    let lock_tag = if server.password {
-        Span::styled(" P", Style::default().fg(Color::Red))
-    } else {
-        Span::styled("  ", Style::default().fg(Color::DarkGray))
-    };
-    let fp_tag = if server.first_person_only {
-        Span::styled(" 1P", Style::default().fg(Color::Yellow))
-    } else {
-        Span::styled("   ", Style::default().fg(Color::DarkGray))
+    // ── Ping ──────────────────────────────────────────────────────────────
+    let (ping_str, ping_color) = match ping_ms {
+        Some(ms) => {
+            let c = if ms < 50 { Color::Green } else if ms < 100 { Color::Yellow } else { Color::Red };
+            (format!("{:>3}ms", ms), c)
+        }
+        None => ("  -  ".to_string(), Color::DarkGray),
     };
 
-    // Line 1: index + prefix (optional status) + fav + name + suffix (optional time)
-    let mut line1 = vec![
+    // ── Line 1 ────────────────────────────────────────────────────────────
+    let mut line1: Vec<Span> = vec![
         Span::styled(
-            format!("{:>5}. ", index + 1),
-            Style::default().fg(Color::DarkGray),
+            format!("{:>5} ", index + 1),
+            Style::default().fg(dim(Color::DarkGray)).bg(bg),
+        ),
+        // Favourite star
+        if is_favorite {
+            Span::styled("★ ", Style::default().fg(sel_fg(Color::Yellow)).bg(bg))
+        } else {
+            Span::styled("  ", Style::default().bg(bg))
+        },
+        // Ping
+        Span::styled(
+            format!("{:<6}", ping_str),
+            Style::default().fg(sel_fg(ping_color)).bg(bg),
+        ),
+        // Players
+        Span::styled(
+            format!("{:>3}/{:<3} ", server.players, server.max_players),
+            Style::default().fg(sel_fg(pc)).bg(bg).add_modifier(Modifier::BOLD),
         ),
     ];
+
+    // Optional prefix (e.g. "ON"/"OFF" in Favorites)
     if let Some(pfx) = prefix {
-        line1.push(pfx);
-    }
-    line1.push(fav_marker);
-    line1.push(Span::styled(server.name.as_str(), name_style));
-    if let Some(sfx) = suffix {
-        line1.push(Span::styled("  ", Style::default()));
-        line1.push(sfx);
+        line1.push(Span::styled(pfx.content, pfx.style.bg(bg)));
+        line1.push(Span::styled(" ", Style::default().bg(bg)));
     }
 
-    // Line 2: IP:port | players | map | mods | version | flags | time
-    let line2 = vec![
-        Span::styled("        ", Style::default()),
+    // Server name
+    line1.push(Span::styled(
+        server.name.as_str(),
+        Style::default()
+            .fg(if is_selected { Color::Black } else { Color::White })
+            .bg(bg)
+            .add_modifier(if is_selected { Modifier::BOLD } else { Modifier::empty() }),
+    ));
+
+    // Optional suffix (e.g. timestamp in History)
+    if let Some(sfx) = suffix {
+        line1.push(Span::styled("  ", Style::default().bg(bg)));
+        line1.push(Span::styled(sfx.content, sfx.style.bg(bg)));
+    }
+
+    line1.push(Span::styled("  ", Style::default().bg(bg)));
+
+    // 🔒 password lock (Nerd Font  / plain text)
+    if server.password {
+        line1.push(Span::styled("", Style::default().fg(Color::Red).bg(bg)));
+    } else {
+        line1.push(Span::styled("  ", Style::default().bg(bg)));
+    }
+
+    line1.push(Span::styled(" ", Style::default().bg(bg)));
+
+    if server.first_person_only {
+        line1.push(Span::styled("1P", Style::default().fg(Color::Yellow).bg(bg)));
+    } else {
+        line1.push(Span::styled("  ", Style::default().bg(bg)));
+    }
+    line1.push(Span::styled(" ", Style::default().bg(bg)));
+
+
+    // Platform:  (Windows Nerd Font) /  (Linux Nerd Font)
+    if server.environment == "w" {
+        line1.push(Span::styled("", Style::default().fg(Color::Cyan).bg(bg)));
+    } else {
+        line1.push(Span::styled("", Style::default().fg(Color::Green).bg(bg)));
+    }
+
+    // ── Line 2 ────────────────────────────────────────────────────────────
+    let mods_str = if server.mods.is_empty() {
+        "no mods".to_string()
+    } else {
+        format!("{} mods", server.mods.len())
+    };
+
+    let line2: Vec<Span> = vec![
+        Span::styled("       ", Style::default().bg(bg)),
         Span::styled(
-            format!("{:<22}", format!("{}:{}", server.endpoint.ip, server.game_port)),
-            Style::default().fg(Color::Green),
+            format!("{:<21}", format!("{}:{}", server.endpoint.ip, server.game_port)),
+            Style::default().fg(dim(Color::Green)).bg(bg),
         ),
-        Span::styled(
-            format!("{:>3}/{:<3}", server.players, server.max_players),
-            Style::default().fg(pc),
-        ),
-        Span::styled(" | ", Style::default().fg(Color::DarkGray)),
         Span::styled(
             format!("{:<14}", server.map),
-            Style::default().fg(Color::Cyan),
+            Style::default().fg(dim(Color::Cyan)).bg(bg),
         ),
         Span::styled(
-            format!("{:>2} mods", server.mods.len()),
-            Style::default().fg(Color::Magenta),
+            format!("{:<8}", mods_str),
+            Style::default().fg(dim(Color::Magenta)).bg(bg),
         ),
-        Span::styled(" | ", Style::default().fg(Color::DarkGray)),
         Span::styled(
-            format!("{:<12}", server.version),
-            Style::default().fg(Color::DarkGray),
+            format!("{:<10}", server.version),
+            Style::default().fg(dim(Color::DarkGray)).bg(bg),
         ),
-        env_tag,
-        lock_tag,
-        fp_tag,
-        Span::styled(" | ", Style::default().fg(Color::DarkGray)),
-        Span::styled(&server.time, Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            server.time.as_str(),
+            Style::default().fg(dim(Color::DarkGray)).bg(bg),
+        ),
     ];
 
-    ListItem::new(vec![Line::from(line1), Line::from(line2)]).style(style)
+    ListItem::new(vec![Line::from(line1), Line::from(line2)])
 }
 
 // ─── Tab Renderers ────────────────────────────────────────────────────────
@@ -1882,15 +2377,7 @@ fn render_servers_tab(f: &mut Frame, app: &App, area: Rect) {
     let visible = app.visible_items();
 
     // Split for details panel
-    let (list_area, details_area) = if app.show_server_details {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
-            .split(area);
-        (chunks[0], Some(chunks[1]))
-    } else {
-        (area, None)
-    };
+    let (list_area, details_area) = split_list_details(area, app.show_server_details);
 
     let server_iter: Box<dyn Iterator<Item = (usize, &dayzsa_ml::Server)>> =
         if let Some(ref indices) = app.filtered_indices {
@@ -1913,7 +2400,8 @@ fn render_servers_tab(f: &mut Frame, app: &App, area: Rect) {
                 .ctl
                 .profile()
                 .is_favorite(&server.endpoint.ip, server.endpoint.port as u16);
-            make_server_list_item(display_idx, server, is_sel, is_fav, None, None)
+            let ping = app.get_ping(server);
+            make_server_list_item(display_idx, server, is_sel, is_fav, None, None, ping)
         })
         .collect();
 
@@ -1931,7 +2419,7 @@ fn render_servers_tab(f: &mut Frame, app: &App, area: Rect) {
 
     let list = List::new(items)
         .block(Block::default().title(title).borders(Borders::ALL))
-        .highlight_symbol(">> ");
+        .highlight_symbol("  ");
     f.render_widget(list, list_area);
 
     // Details panel
@@ -2010,12 +2498,17 @@ fn render_server_details(f: &mut Frame, app: &App, server: &dayzsa_ml::Server, a
             Style::default().fg(Color::Magenta),
         )));
 
-        // Check installed status
-        let installed = app.ctl.get_installed_mods().unwrap_or_default();
-        let installed_ids: Vec<u64> = installed.iter().map(|m| m.id).collect();
+        // Check installed status using cached mod list (avoids filesystem scan in render loop)
+        let installed_ids: std::collections::HashSet<u64> = app
+            .installed_mods
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .map(|m| m.id)
+            .collect();
 
         for mod_ in &server.mods {
-            let is_installed = installed_ids.contains(&(mod_.steam_workshop_id as u64));
+            let is_installed = installed_ids.contains(&(mod_.steam_workshop_id as u64)); // O(1) HashSet lookup
             let marker = if is_installed { "+" } else { "-" };
             let color = if is_installed {
                 Color::Green
@@ -2091,15 +2584,7 @@ fn render_favorites_tab(f: &mut Frame, app: &App, area: Rect) {
     }
 
     // Split for details panel
-    let (list_area, details_area) = if app.show_server_details {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
-            .split(area);
-        (chunks[0], Some(chunks[1]))
-    } else {
-        (area, None)
-    };
+    let (list_area, details_area) = split_list_details(area, app.show_server_details);
 
     let items: Vec<ListItem> = favorites
         .iter()
@@ -2115,34 +2600,38 @@ fn render_favorites_tab(f: &mut Frame, app: &App, area: Rect) {
                 Some(s) => {
                     let prefix =
                         Span::styled(" ON  ", Style::default().fg(Color::Green));
-                    make_server_list_item(i, s, is_sel, true, Some(prefix), None)
+                    let ping = app.get_ping(s);
+                    make_server_list_item(i, s, is_sel, true, Some(prefix), None, ping)
                 }
                 None => {
-                    // Offline: simple two-line display
-                    let style = if is_sel {
-                        Style::default().add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default()
-                    };
+                    // Offline: match the same two-line layout
+                    let bg = if is_sel { Color::Cyan } else { Color::Reset };
                     let content = vec![
                         Line::from(vec![
                             Span::styled(
-                                format!("{:>5}. ", i + 1),
-                                Style::default().fg(Color::DarkGray),
+                                format!("{:>5} ", i + 1),
+                                Style::default().fg(Color::DarkGray).bg(bg),
                             ),
-                            Span::styled(" OFF ", Style::default().fg(Color::Red)),
-                            Span::styled("* ", Style::default().fg(Color::Yellow)),
-                            Span::styled(&fav.name, Style::default().fg(Color::DarkGray)),
+                            Span::styled("★ ", Style::default().fg(Color::Yellow).bg(bg)),
+                            Span::styled(
+                                "OFFLINE",
+                                Style::default().fg(Color::Red).bg(bg).add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled("  ", Style::default().bg(bg)),
+                            Span::styled(
+                                fav.name.as_str(),
+                                Style::default().fg(Color::DarkGray).bg(bg),
+                            ),
                         ]),
                         Line::from(vec![
-                            Span::styled("        ", Style::default()),
+                            Span::styled("       ", Style::default().bg(bg)),
                             Span::styled(
                                 format!("{}:{}", fav.ip, fav.port),
-                                Style::default().fg(Color::DarkGray),
+                                Style::default().fg(Color::DarkGray).bg(bg),
                             ),
                         ]),
                     ];
-                    ListItem::new(content).style(style)
+                    ListItem::new(content)
                 }
             }
         })
@@ -2151,10 +2640,10 @@ fn render_favorites_tab(f: &mut Frame, app: &App, area: Rect) {
     let list = List::new(items)
         .block(
             Block::default()
-                .title(format!("Favorites [{}]", favorites.len()))
+                .title(format!(" Favorites  {} ", favorites.len()))
                 .borders(Borders::ALL),
         )
-        .highlight_symbol(">> ");
+        .highlight_symbol("  ");
     f.render_widget(list, list_area);
 
     // Details panel
@@ -2178,15 +2667,7 @@ fn render_history_tab(f: &mut Frame, app: &App, area: Rect) {
     }
 
     // Split for details panel
-    let (list_area, details_area) = if app.show_server_details {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
-            .split(area);
-        (chunks[0], Some(chunks[1]))
-    } else {
-        (area, None)
-    };
+    let (list_area, details_area) = split_list_details(area, app.show_server_details);
 
     let items: Vec<ListItem> = history
         .iter()
@@ -2210,6 +2691,7 @@ fn render_history_tab(f: &mut Frame, app: &App, area: Rect) {
                 Some(s) => {
                     let prefix =
                         Span::styled(" ON  ", Style::default().fg(Color::Green));
+                    let ping = app.get_ping(s);
                     make_server_list_item(
                         i,
                         s,
@@ -2217,6 +2699,7 @@ fn render_history_tab(f: &mut Frame, app: &App, area: Rect) {
                         is_fav,
                         Some(prefix),
                         Some(time_suffix),
+                        ping,
                     )
                 }
                 None => {
@@ -2298,6 +2781,16 @@ fn render_mods_tab(f: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
+    // Split: list (left 55%) | detail panel (right 45%)
+    let h_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+        .split(area);
+
+    let list_area  = h_chunks[0];
+    let detail_area = h_chunks[1];
+
+    // ── List ──────────────────────────────────────────────────────────────
     let items: Vec<ListItem> = mods
         .iter()
         .enumerate()
@@ -2305,27 +2798,217 @@ fn render_mods_tab(f: &mut Frame, app: &App, area: Rect) {
         .take(visible)
         .map(|(i, m)| {
             let is_sel = i == selected;
-            let style = if is_sel {
-                Style::default().add_modifier(Modifier::BOLD)
+
+            let name_style = if is_sel {
+                Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)
             } else {
-                Style::default()
+                Style::default().fg(Color::White)
             };
 
-            let managed_marker = if m.managed {
-                Span::styled(" [M] ", Style::default().fg(Color::Cyan))
+            let managed_span = if m.managed {
+                Span::styled("●", Style::default().fg(Color::Green))
             } else {
-                Span::styled("     ", Style::default())
+                Span::styled("○", Style::default().fg(Color::DarkGray))
             };
 
+            let size_str = mods::format_size(m.size);
+
+            ListItem::new(Line::from(vec![
+                Span::styled(
+                    format!("{:>4} ", i + 1),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                managed_span,
+                Span::raw(" "),
+                Span::styled(m.name.as_str(), name_style),
+                Span::styled(
+                    format!("  {}", size_str),
+                    Style::default().fg(if is_sel { Color::Black } else { Color::DarkGray })
+                        .bg(if is_sel { Color::Cyan } else { Color::Reset }),
+                ),
+            ]))
+        })
+        .collect();
+
+    let total_size: u64 = mods.iter().map(|m| m.size).sum();
+    let managed_count = mods.iter().filter(|m| m.managed).count();
+
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .title(format!(
+                    " Mods  {}/{}  total {}  managed {} ",
+                    selected + 1,
+                    mods.len(),
+                    mods::format_size(total_size),
+                    managed_count,
+                ))
+                .borders(Borders::ALL),
+        )
+        .highlight_symbol("  ");
+    f.render_widget(list, list_area);
+
+    // ── Detail panel ──────────────────────────────────────────────────────
+    let detail_lines = if let Some(m) = mods.get(selected) {
+        let installed = if m.local_updated > 0 {
+            utils::format_relative_time(m.local_updated)
+        } else {
+            "unknown".to_string()
+        };
+
+        vec![
+            Line::from(Span::styled(
+                m.name.as_str(),
+                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("ID       ", Style::default().fg(Color::DarkGray)),
+                Span::styled(m.id.to_string(), Style::default().fg(Color::Cyan)),
+            ]),
+            Line::from(vec![
+                Span::styled("Size     ", Style::default().fg(Color::DarkGray)),
+                Span::styled(mods::format_size(m.size), Style::default().fg(Color::Green)),
+            ]),
+            Line::from(vec![
+                Span::styled("Updated  ", Style::default().fg(Color::DarkGray)),
+                Span::styled(installed, Style::default().fg(Color::Magenta)),
+            ]),
+            Line::from(vec![
+                Span::styled("Managed  ", Style::default().fg(Color::DarkGray)),
+                if m.managed {
+                    Span::styled("yes  (owned by launcher)", Style::default().fg(Color::Green))
+                } else {
+                    Span::styled("no   (external)", Style::default().fg(Color::DarkGray))
+                },
+            ]),
+            Line::from(""),
+            Line::from(Span::styled(
+                "─── Actions ───",
+                Style::default().fg(Color::DarkGray),
+            )),
+            Line::from(vec![
+                Span::styled("u ", Style::default().fg(Color::Yellow)),
+                Span::styled("update this mod", Style::default().fg(Color::Gray)),
+            ]),
+            Line::from(vec![
+                Span::styled("U ", Style::default().fg(Color::Yellow)),
+                Span::styled("update all mods", Style::default().fg(Color::Gray)),
+            ]),
+            Line::from(vec![
+                Span::styled("d ", Style::default().fg(Color::Yellow)),
+                Span::styled("delete this mod", Style::default().fg(Color::Gray)),
+            ]),
+            Line::from(vec![
+                Span::styled("m ", Style::default().fg(Color::Yellow)),
+                Span::styled("toggle managed", Style::default().fg(Color::Gray)),
+            ]),
+            Line::from(vec![
+                Span::styled("c ", Style::default().fg(Color::Yellow)),
+                Span::styled("cleanup all managed", Style::default().fg(Color::Gray)),
+            ]),
+            Line::from(vec![
+                Span::styled("r ", Style::default().fg(Color::Yellow)),
+                Span::styled("refresh list", Style::default().fg(Color::Gray)),
+            ]),
+            Line::from(""),
+            Line::from(Span::styled(
+                format!("https://steamcommunity.com/sharedfiles/filedetails/?id={}", m.id),
+                Style::default().fg(Color::DarkGray),
+            )),
+        ]
+    } else {
+        vec![Line::from(Span::styled(
+            "No mod selected",
+            Style::default().fg(Color::DarkGray),
+        ))]
+    };
+
+    let detail = Paragraph::new(detail_lines)
+        .block(Block::default().title(" Details ").borders(Borders::ALL))
+        .wrap(ratatui::widgets::Wrap { trim: true });
+    f.render_widget(detail, detail_area);
+}
+
+/// Word-wrap `text` to at most `width` chars per line, returning owned strings.
+fn wrap_text(text: &str, width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    for paragraph in text.split('\n') {
+        let mut current = String::new();
+        for word in paragraph.split_whitespace() {
+            if current.is_empty() {
+                current.push_str(word);
+            } else if current.len() + 1 + word.len() <= width {
+                current.push(' ');
+                current.push_str(word);
+            } else {
+                lines.push(current);
+                current = word.to_string();
+            }
+        }
+        if !current.is_empty() || !paragraph.is_empty() {
+            lines.push(current);
+        }
+    }
+    lines
+}
+
+fn render_news_tab(f: &mut Frame, app: &App, area: Rect) {
+    let offset = app.offset();
+    let selected = app.selected_index();
+    let visible = app.visible_items();
+
+    let articles = match app.news_articles.as_deref() {
+        None => {
+            let text = Paragraph::new("Fetching DayZ news…")
+                .block(Block::default().title("DayZ News").borders(Borders::ALL))
+                .style(Style::default().fg(Color::DarkGray));
+            f.render_widget(text, area);
+            return;
+        }
+        Some([]) => {
+            let text = Paragraph::new("No articles found.")
+                .block(Block::default().title("DayZ News").borders(Borders::ALL))
+                .style(Style::default().fg(Color::DarkGray));
+            f.render_widget(text, area);
+            return;
+        }
+        Some(a) => a,
+    };
+
+    // Split horizontally: list (60%) | detail panel (40%)
+    let h_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+        .split(area);
+
+    let list_area = h_chunks[0];
+    let detail_area = h_chunks[1];
+
+    // ── List ──────────────────────────────────────────────────────────────
+    let items: Vec<ListItem> = articles
+        .iter()
+        .enumerate()
+        .skip(offset)
+        .take(visible)
+        .map(|(i, article)| {
+            let is_sel = i == selected;
+
+            let cat = article
+                .category
+                .as_ref()
+                .map(|c| c.slug.as_str())
+                .unwrap_or("news");
+
+            let date = article.date().to_string();
             let content = vec![
                 Line::from(vec![
                     Span::styled(
                         format!("{:>4}. ", i + 1),
                         Style::default().fg(Color::DarkGray),
                     ),
-                    managed_marker,
                     Span::styled(
-                        &m.name,
+                        &article.title,
                         if is_sel {
                             Style::default()
                                 .fg(Color::White)
@@ -2334,52 +3017,152 @@ fn render_mods_tab(f: &mut Frame, app: &App, area: Rect) {
                             Style::default().fg(Color::White)
                         },
                     ),
+                    Span::styled(
+                        if date.is_empty() {
+                            String::new()
+                        } else {
+                            format!("  {}", date)
+                        },
+                        Style::default().fg(Color::Yellow),
+                    ),
                 ]),
                 Line::from(vec![
-                    Span::styled("          ", Style::default()),
-                    Span::styled(format!("ID: {}", m.id), Style::default().fg(Color::Cyan)),
-                    Span::styled("  Size: ", Style::default().fg(Color::Gray)),
-                    Span::styled(mods::format_size(m.size), Style::default().fg(Color::Green)),
-                    Span::styled("  Installed: ", Style::default().fg(Color::Gray)),
+                    Span::styled("       ", Style::default()),
                     Span::styled(
-                        if m.local_updated > 0 {
-                            utils::format_relative_time(m.local_updated)
-                        } else {
-                            "unknown".to_string()
-                        },
-                        Style::default().fg(Color::Magenta),
-                    ),
-                    Span::styled("  Mod updated: ", Style::default().fg(Color::Gray)),
-                    Span::styled(
-                        if m.timestamp > 0 {
-                            utils::format_relative_time(m.timestamp)
-                        } else {
-                            "unknown".to_string()
-                        },
-                        Style::default().fg(Color::DarkGray),
+                        format!("[{}]", cat),
+                        Style::default().fg(Color::Cyan),
                     ),
                 ]),
             ];
 
-            ListItem::new(content).style(style)
+            ListItem::new(content)
         })
         .collect();
 
-    let total_size: u64 = mods.iter().map(|m| m.size).sum();
+    let cache_age = app
+        .news_fetched_at
+        .map(|t| {
+            let secs = t.elapsed().as_secs();
+            if secs < 60 {
+                format!("{}s ago", secs)
+            } else {
+                format!("{}m ago", secs / 60)
+            }
+        })
+        .unwrap_or_else(|| "?".to_string());
 
     let list = List::new(items)
         .block(
             Block::default()
                 .title(format!(
-                    "Installed Mods [{}/{}] ({})",
+                    "DayZ News [{}/{}] (cached {})",
                     selected + 1,
-                    mods.len(),
-                    mods::format_size(total_size)
+                    articles.len(),
+                    cache_age
                 ))
                 .borders(Borders::ALL),
         )
-        .highlight_symbol(">> ");
-    f.render_widget(list, area);
+        .highlight_symbol(">> ")
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+    f.render_widget(list, list_area);
+
+    // ── Detail panel ──────────────────────────────────────────────────────
+    let detail_lines = if let Some(article) = articles.get(selected) {
+        let mut lines: Vec<Line> = Vec::new();
+
+        // Title
+        lines.push(Line::from(Span::styled(
+            &article.title,
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(""));
+
+        // Category + date row
+        let cat_name = article
+            .category
+            .as_ref()
+            .map(|c| c.name.as_str())
+            .unwrap_or("News");
+        let date = article.date();
+        lines.push(Line::from(vec![
+            Span::styled(format!("[{}]", cat_name), Style::default().fg(Color::Cyan)),
+            if !date.is_empty() {
+                Span::styled(format!("  {}", date), Style::default().fg(Color::Yellow))
+            } else {
+                Span::raw("")
+            },
+        ]));
+
+        // Version (e.g. "1.29")
+        if let Some(ver) = &article.version {
+            if !ver.is_empty() {
+                lines.push(Line::from(vec![
+                    Span::styled("Version: ", Style::default().fg(Color::Gray)),
+                    Span::styled(ver.as_str(), Style::default().fg(Color::Green)),
+                ]));
+            }
+        }
+
+        // Author + role
+        if let Some(author) = &article.author {
+            lines.push(Line::from(""));
+            let mut author_spans = vec![
+                Span::styled("By: ", Style::default().fg(Color::Gray)),
+                Span::styled(&author.name, Style::default().fg(Color::Magenta)),
+            ];
+            if let Some(role) = &author.role {
+                author_spans.push(Span::styled(
+                    format!("  ({})", role),
+                    Style::default().fg(Color::DarkGray),
+                ));
+            }
+            lines.push(Line::from(author_spans));
+        }
+
+        // Full article content (HTML stripped to plain text)
+        let body = article.html_to_text();
+        if !body.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "─── Content ───",
+                Style::default().fg(Color::DarkGray),
+            )));
+            let panel_w = detail_area.width.saturating_sub(4) as usize;
+            let panel_w = if panel_w == 0 { 40 } else { panel_w };
+            for word_line in wrap_text(&body, panel_w) {
+                lines.push(Line::from(Span::styled(
+                    word_line,
+                    Style::default().fg(Color::White),
+                )));
+            }
+        }
+
+        // URL at bottom
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            article.url(),
+            Style::default().fg(Color::DarkGray),
+        )));
+
+        lines
+    } else {
+        vec![Line::from(Span::styled(
+            "Select an article",
+            Style::default().fg(Color::DarkGray),
+        ))]
+    };
+
+    let detail = Paragraph::new(detail_lines)
+        .block(
+            Block::default()
+                .title("Article  (Ctrl+d/u: scroll)")
+                .borders(Borders::ALL),
+        )
+        .wrap(ratatui::widgets::Wrap { trim: true })
+        .scroll((app.news_detail_scroll, 0));
+    f.render_widget(detail, detail_area);
 }
 
 fn render_direct_connect_tab(f: &mut Frame, app: &App, area: Rect) {
@@ -2454,19 +3237,37 @@ fn render_direct_connect_tab(f: &mut Frame, app: &App, area: Rect) {
         .block(Block::default().borders(Borders::ALL).title("Password"));
     f.render_widget(pw, chunks[2]);
 
-    // Connect button
-    let btn_style = if app.direct_cursor == DirectConnectField::Connect {
+    // Button row: [ SERVER INFO ] | [ CONNECT ] side by side
+    let btn_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(chunks[3]);
+
+    let info_btn_style = if app.direct_cursor == DirectConnectField::ServerInfo {
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let info_btn = Paragraph::new("[ SERVER INFO ]")
+        .style(info_btn_style)
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::ALL));
+    f.render_widget(info_btn, btn_chunks[0]);
+
+    let connect_btn_style = if app.direct_cursor == DirectConnectField::Connect {
         Style::default()
             .fg(Color::Green)
             .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::DarkGray)
     };
-    let btn = Paragraph::new("[ CONNECT ]")
-        .style(btn_style)
+    let connect_btn = Paragraph::new("[ CONNECT ]")
+        .style(connect_btn_style)
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
-    f.render_widget(btn, chunks[3]);
+    f.render_widget(connect_btn, btn_chunks[1]);
 
     // Server info
     let info = if let Some(ref server) = app.direct_server_found {
@@ -2648,6 +3449,9 @@ fn draw_progress_overlay(f: &mut Frame, progress: &ProgressState, area: Rect) {
 
     // Status text: what's currently happening
     let status_text = match &progress.phase {
+        ProgressPhase::ShuttingDownSteam => {
+            "Closing Steam (required before steamcmd can run)...".to_string()
+        }
         ProgressPhase::Downloading => {
             format!(
                 "Downloading: {} ({})",
@@ -2774,12 +3578,20 @@ fn draw_popup(f: &mut Frame, popup: &Popup, area: Rect) {
             f.render_widget(widget, popup_area);
         }
         Popup::Info { title, message } => {
-            let widget = Paragraph::new(message.as_str())
+            let mut lines: Vec<Line> = message.lines().map(|l| Line::from(l.to_string())).collect();
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "[Press any key to dismiss]",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            )));
+            let widget = Paragraph::new(Text::from(lines))
                 .block(
                     Block::default()
                         .title(title.as_str())
                         .borders(Borders::ALL)
-                        .style(Style::default().fg(Color::Cyan)),
+                        .style(Style::default().fg(Color::Red)),
                 )
                 .wrap(Wrap { trim: true });
             f.render_widget(widget, popup_area);

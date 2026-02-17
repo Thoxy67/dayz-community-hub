@@ -10,5 +10,6 @@
 - [x] add c button to clear history servers tab and x to remove selected entry
 - [x] organize the list infos and add more details to the ui lists (server, favorite, history) -- shared helper, consistent layout with version/flags/map
 - [x] fix the numeric launch command argument in option tab (e key to edit value)
-- [ ] if steamcmd return 'Cached credentials not found.' don't launch the game show the info to the user how to login back
+- [x] if steamcmd return 'Cached credentials not found.' don't launch the game show the info to the user how to login back
+- [x] implement ping time in the list
 - [ ] split huge main code to smaller module inside his self workspace inside the project

@@ -2,27 +2,31 @@ use crate::errors::Error;
 use crate::Result;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 #[cfg(windows)]
 use std::os::windows::fs::symlink_dir;
 use std::path::Path;
+use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstalledMod {
     pub name: String,
     pub id: u64,
-    /// Mod author's timestamp from meta.cpp
-    pub timestamp: i64,
-    /// Local install/update time (filesystem mtime of meta.cpp)
+    /// Local install/update time (filesystem mtime of meta.cpp, rewritten by steamcmd on each download)
     pub local_updated: i64,
     pub size: u64,
     pub managed: bool,
 }
 
+/// Regexes for parsing meta.cpp — compiled once at first use.
+static NAME_RE: OnceLock<Regex> = OnceLock::new();
+static ID_RE: OnceLock<Regex> = OnceLock::new();
+
 /// Scan the workshop directory and return all installed mods with metadata.
-/// Reads `meta.cpp` from each mod directory to extract name, ID, and timestamp.
+/// Reads `meta.cpp` from each mod directory to extract name and ID.
 pub fn scan_workshop_dir(workshop_path: &Path) -> Result<Vec<InstalledMod>> {
     if !workshop_path.exists() {
         return Ok(Vec::new());
@@ -30,9 +34,8 @@ pub fn scan_workshop_dir(workshop_path: &Path) -> Result<Vec<InstalledMod>> {
 
     let mut mods = Vec::new();
     let entries = fs::read_dir(workshop_path)?;
-    let name_re = Regex::new(r#"name\s*=\s*"([^"]+)""#).unwrap();
-    let id_re = Regex::new(r#"publishedid\s*=\s*(\d+)"#).unwrap();
-    let ts_re = Regex::new(r#"timestamp\s*=\s*(-?\d+)"#).unwrap();
+    let name_re = NAME_RE.get_or_init(|| Regex::new(r#"name\s*=\s*"([^"]+)""#).unwrap());
+    let id_re = ID_RE.get_or_init(|| Regex::new(r#"publishedid\s*=\s*(\d+)"#).unwrap());
 
     for entry in entries {
         let entry = entry?;
@@ -73,12 +76,6 @@ pub fn scan_workshop_dir(workshop_path: &Path) -> Result<Vec<InstalledMod>> {
             }
         };
 
-        let timestamp = ts_re
-            .captures(&meta_content)
-            .and_then(|c| c.get(1))
-            .and_then(|m| m.as_str().parse::<i64>().ok())
-            .unwrap_or(0);
-
         // Local install/update time: use meta.cpp mtime (rewritten by steamcmd on each download)
         let local_updated = fs::metadata(&meta_path)
             .and_then(|m| m.modified())
@@ -93,7 +90,6 @@ pub fn scan_workshop_dir(workshop_path: &Path) -> Result<Vec<InstalledMod>> {
         mods.push(InstalledMod {
             name,
             id,
-            timestamp,
             local_updated,
             size,
             managed,
@@ -123,8 +119,9 @@ fn du_dir(path: &Path) -> Result<u64> {
 }
 
 /// Determine which mod IDs from the server are not installed.
+/// Uses a HashSet for O(1) lookups instead of O(n) Vec::contains.
 pub fn get_missing_mods(server_mods: &[u64], installed_mods: &[InstalledMod]) -> Vec<u64> {
-    let installed_ids: Vec<u64> = installed_mods.iter().map(|m| m.id).collect();
+    let installed_ids: HashSet<u64> = installed_mods.iter().map(|m| m.id).collect();
     server_mods
         .iter()
         .filter(|id| !installed_ids.contains(id))

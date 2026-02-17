@@ -10,6 +10,10 @@ pub enum Error {
     SerdeJson(#[from] serde_json::Error),
     #[error("SteamCMD error: {0}")]
     SteamCmd(String),
+    /// Cached steamcmd credentials are missing or expired.
+    /// The inner string is the exact command the user should run to fix it.
+    #[error("SteamCMD credentials expired. Run: {0}")]
+    CredentialsExpired(String),
     #[error("Invalid path: {0}")]
     InvalidPath(String),
     #[error("Configuration error: {0}")]

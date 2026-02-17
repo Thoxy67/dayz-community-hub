@@ -128,26 +128,32 @@ impl DayzCtl {
     // --- Paths ---
 
     pub fn workshop_path(&self) -> Result<PathBuf> {
-        self.steamcmd
-            .as_ref()
-            .map(|sc| sc.workshop_path())
-            .ok_or_else(|| Error::Config("SteamCMD not configured".to_string()))
+        self.steamcmd_ref().map(|sc| sc.workshop_path())
     }
 
     pub fn dayz_path(&self) -> Result<PathBuf> {
-        self.steamcmd
-            .as_ref()
-            .map(|sc| sc.dayz_path())
-            .ok_or_else(|| Error::Config("SteamCMD not configured".to_string()))
+        self.steamcmd_ref().map(|sc| sc.dayz_path())
     }
 
     pub fn has_steamcmd(&self) -> bool {
         self.steamcmd.is_some()
     }
 
+    /// Expose the shared HTTP client for background tasks.
+    pub fn http_client(&self) -> &Client {
+        &self.client
+    }
+
     /// Get a shared reference to steamcmd for background operations.
     pub fn steamcmd_arc(&self) -> Option<Arc<SteamCmd>> {
         self.steamcmd.clone()
+    }
+
+    /// Private helper: get a reference to SteamCmd or return a config error.
+    fn steamcmd_ref(&self) -> Result<&Arc<SteamCmd>> {
+        self.steamcmd
+            .as_ref()
+            .ok_or_else(|| Error::Config("SteamCMD not configured".to_string()))
     }
 
     /// Start a background mod operation with progress reporting.
@@ -159,10 +165,7 @@ impl DayzCtl {
         mpsc::UnboundedReceiver<ModProgress>,
         tokio::task::JoinHandle<ModOpResult>,
     )> {
-        let steamcmd = self
-            .steamcmd
-            .clone()
-            .ok_or_else(|| Error::Config("SteamCMD not configured".to_string()))?;
+        let steamcmd = self.steamcmd_ref()?.clone();
         let workshop_path = self.workshop_path()?;
         let dayz_path = self.dayz_path()?;
         let installed = self.get_installed_mods().unwrap_or_default();
@@ -213,10 +216,7 @@ impl DayzCtl {
     /// 4. Create symlinks in the DayZ directory
     /// 5. Verify all mods are present
     pub async fn install_missing_mods(&self, server: &Server) -> Result<InstallResult> {
-        let steamcmd = self
-            .steamcmd
-            .as_ref()
-            .ok_or_else(|| Error::Config("SteamCMD not configured".to_string()))?;
+        let steamcmd = self.steamcmd_ref()?;
 
         if !steamcmd.has_real_login() {
             return Err(Error::SteamCmd(
@@ -284,10 +284,7 @@ impl DayzCtl {
 
     /// Download and install a specific mod by ID.
     pub async fn download_mod(&self, workshop_id: u64) -> Result<()> {
-        let steamcmd = self
-            .steamcmd
-            .as_ref()
-            .ok_or_else(|| Error::Config("SteamCMD not configured".to_string()))?;
+        let steamcmd = self.steamcmd_ref()?;
         steamcmd.download_mod(workshop_id).await?;
         let workshop_path = self.workshop_path()?;
         mods::mark_mod_as_managed(&workshop_path, workshop_id)?;
@@ -296,19 +293,12 @@ impl DayzCtl {
 
     /// Update a single mod.
     pub async fn update_mod(&self, workshop_id: u64) -> Result<()> {
-        let steamcmd = self
-            .steamcmd
-            .as_ref()
-            .ok_or_else(|| Error::Config("SteamCMD not configured".to_string()))?;
-        steamcmd.update_mod(workshop_id).await
+        self.steamcmd_ref()?.update_mod(workshop_id).await
     }
 
     /// Update all installed mods. Returns results per mod.
     pub async fn update_all_mods(&self) -> Result<Vec<(u64, Result<()>)>> {
-        let steamcmd = self
-            .steamcmd
-            .as_ref()
-            .ok_or_else(|| Error::Config("SteamCMD not configured".to_string()))?;
+        let steamcmd = self.steamcmd_ref()?;
         let installed = self.get_installed_mods()?;
         let ids: Vec<u64> = installed.iter().map(|m| m.id).collect();
         Ok(steamcmd.update_all_mods(&ids).await)
@@ -316,10 +306,7 @@ impl DayzCtl {
 
     /// Update all mods required by a specific server.
     pub async fn update_server_mods(&self, server: &Server) -> Result<Vec<(u64, Result<()>)>> {
-        let steamcmd = self
-            .steamcmd
-            .as_ref()
-            .ok_or_else(|| Error::Config("SteamCMD not configured".to_string()))?;
+        let steamcmd = self.steamcmd_ref()?;
         let ids: Vec<u64> = server
             .mods
             .iter()

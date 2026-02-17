@@ -1,7 +1,9 @@
 use crate::Result;
 use crate::errors::Error;
+use regex::Regex;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::OnceLock;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc;
@@ -58,6 +60,8 @@ pub fn find_steamcmd() -> Option<PathBuf> {
 /// Progress messages sent during mod download/update operations.
 #[derive(Debug, Clone)]
 pub enum ModProgress {
+    /// Steam is being shut down to avoid session conflict with steamcmd
+    ShuttingDownSteam,
     /// Starting download/update for a mod: (current_index, total_count, mod_id, mod_name)
     Starting {
         current: usize,
@@ -178,10 +182,17 @@ impl SteamCmd {
     /// Matches the bash script's command:
     /// `steamcmd +@ShutdownOnFailedCommand 1 +login <user> +workshop_download_item 221100 <id> validate +quit`
     ///
+    /// Shuts down the Steam client first (shared auth session — both cannot run
+    /// simultaneously without bumping the user offline).
+    ///
     /// Streams stdout to detect "Cached credentials not found" -- if seen,
     /// kills the process immediately (it would hang waiting for password)
     /// and returns an error telling the user how to re-login.
     async fn workshop_download_item(&self, workshop_id: u64) -> Result<()> {
+        // Steam and steamcmd share the same auth session. Shut Steam down
+        // first so steamcmd doesn't bump the user offline mid-session.
+        SteamClient::shutdown_for_steamcmd().await;
+
         let mut child = Command::new(&self.steamcmd_path)
             .arg("+@ShutdownOnFailedCommand")
             .arg("1")
@@ -204,9 +215,8 @@ impl SteamCmd {
             while let Ok(Some(line)) = lines.next_line().await {
                 if line.contains("Cached credentials not found") {
                     let _ = child.kill().await;
-                    return Err(Error::SteamCmd(format!(
-                        "Cached credentials not found. Log in from another terminal:\n  \
-                         steamcmd +login {} +quit",
+                    return Err(Error::CredentialsExpired(format!(
+                        "steamcmd +login {} +quit",
                         self.login
                     )));
                 }
@@ -314,6 +324,11 @@ impl SteamCmd {
             });
             return results;
         }
+
+        // Steam and steamcmd share the same auth session — running both at the same
+        // time kicks the user offline. Shut Steam down cleanly before starting steamcmd.
+        let _ = tx.send(ModProgress::ShuttingDownSteam);
+        SteamClient::shutdown_for_steamcmd().await;
 
         // Report starting the first mod
         let _ = tx.send(ModProgress::Starting {
@@ -467,11 +482,12 @@ impl SteamCmd {
             }
         }
 
-        // If credentials not found, kill process and report with re-login hint
+        // If credentials not found, report all mods as failed with a typed error
         if credentials_not_found {
+            let relogin_cmd = format!("steamcmd +login {} +quit", self.login);
             let hint = format!(
-                "Cached credentials not found. Log in from another terminal:\n  steamcmd +login {} +quit",
-                self.login
+                "Cached credentials not found.\nRun this command to re-login:\n  {}",
+                relogin_cmd
             );
             let results: Vec<(u64, Result<()>)> = mods_info
                 .iter()
@@ -483,7 +499,7 @@ impl SteamCmd {
                         name: name.clone(),
                         error: hint.clone(),
                     });
-                    (*id, Err(Error::SteamCmd(hint.clone())))
+                    (*id, Err(Error::CredentialsExpired(relogin_cmd.clone())))
                 })
                 .collect();
             let _ = tx.send(ModProgress::Finished {
@@ -535,7 +551,7 @@ impl SteamCmd {
         let failed = results.iter().filter(|(_, r)| r.is_err()).count();
         let hint = if failed > 0 {
             Some(format!(
-                "Some downloads failed. If steamcmd login expired, run:\n  steamcmd +login {} +quit",
+                "Some downloads failed. If your steamcmd login expired, run:\n  steamcmd +login {} +quit",
                 self.login
             ))
         } else {
@@ -552,22 +568,16 @@ impl SteamCmd {
     }
 }
 
+/// Regex for extracting a workshop mod ID from a steamcmd output line — compiled once.
+static MOD_ID_RE: OnceLock<Regex> = OnceLock::new();
+
 /// Extract a workshop mod ID (number) from a steamcmd output line.
+/// Matches patterns like "item 1559212036" or "item:1559212036".
 fn extract_mod_id_from_line(line: &str) -> Option<u64> {
-    // Look for patterns like "item 1559212036" in the line
-    let mut words = line.split_whitespace().peekable();
-    while let Some(word) = words.next() {
-        if word == "item" || word == "item:" {
-            if let Some(next) = words.next() {
-                // Strip trailing punctuation
-                let cleaned = next.trim_end_matches(|c: char| !c.is_ascii_digit());
-                if let Ok(id) = cleaned.parse::<u64>() {
-                    return Some(id);
-                }
-            }
-        }
-    }
-    None
+    let re = MOD_ID_RE.get_or_init(|| Regex::new(r"item[: ]+(\d+)").unwrap());
+    re.captures(line)
+        .and_then(|c| c.get(1))
+        .and_then(|m| m.as_str().parse::<u64>().ok())
 }
 
 /// Steam client management (detect, start, shutdown).
@@ -636,5 +646,39 @@ impl SteamClient {
             }
         }
         Ok(())
+    }
+
+    /// Shut down Steam gracefully before running steamcmd.
+    ///
+    /// steamcmd and the Steam client share the same auth session — running both
+    /// simultaneously causes Steam to kick you offline. This function:
+    ///   1. Does nothing if Steam is not running.
+    ///   2. Sends `steam -shutdown` and waits up to 15 s for all processes to exit.
+    ///   3. Force-kills any remaining Steam processes if they didn't exit in time.
+    pub async fn shutdown_for_steamcmd() {
+        if !Self::is_running() {
+            return;
+        }
+
+        // Ask Steam to shut down gracefully
+        let _ = Command::new("steam")
+            .arg("-shutdown")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+
+        // Poll every 500 ms for up to 15 s
+        for _ in 0..30 {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            if !Self::is_running() {
+                return;
+            }
+        }
+
+        // Still running — force kill
+        Self::shutdown_force().ok();
+
+        // Brief pause to let OS release file locks before steamcmd starts
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
 }
