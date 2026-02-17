@@ -12,4 +12,5 @@
 - [x] fix the numeric launch command argument in option tab (e key to edit value)
 - [x] if steamcmd return 'Cached credentials not found.' don't launch the game show the info to the user how to login back
 - [x] implement ping time in the list
+- [ ] priorize the ping to favorite and history server before the whole server list and do 10 ping servers at time
 - [ ] split huge main code to smaller module inside his self workspace inside the project
