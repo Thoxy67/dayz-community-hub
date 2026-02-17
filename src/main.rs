@@ -2088,6 +2088,7 @@ fn draw_title_bar(f: &mut Frame, app: &App, area: Rect) {
             " DayZ-SA Multi Launcher ",
             Style::default()
                 .fg(Color::Yellow)
+                .bg(Color::DarkGray)
                 .add_modifier(Modifier::BOLD),
         ),
         sep(),
@@ -2249,7 +2250,7 @@ fn make_server_list_item<'a>(
     ping_ms: Option<u32>,
 ) -> ListItem<'a> {
     // Selected: black on cyan for both lines
-    let bg = if is_selected { Color::Cyan } else { Color::Reset };
+    let bg = if is_selected { Color::DarkGray } else { Color::Reset };
     let sel_fg = |c: Color| if is_selected { Color::Black } else { c };
     let dim = |c: Color| if is_selected { Color::Black } else { c };
 
@@ -2330,9 +2331,9 @@ fn make_server_list_item<'a>(
 
     // Platform:  (Windows Nerd Font) /  (Linux Nerd Font)
     if server.environment == "w" {
-        line1.push(Span::styled("", Style::default().fg(Color::Cyan).bg(bg)));
+        line1.push(Span::styled("", Style::default().fg(Color::Blue).bg(bg)));
     } else {
-        line1.push(Span::styled("", Style::default().fg(Color::Green).bg(bg)));
+        line1.push(Span::styled("", Style::default().fg(Color::Magenta).bg(bg)));
     }
 
     // ── Line 2 ────────────────────────────────────────────────────────────
