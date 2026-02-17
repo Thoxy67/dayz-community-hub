@@ -144,6 +144,18 @@ impl DayzCtl {
         &self.client
     }
 
+    /// Create a lightweight clone of this controller suitable for use in a
+    /// background task that only needs to call `launch_game`.
+    /// The server list is not cloned (it can be large).
+    pub fn clone_for_launch(&self) -> Self {
+        Self {
+            profile: self.profile.clone(),
+            steamcmd: self.steamcmd.clone(),
+            client: self.client.clone(),
+            server_list: None,
+        }
+    }
+
     /// Get a shared reference to steamcmd for background operations.
     pub fn steamcmd_arc(&self) -> Option<Arc<SteamCmd>> {
         self.steamcmd.clone()
@@ -366,18 +378,35 @@ impl DayzCtl {
     }
 
     /// Full launch workflow matching the bash script's flow:
-    /// 1. Ensure Steam is running
+    /// 1. Ensure Steam is running (wait for it to be ready if just started)
     /// 2. Build launch args
     /// 3. Launch via `steam -applaunch`
     /// 4. Record in history
     pub async fn launch_game(&mut self, server: &Server, password: Option<&str>) -> Result<()> {
-        // Ensure Steam is running
-        SteamClient::start()?;
+        // Start Steam if needed, and find out whether it was already up.
+        let already_running = SteamClient::start()?;
+
+        // If Steam was just cold-started, wait for its IPC socket to become
+        // ready before sending -applaunch.  Sending too early causes the
+        // command to be silently discarded — which is exactly why a second
+        // attempt always works.
+        if !already_running {
+            // Poll until the Steam process is visible in the process table,
+            // then add a small extra buffer for IPC initialisation.
+            for _ in 0..30u8 {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                if SteamClient::is_running() {
+                    // Steam process is up; give it a couple more seconds to
+                    // open its socket and register the game-launch handler.
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                    break;
+                }
+            }
+        }
 
         // Build launch arguments
         let args = self.build_steam_launch_args(server, password);
 
-        // If Steam is already running, just run steam with args in background
         let mut cmd = Command::new("steam");
         cmd.args(&args).stdout(Stdio::null()).stderr(Stdio::null());
 

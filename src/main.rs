@@ -1,7 +1,7 @@
 use dayzsa_ml::{
     Result, a2s_query, api, config,
     ctl::{DayzCtl, ModOpResult, ModOperation},
-    mods, news, steamcmd,
+    mods, news, offline::OfflineMode, steamcmd,
     steamcmd::ModProgress,
     system, utils,
 };
@@ -15,10 +15,9 @@ use ratatui::{
 };
 use std::collections::HashMap;
 use std::io;
-use std::io::Write;
 use termion::input::TermRead;
 use termion::{event::Key, raw::IntoRawMode};
-use tokio::runtime::Handle;
+
 use tokio::sync::mpsc;
 
 // ─── Application State ────────────────────────────────────────────────────
@@ -26,8 +25,8 @@ use tokio::sync::mpsc;
 struct App {
     ctl: DayzCtl,
     servers: Vec<dayzsa_ml::Server>,
-    selected_indices: [usize; 7],
-    offsets: [usize; 7],
+    selected_indices: [usize; 8],
+    offsets: [usize; 8],
     tab: Tab,
     status_message: Option<String>,
     status_color: Color,
@@ -79,6 +78,12 @@ struct App {
     news_articles: Option<Vec<news::Article>>,
     news_fetched_at: Option<std::time::Instant>,
     news_detail_scroll: u16,
+    // Offline mode tab
+    offline_missions: Option<Vec<String>>,
+    offline_status: Option<String>,
+    offline_status_color: Color,
+    // Launch guard: true while a background launch task is in flight
+    launching: bool,
 }
 
 /// Tracks the live progress of a background mod operation.
@@ -113,6 +118,10 @@ enum BackgroundResult {
     SteamPlayerCount(u32),
     NewsRefreshed(Vec<news::Article>),
     NewsError(String),
+    OfflineModeUpdated,
+    OfflineModeError(String),
+    LaunchDone(String),
+    LaunchError(String),
 }
 
 /// Action to perform after a background mod operation completes.
@@ -131,6 +140,7 @@ enum Tab {
     News,
     DirectConnect,
     Options,
+    Offline,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -175,6 +185,7 @@ impl Tab {
             Tab::News => 4,
             Tab::DirectConnect => 5,
             Tab::Options => 6,
+            Tab::Offline => 7,
         }
     }
 
@@ -187,6 +198,7 @@ impl Tab {
             Tab::News => "News",
             Tab::DirectConnect => "Connect",
             Tab::Options => "Options",
+            Tab::Offline => "Offline",
         }
     }
 
@@ -199,6 +211,7 @@ impl Tab {
             Tab::News,
             Tab::DirectConnect,
             Tab::Options,
+            Tab::Offline,
         ]
     }
 
@@ -220,8 +233,8 @@ impl App {
         Self {
             ctl,
             servers,
-            selected_indices: [0; 7],
-            offsets: [0; 7],
+            selected_indices: [0; 8],
+            offsets: [0; 8],
             tab: Tab::Servers,
             status_message: None,
             status_color: Color::Cyan,
@@ -256,6 +269,10 @@ impl App {
             news_articles: None,
             news_fetched_at: None,
             news_detail_scroll: 0,
+            offline_missions: None,
+            offline_status: None,
+            offline_status_color: Color::Cyan,
+            launching: false,
         }
     }
 
@@ -314,9 +331,9 @@ impl App {
         // Overhead: tab bar (3) + title bar (1) + status bar (1) + list borders (2) = 7
         let overhead = 9u16;
         let available = self.term_height.saturating_sub(overhead);
-        // Mods and News list use single-line rows; server tabs use 2 lines per item.
+        // Mods, News and Offline list use single-line rows; server tabs use 2 lines per item.
         let lines_per_item: u16 = match self.tab {
-            Tab::Mods | Tab::News => 1,
+            Tab::Mods | Tab::News | Tab::Offline => 1,
             _ => 2,
         };
         (available / lines_per_item).max(3) as usize
@@ -337,6 +354,7 @@ impl App {
             Tab::Options => self.ctl.profile().options.all_options().len(),
             Tab::DirectConnect => 5,
             Tab::News => self.news_articles.as_ref().map(|a| a.len()).unwrap_or(0),
+            Tab::Offline => self.offline_missions.as_ref().map(|m| m.len()).unwrap_or(0),
         }
     }
 
@@ -500,6 +518,12 @@ impl App {
     }
 
     fn connect_to_selected(&mut self) {
+        // Prevent a second launch while one is already in flight (e.g. rapid
+        // Enter presses while "Starting Steam…" status is displayed).
+        if self.launching {
+            return;
+        }
+
         if self.tab == Tab::DirectConnect {
             self.handle_direct_connect();
             return;
@@ -562,16 +586,34 @@ impl App {
     }
 
     fn launch_server(&mut self, server: &dayzsa_ml::Server, password: Option<&str>) {
-        match tokio::task::block_in_place(|| {
-            Handle::current().block_on(self.ctl.launch_game(server, password))
-        }) {
-            Ok(_) => {
-                self.set_success(format!("Launching DayZ -> {}", server.name));
-            }
-            Err(e) => {
-                self.set_error(format!("Launch failed: {}", e));
-            }
+        // Guard: ignore if a launch is already in flight (prevents double-launch
+        // from rapid key presses — see connect_to_selected which lacks is_busy()).
+        if self.launching {
+            return;
         }
+        self.launching = true;
+
+        let server = server.clone();
+        let password = password.map(|p| p.to_string());
+        let tx = self.misc_sender();
+
+        // Show status immediately so the user knows something is happening.
+        // If Steam needs to cold-start this will take up to ~35 s.
+        self.set_info("Starting Steam and launching DayZ…");
+
+        // Fire the launch in a background task so the TUI keeps rendering.
+        // The result arrives via misc_rx as BackgroundResult::LaunchDone/Error.
+        let mut ctl_clone = self.ctl.clone_for_launch();
+        tokio::spawn(async move {
+            match ctl_clone.launch_game(&server, password.as_deref()).await {
+                Ok(_) => {
+                    let _ = tx.send(BackgroundResult::LaunchDone(server.name.clone()));
+                }
+                Err(e) => {
+                    let _ = tx.send(BackgroundResult::LaunchError(format!("{}", e)));
+                }
+            }
+        });
     }
 
     fn install_mods_for_server(&mut self, _mod_ids: Vec<u64>) {
@@ -960,6 +1002,128 @@ impl App {
         }
     }
 
+    // ─── Offline Mode ───
+
+    /// Build an `OfflineMode` instance if the DayZ path is known.
+    fn offline_mode(&self) -> Option<OfflineMode> {
+        self.ctl
+            .dayz_path()
+            .ok()
+            .map(|p| OfflineMode::new(p, self.ctl.http_client().clone()))
+    }
+
+    /// Refresh the list of available offline missions.
+    fn refresh_offline_missions(&mut self) {
+        match self.offline_mode() {
+            None => {
+                self.offline_status = Some("SteamCMD / DayZ path not configured".to_string());
+                self.offline_status_color = Color::Red;
+                self.offline_missions = Some(vec![]);
+            }
+            Some(om) => match om.get_available_missions() {
+                Ok(missions) => {
+                    let count = missions.len();
+                    self.offline_missions = Some(missions);
+                    if count == 0 {
+                        self.offline_status =
+                            Some("No missions found. Press 'u' to install.".to_string());
+                        self.offline_status_color = Color::Yellow;
+                    } else {
+                        self.offline_status = Some(format!("{} mission(s) available", count));
+                        self.offline_status_color = Color::Green;
+                    }
+                }
+                Err(e) => {
+                    self.offline_status = Some(format!("Error reading missions: {}", e));
+                    self.offline_status_color = Color::Red;
+                    self.offline_missions = Some(vec![]);
+                }
+            },
+        }
+    }
+
+    /// Trigger a background install/update of DayZCommunityOfflineMode.
+    fn update_offline_mode(&mut self) {
+        let om = match self.offline_mode() {
+            Some(o) => o,
+            None => {
+                self.set_error("DayZ path not configured — cannot install offline mode");
+                return;
+            }
+        };
+        self.set_info("Downloading DayZCommunityOfflineMode…");
+        let tx = self.misc_sender();
+        tokio::spawn(async move {
+            match om.update().await {
+                Ok(()) => {
+                    let _ = tx.send(BackgroundResult::OfflineModeUpdated);
+                }
+                Err(e) => {
+                    let _ = tx.send(BackgroundResult::OfflineModeError(format!("{}", e)));
+                }
+            }
+        });
+    }
+
+    /// Launch the selected offline mission.
+    fn launch_offline_mission(&mut self) {
+        if self.launching {
+            return;
+        }
+        let missions = match self.offline_missions.as_ref() {
+            Some(m) if !m.is_empty() => m,
+            _ => {
+                self.set_error("No missions available. Press 'u' to install offline mode.");
+                return;
+            }
+        };
+        let idx = self.selected_indices[Tab::Offline.index()];
+        let mission = match missions.get(idx) {
+            Some(m) => m.clone(),
+            None => return,
+        };
+
+        // Build a minimal server to re-use launch infrastructure
+        let dayz_path = match self.ctl.dayz_path() {
+            Ok(p) => p,
+            Err(e) => {
+                self.set_error(format!("DayZ path error: {}", e));
+                return;
+            }
+        };
+
+        let om = OfflineMode::new(dayz_path, self.ctl.http_client().clone());
+        let dayz_args = om.build_launch_args(&mission, &[], false);
+
+        // Wrap with -applaunch, -nolauncher and optional player name
+        // (reuses the same helper as the normal online launch).
+        let steam_args = dayzsa_ml::launch::build_steam_applaunch_args(
+            dayzsa_ml::steamcmd::DAYZ_GAME_ID,
+            &dayz_args,
+            self.ctl.profile().player.as_deref(),
+        );
+
+        // Ensure Steam is running before launching
+        if let Err(e) = dayzsa_ml::steamcmd::SteamClient::start() {
+            self.set_error(format!("Could not start Steam: {}", e));
+            return;
+        }
+
+        match std::process::Command::new("steam")
+            .args(&steam_args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+        {
+            Ok(_) => {
+                self.set_success(format!("Launching offline mission: {}", mission));
+            }
+            Err(e) => {
+                self.set_error(format!("Launch failed: {}", e));
+            }
+        }
+    }
+
     fn toggle_option_at_index(&mut self) {
         if self.tab != Tab::Options {
             return;
@@ -1323,20 +1487,50 @@ impl App {
 
     // ─── Ping ───
 
-    /// Start background pinging of visible/relevant servers.
-    /// Pings all servers concurrently (with concurrency limit) and sends results
-    /// back through a channel.
+    /// Start background pinging of all servers, prioritising Favorites and History
+    /// so their latency is visible immediately.  All remaining servers follow.
     fn start_background_ping(&mut self) {
-        let servers: Vec<dayzsa_ml::Server> = self.servers.clone();
+        // Build a set of priority IPs (favorites + history) for O(1) lookup.
+        let priority_keys: std::collections::HashSet<String> = self
+            .ctl
+            .profile()
+            .favorites
+            .iter()
+            .map(|f| format!("{}:{}", f.ip, f.port))
+            .chain(
+                self.ctl
+                    .profile()
+                    .history
+                    .iter()
+                    .map(|h| format!("{}:{}", h.ip, h.port)),
+            )
+            .collect();
+
+        // Partition: priority servers first, then the rest.
+        let (mut priority, rest): (Vec<_>, Vec<_>) = self
+            .servers
+            .iter()
+            .cloned()
+            .partition(|s| {
+                let key = format!("{}:{}", s.endpoint.ip, s.endpoint.port);
+                priority_keys.contains(&key)
+            });
+
+        // Append the bulk list after the priority batch.
+        priority.extend(rest);
+        let ordered_servers = priority;
+
         let (tx, rx) = mpsc::unbounded_channel();
         self.ping_rx = Some(rx);
 
         tokio::spawn(async move {
-            // Ping servers concurrently with a semaphore to limit open sockets
+            // Priority servers: ping immediately with a small concurrency window
+            // so results arrive quickly.
+            let priority_count = priority_keys.len().min(ordered_servers.len());
             let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(50));
             let mut handles = Vec::new();
 
-            for server in servers {
+            for server in ordered_servers {
                 let tx = tx.clone();
                 let sem = semaphore.clone();
                 let handle = tokio::spawn(async move {
@@ -1353,6 +1547,9 @@ impl App {
             for handle in handles {
                 let _ = handle.await;
             }
+
+            // Suppress unused variable warning; used above for the min()
+            let _ = priority_count;
         });
     }
 
@@ -1433,6 +1630,25 @@ impl App {
                             self.set_error(format!("News fetch failed: {}", e));
                             self.bg_rx = None;
                         }
+                        BackgroundResult::OfflineModeUpdated => {
+                            self.set_success("Offline mode installed/updated successfully");
+                            self.refresh_offline_missions();
+                            self.bg_rx = None;
+                        }
+                        BackgroundResult::OfflineModeError(e) => {
+                            self.set_error(format!("Offline mode update failed: {}", e));
+                            self.bg_rx = None;
+                        }
+                        BackgroundResult::LaunchDone(name) => {
+                            self.launching = false;
+                            self.set_success(format!("Launched DayZ -> {}", name));
+                            self.bg_rx = None;
+                        }
+                        BackgroundResult::LaunchError(e) => {
+                            self.launching = false;
+                            self.set_error(format!("Launch failed: {}", e));
+                            self.bg_rx = None;
+                        }
                     }
                     break;
                 }
@@ -1480,6 +1696,21 @@ impl App {
                 }
                 BackgroundResult::NewsError(e) => {
                     self.set_error(format!("News fetch failed: {}", e));
+                }
+                BackgroundResult::OfflineModeUpdated => {
+                    self.set_success("Offline mode installed/updated successfully");
+                    self.refresh_offline_missions();
+                }
+                BackgroundResult::OfflineModeError(e) => {
+                    self.set_error(format!("Offline mode update failed: {}", e));
+                }
+                BackgroundResult::LaunchDone(name) => {
+                    self.launching = false;
+                    self.set_success(format!("Launched DayZ -> {}", name));
+                }
+                BackgroundResult::LaunchError(e) => {
+                    self.launching = false;
+                    self.set_error(format!("Launch failed: {}", e));
                 }
                 // Other variants handled in poll_background
                 _ => {}
@@ -1549,8 +1780,10 @@ impl App {
     }
 }
 
-// ─── Setup ────────────────────────────────────────────────────────────────
+// ─── Setup Wizard ─────────────────────────────────────────────────────────
 
+/// A ratatui-based first-run setup wizard.
+/// Renders directly onto a temporary terminal, restores it when done.
 fn run_setup_if_needed(profile_path: &std::path::Path) -> Result<()> {
     let mut profile = if profile_path.exists() {
         config::Profile::load(profile_path)?
@@ -1560,84 +1793,332 @@ fn run_setup_if_needed(profile_path: &std::path::Path) -> Result<()> {
         prof
     };
 
-    let mut needs_save = false;
-
-    // Auto-detect steam root
+    // Auto-detect steam root silently
     if profile.steam_root.is_none() {
         if let Some(root) = steamcmd::find_steam_root() {
-            println!("Auto-detected Steam root: {}", root.display());
             profile.steam_root = Some(root.to_string_lossy().to_string());
-            needs_save = true;
-        } else {
-            println!("Steam root not found. Enter path to steamapps directory:");
-            let mut input = String::new();
-            std::io::stdin().read_line(&mut input)?;
-            let path = input.trim();
-            if !path.is_empty() {
-                profile.steam_root = Some(path.to_string());
-                needs_save = true;
-            }
         }
     }
 
-    // Steam login
-    if profile.steam_login.is_none() {
-        println!("Steam username for workshop downloads (or 'anonymous' to skip):");
-        print!("> ");
-        io::stdout().flush()?;
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        let login = input.trim();
-        if login.is_empty() {
-            profile.steam_login = Some("anonymous".to_string());
-        } else {
-            profile.steam_login = Some(login.to_string());
+    // Determine which fields still need input
+    let need_login = profile.steam_login.is_none();
+    let need_player = profile.player.is_none();
+    let need_steam_root = profile.steam_root.is_none();
+
+    let has_warnings = (profile.steamcmd_enabled && steamcmd::find_steamcmd().is_none())
+        || matches!(
+            system::check_max_map_count(),
+            Ok(ref c) if !c.ok
+        );
+
+    if !need_login && !need_player && !need_steam_root && !has_warnings {
+        return Ok(()); // Nothing to ask, skip wizard entirely
+    }
+
+    // Enter raw mode for the TUI wizard
+    let stdout = io::stdout().into_raw_mode()?;
+    let backend = TermionBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+    terminal.clear()?;
+
+    // Wizard state
+    #[derive(Clone, Copy, PartialEq)]
+    enum WizardField {
+        Login,
+        Player,
+        SteamRoot,
+        Warnings,
+        Done,
+    }
+
+    let fields_order: Vec<WizardField> = {
+        let mut v = vec![];
+        if need_login      { v.push(WizardField::Login); }
+        if need_player     { v.push(WizardField::Player); }
+        if need_steam_root { v.push(WizardField::SteamRoot); }
+        if has_warnings    { v.push(WizardField::Warnings); }
+        v.push(WizardField::Done);
+        v
+    };
+
+    let mut field_idx = 0usize;
+    let mut input_login     = String::new();
+    let mut input_player    = String::new();
+    let mut input_steam_root = String::new();
+
+    let async_stdin = termion::async_stdin();
+    let mut keys = async_stdin.keys();
+
+    let warnings_text: String = {
+        let mut w = vec![];
+        if profile.steamcmd_enabled && steamcmd::find_steamcmd().is_none() {
+            w.push(
+                "steamcmd not found — mod downloads will be disabled.\n\
+                 Install: sudo apt install steamcmd".to_string(),
+            );
         }
-        needs_save = true;
-    }
-
-    // Player name
-    if profile.player.is_none() {
-        println!("Player name (in-game name):");
-        print!("> ");
-        io::stdout().flush()?;
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        let name = input.trim();
-        if !name.is_empty() {
-            profile.player = Some(name.to_string());
-            needs_save = true;
-        }
-    }
-
-    if needs_save {
-        profile.save()?;
-        println!("Configuration saved to: {}", profile_path.display());
-    }
-
-    // SteamCMD check
-    if profile.steamcmd_enabled && steamcmd::find_steamcmd().is_none() {
-        println!("Warning: steamcmd not found. Mod downloads will not work.");
-        println!("Install with: sudo apt install steamcmd (or your package manager)");
-        println!("Press Enter to continue...");
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-    }
-
-    // System check
-    match system::check_max_map_count() {
-        Ok(check) => {
+        if let Ok(ref check) = system::check_max_map_count() {
             if !check.ok {
-                println!("Warning: {}", check.recommendation());
-                println!("Press Enter to continue...");
-                let mut input = String::new();
-                std::io::stdin().read_line(&mut input)?;
+                w.push(check.recommendation());
             }
         }
-        Err(_) => {} // Not on Linux or can't read sysctl
-    }
+        w.join("\n\n")
+    };
 
-    Ok(())
+    loop {
+        let current_field = fields_order[field_idx];
+
+        terminal.draw(|f| {
+            let size = f.area();
+
+            // Outer block
+            let block = Block::default()
+                .title(" DayZ-SA Multi Launcher — First Run Setup ")
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::Yellow));
+            f.render_widget(block, size);
+
+            let inner = Rect {
+                x: size.x + 2,
+                y: size.y + 1,
+                width: size.width.saturating_sub(4),
+                height: size.height.saturating_sub(2),
+            };
+
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(2),  // Welcome text
+                    Constraint::Min(0),     // Form content
+                    Constraint::Length(2),  // Footer
+                ])
+                .split(inner);
+
+            // Welcome
+            let step = field_idx + 1;
+            let total = fields_order.len();
+            f.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::styled("Welcome! ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        format!("Step {}/{} — ", step, total),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                    Span::styled(
+                        match current_field {
+                            WizardField::Login     => "Steam login",
+                            WizardField::Player    => "Player name",
+                            WizardField::SteamRoot => "Steam root path",
+                            WizardField::Warnings  => "System warnings",
+                            WizardField::Done      => "All done",
+                        },
+                        Style::default().fg(Color::Cyan),
+                    ),
+                ])),
+                chunks[0],
+            );
+
+            // Form content
+            let content_area = chunks[1];
+            match current_field {
+                WizardField::Login => {
+                    let lines = vec![
+                        Line::from(Span::styled(
+                            "Steam username used for workshop (mod) downloads.",
+                            Style::default().fg(Color::White),
+                        )),
+                        Line::from(Span::styled(
+                            "Type 'anonymous' to skip mod downloads.",
+                            Style::default().fg(Color::DarkGray),
+                        )),
+                        Line::from(""),
+                        Line::from(vec![
+                            Span::styled("Username: ", Style::default().fg(Color::Gray)),
+                            Span::styled(
+                                format!("{}|", input_login),
+                                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                            ),
+                        ]),
+                    ];
+                    f.render_widget(
+                        Paragraph::new(lines)
+                            .block(Block::default().borders(Borders::ALL).title(" Steam Login ")),
+                        content_area,
+                    );
+                }
+                WizardField::Player => {
+                    let lines = vec![
+                        Line::from(Span::styled(
+                            "Your in-game display name.",
+                            Style::default().fg(Color::White),
+                        )),
+                        Line::from(""),
+                        Line::from(vec![
+                            Span::styled("Player name: ", Style::default().fg(Color::Gray)),
+                            Span::styled(
+                                format!("{}|", input_player),
+                                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                            ),
+                        ]),
+                    ];
+                    f.render_widget(
+                        Paragraph::new(lines)
+                            .block(Block::default().borders(Borders::ALL).title(" Player Name ")),
+                        content_area,
+                    );
+                }
+                WizardField::SteamRoot => {
+                    let lines = vec![
+                        Line::from(Span::styled(
+                            "Path to your steamapps directory.",
+                            Style::default().fg(Color::White),
+                        )),
+                        Line::from(Span::styled(
+                            "e.g. /home/user/.steam/steam/steamapps",
+                            Style::default().fg(Color::DarkGray),
+                        )),
+                        Line::from(""),
+                        Line::from(vec![
+                            Span::styled("Path: ", Style::default().fg(Color::Gray)),
+                            Span::styled(
+                                format!("{}|", input_steam_root),
+                                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                            ),
+                        ]),
+                    ];
+                    f.render_widget(
+                        Paragraph::new(lines)
+                            .block(Block::default().borders(Borders::ALL).title(" Steam Root Path ")),
+                        content_area,
+                    );
+                }
+                WizardField::Warnings => {
+                    let mut lines: Vec<Line> = vec![
+                        Line::from(Span::styled(
+                            "Please review the following warnings:",
+                            Style::default().fg(Color::Yellow),
+                        )),
+                        Line::from(""),
+                    ];
+                    for warn_line in warnings_text.lines() {
+                        lines.push(Line::from(Span::styled(
+                            warn_line.to_string(),
+                            Style::default().fg(Color::Red),
+                        )));
+                    }
+                    lines.push(Line::from(""));
+                    lines.push(Line::from(Span::styled(
+                        "Press Enter to continue.",
+                        Style::default().fg(Color::DarkGray),
+                    )));
+                    f.render_widget(
+                        Paragraph::new(lines)
+                            .block(Block::default().borders(Borders::ALL).title(" Warnings "))
+                            .wrap(ratatui::widgets::Wrap { trim: true }),
+                        content_area,
+                    );
+                }
+                WizardField::Done => {
+                    let lines = vec![
+                        Line::from(Span::styled(
+                            "Setup complete! Configuration saved.",
+                            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                        )),
+                        Line::from(""),
+                        Line::from(Span::styled(
+                            "Press Enter to launch the launcher.",
+                            Style::default().fg(Color::White),
+                        )),
+                    ];
+                    f.render_widget(
+                        Paragraph::new(lines)
+                            .block(Block::default().borders(Borders::ALL).title(" Ready ")),
+                        content_area,
+                    );
+                }
+            }
+
+            // Footer
+            f.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::styled("Enter", Style::default().fg(Color::Green)),
+                    Span::styled(":Next  ", Style::default().fg(Color::DarkGray)),
+                    Span::styled("Backspace", Style::default().fg(Color::Yellow)),
+                    Span::styled(":Delete  ", Style::default().fg(Color::DarkGray)),
+                    Span::styled("Ctrl+C", Style::default().fg(Color::Red)),
+                    Span::styled(":Quit", Style::default().fg(Color::DarkGray)),
+                ])),
+                chunks[2],
+            );
+        })?;
+
+        std::thread::sleep(std::time::Duration::from_millis(16));
+
+        while let Some(Ok(key)) = keys.next() {
+            match key {
+                Key::Ctrl('c') => {
+                    terminal.clear()?;
+                    terminal.show_cursor()?;
+                    return Err(dayzsa_ml::Error::Io(io::Error::new(
+                        io::ErrorKind::Interrupted,
+                        "Setup cancelled",
+                    )));
+                }
+                Key::Char('\n') => {
+                    // Commit the current field
+                    match current_field {
+                        WizardField::Login => {
+                            let login = if input_login.trim().is_empty() {
+                                "anonymous".to_string()
+                            } else {
+                                input_login.trim().to_string()
+                            };
+                            profile.steam_login = Some(login);
+                        }
+                        WizardField::Player => {
+                            if !input_player.trim().is_empty() {
+                                profile.player = Some(input_player.trim().to_string());
+                            }
+                        }
+                        WizardField::SteamRoot => {
+                            if !input_steam_root.trim().is_empty() {
+                                profile.steam_root = Some(input_steam_root.trim().to_string());
+                            }
+                        }
+                        WizardField::Warnings => {}
+                        WizardField::Done => {
+                            profile.save()?;
+                            terminal.clear()?;
+                            terminal.show_cursor()?;
+                            return Ok(());
+                        }
+                    }
+                    // Advance to next field
+                    if field_idx + 1 < fields_order.len() {
+                        field_idx += 1;
+                    }
+                }
+                Key::Backspace => {
+                    match current_field {
+                        WizardField::Login     => { input_login.pop(); }
+                        WizardField::Player    => { input_player.pop(); }
+                        WizardField::SteamRoot => { input_steam_root.pop(); }
+                        _ => {}
+                    }
+                }
+                Key::Char(c) => {
+                    match current_field {
+                        WizardField::Login     => input_login.push(c),
+                        WizardField::Player    => input_player.push(c),
+                        WizardField::SteamRoot => input_steam_root.push(c),
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+            break;
+        }
+    }
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────
@@ -1931,6 +2412,9 @@ async fn main() -> Result<()> {
                     if app.tab == Tab::News {
                         app.fetch_news_if_needed();
                     }
+                    if app.tab == Tab::Offline && app.offline_missions.is_none() {
+                        app.refresh_offline_missions();
+                    }
                     app.status_message = None;
                 }
                 Key::BackTab | Key::Ctrl('p') => {
@@ -1942,6 +2426,9 @@ async fn main() -> Result<()> {
                     if app.tab == Tab::News {
                         app.fetch_news_if_needed();
                     }
+                    if app.tab == Tab::Offline && app.offline_missions.is_none() {
+                        app.refresh_offline_missions();
+                    }
                     app.status_message = None;
                 }
 
@@ -1951,10 +2438,14 @@ async fn main() -> Result<()> {
                         app.toggle_option_at_index();
                     } else if app.tab == Tab::News {
                         app.open_selected_news_url();
+                    } else if app.tab == Tab::Offline {
+                        app.launch_offline_mission();
                     } else {
                         app.connect_to_selected();
                     }
                 }
+                Key::Char('u') if app.tab == Tab::Offline => app.update_offline_mode(),
+                Key::Char('r') if app.tab == Tab::Offline => app.refresh_offline_missions(),
                 Key::Char('e') if app.tab == Tab::Options => {
                     app.start_option_edit();
                 }
@@ -2045,6 +2536,7 @@ fn draw_ui(f: &mut Frame, app: &App) {
         Tab::News => render_news_tab(f, app, chunks[2]),
         Tab::DirectConnect => render_direct_connect_tab(f, app, chunks[2]),
         Tab::Options => render_options_tab(f, app, chunks[2]),
+        Tab::Offline => render_offline_tab(f, app, chunks[2]),
     }
 
     draw_status_bar(f, app, chunks[3]);
@@ -2185,6 +2677,7 @@ fn keybinds_for_tab(tab: Tab) -> &'static str {
         Tab::News => "j/k:Nav | Enter:Open in browser | Ctrl+d/u:Scroll content | Tab/S-Tab:Tabs | q:Quit",
         Tab::DirectConnect => "Up/Down:Fields | Enter:Activate | Tab/S-Tab:Tabs | Esc:Back",
         Tab::Options => "j/k:Nav | Enter:Toggle | e:Edit Value | Tab/S-Tab:Tabs | q:Quit",
+        Tab::Offline => "j/k:Nav | Enter:Launch mission | u:Update/Install | Tab/S-Tab:Tabs | q:Quit",
     }
 }
 
@@ -2249,10 +2742,10 @@ fn make_server_list_item<'a>(
     suffix: Option<Span<'a>>,
     ping_ms: Option<u32>,
 ) -> ListItem<'a> {
-    // Selected: black on cyan for both lines
-    let bg = if is_selected { Color::DarkGray } else { Color::Reset };
-    let sel_fg = |c: Color| if is_selected { Color::Black } else { c };
-    let dim = |c: Color| if is_selected { Color::Black } else { c };
+    // Selected: black on cyan for both lines.
+    // `fg(c)` maps every colour to black when selected (cyan bg provides contrast).
+    let bg = if is_selected { Color::Cyan } else { Color::Reset };
+    let fg = |c: Color| if is_selected { Color::Black } else { c };
 
     let pc = player_color(server.players, server.max_players);
 
@@ -2262,30 +2755,30 @@ fn make_server_list_item<'a>(
             let c = if ms < 50 { Color::Green } else if ms < 100 { Color::Yellow } else { Color::Red };
             (format!("{:>3}ms", ms), c)
         }
-        None => ("  -  ".to_string(), Color::DarkGray),
+        None => ("   -  ".to_string(), Color::DarkGray),
     };
 
     // ── Line 1 ────────────────────────────────────────────────────────────
     let mut line1: Vec<Span> = vec![
         Span::styled(
             format!("{:>5} ", index + 1),
-            Style::default().fg(dim(Color::DarkGray)).bg(bg),
+            Style::default().fg(fg(Color::DarkGray)).bg(bg),
         ),
-        // Favourite star
+        // Favourite star (Nerd Font )
         if is_favorite {
-            Span::styled("★ ", Style::default().fg(sel_fg(Color::Yellow)).bg(bg))
+            Span::styled(" ", Style::default().fg(fg(Color::Yellow)).bg(bg))
         } else {
             Span::styled("  ", Style::default().bg(bg))
         },
         // Ping
         Span::styled(
-            format!("{:<6}", ping_str),
-            Style::default().fg(sel_fg(ping_color)).bg(bg),
+            format!("{:<7}", ping_str),
+            Style::default().fg(fg(ping_color)).bg(bg),
         ),
-        // Players
+        // Players/max (bold, colour-coded by fill)
         Span::styled(
             format!("{:>3}/{:<3} ", server.players, server.max_players),
-            Style::default().fg(sel_fg(pc)).bg(bg).add_modifier(Modifier::BOLD),
+            Style::default().fg(fg(pc)).bg(bg).add_modifier(Modifier::BOLD),
         ),
     ];
 
@@ -2299,7 +2792,7 @@ fn make_server_list_item<'a>(
     line1.push(Span::styled(
         server.name.as_str(),
         Style::default()
-            .fg(if is_selected { Color::Black } else { Color::White })
+            .fg(fg(Color::White))
             .bg(bg)
             .add_modifier(if is_selected { Modifier::BOLD } else { Modifier::empty() }),
     ));
@@ -2308,6 +2801,34 @@ fn make_server_list_item<'a>(
     if let Some(sfx) = suffix {
         line1.push(Span::styled("  ", Style::default().bg(bg)));
         line1.push(Span::styled(sfx.content, sfx.style.bg(bg)));
+    }
+
+    // ── Flags — each is its own Span with its own colour ─────────────────
+    line1.push(Span::styled("  ", Style::default().bg(bg)));
+
+    //  = lock (Nerd Font nf-fa-lock), red when password-protected
+    if server.password {
+        line1.push(Span::styled(" ", Style::default().fg(fg(Color::Red)).bg(bg)));
+    } else {
+        line1.push(Span::styled("  ", Style::default().bg(bg)));
+    }
+
+    line1.push(Span::styled(" ", Style::default().bg(bg)));
+
+    // 1P = first-person only, yellow
+    if server.first_person_only {
+        line1.push(Span::styled("1P", Style::default().fg(fg(Color::Yellow)).bg(bg)));
+    } else {
+        line1.push(Span::styled("  ", Style::default().bg(bg)));
+    }
+
+    line1.push(Span::styled(" ", Style::default().bg(bg)));
+
+    //  = Windows (nf-dev-windows, blue) /  = Linux (nf-linux-tux, green)
+    if server.environment == "w" {
+        line1.push(Span::styled(" ", Style::default().fg(fg(Color::Blue)).bg(bg)));
+    } else {
+        line1.push(Span::styled(" ", Style::default().fg(fg(Color::Green)).bg(bg)));
     }
 
     line1.push(Span::styled("  ", Style::default().bg(bg)));
@@ -2347,23 +2868,23 @@ fn make_server_list_item<'a>(
         Span::styled("       ", Style::default().bg(bg)),
         Span::styled(
             format!("{:<21}", format!("{}:{}", server.endpoint.ip, server.game_port)),
-            Style::default().fg(dim(Color::Green)).bg(bg),
+            Style::default().fg(fg(Color::Green)).bg(bg),
         ),
         Span::styled(
             format!("{:<14}", server.map),
-            Style::default().fg(dim(Color::Cyan)).bg(bg),
+            Style::default().fg(fg(Color::Cyan)).bg(bg),
         ),
         Span::styled(
             format!("{:<8}", mods_str),
-            Style::default().fg(dim(Color::Magenta)).bg(bg),
+            Style::default().fg(fg(Color::Magenta)).bg(bg),
         ),
         Span::styled(
             format!("{:<10}", server.version),
-            Style::default().fg(dim(Color::DarkGray)).bg(bg),
+            Style::default().fg(fg(Color::DarkGray)).bg(bg),
         ),
         Span::styled(
             server.time.as_str(),
-            Style::default().fg(dim(Color::DarkGray)).bg(bg),
+            Style::default().fg(fg(Color::DarkGray)).bg(bg),
         ),
     ];
 
@@ -3539,6 +4060,157 @@ fn draw_progress_overlay(f: &mut Frame, progress: &ProgressState, area: Rect) {
             .collect();
         f.render_widget(Paragraph::new(lines), inner[list_area_idx]);
     }
+}
+
+fn render_offline_tab(f: &mut Frame, app: &App, area: Rect) {
+    // Split: left list (50%) | right info panel (50%)
+    let h_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(area);
+
+    let list_area = h_chunks[0];
+    let info_area = h_chunks[1];
+
+    // ── Mission list ──────────────────────────────────────────────────────
+    let selected = app.selected_indices[Tab::Offline.index()];
+    let offset = app.offsets[Tab::Offline.index()];
+    let visible = app.visible_items();
+
+    let missions = app.offline_missions.as_deref().unwrap_or(&[]);
+
+    let items: Vec<ratatui::widgets::ListItem> = missions
+        .iter()
+        .enumerate()
+        .skip(offset)
+        .take(visible)
+        .map(|(i, name)| {
+            let is_sel = i == selected;
+            let style = if is_sel {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            ratatui::widgets::ListItem::new(Line::from(vec![
+                Span::styled(
+                    format!("{:>3}. ", i + 1),
+                    Style::default()
+                        .fg(if is_sel { Color::Black } else { Color::DarkGray })
+                        .bg(if is_sel { Color::Cyan } else { Color::Reset }),
+                ),
+                Span::styled(name.as_str(), style),
+            ]))
+        })
+        .collect();
+
+    let list_title = if missions.is_empty() {
+        " Offline Missions  (none installed) ".to_string()
+    } else {
+        format!(" Offline Missions  [{}/{}] ", selected + 1, missions.len())
+    };
+
+    let list = ratatui::widgets::List::new(items)
+        .block(
+            Block::default()
+                .title(list_title)
+                .borders(Borders::ALL)
+                .style(Style::default()),
+        )
+        .highlight_symbol(">> ");
+    f.render_widget(list, list_area);
+
+    // ── Info / help panel ─────────────────────────────────────────────────
+    let selected_mission = missions.get(selected).cloned();
+
+    let mut lines: Vec<Line> = vec![
+        Line::from(Span::styled(
+            "DayZ Community Offline Mode",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Play DayZ offline with a local mission,",
+            Style::default().fg(Color::White),
+        )),
+        Line::from(Span::styled(
+            "no internet connection required.",
+            Style::default().fg(Color::White),
+        )),
+        Line::from(""),
+    ];
+
+    // Status line
+    if let Some(ref status) = app.offline_status {
+        lines.push(Line::from(Span::styled(
+            status.as_str(),
+            Style::default().fg(app.offline_status_color),
+        )));
+        lines.push(Line::from(""));
+    }
+
+    // Selected mission details
+    if let Some(ref name) = selected_mission {
+        lines.push(Line::from(Span::styled(
+            "Selected Mission",
+            Style::default().fg(Color::Gray),
+        )));
+        lines.push(Line::from(Span::styled(
+            name.as_str(),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "Press Enter to launch this mission.",
+            Style::default().fg(Color::Green),
+        )));
+    } else {
+        lines.push(Line::from(Span::styled(
+            "No missions installed.",
+            Style::default().fg(Color::DarkGray),
+        )));
+        lines.push(Line::from(Span::styled(
+            "Press 'u' to download DayZCommunityOfflineMode",
+            Style::default().fg(Color::Yellow),
+        )));
+        lines.push(Line::from(Span::styled(
+            "from github.com/Arkensor/DayZCommunityOfflineMode",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "─── Actions ───",
+        Style::default().fg(Color::DarkGray),
+    )));
+    lines.push(Line::from(vec![
+        Span::styled("Enter ", Style::default().fg(Color::Yellow)),
+        Span::styled("launch selected mission", Style::default().fg(Color::Gray)),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("u     ", Style::default().fg(Color::Yellow)),
+        Span::styled("install / update offline mode", Style::default().fg(Color::Gray)),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("r     ", Style::default().fg(Color::Yellow)),
+        Span::styled("refresh mission list", Style::default().fg(Color::Gray)),
+    ]));
+
+    let info = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .title(" Offline Mode Info ")
+                .borders(Borders::ALL),
+        )
+        .wrap(ratatui::widgets::Wrap { trim: true });
+    f.render_widget(info, info_area);
 }
 
 fn draw_popup(f: &mut Frame, popup: &Popup, area: Rect) {

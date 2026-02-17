@@ -1,12 +1,15 @@
 use crate::Result;
 use flate2::read::GzDecoder;
 use reqwest::Client;
+use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tar::Archive;
 
 const COMMUNITY_OFFLINE_REPO: &str = "Arkensor/DayZCommunityOfflineMode";
 const MISSIONS_DIR: &str = "Missions";
+/// User-Agent required by GitHub API (any non-empty string works).
+const UA: &str = "dayzsa-ml/0.1 (https://github.com/a2sdayz)";
 
 pub struct OfflineMode {
     dayz_path: PathBuf,
@@ -59,19 +62,34 @@ impl OfflineMode {
     }
 
     async fn get_latest_tag(&self) -> Result<String> {
-        let resp = self
-            .client
-            .get(&format!(
-                "https://github.com/{}/releases/latest",
-                COMMUNITY_OFFLINE_REPO
-            ))
-            .send()
-            .await?;
+        // Use the GitHub REST API — requires a User-Agent header.
+        #[derive(Deserialize)]
+        struct Release {
+            tag_name: String,
+        }
 
-        // Get the final URL after redirects
-        let url = resp.url().to_string();
-        let tag = url.split('/').last().unwrap_or("").to_string();
-        Ok(tag)
+        let url = format!(
+            "https://api.github.com/repos/{}/releases/latest",
+            COMMUNITY_OFFLINE_REPO
+        );
+
+        let release: Release = self
+            .client
+            .get(&url)
+            .header("User-Agent", UA)
+            .header("Accept", "application/vnd.github+json")
+            .send()
+            .await?
+            .json::<Release>()
+            .await
+            .map_err(|e| {
+                crate::errors::Error::Other(format!(
+                    "Failed to parse GitHub release info: {}",
+                    e
+                ))
+            })?;
+
+        Ok(release.tag_name)
     }
 
     fn get_current_version(&self) -> Option<String> {
@@ -88,6 +106,10 @@ impl OfflineMode {
     }
 
     async fn download_and_extract(&self, tag: &str) -> Result<()> {
+        // GitHub's tarball endpoint redirects to a CDN URL.
+        // We must send the User-Agent on the initial request; reqwest follows
+        // the redirect automatically, but we also need to ensure the response
+        // is actually a gzip stream before handing it to flate2.
         let tarball_url = if tag.is_empty() {
             format!(
                 "https://api.github.com/repos/{}/tarball",
@@ -100,8 +122,33 @@ impl OfflineMode {
             )
         };
 
-        let response = self.client.get(&tarball_url).send().await?;
+        let response = self
+            .client
+            .get(&tarball_url)
+            .header("User-Agent", UA)
+            .header("Accept", "application/vnd.github+json")
+            .send()
+            .await?;
+
+        let status = response.status();
+        if !status.is_success() {
+            return Err(crate::errors::Error::Other(format!(
+                "GitHub returned HTTP {} for tarball download",
+                status
+            )));
+        }
+
         let bytes = response.bytes().await?;
+
+        // Sanity-check: a gzip stream starts with the magic bytes 0x1f 0x8b.
+        if bytes.len() < 2 || bytes[0] != 0x1f || bytes[1] != 0x8b {
+            return Err(crate::errors::Error::Other(format!(
+                "Downloaded data is not a gzip stream (got {} bytes, first bytes: {:?}). \
+                 The GitHub API may have returned an error page.",
+                bytes.len(),
+                &bytes[..bytes.len().min(64)]
+            )));
+        }
 
         let missions_path = self.missions_path();
         fs::create_dir_all(&missions_path)?;
@@ -109,22 +156,56 @@ impl OfflineMode {
         let decoder = GzDecoder::new(&bytes[..]);
         let mut archive = Archive::new(decoder);
 
-        // Extract and strip the first directory component
+        // Extract and strip the first directory component.
+        // We do two passes: first create all directories, then extract files.
+        // This avoids failures when a file entry appears before its parent
+        // directory entry in the archive (which tar does not guarantee).
+        let mut entries_data: Vec<(PathBuf, Vec<u8>, u32)> = Vec::new();
+
         for entry in archive.entries()? {
             let mut entry = entry?;
-            let path = entry.path()?;
+            let path = entry.path()?.into_owned();
+            let mode = entry.header().mode().unwrap_or(0o644);
             let components: Vec<_> = path.components().collect();
 
-            if components.len() > 1 {
-                let new_path = components[1..].iter().collect::<PathBuf>();
-                let full_path = missions_path.join(new_path);
-
-                if let Some(parent) = full_path.parent() {
-                    fs::create_dir_all(parent)?;
-                }
-
-                entry.unpack(&full_path)?;
+            if components.len() <= 1 {
+                continue; // skip the top-level directory entry itself
             }
+
+            let new_path: PathBuf = components[1..].iter().collect();
+            let full_path = missions_path.join(&new_path);
+
+            if entry.header().entry_type().is_dir() {
+                fs::create_dir_all(&full_path).map_err(|e| {
+                    crate::errors::Error::Other(format!(
+                        "Failed to create directory {:?}: {}",
+                        full_path, e
+                    ))
+                })?;
+            } else {
+                // Buffer the file contents so we can create its parent dir first.
+                let mut buf = Vec::new();
+                std::io::Read::read_to_end(&mut entry, &mut buf)?;
+                entries_data.push((full_path, buf, mode));
+            }
+        }
+
+        // Second pass: write all files (parent dirs are now guaranteed to exist).
+        for (full_path, data, _mode) in entries_data {
+            if let Some(parent) = full_path.parent() {
+                fs::create_dir_all(parent).map_err(|e| {
+                    crate::errors::Error::Other(format!(
+                        "Failed to create parent dir {:?}: {}",
+                        parent, e
+                    ))
+                })?;
+            }
+            fs::write(&full_path, &data).map_err(|e| {
+                crate::errors::Error::Other(format!(
+                    "Failed to write {:?}: {}",
+                    full_path, e
+                ))
+            })?;
         }
 
         Ok(())
@@ -136,6 +217,10 @@ impl OfflineMode {
             .join("DayZCommunityOfflineMode.ChernarusPlus")
             .join(".version");
 
+        // The directory may not exist yet on first install.
+        if let Some(parent) = version_file.parent() {
+            fs::create_dir_all(parent)?;
+        }
         fs::write(version_file, version)?;
         Ok(())
     }

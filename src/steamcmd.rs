@@ -585,25 +585,31 @@ pub struct SteamClient;
 
 impl SteamClient {
     /// Check if the Steam client is currently running.
-    /// Matches process names more precisely to avoid false positives.
+    ///
+    /// Matches the main Steam client process only — not helpers that can
+    /// outlive a crashed Steam (steamwebhelper) and not container wrappers
+    /// used by Flatpak (bwrap, pressure-vessel-wrap).
     pub fn is_running() -> bool {
         use sysinfo::System;
         let mut system = System::new();
         system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
         system.processes().values().any(|process| {
             let name = process.name().to_string_lossy().to_lowercase();
-            // Match the actual Steam client process, not just anything containing "steam"
-            name == "steam"
-                || name == "steam.exe"
-                || name == "steamwebhelper"
-                || name == "steam-runtime"
+            // "steam" covers native Linux and the Flatpak entry-point script.
+            // "steam.exe" covers Wine/Proton scenarios.
+            // We intentionally exclude "steamwebhelper" — it can outlive a
+            // crashed Steam client and would cause a false-positive.
+            name == "steam" || name == "steam.exe"
         })
     }
 
-    /// Start Steam in silent mode (no friends UI). Does NOT block.
-    pub fn start() -> Result<()> {
+    /// Start Steam in silent mode (no friends UI).
+    ///
+    /// Returns `true` if Steam was already running, `false` if it was just
+    /// started (so the caller knows whether to wait for it to become ready).
+    pub fn start() -> Result<bool> {
         if Self::is_running() {
-            return Ok(());
+            return Ok(true);
         }
         std::process::Command::new("nohup")
             .arg("steam")
@@ -612,7 +618,7 @@ impl SteamClient {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()?;
-        Ok(())
+        Ok(false)
     }
 
     /// Graceful shutdown via `steam -shutdown`.
