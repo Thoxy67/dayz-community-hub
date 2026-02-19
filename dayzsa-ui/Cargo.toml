@@ -1,0 +1,11 @@
+[package]
+name = "dayzsa-ui"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+dayzsa-core.workspace = true
+tokio.workspace = true
+serde_json.workspace = true
+ratatui = { version = "0.30.0", default-features = false, features = ["termion"] }
+termion = "4"

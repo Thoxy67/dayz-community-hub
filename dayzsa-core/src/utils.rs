@@ -28,32 +28,14 @@ pub fn format_relative_time(timestamp: i64) -> String {
     }
 }
 
-/// Format a Unix timestamp into a simple date string (YYYY-MM-DD HH:MM).
-/// Uses local time if chrono is available, otherwise UTC.
-#[cfg(feature = "chrono")]
+/// Format a Unix timestamp into a UTC date string (YYYY-MM-DD HH:MM).
 pub fn format_absolute_time(timestamp: i64) -> String {
-    use chrono::{DateTime, NaiveDateTime, Utc};
-    let naive = NaiveDateTime::from_timestamp_opt(timestamp, 0).unwrap_or_default();
-    let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
+    use chrono::{DateTime, TimeZone, Utc};
+    let datetime: DateTime<Utc> = Utc
+        .timestamp_opt(timestamp, 0)
+        .single()
+        .unwrap_or_else(|| Utc.timestamp_opt(0, 0).single().unwrap());
     datetime.format("%Y-%m-%d %H:%M").to_string()
-}
-
-/// Fallback without chrono: use UTC time via std.
-#[cfg(not(feature = "chrono"))]
-pub fn format_absolute_time(timestamp: i64) -> String {
-    // Simple UTC formatting using std
-    let secs = timestamp as u64;
-    let days = secs / 86400;
-    let years = days / 365;
-    let rem_days = days % 365;
-    // Not accurate, just a fallback
-    if years > 0 {
-        format!("{} years {} days ago", years, rem_days)
-    } else if days > 0 {
-        format!("{} days ago", days)
-    } else {
-        format_relative_time(timestamp)
-    }
 }
 
 #[cfg(test)]

@@ -1,0 +1,15 @@
+[package]
+name = "dayzsa-bin"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "dayzsa"
+path = "src/main.rs"
+
+[dependencies]
+dayzsa-core.workspace = true
+dayzsa-ui.workspace = true
+tokio.workspace = true
+termion = "4"
+ratatui = { version = "0.30.0", default-features = false, features = ["termion"] }

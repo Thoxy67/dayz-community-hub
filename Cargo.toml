@@ -1,35 +1,57 @@
-[package]
-name = "dayzsa-ml"
+[workspace]
+members = [
+    "dayzsa-core",
+    "dayzsa-ui",
+    "dayzsa-bin",
+]
+resolver = "2"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
-a2s = { version = "0.6.1", features = ["async"] }
+[workspace.dependencies]
+# Async runtime
 tokio = { version = "1", features = ["full"] }
+
+# HTTP
 reqwest = { version = "0.13.2", features = ["json", "query"] }
+
+# Serialisation
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Error handling
 thiserror = "2"
+
+# Utilities
 regex = "1"
 which = "8.0.0"
 sysinfo = "0.38.2"
+chrono = { version = "0.4" }
+
+# Compression / archive
 flate2 = "1"
 tar = "0.4"
-chrono = { version = "0.4", optional = true }
+
+# TUI
 ratatui = { version = "0.30.0", default-features = false, features = ["termion"] }
 termion = "4"
+
+# DayZ A2S queries
+a2s = { version = "0.6.1", features = ["async"] }
 ping-async = "1.0.2"
 
-[features]
-default = []
-chrono = ["dep:chrono"]
+# Internal crates
+dayzsa-core = { path = "dayzsa-core" }
+dayzsa-ui   = { path = "dayzsa-ui" }
 
 [profile.dev]
-incremental = true # Compile your binary in smaller steps.
+incremental = true
 
 [profile.release]
-codegen-units = 1 # Allows LLVM to perform better optimization.
-lto = true # Enables link-time-optimizations.
-opt-level = "s" # Prioritizes small binary size. Use `3` if you prefer speed.
-panic = "abort" # Higher performance by disabling panic handlers.
-strip = true # Ensures debug symbols are removed.
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

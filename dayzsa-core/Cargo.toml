@@ -1,0 +1,22 @@
+[package]
+name = "dayzsa-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tokio.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+regex = "1"
+which = "8.0.0"
+sysinfo = "0.38.2"
+flate2 = "1"
+tar = "0.4"
+a2s = { version = "0.6.1", features = ["async"] }
+ping-async = "1.0.2"
+chrono = { version = "0.4" }
+
+[features]
+default = []
