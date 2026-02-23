@@ -1,10 +1,10 @@
 [package]
-name = "dayzsa-ui"
+name = "dayz-community-hub-ui"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-dayzsa-core.workspace = true
+dayz-community-hub-core.workspace = true
 tokio.workspace = true
 serde_json.workspace = true
 ratatui = { version = "0.30.0", default-features = false, features = ["termion"] }

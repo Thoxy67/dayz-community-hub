@@ -14,6 +14,30 @@ use std::sync::Arc;
 use tokio::process::Command;
 use tokio::sync::mpsc;
 
+/// Returns the user's home directory path, cross-platform.
+fn home_dir() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        let p = std::env::var("USERPROFILE")
+            .or_else(|_| std::env::var("HOMEDRIVE").and_then(|d| std::env::var("HOMEPATH").map(|p| d + &p)))
+            .unwrap_or_else(|_| "C:\\Users\\Public".to_string());
+        PathBuf::from(p)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let p = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+        PathBuf::from(p)
+    }
+}
+
+/// Returns the fallback steamapps path when Steam root is not configured.
+fn default_steamapps_fallback() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    { PathBuf::from("C:\\Program Files (x86)\\Steam\\steamapps") }
+    #[cfg(not(target_os = "windows"))]
+    { home_dir().join(".steam/steam/steamapps") }
+}
+
 pub struct DayzCtl {
     profile: Profile,
     steamcmd: Option<Arc<SteamCmd>>,
@@ -25,17 +49,21 @@ impl DayzCtl {
     pub async fn new(profile_path: impl AsRef<Path>) -> Result<Self> {
         let profile = Profile::load(profile_path)?;
         let steamcmd = if profile.steamcmd_enabled {
-            if let Some(steamcmd_path) = find_steamcmd() {
+            // Prefer explicit user-configured path, then auto-detect
+            let resolved_path = profile.steamcmd_path
+                .as_ref()
+                .filter(|s| !s.is_empty())
+                .map(PathBuf::from)
+                .filter(|p| p.exists())
+                .or_else(find_steamcmd);
+            if let Some(steamcmd_path) = resolved_path {
                 let steam_root = profile
                     .steam_root
                     .as_ref()
-                    .filter(|s| !s.is_empty()) // Treat empty string as None
+                    .filter(|s| !s.is_empty())
                     .map(|s| PathBuf::from(s))
                     .or_else(find_steam_root)
-                    .unwrap_or_else(|| {
-                        let home = std::env::var("HOME").unwrap_or_default();
-                        PathBuf::from(home).join(".steam/steam/steamapps")
-                    });
+                    .unwrap_or_else(default_steamapps_fallback);
                 let login = profile
                     .steam_login
                     .clone()
@@ -145,17 +173,20 @@ impl DayzCtl {
     /// without restarting the app.
     pub fn rebuild_steamcmd(&mut self) {
         self.steamcmd = if self.profile.steamcmd_enabled {
-            find_steamcmd().map(|steamcmd_path| {
+            let resolved_path = self.profile.steamcmd_path
+                .as_ref()
+                .filter(|s| !s.is_empty())
+                .map(PathBuf::from)
+                .filter(|p| p.exists())
+                .or_else(find_steamcmd);
+            resolved_path.map(|steamcmd_path| {
                 let steam_root = self.profile
                     .steam_root
                     .as_ref()
                     .filter(|s| !s.is_empty())
                     .map(PathBuf::from)
                     .or_else(find_steam_root)
-                    .unwrap_or_else(|| {
-                        let home = std::env::var("HOME").unwrap_or_default();
-                        PathBuf::from(home).join(".steam/steam/steamapps")
-                    });
+                    .unwrap_or_else(default_steamapps_fallback);
                 let login = self.profile
                     .steam_login
                     .clone()
@@ -256,7 +287,7 @@ impl DayzCtl {
     ///
     /// 1. Determine which mods are missing
     /// 2. Download each via steamcmd
-    /// 3. Mark each as managed (`.dayz-ctl` marker)
+    /// 3. Mark each as managed (`.dayz-community-hub` marker)
     /// 4. Create symlinks in the DayZ directory
     /// 5. Verify all mods are present
     pub async fn install_missing_mods(&self, server: &Server) -> Result<InstallResult> {

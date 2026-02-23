@@ -114,7 +114,7 @@ mod tests {
     use tokio::try_join;
 
     /// Direct A2S test against a live server — mirrors the a2s lib's own async test.
-    /// Run with: cargo test --package dayzsa-core -- a2s_query::tests::test_live_server --nocapture --ignored
+    /// Run with: cargo test --package dayz-community-hub-core -- a2s_query::tests::test_live_server --nocapture --ignored
     #[tokio::test]
     #[ignore]
     async fn test_live_server() {

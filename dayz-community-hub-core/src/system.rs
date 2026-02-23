@@ -1,22 +1,34 @@
 use crate::Result;
-use std::fs;
 use std::path::Path;
 
 const MAX_MAP_COUNT_MIN: u64 = 1024 * 1024; // 1048576
 
+/// Check vm.max_map_count (Linux only; returns Ok(true) on other platforms).
 pub fn check_max_map_count() -> Result<CheckResult> {
-    let current = read_max_map_count()?;
-    let ok = current >= MAX_MAP_COUNT_MIN;
-
-    Ok(CheckResult {
-        current,
-        required: MAX_MAP_COUNT_MIN,
-        ok,
-    })
+    #[cfg(target_os = "linux")]
+    {
+        let current = read_max_map_count()?;
+        let ok = current >= MAX_MAP_COUNT_MIN;
+        Ok(CheckResult {
+            current,
+            required: MAX_MAP_COUNT_MIN,
+            ok,
+        })
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        // Not applicable on Windows/macOS — report as satisfied.
+        Ok(CheckResult {
+            current: MAX_MAP_COUNT_MIN,
+            required: MAX_MAP_COUNT_MIN,
+            ok: true,
+        })
+    }
 }
 
+#[cfg(target_os = "linux")]
 fn read_max_map_count() -> Result<u64> {
-    let content = fs::read_to_string("/proc/sys/vm/max_map_count")?;
+    let content = std::fs::read_to_string("/proc/sys/vm/max_map_count")?;
     content
         .trim()
         .parse()

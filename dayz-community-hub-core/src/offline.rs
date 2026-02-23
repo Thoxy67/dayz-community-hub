@@ -9,7 +9,7 @@ use tar::Archive;
 const COMMUNITY_OFFLINE_REPO: &str = "Arkensor/DayZCommunityOfflineMode";
 const MISSIONS_DIR: &str = "Missions";
 /// User-Agent required by GitHub API (any non-empty string works).
-const UA: &str = "dayzsa-ml/0.1 (https://github.com/a2sdayz)";
+const UA: &str = "dayz-community-hub/0.1";
 
 pub struct OfflineMode {
     dayz_path: PathBuf,

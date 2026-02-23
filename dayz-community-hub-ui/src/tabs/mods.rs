@@ -1,7 +1,7 @@
 //! Mods tab renderer.
 
 use crate::app::App;
-use dayzsa_core::{mods, utils};
+use dayz_community_hub_core::{mods, utils};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},

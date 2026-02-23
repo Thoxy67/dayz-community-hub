@@ -1,4 +1,4 @@
-use dayzsa_core::{
+use dayz_community_hub_core::{
     a2s_query,
     api::{self, Server},
     config::{self, Profile},
@@ -110,6 +110,8 @@ pub struct ProfileDto {
     pub steam_password: Option<String>,
     pub steam_root: Option<String>,
     pub steamcmd_enabled: bool,
+    /// Explicit path to steamcmd binary (overrides auto-detection).
+    pub steamcmd_path: Option<String>,
     pub player: Option<String>,
     pub steam_api_key: Option<String>,
     pub steam_id: Option<String>,
@@ -256,6 +258,7 @@ fn profile_to_dto(profile: &Profile) -> ProfileDto {
         steam_password: profile.steam_password.clone(),
         steam_root: profile.steam_root.clone(),
         steamcmd_enabled: profile.steamcmd_enabled,
+        steamcmd_path: profile.steamcmd_path.clone(),
         player: profile.player.clone(),
         steam_api_key: profile.steam_api_key.clone(),
         steam_id: profile.steam_id.clone(),
@@ -503,6 +506,7 @@ async fn save_profile_settings(
     steam_password: Option<String>,
     steam_root: Option<String>,
     steamcmd_enabled: bool,
+    steamcmd_path: Option<String>,
     steam_api_key: Option<String>,
     steam_id: Option<String>,
     state: State<'_, SharedState>,
@@ -519,6 +523,7 @@ async fn save_profile_settings(
         profile.steam_password = steam_password;
         profile.steam_root = steam_root;
         profile.steamcmd_enabled = steamcmd_enabled;
+        profile.steamcmd_path = steamcmd_path;
         profile.steam_api_key = steam_api_key;
         profile.steam_id = steam_id;
     }
@@ -851,7 +856,7 @@ async fn launch_direct(
             })
             .cloned()
             .unwrap_or_else(|| Server {
-                endpoint: dayzsa_core::Endpoint {
+                endpoint: dayz_community_hub_core::Endpoint {
                     ip: ip.clone(),
                     port: game_port as i64,
                 },
@@ -1067,7 +1072,7 @@ async fn fetch_image(url: String) -> Result<String, String> {
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
         .danger_accept_invalid_hostnames(true)
-        .user_agent("Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0")
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0")
         .timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| e.to_string())?;
@@ -1274,17 +1279,18 @@ async fn launch_offline_mission(
 
     let om = OfflineMode::new(dayz_path, client);
     let dayz_args = om.build_launch_args(&mission, &[], false);
-    let steam_args = dayzsa_core::launch::build_steam_applaunch_args(
-        dayzsa_core::steamcmd::DAYZ_GAME_ID,
+    let steam_args = dayz_community_hub_core::launch::build_steam_applaunch_args(
+        dayz_community_hub_core::steamcmd::DAYZ_GAME_ID,
         &dayz_args,
         player.as_deref(),
     );
 
-    if let Err(e) = dayzsa_core::steamcmd::SteamClient::start() {
+    if let Err(e) = dayz_community_hub_core::steamcmd::SteamClient::start() {
         return Err(format!("Could not start Steam: {}", e));
     }
 
-    std::process::Command::new("steam")
+    let steam_bin = dayz_community_hub_core::steamcmd::SteamClient::steam_exe();
+    std::process::Command::new(steam_bin)
         .args(&steam_args)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -1344,7 +1350,7 @@ async fn start_pinging(
                 // Build a minimal Server so we can call a2s_query::ping_server,
                 // exactly like the TUI does — ICMP echo, no TCP, no UDP A2S.
                 let server = api::Server {
-                    endpoint: dayzsa_core::Endpoint {
+                    endpoint: dayz_community_hub_core::Endpoint {
                         ip: ip_clone.clone(),
                         port,
                     },

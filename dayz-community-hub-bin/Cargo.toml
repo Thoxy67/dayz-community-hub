@@ -1,15 +1,15 @@
 [package]
-name = "dayzsa-bin"
+name = "dayz-community-hub-bin"
 version.workspace = true
 edition.workspace = true
 
 [[bin]]
-name = "dayzsa"
+name = "dayz-community-hub"
 path = "src/main.rs"
 
 [dependencies]
-dayzsa-core.workspace = true
-dayzsa-ui.workspace = true
+dayz-community-hub-core.workspace = true
+dayz-community-hub-ui.workspace = true
 tokio.workspace = true
 termion = "4"
 ratatui = { version = "0.30.0", default-features = false, features = ["termion"] }

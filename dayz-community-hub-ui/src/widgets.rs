@@ -50,7 +50,7 @@ pub fn player_color(players: i64, max_players: i64) -> Color {
 /// Line 2 — secondary:       ip:port  map  mods  version  time
 pub fn make_server_list_item<'a>(
     index: usize,
-    server: &'a dayzsa_core::Server,
+    server: &'a dayz_community_hub_core::Server,
     is_selected: bool,
     is_favorite: bool,
     prefix: Option<Span<'a>>,
@@ -571,7 +571,7 @@ pub fn draw_popup(f: &mut Frame, popup: &Popup, area: Rect) {
 
 // ─── Server details panel ─────────────────────────────────────────────────
 
-pub fn render_server_details(f: &mut Frame, app: &App, server: &dayzsa_core::Server, area: Rect) {
+pub fn render_server_details(f: &mut Frame, app: &App, server: &dayz_community_hub_core::Server, area: Rect) {
     let mut lines = vec![
         Line::from(vec![
             Span::styled("Name: ", Style::default().fg(Color::Gray)),

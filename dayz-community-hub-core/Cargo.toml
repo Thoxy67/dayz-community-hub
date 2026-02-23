@@ -1,5 +1,5 @@
 [package]
-name = "dayzsa-core"
+name = "dayz-community-hub-core"
 version.workspace = true
 edition.workspace = true
 

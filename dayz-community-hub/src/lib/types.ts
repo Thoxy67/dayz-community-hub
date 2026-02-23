@@ -68,6 +68,8 @@ export interface ProfileDto {
   steam_password: string | null;
   steam_root: string | null;
   steamcmd_enabled: boolean;
+  /** Explicit path to steamcmd binary (overrides auto-detection). */
+  steamcmd_path: string | null;
   player: string | null;
   steam_api_key: string | null;
   steam_id: string | null;

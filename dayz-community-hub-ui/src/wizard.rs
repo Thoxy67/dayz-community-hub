@@ -1,6 +1,6 @@
 //! First-run setup wizard rendered with ratatui/termion.
 
-use dayzsa_core::{config, steamcmd, system, Result};
+use dayz_community_hub_core::{config, steamcmd, system, Result};
 use ratatui::{
     backend::TermionBackend,
     layout::{Constraint, Direction, Layout, Rect},
@@ -312,7 +312,7 @@ pub fn run_setup_if_needed(profile_path: &std::path::Path) -> Result<()> {
                 Key::Ctrl('c') => {
                     terminal.clear()?;
                     terminal.show_cursor()?;
-                    return Err(dayzsa_core::Error::Io(io::Error::new(
+                    return Err(dayz_community_hub_core::Error::Io(io::Error::new(
                         io::ErrorKind::Interrupted,
                         "Setup cancelled",
                     )));

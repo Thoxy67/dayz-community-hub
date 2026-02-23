@@ -299,18 +299,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "dayzsa-bin"
+name = "dayz-community-hub-bin"
 version = "0.1.0"
 dependencies = [
- "dayzsa-core",
- "dayzsa-ui",
+ "dayz-community-hub-core",
+ "dayz-community-hub-ui",
  "ratatui",
  "termion",
  "tokio",
 ]
 
 [[package]]
-name = "dayzsa-core"
+name = "dayz-community-hub-core"
 version = "0.1.0"
 dependencies = [
  "a2s",
@@ -329,10 +329,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "dayzsa-ui"
+name = "dayz-community-hub-ui"
 version = "0.1.0"
 dependencies = [
- "dayzsa-core",
+ "dayz-community-hub-core",
  "ratatui",
  "serde_json",
  "termion",

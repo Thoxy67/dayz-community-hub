@@ -825,7 +825,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be1e0bca6c3637f992fc1cc7cbc52a78c1ef6db076dbf1059c4323d6a2048376"
 
 [[package]]
-name = "dayzsa-core"
+name = "dayz-community-hub"
+version = "0.1.0"
+dependencies = [
+ "a2s",
+ "base64 0.22.1",
+ "dayz-community-hub-core",
+ "reqwest 0.13.2",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-dialog",
+ "tauri-plugin-http",
+ "tauri-plugin-opener",
+ "tauri-plugin-shell",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
+name = "dayz-community-hub-core"
 version = "0.1.0"
 dependencies = [
  "a2s",
@@ -841,27 +862,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "which",
-]
-
-[[package]]
-name = "dayzsa-gui"
-version = "0.1.0"
-dependencies = [
- "a2s",
- "base64 0.22.1",
- "dayzsa-core",
- "reqwest 0.13.2",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-dialog",
- "tauri-plugin-http",
- "tauri-plugin-opener",
- "tauri-plugin-shell",
- "tokio",
- "tokio-stream",
 ]
 
 [[package]]

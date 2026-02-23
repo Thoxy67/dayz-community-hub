@@ -17,7 +17,7 @@ pub fn render_servers_tab(f: &mut Frame, app: &App, area: Rect) {
 
     let (list_area, details_area) = split_list_details(area, app.show_server_details);
 
-    let server_iter: Box<dyn Iterator<Item = (usize, &dayzsa_core::Server)>> =
+    let server_iter: Box<dyn Iterator<Item = (usize, &dayz_community_hub_core::Server)>> =
         if let Some(ref indices) = app.filtered_indices {
             Box::new(
                 indices

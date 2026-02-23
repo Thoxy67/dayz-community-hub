@@ -1,6 +1,6 @@
 //! Application state, types, and all `App` methods.
 
-use dayzsa_core::{
+use dayz_community_hub_core::{
     a2s_query, api, config,
     ctl::{DayzCtl, ModOpResult, ModOperation},
     mods, news, offline::OfflineMode,
@@ -104,8 +104,8 @@ pub enum ConfirmAction {
     RemoveFavorite(String, u16),
     RemoveHistoryEntry(String, u16),
     ClearHistory,
-    UpdateThenLaunch(dayzsa_core::Server, Option<String>),
-    LaunchDirect(dayzsa_core::Server, Option<String>),
+    UpdateThenLaunch(dayz_community_hub_core::Server, Option<String>),
+    LaunchDirect(dayz_community_hub_core::Server, Option<String>),
 }
 
 /// Tracks the live progress of a background mod operation.
@@ -148,7 +148,7 @@ pub enum BackgroundResult {
 /// Action to perform after a background mod operation completes.
 #[derive(Clone)]
 pub enum PendingAfterOp {
-    LaunchServer(dayzsa_core::Server, Option<String>),
+    LaunchServer(dayz_community_hub_core::Server, Option<String>),
     RefreshMods,
 }
 
@@ -156,7 +156,7 @@ pub enum PendingAfterOp {
 
 pub struct App {
     pub ctl: DayzCtl,
-    pub servers: Vec<dayzsa_core::Server>,
+    pub servers: Vec<dayz_community_hub_core::Server>,
     pub selected_indices: [usize; 8],
     pub offsets: [usize; 8],
     pub tab: Tab,
@@ -167,7 +167,7 @@ pub struct App {
     pub direct_port: String,
     pub direct_password: String,
     pub direct_cursor: DirectConnectField,
-    pub direct_server_found: Option<dayzsa_core::Server>,
+    pub direct_server_found: Option<dayz_community_hub_core::Server>,
     // Mods
     pub installed_mods: Option<Vec<mods::InstalledMod>>,
     // Server details
@@ -218,7 +218,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(ctl: DayzCtl, servers: Vec<dayzsa_core::Server>) -> Self {
+    pub fn new(ctl: DayzCtl, servers: Vec<dayz_community_hub_core::Server>) -> Self {
         Self {
             ctl,
             servers,
@@ -397,7 +397,7 @@ impl App {
 
     // ─── Server helpers ───
 
-    pub fn get_selected_server(&self) -> Option<dayzsa_core::Server> {
+    pub fn get_selected_server(&self) -> Option<dayz_community_hub_core::Server> {
         match self.tab {
             Tab::Servers => {
                 let idx = self.selected_index();
@@ -435,7 +435,7 @@ impl App {
         }
     }
 
-    pub fn get_ping(&self, server: &dayzsa_core::Server) -> Option<u32> {
+    pub fn get_ping(&self, server: &dayz_community_hub_core::Server) -> Option<u32> {
         let key = format!("{}:{}", server.endpoint.ip, server.endpoint.port);
         self.ping_cache.get(&key).copied()
     }
@@ -583,7 +583,7 @@ impl App {
         }
     }
 
-    pub fn launch_server(&mut self, server: &dayzsa_core::Server, password: Option<&str>) {
+    pub fn launch_server(&mut self, server: &dayz_community_hub_core::Server, password: Option<&str>) {
         if self.launching {
             return;
         }
@@ -786,8 +786,8 @@ impl App {
                 }
             }
         } else {
-            let temp_server = dayzsa_core::Server {
-                endpoint: dayzsa_core::Endpoint {
+            let temp_server = dayz_community_hub_core::Server {
+                endpoint: dayz_community_hub_core::Endpoint {
                     ip: ip.clone(),
                     port: port as i64,
                 },
@@ -829,9 +829,9 @@ impl App {
 
         let port = port_str.parse::<u16>().unwrap_or(2302);
 
-        let server = dayzsa_core::Server {
+        let server = dayz_community_hub_core::Server {
             name: format!("{}:{}", ip, port),
-            endpoint: dayzsa_core::Endpoint {
+            endpoint: dayz_community_hub_core::Endpoint {
                 ip: ip.clone(),
                 port: port as i64,
             },
@@ -1067,13 +1067,13 @@ impl App {
         let om = OfflineMode::new(dayz_path, self.ctl.http_client().clone());
         let dayz_args = om.build_launch_args(&mission, &[], false);
 
-        let steam_args = dayzsa_core::launch::build_steam_applaunch_args(
-            dayzsa_core::steamcmd::DAYZ_GAME_ID,
+        let steam_args = dayz_community_hub_core::launch::build_steam_applaunch_args(
+            dayz_community_hub_core::steamcmd::DAYZ_GAME_ID,
             &dayz_args,
             self.ctl.profile().player.as_deref(),
         );
 
-        if let Err(e) = dayzsa_core::steamcmd::SteamClient::start() {
+        if let Err(e) = dayz_community_hub_core::steamcmd::SteamClient::start() {
             self.set_error(format!("Could not start Steam: {}", e));
             return;
         }

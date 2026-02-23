@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    dayzsa_gui_lib::run()
+    dayz_community_hub_lib::run()
 }

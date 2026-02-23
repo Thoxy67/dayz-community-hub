@@ -3,19 +3,31 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const APP_NAME: &str = "dayz-ctl";
+const APP_NAME: &str = "dayz-community-hub";
 const APP_VERSION: &str = "0.1.0";
 
-/// Returns the default data directory: `~/.local/share/dayz-ctl/`
+/// Returns the platform-appropriate data directory.
+/// - Linux/macOS: `~/.local/share/dayz-community-hub/`
+/// - Windows:     `%APPDATA%\dayz-community-hub\`
 pub fn default_data_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    PathBuf::from(home)
-        .join(".local")
-        .join("share")
-        .join(APP_NAME)
+    #[cfg(target_os = "windows")]
+    {
+        let appdata = std::env::var("APPDATA").unwrap_or_else(|_| {
+            std::env::var("USERPROFILE").unwrap_or_else(|_| "C:\\Users\\Public".to_string())
+        });
+        PathBuf::from(appdata).join(APP_NAME)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+        PathBuf::from(home)
+            .join(".local")
+            .join("share")
+            .join(APP_NAME)
+    }
 }
 
-/// Returns the default profile path: `~/.local/share/dayz-ctl/profile.json`
+/// Returns the default profile path: `~/.local/share/dayz-community-hub/profile.json`
 pub fn default_profile_path() -> PathBuf {
     default_data_dir().join("profile.json")
 }
@@ -38,6 +50,9 @@ pub struct Profile {
     /// Steam 64-bit account ID — used with the API key to resolve the avatar.
     #[serde(default)]
     pub steam_id: Option<String>,
+    /// Optional explicit path to steamcmd binary (overrides auto-detection).
+    #[serde(default)]
+    pub steamcmd_path: Option<String>,
     pub favorites: Vec<Favorite>,
     pub history: Vec<History>,
     #[serde(
@@ -494,6 +509,7 @@ impl Profile {
             steam_password: None,
             steam_root: None,
             steamcmd_enabled: true,
+            steamcmd_path: None,
             player: None,
             steam_api_key: None,
             steam_id: None,

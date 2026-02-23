@@ -103,9 +103,17 @@
             Leave blank to use the <span class="font-mono bg-base-300/60 px-1 rounded">anonymous</span> login (works for free mods).
           </p>
           <p class="text-xs text-base-content/50 mt-1 leading-relaxed">
-            <span class="font-semibold text-warning/80">Steam root</span> is the path to your Steam installation folder
-            (e.g. <span class="font-mono bg-base-300/60 px-1 rounded">~/.steam/steam</span>).
+            <span class="font-semibold text-warning/80">Steam root</span> is the path to your Steam installation folder.
+            Linux default: <span class="font-mono bg-base-300/60 px-1 rounded">~/.steam/steam</span> —
+            Windows default: <span class="font-mono bg-base-300/60 px-1 rounded">C:\Program Files (x86)\Steam</span>.
             Required so the app can find your Workshop directory.
+          </p>
+          <p class="text-xs text-base-content/50 mt-1 leading-relaxed">
+            <span class="font-semibold text-base-content/60">SteamCMD path</span> — leave blank to let the app auto-detect.
+            Set this if SteamCMD is installed in a non-standard location.
+            Linux: <span class="font-mono bg-base-300/60 px-1 rounded">steamcmd</span> or
+            <span class="font-mono bg-base-300/60 px-1 rounded">/usr/bin/steamcmd</span> —
+            Windows: <span class="font-mono bg-base-300/60 px-1 rounded">C:\SteamCMD\steamcmd.exe</span>.
           </p>
           <div class="flex items-center gap-1.5 mt-2 text-xs text-warning/70">
             <Icon icon="ph:warning" class="size-3 shrink-0" />
@@ -155,8 +163,17 @@
             The app uses it to install and update your DayZ mods in the background.
           </p>
           <p class="text-xs text-base-content/50 mt-1 leading-relaxed">
-            If the title bar shows <span class="text-warning/80 font-semibold">SteamCMD not found</span>, download it and place
-            the <span class="font-mono bg-base-300/60 px-1 rounded">steamcmd</span> executable somewhere on your <span class="font-mono bg-base-300/60 px-1 rounded">PATH</span>.
+            If the title bar shows <span class="text-warning/80 font-semibold">SteamCMD not found</span>, download it from
+            <span class="font-mono bg-base-300/60 px-1 rounded">developer.valvesoftware.com/wiki/SteamCMD</span> and either
+            place it on your PATH or set the path manually in account settings.
+          </p>
+          <p class="text-xs text-base-content/50 mt-1 leading-relaxed">
+            <span class="font-semibold text-base-content/60">Linux:</span> install via package manager
+            (<span class="font-mono bg-base-300/60 px-1 rounded">apt install steamcmd</span>) or place the binary in
+            <span class="font-mono bg-base-300/60 px-1 rounded">/usr/bin/steamcmd</span>.
+            <span class="font-semibold text-base-content/60">Windows:</span> extract to
+            <span class="font-mono bg-base-300/60 px-1 rounded">C:\SteamCMD\</span> and add to PATH,
+            or set the path explicitly in account settings.
           </p>
         </div>
         <div class="px-4 py-3">

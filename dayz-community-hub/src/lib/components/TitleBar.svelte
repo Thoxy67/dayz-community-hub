@@ -16,6 +16,7 @@
       steamPassword: string | null,
       steamRoot: string | null,
       steamcmdEnabled: boolean,
+      steamcmdPath: string | null,
       steamApiKey: string | null,
       steamId: string | null,
     ) => void;
@@ -49,6 +50,7 @@
   let steamRoot     = $state('');
   let steamApiKey   = $state('');
   let steamId       = $state('');
+  let steamcmdPath  = $state('');
   let showPassword  = $state(false);
   let showApiKey    = $state(false);
 
@@ -57,6 +59,7 @@
     steamLogin    = profile?.steam_login ?? '';
     steamPassword = profile?.steam_password ?? '';
     steamRoot     = profile?.steam_root ?? '';
+    steamcmdPath  = profile?.steamcmd_path ?? '';
     steamApiKey   = profile?.steam_api_key ?? '';
     steamId       = profile?.steam_id ?? '';
     showPassword  = false;
@@ -73,6 +76,7 @@
       steamPassword || null,
       steamRoot.trim() || null,
       profile?.steamcmd_enabled ?? true,
+      steamcmdPath.trim() || null,
       steamApiKey.trim() || null,
       steamId.trim() || null,
     );
@@ -326,7 +330,7 @@
               </div>
             </div>
             <!-- Steam root -->
-            <div class="flex items-center gap-3 px-3 py-2.5">
+            <div class="flex items-center gap-3 px-3 py-2.5 border-b border-base-300/60">
               <label class="text-xs text-base-content/55 w-24 shrink-0" for="field-root">Steam root</label>
               <input
                 id="field-root"
@@ -338,6 +342,28 @@
               <button
                 class="text-base-content/35 hover:text-primary transition-colors shrink-0"
                 onclick={browseSteamRoot}
+                title="Browse…"
+              >
+                <Icon icon="ph:folder-open" class="size-3.5" />
+              </button>
+            </div>
+            <!-- SteamCMD path -->
+            <div class="flex items-center gap-3 px-3 py-2.5">
+              <label class="text-xs text-base-content/55 w-24 shrink-0" for="field-steamcmd">SteamCMD path</label>
+              <input
+                id="field-steamcmd"
+                type="text"
+                class="flex-1 bg-transparent text-xs font-mono text-base-content placeholder:text-base-content/25 outline-none min-w-0"
+                placeholder="auto-detect"
+                bind:value={steamcmdPath}
+              />
+              <button
+                class="text-base-content/35 hover:text-primary transition-colors shrink-0"
+                onclick={async () => {
+                  const { open } = await import('@tauri-apps/plugin-dialog');
+                  const selected = await open({ multiple: false, title: 'Select steamcmd binary' });
+                  if (selected) steamcmdPath = selected as string;
+                }}
                 title="Browse…"
               >
                 <Icon icon="ph:folder-open" class="size-3.5" />

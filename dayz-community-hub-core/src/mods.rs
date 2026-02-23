@@ -85,7 +85,7 @@ pub fn scan_workshop_dir(workshop_path: &Path) -> Result<Vec<InstalledMod>> {
             .unwrap_or(0);
 
         let size = du_dir(&path).unwrap_or(0);
-        let managed = path.join(".dayz-ctl").exists();
+        let managed = path.join(".dayz-community-hub").exists();
 
         mods.push(InstalledMod {
             name,
@@ -183,10 +183,12 @@ pub fn create_mod_symlinks(
     Ok(created)
 }
 
-/// Mark a mod as managed by writing the mod ID to a `.dayz-ctl` marker file.
-/// This matches the bash script's behavior: `echo "$id" > "$dayz_workshop_path/$id/.dayz-ctl"`
+/// Mark a mod as managed by writing the mod ID to a `.dayz-community-hub` marker file.
+/// This matches the bash script's behavior: `echo "$id" > "$dayz_workshop_path/$id/.dayz-community-hub"`
 pub fn mark_mod_as_managed(workshop_path: &Path, mod_id: u64) -> Result<()> {
-    let managed_file = workshop_path.join(mod_id.to_string()).join(".dayz-ctl");
+    let managed_file = workshop_path
+        .join(mod_id.to_string())
+        .join(".dayz-community-hub");
     fs::write(managed_file, mod_id.to_string())?;
     Ok(())
 }
@@ -211,7 +213,7 @@ pub fn remove_all_mod_symlinks(dayz_path: &Path) -> Result<usize> {
     Ok(count)
 }
 
-/// Remove all mods that have the `.dayz-ctl` marker file (managed mods).
+/// Remove all mods that have the `.dayz-community-hub` marker file (managed mods).
 pub fn remove_managed_mods(workshop_path: &Path) -> Result<(usize, u64)> {
     let mut count = 0;
     let mut total_size = 0;
@@ -228,7 +230,7 @@ pub fn remove_managed_mods(workshop_path: &Path) -> Result<(usize, u64)> {
             continue;
         }
 
-        let managed_file = path.join(".dayz-ctl");
+        let managed_file = path.join(".dayz-community-hub");
         if !managed_file.exists() {
             continue;
         }
@@ -250,10 +252,10 @@ pub fn delete_mod(workshop_path: &Path, mod_id: u64, only_managed: bool) -> Resu
     }
 
     if only_managed {
-        let managed_file = mod_path.join(".dayz-ctl");
+        let managed_file = mod_path.join(".dayz-community-hub");
         if !managed_file.exists() {
             return Err(Error::Mod(format!(
-                "Mod {} is not managed (no .dayz-ctl file)",
+                "Mod {} is not managed (no .dayz-community-hub file)",
                 mod_id
             )));
         }
@@ -270,7 +272,7 @@ pub fn toggle_mod_managed(workshop_path: &Path, mod_id: u64) -> Result<bool> {
         return Err(Error::Mod(format!("Mod {} does not exist", mod_id)));
     }
 
-    let managed_file = mod_path.join(".dayz-ctl");
+    let managed_file = mod_path.join(".dayz-community-hub");
     let currently_managed = managed_file.exists();
 
     if currently_managed {

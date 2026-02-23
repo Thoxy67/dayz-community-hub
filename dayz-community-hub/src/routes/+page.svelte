@@ -494,6 +494,7 @@
     steamPassword: string | null,
     steamRoot: string | null,
     steamcmdEnabled: boolean,
+    steamcmdPath: string | null,
     steamApiKey: string | null,
     steamId: string | null,
   ) {
@@ -504,6 +505,7 @@
         steamPassword,
         steamRoot,
         steamcmdEnabled,
+        steamcmdPath,
         steamApiKey,
         steamId,
       });

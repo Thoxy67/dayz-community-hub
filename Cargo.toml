@@ -1,8 +1,8 @@
 [workspace]
 members = [
-    "dayzsa-core",
-    "dayzsa-ui",
-    "dayzsa-bin",
+    "dayz-community-hub-core",
+    "dayz-community-hub-ui",
+    "dayz-community-hub-bin",
 ]
 resolver = "2"
 
@@ -43,8 +43,8 @@ a2s = { version = "0.6.1", features = ["async"] }
 ping-async = "1.0.2"
 
 # Internal crates
-dayzsa-core = { path = "dayzsa-core" }
-dayzsa-ui   = { path = "dayzsa-ui" }
+dayz-community-hub-core = { path = "dayz-community-hub-core" }
+dayz-community-hub-ui   = { path = "dayz-community-hub-ui" }
 
 [profile.dev]
 incremental = true

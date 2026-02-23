@@ -13,48 +13,108 @@ pub const DAYZ_GAME_ID: u32 = 221100;
 /// Try to find Steam root directory by checking common locations.
 /// Returns the path to the `steamapps` directory.
 pub fn find_steam_root() -> Option<PathBuf> {
-    let home = std::env::var("HOME").ok()?;
-    let home_path = PathBuf::from(home);
-
-    let candidates = [
-        home_path.join(".steam/steam/steamapps"),
-        home_path.join(".local/share/Steam/steamapps"),
-        home_path.join(".steam/root/steamapps"),
-        home_path.join(".var/app/com.valvesoftware.Steam/data/Steam/steamapps"),
-    ];
-
-    for candidate in candidates.iter() {
-        if candidate.exists() && candidate.is_dir() {
-            return Some(candidate.to_path_buf());
+    #[cfg(target_os = "windows")]
+    {
+        // Windows: Steam installs to Program Files (x86) by default,
+        // or a user-chosen drive. Check common locations and registry env vars.
+        let candidates: Vec<PathBuf> = {
+            let mut v = Vec::new();
+            // STEAM_PATH env override (power users)
+            if let Ok(p) = std::env::var("STEAM_PATH") {
+                v.push(PathBuf::from(&p).join("steamapps"));
+            }
+            // Default install locations
+            for base in &[
+                "C:\\Program Files (x86)\\Steam",
+                "C:\\Program Files\\Steam",
+            ] {
+                v.push(PathBuf::from(base).join("steamapps"));
+            }
+            // Per-user roaming / local variants
+            if let Ok(local) = std::env::var("LOCALAPPDATA") {
+                v.push(PathBuf::from(&local).join("Steam").join("steamapps"));
+            }
+            v
+        };
+        for candidate in &candidates {
+            if candidate.exists() && candidate.is_dir() {
+                return Some(candidate.clone());
+            }
         }
+        None
     }
-
-    None
+    #[cfg(not(target_os = "windows"))]
+    {
+        let home = std::env::var("HOME").ok()?;
+        let home_path = PathBuf::from(home);
+        let candidates = [
+            home_path.join(".steam/steam/steamapps"),
+            home_path.join(".local/share/Steam/steamapps"),
+            home_path.join(".steam/root/steamapps"),
+            home_path.join(".var/app/com.valvesoftware.Steam/data/Steam/steamapps"),
+        ];
+        for candidate in candidates.iter() {
+            if candidate.exists() && candidate.is_dir() {
+                return Some(candidate.to_path_buf());
+            }
+        }
+        None
+    }
 }
 
-/// Try to find steamcmd binary in PATH or common locations
+/// Try to find steamcmd binary in PATH or common locations.
 pub fn find_steamcmd() -> Option<PathBuf> {
-    if let Ok(path) = which::which("steamcmd") {
+    // Honour PATH first (works on all platforms)
+    #[cfg(target_os = "windows")]
+    let binary = "steamcmd.exe";
+    #[cfg(not(target_os = "windows"))]
+    let binary = "steamcmd";
+
+    if let Ok(path) = which::which(binary) {
         return Some(path);
     }
 
-    let home = std::env::var("HOME").ok()?;
-    let home_path = PathBuf::from(home);
-    let candidates = [
-        home_path.join(".steam/steamcmd/steamcmd.sh"),
-        home_path.join(".local/share/Steam/steamcmd/steamcmd.sh"),
-        PathBuf::from("/usr/games/steamcmd"),
-        PathBuf::from("/usr/local/games/steamcmd"),
-        PathBuf::from("/usr/bin/steamcmd"),
-    ];
-
-    for candidate in candidates.iter() {
-        if candidate.exists() {
-            return Some(candidate.to_path_buf());
+    #[cfg(target_os = "windows")]
+    {
+        let candidates: Vec<PathBuf> = {
+            let mut v = Vec::new();
+            for base in &[
+                "C:\\Program Files (x86)\\Steam\\steamcmd.exe",
+                "C:\\Program Files (x86)\\SteamCMD\\steamcmd.exe",
+                "C:\\SteamCMD\\steamcmd.exe",
+            ] {
+                v.push(PathBuf::from(base));
+            }
+            if let Ok(local) = std::env::var("LOCALAPPDATA") {
+                v.push(PathBuf::from(&local).join("Programs").join("steamcmd").join("steamcmd.exe"));
+            }
+            v
+        };
+        for candidate in &candidates {
+            if candidate.exists() {
+                return Some(candidate.clone());
+            }
         }
+        None
     }
-
-    None
+    #[cfg(not(target_os = "windows"))]
+    {
+        let home = std::env::var("HOME").ok()?;
+        let home_path = PathBuf::from(home);
+        let candidates = [
+            home_path.join(".steam/steamcmd/steamcmd.sh"),
+            home_path.join(".local/share/Steam/steamcmd/steamcmd.sh"),
+            PathBuf::from("/usr/games/steamcmd"),
+            PathBuf::from("/usr/local/games/steamcmd"),
+            PathBuf::from("/usr/bin/steamcmd"),
+        ];
+        for candidate in candidates.iter() {
+            if candidate.exists() {
+                return Some(candidate.to_path_buf());
+            }
+        }
+        None
+    }
 }
 
 /// Progress messages sent during mod download/update operations.
@@ -605,21 +665,24 @@ fn extract_mod_id_from_line(line: &str) -> Option<u64> {
 pub struct SteamClient;
 
 impl SteamClient {
+    /// Returns the Steam executable name for the current platform.
+    pub fn steam_exe() -> &'static str {
+        #[cfg(target_os = "windows")]
+        { "steam.exe" }
+        #[cfg(not(target_os = "windows"))]
+        { "steam" }
+    }
+
     /// Check if the Steam client is currently running.
-    ///
-    /// Matches the main Steam client process only — not helpers that can
-    /// outlive a crashed Steam (steamwebhelper) and not container wrappers
-    /// used by Flatpak (bwrap, pressure-vessel-wrap).
     pub fn is_running() -> bool {
         use sysinfo::System;
         let mut system = System::new();
         system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
         system.processes().values().any(|process| {
             let name = process.name().to_string_lossy().to_lowercase();
-            // "steam" covers native Linux and the Flatpak entry-point script.
-            // "steam.exe" covers Wine/Proton scenarios.
-            // We intentionally exclude "steamwebhelper" — it can outlive a
-            // crashed Steam client and would cause a false-positive.
+            // "steam" — native Linux / macOS / Flatpak entry-point.
+            // "steam.exe" — Windows and Wine/Proton on Linux.
+            // Exclude "steamwebhelper" — it can outlive a crashed client.
             name == "steam" || name == "steam.exe"
         })
     }
@@ -632,19 +695,36 @@ impl SteamClient {
         if Self::is_running() {
             return Ok(true);
         }
-        std::process::Command::new("nohup")
-            .arg("steam")
-            .arg("-nofriendsui")
-            .arg("-silent")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()?;
+
+        #[cfg(target_os = "windows")]
+        {
+            // On Windows spawn steam.exe directly; no nohup equivalent needed
+            // because detached processes persist after the parent exits.
+            std::process::Command::new(Self::steam_exe())
+                .arg("-nofriendsui")
+                .arg("-silent")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()?;
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            // On Linux/macOS use nohup so Steam keeps running if the spawner exits.
+            std::process::Command::new("nohup")
+                .arg(Self::steam_exe())
+                .arg("-nofriendsui")
+                .arg("-silent")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()?;
+        }
+
         Ok(false)
     }
 
     /// Graceful shutdown via `steam -shutdown`.
     pub async fn shutdown() -> Result<()> {
-        let _ = Command::new("steam")
+        let _ = Command::new(Self::steam_exe())
             .arg("-shutdown")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -688,7 +768,7 @@ impl SteamClient {
         }
 
         // Ask Steam to shut down gracefully
-        let _ = Command::new("steam")
+        let _ = Command::new(Self::steam_exe())
             .arg("-shutdown")
             .stdout(Stdio::null())
             .stderr(Stdio::null())

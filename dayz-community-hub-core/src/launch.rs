@@ -53,11 +53,10 @@ pub fn build_steam_applaunch_args(
     args: &[String],
     username: Option<&str>,
 ) -> Vec<String> {
-    let mut steam_args = vec![
-        "-applaunch".to_string(),
-        game_id.to_string(),
-        "-malloc=system".to_string(),
-    ];
+    let mut steam_args = vec!["-applaunch".to_string(), game_id.to_string()];
+    // -malloc=system is a Linux-only DayZ optimisation flag; skip on Windows.
+    #[cfg(not(target_os = "windows"))]
+    steam_args.push("-malloc=system".to_string());
     if let Some(user) = username {
         if !user.is_empty() {
             steam_args.push(format!("-name={}", user));

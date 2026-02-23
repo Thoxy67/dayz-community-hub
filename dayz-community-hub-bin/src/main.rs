@@ -1,18 +1,18 @@
-use dayzsa_core::{api, config, system};
-use dayzsa_ui::{App, draw_ui, handle_key, run_setup_if_needed};
+use dayz_community_hub_core::{api, config, system};
+use dayz_community_hub_ui::{App, draw_ui, handle_key, run_setup_if_needed};
 use ratatui::{Terminal, backend::TermionBackend};
 use std::io;
 use termion::{input::TermRead, raw::IntoRawMode};
 
 #[tokio::main]
-async fn main() -> dayzsa_core::Result<()> {
+async fn main() -> dayz_community_hub_core::Result<()> {
     let profile_path = config::default_profile_path();
 
     // First-run setup wizard
     run_setup_if_needed(&profile_path)?;
 
     // Initialise controller
-    let mut ctl = dayzsa_core::ctl::DayzCtl::new(&profile_path).await?;
+    let mut ctl = dayz_community_hub_core::ctl::DayzCtl::new(&profile_path).await?;
 
     // Use cached server list (5 min TTL) or fetch fresh
     let cache_path = config::default_data_dir().join("server_list_cache.json");
