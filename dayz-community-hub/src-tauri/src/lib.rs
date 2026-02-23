@@ -1982,6 +1982,118 @@ fn get_cli_args() -> CliArgs {
     })
 }
 
+// ─── Auto-updater (Windows only) ─────────────────────────────────────────────
+//
+// On Linux/macOS the app is distributed via package managers, so in-app
+// updates are intentionally disabled on those platforms.
+
+#[cfg(windows)]
+mod updater {
+    use serde::Serialize;
+    use std::sync::Mutex;
+    use tauri::{ipc::Channel, AppHandle, State};
+    use tauri_plugin_updater::{Update, UpdaterExt};
+
+    // ── Error type ────────────────────────────────────────────────────────────
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum UpdateError {
+        #[error(transparent)]
+        Updater(#[from] tauri_plugin_updater::Error),
+        #[error("no pending update — call check_for_update first")]
+        NoPendingUpdate,
+    }
+
+    impl Serialize for UpdateError {
+        fn serialize<S>(&self, s: S) -> std::result::Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            s.serialize_str(&self.to_string())
+        }
+    }
+
+    type Result<T> = std::result::Result<T, UpdateError>;
+
+    // ── Download progress events sent over a Channel ──────────────────────────
+
+    #[derive(Clone, Serialize)]
+    #[serde(tag = "event", content = "data", rename_all = "camelCase")]
+    pub enum DownloadEvent {
+        Started { content_length: Option<u64> },
+        Progress { chunk_length: usize },
+        Finished,
+    }
+
+    // ── Pending update state (managed by Tauri) ───────────────────────────────
+
+    pub struct PendingUpdate(pub Mutex<Option<Update>>);
+
+    // ── DTO returned to the frontend ──────────────────────────────────────────
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct UpdateInfo {
+        pub version: String,
+        pub current_version: String,
+        pub body: Option<String>,
+        pub date: Option<String>,
+    }
+
+    // ── Commands ──────────────────────────────────────────────────────────────
+
+    /// Check for a new version.  Returns `Some(UpdateInfo)` when an update is
+    /// available, `None` when the app is already up to date.
+    #[tauri::command]
+    pub async fn check_for_update(
+        app: AppHandle,
+        pending: State<'_, PendingUpdate>,
+    ) -> Result<Option<UpdateInfo>> {
+        let update = app.updater()?.check().await?;
+        let info = update.as_ref().map(|u| UpdateInfo {
+            version: u.version.clone(),
+            current_version: u.current_version.clone(),
+            body: u.body.clone(),
+            date: u.date.map(|d| d.to_rfc3339()),
+        });
+        *pending.0.lock().unwrap() = update;
+        Ok(info)
+    }
+
+    /// Download and install the pending update, streaming progress events back
+    /// to the frontend via `on_event`.  On Windows the app will quit
+    /// automatically once the installer launches.
+    #[tauri::command]
+    pub async fn install_update(
+        pending: State<'_, PendingUpdate>,
+        on_event: Channel<DownloadEvent>,
+    ) -> Result<()> {
+        let update = pending
+            .0
+            .lock()
+            .unwrap()
+            .take()
+            .ok_or(UpdateError::NoPendingUpdate)?;
+
+        let mut started = false;
+        update
+            .download_and_install(
+                |chunk_length, content_length| {
+                    if !started {
+                        let _ = on_event.send(DownloadEvent::Started { content_length });
+                        started = true;
+                    }
+                    let _ = on_event.send(DownloadEvent::Progress { chunk_length });
+                },
+                || {
+                    let _ = on_event.send(DownloadEvent::Finished);
+                },
+            )
+            .await?;
+        Ok(())
+    }
+}
+
 // ─── Application entry point ──────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1990,6 +2102,19 @@ pub fn run(args: CliArgs) {
     let _ = CLI_ARGS.set(args);
 
     tauri::Builder::default()
+        .setup(|app| {
+            // Register Windows-only plugins via setup so we can use cfg guards.
+            #[cfg(windows)]
+            {
+                app.handle()
+                    .plugin(tauri_plugin_updater::Builder::new().build())?;
+                app.handle().plugin(tauri_plugin_process::init())?;
+                app.manage(updater::PendingUpdate(std::sync::Mutex::new(None)));
+            }
+            #[cfg(not(windows))]
+            let _ = app;
+            Ok(())
+        })
         // Single-instance guard: if another instance is already running,
         // that instance's frontend receives a "cli-args" event carrying the
         // new invocation's arguments, then this process exits.
@@ -2061,6 +2186,11 @@ pub fn run(args: CliArgs) {
             download_steamcmd_windows,
             get_cli_args,
             fetch_battlemetrics_server,
+            // Windows-only auto-updater commands
+            #[cfg(windows)]
+            updater::check_for_update,
+            #[cfg(windows)]
+            updater::install_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

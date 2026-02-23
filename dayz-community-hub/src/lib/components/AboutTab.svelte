@@ -2,7 +2,7 @@
   import Icon from '@iconify/svelte';
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { getVersion, getName } from '@tauri-apps/api/app';
-  import { invoke } from '@tauri-apps/api/core';
+  import { invoke, Channel } from '@tauri-apps/api/core';
   import { onMount } from 'svelte';
 
   interface Props {
@@ -24,6 +24,81 @@
   let cmdDownloadErr = $state('');
   let cmdDownloadOk  = $state(false);
 
+  // ── Update checker (Windows only) ──────────────────────────────────────────
+
+  type UpdateInfo = {
+    version: string;
+    currentVersion: string;
+    body: string | null;
+    date: string | null;
+  };
+
+  type DownloadEvent =
+    | { event: 'Started';   data: { contentLength: number | null } }
+    | { event: 'Progress';  data: { chunkLength: number } }
+    | { event: 'Finished' };
+
+  type UpdateState =
+    | 'idle'          // haven't checked yet
+    | 'checking'      // check_for_update in flight
+    | 'up_to_date'    // no update found
+    | 'available'     // update info present, not yet installing
+    | 'downloading'   // install_update in progress
+    | 'done'          // finished — app will restart shortly
+    | 'error';        // something went wrong
+
+  let updateState  = $state<UpdateState>('idle');
+  let updateInfo   = $state<UpdateInfo | null>(null);
+  let updateError  = $state('');
+  let dlReceived   = $state(0);
+  let dlTotal      = $state(0);
+
+  let dlPercent = $derived(
+    dlTotal > 0 ? Math.round((dlReceived / dlTotal) * 100) : 0
+  );
+
+  async function checkForUpdate() {
+    updateState = 'checking';
+    updateError = '';
+    try {
+      const info = await invoke<UpdateInfo | null>('check_for_update');
+      if (info) {
+        updateInfo  = info;
+        updateState = 'available';
+      } else {
+        updateState = 'up_to_date';
+      }
+    } catch (e) {
+      updateError = String(e);
+      updateState = 'error';
+    }
+  }
+
+  async function installUpdate() {
+    updateState = 'downloading';
+    dlReceived  = 0;
+    dlTotal     = 0;
+    updateError = '';
+
+    const onEvent = new Channel<DownloadEvent>();
+    onEvent.onmessage = (ev) => {
+      if (ev.event === 'Started') {
+        dlTotal = ev.data.contentLength ?? 0;
+      } else if (ev.event === 'Progress') {
+        dlReceived += ev.data.chunkLength;
+      } else if (ev.event === 'Finished') {
+        updateState = 'done';
+      }
+    };
+
+    try {
+      await invoke('install_update', { onEvent });
+    } catch (e) {
+      updateError = String(e);
+      updateState = 'error';
+    }
+  }
+
   onMount(async () => {
     try {
       [appVersion, appName] = await Promise.all([getVersion(), getName()]);
@@ -32,6 +107,11 @@
       const status = await invoke<{ found: boolean; path: string | null; platform: string }>('detect_steamcmd');
       platform = status.platform;
     } catch { /* ignore */ }
+
+    // Auto-check for updates on Windows
+    if (platform === 'windows') {
+      checkForUpdate();
+    }
   });
 
   async function installSteamcmdWindows() {
@@ -111,6 +191,134 @@
         {/each}
       </div>
     </div>
+
+    <!-- ── Updates (Windows only) ──────────────────────────────────────── -->
+    {#if platform === 'windows'}
+      <section>
+        <div class="flex items-center gap-2 mb-3">
+          <Icon icon="ph:arrow-circle-up" class="size-4 text-primary shrink-0" />
+          <h2 class="text-xs font-semibold text-base-content/60 uppercase tracking-widest">Updates</h2>
+        </div>
+
+        <div class="rounded-xl border border-base-300/60 bg-base-200/40 overflow-hidden">
+
+          {#if updateState === 'idle' || updateState === 'checking'}
+            <!-- Checking / idle -->
+            <div class="flex items-center gap-3 px-4 py-3.5">
+              <span class="loading loading-spinner loading-sm text-primary shrink-0"></span>
+              <span class="text-sm text-base-content/60">Checking for updates…</span>
+            </div>
+
+          {:else if updateState === 'up_to_date'}
+            <!-- Up to date -->
+            <div class="flex items-center gap-3 px-4 py-3.5">
+              <div class="size-8 rounded-lg bg-success/10 border border-success/20 flex items-center justify-center shrink-0">
+                <Icon icon="ph:check-circle" class="size-4 text-success" />
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-semibold text-base-content">You're up to date</p>
+                <p class="text-xs text-base-content/45 mt-0.5">v{appVersion} is the latest version</p>
+              </div>
+              <button
+                class="btn btn-xs btn-ghost text-base-content/40 gap-1"
+                onclick={checkForUpdate}
+              >
+                <Icon icon="ph:arrows-clockwise" class="size-3.5" />
+                Re-check
+              </button>
+            </div>
+
+          {:else if updateState === 'available'}
+            <!-- Update available -->
+            <div class="flex items-start gap-3 px-4 py-3.5 border-b border-base-300/40">
+              <div class="size-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 mt-0.5">
+                <Icon icon="ph:arrow-circle-up" class="size-4 text-primary" />
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-semibold text-base-content">
+                  Update available —
+                  <span class="text-primary font-mono">v{updateInfo?.version}</span>
+                </p>
+                <p class="text-xs text-base-content/45 mt-0.5">
+                  Current: <span class="font-mono">v{updateInfo?.currentVersion}</span>
+                  {#if updateInfo?.date}
+                    · Released {new Date(updateInfo.date).toLocaleDateString()}
+                  {/if}
+                </p>
+                {#if updateInfo?.body}
+                  <p class="text-xs text-base-content/50 mt-2 leading-relaxed line-clamp-3">{updateInfo.body}</p>
+                {/if}
+              </div>
+            </div>
+            <div class="flex items-center justify-end gap-2 px-4 py-2.5 bg-base-200/60">
+              <button
+                class="btn btn-sm btn-primary gap-1.5"
+                onclick={installUpdate}
+              >
+                <Icon icon="ph:download-simple" class="size-3.5" />
+                Install update
+              </button>
+            </div>
+
+          {:else if updateState === 'downloading'}
+            <!-- Downloading -->
+            <div class="px-4 py-3.5 space-y-2.5">
+              <div class="flex items-center gap-2">
+                <span class="loading loading-spinner loading-sm text-primary shrink-0"></span>
+                <span class="text-sm font-semibold text-base-content">
+                  Downloading v{updateInfo?.version}…
+                </span>
+                {#if dlTotal > 0}
+                  <span class="ml-auto text-xs text-base-content/40 tabular-nums font-mono shrink-0">
+                    {dlPercent}%
+                  </span>
+                {/if}
+              </div>
+              <div class="w-full rounded-full bg-base-300 overflow-hidden" style="height:6px;">
+                <div
+                  class="h-full bg-primary rounded-full transition-all duration-200"
+                  style="width:{dlTotal > 0 ? dlPercent : 0}%"
+                ></div>
+              </div>
+              {#if dlTotal > 0}
+                <p class="text-xs text-base-content/35 tabular-nums">
+                  {(dlReceived / 1024 / 1024).toFixed(1)} MB / {(dlTotal / 1024 / 1024).toFixed(1)} MB
+                </p>
+              {/if}
+            </div>
+
+          {:else if updateState === 'done'}
+            <!-- Done — installer launching -->
+            <div class="flex items-center gap-3 px-4 py-3.5">
+              <div class="size-8 rounded-lg bg-success/10 border border-success/20 flex items-center justify-center shrink-0">
+                <Icon icon="ph:check-circle" class="size-4 text-success" />
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-semibold text-base-content">Download complete</p>
+                <p class="text-xs text-base-content/45 mt-0.5">The installer is launching — the app will restart automatically.</p>
+              </div>
+            </div>
+
+          {:else if updateState === 'error'}
+            <!-- Error -->
+            <div class="px-4 py-3.5 space-y-2">
+              <div class="flex items-start gap-2 text-error">
+                <Icon icon="ph:warning-circle" class="size-4 shrink-0 mt-0.5" />
+                <p class="text-xs leading-relaxed break-all">{updateError}</p>
+              </div>
+              <button
+                class="btn btn-xs btn-ghost text-base-content/40 gap-1"
+                onclick={checkForUpdate}
+              >
+                <Icon icon="ph:arrows-clockwise" class="size-3.5" />
+                Retry
+              </button>
+            </div>
+          {/if}
+
+        </div>
+      </section>
+    {/if}
 
     <!-- ── Quick Start ──────────────────────────────────────────────────── -->
     <section>

@@ -28,6 +28,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -35,5 +36,17 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "RWQUlUz/r1S49o8VUuyjJXmU7BxjU0GeKRYxtfEhS4UY1xEXmAGdHX3O",
+      "dangerousInsecureTransportProtocol": false,
+      "endpoints": [
+        "https://git.thoxy.xyz/thoxy/dayz-community-hub/releases/download/latest/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }
