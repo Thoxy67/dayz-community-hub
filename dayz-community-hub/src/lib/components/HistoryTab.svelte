@@ -17,6 +17,21 @@
 
   let { history, servers, pingCache, favorites, onConnect, onAddFavorite, onRemoveFavorite, onRemove, onClearAll }: Props = $props();
 
+  // Pre-built lookup map rebuilt only when `servers` changes (O(n) once).
+  // Covers both query_port and game_port keys so per-row lookups are O(1).
+  let serverByKey = $derived((() => {
+    const m = new Map<string, ServerDto>();
+    for (const s of servers) {
+      m.set(`${s.ip}:${s.query_port}`, s);
+      m.set(`${s.ip}:${s.game_port}`, s);
+    }
+    return m;
+  })());
+
+  function findServer(h: HistoryDto): ServerDto | null {
+    return serverByKey.get(`${h.ip}:${h.port}`) ?? null;
+  }
+
   /**
    * Check if a history entry matches a favorite.
    * Favorites are stored with the game port; history with the query port (game port - 1).
@@ -73,14 +88,6 @@
     return sortAsc ? 'ph:arrow-up' : 'ph:arrow-down';
   }
 
-  function findServer(h: HistoryDto): ServerDto | null {
-    return (
-      servers.find(
-        (s) => s.ip === h.ip && (s.query_port === h.port || s.game_port === h.port)
-      ) ?? null
-    );
-  }
-
   let sorted = $derived((() => {
     const arr = history.slice();
     const dir = sortAsc ? 1 : -1;
@@ -111,6 +118,21 @@
     if (ms < 50) return 'text-success';
     if (ms < 100) return 'text-warning';
     return 'text-error';
+  }
+
+  /**
+   * Compute a human-readable relative time string from a Unix timestamp (seconds).
+   * Computed in the frontend so it never goes stale when the app is left open.
+   */
+  function relativeTime(ts: number): string {
+    const secs = Math.floor(Date.now() / 1000) - ts;
+    if (secs < 60) return 'just now';
+    const mins = Math.floor(secs / 60);
+    if (mins < 60) return `${mins} minute${mins === 1 ? '' : 's'} ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+    const days = Math.floor(hours / 24);
+    return `${days} day${days === 1 ? '' : 's'} ago`;
   }
 
   let copiedKey = $state('');
@@ -229,7 +251,7 @@
 
               <!-- Last played -->
               <td class="px-3 py-2">
-                <span class="text-base-content/40">{entry.relative_time}</span>
+                <span class="text-base-content/40">{relativeTime(entry.ts)}</span>
               </td>
 
               <!-- Actions — always visible -->

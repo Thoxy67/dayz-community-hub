@@ -84,18 +84,19 @@
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
-  function optMap(): Map<string, LaunchOptionDto> {
-    return new Map(options.map((o) => [o.key, o]));
-  }
 
-  function filteredGroups() {
+  // Lookup map rebuilt only when options changes — O(n) once instead of per render.
+  let optMap = $derived(new Map(options.map((o) => [o.key, o])));
+
+  // These are $derived so they only recompute when options or search changes,
+  // not on every render tick (previously plain functions called in {#each}).
+  let filteredGroups = $derived((() => {
     const q = search.trim().toLowerCase();
-    const map = optMap();
     return groups
       .map((g) => ({
         ...g,
         opts: g.keys
-          .map((k) => map.get(k))
+          .map((k) => optMap.get(k))
           .filter((o): o is LaunchOptionDto => {
             if (!o) return false;
             if (!q) return true;
@@ -107,10 +108,10 @@
           }),
       }))
       .filter((g) => g.opts.length > 0);
-  }
+  })());
 
   // Ungrouped options (not listed in any group)
-  function ungroupedOpts(): LaunchOptionDto[] {
+  let ungroupedOpts = $derived((() => {
     const listed = new Set(groups.flatMap((g) => g.keys));
     const q = search.trim().toLowerCase();
     return options.filter((o) => {
@@ -118,7 +119,7 @@
       if (!q) return true;
       return o.key.toLowerCase().includes(q) || o.description.toLowerCase().includes(q);
     });
-  }
+  })());
 
   // ── Edit helpers ──────────────────────────────────────────────────────────
   function startEdit(opt: LaunchOptionDto) {
@@ -195,7 +196,7 @@
 
   <!-- Scrollable body -->
   <div class="overflow-y-auto flex-1 p-4 space-y-5">
-    {#each filteredGroups() as group}
+    {#each filteredGroups as group}
       <!-- Group card -->
       <div class="rounded-xl border border-base-300 bg-base-100 overflow-hidden">
         <!-- Group header -->
@@ -296,14 +297,14 @@
     {/each}
 
     <!-- Ungrouped fallback -->
-    {#if ungroupedOpts().length > 0}
+    {#if ungroupedOpts.length > 0}
       <div class="rounded-xl border border-base-300 bg-base-100 overflow-hidden">
         <div class="flex items-center gap-2 px-4 py-2 bg-base-200 border-b border-base-300">
           <Icon icon="ph:sliders" class="size-4 text-base-content/50" />
           <span class="text-xs font-semibold text-base-content/80 uppercase tracking-wide">Other</span>
         </div>
         <div class="divide-y divide-base-200">
-          {#each ungroupedOpts() as opt}
+          {#each ungroupedOpts as opt}
             <div class="flex items-center gap-3 px-4 py-2.5 hover:bg-base-200 transition-colors" class:opacity-50={!opt.enabled}>
               <Icon icon="ph:sliders" class="size-4 text-base-content/40 flex-shrink-0" />
               <div class="flex-1 min-w-0">
@@ -343,7 +344,7 @@
       </div>
     {/if}
 
-    {#if filteredGroups().length === 0 && ungroupedOpts().length === 0}
+    {#if filteredGroups.length === 0 && ungroupedOpts.length === 0}
       <div class="flex flex-col items-center justify-center py-16 text-base-content/30 gap-2">
         <Icon icon="ph:magnifying-glass" class="size-8" />
         <span class="text-sm">No options match "{search}"</span>

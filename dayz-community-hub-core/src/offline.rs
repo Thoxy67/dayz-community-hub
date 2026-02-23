@@ -157,15 +157,12 @@ impl OfflineMode {
         let mut archive = Archive::new(decoder);
 
         // Extract and strip the first directory component.
-        // We do two passes: first create all directories, then extract files.
-        // This avoids failures when a file entry appears before its parent
-        // directory entry in the archive (which tar does not guarantee).
-        let mut entries_data: Vec<(PathBuf, Vec<u8>, u32)> = Vec::new();
-
+        // We use `create_dir_all` before each file write (idempotent) so we
+        // can handle the case where a file entry appears before its parent
+        // directory entry — no need to buffer all file contents in memory first.
         for entry in archive.entries()? {
             let mut entry = entry?;
             let path = entry.path()?.into_owned();
-            let mode = entry.header().mode().unwrap_or(0o644);
             let components: Vec<_> = path.components().collect();
 
             if components.len() <= 1 {
@@ -183,29 +180,29 @@ impl OfflineMode {
                     ))
                 })?;
             } else {
-                // Buffer the file contents so we can create its parent dir first.
-                let mut buf = Vec::new();
-                std::io::Read::read_to_end(&mut entry, &mut buf)?;
-                entries_data.push((full_path, buf, mode));
-            }
-        }
-
-        // Second pass: write all files (parent dirs are now guaranteed to exist).
-        for (full_path, data, _mode) in entries_data {
-            if let Some(parent) = full_path.parent() {
-                fs::create_dir_all(parent).map_err(|e| {
+                // Ensure parent directory exists before writing the file.
+                if let Some(parent) = full_path.parent() {
+                    fs::create_dir_all(parent).map_err(|e| {
+                        crate::errors::Error::Other(format!(
+                            "Failed to create parent dir {:?}: {}",
+                            parent, e
+                        ))
+                    })?;
+                }
+                // Write directly from the archive stream — no intermediate buffer.
+                let mut out = std::fs::File::create(&full_path).map_err(|e| {
                     crate::errors::Error::Other(format!(
-                        "Failed to create parent dir {:?}: {}",
-                        parent, e
+                        "Failed to create {:?}: {}",
+                        full_path, e
+                    ))
+                })?;
+                std::io::copy(&mut entry, &mut out).map_err(|e| {
+                    crate::errors::Error::Other(format!(
+                        "Failed to write {:?}: {}",
+                        full_path, e
                     ))
                 })?;
             }
-            fs::write(&full_path, &data).map_err(|e| {
-                crate::errors::Error::Other(format!(
-                    "Failed to write {:?}: {}",
-                    full_path, e
-                ))
-            })?;
         }
 
         Ok(())

@@ -2,14 +2,14 @@ use crate::errors::Error;
 use crate::Result;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 #[cfg(windows)]
 use std::os::windows::fs::symlink_dir;
-use std::path::Path;
-use std::sync::OnceLock;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstalledMod {
@@ -24,6 +24,15 @@ pub struct InstalledMod {
 /// Regexes for parsing meta.cpp — compiled once at first use.
 static NAME_RE: OnceLock<Regex> = OnceLock::new();
 static ID_RE: OnceLock<Regex> = OnceLock::new();
+
+/// Process-lifetime cache: mod directory path → (dir_mtime_secs, total_size_bytes).
+/// A directory's mtime is updated by the OS when its contents change, so this
+/// avoids the expensive recursive walk on every scan when nothing has changed.
+static SIZE_CACHE: OnceLock<Mutex<HashMap<PathBuf, (u64, u64)>>> = OnceLock::new();
+
+fn size_cache() -> &'static Mutex<HashMap<PathBuf, (u64, u64)>> {
+    SIZE_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 /// Scan the workshop directory and return all installed mods with metadata.
 /// Reads `meta.cpp` from each mod directory to extract name and ID.
@@ -84,7 +93,7 @@ pub fn scan_workshop_dir(workshop_path: &Path) -> Result<Vec<InstalledMod>> {
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
 
-        let size = du_dir(&path).unwrap_or(0);
+        let size = du_dir_cached(&path).unwrap_or(0);
         let managed = path.join(".dayz-community-hub").exists();
 
         mods.push(InstalledMod {
@@ -99,6 +108,37 @@ pub fn scan_workshop_dir(workshop_path: &Path) -> Result<Vec<InstalledMod>> {
     // Sort by name for consistent display
     mods.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     Ok(mods)
+}
+
+/// Cached directory size: skips the recursive walk when the directory's mtime
+/// has not changed since the last scan.
+fn du_dir_cached(path: &Path) -> Result<u64> {
+    // Read the directory's own mtime — changes when files are added/removed.
+    let dir_mtime = fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    // Check the cache first.
+    if let Ok(cache) = size_cache().lock() {
+        if let Some(&(cached_mtime, cached_size)) = cache.get(path) {
+            if cached_mtime == dir_mtime && dir_mtime != 0 {
+                return Ok(cached_size);
+            }
+        }
+    }
+
+    // Cache miss or mtime changed — do the full walk.
+    let size = du_dir(path)?;
+
+    // Update the cache.
+    if let Ok(mut cache) = size_cache().lock() {
+        cache.insert(path.to_path_buf(), (dir_mtime, size));
+    }
+
+    Ok(size)
 }
 
 /// Calculate total directory size recursively.

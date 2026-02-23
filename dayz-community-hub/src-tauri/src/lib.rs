@@ -10,15 +10,35 @@ use dayz_community_hub_core::{
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::sync::OnceLock;
 use tauri::{ipc::Channel, AppHandle, Emitter, Manager, State};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
+
+// ─── Shared HTTP client (insecure) ────────────────────────────────────────────
+//
+// DayZ's CDN and news API use certificates that fail standard validation.
+// We build one client once and reuse it across all fetch_image /
+// fetch_steam_avatar / fetch_news calls to keep the connection pool alive.
+
+static INSECURE_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+fn insecure_client() -> &'static reqwest::Client {
+    INSECURE_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .danger_accept_invalid_certs(true)
+            .danger_accept_invalid_hostnames(true)
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0")
+            .timeout(std::time::Duration::from_secs(15))
+            .build()
+            .expect("Failed to build insecure HTTP client")
+    })
+}
 
 // ─── Shared state ─────────────────────────────────────────────────────────────
 
 pub struct AppState {
     pub ctl: DayzCtl,
     pub servers: Vec<Server>,
-    pub ping_cache: std::collections::HashMap<String, u32>,
     /// Cached Steam avatar as a data: URI. Populated by `fetch_steam_avatar`.
     pub cached_avatar: Option<String>,
     /// mod_id → remote time_updated from Steam Workshop API.
@@ -26,6 +46,10 @@ pub struct AppState {
 }
 
 type SharedState = Arc<Mutex<AppState>>;
+
+/// Ping results live in their own lock so the ~50 concurrent ping tasks never
+/// contend with unrelated IPC commands that need `AppState`.
+type PingCache = Arc<RwLock<std::collections::HashMap<String, u32>>>;
 
 // ─── Serializable DTOs ────────────────────────────────────────────────────────
 
@@ -426,12 +450,13 @@ async fn initialize(app: AppHandle) -> Result<InitResult, String> {
     let state: SharedState = Arc::new(Mutex::new(AppState {
         ctl,
         servers,
-        ping_cache: std::collections::HashMap::new(),
         cached_avatar: None,
         mod_update_cache: std::collections::HashMap::new(),
     }));
+    let ping_cache: PingCache = Arc::new(RwLock::new(std::collections::HashMap::new()));
 
     app.manage(state);
+    app.manage(ping_cache);
 
     Ok(InitResult {
         server_count,
@@ -488,11 +513,11 @@ async fn refresh_servers(state: State<'_, SharedState>) -> Result<Vec<ServerSlim
 async fn get_ping(
     ip: String,
     port: i64,
-    state: State<'_, SharedState>,
+    ping_cache: State<'_, PingCache>,
 ) -> Result<Option<u32>, String> {
-    let state = state.lock().await;
+    let cache = ping_cache.read().await;
     let key = format!("{}:{}", ip, port);
-    Ok(state.ping_cache.get(&key).copied())
+    Ok(cache.get(&key).copied())
 }
 
 /// Get the current profile.
@@ -613,20 +638,27 @@ async fn get_installed_mods(state: State<'_, SharedState>) -> Result<Vec<Install
 /// to benefit from higher rate limits.
 #[tauri::command]
 async fn check_mod_updates(state: State<'_, SharedState>) -> Result<Vec<InstalledModDto>, String> {
-    // Collect mod IDs and api key without holding the lock during network I/O
-    let (mod_ids, api_key, ctl_clone) = {
+    // Collect api key and a ctl clone without holding the lock during I/O.
+    // The filesystem scan (get_installed_mods) is done outside the lock via
+    // spawn_blocking to avoid blocking all other IPC commands.
+    let (api_key, ctl_clone) = {
         let s = state.lock().await;
-        let ids: Vec<u64> = s
-            .ctl
-            .get_installed_mods()
-            .unwrap_or_default()
-            .iter()
-            .map(|m| m.id)
-            .collect();
         let key = s.ctl.profile().steam_api_key.clone();
         let ctl = s.ctl.clone_for_launch();
-        (ids, key, ctl)
+        (key, ctl)
     };
+
+    let ctl_for_scan = {
+        let s = state.lock().await;
+        s.ctl.clone_for_launch()
+    };
+    let mod_ids: Vec<u64> = tokio::task::spawn_blocking(move || ctl_for_scan.get_installed_mods())
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
+        .unwrap_or_default()
+        .iter()
+        .map(|m| m.id)
+        .collect();
 
     if mod_ids.is_empty() {
         return Ok(vec![]);
@@ -903,6 +935,32 @@ async fn start_mod_operation(
     on_progress: Channel<ModProgressEvent>,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
+    // For "update_stale" we need to scan the filesystem to find stale mods.
+    // We do this outside the lock to avoid blocking all other IPC commands
+    // during the (potentially multi-second) workshop directory walk.
+    let stale_mods: Option<Vec<(u64, String)>> = if op_type == "update_stale" {
+        let (update_cache, ctl_clone) = {
+            let s = state.lock().await;
+            (s.mod_update_cache.clone(), s.ctl.clone_for_launch())
+        };
+        let stale = tokio::task::spawn_blocking(move || ctl_clone.get_installed_mods())
+            .await
+            .map_err(|e| format!("Task join error: {}", e))?
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|m| {
+                update_cache
+                    .get(&m.id)
+                    .map(|&r| r > m.local_updated)
+                    .unwrap_or(false)
+            })
+            .map(|m| (m.id, m.name.clone()))
+            .collect::<Vec<_>>();
+        Some(stale)
+    } else {
+        None
+    };
+
     let mut rx = {
         let state = state.lock().await;
         let op = match op_type.as_str() {
@@ -925,19 +983,9 @@ async fn start_mod_operation(
                 }
             }
             "update_all" => ModOperation::UpdateAll,
-            "update_stale" => {
-                // `state` is already the held MutexGuard here — use it directly
-                let cache = &state.mod_update_cache;
-                let stale = state
-                    .ctl
-                    .get_installed_mods()
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|m| cache.get(&m.id).map(|&r| r > m.local_updated).unwrap_or(false))
-                    .map(|m| (m.id, m.name.clone()))
-                    .collect::<Vec<_>>();
-                ModOperation::UpdateStale { stale_mods: stale }
-            }
+            "update_stale" => ModOperation::UpdateStale {
+                stale_mods: stale_mods.unwrap_or_default(),
+            },
             "update_one" => ModOperation::UpdateOne {
                 mod_id: mod_id.ok_or("mod_id required")?,
                 name: mod_name.unwrap_or_default(),
@@ -1073,13 +1121,7 @@ async fn query_a2s(
 /// return it as a `data:<mime>;base64,<bytes>` URI ready for use in <img src>.
 #[tauri::command]
 async fn fetch_image(url: String) -> Result<String, String> {
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
-        .danger_accept_invalid_hostnames(true)
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0")
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = insecure_client();
     let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
     let content_type = resp
         .headers()
@@ -1099,12 +1141,10 @@ async fn fetch_image(url: String) -> Result<String, String> {
 
 /// Fetch the latest news articles.
 #[tauri::command]
-async fn fetch_news(state: State<'_, SharedState>) -> Result<Vec<ArticleDto>, String> {
-    let client = {
-        let state = state.lock().await;
-        state.ctl.http_client().clone()
-    };
-    let articles = news::fetch_news(&client).await.map_err(|e| e.to_string())?;
+async fn fetch_news() -> Result<Vec<ArticleDto>, String> {
+    // Use the shared insecure client — dayz.com API requires cert validation
+    // to be disabled, and reusing the client keeps the connection pool alive.
+    let articles = news::fetch_news(insecure_client()).await.map_err(|e| e.to_string())?;
     Ok(articles
         .iter()
         .map(|a| ArticleDto {
@@ -1169,11 +1209,7 @@ async fn fetch_steam_avatar(state: State<'_, SharedState>) -> Result<Option<Stri
         api_key, steam_id
     );
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .user_agent("Mozilla/5.0")
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = insecure_client();
 
     let resp: serde_json::Value = client
         .get(&url)
@@ -1311,6 +1347,7 @@ async fn start_pinging(
     targets: Vec<String>, // "ip:port" strings to ping (sent by frontend)
     on_result: Channel<PingResultDto>,
     state: State<'_, SharedState>,
+    ping_cache: State<'_, PingCache>,
 ) -> Result<(), String> {
     // Deduplicate and collect endpoints
     let mut endpoints: Vec<(String, i64)> = Vec::new();
@@ -1338,7 +1375,8 @@ async fn start_pinging(
         }
     }
 
-    let state_arc = state.inner().clone();
+    // Clone the Arc so the spawned task owns it — no AppState lock needed.
+    let ping_cache_arc = ping_cache.inner().clone();
     let semaphore = Arc::new(tokio::sync::Semaphore::new(50)); // max 50 concurrent pings
 
     tokio::spawn(async move {
@@ -1346,7 +1384,7 @@ async fn start_pinging(
         for (ip, port) in endpoints {
             let ip_clone = ip.clone();
             let on_result_clone = on_result.clone();
-            let state_clone = state_arc.clone();
+            let cache_clone = ping_cache_arc.clone();
             let permit = semaphore.clone();
 
             let handle = tokio::spawn(async move {
@@ -1362,10 +1400,9 @@ async fn start_pinging(
                 };
                 if let Ok(ms) = a2s_query::ping_server(&server).await {
                     let key = format!("{}:{}", ip_clone, port);
-                    {
-                        let mut state = state_clone.lock().await;
-                        state.ping_cache.insert(key, ms);
-                    }
+                    // Use a write lock on the dedicated ping cache — this never
+                    // blocks commands that only need AppState.
+                    cache_clone.write().await.insert(key, ms);
                     let _ = on_result_clone.send(PingResultDto {
                         ip: ip_clone,
                         port,

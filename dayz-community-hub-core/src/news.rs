@@ -143,18 +143,12 @@ pub struct NewsResponse {
 /// Fetch the latest DayZ news articles.
 /// Matches the bash script's `updateDayzNews()` / `getDayzNews()`.
 ///
-/// dayz.com uses a self-signed / expired cert on its API path, so we build a
-/// dedicated client that skips TLS verification (same as `curl --insecure` in
-/// the bash script). We also set a browser UA to avoid 403s.
-pub async fn fetch_news(_client: &reqwest::Client) -> Result<Vec<Article>> {
-    let insecure_client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
-        .user_agent("Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0")
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| crate::errors::Error::Other(format!("Failed to build news client: {}", e)))?;
-
-    let resp = insecure_client
+/// dayz.com uses a self-signed / expired cert on its API path, so the caller
+/// must supply an insecure `reqwest::Client` (TLS verification disabled).
+/// Using a shared, long-lived client keeps the connection pool alive between
+/// calls instead of establishing a new TLS handshake each time.
+pub async fn fetch_news(client: &reqwest::Client) -> Result<Vec<Article>> {
+    let resp = client
         .get("https://dayz.com/api/article")
         .query(&[("rowsPerPage", "50")])
         .send()

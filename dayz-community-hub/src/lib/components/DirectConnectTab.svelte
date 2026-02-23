@@ -39,18 +39,30 @@
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
+  /** Server found in the cached list by IP + port. */
+  let foundServer = $derived((() => {
+    const p = parseInt(port, 10);
+    if (!address || isNaN(p)) return null;
+    return (
+      servers.find(
+        (s) =>
+          s.ip === address.trim() &&
+          (s.query_port === p || s.game_port === p)
+      ) ?? null
+    );
+  })());
+
   /** True if the current ip:port (or any related port) is already a favorite. */
-  let isFavorite = $derived(() => {
+  let isFavorite = $derived((() => {
     const ip = address.trim();
     const p = parseInt(port, 10);
     if (!ip || isNaN(p)) return false;
     // Check the typed port directly
     if (favorites.has(`${ip}:${p}`)) return true;
     // Also check game_port / query_port from the matched server
-    const fs = foundServer();
-    if (!fs) return false;
-    return favorites.has(`${ip}:${fs.game_port}`) || favorites.has(`${ip}:${fs.query_port}`);
-  });
+    if (!foundServer) return false;
+    return favorites.has(`${ip}:${foundServer.game_port}`) || favorites.has(`${ip}:${foundServer.query_port}`);
+  })());
 
   function parseAddress() {
     const raw = address.trim();
@@ -63,19 +75,6 @@
       }
     }
   }
-
-  /** Server found in the cached list by IP + port. */
-  let foundServer = $derived(() => {
-    const p = parseInt(port, 10);
-    if (!address || isNaN(p)) return null;
-    return (
-      servers.find(
-        (s) =>
-          s.ip === address.trim() &&
-          (s.query_port === p || s.game_port === p)
-      ) ?? null
-    );
-  });
 
   function playerBarColor(players: number, max: number): string {
     if (players >= max) return 'bg-error';
@@ -120,7 +119,7 @@
 
     try {
       // 1. Server found in list — use authoritative query port, no guessing needed.
-      const fs = foundServer();
+      const fs = foundServer;
       if (fs) {
         a2s = await tryQuery(ip, fs.query_port);
         resolvedQueryPort = fs.query_port;
@@ -165,20 +164,18 @@
   }
 
   // Server name to show: prefer a2s (live) > fullServer > foundServer
-  let displayName = $derived(() => {
-    if (a2s) return a2s.server_name;
-    const fs = foundServer();
-    return fs?.name ?? '';
-  });
+  let displayName = $derived(
+    a2s ? a2s.server_name : (foundServer?.name ?? '')
+  );
 
   // Mods: prefer fullServer (has IDs) > a2s.mods
-  let displayMods = $derived(() => {
-    if (fullServer && fullServer.mods.length > 0) return fullServer.mods;
-    if (a2s && a2s.mods.length > 0) return a2s.mods;
-    return [];
-  });
+  let displayMods = $derived(
+    (fullServer && fullServer.mods.length > 0)
+      ? fullServer.mods
+      : (a2s && a2s.mods.length > 0 ? a2s.mods : [])
+  );
 
-  let showCard = $derived(() => !!(a2s || foundServer()));
+  let showCard = $derived(!!(a2s || foundServer));
 </script>
 
 <div class="flex flex-col h-full overflow-auto">
@@ -221,9 +218,9 @@
             <label class="label py-0 pb-1.5" for="dc-port">
               <span class="label-text text-xs text-base-content/60 flex items-center gap-1.5">
                 <Icon icon="ph:plugs" class="size-3.5" />
-                {#if foundServer() && parseInt(port, 10) === foundServer()?.game_port}
+                {#if foundServer && parseInt(port, 10) === foundServer?.game_port}
                   Port <span class="text-amber-400 ml-1">(game)</span>
-                {:else if foundServer() && parseInt(port, 10) === foundServer()?.query_port}
+                {:else if foundServer && parseInt(port, 10) === foundServer?.query_port}
                   Port <span class="text-sky-400 ml-1">(query)</span>
                 {:else}
                   Port
@@ -311,14 +308,14 @@
     {/if}
 
     <!-- Rich server info card -->
-    {#if showCard()}
-      {@const fs = foundServer()}
+    {#if showCard}
+      {@const fs = foundServer}
       {@const players = a2s?.players ?? fs?.players ?? 0}
       {@const maxPlayers = a2s?.max_players ?? fs?.max_players ?? 0}
       {@const map = a2s?.map ?? fs?.map ?? ''}
       {@const version = a2s?.version ?? fs?.version ?? ''}
-      {@const mods = displayMods()}
-      {@const name = displayName()}
+      {@const mods = displayMods}
+      {@const name = displayName}
 
       <div class="rounded-xl border border-base-300 bg-base-100 overflow-hidden">
 
@@ -377,7 +374,7 @@
               {/if}
             </div>
           </div>
-          {#if isFavorite()}
+          {#if isFavorite}
             <span class="btn btn-ghost btn-xs btn-square shrink-0 cursor-default" title="Already in favorites">
               <Icon icon="ph:star-fill" class="size-4 text-warning" />
             </span>

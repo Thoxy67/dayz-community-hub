@@ -29,6 +29,17 @@
   }: Props = $props();
 
   let searchQuery = $state('');
+  // Deferred version of searchQuery: updated 150ms after the user stops typing.
+  // The filtered derived uses this so the expensive 10k-server scan only fires
+  // once per typing pause rather than on every keystroke.
+  let deferredQuery = $state('');
+  let _searchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => {
+    const q = searchQuery;
+    clearTimeout(_searchDebounceTimer);
+    _searchDebounceTimer = setTimeout(() => { deferredQuery = q; }, 150);
+    return () => clearTimeout(_searchDebounceTimer);
+  });
   let filterMap = $state('');            // '' = all maps
   type ModFilter = 'both' | 'mods-only' | 'no-mods';
   let filterMods = $state<ModFilter>('both');
@@ -143,9 +154,13 @@
 
   function pingKey(s: ServerDto) { return `${s.ip}:${s.query_port}`; }
 
+  // Sorted list of unique map names — rebuilt only when servers changes,
+  // not on every render (was previously computed inline in the {#each}).
+  let uniqueMaps = $derived([...new Set(servers.map((s) => s.map))].sort());
+
   let filtered = $derived((() => {
     let list = servers;
-    const q = searchQuery.trim().toLowerCase();
+    const q = deferredQuery.trim().toLowerCase();
     if (q) {
       list = list.filter(
         (s) =>
@@ -166,17 +181,15 @@
     return list;
   })());
 
-  let sorted = $derived((() => {
-    if (sortCol === 'none') return filtered;
+  // When sorting by ping we need to read pingCache, which updates on every
+  // ping result.  For all other sort columns pingCache is irrelevant, so we
+  // deliberately avoid reading it here — keeping those sorts cheap.
+  let sortedNoPing = $derived((() => {
+    if (sortCol === 'none' || sortCol === 'ping') return filtered;
     const arr = filtered.slice();
     const dir = sortAsc ? 1 : -1;
     arr.sort((a, b) => {
       switch (sortCol) {
-        case 'ping': {
-          const pa = pingCache.get(pingKey(a)) ?? Infinity;
-          const pb = pingCache.get(pingKey(b)) ?? Infinity;
-          return dir * (pa - pb);
-        }
         case 'players':
           return dir * (a.players - b.players);
         case 'name':
@@ -188,6 +201,20 @@
         default:
           return 0;
       }
+    });
+    return arr;
+  })());
+
+  // Separate derived that reads pingCache — only invalidated by ping updates
+  // when the user has explicitly chosen to sort by ping.
+  let sorted = $derived((() => {
+    if (sortCol !== 'ping') return sortedNoPing;
+    const arr = sortedNoPing.length === filtered.length ? filtered.slice() : sortedNoPing.slice();
+    const dir = sortAsc ? 1 : -1;
+    arr.sort((a, b) => {
+      const pa = pingCache.get(pingKey(a)) ?? Infinity;
+      const pb = pingCache.get(pingKey(b)) ?? Infinity;
+      return dir * (pa - pb);
     });
     return arr;
   })());
@@ -295,8 +322,8 @@
   }
 
   $effect(() => {
-    // Re-run whenever search text or any flag filter changes
-    searchQuery; filterFirstPerson; filterPassword; filterBE; filterMods; filterMap;
+    // Re-run whenever the debounced search text or any flag filter changes
+    deferredQuery; filterFirstPerson; filterPassword; filterBE; filterMods; filterMap;
     selectedIndex = 0;
     a2s = null;
     if (scrollContainer) scrollContainer.scrollTop = 0;
@@ -412,7 +439,7 @@
         bind:value={filterMap}
       >
         <option value="">All maps</option>
-        {#each [...new Set(servers.map((s) => s.map))].sort() as map}
+        {#each uniqueMaps as map}
           <option value={map}>{map}</option>
         {/each}
       </select>

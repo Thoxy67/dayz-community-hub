@@ -23,30 +23,39 @@
   let mods = $state<ModDto[]>([]);
   let modsLoading = $state(false);
   let lastFetchedKey = $state('');
+  let _detailDebounce: ReturnType<typeof setTimeout> | undefined;
 
-  // Fetch full details when server changes
+  // Fetch full mod list when the selected server changes.
+  // A 200ms debounce prevents firing an IPC call for every row the user
+  // passes through while scrolling/navigating the server list quickly.
   $effect(() => {
     const key = `${server.ip}:${server.query_port}`;
-    if (key !== lastFetchedKey) {
-      lastFetchedKey = key;
-      mods = [];
-      if (server.mods_count > 0) {
-        modsLoading = true;
-        invoke<ServerFullDto>('get_server_details', { ip: server.ip, port: server.query_port })
-          .then((full) => {
-            // Guard: only apply if we're still looking at the same server
-            if (`${server.ip}:${server.query_port}` === key) {
-              mods = full.mods;
-            }
-          })
-          .catch(() => {
-            mods = [];
-          })
-          .finally(() => {
-            modsLoading = false;
-          });
-      }
-    }
+    const count = server.mods_count;
+
+    if (key === lastFetchedKey) return;
+
+    // Clear any pending fetch for a previous server
+    clearTimeout(_detailDebounce);
+    mods = [];
+    lastFetchedKey = key;
+
+    if (count === 0) return;
+
+    _detailDebounce = setTimeout(() => {
+      // Re-check: user may have moved away during the debounce window
+      if (`${server.ip}:${server.query_port}` !== key) return;
+      modsLoading = true;
+      invoke<ServerFullDto>('get_server_details', { ip: server.ip, port: server.query_port })
+        .then((full) => {
+          if (`${server.ip}:${server.query_port}` === key) {
+            mods = full.mods;
+          }
+        })
+        .catch(() => { mods = []; })
+        .finally(() => { modsLoading = false; });
+    }, 200);
+
+    return () => clearTimeout(_detailDebounce);
   });
 
   function pingColor(ms: number | null): string {

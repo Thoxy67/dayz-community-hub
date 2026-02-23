@@ -104,17 +104,25 @@ pub fn load_server_list_cache(cache_path: &std::path::Path) -> Option<ServerList
     serde_json::from_slice(&data).ok()
 }
 
+/// Serialization-only view of the cache that borrows the list instead of cloning it.
+#[derive(Serialize)]
+struct ServerListCacheRef<'a> {
+    fetched_at: u64,
+    list: &'a ServerList,
+}
+
 /// Persist a freshly-fetched server list to disk.
+/// Serializes from a reference to avoid cloning the entire Vec<Server>.
 pub fn save_server_list_cache(cache_path: &std::path::Path, list: &ServerList) {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let cache = ServerListCache {
+    let cache_ref = ServerListCacheRef {
         fetched_at: now,
-        list: list.clone(),
+        list,
     };
-    if let Ok(data) = serde_json::to_vec(&cache) {
+    if let Ok(data) = serde_json::to_vec(&cache_ref) {
         let _ = std::fs::write(cache_path, data);
     }
 }

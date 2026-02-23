@@ -62,8 +62,13 @@
   let offlineStatusKind = $state<'info' | 'success' | 'error' | 'warning'>('info');
 
   let serversLoading = $state(false);
+  let serversRefreshing = $state(false); // guard: prevent concurrent refresh_servers calls
   let modsLoading = $state(false);
   let modsChecking = $state(false);
+  // Timestamp of the last successful checkModUpdates call (ms since epoch, 0 = never).
+  // Used to throttle the Steam Workshop API call to at most once per 5 minutes.
+  let modUpdatesLastChecked = $state(0);
+  const MOD_UPDATES_TTL_MS = 5 * 60 * 1000;
   let newsLoading = $state(false);
   let offlineLoading = $state(false);
 
@@ -125,6 +130,8 @@
   }
 
   async function refreshServers() {
+    if (serversRefreshing) return;
+    serversRefreshing = true;
     serversLoading = true;
     setStatus('Refreshing server list…', 'info');
     try {
@@ -135,6 +142,7 @@
       setStatus(`Refresh failed: ${e}`, 'error');
     } finally {
       serversLoading = false;
+      serversRefreshing = false;
     }
   }
 
@@ -157,10 +165,13 @@
     }
   }
 
-  async function checkModUpdates() {
+  async function checkModUpdates(force = false) {
+    const now = Date.now();
+    if (!force && now - modUpdatesLastChecked < MOD_UPDATES_TTL_MS) return;
     modsChecking = true;
     try {
       installedMods = await invoke<InstalledModDto[]>('check_mod_updates');
+      modUpdatesLastChecked = Date.now();
     } catch (e) {
       setStatus(`Update check failed: ${e}`, 'error');
     } finally {
@@ -230,7 +241,10 @@
 
     const onResult = new Channel<PingResult>();
     onResult.onmessage = (msg) => {
-      pingCache = new Map(pingCache).set(`${msg.ip}:${msg.port}`, msg.ms);
+      // Mutate in-place: Svelte 5 tracks Map mutations reactively, so we
+      // avoid creating a new Map object on every ping result (which would
+      // trigger a full re-render of all server rows for each of ~300 pings).
+      pingCache.set(`${msg.ip}:${msg.port}`, msg.ms);
     };
     invoke('start_pinging', { targets, onResult }).catch(() => {});
   }
@@ -270,12 +284,16 @@
 
   /** Silent background refresh — updates servers without blocking UI */
   async function refreshServersBackground() {
+    if (serversRefreshing) return;
+    serversRefreshing = true;
     try {
       const freshServers = await invoke<ServerDto[]>('refresh_servers');
       servers = freshServers;
       loadStats(); // Update stats with fresh data
     } catch {
       // Non-fatal — we already have cached data
+    } finally {
+      serversRefreshing = false;
     }
   }
 
@@ -378,26 +396,44 @@
   }
 
   // ── Favorites ─────────────────────────────────────────────────────────────
+
+  /** Append a favorite to local profile state without a round-trip. */
+  function profileAddFavorite(name: string, ip: string, port: number) {
+    if (!profile) return;
+    // Avoid duplicates
+    if (!profile.favorites.some((f) => f.ip === ip && f.port === port)) {
+      profile.favorites = [...profile.favorites, { name, ip, port }];
+    }
+  }
+
+  /** Remove a favorite from local profile state without a round-trip. */
+  function profileRemoveFavorite(ip: string, port: number) {
+    if (!profile) return;
+    profile.favorites = profile.favorites.filter((f) => !(f.ip === ip && f.port === port));
+  }
+
   async function addFavorite(server: ServerDto) {
     try {
+      profileAddFavorite(server.name, server.ip, server.query_port);
       await invoke('add_favorite', {
         name: server.name,
         ip: server.ip,
         port: server.query_port,
       });
-      await loadProfile();
       setStatus(`Added ${server.name} to favorites`, 'success');
     } catch (e) {
+      await loadProfile(); // Revert on error
       setStatus(`Failed: ${e}`, 'error');
     }
   }
 
   async function addFavoriteDirect(name: string, ip: string, port: number) {
     try {
+      profileAddFavorite(name, ip, port);
       await invoke('add_favorite', { name, ip, port });
-      await loadProfile();
       setStatus(`Added ${name} to favorites`, 'success');
     } catch (e) {
+      await loadProfile();
       setStatus(`Failed: ${e}`, 'error');
     }
   }
@@ -407,9 +443,14 @@
       title: 'Remove Favorite',
       message: `Remove '${fav.name}' from favorites?`,
       onConfirm: async () => {
-        await invoke('remove_favorite', { ip: fav.ip, port: fav.port });
-        await loadProfile();
-        setStatus('Removed from favorites', 'success');
+        try {
+          profileRemoveFavorite(fav.ip, fav.port);
+          await invoke('remove_favorite', { ip: fav.ip, port: fav.port });
+          setStatus('Removed from favorites', 'success');
+        } catch (e) {
+          await loadProfile();
+          setStatus(`Failed: ${e}`, 'error');
+        }
       },
     };
   }
@@ -417,10 +458,11 @@
   /** Instant (no confirm dialog) remove — used by toggle stars in server/history lists. */
   async function removeFavoriteQuick(ip: string, port: number) {
     try {
+      profileRemoveFavorite(ip, port);
       await invoke('remove_favorite', { ip, port });
-      await loadProfile();
       setStatus('Removed from favorites', 'success');
     } catch (e) {
+      await loadProfile();
       setStatus(`Failed: ${e}`, 'error');
     }
   }
@@ -486,9 +528,14 @@
       title: 'Remove Entry',
       message: `Remove '${h.name}' from history?`,
       onConfirm: async () => {
-        await invoke('remove_history_entry', { ip: h.ip, port: h.port });
-        await loadProfile();
-        setStatus('Removed from history', 'success');
+        try {
+          if (profile) profile.history = profile.history.filter((e) => !(e.ip === h.ip && e.port === h.port));
+          await invoke('remove_history_entry', { ip: h.ip, port: h.port });
+          setStatus('Removed from history', 'success');
+        } catch (e) {
+          await loadProfile();
+          setStatus(`Failed: ${e}`, 'error');
+        }
       },
     };
   }
@@ -498,19 +545,25 @@
       title: 'Clear History',
       message: `Clear all ${profile?.history.length ?? 0} history entries?`,
       onConfirm: async () => {
-        await invoke('clear_history');
-        await loadProfile();
-        setStatus('History cleared', 'success');
+        try {
+          if (profile) profile.history = [];
+          await invoke('clear_history');
+          setStatus('History cleared', 'success');
+        } catch (e) {
+          await loadProfile();
+          setStatus(`Failed: ${e}`, 'error');
+        }
       },
     };
   }
 
   async function addFavoriteFromHistory(h: HistoryDto) {
     try {
+      profileAddFavorite(h.name, h.ip, h.port);
       await invoke('add_favorite', { name: h.name, ip: h.ip, port: h.port });
-      await loadProfile();
       setStatus(`Added ${h.name} to favorites`, 'success');
     } catch (e) {
+      await loadProfile();
       setStatus(`Failed: ${e}`, 'error');
     }
   }
@@ -599,19 +652,42 @@
   }
 
   async function toggleOption(key: string) {
+    // Optimistically flip the option in local state — backend returns the new bool
+    const prev = profile?.options.find((o) => o.key === key)?.enabled;
+    if (profile) {
+      profile.options = profile.options.map((o) =>
+        o.key === key ? { ...o, enabled: !o.enabled } : o
+      );
+    }
     try {
-      await invoke('toggle_launch_option', { key });
-      await loadProfile();
+      await invoke<boolean>('toggle_launch_option', { key });
     } catch (e) {
+      // Revert on failure
+      if (profile) {
+        profile.options = profile.options.map((o) =>
+          o.key === key ? { ...o, enabled: prev ?? o.enabled } : o
+        );
+      }
       setStatus(`Failed: ${e}`, 'error');
     }
   }
 
   async function setOptionValue(key: string, value: string | null) {
+    const prevOpt = profile?.options.find((o) => o.key === key);
+    if (profile) {
+      profile.options = profile.options.map((o) =>
+        o.key === key ? { ...o, value, enabled: value !== null ? true : o.enabled } : o
+      );
+    }
     try {
       await invoke('set_launch_option_value', { key, value });
-      await loadProfile();
     } catch (e) {
+      // Revert on failure
+      if (profile && prevOpt) {
+        profile.options = profile.options.map((o) =>
+          o.key === key ? { ...prevOpt } : o
+        );
+      }
       setStatus(`Failed: ${e}`, 'error');
     }
   }
@@ -694,7 +770,8 @@
 
   function dismissModOp() {
     modOp.active = false;
-    loadMods().then(() => checkModUpdates());
+    // Force a fresh update check after a mod operation completes.
+    loadMods().then(() => checkModUpdates(true));
     loadStats();
   }
 
@@ -738,6 +815,7 @@
 
     return () => {
       cleanupFns.forEach((fn) => fn());
+      if (statusTimeout) clearTimeout(statusTimeout);
     };
   });
 </script>
@@ -808,8 +886,8 @@
         loading={modsLoading}
         checking={modsChecking}
         staleCount={staleModCount}
-        onRefresh={() => loadMods().then(() => checkModUpdates())}
-        onCheckUpdates={checkModUpdates}
+        onRefresh={() => loadMods().then(() => checkModUpdates(true))}
+        onCheckUpdates={() => checkModUpdates(true)}
         onDelete={deleteMod}
         onToggleManaged={toggleModManaged}
         onUpdate={updateMod}

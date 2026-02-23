@@ -34,12 +34,19 @@
     return sortAsc ? 'ph:arrow-up' : 'ph:arrow-down';
   }
 
+  // Pre-built lookup map: both "ip:query_port" and "ip:game_port" → server.
+  // Rebuilt only when `servers` changes (O(n) once) so per-row lookups are O(1).
+  let serverByKey = $derived((() => {
+    const m = new Map<string, ServerDto>();
+    for (const s of servers) {
+      m.set(`${s.ip}:${s.query_port}`, s);
+      m.set(`${s.ip}:${s.game_port}`, s);
+    }
+    return m;
+  })());
+
   function findServer(fav: FavoriteDto): ServerDto | null {
-    return (
-      servers.find(
-        (s) => s.ip === fav.ip && (s.query_port === fav.port || s.game_port === fav.port)
-      ) ?? null
-    );
+    return serverByKey.get(`${fav.ip}:${fav.port}`) ?? null;
   }
 
   /** Best ping key for a favorite: prefer server's query_port, fall back to fav.port. */

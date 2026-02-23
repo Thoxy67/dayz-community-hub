@@ -89,15 +89,25 @@ pub async fn ping_server(server: &Server) -> Result<u32> {
     }
 }
 
-/// Get comprehensive server information including players and rules
+/// Get comprehensive server information including players and rules.
+///
+/// All three A2S queries (info, players, rules) are issued concurrently via
+/// `tokio::join!` — wall-clock time is ~1 RTT instead of ~3 RTTs.
+/// The ping is measured as the time until the first response (info) arrives,
+/// which is the most meaningful latency indicator for the user.
 pub async fn get_server_details(server: &Server) -> Result<ServerDetails> {
-    // Measure ping during info query
     let start = Instant::now();
-    let info = query_server_info(server).await?;
-    let ping_ms = start.elapsed().as_millis() as u32;
 
-    let players = query_player_info(server).await.ok();
-    let rules = query_rules(server).await.ok();
+    let (info_result, players_result, rules_result) = tokio::join!(
+        query_server_info(server),
+        query_player_info(server),
+        query_rules(server),
+    );
+
+    let ping_ms = start.elapsed().as_millis() as u32;
+    let info = info_result?;
+    let players = players_result.ok();
+    let rules = rules_result.ok();
 
     Ok(ServerDetails {
         info,

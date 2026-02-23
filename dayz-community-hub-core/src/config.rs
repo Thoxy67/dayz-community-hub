@@ -1,5 +1,6 @@
 use crate::Result;
 use serde::{Deserialize, Deserializer, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -564,16 +565,27 @@ impl Profile {
         &'a self,
         servers: &'a [crate::api::Server],
     ) -> Vec<FavoriteStatus<'a>> {
-        let mut result = Vec::new();
-        for favorite in &self.favorites {
-            let server = servers.iter().find(|s| {
-                s.endpoint.ip == favorite.ip
-                    && (s.endpoint.port as u16 == favorite.port
-                        || s.game_port as u16 == favorite.port)
-            });
-            result.push(FavoriteStatus { favorite, server });
+        // Build O(1) lookup maps keyed by both query port and game port so each
+        // favorite look-up is O(1) instead of O(n) (was O(n×m) overall).
+        let mut by_query: HashMap<(&str, u16), &crate::api::Server> =
+            HashMap::with_capacity(servers.len());
+        let mut by_game: HashMap<(&str, u16), &crate::api::Server> =
+            HashMap::with_capacity(servers.len());
+        for s in servers {
+            by_query.insert((s.endpoint.ip.as_str(), s.endpoint.port as u16), s);
+            by_game.insert((s.endpoint.ip.as_str(), s.game_port as u16), s);
         }
-        result
+
+        self.favorites
+            .iter()
+            .map(|favorite| {
+                let server = by_query
+                    .get(&(favorite.ip.as_str(), favorite.port))
+                    .or_else(|| by_game.get(&(favorite.ip.as_str(), favorite.port)))
+                    .copied();
+                FavoriteStatus { favorite, server }
+            })
+            .collect()
     }
 }
 

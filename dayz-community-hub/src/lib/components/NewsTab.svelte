@@ -16,21 +16,63 @@
   let selected = $derived(articles[selectedIndex] ?? null);
 
   // ── Image fetching (bypass WebKit TLS) ────────────────────────────────────
+
+  // LRU-capped image cache: keeps the last MAX_CACHE_SIZE entries to avoid
+  // unbounded base64 string accumulation (each image can be 100-300 KB).
+  const MAX_CACHE_SIZE = 30;
   const imgCache = new Map<string, string>();
+
+  function cacheSet(url: string, uri: string) {
+    if (imgCache.size >= MAX_CACHE_SIZE) {
+      // Evict the oldest entry (Map preserves insertion order)
+      imgCache.delete(imgCache.keys().next().value!);
+    }
+    imgCache.set(url, uri);
+  }
+
+  // Concurrency limiter: at most MAX_CONCURRENT fetches at a time.
+  // Extra requests are queued and drained as slots free up.
+  const MAX_CONCURRENT = 5;
+  let activeCount = 0;
+  const fetchQueue: Array<() => void> = [];
+
+  function drainQueue() {
+    while (activeCount < MAX_CONCURRENT && fetchQueue.length > 0) {
+      activeCount++;
+      fetchQueue.shift()!();
+    }
+  }
 
   async function fetchImage(url: string): Promise<string> {
     if (imgCache.has(url)) return imgCache.get(url)!;
-    const dataUri = await invoke<string>('fetch_image', { url });
-    imgCache.set(url, dataUri);
-    return dataUri;
+
+    // Wait for a concurrency slot
+    await new Promise<void>((resolve) => {
+      fetchQueue.push(resolve);
+      drainQueue();
+    });
+
+    try {
+      const dataUri = await invoke<string>('fetch_image', { url });
+      cacheSet(url, dataUri);
+      return dataUri;
+    } finally {
+      activeCount--;
+      drainQueue();
+    }
   }
 
   /** Svelte action: rewrite every <img src> inside the node to a data: URI. */
   function rustImages(node: HTMLElement) {
+    const rewritten = new WeakSet<HTMLImageElement>();
+
     function rewrite() {
       node.querySelectorAll<HTMLImageElement>('img[src]').forEach((img) => {
         const src = img.getAttribute('src');
-        if (!src || src.startsWith('data:') || src.startsWith('blob:')) return;
+        // Skip already-rewritten images and data/blob URIs to avoid
+        // re-triggering the MutationObserver when we set img.src.
+        if (!src || src.startsWith('data:') || src.startsWith('blob:') || rewritten.has(img)) return;
+        rewritten.add(img);
         img.removeAttribute('src');
         fetchImage(src)
           .then((uri) => { img.src = uri; })
@@ -54,6 +96,8 @@
       thumbs = Array(articles.length).fill(null);
       thumbFetching.clear();
     }
+    // Queue thumbnail fetches — the concurrency limiter above ensures at most
+    // MAX_CONCURRENT fetch_image IPC calls are in-flight at any time.
     articles.forEach((article, i) => {
       if (thumbFetching.has(i) || !article.image_url) return;
       thumbFetching.add(i);
