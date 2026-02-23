@@ -1,7 +1,15 @@
 <script lang="ts">
   import type { InstalledModDto } from '$lib/types';
   import { openUrl } from '@tauri-apps/plugin-opener';
+  import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import Icon from '@iconify/svelte';
+
+  let copiedKey = $state('');
+  async function copyText(key: string, text: string) {
+    await writeText(text);
+    copiedKey = key;
+    setTimeout(() => { if (copiedKey === key) copiedKey = ''; }, 1500);
+  }
 
   interface Props {
     mods: InstalledModDto[];
@@ -169,7 +177,7 @@
             <th class="w-20 px-3 py-2 font-medium text-right">Size</th>
             <th class="w-28 px-3 py-2 font-medium text-left">Local</th>
             <th class="w-28 px-3 py-2 font-medium text-left">Remote</th>
-            <th class="w-16 px-3 py-2 font-medium text-center">Status</th>
+            <th class="w-16 px-3 py-2 font-medium text-center" title="UPDATE = new version on Workshop; OK = up to date; MANAGED = tracked but not yet checked for updates">Status</th>
             <th class="w-24 px-3 py-2"></th>
           </tr>
         </thead>
@@ -191,21 +199,44 @@
                   {:else}
                     <Icon icon="mdi:puzzle-outline" class="size-3.5 text-base-content/20 shrink-0" />
                   {/if}
-                  <span class="truncate font-medium text-base-content/90
-                               {stale ? 'text-base-content' : ''}">{mod.name}</span>
+                  <button
+                    class="truncate font-medium text-base-content/90 hover:text-base-content transition-colors text-left group/name
+                           {stale ? 'text-base-content' : ''}"
+                    title="Copy mod name"
+                    onclick={() => copyText(`name-${mod.id}`, mod.name)}
+                  >
+                    {#if copiedKey === `name-${mod.id}`}
+                      <span class="text-success text-xs font-normal">Copied!</span>
+                    {:else}
+                      {mod.name}
+                    {/if}
+                  </button>
                 </div>
               </td>
 
               <!-- Workshop ID -->
               <td class="px-3 py-2">
-                <button
-                  class="font-mono text-base-content/45 hover:text-primary transition-colors flex items-center gap-1 group/ws"
-                  onclick={() => openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.id}`)}
-                  title="Open on Steam Workshop"
-                >
-                  {mod.id}
-                  <Icon icon="mdi:steam" class="size-3 opacity-0 group-hover/ws:opacity-100 transition-opacity" />
-                </button>
+                <div class="flex items-center gap-1 group/ws">
+                  <button
+                    class="font-mono text-base-content/45 hover:text-primary transition-colors flex items-center gap-1"
+                    onclick={() => openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.id}`)}
+                    title="Open on Steam Workshop"
+                  >
+                    {mod.id}
+                    <Icon icon="mdi:steam" class="size-3 opacity-0 group-hover/ws:opacity-100 transition-opacity" />
+                  </button>
+                  <button
+                    class="opacity-0 group-hover/ws:opacity-100 transition-opacity text-base-content/40 hover:text-base-content/80"
+                    title="Copy workshop ID"
+                    onclick={() => copyText(`ws-${mod.id}`, String(mod.id))}
+                  >
+                    {#if copiedKey === `ws-${mod.id}`}
+                      <Icon icon="ph:check" class="size-3 text-success" />
+                    {:else}
+                      <Icon icon="ph:copy" class="size-3" />
+                    {/if}
+                  </button>
+                </div>
               </td>
 
               <!-- Size -->
@@ -262,7 +293,10 @@
                     </button>
                   </span>
                   <!-- Toggle managed -->
-                  <span title={mod.managed ? 'Unmanage' : 'Mark as managed'}>
+                  <span title={mod.managed
+                    ? 'Managed: this mod is tracked and included when connecting to modded servers. Click to unmanage.'
+                    : 'Unmanaged: this mod is installed but not tracked. Click to mark as managed so it is included in server connections.'
+                  }>
                     <button
                       class="size-6 rounded flex items-center justify-center transition-colors
                              {mod.managed

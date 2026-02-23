@@ -24,6 +24,14 @@
   });
 
   let canDismiss = $derived(state.phase === 'finished');
+
+  // Auto-dismiss after 2.5 s when everything succeeded (no failures, no hint).
+  $effect(() => {
+    if (state.phase === 'finished' && state.failed === 0 && !state.hint) {
+      const t = setTimeout(onDismiss, 2500);
+      return () => clearTimeout(t);
+    }
+  });
 </script>
 
 {#if state.active}

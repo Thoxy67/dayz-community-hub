@@ -2,7 +2,15 @@
   import type { ServerDto, ServerFullDto, ModDto, A2sDetailsDto, InstalledModDto } from '$lib/types';
   import { invoke } from '@tauri-apps/api/core';
   import { openUrl } from '@tauri-apps/plugin-opener';
+  import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import Icon from '@iconify/svelte';
+
+  let copiedIp = $state(false);
+  async function copyIp() {
+    await writeText(`${server.ip}:${server.game_port}`);
+    copiedIp = true;
+    setTimeout(() => { copiedIp = false; }, 1500);
+  }
 
   interface Props {
     server: ServerDto;
@@ -58,6 +66,15 @@
     return () => clearTimeout(_detailDebounce);
   });
 
+  function formatDuration(secs: number): string {
+    const s = Math.floor(secs);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m`;
+    return `<1m`;
+  }
+
   function pingColor(ms: number | null): string {
     if (ms === null) return 'text-base-content/40';
     if (ms < 50) return 'text-success';
@@ -84,7 +101,18 @@
     <!-- Core info grid -->
     <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
       <div class="text-base-content/50">IP</div>
-      <div class="font-mono text-base-content">{server.ip}:{server.game_port}</div>
+      <button
+        class="font-mono text-base-content hover:text-primary transition-colors flex items-center gap-1 group/ip text-left"
+        title="Copy IP:port"
+        onclick={copyIp}
+      >
+        {#if copiedIp}
+          <span class="text-success">Copied!</span>
+        {:else}
+          {server.ip}:{server.game_port}
+          <Icon icon="ph:copy" class="size-3 opacity-0 group-hover/ip:opacity-100 transition-opacity" />
+        {/if}
+      </button>
 
       <div class="text-base-content/50">Query port</div>
       <div class="font-mono text-base-content">{server.query_port}</div>
@@ -197,7 +225,7 @@
             {#each a2s.players_list as player}
               <div class="flex items-center gap-2 text-xs">
                 <span class="text-base-content/80 truncate">{player.name}</span>
-                <span class="text-base-content/40 ml-auto">score: {player.score}</span>
+                <span class="text-base-content/40 ml-auto tabular-nums">{formatDuration(player.duration)}</span>
               </div>
             {/each}
           </div>

@@ -785,6 +785,17 @@
   // ── Event listeners ───────────────────────────────────────────────────────
   let cleanupFns: Array<() => void> = [];
 
+  function handleGlobalKeydown(e: KeyboardEvent) {
+    // Ctrl+1…9 switches tabs
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+      const n = parseInt(e.key, 10);
+      if (n >= 1 && n <= tabs.length) {
+        e.preventDefault();
+        selectTab(tabs[n - 1].id);
+      }
+    }
+  }
+
   onMount(() => {
     const saved = localStorage.getItem('theme') as 'light' | 'dark' | null;
     if (saved) theme = saved;
@@ -820,7 +831,7 @@
   });
 </script>
 
-<div class="flex flex-col h-screen w-screen overflow-hidden bg-base-100 text-base-content" data-theme={theme}>
+<div class="flex flex-col h-screen w-screen overflow-hidden bg-base-100 text-base-content" data-theme={theme} onkeydown={handleGlobalKeydown}>
   <TitleBar {stats} {steamPlayers} {theme} {profile} onToggleTheme={toggleTheme} onSaveSettings={saveProfileSettings} />
   <TabBar {activeTab} {tabs} onSelect={selectTab} />
 
@@ -867,6 +878,7 @@
         {pingCache}
         onConnect={connectByAddress}
         onRemove={removeFavorite}
+        onGoToServers={() => selectTab('servers')}
       />
     {:else if activeTab === 'history'}
       <HistoryTab
@@ -879,6 +891,7 @@
         onRemoveFavorite={(h) => removeFavoriteQuick(h.ip, h.port)}
         onRemove={removeHistoryEntry}
         onClearAll={clearHistory}
+        onGoToServers={() => selectTab('servers')}
       />
     {:else if activeTab === 'mods'}
       <ModsTab

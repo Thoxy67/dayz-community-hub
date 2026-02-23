@@ -137,10 +137,14 @@
   <div class="flex items-center gap-1 text-xs">
 
     {#if stats && !stats.has_steamcmd}
-      <span class="flex items-center gap-1 text-warning mr-2">
+      <button
+        class="flex items-center gap-1 text-warning mr-2 hover:text-warning/80 transition-colors"
+        title="SteamCMD not found — click to open settings and configure the path"
+        onclick={openModal}
+      >
         <Icon icon="ph:warning" class="size-3.5" />
         <span>SteamCMD not found</span>
-      </span>
+      </button>
     {/if}
 
     <!-- User chip -->

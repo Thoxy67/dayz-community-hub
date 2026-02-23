@@ -2,7 +2,15 @@
   import type { A2sDetailsDto, ServerDto, ServerFullDto, InstalledModDto } from '$lib/types';
   import { invoke } from '@tauri-apps/api/core';
   import { openUrl } from '@tauri-apps/plugin-opener';
+  import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import Icon from '@iconify/svelte';
+
+  let copiedIp = $state(false);
+  async function copyIp(ip: string, port: number) {
+    await writeText(`${ip}:${port}`);
+    copiedIp = true;
+    setTimeout(() => { copiedIp = false; }, 1500);
+  }
 
   interface Props {
     servers: ServerDto[];
@@ -235,6 +243,11 @@
               bind:value={port}
               onkeydown={handleKeydown}
             />
+            <label class="label py-0 pt-1">
+              <span class="label-text-alt text-base-content/35 text-xs">
+                Game port (e.g. 2302) or query port — both accepted.
+              </span>
+            </label>
           </div>
         </div>
 
@@ -423,7 +436,18 @@
                 <Icon icon="ph:globe-hemisphere-west" class="size-3.5" />
                 IP
               </div>
-              <span class="font-mono text-base-content">{fs.ip}:{fs.game_port}</span>
+              <button
+                class="font-mono text-base-content hover:text-primary transition-colors flex items-center gap-1 group/ip text-left"
+                title="Copy IP:port"
+                onclick={() => copyIp(fs.ip, fs.game_port)}
+              >
+                {#if copiedIp}
+                  <span class="text-success">Copied!</span>
+                {:else}
+                  {fs.ip}:{fs.game_port}
+                  <Icon icon="ph:copy" class="size-3 opacity-0 group-hover/ip:opacity-100 transition-opacity" />
+                {/if}
+              </button>
 
               <div class="text-base-content/50 flex items-center gap-1.5">
                 <Icon icon="ph:plugs" class="size-3.5" />

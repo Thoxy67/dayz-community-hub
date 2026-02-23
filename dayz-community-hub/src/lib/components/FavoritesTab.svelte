@@ -11,9 +11,10 @@
     pingCache: Map<string, number>;
     onConnect: (ip: string, port: number, name: string) => void;
     onRemove: (fav: FavoriteDto) => void;
+    onGoToServers?: () => void;
   }
 
-  let { favorites, servers, pingCache, onConnect, onRemove }: Props = $props();
+  let { favorites, servers, pingCache, onConnect, onRemove, onGoToServers }: Props = $props();
 
   // ── Sorting ──────────────────────────────────────────────────────────────
   type SortCol = 'name' | 'players' | 'ping';
@@ -108,6 +109,28 @@
     a2sError = '';
   }
 
+  let selectedIdx = $state(-1);
+
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape' && detailFav) {
+      closeDetail();
+      e.preventDefault();
+      return;
+    }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const len = sorted.length;
+      if (len === 0) return;
+      selectedIdx = e.key === 'ArrowDown'
+        ? Math.min(selectedIdx + 1, len - 1)
+        : Math.max(selectedIdx - 1, 0);
+    }
+    if (e.key === 'Enter' && selectedIdx >= 0 && selectedIdx < sorted.length) {
+      e.preventDefault();
+      openDetail(sorted[selectedIdx]);
+    }
+  }
+
   // ── Copy IP ───────────────────────────────────────────────────────────────
   let copiedKey = $state('');
   async function copyIp(e: MouseEvent, ip: string, port: number) {
@@ -146,14 +169,32 @@
     if (players > max / 2) return 'bg-warning';
     return 'bg-success';
   }
+
+  function formatDuration(secs: number): string {
+    const s = Math.floor(secs);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m`;
+    return `<1m`;
+  }
 </script>
 
-<div class="flex h-full overflow-hidden">
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<div class="flex h-full overflow-hidden" role="region" onkeydown={handleKeydown}>
   <!-- Table -->
   <div class="flex flex-col flex-1 overflow-hidden">
     {#if favorites.length === 0}
-      <div class="flex items-center justify-center h-full text-base-content/40">
-        No favorites yet — add servers from the Servers tab
+      <div class="flex flex-col items-center justify-center h-full gap-3 text-base-content/40">
+        <Icon icon="ph:star" class="size-10 opacity-30" />
+        <span class="text-sm">No favorites yet</span>
+        <button
+          class="btn btn-sm btn-outline btn-primary gap-1.5"
+          onclick={onGoToServers}
+        >
+          <Icon icon="mdi:server" class="size-3.5" />
+          Browse Servers
+        </button>
       </div>
     {:else}
       <div class="overflow-auto flex-1">
@@ -161,7 +202,11 @@
           <thead class="sticky top-0 z-10">
             <tr class="bg-base-200/95 backdrop-blur-sm text-base-content/50 uppercase tracking-wider border-b border-base-300 select-none" style="font-size:10px;">
               <th class="px-3 py-2 text-left cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('name')}>
-                <span class="flex items-center gap-1">Server <Icon icon={sortIcon('name')} class="size-2.5" /></span>
+                <span class="flex items-center gap-1">
+                  Server
+                  <span class="normal-case font-normal text-base-content/35 ml-0.5">{favorites.length}</span>
+                  <Icon icon={sortIcon('name')} class="size-2.5" />
+                </span>
               </th>
               <th class="w-32 px-3 py-2 cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('players')}>
                 <span class="flex items-center gap-1">Players <Icon icon={sortIcon('players')} class="size-2.5" /></span>
@@ -170,24 +215,30 @@
                 <span class="flex items-center gap-1">Ping <Icon icon={sortIcon('ping')} class="size-2.5" /></span>
               </th>
               <th class="w-28 px-3 py-2 text-left font-medium">Map</th>
+              <th class="w-16 px-3 py-2 font-medium text-left" title="In-game server time">Time</th>
               <th class="w-14 px-3 py-2 text-center font-medium">Mods</th>
               <th class="w-8 px-2 py-2 text-center font-medium">OS</th>
               <th class="w-40 px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
-            {#each sorted as fav}
+            {#each sorted as fav, fi}
               {@const server = findServer(fav)}
               {@const ping = pingCache.get(pingKey(fav))}
               {@const isSelected = detailFav?.ip === fav.ip && detailFav?.port === fav.port}
+              {@const isFocused = fi === selectedIdx}
               {@const pct = server && server.max_players > 0 ? Math.round((server.players / server.max_players) * 100) : 0}
-              <tr class="group/row border-b border-base-300/40 transition-colors {isSelected ? 'bg-primary/10 border-primary/20' : 'hover:bg-base-200/60'}">
+              <tr
+                class="group/row border-b border-base-300/40 transition-colors cursor-pointer
+                       {isSelected ? 'bg-primary/10 border-primary/20' : isFocused ? 'bg-base-200/80 outline outline-1 outline-primary/40' : 'hover:bg-base-200/60'}"
+                onclick={() => { selectedIdx = fi; openDetail(fav); }}
+              >
                 <!-- Server name + IP -->
                 <td class="px-3 py-2 max-w-0">
                   <div class="flex items-center gap-1.5 min-w-0">
                     <span class="truncate font-medium text-base-content/90">{fav.name}</span>
                     {#if !server}
-                      <span class="shrink-0 text-warning" style="font-size:9px;" title="Not in current server list">OFFLINE</span>
+                      <span class="shrink-0 text-warning" style="font-size:9px;" title="Server not found in the current server list — it may be offline, or try refreshing the server list">OFFLINE</span>
                     {/if}
                   </div>
                   <div class="flex items-center gap-2 mt-0.5">
@@ -239,6 +290,11 @@
                 <!-- Map -->
                 <td class="px-3 py-2 max-w-0">
                   <span class="truncate block text-teal-400/80">{server ? server.map : '—'}</span>
+                </td>
+
+                <!-- Time -->
+                <td class="px-3 py-2">
+                  <span class="text-base-content/60 tabular-nums font-mono">{server?.time || '—'}</span>
                 </td>
 
                 <!-- Mods -->
@@ -379,7 +435,7 @@
                         <Icon icon="mdi:account-outline" class="size-3 text-base-content/30" />
                         <span>{pl.name || '—'}</span>
                       </div>
-                      <span class="text-base-content/30 tabular-nums">{pl.score} pts</span>
+                      <span class="text-base-content/30 tabular-nums">{formatDuration(pl.duration)}</span>
                     </div>
                   {/each}
                 </div>

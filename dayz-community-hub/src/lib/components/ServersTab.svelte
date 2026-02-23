@@ -76,9 +76,9 @@
     'no-fp':   'No 1P',
   };
   const fpTitle: Record<FPFilter, string> = {
-    'both':    'Click to show only first-person servers',
-    'fp-only': 'Click to hide first-person servers',
-    'no-fp':   'Click to show all servers',
+    'both':    '1P = First-Person Only servers (no third-person camera). Click to show only 1P servers.',
+    'fp-only': 'Showing first-person only servers. Click to exclude first-person servers.',
+    'no-fp':   'Hiding first-person only servers. Click to show all servers.',
   };
   type PwdFilter = 'both' | 'no-pwd' | 'pwd-only';
   let filterPassword = $state<PwdFilter>('both');
@@ -136,7 +136,7 @@
       sortAsc = col === 'name' || col === 'map'; // text cols default asc, numeric cols default desc
     }
     selectedIndex = 0;
-    if (scrollContainer) scrollContainer.scrollTop = 0;
+    if (scrollContainer) scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
     scrollTop = 0;
   }
 
@@ -302,6 +302,15 @@
       e.preventDefault();
     } else if (e.key === 'Enter' && selected) {
       onConnect(selected);
+    } else if (e.key === 'Escape') {
+      if (showDetails) {
+        showDetails = false;
+        a2s = null;
+        a2sError = '';
+      } else {
+        selectedIndex = -1;
+      }
+      e.preventDefault();
     }
   }
 
@@ -326,7 +335,7 @@
     deferredQuery; filterFirstPerson; filterPassword; filterBE; filterMods; filterMap;
     selectedIndex = 0;
     a2s = null;
-    if (scrollContainer) scrollContainer.scrollTop = 0;
+    if (scrollContainer) scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
     scrollTop = 0;
   });
 
@@ -527,6 +536,7 @@
               <th class="w-28 px-3 py-2 cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('map')}>
                 <span class="flex items-center gap-1">Map <Icon icon={sortIcon('map')} class="size-2.5" /></span>
               </th>
+              <th class="w-16 px-3 py-2 font-medium text-left" title="In-game server time">Time</th>
               <th class="w-14 px-3 py-2 cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('mods')}>
                 <span class="flex items-center gap-1">Mods <Icon icon={sortIcon('mods')} class="size-2.5" /></span>
               </th>
@@ -535,7 +545,7 @@
           </thead>
           <tbody>
             {#if offsetY > 0}
-              <tr><td colspan="8" class="p-0 border-0" style="height:{offsetY}px"></td></tr>
+              <tr><td colspan="9" class="p-0 border-0" style="height:{offsetY}px"></td></tr>
             {/if}
             {#each visibleServers as server, vi}
               {@const i = startIndex + vi}
@@ -626,6 +636,11 @@
                   <span class="truncate text-teal-400/80 block">{server.map}</span>
                 </td>
 
+                <!-- Time -->
+                <td class="px-3">
+                  <span class="text-base-content/60 tabular-nums font-mono">{server.time || '—'}</span>
+                </td>
+
                 <!-- Mods -->
                 <td class="px-3 text-center">
                   {#if server.mods_count > 0}
@@ -649,7 +664,7 @@
               </tr>
             {/each}
             {#if totalHeight - (endIndex * ROW_HEIGHT) > 0}
-              <tr><td colspan="8" class="p-0 border-0" style="height:{totalHeight - (endIndex * ROW_HEIGHT)}px"></td></tr>
+              <tr><td colspan="9" class="p-0 border-0" style="height:{totalHeight - (endIndex * ROW_HEIGHT)}px"></td></tr>
             {/if}
           </tbody>
         </table>
@@ -726,8 +741,18 @@
               <span class="text-fuchsia-400/90">{selected.mods_count} mod{selected.mods_count !== 1 ? 's' : ''}</span>
             </span>
           {/if}
-          <!-- IP -->
-          <span class="font-mono text-base-content/30">{selected.ip}:{selected.game_port}</span>
+          <!-- IP (click to copy) -->
+          <button
+            class="font-mono text-base-content/30 hover:text-base-content/60 transition-colors cursor-pointer"
+            title="Copy IP:port"
+            onclick={(e) => copyIp(e, selected!)}
+          >
+            {#if copiedKey === `${selected.ip}:${selected.game_port}`}
+              <span class="text-success text-xs">Copied!</span>
+            {:else}
+              {selected.ip}:{selected.game_port}
+            {/if}
+          </button>
         </div>
       </div>
 
