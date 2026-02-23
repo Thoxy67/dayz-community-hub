@@ -25,9 +25,10 @@
   let steamLogin   = $state('');
   let steamPass    = $state('');
   let showPass     = $state(false);
-  let steamApiKey  = $state('');
-  let steamId      = $state('');
-  let steamcmdPath = $state('');
+  let steamApiKey         = $state('');
+  let steamId             = $state('');
+  let steamcmdPath        = $state('');
+  let battlemetricsApiKey = $state('');
 
   // ── SteamCMD detection state ────────────────────────────────────────────────
   type SteamcmdStatus = { found: boolean; path: string | null; platform: string };
@@ -163,13 +164,14 @@
     saveError = '';
     try {
       await invoke('save_profile_settings', {
-        player:          playerName.trim()   || null,
-        steamLogin:      steamLogin.trim()   || null,
-        steamPassword:   steamPass           || null,
-        steamRoot:       steamRoot.trim()    || null,
-        steamcmdPath:    steamcmdPath.trim() || null,
-        steamApiKey:     steamApiKey.trim()  || null,
-        steamId:         steamId.trim()      || null,
+        player:                playerName.trim()            || null,
+        steamLogin:            steamLogin.trim()            || null,
+        steamPassword:         steamPass                    || null,
+        steamRoot:             steamRoot.trim()             || null,
+        steamcmdPath:          steamcmdPath.trim()          || null,
+        steamApiKey:           steamApiKey.trim()           || null,
+        steamId:               steamId.trim()               || null,
+        battlemetricsApiKey:   battlemetricsApiKey.trim()   || null,
         steamcmdEnabled: true,
       });
       onDone();
@@ -458,6 +460,29 @@
                 </span>
               </label>
               <input id="wiz-steamid" type="text" class="input input-bordered input-xs font-mono" placeholder="76561198…" bind:value={steamId} />
+            </div>
+          </div>
+
+          <!-- BattleMetrics API token -->
+          <div class="bg-base-200/50 rounded-xl border border-base-300/60 p-4 space-y-3">
+            <div class="flex items-center justify-between">
+              <p class="text-xs font-semibold text-base-content/60 uppercase tracking-wide flex items-center gap-1.5">
+                <Icon icon="ph:chart-line-up" class="size-3.5" />
+                BattleMetrics
+                <span class="font-normal normal-case tracking-normal text-base-content/35 ml-1">optional</span>
+              </p>
+            </div>
+            <p class="text-xs text-base-content/50 leading-relaxed">
+              Adds server rankings, status, uptime %, and a 24 h player count graph to every server detail panel.
+            </p>
+            <div class="form-control">
+              <label class="label py-0 pb-1" for="wiz-bmkey">
+                <span class="label-text text-xs text-base-content/50 flex items-center gap-1">
+                  Personal access token
+                  <button class="text-primary hover:underline ml-1" onclick={() => openUrl('https://www.battlemetrics.com/developers')}>battlemetrics.com/developers</button>
+                </span>
+              </label>
+              <input id="wiz-bmkey" type="password" class="input input-bordered input-xs font-mono" placeholder="eyJhbGci…" bind:value={battlemetricsApiKey} />
             </div>
           </div>
 
