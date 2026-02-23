@@ -305,6 +305,22 @@
             <Icon icon="ph:rocket-launch" class="size-4" />
             Connect
           </button>
+          <!-- Favorite shortcut — visible whenever an address is typed -->
+          {#if onAddFavorite && address.trim()}
+            {#if isFavorite}
+              <span class="btn btn-ghost btn-sm btn-square shrink-0 cursor-default" title="Already in favorites">
+                <Icon icon="ph:star-fill" class="size-4 text-warning" />
+              </span>
+            {:else}
+              <button
+                class="btn btn-ghost btn-sm btn-square shrink-0"
+                onclick={() => onAddFavorite!(displayName || address.trim(), address.trim(), parseInt(port, 10))}
+                title="Add to favorites"
+              >
+                <Icon icon="ph:star" class="size-4 text-warning/60 hover:text-warning transition-colors" />
+              </button>
+            {/if}
+          {/if}
         </div>
       </div>
     </div>
@@ -391,14 +407,6 @@
             <span class="btn btn-ghost btn-xs btn-square shrink-0 cursor-default" title="Already in favorites">
               <Icon icon="ph:star-fill" class="size-4 text-warning" />
             </span>
-          {:else if onAddFavorite && name}
-            <button
-              class="btn btn-ghost btn-xs btn-square shrink-0"
-              onclick={() => onAddFavorite!(name, address.trim(), parseInt(port, 10))}
-              title="Add to favorites"
-            >
-              <Icon icon="ph:star" class="size-4 text-warning/60" />
-            </button>
           {/if}
         </div>
 

@@ -20,6 +20,7 @@
     TabId,
     ConfirmDialog,
     ModOpState,
+    ServersFilterState,
   } from '$lib/types';
 
   import TitleBar from '$lib/components/TitleBar.svelte';
@@ -73,6 +74,24 @@
   let offlineLoading = $state(false);
 
   let confirmDialog = $state<ConfirmDialog | null>(null);
+
+  // ── Persistent filter state (survives tab switches) ───────────────────────
+  let serversFilter = $state<ServersFilterState>({
+    searchQuery: '',
+    filterMap: '',
+    filterMods: 'both',
+    filterFirstPerson: 'both',
+    filterPassword: 'both',
+    filterBE: 'both',
+    sortCol: 'none',
+    sortAsc: true,
+  });
+  let optionsSearch = $state('');
+  // Quick-connect banner: most recent history entry (null once dismissed).
+  let quickConnectDismissed = $state(false);
+  let lastHistoryEntry = $derived(
+    !quickConnectDismissed ? (profile?.history?.[0] ?? null) : null
+  );
   let statusMessage = $state('');
   let statusKind = $state<'info' | 'success' | 'error' | 'warning'>('info');
 
@@ -376,6 +395,7 @@
     try {
       await invoke('setup_mod_symlinks', { ip: server.ip, port: server.query_port }).catch(() => {});
       await invoke('launch_server', { ip: server.ip, port: server.query_port, password: null });
+      setStatus('Waiting for Steam to open DayZ…', 'info');
     } catch (e) {
       setStatus(`Launch failed: ${e}`, 'error');
     }
@@ -389,10 +409,14 @@
     startModOp('update_server', { ip: server.ip, port: server.query_port });
   }
 
-  function connectDirect(ip: string, port: number, password?: string) {
+  async function connectDirect(ip: string, port: number, password?: string) {
     setStatus(`Connecting to ${ip}:${port}…`, 'info');
-    invoke('launch_direct', { ip, gamePort: port, password: password ?? null })
-      .catch((e) => setStatus(`Launch failed: ${e}`, 'error'));
+    try {
+      await invoke('launch_direct', { ip, gamePort: port, password: password ?? null });
+      setStatus('Waiting for Steam to open DayZ…', 'info');
+    } catch (e) {
+      setStatus(`Launch failed: ${e}`, 'error');
+    }
   }
 
   // ── Favorites ─────────────────────────────────────────────────────────────
@@ -847,6 +871,28 @@
     </div>
   {/if}
 
+  <!-- Quick-connect banner: last played server, shown on Servers tab -->
+  {#if lastHistoryEntry && activeTab === 'servers' && initialized}
+    <div class="flex items-center gap-2 px-3 py-1.5 bg-base-200 border-b border-base-300 flex-shrink-0 text-xs">
+      <span class="text-base-content/40 shrink-0">Last played:</span>
+      <span class="font-medium text-base-content/80 truncate flex-1">{lastHistoryEntry.name}</span>
+      <button
+        class="btn btn-xs btn-primary h-6 min-h-0 px-2.5 shrink-0 gap-1"
+        onclick={() => connectByAddress(lastHistoryEntry!.ip, lastHistoryEntry!.port, lastHistoryEntry!.name)}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="size-3" viewBox="0 0 256 256" fill="currentColor"><path d="M221.66,133.66l-72,72a8,8,0,0,1-11.32-11.32L196.69,136H40a8,8,0,0,1,0-16H196.69L138.34,61.66a8,8,0,0,1,11.32-11.32l72,72A8,8,0,0,1,221.66,133.66Z"/></svg>
+        Reconnect
+      </button>
+      <button
+        class="size-5 flex items-center justify-center rounded text-base-content/30 hover:text-base-content/70 hover:bg-base-300 transition-colors shrink-0"
+        onclick={() => (quickConnectDismissed = true)}
+        title="Dismiss"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="size-3" viewBox="0 0 256 256" fill="currentColor"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/></svg>
+      </button>
+    </div>
+  {/if}
+
   <div class="flex-1 overflow-hidden">
     {#if !initialized}
       <div class="flex flex-col items-center justify-center h-full gap-4">
@@ -866,6 +912,7 @@
         {installedMods}
         favorites={favoritesSet}
         loading={serversLoading}
+        bind:filter={serversFilter}
         onConnect={connectToServer}
         onAddFavorite={addFavorite}
         onRemoveFavorite={(s) => removeFavoriteQuick(s.ip, s.query_port)}
@@ -926,6 +973,7 @@
     {:else if activeTab === 'options'}
       <OptionsTab
         options={profile?.options ?? []}
+        bind:search={optionsSearch}
         onToggle={toggleOption}
         onSetValue={setOptionValue}
       />

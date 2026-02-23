@@ -4,13 +4,12 @@
 
   interface Props {
     options: LaunchOptionDto[];
+    search: string;
     onToggle: (key: string) => void;
     onSetValue: (key: string, value: string | null) => void;
   }
 
-  let { options, onToggle, onSetValue }: Props = $props();
-
-  let search = $state('');
+  let { options, search = $bindable(''), onToggle, onSetValue }: Props = $props();
   let editingKey = $state<string | null>(null);
   let editValue = $state('');
 

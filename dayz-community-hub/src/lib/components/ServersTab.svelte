@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ServerDto, InstalledModDto, A2sDetailsDto } from '$lib/types';
+  import type { ServerDto, InstalledModDto, A2sDetailsDto, ServersFilterState } from '$lib/types';
   import ServerDetailPanel from './ServerDetailPanel.svelte';
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import Icon from '@iconify/svelte';
@@ -10,6 +10,7 @@
     installedMods: InstalledModDto[];
     favorites: Set<string>; // "ip:port" keys
     loading: boolean;
+    filter: ServersFilterState;
     onConnect: (server: ServerDto) => void;
     onAddFavorite: (server: ServerDto) => void;
     onRemoveFavorite: (server: ServerDto) => void;
@@ -22,32 +23,27 @@
     installedMods,
     favorites,
     loading,
+    filter = $bindable(),
     onConnect,
     onAddFavorite,
     onRemoveFavorite,
     onRefresh,
   }: Props = $props();
 
-  let searchQuery = $state('');
-  // Deferred version of searchQuery: updated 150ms after the user stops typing.
-  // The filtered derived uses this so the expensive 10k-server scan only fires
-  // once per typing pause rather than on every keystroke.
-  let deferredQuery = $state('');
+  // Deferred version of filter.searchQuery: updated 150ms after the user stops typing.
+  let deferredQuery = $state(filter.searchQuery);
   let _searchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
-    const q = searchQuery;
+    const q = filter.searchQuery;
     clearTimeout(_searchDebounceTimer);
     _searchDebounceTimer = setTimeout(() => { deferredQuery = q; }, 150);
     return () => clearTimeout(_searchDebounceTimer);
   });
-  let filterMap = $state('');            // '' = all maps
-  type ModFilter = 'both' | 'mods-only' | 'no-mods';
-  let filterMods = $state<ModFilter>('both');
 
+  type ModFilter = 'both' | 'mods-only' | 'no-mods';
   function cycleMods() {
-    if (filterMods === 'both')      filterMods = 'mods-only';
-    else if (filterMods === 'mods-only') filterMods = 'no-mods';
-    else                            filterMods = 'both';
+    const v = filter.filterMods;
+    filter.filterMods = v === 'both' ? 'mods-only' : v === 'mods-only' ? 'no-mods' : 'both';
   }
 
   const modsLabel: Record<ModFilter, string> = {
@@ -62,12 +58,9 @@
   };
 
   type FPFilter = 'both' | 'fp-only' | 'no-fp';
-  let filterFirstPerson = $state<FPFilter>('both');
-
   function cycleFP() {
-    if (filterFirstPerson === 'both')    filterFirstPerson = 'fp-only';
-    else if (filterFirstPerson === 'fp-only') filterFirstPerson = 'no-fp';
-    else                                 filterFirstPerson = 'both';
+    const v = filter.filterFirstPerson;
+    filter.filterFirstPerson = v === 'both' ? 'fp-only' : v === 'fp-only' ? 'no-fp' : 'both';
   }
 
   const fpLabel: Record<FPFilter, string> = {
@@ -80,15 +73,28 @@
     'fp-only': 'Showing first-person only servers. Click to exclude first-person servers.',
     'no-fp':   'Hiding first-person only servers. Click to show all servers.',
   };
-  type PwdFilter = 'both' | 'no-pwd' | 'pwd-only';
-  let filterPassword = $state<PwdFilter>('both');
-  type BEFilter = 'both' | 'be-only' | 'no-be';
-  let filterBE = $state<BEFilter>('both');
 
+  type PwdFilter = 'both' | 'no-pwd' | 'pwd-only';
+  function cyclePwd() {
+    const v = filter.filterPassword;
+    filter.filterPassword = v === 'both' ? 'no-pwd' : v === 'no-pwd' ? 'pwd-only' : 'both';
+  }
+
+  const pwdLabel: Record<PwdFilter, string> = {
+    'both':     'Pwd: all',
+    'no-pwd':   'No pwd',
+    'pwd-only': 'Pwd only',
+  };
+  const pwdTitle: Record<PwdFilter, string> = {
+    'both':     'Click to hide password servers',
+    'no-pwd':   'Click to show only password servers',
+    'pwd-only': 'Click to show all servers',
+  };
+
+  type BEFilter = 'both' | 'be-only' | 'no-be';
   function cycleBE() {
-    if (filterBE === 'both')    filterBE = 'be-only';
-    else if (filterBE === 'be-only') filterBE = 'no-be';
-    else                        filterBE = 'both';
+    const v = filter.filterBE;
+    filter.filterBE = v === 'both' ? 'be-only' : v === 'be-only' ? 'no-be' : 'both';
   }
 
   const beLabel: Record<BEFilter, string> = {
@@ -102,22 +108,6 @@
     'no-be':   'Click to show all servers',
   };
 
-  function cyclePwd() {
-    if (filterPassword === 'both')     filterPassword = 'no-pwd';
-    else if (filterPassword === 'no-pwd') filterPassword = 'pwd-only';
-    else                               filterPassword = 'both';
-  }
-
-  const pwdLabel: Record<PwdFilter, string> = {
-    'both':     'Pwd: all',
-    'no-pwd':   'No pwd',
-    'pwd-only': 'Pwd only',
-  };
-  const pwdTitle: Record<PwdFilter, string> = {
-    'both':     'Click to hide password servers',
-    'no-pwd':   'Click to show only password servers',
-    'pwd-only': 'Click to show all servers',
-  };
   let selectedIndex = $state(0);
   let showDetails = $state(false);
   let a2s = $state<A2sDetailsDto | null>(null);
@@ -125,15 +115,14 @@
 
   // ── Sorting ──────────────────────────────────────────────────────────────
   type SortCol = 'ping' | 'players' | 'name' | 'map' | 'mods' | 'none';
-  let sortCol = $state<SortCol>('none');
-  let sortAsc = $state(true);
+  // sortCol/sortAsc are read from filter but toggling writes back into filter directly.
 
   function toggleSort(col: SortCol) {
-    if (sortCol === col) {
-      sortAsc = !sortAsc;
+    if (filter.sortCol === col) {
+      filter.sortAsc = !filter.sortAsc;
     } else {
-      sortCol = col;
-      sortAsc = col === 'name' || col === 'map'; // text cols default asc, numeric cols default desc
+      filter.sortCol = col;
+      filter.sortAsc = col === 'name' || col === 'map';
     }
     selectedIndex = 0;
     if (scrollContainer) scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
@@ -141,8 +130,8 @@
   }
 
   function sortIcon(col: SortCol) {
-    if (sortCol !== col) return 'ph:arrows-down-up';
-    return sortAsc ? 'ph:arrow-up' : 'ph:arrow-down';
+    if (filter.sortCol !== col) return 'ph:arrows-down-up';
+    return filter.sortAsc ? 'ph:arrow-up' : 'ph:arrow-down';
   }
 
   // ── Virtual scrolling state ──────────────────────────────────────────────
@@ -169,15 +158,15 @@
           s.map.toLowerCase().includes(q)
       );
     }
-    if (filterFirstPerson === 'fp-only') list = list.filter((s) => s.first_person_only);
-    if (filterFirstPerson === 'no-fp')  list = list.filter((s) => !s.first_person_only);
-    if (filterPassword === 'no-pwd')    list = list.filter((s) => !s.password);
-    if (filterPassword === 'pwd-only')  list = list.filter((s) => s.password);
-    if (filterBE === 'be-only')         list = list.filter((s) => !!s.battl_eye);
-    if (filterBE === 'no-be')           list = list.filter((s) => !s.battl_eye);
-    if (filterMods === 'mods-only')     list = list.filter((s) => s.mods_count > 0);
-    if (filterMods === 'no-mods')       list = list.filter((s) => s.mods_count === 0);
-    if (filterMap)                      list = list.filter((s) => s.map === filterMap);
+    if (filter.filterFirstPerson === 'fp-only') list = list.filter((s) => s.first_person_only);
+    if (filter.filterFirstPerson === 'no-fp')  list = list.filter((s) => !s.first_person_only);
+    if (filter.filterPassword === 'no-pwd')    list = list.filter((s) => !s.password);
+    if (filter.filterPassword === 'pwd-only')  list = list.filter((s) => s.password);
+    if (filter.filterBE === 'be-only')         list = list.filter((s) => !!s.battl_eye);
+    if (filter.filterBE === 'no-be')           list = list.filter((s) => !s.battl_eye);
+    if (filter.filterMods === 'mods-only')     list = list.filter((s) => s.mods_count > 0);
+    if (filter.filterMods === 'no-mods')       list = list.filter((s) => s.mods_count === 0);
+    if (filter.filterMap)                      list = list.filter((s) => s.map === filter.filterMap);
     return list;
   })());
 
@@ -185,11 +174,11 @@
   // ping result.  For all other sort columns pingCache is irrelevant, so we
   // deliberately avoid reading it here — keeping those sorts cheap.
   let sortedNoPing = $derived((() => {
-    if (sortCol === 'none' || sortCol === 'ping') return filtered;
+    if (filter.sortCol === 'none' || filter.sortCol === 'ping') return filtered;
     const arr = filtered.slice();
-    const dir = sortAsc ? 1 : -1;
+    const dir = filter.sortAsc ? 1 : -1;
     arr.sort((a, b) => {
-      switch (sortCol) {
+      switch (filter.sortCol) {
         case 'players':
           return dir * (a.players - b.players);
         case 'name':
@@ -208,9 +197,9 @@
   // Separate derived that reads pingCache — only invalidated by ping updates
   // when the user has explicitly chosen to sort by ping.
   let sorted = $derived((() => {
-    if (sortCol !== 'ping') return sortedNoPing;
+    if (filter.sortCol !== 'ping') return sortedNoPing;
     const arr = sortedNoPing.length === filtered.length ? filtered.slice() : sortedNoPing.slice();
-    const dir = sortAsc ? 1 : -1;
+    const dir = filter.sortAsc ? 1 : -1;
     arr.sort((a, b) => {
       const pa = pingCache.get(pingKey(a)) ?? Infinity;
       const pb = pingCache.get(pingKey(b)) ?? Infinity;
@@ -332,7 +321,7 @@
 
   $effect(() => {
     // Re-run whenever the debounced search text or any flag filter changes
-    deferredQuery; filterFirstPerson; filterPassword; filterBE; filterMods; filterMap;
+    deferredQuery; filter.filterFirstPerson; filter.filterPassword; filter.filterBE; filter.filterMods; filter.filterMap;
     selectedIndex = 0;
     a2s = null;
     if (scrollContainer) scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
@@ -360,11 +349,12 @@
       <input
         type="text"
         placeholder="Search name, IP, map…"
-        bind:value={searchQuery}
+        value={filter.searchQuery}
+        oninput={(e) => { filter.searchQuery = (e.target as HTMLInputElement).value; }}
         class="grow bg-transparent outline-none text-sm min-w-0"
       />
-      {#if searchQuery}
-        <button class="btn btn-ghost btn-xs p-0 min-h-0 h-auto shrink-0" onclick={() => (searchQuery = '')}>
+      {#if filter.searchQuery}
+        <button class="btn btn-ghost btn-xs p-0 min-h-0 h-auto shrink-0" onclick={() => { filter.searchQuery = ''; }}>
           <Icon icon="ph:x" class="size-3" />
         </button>
       {/if}
@@ -378,62 +368,62 @@
       <!-- 1P -->
       <button
         class="flex items-center gap-1 px-2.5 h-full text-xs font-semibold transition-colors"
-        class:bg-warning={filterFirstPerson === 'fp-only'}
-        class:text-warning-content={filterFirstPerson === 'fp-only'}
-        class:bg-error={filterFirstPerson === 'no-fp'}
-        class:text-error-content={filterFirstPerson === 'no-fp'}
-        class:opacity-50={filterFirstPerson === 'both'}
-        class:hover:opacity-100={filterFirstPerson === 'both'}
+        class:bg-warning={filter.filterFirstPerson === 'fp-only'}
+        class:text-warning-content={filter.filterFirstPerson === 'fp-only'}
+        class:bg-error={filter.filterFirstPerson === 'no-fp'}
+        class:text-error-content={filter.filterFirstPerson === 'no-fp'}
+        class:opacity-50={filter.filterFirstPerson === 'both'}
+        class:hover:opacity-100={filter.filterFirstPerson === 'both'}
         onclick={cycleFP}
-        title={fpTitle[filterFirstPerson]}
+        title={fpTitle[filter.filterFirstPerson as FPFilter]}
       >
-        {fpLabel[filterFirstPerson]}
+        {fpLabel[filter.filterFirstPerson as FPFilter]}
       </button>
       <!-- Password -->
       <button
         class="flex items-center gap-1.5 px-2.5 h-full text-xs font-medium transition-colors"
-        class:bg-error={filterPassword === 'pwd-only'}
-        class:text-error-content={filterPassword === 'pwd-only'}
-        class:bg-warning={filterPassword === 'no-pwd'}
-        class:text-warning-content={filterPassword === 'no-pwd'}
-        class:text-base-content={filterPassword === 'both'}
-        class:opacity-50={filterPassword === 'both'}
-        class:hover:opacity-100={filterPassword === 'both'}
+        class:bg-error={filter.filterPassword === 'pwd-only'}
+        class:text-error-content={filter.filterPassword === 'pwd-only'}
+        class:bg-warning={filter.filterPassword === 'no-pwd'}
+        class:text-warning-content={filter.filterPassword === 'no-pwd'}
+        class:text-base-content={filter.filterPassword === 'both'}
+        class:opacity-50={filter.filterPassword === 'both'}
+        class:hover:opacity-100={filter.filterPassword === 'both'}
         onclick={cyclePwd}
-        title={pwdTitle[filterPassword]}
+        title={pwdTitle[filter.filterPassword as PwdFilter]}
       >
         <Icon icon="mdi:lock" class="size-3 shrink-0" />
-        {pwdLabel[filterPassword]}
+        {pwdLabel[filter.filterPassword as PwdFilter]}
       </button>
       <!-- BattlEye -->
       <button
         class="flex items-center gap-1.5 px-2.5 h-full text-xs font-medium transition-colors"
-        class:bg-primary={filterBE === 'be-only'}
-        class:text-primary-content={filterBE === 'be-only'}
-        class:bg-error={filterBE === 'no-be'}
-        class:text-error-content={filterBE === 'no-be'}
-        class:opacity-50={filterBE === 'both'}
-        class:hover:opacity-100={filterBE === 'both'}
+        class:bg-primary={filter.filterBE === 'be-only'}
+        class:text-primary-content={filter.filterBE === 'be-only'}
+        class:bg-error={filter.filterBE === 'no-be'}
+        class:text-error-content={filter.filterBE === 'no-be'}
+        class:opacity-50={filter.filterBE === 'both'}
+        class:hover:opacity-100={filter.filterBE === 'both'}
         onclick={cycleBE}
-        title={beTitle[filterBE]}
+        title={beTitle[filter.filterBE as BEFilter]}
       >
         <img src="/battleeye.png" alt="BE" class="h-3.5 w-auto rounded-sm shrink-0" />
-        {beLabel[filterBE]}
+        {beLabel[filter.filterBE as BEFilter]}
       </button>
       <!-- Mods -->
       <button
         class="flex items-center gap-1.5 px-2.5 h-full text-xs font-medium transition-colors"
-        class:bg-fuchsia-500={filterMods === 'mods-only'}
-        class:text-white={filterMods === 'mods-only'}
-        class:bg-error={filterMods === 'no-mods'}
-        class:text-error-content={filterMods === 'no-mods'}
-        class:opacity-50={filterMods === 'both'}
-        class:hover:opacity-100={filterMods === 'both'}
+        class:bg-fuchsia-500={filter.filterMods === 'mods-only'}
+        class:text-white={filter.filterMods === 'mods-only'}
+        class:bg-error={filter.filterMods === 'no-mods'}
+        class:text-error-content={filter.filterMods === 'no-mods'}
+        class:opacity-50={filter.filterMods === 'both'}
+        class:hover:opacity-100={filter.filterMods === 'both'}
         onclick={cycleMods}
-        title={modsTitle[filterMods]}
+        title={modsTitle[filter.filterMods as ModFilter]}
       >
         <Icon icon="mdi:puzzle-outline" class="size-3 shrink-0" />
-        {modsLabel[filterMods]}
+        {modsLabel[filter.filterMods as ModFilter]}
       </button>
     </div>
 
@@ -441,21 +431,22 @@
     <div class="relative shrink-0">
       <select
         class="select select-sm select-bordered h-7 min-h-0 py-0 pr-7 pl-2.5 text-xs rounded-lg appearance-none"
-        class:text-base-content={!filterMap}
-        class:opacity-50={!filterMap}
-        class:text-sky-400={!!filterMap}
-        class:opacity-100={!!filterMap}
-        bind:value={filterMap}
+        class:text-base-content={!filter.filterMap}
+        class:opacity-50={!filter.filterMap}
+        class:text-sky-400={!!filter.filterMap}
+        class:opacity-100={!!filter.filterMap}
+        value={filter.filterMap}
+        onchange={(e) => { filter.filterMap = (e.target as HTMLSelectElement).value; }}
       >
         <option value="">All maps</option>
         {#each uniqueMaps as map}
           <option value={map}>{map}</option>
         {/each}
       </select>
-      {#if filterMap}
+      {#if filter.filterMap}
         <button
           class="absolute right-6 top-1/2 -translate-y-1/2 text-base-content/40 hover:text-base-content transition-colors"
-          onclick={() => (filterMap = '')}
+          onclick={() => (filter.filterMap = '')}
           title="Clear map filter"
         >
           <Icon icon="ph:x" class="size-2.5" />
@@ -503,7 +494,8 @@
 
   <!-- Main content: table + optional details panel -->
   <div class="flex flex-1 overflow-hidden">
-    <!-- Server table with virtual scrolling -->
+    <!-- Server table with virtual scrolling (wrapper for jump-to-top button) -->
+    <div class="relative flex-1 flex flex-col overflow-hidden">
     <div
       class="flex-1 overflow-auto"
       bind:this={scrollContainer}
@@ -670,6 +662,18 @@
         </table>
       {/if}
     </div>
+
+    <!-- Jump-to-top button — appears when scrolled > 300px -->
+    {#if scrollTop > 300}
+      <button
+        class="absolute bottom-4 left-4 z-20 btn btn-sm btn-circle btn-neutral shadow-lg opacity-80 hover:opacity-100 transition-opacity"
+        title="Jump to top"
+        onclick={() => { if (scrollContainer) scrollContainer.scrollTo({ top: 0, behavior: 'smooth' }); scrollTop = 0; }}
+      >
+        <Icon icon="ph:arrow-up" class="size-4" />
+      </button>
+    {/if}
+    </div><!-- end relative wrapper -->
 
     <!-- Details panel -->
     {#if showDetails && selected}

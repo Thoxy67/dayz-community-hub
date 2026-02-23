@@ -1,5 +1,7 @@
 <script lang="ts">
-  import type { HistoryDto, ServerDto } from '$lib/types';
+  import type { HistoryDto, ServerDto, A2sDetailsDto } from '$lib/types';
+  import { invoke } from '@tauri-apps/api/core';
+  import { openUrl } from '@tauri-apps/plugin-opener';
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import Icon from '@iconify/svelte';
 
@@ -162,6 +164,15 @@
     return 'bg-error';
   }
 
+  function formatDuration(secs: number): string {
+    const s = Math.floor(secs);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m`;
+    return `<1m`;
+  }
+
   function playerBarColor(players: number, max: number): string {
     if (players === 0) return 'bg-base-content/20';
     if (players >= max) return 'bg-error';
@@ -169,9 +180,43 @@
     return 'bg-success';
   }
 
+  // ── A2S detail panel ─────────────────────────────────────────────────────
+  let detailEntry = $state<HistoryDto | null>(null);
+  let a2s = $state<A2sDetailsDto | null>(null);
+  let a2sLoading = $state(false);
+  let a2sError = $state('');
+
+  async function openDetail(entry: HistoryDto) {
+    detailEntry = entry;
+    a2s = null;
+    a2sError = '';
+    a2sLoading = true;
+    try {
+      // Use query port from live server list if available, else history port directly.
+      const sv = findServer(entry);
+      const queryPort = sv ? sv.query_port : entry.port;
+      a2s = await invoke<A2sDetailsDto>('query_a2s', { ip: entry.ip, port: queryPort });
+    } catch (e) {
+      a2sError = String(e);
+    } finally {
+      a2sLoading = false;
+    }
+  }
+
+  function closeDetail() {
+    detailEntry = null;
+    a2s = null;
+    a2sError = '';
+  }
+
   let selectedIdx = $state(-1);
 
   function handleKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape' && detailEntry) {
+      closeDetail();
+      e.preventDefault();
+      return;
+    }
     const len = sorted.length;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
@@ -189,7 +234,8 @@
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<div class="flex flex-col h-full overflow-hidden" role="region" onkeydown={handleKeydown} tabindex="-1">
+<div class="flex h-full overflow-hidden" role="region" onkeydown={handleKeydown} tabindex="-1">
+  <div class="flex flex-col flex-1 overflow-hidden">
   {#if history.length === 0}
     <div class="flex flex-col items-center justify-center h-full gap-3 text-base-content/40">
       <Icon icon="ph:clock-clockwise" class="size-10 opacity-30" />
@@ -234,9 +280,10 @@
             {@const ping = pingCache.get(`${entry.ip}:${entry.port}`)}
             {@const pct = server && server.max_players > 0 ? Math.round((server.players / server.max_players) * 100) : 0}
             {@const isFocused = ei === selectedIdx}
+            {@const isSelected = detailEntry?.ip === entry.ip && detailEntry?.port === entry.port}
             <tr
               class="group/row border-b border-base-300/40 transition-colors cursor-pointer
-                     {isFocused ? 'bg-base-200/80 outline outline-1 outline-primary/40' : 'hover:bg-base-200/60'}"
+                     {isSelected ? 'bg-primary/10 border-primary/20' : isFocused ? 'bg-base-200/80 outline outline-1 outline-primary/40' : 'hover:bg-base-200/60'}"
               onclick={() => selectedIdx = ei}
             >
               <!-- Server name + IP -->
@@ -314,6 +361,17 @@
               <!-- Actions — always visible -->
               <td class="px-2 py-2">
                 <div class="flex gap-1 items-center justify-end">
+                  <!-- Info / A2S detail -->
+                  <span title={isSelected ? 'Close details' : 'Live server details'}>
+                    <button
+                      class="size-6 rounded flex items-center justify-center transition-colors
+                             {isSelected ? 'bg-primary/15 text-primary hover:bg-primary/25'
+                                         : 'text-base-content/35 hover:bg-base-300 hover:text-base-content/80'}"
+                      onclick={(e) => { e.stopPropagation(); isSelected ? closeDetail() : openDetail(entry); }}
+                    >
+                      <Icon icon="ph:info" class="size-3.5" />
+                    </button>
+                  </span>
                  <!-- Favorite toggle -->
                    <button
                      class="size-6 rounded flex items-center justify-center transition-colors
@@ -353,6 +411,129 @@
       <button class="btn btn-error btn-xs btn-outline" onclick={onClearAll}>
         Clear all history
       </button>
+    </div>
+  {/if}
+  </div><!-- end flex-col flex-1 -->
+
+  <!-- A2S detail side panel -->
+  {#if detailEntry}
+    <div class="w-72 flex-shrink-0 border-l border-base-300 flex flex-col overflow-hidden">
+      <!-- Panel header -->
+      <div class="flex items-center gap-2 px-3 py-2 bg-base-200 border-b border-base-300 flex-shrink-0">
+        <Icon icon="mdi:server" class="size-4 text-primary shrink-0" />
+        <span class="text-xs font-semibold truncate flex-1">{detailEntry.name}</span>
+        <button class="btn btn-ghost btn-xs p-0.5" onclick={closeDetail} title="Close">
+          <Icon icon="ph:x" class="size-3.5" />
+        </button>
+      </div>
+
+      <div class="flex-1 flex flex-col min-h-0">
+        {#if a2sLoading}
+          <div class="flex items-center justify-center py-8 gap-2 text-base-content/50">
+            <span class="loading loading-spinner loading-sm"></span>
+            <span class="text-xs">Querying…</span>
+          </div>
+        {:else if a2sError}
+          <div class="m-3 flex items-start gap-2 px-2.5 py-2 rounded-lg bg-error/10 border border-error/25 text-xs text-error">
+            <Icon icon="ph:warning-circle" class="size-3.5 shrink-0 mt-0.5" />
+            <span class="leading-snug break-all">{a2sError}</span>
+          </div>
+        {:else if a2s}
+          <div class="flex-shrink-0 p-3 space-y-3">
+            <div class="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+              <span class="flex items-center gap-1.5 text-base-content/50">
+                <Icon icon="mdi:controller" class="size-3.5 shrink-0" />Players
+              </span>
+              <span class="font-mono font-medium {a2s.players >= a2s.max_players ? 'text-error' : a2s.players > a2s.max_players / 2 ? 'text-warning' : 'text-success'}">
+                {a2s.players}/{a2s.max_players}
+              </span>
+
+              <span class="flex items-center gap-1.5 text-base-content/50">
+                <Icon icon="mdi:map-outline" class="size-3.5 shrink-0" />Map
+              </span>
+              <span class="text-teal-400">{a2s.map}</span>
+
+              <span class="flex items-center gap-1.5 text-base-content/50">
+                <Icon icon="mdi:tag-outline" class="size-3.5 shrink-0" />Version
+              </span>
+              <span class="text-base-content/70">{a2s.version}</span>
+
+              <span class="flex items-center gap-1.5 text-base-content/50">
+                <Icon icon="mdi:signal" class="size-3.5 shrink-0" />Ping
+              </span>
+              <span class="font-mono {pingColor(pingCache.get(`${detailEntry.ip}:${detailEntry.port}`))}">
+                {pingCache.get(`${detailEntry.ip}:${detailEntry.port}`) !== undefined
+                  ? `${pingCache.get(`${detailEntry.ip}:${detailEntry.port}`)}ms`
+                  : '—'}
+              </span>
+            </div>
+
+            {#if a2s.players_list.length > 0}
+              <div>
+                <div class="flex items-center gap-1.5 text-xs text-base-content/40 mb-1.5">
+                  <Icon icon="mdi:account-multiple-outline" class="size-3.5" />
+                  <span>Online ({a2s.players_list.length})</span>
+                </div>
+                <div class="space-y-1 max-h-36 overflow-y-auto">
+                  {#each a2s.players_list as pl}
+                    <div class="flex justify-between text-xs">
+                      <div class="flex items-center gap-1.5 text-base-content/80">
+                        <Icon icon="mdi:account-outline" class="size-3 text-base-content/30" />
+                        <span>{pl.name || '—'}</span>
+                      </div>
+                      <span class="text-base-content/30 tabular-nums">{formatDuration(pl.duration)}</span>
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            {:else if a2s.players === 0}
+              <p class="text-xs text-base-content/30 text-center py-1">No players online</p>
+            {:else}
+              <p class="text-xs text-base-content/30 text-center py-1">Player names not reported by server</p>
+            {/if}
+          </div>
+
+          {#if a2s.mods.length > 0}
+            <div class="flex flex-col flex-1 min-h-0 border-t border-base-300">
+              <div class="flex items-center gap-1.5 text-xs text-base-content/40 px-3 py-2 flex-shrink-0">
+                <Icon icon="mdi:puzzle-outline" class="size-3.5" />
+                <span>Mods ({a2s.mods.length})</span>
+              </div>
+              <div class="flex-1 overflow-y-auto px-3 pb-2 space-y-1">
+                {#each a2s.mods as mod}
+                  <div class="flex items-center gap-1.5 text-xs">
+                    <Icon icon="mdi:puzzle-outline" class="size-3 text-secondary shrink-0" />
+                    <button
+                      class="truncate text-base-content/80 hover:text-primary transition-colors text-left"
+                      onclick={() => openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.steam_workshop_id}`)}
+                      title="Open on Steam Workshop: {mod.name}"
+                    >{mod.name}</button>
+                    <button
+                      class="ml-auto shrink-0 font-mono text-xs text-base-content/30 hover:text-primary transition-colors flex items-center gap-0.5"
+                      onclick={() => openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.steam_workshop_id}`)}
+                      title="Open on Steam Workshop"
+                    >
+                      {mod.steam_workshop_id}
+                      <Icon icon="mdi:steam" class="size-3" />
+                    </button>
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {/if}
+        {/if}
+      </div>
+
+      <div class="px-3 py-2 border-t border-base-300 flex-shrink-0">
+        <button
+          class="btn btn-ghost btn-xs w-full gap-1.5"
+          onclick={() => detailEntry && openDetail(detailEntry)}
+          disabled={a2sLoading}
+        >
+          <Icon icon="ph:arrows-clockwise" class="size-3.5" />
+          Refresh
+        </button>
+      </div>
     </div>
   {/if}
 </div>

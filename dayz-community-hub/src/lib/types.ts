@@ -169,6 +169,17 @@ export interface ConfirmDialog {
   declineVariant?: 'warning' | 'success' | 'error' | 'info' | 'ghost';
 }
 
+export interface ServersFilterState {
+  searchQuery: string;
+  filterMap: string;
+  filterMods: 'both' | 'mods-only' | 'no-mods';
+  filterFirstPerson: 'both' | 'fp-only' | 'no-fp';
+  filterPassword: 'both' | 'no-pwd' | 'pwd-only';
+  filterBE: 'both' | 'be-only' | 'no-be';
+  sortCol: 'ping' | 'players' | 'name' | 'map' | 'mods' | 'none';
+  sortAsc: boolean;
+}
+
 export interface ModOpState {
   active: boolean;
   phase: 'shutting_down' | 'downloading' | 'finished';

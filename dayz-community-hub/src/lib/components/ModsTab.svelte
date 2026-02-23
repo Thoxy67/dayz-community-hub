@@ -19,7 +19,7 @@
     onRefresh: () => void;
     onCheckUpdates: () => void;
     onDelete: (mod: InstalledModDto) => void;
-    onToggleManaged: (mod: InstalledModDto) => void;
+    onToggleManaged: (mod: InstalledModDto) => Promise<void>;
     onUpdate: (mod: InstalledModDto) => void;
     onUpdateAll: () => void;
     onUpdateStale: () => void;
@@ -31,6 +31,18 @@
     onRefresh, onCheckUpdates, onDelete, onToggleManaged,
     onUpdate, onUpdateAll, onUpdateStale, onCleanup,
   }: Props = $props();
+
+  // Track which mod IDs are currently being toggled so we can show a per-row spinner.
+  let togglingIds = $state(new Set<number>());
+
+  async function handleToggleManaged(mod: InstalledModDto) {
+    togglingIds = new Set([...togglingIds, mod.id]);
+    try {
+      await onToggleManaged(mod);
+    } finally {
+      togglingIds = new Set([...togglingIds].filter((id) => id !== mod.id));
+    }
+  }
 
   let totalSize = $derived(mods.reduce((acc, m) => acc + m.size, 0));
 
@@ -293,7 +305,7 @@
                     </button>
                   </span>
                   <!-- Toggle managed -->
-                  <span title={mod.managed
+                  <span title={togglingIds.has(mod.id) ? 'Updating…' : mod.managed
                     ? 'Managed: this mod is tracked and included when connecting to modded servers. Click to unmanage.'
                     : 'Unmanaged: this mod is installed but not tracked. Click to mark as managed so it is included in server connections.'
                   }>
@@ -301,10 +313,16 @@
                       class="size-6 rounded flex items-center justify-center transition-colors
                              {mod.managed
                                ? 'text-success/60 hover:bg-success/10'
-                               : 'text-base-content/35 hover:bg-base-300 hover:text-base-content/70'}"
-                      onclick={() => onToggleManaged(mod)}
+                               : 'text-base-content/35 hover:bg-base-300 hover:text-base-content/70'}
+                             {togglingIds.has(mod.id) ? 'opacity-60 pointer-events-none' : ''}"
+                      onclick={() => handleToggleManaged(mod)}
+                      disabled={togglingIds.has(mod.id)}
                     >
-                      <Icon icon={mod.managed ? 'ph:check-square' : 'ph:square'} class="size-3.5" />
+                      {#if togglingIds.has(mod.id)}
+                        <span class="loading loading-spinner loading-xs"></span>
+                      {:else}
+                        <Icon icon={mod.managed ? 'ph:check-square' : 'ph:square'} class="size-3.5" />
+                      {/if}
                     </button>
                   </span>
                   <!-- Delete -->
