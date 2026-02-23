@@ -389,6 +389,16 @@
     }
   }
 
+  async function addFavoriteDirect(name: string, ip: string, port: number) {
+    try {
+      await invoke('add_favorite', { name, ip, port });
+      await loadProfile();
+      setStatus(`Added ${name} to favorites`, 'success');
+    } catch (e) {
+      setStatus(`Failed: ${e}`, 'error');
+    }
+  }
+
   function removeFavorite(fav: FavoriteDto) {
     confirmDialog = {
       title: 'Remove Favorite',
@@ -399,6 +409,17 @@
         setStatus('Removed from favorites', 'success');
       },
     };
+  }
+
+  /** Instant (no confirm dialog) remove — used by toggle stars in server/history lists. */
+  async function removeFavoriteQuick(ip: string, port: number) {
+    try {
+      await invoke('remove_favorite', { ip, port });
+      await loadProfile();
+      setStatus('Removed from favorites', 'success');
+    } catch (e) {
+      setStatus(`Failed: ${e}`, 'error');
+    }
   }
 
   // ── History ───────────────────────────────────────────────────────────────
@@ -700,6 +721,7 @@
         loading={serversLoading}
         onConnect={connectToServer}
         onAddFavorite={addFavorite}
+        onRemoveFavorite={(s) => removeFavoriteQuick(s.ip, s.query_port)}
         onRefresh={refreshServers}
       />
     {:else if activeTab === 'favorites'}
@@ -715,8 +737,10 @@
         history={profile?.history ?? []}
         {servers}
         {pingCache}
+        favorites={favoritesSet}
         onConnect={connectByAddress}
         onAddFavorite={addFavoriteFromHistory}
+        onRemoveFavorite={(h) => removeFavoriteQuick(h.ip, h.port)}
         onRemove={removeHistoryEntry}
         onClearAll={clearHistory}
       />
@@ -743,10 +767,13 @@
         onOpenUrl={openUrl}
       />
     {:else if activeTab === 'connect'}
-      <DirectConnectTab
-        {servers}
-        onConnect={connectDirect}
-      />
+       <DirectConnectTab
+         {servers}
+         {installedMods}
+         favorites={favoritesSet}
+         onConnect={connectDirect}
+         onAddFavorite={addFavoriteDirect}
+       />
     {:else if activeTab === 'options'}
       <OptionsTab
         options={profile?.options ?? []}

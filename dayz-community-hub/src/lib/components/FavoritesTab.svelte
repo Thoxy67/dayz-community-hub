@@ -42,6 +42,12 @@
     );
   }
 
+  /** Best ping key for a favorite: prefer server's query_port, fall back to fav.port. */
+  function pingKey(fav: FavoriteDto): string {
+    const sv = findServer(fav);
+    return sv ? `${fav.ip}:${sv.query_port}` : `${fav.ip}:${fav.port}`;
+  }
+
   let sorted = $derived((() => {
     const arr = favorites.slice();
     const dir = sortAsc ? 1 : -1;
@@ -55,8 +61,8 @@
           return dir * (pa - pb);
         }
         case 'ping': {
-          const pa = pingCache.get(`${a.ip}:${a.port}`) ?? Infinity;
-          const pb = pingCache.get(`${b.ip}:${b.port}`) ?? Infinity;
+          const pa = pingCache.get(pingKey(a)) ?? Infinity;
+          const pb = pingCache.get(pingKey(b)) ?? Infinity;
           return dir * (pa - pb);
         }
         default: return 0;
@@ -77,7 +83,11 @@
     a2sError = '';
     a2sLoading = true;
     try {
-      a2s = await invoke<A2sDetailsDto>('query_a2s', { ip: fav.ip, port: fav.port });
+      // Prefer the authoritative query_port from the live server list.
+      // Favorites store the game port; query port = game port - 1 (DayZ convention).
+      const sv = findServer(fav);
+      const queryPort = sv ? sv.query_port : fav.port;
+      a2s = await invoke<A2sDetailsDto>('query_a2s', { ip: fav.ip, port: queryPort });
     } catch (e) {
       a2sError = String(e);
     } finally {
@@ -161,7 +171,7 @@
           <tbody>
             {#each sorted as fav}
               {@const server = findServer(fav)}
-              {@const ping = pingCache.get(`${fav.ip}:${fav.port}`)}
+              {@const ping = pingCache.get(pingKey(fav))}
               {@const isSelected = detailFav?.ip === fav.ip && detailFav?.port === fav.port}
               {@const pct = server && server.max_players > 0 ? Math.round((server.players / server.max_players) * 100) : 0}
               <tr class="group/row border-b border-base-300/40 transition-colors {isSelected ? 'bg-primary/10 border-primary/20' : 'hover:bg-base-200/60'}">
@@ -221,13 +231,13 @@
 
                 <!-- Map -->
                 <td class="px-3 py-2 max-w-0">
-                  <span class="truncate block text-sky-500/80">{server ? server.map : '—'}</span>
+                  <span class="truncate block text-teal-400/80">{server ? server.map : '—'}</span>
                 </td>
 
                 <!-- Mods -->
                 <td class="px-3 py-2 text-center">
                   {#if server && server.mods_count > 0}
-                    <span class="inline-flex items-center gap-0.5 text-violet-400/80">
+                    <span class="inline-flex items-center gap-0.5 text-fuchsia-400/90">
                       <Icon icon="mdi:puzzle-outline" class="size-3 shrink-0" />
                       {server.mods_count}
                     </span>
@@ -242,7 +252,7 @@
                     {#if server.environment === 'w'}
                       <span title="Windows"><Icon icon="gg:windows" class="size-3.5 text-sky-400/70" /></span>
                     {:else}
-                      <span title="Linux"><Icon icon="simple-icons:linux" class="size-3.5 text-emerald-400/70" /></span>
+                      <span title="Linux"><Icon icon="simple-icons:linux" class="size-3.5 text-rose-400/80" /></span>
                     {/if}
                   {:else}
                     <span class="text-base-content/20">—</span>
@@ -328,7 +338,7 @@
               <span class="flex items-center gap-1.5 text-base-content/50">
                 <Icon icon="mdi:map-outline" class="size-3.5 shrink-0" />Map
               </span>
-              <span class="text-info">{a2s.map}</span>
+              <span class="text-teal-400">{a2s.map}</span>
 
               <span class="flex items-center gap-1.5 text-base-content/50">
                 <Icon icon="mdi:tag-outline" class="size-3.5 shrink-0" />Version
@@ -343,8 +353,8 @@
               <span class="flex items-center gap-1.5 text-base-content/50">
                 <Icon icon="mdi:signal" class="size-3.5 shrink-0" />Ping
               </span>
-              <span class="font-mono {pingColor(pingCache.get(`${detailFav.ip}:${detailFav.port}`))}">
-                {pingCache.get(`${detailFav.ip}:${detailFav.port}`) !== undefined ? `${pingCache.get(`${detailFav.ip}:${detailFav.port}`)}ms` : '—'}
+              <span class="font-mono {pingColor(pingCache.get(pingKey(detailFav)))}">
+                {pingCache.get(pingKey(detailFav)) !== undefined ? `${pingCache.get(pingKey(detailFav))}ms` : '—'}
               </span>
             </div>
 

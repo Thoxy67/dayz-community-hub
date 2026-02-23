@@ -86,7 +86,7 @@
       </div>
 
       <div class="text-base-content/50">Map</div>
-      <div class="text-info">{server.map}</div>
+      <div class="text-teal-400">{server.map}</div>
 
       <div class="text-base-content/50">Version</div>
       <div class="text-base-content/70">{server.version}</div>

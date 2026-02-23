@@ -12,6 +12,7 @@
     loading: boolean;
     onConnect: (server: ServerDto) => void;
     onAddFavorite: (server: ServerDto) => void;
+    onRemoveFavorite: (server: ServerDto) => void;
     onRefresh: () => void;
   }
 
@@ -23,6 +24,7 @@
     loading,
     onConnect,
     onAddFavorite,
+    onRemoveFavorite,
     onRefresh,
   }: Props = $props();
 
@@ -385,7 +387,7 @@
       <!-- Mods -->
       <button
         class="flex items-center gap-1.5 px-2.5 h-full text-xs font-medium transition-colors"
-        class:bg-violet-500={filterMods === 'mods-only'}
+        class:bg-fuchsia-500={filterMods === 'mods-only'}
         class:text-white={filterMods === 'mods-only'}
         class:bg-error={filterMods === 'no-mods'}
         class:text-error-content={filterMods === 'no-mods'}
@@ -524,12 +526,16 @@
                 <!-- # -->
                 <td class="px-2 text-right tabular-nums text-base-content/25 font-mono" style="font-size:10px;">{i + 1}</td>
 
-                <!-- Fav star -->
-                <td class="px-1 text-center">
-                  {#if isFav}
-                    <Icon icon="ph:star-fill" class="size-3 text-warning" />
-                  {/if}
-                </td>
+                 <!-- Fav star (toggle) -->
+                 <td class="px-1 text-center">
+                   <button
+                     class="size-5 flex items-center justify-center rounded transition-colors hover:bg-warning/15"
+                     onclick={(e) => { e.stopPropagation(); isFav ? onRemoveFavorite(server) : onAddFavorite(server); }}
+                     title={isFav ? 'Remove from favorites' : 'Add to favorites'}
+                   >
+                     <Icon icon={isFav ? 'ph:star-fill' : 'ph:star'} class="size-3 {isFav ? 'text-warning' : 'text-base-content/20 group-hover/row:text-base-content/40'}" />
+                   </button>
+                 </td>
 
                 <!-- Ping: dot + ms -->
                 <td class="px-3">
@@ -590,13 +596,13 @@
 
                 <!-- Map -->
                 <td class="px-3 max-w-0">
-                  <span class="truncate text-sky-500/80 block">{server.map}</span>
+                  <span class="truncate text-teal-400/80 block">{server.map}</span>
                 </td>
 
                 <!-- Mods -->
                 <td class="px-3 text-center">
                   {#if server.mods_count > 0}
-                    <span class="inline-flex items-center gap-0.5 text-violet-400/80">
+                    <span class="inline-flex items-center gap-0.5 text-fuchsia-400/90">
                       <Icon icon="mdi:puzzle-outline" class="size-3 shrink-0" />
                       {server.mods_count}
                     </span>
@@ -610,7 +616,7 @@
                   {#if server.environment === 'w'}
                     <span title="Windows"><Icon icon="gg:windows" class="size-3.5 text-sky-400/70" /></span>
                   {:else}
-                    <span title="Linux"><Icon icon="simple-icons:linux" class="size-3.5 text-emerald-400/70" /></span>
+                    <span title="Linux"><Icon icon="simple-icons:linux" class="size-3.5 text-rose-400/80" /></span>
                   {/if}
                 </td>
               </tr>
@@ -684,13 +690,13 @@
           <!-- Map -->
           <span class="flex items-center gap-1">
             <Icon icon="ph:map-trifold" class="size-3 shrink-0" />
-            <span class="text-sky-500/70">{selected.map}</span>
+            <span class="text-teal-400/70">{selected.map}</span>
           </span>
           <!-- Mods -->
           {#if selected.mods_count > 0}
             <span class="flex items-center gap-1">
               <Icon icon="mdi:puzzle-outline" class="size-3 shrink-0" />
-              <span class="text-violet-400/70">{selected.mods_count} mod{selected.mods_count !== 1 ? 's' : ''}</span>
+              <span class="text-fuchsia-400/90">{selected.mods_count} mod{selected.mods_count !== 1 ? 's' : ''}</span>
             </span>
           {/if}
           <!-- IP -->
@@ -705,11 +711,12 @@
       <div class="flex items-center gap-1 px-2 shrink-0">
         <button
           class="btn btn-ghost btn-sm gap-1.5"
-          onclick={() => selected && onAddFavorite(selected)}
-          title="Add to favorites"
+          class:text-warning={selected && favorites.has(favKey(selected))}
+          onclick={() => { if (!selected) return; favorites.has(favKey(selected)) ? onRemoveFavorite(selected) : onAddFavorite(selected); }}
+          title={selected && favorites.has(favKey(selected)) ? 'Remove from favorites' : 'Add to favorites'}
         >
-          <Icon icon="ph:star" class="size-3.5" />
-          Favorite
+          <Icon icon={selected && favorites.has(favKey(selected)) ? 'ph:star-fill' : 'ph:star'} class="size-3.5" />
+          {selected && favorites.has(favKey(selected)) ? 'Unfavorite' : 'Favorite'}
         </button>
         <button
           class="btn btn-ghost btn-sm gap-1.5"

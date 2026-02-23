@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from '@iconify/svelte';
+  import { openUrl } from '@tauri-apps/plugin-opener';
 </script>
 
 <div class="h-full overflow-y-auto">
@@ -141,8 +142,8 @@
             </li>
           </ul>
           <p class="text-xs text-base-content/40 mt-2 leading-relaxed">
-            Get a free API key at <span class="font-mono bg-base-300/60 px-1 rounded">steamcommunity.com/dev/apikey</span>.
-            Your Steam ID (64-bit) is visible at <span class="font-mono bg-base-300/60 px-1 rounded">steamidfinder.com</span>.
+            Get a free API key at <button class="font-mono bg-base-300/60 hover:bg-base-300 px-1 rounded text-primary hover:underline transition-colors" onclick={() => openUrl('https://steamcommunity.com/dev/apikey')}>steamcommunity.com/dev/apikey</button>.
+            Your Steam ID (64-bit) is visible at <button class="font-mono bg-base-300/60 hover:bg-base-300 px-1 rounded text-primary hover:underline transition-colors" onclick={() => openUrl('https://steamdb.info/calculator/')}>steamdb.info/calculator</button>.
           </p>
         </div>
 

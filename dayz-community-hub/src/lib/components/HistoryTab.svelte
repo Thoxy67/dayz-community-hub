@@ -7,13 +7,53 @@
     history: HistoryDto[];
     servers: ServerDto[];
     pingCache: Map<string, number>;
+    favorites: Set<string>; // "ip:port" keys
     onConnect: (ip: string, port: number, name: string) => void;
     onAddFavorite: (h: HistoryDto) => void;
+    onRemoveFavorite: (h: HistoryDto) => void;
     onRemove: (h: HistoryDto) => void;
     onClearAll: () => void;
   }
 
-  let { history, servers, pingCache, onConnect, onAddFavorite, onRemove, onClearAll }: Props = $props();
+  let { history, servers, pingCache, favorites, onConnect, onAddFavorite, onRemoveFavorite, onRemove, onClearAll }: Props = $props();
+
+  /**
+   * Check if a history entry matches a favorite.
+   * Favorites are stored with the game port; history with the query port (game port - 1).
+   * Also cross-check via the live server list which knows both ports.
+   */
+  function isFav(h: HistoryDto): boolean {
+    const ip = h.ip;
+    const p = h.port;
+    // Direct match (same port stored)
+    if (favorites.has(`${ip}:${p}`)) return true;
+    // Game port is typically query port + 1
+    if (favorites.has(`${ip}:${p + 1}`)) return true;
+    // Resolve via server list — the server knows both game_port and query_port
+    const sv = findServer(h);
+    if (sv) {
+      if (favorites.has(`${ip}:${sv.game_port}`)) return true;
+      if (favorites.has(`${ip}:${sv.query_port}`)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Return the port that was actually stored in favorites for this history entry,
+   * so remove_favorite hits the right record.
+   */
+  function favPort(h: HistoryDto): number {
+    const ip = h.ip;
+    const p = h.port;
+    if (favorites.has(`${ip}:${p}`)) return p;
+    if (favorites.has(`${ip}:${p + 1}`)) return p + 1;
+    const sv = findServer(h);
+    if (sv) {
+      if (favorites.has(`${ip}:${sv.game_port}`)) return sv.game_port;
+      if (favorites.has(`${ip}:${sv.query_port}`)) return sv.query_port;
+    }
+    return p;
+  }
 
   type SortCol = 'name' | 'players' | 'ping';
   let sortCol = $state<SortCol>('name');
@@ -195,15 +235,17 @@
               <!-- Actions — always visible -->
               <td class="px-2 py-2">
                 <div class="flex gap-1 items-center justify-end">
-                  <!-- Add to favorites -->
-                  <span title="Add to favorites">
-                    <button
-                      class="size-6 rounded flex items-center justify-center text-base-content/35 hover:bg-warning/10 hover:text-warning transition-colors"
-                      onclick={() => onAddFavorite(entry)}
-                    >
-                      <Icon icon="ph:star" class="size-3.5" />
-                    </button>
-                  </span>
+                 <!-- Favorite toggle -->
+                   <button
+                     class="size-6 rounded flex items-center justify-center transition-colors
+                            {isFav(entry) ? 'text-warning hover:bg-error/10 hover:text-error' : 'text-base-content/35 hover:bg-warning/10 hover:text-warning'}"
+                     onclick={() => isFav(entry)
+                       ? onRemoveFavorite({ ...entry, port: favPort(entry) })
+                       : onAddFavorite(entry)}
+                     title={isFav(entry) ? 'Remove from favorites' : 'Add to favorites'}
+                   >
+                     <Icon icon={isFav(entry) ? 'ph:star-fill' : 'ph:star'} class="size-3.5" />
+                   </button>
                   <!-- Remove -->
                   <span title="Remove from history">
                     <button
