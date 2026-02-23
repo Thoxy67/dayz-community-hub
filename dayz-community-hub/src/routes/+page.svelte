@@ -33,6 +33,7 @@
   import OptionsTab from '$lib/components/OptionsTab.svelte';
   import OfflineTab from '$lib/components/OfflineTab.svelte';
   import AboutTab from '$lib/components/AboutTab.svelte';
+  import SetupWizard from '$lib/components/SetupWizard.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import ProgressModal from '$lib/components/ProgressModal.svelte';
 
@@ -47,6 +48,7 @@
   // ── Global state ──────────────────────────────────────────────────────────
   let initialized = $state(false);
   let initError = $state<string | null>(null);
+  let showWizard = $state(false);
   let activeTab = $state<TabId>('servers');
   let servers = $state<ServerDto[]>([]);
   let profile = $state<ProfileDto | null>(null);
@@ -237,8 +239,9 @@
   async function doInitialize() {
     try {
       // 1. Init backend (creates DayzCtl, loads cache)
-      const result = await invoke<{ server_count: number; from_cache: boolean }>('initialize');
+      const result = await invoke<{ server_count: number; from_cache: boolean; is_first_launch: boolean }>('initialize');
       initialized = true;
+      if (result.is_first_launch) showWizard = true;
 
       // 2. Load profile + stats + steam players + mods in parallel (fast, no big data)
       await Promise.all([loadProfile(), loadStats(), loadSteamPlayers(), loadMods()]);
@@ -464,8 +467,8 @@
 
   function resetProfile() {
     confirmDialog = {
-      title: 'Reset Profile',
-      message: 'Reset all settings, favorites, history and launch options to defaults? Installed mods on disk are not affected. The app will restart to apply the changes.',
+      title: 'Reset to Factory Defaults',
+      message: 'This will delete all settings, favorites, history, cached server lists, and launch options — as if the app was never launched. Mods downloaded to your Steam workshop folder are not affected. The app will restart and the setup wizard will reappear.',
       onConfirm: async () => {
         try {
           await invoke('reset_profile');
@@ -856,4 +859,14 @@
 
   <ConfirmModal dialog={confirmDialog} onClose={() => (confirmDialog = null)} />
   <ProgressModal state={modOp} onDismiss={dismissModOp} />
+
+  {#if showWizard}
+    <SetupWizard onDone={async () => {
+      showWizard = false;
+      await loadProfile();
+      // Re-fetch avatar with the newly saved API key + Steam ID, then refresh stats
+      invoke('fetch_steam_avatar').then(() => loadStats()).catch(() => {});
+      await loadStats();
+    }} />
+  {/if}
 </div>

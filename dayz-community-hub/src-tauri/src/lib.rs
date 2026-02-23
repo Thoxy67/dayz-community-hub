@@ -192,6 +192,8 @@ pub struct ModProgressEvent {
 pub struct InitResult {
     pub server_count: usize,
     pub from_cache: bool,
+    /// True when the profile was freshly created (no existing profile.json found).
+    pub is_first_launch: bool,
 }
 
 /// Ping result sent via Channel.
@@ -399,6 +401,7 @@ fn mod_progress_to_event(msg: &ModProgress) -> ModProgressEvent {
 #[tauri::command]
 async fn initialize(app: AppHandle) -> Result<InitResult, String> {
     let profile_path = config::default_profile_path();
+    let is_first_launch = !profile_path.exists();
     let ctl = DayzCtl::new(&profile_path)
         .await
         .map_err(|e| format!("Failed to init controller: {}", e))?;
@@ -433,6 +436,7 @@ async fn initialize(app: AppHandle) -> Result<InitResult, String> {
     Ok(InitResult {
         server_count,
         from_cache,
+        is_first_launch,
     })
 }
 
@@ -1432,45 +1436,56 @@ async fn find_server(
 
 // ─── Profile export / import / reset ─────────────────────────────────────────
 
-/// Bundle format written inside the zstd stream.
+/// Bundle format: a map of filename → raw JSON value for every settings file.
+/// Cache files (server_list_cache.json) are excluded.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct ProfileBundle {
     /// Format version — bump if the bundle layout changes.
     version: u8,
-    /// Contents of profile.json
-    profile: serde_json::Value,
-    /// Contents of mods.json (optional — absent if file doesn't exist)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    mods: Option<serde_json::Value>,
+    /// All settings files keyed by filename (e.g. "profile.json", "mods.json").
+    files: std::collections::HashMap<String, serde_json::Value>,
 }
 
-/// Export profile + mods as a zstd-compressed bundle written to `path`.
+/// Files that should never be included in an export (transient caches etc.)
+const EXPORT_EXCLUDE: &[&str] = &["server_list_cache.json"];
+
+/// Export all settings files from the data directory as a zstd-compressed bundle.
+/// Includes profile.json (settings, favorites, history, launch options) and
+/// mods.json (managed mod list) — everything needed to fully restore a setup.
 #[tauri::command]
 async fn export_profile(path: String) -> Result<(), String> {
     let data_dir = config::default_data_dir();
 
-    // Read profile.json
-    let profile_path = data_dir.join("profile.json");
-    let profile_json: serde_json::Value = {
-        let raw = std::fs::read_to_string(&profile_path)
-            .map_err(|e| format!("Cannot read profile.json: {e}"))?;
-        serde_json::from_str(&raw).map_err(|e| format!("profile.json parse error: {e}"))?
-    };
+    let mut files: std::collections::HashMap<String, serde_json::Value> =
+        std::collections::HashMap::new();
 
-    // Read mods.json (optional)
-    let mods_path = data_dir.join("mods.json");
-    let mods_json: Option<serde_json::Value> = if mods_path.exists() {
-        let raw = std::fs::read_to_string(&mods_path)
-            .map_err(|e| format!("Cannot read mods.json: {e}"))?;
-        Some(serde_json::from_str(&raw).map_err(|e| format!("mods.json parse error: {e}"))?)
-    } else {
-        None
-    };
+    // Walk all .json files in the data dir (non-recursive — only top-level)
+    let read_dir = std::fs::read_dir(&data_dir)
+        .map_err(|e| format!("Cannot read data dir: {e}"))?;
 
-    let bundle = ProfileBundle { version: 1, profile: profile_json, mods: mods_json };
+    for entry in read_dir.flatten() {
+        let fname = entry.file_name();
+        let name = fname.to_string_lossy();
+        if !name.ends_with(".json") {
+            continue;
+        }
+        if EXPORT_EXCLUDE.contains(&name.as_ref()) {
+            continue;
+        }
+        let raw = std::fs::read_to_string(entry.path())
+            .map_err(|e| format!("Cannot read {name}: {e}"))?;
+        let value: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| format!("{name} parse error: {e}"))?;
+        files.insert(name.to_string(), value);
+    }
+
+    if !files.contains_key("profile.json") {
+        return Err("profile.json not found in data directory".into());
+    }
+
+    let bundle = ProfileBundle { version: 2, files };
     let json_bytes = serde_json::to_vec(&bundle).map_err(|e| e.to_string())?;
 
-    // Compress with zstd (level 9)
     let compressed = zstd::encode_all(std::io::Cursor::new(&json_bytes), 9)
         .map_err(|e| format!("zstd compression failed: {e}"))?;
 
@@ -1480,8 +1495,9 @@ async fn export_profile(path: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Import a profile bundle from `path` (zstd-compressed JSON), overwriting current profile + mods.
-/// Returns the loaded profile DTO so the frontend can refresh immediately.
+/// Import a profile bundle, overwriting all settings files.
+/// Supports both the old v1 format (profile + mods fields) and the new v2 format (files map).
+/// The app is restarted by the caller after this returns.
 #[tauri::command]
 async fn import_profile(
     path: String,
@@ -1493,27 +1509,41 @@ async fn import_profile(
     let json_bytes = zstd::decode_all(std::io::Cursor::new(&compressed))
         .map_err(|e| format!("zstd decompression failed: {e}"))?;
 
-    let bundle: ProfileBundle = serde_json::from_slice(&json_bytes)
+    // Parse as generic value first to handle both v1 and v2
+    let raw: serde_json::Value = serde_json::from_slice(&json_bytes)
         .map_err(|e| format!("Bundle parse error: {e}"))?;
 
-    if bundle.version != 1 {
-        return Err(format!("Unsupported bundle version {}", bundle.version));
-    }
+    let version = raw["version"].as_u64().unwrap_or(1) as u8;
 
     let data_dir = config::default_data_dir();
     std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
 
-    // Write profile.json
-    let profile_str = serde_json::to_string_pretty(&bundle.profile)
-        .map_err(|e| e.to_string())?;
-    std::fs::write(data_dir.join("profile.json"), &profile_str)
-        .map_err(|e| format!("Cannot write profile.json: {e}"))?;
-
-    // Write mods.json if present
-    if let Some(mods) = &bundle.mods {
-        let mods_str = serde_json::to_string_pretty(mods).map_err(|e| e.to_string())?;
-        std::fs::write(data_dir.join("mods.json"), &mods_str)
-            .map_err(|e| format!("Cannot write mods.json: {e}"))?;
+    match version {
+        1 => {
+            // Legacy format: { version, profile, mods? }
+            let profile_str = serde_json::to_string_pretty(&raw["profile"])
+                .map_err(|e| e.to_string())?;
+            std::fs::write(data_dir.join("profile.json"), &profile_str)
+                .map_err(|e| format!("Cannot write profile.json: {e}"))?;
+            if !raw["mods"].is_null() {
+                let mods_str = serde_json::to_string_pretty(&raw["mods"])
+                    .map_err(|e| e.to_string())?;
+                std::fs::write(data_dir.join("mods.json"), &mods_str)
+                    .map_err(|e| format!("Cannot write mods.json: {e}"))?;
+            }
+        }
+        2 => {
+            // New format: { version, files: { "profile.json": {...}, ... } }
+            let files = raw["files"].as_object()
+                .ok_or("Bundle files map missing")?;
+            for (filename, value) in files {
+                let content = serde_json::to_string_pretty(value)
+                    .map_err(|e| e.to_string())?;
+                std::fs::write(data_dir.join(filename), &content)
+                    .map_err(|e| format!("Cannot write {filename}: {e}"))?;
+            }
+        }
+        v => return Err(format!("Unsupported bundle version {v}")),
     }
 
     // Reload profile in state
@@ -1523,24 +1553,167 @@ async fn import_profile(
     Ok(profile_to_dto(state.ctl.profile()))
 }
 
-/// Reset the profile to factory defaults (keeps mods.json untouched).
+/// Wipe the entire data directory so the app looks brand-new on next boot.
+/// The app is expected to be restarted immediately after this call.
+/// Because the profile.json won't exist, `initialize` will set `is_first_launch = true`
+/// and the setup wizard will reappear automatically.
 #[tauri::command]
-async fn reset_profile(state: State<'_, SharedState>) -> Result<ProfileDto, String> {
-    let profile_path = config::default_profile_path();
-    // Build a fresh profile and save it
-    let mut fresh = config::Profile::default_with_version("0.1.0");
-    fresh.path = profile_path.clone();
-    fresh.save().map_err(|e| e.to_string())?;
-    // Reload into state
-    let mut state = state.lock().await;
-    state.ctl.reload_profile(&profile_path).map_err(|e| e.to_string())?;
-    Ok(profile_to_dto(state.ctl.profile()))
+async fn reset_profile(_state: State<'_, SharedState>) -> Result<(), String> {
+    let data_dir = config::default_data_dir();
+    if data_dir.exists() {
+        std::fs::remove_dir_all(&data_dir)
+            .map_err(|e| format!("Cannot remove data directory: {e}"))?;
+    }
+    Ok(())
 }
 
 /// Restart the application immediately.
 #[tauri::command]
 fn restart_app(app: tauri::AppHandle) {
     app.restart();
+}
+
+// ─── SteamCMD detection / download ───────────────────────────────────────────
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SteamcmdStatusDto {
+    /// Whether a steamcmd binary was found.
+    pub found: bool,
+    /// Full path to the binary if found.
+    pub path: Option<String>,
+    /// "windows" | "linux" | "macos"
+    pub platform: String,
+}
+
+/// Detect whether steamcmd is available:
+///   - Checks the profile's explicit `steamcmd_path` first.
+///   - Then searches PATH for `steamcmd` (Linux/macOS) or `steamcmd.exe` (Windows).
+///   - On Windows also checks `%APPDATA%\dayz_community_hub\steamcmd\steamcmd.exe`.
+#[tauri::command]
+async fn detect_steamcmd(state: State<'_, SharedState>) -> Result<SteamcmdStatusDto, String> {
+    let explicit_path = {
+        let s = state.lock().await;
+        s.ctl.profile().steamcmd_path.clone()
+    };
+
+    #[cfg(target_os = "windows")]
+    let platform = "windows";
+    #[cfg(target_os = "linux")]
+    let platform = "linux";
+    #[cfg(target_os = "macos")]
+    let platform = "macos";
+
+    // 1. Explicit profile path
+    if let Some(ref p) = explicit_path {
+        if !p.is_empty() && std::path::Path::new(p).exists() {
+            return Ok(SteamcmdStatusDto { found: true, path: Some(p.clone()), platform: platform.into() });
+        }
+    }
+
+    // 2. PATH lookup
+    #[cfg(target_os = "windows")]
+    let binary_name = "steamcmd.exe";
+    #[cfg(not(target_os = "windows"))]
+    let binary_name = "steamcmd";
+
+    if let Ok(found_path) = which::which(binary_name) {
+        let p = found_path.to_string_lossy().to_string();
+        return Ok(SteamcmdStatusDto { found: true, path: Some(p), platform: platform.into() });
+    }
+
+    // 3. Windows fallback: check our own install dir
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(appdata) = std::env::var_os("APPDATA") {
+            let candidate = std::path::PathBuf::from(appdata)
+                .join("dayz_community_hub")
+                .join("steamcmd")
+                .join("steamcmd.exe");
+            if candidate.exists() {
+                return Ok(SteamcmdStatusDto {
+                    found: true,
+                    path: Some(candidate.to_string_lossy().to_string()),
+                    platform: platform.into(),
+                });
+            }
+        }
+    }
+
+    Ok(SteamcmdStatusDto { found: false, path: None, platform: platform.into() })
+}
+
+/// Windows-only: download steamcmd.zip from Valve and unzip it into
+/// `%APPDATA%\dayz_community_hub\steamcmd\`.
+/// Returns the path to the extracted `steamcmd.exe`.
+#[tauri::command]
+async fn download_steamcmd_windows() -> Result<String, String> {
+    #[cfg(not(target_os = "windows"))]
+    return Err("Only available on Windows".into());
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::io::Cursor;
+
+        let appdata = std::env::var("APPDATA")
+            .map_err(|_| "APPDATA env var not found".to_string())?;
+        let install_dir = std::path::PathBuf::from(&appdata)
+            .join("dayz_community_hub")
+            .join("steamcmd");
+        std::fs::create_dir_all(&install_dir)
+            .map_err(|e| format!("Cannot create steamcmd dir: {e}"))?;
+
+        let exe_path = install_dir.join("steamcmd.exe");
+        if exe_path.exists() {
+            return Ok(exe_path.to_string_lossy().to_string());
+        }
+
+        // Download the zip
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(120))
+            .user_agent("Mozilla/5.0")
+            .build()
+            .map_err(|e| e.to_string())?;
+
+        let bytes = client
+            .get("https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip")
+            .send()
+            .await
+            .map_err(|e| format!("Download failed: {e}"))?
+            .bytes()
+            .await
+            .map_err(|e| format!("Download read failed: {e}"))?;
+
+        // Unzip in a blocking task
+        let install_dir_clone = install_dir.clone();
+        tokio::task::spawn_blocking(move || {
+            let cursor = Cursor::new(bytes);
+            let mut archive = zip::ZipArchive::new(cursor)
+                .map_err(|e| format!("ZIP open failed: {e}"))?;
+            for i in 0..archive.len() {
+                let mut file = archive.by_index(i)
+                    .map_err(|e| format!("ZIP entry error: {e}"))?;
+                let out_path = install_dir_clone.join(file.name());
+                if file.is_dir() {
+                    std::fs::create_dir_all(&out_path)
+                        .map_err(|e| format!("mkdir failed: {e}"))?;
+                } else {
+                    if let Some(parent) = out_path.parent() {
+                        std::fs::create_dir_all(parent)
+                            .map_err(|e| format!("mkdir failed: {e}"))?;
+                    }
+                    let mut out = std::fs::File::create(&out_path)
+                        .map_err(|e| format!("File create failed: {e}"))?;
+                    std::io::copy(&mut file, &mut out)
+                        .map_err(|e| format!("File write failed: {e}"))?;
+                }
+            }
+            Ok::<(), String>(())
+        })
+        .await
+        .map_err(|e| format!("Task join error: {e}"))??;
+
+        Ok(exe_path.to_string_lossy().to_string())
+    }
 }
 
 // ─── Application entry point ──────────────────────────────────────────────────
@@ -1593,6 +1766,8 @@ pub fn run() {
             import_profile,
             reset_profile,
             restart_app,
+            detect_steamcmd,
+            download_steamcmd_windows,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

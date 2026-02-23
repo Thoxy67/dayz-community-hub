@@ -28,5 +28,20 @@ tokio-stream = { version = "0.1.18", features = ["full"] }
 reqwest = { version = "0.13.2", features = ["rustls", "json", "query"] }
 base64 = "0.22"
 zstd = "0.13"
+zip = { version = "8.1.0", default-features = false, features = ["deflate"] }
+which = "8.0.0"
 tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2.3.2"
+
+[target."cfg(target_os = \"macos\")".dependencies]
+cocoa = "0.26"
+
+[profile.dev]
+incremental = true # Compile your binary in smaller steps.
+
+[profile.release]
+codegen-units = 1 # Allows LLVM to perform better optimization.
+lto = true # Enables link-time-optimizations.
+opt-level = "s" # Prioritizes small binary size. Use `3` if you prefer speed.
+panic = "abort" # Higher performance by disabling panic handlers.
+strip = true # Ensures debug symbols are removed.
