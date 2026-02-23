@@ -1,6 +1,6 @@
 # Maintainer: thoxy <your@email.here>
 pkgname=dayz-community-hub-git
-pkgver=r29.3a53c52
+pkgver=r34.2af38e4
 pkgrel=1
 pkgdesc="DayZ SA Multi Launcher and Server Browser"
 arch=('x86_64')

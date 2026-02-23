@@ -15,7 +15,7 @@ edition = "2024"
 tokio = { version = "1", features = ["full"] }
 
 # HTTP
-reqwest = { version = "0.13.2", features = ["json", "query"] }
+reqwest = { version = "0.13.2", default-features = false, features = ["native-tls", "json", "query"] }
 
 # Serialisation
 serde = { version = "1", features = ["derive"] }
