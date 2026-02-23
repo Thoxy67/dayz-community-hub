@@ -422,6 +422,61 @@
     }
   }
 
+  // ── Profile export / import / reset ──────────────────────────────────────
+  async function exportProfile() {
+    const { save } = await import('@tauri-apps/plugin-dialog');
+    const path = await save({
+      title: 'Export profile',
+      defaultPath: 'dayz-community-hub-profile.dchub',
+      filters: [{ name: 'DayZ Community Hub profile', extensions: ['dchub'] }],
+    });
+    if (!path) return;
+    try {
+      await invoke('export_profile', { path });
+      setStatus('Profile exported successfully', 'success');
+    } catch (e) {
+      setStatus(`Export failed: ${e}`, 'error');
+    }
+  }
+
+  async function importProfile() {
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const selected = await open({
+      title: 'Import profile',
+      multiple: false,
+      filters: [{ name: 'DayZ Community Hub profile', extensions: ['dchub'] }],
+    });
+    if (!selected) return;
+    const path = typeof selected === 'string' ? selected : selected[0];
+    confirmDialog = {
+      title: 'Import Profile',
+      message: 'This will overwrite your current profile, favorites, history and launch options. Continue?',
+      onConfirm: async () => {
+        try {
+          profile = await invoke<ProfileDto>('import_profile', { path });
+          setStatus('Profile imported successfully', 'success');
+        } catch (e) {
+          setStatus(`Import failed: ${e}`, 'error');
+        }
+      },
+    };
+  }
+
+  function resetProfile() {
+    confirmDialog = {
+      title: 'Reset Profile',
+      message: 'Reset all settings, favorites, history and launch options to defaults? Installed mods on disk are not affected.',
+      onConfirm: async () => {
+        try {
+          profile = await invoke<ProfileDto>('reset_profile');
+          setStatus('Profile reset to defaults', 'success');
+        } catch (e) {
+          setStatus(`Reset failed: ${e}`, 'error');
+        }
+      },
+    };
+  }
+
   // ── History ───────────────────────────────────────────────────────────────
   function removeHistoryEntry(h: HistoryDto) {
     confirmDialog = {
@@ -791,7 +846,11 @@
         onLaunch={launchOfflineMission}
       />
     {:else if activeTab === 'about'}
-      <AboutTab />
+      <AboutTab
+        onExport={exportProfile}
+        onImport={importProfile}
+        onReset={resetProfile}
+      />
     {/if}
   </div>
 

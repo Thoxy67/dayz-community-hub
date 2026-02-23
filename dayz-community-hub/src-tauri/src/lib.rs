@@ -1430,6 +1430,113 @@ async fn find_server(
     Ok(server)
 }
 
+// ─── Profile export / import / reset ─────────────────────────────────────────
+
+/// Bundle format written inside the zstd stream.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ProfileBundle {
+    /// Format version — bump if the bundle layout changes.
+    version: u8,
+    /// Contents of profile.json
+    profile: serde_json::Value,
+    /// Contents of mods.json (optional — absent if file doesn't exist)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mods: Option<serde_json::Value>,
+}
+
+/// Export profile + mods as a zstd-compressed bundle written to `path`.
+#[tauri::command]
+async fn export_profile(path: String) -> Result<(), String> {
+    let data_dir = config::default_data_dir();
+
+    // Read profile.json
+    let profile_path = data_dir.join("profile.json");
+    let profile_json: serde_json::Value = {
+        let raw = std::fs::read_to_string(&profile_path)
+            .map_err(|e| format!("Cannot read profile.json: {e}"))?;
+        serde_json::from_str(&raw).map_err(|e| format!("profile.json parse error: {e}"))?
+    };
+
+    // Read mods.json (optional)
+    let mods_path = data_dir.join("mods.json");
+    let mods_json: Option<serde_json::Value> = if mods_path.exists() {
+        let raw = std::fs::read_to_string(&mods_path)
+            .map_err(|e| format!("Cannot read mods.json: {e}"))?;
+        Some(serde_json::from_str(&raw).map_err(|e| format!("mods.json parse error: {e}"))?)
+    } else {
+        None
+    };
+
+    let bundle = ProfileBundle { version: 1, profile: profile_json, mods: mods_json };
+    let json_bytes = serde_json::to_vec(&bundle).map_err(|e| e.to_string())?;
+
+    // Compress with zstd (level 9)
+    let compressed = zstd::encode_all(std::io::Cursor::new(&json_bytes), 9)
+        .map_err(|e| format!("zstd compression failed: {e}"))?;
+
+    std::fs::write(&path, &compressed)
+        .map_err(|e| format!("Cannot write export file: {e}"))?;
+
+    Ok(())
+}
+
+/// Import a profile bundle from `path` (zstd-compressed JSON), overwriting current profile + mods.
+/// Returns the loaded profile DTO so the frontend can refresh immediately.
+#[tauri::command]
+async fn import_profile(
+    path: String,
+    state: State<'_, SharedState>,
+) -> Result<ProfileDto, String> {
+    let compressed = std::fs::read(&path)
+        .map_err(|e| format!("Cannot read import file: {e}"))?;
+
+    let json_bytes = zstd::decode_all(std::io::Cursor::new(&compressed))
+        .map_err(|e| format!("zstd decompression failed: {e}"))?;
+
+    let bundle: ProfileBundle = serde_json::from_slice(&json_bytes)
+        .map_err(|e| format!("Bundle parse error: {e}"))?;
+
+    if bundle.version != 1 {
+        return Err(format!("Unsupported bundle version {}", bundle.version));
+    }
+
+    let data_dir = config::default_data_dir();
+    std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+
+    // Write profile.json
+    let profile_str = serde_json::to_string_pretty(&bundle.profile)
+        .map_err(|e| e.to_string())?;
+    std::fs::write(data_dir.join("profile.json"), &profile_str)
+        .map_err(|e| format!("Cannot write profile.json: {e}"))?;
+
+    // Write mods.json if present
+    if let Some(mods) = &bundle.mods {
+        let mods_str = serde_json::to_string_pretty(mods).map_err(|e| e.to_string())?;
+        std::fs::write(data_dir.join("mods.json"), &mods_str)
+            .map_err(|e| format!("Cannot write mods.json: {e}"))?;
+    }
+
+    // Reload profile in state
+    let profile_path = config::default_profile_path();
+    let mut state = state.lock().await;
+    state.ctl.reload_profile(&profile_path).map_err(|e| e.to_string())?;
+    Ok(profile_to_dto(state.ctl.profile()))
+}
+
+/// Reset the profile to factory defaults (keeps mods.json untouched).
+#[tauri::command]
+async fn reset_profile(state: State<'_, SharedState>) -> Result<ProfileDto, String> {
+    let profile_path = config::default_profile_path();
+    // Build a fresh profile and save it
+    let mut fresh = config::Profile::default_with_version("0.1.0");
+    fresh.path = profile_path.clone();
+    fresh.save().map_err(|e| e.to_string())?;
+    // Reload into state
+    let mut state = state.lock().await;
+    state.ctl.reload_profile(&profile_path).map_err(|e| e.to_string())?;
+    Ok(profile_to_dto(state.ctl.profile()))
+}
+
 // ─── Application entry point ──────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1476,6 +1583,9 @@ pub fn run() {
             is_favorite,
             setup_mod_symlinks,
             find_server,
+            export_profile,
+            import_profile,
+            reset_profile,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

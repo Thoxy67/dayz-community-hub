@@ -1,6 +1,14 @@
 <script lang="ts">
   import Icon from '@iconify/svelte';
   import { openUrl } from '@tauri-apps/plugin-opener';
+
+  interface Props {
+    onExport: () => void;
+    onImport: () => void;
+    onReset: () => void;
+  }
+
+  let { onExport, onImport, onReset }: Props = $props();
 </script>
 
 <div class="h-full overflow-y-auto">
@@ -217,6 +225,73 @@
             <p class="text-xs text-base-content/55 leading-relaxed">{item.tip}</p>
           </div>
         {/each}
+      </div>
+    </section>
+
+    <!-- ── Profile Management ───────────────────────────────────────────── -->
+    <section>
+      <div class="flex items-center gap-2 mb-3">
+        <Icon icon="ph:archive" class="size-4 text-primary shrink-0" />
+        <h2 class="text-sm font-semibold text-base-content uppercase tracking-wider">Profile Management</h2>
+      </div>
+      <div class="bg-base-200/60 rounded-xl border border-base-300/60 divide-y divide-base-300/50">
+
+        <!-- Export -->
+        <div class="flex items-center gap-4 px-4 py-3">
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-base-content flex items-center gap-2">
+              <Icon icon="ph:export" class="size-3.5 text-base-content/40" />
+              Export
+            </p>
+            <p class="text-xs text-base-content/50 mt-0.5 leading-relaxed">
+              Save all settings, favorites, history, launch options and mod list to a
+              <span class="font-mono bg-base-300/60 px-1 rounded">.dchub</span> file.
+              The file is zstd-compressed and can be imported on any machine.
+            </p>
+          </div>
+          <button class="btn btn-sm btn-primary shrink-0 gap-1.5" onclick={onExport}>
+            <Icon icon="ph:export" class="size-3.5" />
+            Export
+          </button>
+        </div>
+
+        <!-- Import -->
+        <div class="flex items-center gap-4 px-4 py-3">
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-base-content flex items-center gap-2">
+              <Icon icon="ph:import" class="size-3.5 text-base-content/40" />
+              Import
+            </p>
+            <p class="text-xs text-base-content/50 mt-0.5 leading-relaxed">
+              Restore a previously exported
+              <span class="font-mono bg-base-300/60 px-1 rounded">.dchub</span> file.
+              This will overwrite your current profile and mod list.
+            </p>
+          </div>
+          <button class="btn btn-sm btn-ghost shrink-0 gap-1.5" onclick={onImport}>
+            <Icon icon="ph:import" class="size-3.5" />
+            Import
+          </button>
+        </div>
+
+        <!-- Reset -->
+        <div class="flex items-center gap-4 px-4 py-3">
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-base-content flex items-center gap-2">
+              <Icon icon="ph:arrow-counter-clockwise" class="size-3.5 text-error/60" />
+              <span class="text-error/80">Reset to defaults</span>
+            </p>
+            <p class="text-xs text-base-content/50 mt-0.5 leading-relaxed">
+              Wipe your profile back to factory defaults — clears all settings, favorites,
+              history and launch options. Installed mods on disk are not affected.
+            </p>
+          </div>
+          <button class="btn btn-sm btn-error btn-outline shrink-0 gap-1.5" onclick={onReset}>
+            <Icon icon="ph:arrow-counter-clockwise" class="size-3.5" />
+            Reset
+          </button>
+        </div>
+
       </div>
     </section>
 

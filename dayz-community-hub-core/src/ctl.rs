@@ -132,6 +132,12 @@ impl DayzCtl {
         self.profile.save()
     }
 
+    /// Reload the profile from disk, replacing the in-memory state.
+    pub fn reload_profile(&mut self, path: &std::path::Path) -> Result<()> {
+        self.profile = Profile::load(path)?;
+        Ok(())
+    }
+
     pub fn add_favorite(&mut self, name: String, ip: String, port: u16) {
         self.profile.add_favorite(name, ip, port);
     }
