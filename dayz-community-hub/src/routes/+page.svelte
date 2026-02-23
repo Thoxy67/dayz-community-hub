@@ -3,6 +3,7 @@
   import { invoke, Channel } from '@tauri-apps/api/core';
   import { listen } from '@tauri-apps/api/event';
   import { openUrl as shellOpen } from '@tauri-apps/plugin-opener';
+  import { save as saveDialog, open as openDialog } from '@tauri-apps/plugin-dialog';
   import { onMount } from 'svelte';
 
   import type {
@@ -544,8 +545,7 @@
 
   // ── Profile export / import / reset ──────────────────────────────────────
   async function exportProfile() {
-    const { save } = await import('@tauri-apps/plugin-dialog');
-    const path = await save({
+    const path = await saveDialog({
       title: 'Export profile',
       defaultPath: 'dayz-community-hub-profile.dchub',
       filters: [{ name: 'DayZ Community Hub profile', extensions: ['dchub'] }],
@@ -560,8 +560,7 @@
   }
 
   async function importProfile() {
-    const { open } = await import('@tauri-apps/plugin-dialog');
-    const selected = await open({
+    const selected = await openDialog({
       title: 'Import profile',
       multiple: false,
       filters: [{ name: 'DayZ Community Hub profile', extensions: ['dchub'] }],

@@ -2,6 +2,7 @@
   import type { AppStatsDto, ProfileDto } from '$lib/types';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { open as openDialog } from '@tauri-apps/plugin-dialog';
+  import { openUrl } from '@tauri-apps/plugin-opener';
   import Icon from '@iconify/svelte';
 
   interface Props {
@@ -370,8 +371,7 @@
               <button
                 class="text-base-content/35 hover:text-primary transition-colors shrink-0"
                 onclick={async () => {
-                  const { open } = await import('@tauri-apps/plugin-dialog');
-                  const selected = await open({ multiple: false, title: 'Select steamcmd binary' });
+                  const selected = await openDialog({ multiple: false, title: 'Select steamcmd binary' });
                   if (selected) steamcmdPath = selected as string;
                 }}
                 title="Browse…"
@@ -492,7 +492,7 @@
             <button
               type="button"
               class="text-primary hover:underline"
-              onclick={() => { import('@tauri-apps/plugin-opener').then(m => m.openUrl('https://www.battlemetrics.com/developers')); }}
+              onclick={() => { openUrl('https://www.battlemetrics.com/developers'); }}
             >battlemetrics.com/developers</button>
           </p>
         </div>

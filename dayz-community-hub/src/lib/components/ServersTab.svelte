@@ -2,6 +2,7 @@
   import type { ServerDto, InstalledModDto, A2sDetailsDto, ServersFilterState } from '$lib/types';
   import ServerDetailPanel from './ServerDetailPanel.svelte';
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
+  import { invoke } from '@tauri-apps/api/core';
   import Icon from '@iconify/svelte';
 
   interface Props {
@@ -270,7 +271,6 @@
 
   async function handleQueryA2s() {
     if (!selected) return;
-    const { invoke } = await import('@tauri-apps/api/core');
     a2sLoading = true;
     a2sError = '';
     try {
