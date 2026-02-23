@@ -1,0 +1,69 @@
+# Maintainer: thoxy <your@email.here>
+pkgname=dayz-community-hub-git
+pkgver=r29.3a53c52
+pkgrel=1
+pkgdesc="DayZ SA Multi Launcher and Server Browser"
+arch=('x86_64')
+url="https://git.thoxy.xyz/thoxy/dayz-community-hub"
+license=('MIT')
+depends=(
+    'webkit2gtk-4.1'
+    'gtk3'
+    'libayatana-appindicator'
+    'openssl'
+)
+makedepends=(
+    'rust'
+    'cargo'
+    'bun'
+    'git'
+    'openssl'
+    'appmenu-gtk-module'
+)
+provides=('dayz-community-hub')
+conflicts=('dayz-community-hub')
+source=("$pkgname::git+https://git.thoxy.xyz/thoxy/dayz-community-hub.git#branch=master")
+sha256sums=('SKIP')
+
+pkgver() {
+    cd "$pkgname"
+    printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+prepare() {
+    cd "$pkgname/dayz-community-hub"
+    export CARGO_HOME="$srcdir/cargo-home"
+    cargo fetch --manifest-path src-tauri/Cargo.toml
+}
+
+build() {
+    cd "$pkgname/dayz-community-hub"
+    export CARGO_HOME="$srcdir/cargo-home"
+
+    bun install --frozen-lockfile
+    bun run tauri build --no-bundle
+}
+
+package() {
+    cd "$pkgname/dayz-community-hub"
+
+    # Binary
+    install -Dm755 "src-tauri/target/release/dayz-community-hub" \
+        "$pkgdir/usr/bin/dayz-community-hub"
+
+    # Icons (XDG hicolor)
+    install -Dm644 "src-tauri/icons/32x32.png" \
+        "$pkgdir/usr/share/icons/hicolor/32x32/apps/dayz-community-hub.png"
+    install -Dm644 "src-tauri/icons/128x128.png" \
+        "$pkgdir/usr/share/icons/hicolor/128x128/apps/dayz-community-hub.png"
+    install -Dm644 "src-tauri/icons/128x128@2x.png" \
+        "$pkgdir/usr/share/icons/hicolor/256x256@2/apps/dayz-community-hub.png"
+
+    # .desktop file
+    install -Dm644 "src-tauri/assets/linux/dayz-community-hub.desktop" \
+        "$pkgdir/usr/share/applications/dayz-community-hub.desktop"
+
+    # License
+    install -Dm644 "$srcdir/$pkgname/LICENSE" \
+        "$pkgdir/usr/share/licenses/dayz-community-hub-git/LICENSE" 2>/dev/null || true
+}

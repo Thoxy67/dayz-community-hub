@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=DayZ Community Hub
+Comment=DayZ SA Multi Launcher and Server Browser
+GenericName=Game Launcher
+Exec=/usr/bin/dayz-community-hub %U
+Icon=dayz-community-hub
+Terminal=false
+Type=Application
+Categories=Game;
+Keywords=dayz;launcher;server;browser;
+StartupNotify=true
+StartupWMClass=dayz-community-hub
