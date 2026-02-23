@@ -27,7 +27,7 @@ a2s = { version = "0.6.1", features = ["async"] }
 tokio-stream = { version = "0.1.18", features = ["full"] }
 reqwest = { version = "0.13.2", default-features = false, features = ["native-tls", "json", "query"] }
 base64 = "0.22"
-zstd = { version = "0.13", features = ["pkg-config"] }
+
 zip = { version = "8.1.0", default-features = false, features = ["deflate"] }
 which = "8.0.0"
 tauri-plugin-dialog = "2"
@@ -35,7 +35,11 @@ tauri-plugin-clipboard-manager = "2.3.2"
 tauri-plugin-single-instance = "2"
 clap = { version = "4", features = ["derive"] }
 
+[target."cfg(not(windows))".dependencies]
+zstd = { version = "0.13", features = ["pkg-config"] }
+
 [target."cfg(windows)".dependencies]
+zstd = "0.13"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 thiserror = "2"
