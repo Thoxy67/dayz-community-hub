@@ -2054,7 +2054,19 @@ mod updater {
             version: u.version.clone(),
             current_version: u.current_version.clone(),
             body: u.body.clone(),
-            date: u.date.map(|d| d.to_rfc3339()),
+            date: u.date.map(|d| {
+                    // OffsetDateTime doesn't expose rfc3339 without the
+                    // `time/formatting` feature; emit a simple ISO-8601 date string.
+                    format!(
+                        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+                        d.year(),
+                        d.month() as u8,
+                        d.day(),
+                        d.hour(),
+                        d.minute(),
+                        d.second(),
+                    )
+                }),
         });
         *pending.0.lock().unwrap() = update;
         Ok(info)
