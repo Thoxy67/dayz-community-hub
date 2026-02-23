@@ -23,11 +23,21 @@ pub fn default_profile_path() -> PathBuf {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
     pub steam_login: Option<String>,
+    /// Steam account password — stored in plaintext so steamcmd can log in
+    /// non-interactively without relying on cached credentials.
+    #[serde(default)]
+    pub steam_password: Option<String>,
     #[serde(default)]
     pub steam_root: Option<String>,
     #[serde(default = "default_steamcmd_enabled")]
     pub steamcmd_enabled: bool,
     pub player: Option<String>,
+    /// Steam Web API key — used to fetch player avatar via GetPlayerSummaries.
+    #[serde(default)]
+    pub steam_api_key: Option<String>,
+    /// Steam 64-bit account ID — used with the API key to resolve the avatar.
+    #[serde(default)]
+    pub steam_id: Option<String>,
     pub favorites: Vec<Favorite>,
     pub history: Vec<History>,
     #[serde(
@@ -124,6 +134,7 @@ pub struct LaunchOptions {
     pub noborder: LaunchOption,
     pub nosplash: LaunchOption,
     pub skipintro: LaunchOption,
+    pub nolauncher: LaunchOption,
     pub file_patching: LaunchOption,
     pub do_logs: LaunchOption,
     pub buldozer: LaunchOption,
@@ -134,6 +145,7 @@ pub struct LaunchOptions {
     pub max_mem: LaunchOption,
     pub max_vram: LaunchOption,
     pub cpu_count: LaunchOption,
+    pub ex_threads: LaunchOption,
     pub no_benchmark: LaunchOption,
     pub script_debug: LaunchOption,
     pub profiles: LaunchOption,
@@ -190,6 +202,11 @@ where
             &["skipintro", "skipIntro"],
             default_on("Skip intro video"),
         ),
+        nolauncher: get_opt(
+            &map,
+            &["nolauncher", "noLauncher"],
+            default_on("Skip launcher"),
+        ),
         file_patching: get_opt(
             &map,
             &["file_patching", "filePathing", "filePatching"],
@@ -227,6 +244,11 @@ where
             &map,
             &["cpu_count", "cpuCount"],
             default_off("Number of CPU cores"),
+        ),
+        ex_threads: get_opt(
+            &map,
+            &["ex_threads", "exThreads"],
+            default_off("Number of threads"),
         ),
         no_benchmark: get_opt(
             &map,
@@ -269,6 +291,11 @@ impl LaunchOptions {
                 enabled: true,
                 value: None,
                 description: "Skip intro video".to_string(),
+            },
+            nolauncher: LaunchOption {
+                enabled: true,
+                value: None,
+                description: "Skip launcher".to_string(),
             },
             file_patching: LaunchOption {
                 enabled: false,
@@ -320,6 +347,11 @@ impl LaunchOptions {
                 value: None,
                 description: "Number of CPU cores to use".to_string(),
             },
+            ex_threads: LaunchOption {
+                enabled: false,
+                value: None,
+                description: "Number of threads".to_string(),
+            },
             no_benchmark: LaunchOption {
                 enabled: false,
                 value: None,
@@ -347,6 +379,7 @@ impl LaunchOptions {
             ("-noborder", &self.noborder),
             ("-nosplash", &self.nosplash),
             ("-skipIntro", &self.skipintro),
+            ("-nolauncher", &self.nolauncher),
             ("-filePatching", &self.file_patching),
             ("-doLogs", &self.do_logs),
             ("-buldozer", &self.buldozer),
@@ -357,6 +390,7 @@ impl LaunchOptions {
             ("-maxMem", &self.max_mem),
             ("-maxVRAM", &self.max_vram),
             ("-cpuCount", &self.cpu_count),
+            ("-exThreads", &self.ex_threads),
             ("-noBenchmark", &self.no_benchmark),
             ("-scriptDebug", &self.script_debug),
             ("-profiles", &self.profiles),
@@ -382,6 +416,7 @@ impl LaunchOptions {
             ("noborder", &mut self.noborder),
             ("nosplash", &mut self.nosplash),
             ("skipintro", &mut self.skipintro),
+            ("nolauncher", &mut self.nolauncher),
             ("file_patching", &mut self.file_patching),
             ("do_logs", &mut self.do_logs),
             ("buldozer", &mut self.buldozer),
@@ -392,6 +427,7 @@ impl LaunchOptions {
             ("max_mem", &mut self.max_mem),
             ("max_vram", &mut self.max_vram),
             ("cpu_count", &mut self.cpu_count),
+            ("ex_threads", &mut self.ex_threads),
             ("no_benchmark", &mut self.no_benchmark),
             ("script_debug", &mut self.script_debug),
             ("profiles", &mut self.profiles),
@@ -405,6 +441,7 @@ impl LaunchOptions {
             ("noborder", &self.noborder),
             ("nosplash", &self.nosplash),
             ("skipintro", &self.skipintro),
+            ("nolauncher", &self.nolauncher),
             ("file_patching", &self.file_patching),
             ("do_logs", &self.do_logs),
             ("buldozer", &self.buldozer),
@@ -415,6 +452,7 @@ impl LaunchOptions {
             ("max_mem", &self.max_mem),
             ("max_vram", &self.max_vram),
             ("cpu_count", &self.cpu_count),
+            ("ex_threads", &self.ex_threads),
             ("no_benchmark", &self.no_benchmark),
             ("script_debug", &self.script_debug),
             ("profiles", &self.profiles),
@@ -453,9 +491,12 @@ impl Profile {
     pub fn default_with_version(version: &str) -> Self {
         Self {
             steam_login: None,
+            steam_password: None,
             steam_root: None,
             steamcmd_enabled: true,
             player: None,
+            steam_api_key: None,
+            steam_id: None,
             favorites: Vec::new(),
             history: Vec::new(),
             options: LaunchOptions::defaults(),
@@ -500,10 +541,7 @@ impl Profile {
             },
         );
 
-        const MAX_HISTORY: usize = 10;
-        if self.history.len() > MAX_HISTORY {
-            self.history.truncate(MAX_HISTORY);
-        }
+        // No cap — history is unlimited.
     }
 
     pub fn get_favorites_with_status<'a>(

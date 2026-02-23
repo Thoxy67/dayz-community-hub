@@ -101,6 +101,11 @@ pub struct SteamCmd {
     steamcmd_path: PathBuf,
     steam_root: PathBuf,
     login: String,
+    /// Optional password for non-interactive login. When set, steamcmd is
+    /// invoked as `+login <user> <password>` so it doesn't rely on cached
+    /// credentials. When absent, only the username is passed and steamcmd
+    /// falls back to its credential cache.
+    password: Option<String>,
     game_id: u32,
 }
 
@@ -115,8 +120,14 @@ impl SteamCmd {
             steamcmd_path: steamcmd_path.as_ref().to_path_buf(),
             steam_root: steam_root.as_ref().to_path_buf(),
             login,
+            password: None,
             game_id: DAYZ_GAME_ID,
         }
+    }
+
+    pub fn with_password(mut self, password: Option<String>) -> Self {
+        self.password = password;
+        self
     }
 
     pub fn with_game_id(mut self, game_id: u32) -> Self {
@@ -128,6 +139,18 @@ impl SteamCmd {
         &self.login
     }
 
+    pub fn password(&self) -> Option<&str> {
+        self.password.as_deref()
+    }
+
+    /// Push `+login <user>` or `+login <user> <password>` args onto a command.
+    fn push_login_args(&self, cmd: &mut Command) {
+        cmd.arg("+login").arg(&self.login);
+        if let Some(ref pw) = self.password {
+            cmd.arg(pw);
+        }
+    }
+
     pub fn steam_root(&self) -> &Path {
         &self.steam_root
     }
@@ -137,12 +160,12 @@ impl SteamCmd {
         !self.login.is_empty() && self.login != "anonymous"
     }
 
-    /// Cache login credentials by running `steamcmd +login <user> +quit`.
-    /// This is interactive and will prompt for password/2FA in the terminal.
+    /// Cache login credentials by running `steamcmd +login <user> [<password>] +quit`.
+    /// If no password is saved, this is interactive and will prompt for password/2FA.
     pub async fn cache_login(&self) -> Result<()> {
-        let status = Command::new(&self.steamcmd_path)
-            .arg("+login")
-            .arg(&self.login)
+        let mut cmd = Command::new(&self.steamcmd_path);
+        self.push_login_args(&mut cmd);
+        let status = cmd
             .arg("+quit")
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
@@ -193,11 +216,10 @@ impl SteamCmd {
         // first so steamcmd doesn't bump the user offline mid-session.
         SteamClient::shutdown_for_steamcmd().await;
 
-        let mut child = Command::new(&self.steamcmd_path)
-            .arg("+@ShutdownOnFailedCommand")
-            .arg("1")
-            .arg("+login")
-            .arg(&self.login)
+        let mut cmd = Command::new(&self.steamcmd_path);
+        cmd.arg("+@ShutdownOnFailedCommand").arg("1");
+        self.push_login_args(&mut cmd);
+        let mut child = cmd
             .arg("+workshop_download_item")
             .arg(self.game_id.to_string())
             .arg(workshop_id.to_string())
@@ -249,11 +271,10 @@ impl SteamCmd {
 
     /// Update the DayZ game itself via steamcmd.
     pub async fn update_game(&self) -> Result<()> {
-        let output = Command::new(&self.steamcmd_path)
-            .arg("+@ShutdownOnFailedCommand")
-            .arg("1")
-            .arg("+login")
-            .arg(&self.login)
+        let mut cmd = Command::new(&self.steamcmd_path);
+        cmd.arg("+@ShutdownOnFailedCommand").arg("1");
+        self.push_login_args(&mut cmd);
+        let output = cmd
             .arg("+app_update")
             .arg(self.game_id.to_string())
             .arg("+quit")
@@ -339,11 +360,11 @@ impl SteamCmd {
         });
 
         // Build a single steamcmd command with all mods batched:
-        // steamcmd +login <user> +workshop_download_item 221100 <id1> validate \
-        //                        +workshop_download_item 221100 <id2> validate ... +quit
+        // steamcmd +login <user> [<password>] +workshop_download_item 221100 <id1> validate \
+        //                                     +workshop_download_item 221100 <id2> validate ... +quit
         let mut cmd = Command::new(&self.steamcmd_path);
         cmd.arg("+@ShutdownOnFailedCommand").arg("0"); // Don't abort on single mod failure
-        cmd.arg("+login").arg(&self.login);
+        self.push_login_args(&mut cmd);
 
         for (mod_id, _) in mods_info {
             cmd.arg("+workshop_download_item")

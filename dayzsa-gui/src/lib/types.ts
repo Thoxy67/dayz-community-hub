@@ -1,0 +1,180 @@
+// ─── DTOs mirroring the Rust structs in src-tauri/src/lib.rs ─────────────────
+
+export interface ModDto {
+  name: string;
+  steam_workshop_id: number;
+}
+
+/** Slim server DTO for list display (no mod details). */
+export interface ServerDto {
+  game_port: number;
+  ip: string;
+  query_port: number;
+  name: string;
+  map: string;
+  players: number;
+  max_players: number;
+  environment: string; // "w" = Windows, "l" = Linux
+  password: boolean;
+  version: string;
+  first_person_only: boolean;
+  time: string;
+  mods_count: number;
+  vac: boolean;
+  battl_eye: boolean | null;
+}
+
+/** Full server DTO with mod details (fetched on demand). */
+export interface ServerFullDto extends ServerDto {
+  mods: ModDto[];
+}
+
+export interface InstalledModDto {
+  name: string;
+  id: number;
+  local_updated: number;
+  size: number;
+  size_human: string;
+  managed: boolean;
+  /** Remote time_updated from Steam Workshop API. null if not yet checked. */
+  remote_updated: number | null;
+  /** True when remote_updated > local_updated. */
+  update_available: boolean;
+}
+
+export interface FavoriteDto {
+  name: string;
+  ip: string;
+  port: number;
+}
+
+export interface HistoryDto {
+  name: string;
+  ip: string;
+  port: number;
+  ts: number;
+  relative_time: string;
+}
+
+export interface LaunchOptionDto {
+  key: string;
+  enabled: boolean;
+  value: string | null;
+  description: string;
+}
+
+export interface ProfileDto {
+  steam_login: string | null;
+  steam_password: string | null;
+  steam_root: string | null;
+  steamcmd_enabled: boolean;
+  player: string | null;
+  steam_api_key: string | null;
+  steam_id: string | null;
+  favorites: FavoriteDto[];
+  history: HistoryDto[];
+  options: LaunchOptionDto[];
+}
+
+export interface ArticleDto {
+  title: string;
+  slug: string;
+  excerpt: string | null;
+  content_text: string;
+  content_html: string;
+  date: string;
+  url: string;
+  image_url: string | null;
+  category: string | null;
+  author: string | null;
+}
+
+export interface A2sPlayerDto {
+  name: string;
+  score: number;
+  duration: number;
+}
+
+export interface A2sDetailsDto {
+  server_name: string;
+  game: string;
+  players: number;
+  max_players: number;
+  map: string;
+  version: string;
+  players_list: A2sPlayerDto[];
+  /** Mods from server list (empty if server not found in list) */
+  mods: ModDto[];
+  /** Actual query port used */
+  query_port: number;
+}
+
+export interface AppStatsDto {
+  server_count: number;
+  total_players: number;
+  player_name: string | null;
+  steam_login: string | null;
+  has_steamcmd: boolean;
+  /** Steam avatar as a data: URI, null if not configured or not yet fetched. */
+  avatar_url: string | null;
+}
+
+export interface ModProgressEvent {
+  kind: 'shutting_down_steam' | 'starting' | 'done' | 'failed' | 'finished';
+  current: number;
+  total: number;
+  mod_id: number;
+  name: string;
+  ok: number;
+  failed: number;
+  hint: string | null;
+}
+
+export interface PingResult {
+  ip: string;
+  port: number;
+  ms: number;
+}
+
+// ─── App-level UI state ────────────────────────────────────────────────────────
+
+export type TabId =
+  | 'servers'
+  | 'favorites'
+  | 'history'
+  | 'mods'
+  | 'news'
+  | 'connect'
+  | 'options'
+  | 'offline'
+  | 'about';
+
+export interface ConfirmDialog {
+  title: string;
+  message: string;
+  onConfirm: () => void;
+  /** If set, "No" executes this instead of just closing */
+  onDecline?: () => void;
+  /** If set, a third "Cancel" button appears that just closes without any action */
+  onCancel?: () => void;
+  /** Custom label for the confirm button */
+  confirmLabel?: string;
+  /** Custom label for the decline button */
+  declineLabel?: string;
+  /** DaisyUI color variant for the confirm button (default: 'warning') */
+  confirmVariant?: 'warning' | 'success' | 'error' | 'info' | 'primary';
+  /** DaisyUI color variant for the decline button (default: 'ghost') */
+  declineVariant?: 'warning' | 'success' | 'error' | 'info' | 'ghost';
+}
+
+export interface ModOpState {
+  active: boolean;
+  phase: 'shutting_down' | 'downloading' | 'finished';
+  current: number;
+  total: number;
+  currentName: string;
+  completed: Array<{ id: number; name: string; ok: boolean }>;
+  ok: number;
+  failed: number;
+  hint: string | null;
+}

@@ -40,11 +40,11 @@ impl DayzCtl {
                     .steam_login
                     .clone()
                     .unwrap_or_else(|| "anonymous".to_string());
-                Some(Arc::new(SteamCmd::new(
-                    steamcmd_path,
-                    steam_root,
-                    Some(login),
-                )))
+                let password = profile.steam_password.clone();
+                Some(Arc::new(
+                    SteamCmd::new(steamcmd_path, steam_root, Some(login))
+                        .with_password(password),
+                ))
             } else {
                 None
             }
@@ -137,6 +137,38 @@ impl DayzCtl {
 
     pub fn has_steamcmd(&self) -> bool {
         self.steamcmd.is_some()
+    }
+
+    /// Rebuild the `SteamCmd` instance from the current profile.
+    /// Call this after mutating `profile.steam_login`, `steam_password`,
+    /// `steam_root`, or `steamcmd_enabled` so the new values take effect
+    /// without restarting the app.
+    pub fn rebuild_steamcmd(&mut self) {
+        self.steamcmd = if self.profile.steamcmd_enabled {
+            find_steamcmd().map(|steamcmd_path| {
+                let steam_root = self.profile
+                    .steam_root
+                    .as_ref()
+                    .filter(|s| !s.is_empty())
+                    .map(PathBuf::from)
+                    .or_else(find_steam_root)
+                    .unwrap_or_else(|| {
+                        let home = std::env::var("HOME").unwrap_or_default();
+                        PathBuf::from(home).join(".steam/steam/steamapps")
+                    });
+                let login = self.profile
+                    .steam_login
+                    .clone()
+                    .unwrap_or_else(|| "anonymous".to_string());
+                let password = self.profile.steam_password.clone();
+                Arc::new(
+                    SteamCmd::new(steamcmd_path, steam_root, Some(login))
+                        .with_password(password),
+                )
+            })
+        } else {
+            None
+        };
     }
 
     /// Expose the shared HTTP client for background tasks.
@@ -441,6 +473,9 @@ pub enum ModOperation {
     },
     /// Update all installed mods
     UpdateAll,
+    /// Update only mods that are known to be stale (remote_updated > local_updated).
+    /// `stale_ids` is the pre-filtered list of (mod_id, name) pairs from the GUI.
+    UpdateStale { stale_mods: Vec<(u64, String)> },
     /// Update a single mod
     UpdateOne { mod_id: u64, name: String },
 }
@@ -552,6 +587,21 @@ pub fn spawn_mod_operation(
                     .collect();
 
                 let results = steamcmd.download_mods_with_progress(&mods_info, &tx).await;
+                ModOpResult::UpdateDone(results)
+            }
+
+            ModOperation::UpdateStale { stale_mods } => {
+                if stale_mods.is_empty() {
+                    // Nothing stale — emit finished immediately, skip Steam restart
+                    let _ = tx.send(crate::steamcmd::ModProgress::Finished {
+                        ok: 0,
+                        failed: 0,
+                        total: 0,
+                        hint: None,
+                    });
+                    return ModOpResult::UpdateDone(vec![]);
+                }
+                let results = steamcmd.download_mods_with_progress(&stale_mods, &tx).await;
                 ModOpResult::UpdateDone(results)
             }
 

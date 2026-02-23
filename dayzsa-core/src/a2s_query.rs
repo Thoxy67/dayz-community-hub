@@ -107,6 +107,86 @@ pub async fn get_server_details(server: &Server) -> Result<ServerDetails> {
     })
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use a2s::A2SClient;
+    use tokio::try_join;
+
+    /// Direct A2S test against a live server — mirrors the a2s lib's own async test.
+    /// Run with: cargo test --package dayzsa-core -- a2s_query::tests::test_live_server --nocapture --ignored
+    #[tokio::test]
+    #[ignore]
+    async fn test_live_server() {
+        let addr = "195.60.166.46:27016";
+        println!("=== Direct A2SClient test against {} ===", addr);
+
+        let client = A2SClient::new().await.expect("A2SClient::new failed");
+
+        // info only first — cheapest query
+        match client.info(addr).await {
+            Ok(info) => println!("INFO ok: name={:?} map={:?} players={}/{} version={:?}",
+                info.name, info.map, info.players, info.max_players, info.version),
+            Err(e) => println!("INFO error: {:?}", e),
+        }
+
+        // new client for players (socket is stateful)
+        let client2 = A2SClient::new().await.expect("A2SClient::new failed");
+        match client2.players(addr).await {
+            Ok(players) => println!("PLAYERS ok: {} players", players.len()),
+            Err(e) => println!("PLAYERS error: {:?}", e),
+        }
+
+        println!("=== Via get_server_details wrapper ===");
+        let server = crate::api::Server {
+            endpoint: crate::api::Endpoint {
+                ip: "195.60.166.46".to_string(),
+                port: 27016,
+            },
+            ..Default::default()
+        };
+        match get_server_details(&server).await {
+            Ok(details) => {
+                println!("get_server_details ok:");
+                println!("  name    = {:?}", details.info.name);
+                println!("  map     = {:?}", details.info.map);
+                println!("  players = {}/{}", details.info.players, details.info.max_players);
+                println!("  ping    = {:?}ms", details.ping_ms);
+                if let Some(ref pl) = details.players {
+                    println!("  online  = {} players", pl.len());
+                    for p in pl.iter().take(5) {
+                        println!("    {:?}", p.name);
+                    }
+                } else {
+                    println!("  players query failed (ok for DayZ)");
+                }
+            }
+            Err(e) => println!("get_server_details error: {:?}", e),
+        }
+    }
+
+    /// Test the same query port but via try_join (exactly like the a2s lib's own test)
+    #[tokio::test]
+    #[ignore]
+    async fn test_live_try_join() {
+        let addr = "195.60.166.46:27016";
+        println!("=== try_join test against {} ===", addr);
+
+        let client = A2SClient::new().await.expect("A2SClient::new failed");
+        let info_fut = client.info(addr);
+        let players_fut = client.players(addr);
+
+        match try_join!(info_fut, players_fut) {
+            Ok((info, players)) => {
+                println!("try_join ok");
+                println!("  name={:?} players={}/{}", info.name, info.players, info.max_players);
+                println!("  {} online", players.len());
+            }
+            Err(e) => println!("try_join error: {:?}", e),
+        }
+    }
+}
+
 /// Comprehensive server details from A2S queries
 #[derive(Debug, Clone)]
 pub struct ServerDetails {

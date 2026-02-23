@@ -56,7 +56,7 @@ pub fn build_steam_applaunch_args(
     let mut steam_args = vec![
         "-applaunch".to_string(),
         game_id.to_string(),
-        "-nolauncher".to_string(),
+        "-malloc=system".to_string(),
     ];
     if let Some(user) = username {
         if !user.is_empty() {

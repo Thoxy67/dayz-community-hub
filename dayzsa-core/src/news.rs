@@ -9,11 +9,14 @@ pub const NEWS_CACHE_TTL_SECS: u64 = 3600;
 /// A single DayZ news article.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Article {
+    pub id: u64,
     pub title: String,
     pub slug: String,
     pub excerpt: Option<String>,
     pub content: Option<String>,
     pub version: Option<String>,
+    /// Hero image filename (e.g. "0OGKO3k.jpeg") served from /app-static/uploads/article/{id}/
+    pub image: Option<String>,
     /// ISO 8601 publish date from the API, e.g. "2026-02-05T00:30:00.000Z"
     pub published_at: Option<String>,
     #[serde(rename = "ArticleCategory")]
@@ -29,6 +32,27 @@ static RE_ENTITY: OnceLock<Regex> = OnceLock::new();
 static RE_BLANK:  OnceLock<Regex> = OnceLock::new();
 
 impl Article {
+    /// Return the raw HTML content with `<app-picture>` custom elements replaced
+    /// by standard `<img>` tags pointing to dayz.com's CDN at 640 px webp.
+    pub fn content_html(&self) -> String {
+        let html = match self.content.as_deref() {
+            Some(h) if !h.is_empty() => h,
+            _ => return String::new(),
+        };
+        static RE_PIC: OnceLock<Regex> = OnceLock::new();
+        let re = RE_PIC.get_or_init(|| {
+            Regex::new(r#"<app-picture[^>]*\bcode="([^"]+)"[^>]*>\s*</app-picture>"#).unwrap()
+        });
+        re.replace_all(html, |caps: &regex::Captures| {
+            let code = &caps[1];
+            format!(
+                r#"<img src="https://dayz.com/app-static/uploads/{}_{}.{}" alt="" loading="lazy" />"#,
+                code, 640, "webp"
+            )
+        })
+        .into_owned()
+    }
+
     /// Strip HTML tags and decode common entities, returning plain text
     /// suitable for display in the TUI detail panel.
     pub fn html_to_text(&self) -> String {
