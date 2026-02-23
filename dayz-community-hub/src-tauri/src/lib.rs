@@ -1537,6 +1537,12 @@ async fn reset_profile(state: State<'_, SharedState>) -> Result<ProfileDto, Stri
     Ok(profile_to_dto(state.ctl.profile()))
 }
 
+/// Restart the application immediately.
+#[tauri::command]
+fn restart_app(app: tauri::AppHandle) {
+    app.restart();
+}
+
 // ─── Application entry point ──────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1586,6 +1592,7 @@ pub fn run() {
             export_profile,
             import_profile,
             reset_profile,
+            restart_app,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

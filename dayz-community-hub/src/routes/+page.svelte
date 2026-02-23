@@ -450,11 +450,11 @@
     const path = typeof selected === 'string' ? selected : selected[0];
     confirmDialog = {
       title: 'Import Profile',
-      message: 'This will overwrite your current profile, favorites, history and launch options. Continue?',
+      message: 'This will overwrite your current profile, favorites, history and launch options. The app will restart to apply the changes. Continue?',
       onConfirm: async () => {
         try {
-          profile = await invoke<ProfileDto>('import_profile', { path });
-          setStatus('Profile imported successfully', 'success');
+          await invoke('import_profile', { path });
+          await invoke('restart_app');
         } catch (e) {
           setStatus(`Import failed: ${e}`, 'error');
         }
@@ -465,11 +465,11 @@
   function resetProfile() {
     confirmDialog = {
       title: 'Reset Profile',
-      message: 'Reset all settings, favorites, history and launch options to defaults? Installed mods on disk are not affected.',
+      message: 'Reset all settings, favorites, history and launch options to defaults? Installed mods on disk are not affected. The app will restart to apply the changes.',
       onConfirm: async () => {
         try {
-          profile = await invoke<ProfileDto>('reset_profile');
-          setStatus('Profile reset to defaults', 'success');
+          await invoke('reset_profile');
+          await invoke('restart_app');
         } catch (e) {
           setStatus(`Reset failed: ${e}`, 'error');
         }
