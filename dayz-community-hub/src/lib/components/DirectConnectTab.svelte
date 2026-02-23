@@ -243,11 +243,11 @@
               bind:value={port}
               onkeydown={handleKeydown}
             />
-            <label class="label py-0 pt-1">
+            <p class="label py-0 pt-1">
               <span class="label-text-alt text-base-content/35 text-xs">
                 Game port (e.g. 2302) or query port — both accepted.
               </span>
-            </label>
+            </p>
           </div>
         </div>
 

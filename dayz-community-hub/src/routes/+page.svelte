@@ -915,6 +915,7 @@
   });
 </script>
 
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="flex flex-col h-screen w-screen overflow-hidden bg-base-100 text-base-content" data-theme={theme} onkeydown={handleGlobalKeydown}>
   <TitleBar {stats} {steamPlayers} {theme} {profile} onToggleTheme={toggleTheme} onSaveSettings={saveProfileSettings} />
   <TabBar {activeTab} {tabs} onSelect={selectTab} />

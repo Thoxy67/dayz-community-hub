@@ -273,9 +273,9 @@
               placeholder="e.g. Survivor"
               bind:value={playerName}
             />
-            <label class="label py-0 pt-1">
+            <p class="label py-0 pt-1">
               <span class="label-text-alt text-base-content/40">Passed as <span class="font-mono">-name=</span> to DayZ.</span>
-            </label>
+            </p>
           </div>
 
           <!-- Steam root -->
@@ -299,12 +299,12 @@
                 <Icon icon="ph:folder-open" class="size-4" />
               </button>
             </div>
-            <label class="label py-0 pt-1">
+            <p class="label py-0 pt-1">
               <span class="label-text-alt text-base-content/40">
                 Linux: <span class="font-mono">~/.steam/steam</span> —
                 Windows: <span class="font-mono">C:\Program Files (x86)\Steam</span>
               </span>
-            </label>
+            </p>
           </div>
         </div>
 
