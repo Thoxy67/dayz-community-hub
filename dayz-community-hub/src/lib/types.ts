@@ -73,9 +73,26 @@ export interface ProfileDto {
   player: string | null;
   steam_api_key: string | null;
   steam_id: string | null;
+  battlemetrics_api_key: string | null;
   favorites: FavoriteDto[];
   history: HistoryDto[];
   options: LaunchOptionDto[];
+}
+
+/** BattleMetrics server info fetched on demand for the detail panel. */
+export interface BattleMetricsDto {
+  /** BattleMetrics server ID (used to build the BM page URL). */
+  id: string;
+  /** Global rank (1 = most popular). null if not ranked. */
+  rank: number | null;
+  /** "online" | "offline" | "dead" */
+  status: string;
+  /** ISO 3166-1 alpha-2 country code, e.g. "DE". null if unknown. */
+  country: string | null;
+  /** Uptime % over last 30 days (0–100). null if not available. */
+  uptime: number | null;
+  /** Player count data points for the last 24 h: [unix_secs, count] pairs. */
+  player_history: [number, number][];
 }
 
 export interface ArticleDto {
@@ -178,6 +195,13 @@ export interface ServersFilterState {
   filterBE: 'both' | 'be-only' | 'no-be';
   sortCol: 'ping' | 'players' | 'name' | 'map' | 'mods' | 'none';
   sortAsc: boolean;
+}
+
+export interface CliArgs {
+  /** "ip" or "ip:port" from --connect, null if not provided */
+  connect: string | null;
+  /** true if --reconnect was passed */
+  reconnect: boolean;
 }
 
 export interface ModOpState {

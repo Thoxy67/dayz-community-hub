@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { HistoryDto, ServerDto, A2sDetailsDto } from '$lib/types';
+  import type { HistoryDto, ServerDto, A2sDetailsDto, BattleMetricsDto } from '$lib/types';
   import { invoke } from '@tauri-apps/api/core';
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
@@ -10,6 +10,8 @@
     servers: ServerDto[];
     pingCache: Map<string, number>;
     favorites: Set<string>; // "ip:port" keys
+    /** BattleMetrics personal access token (null = not configured). */
+    bmApiKey: string | null;
     onConnect: (ip: string, port: number, name: string) => void;
     onAddFavorite: (h: HistoryDto) => void;
     onRemoveFavorite: (h: HistoryDto) => void;
@@ -18,7 +20,7 @@
     onGoToServers?: () => void;
   }
 
-  let { history, servers, pingCache, favorites, onConnect, onAddFavorite, onRemoveFavorite, onRemove, onClearAll, onGoToServers }: Props = $props();
+  let { history, servers, pingCache, favorites, bmApiKey, onConnect, onAddFavorite, onRemoveFavorite, onRemove, onClearAll, onGoToServers }: Props = $props();
 
   // Pre-built lookup map rebuilt only when `servers` changes (O(n) once).
   // Covers both query_port and game_port keys so per-row lookups are O(1).
@@ -207,6 +209,55 @@
     detailEntry = null;
     a2s = null;
     a2sError = '';
+    bm = null;
+    bmError = '';
+    bmFetchedKey = '';
+  }
+
+  // ── BattleMetrics ──────────────────────────────────────────────────────────
+  let bm = $state<BattleMetricsDto | null>(null);
+  let bmLoading = $state(false);
+  let bmError = $state('');
+  let bmFetchedKey = '';
+  let bmRetryTick = $state(0);
+
+  $effect(() => {
+    if (!detailEntry) return;
+    const sv = findServer(detailEntry);
+    const queryPort = sv ? sv.query_port : detailEntry.port;
+    const key = `${detailEntry.ip}:${queryPort}`;
+    bmRetryTick;
+    const token = bmApiKey;
+    if (!token || key === bmFetchedKey) return;
+
+    bmLoading = true;
+    bmError = '';
+    invoke<BattleMetricsDto>('fetch_battlemetrics_server', { ip: detailEntry.ip, port: queryPort })
+      .then((result) => {
+        if (detailEntry && `${detailEntry.ip}:${(findServer(detailEntry) ?? { query_port: detailEntry.port }).query_port}` === key) {
+          bm = result;
+          bmError = '';
+          bmFetchedKey = key;
+        }
+      })
+      .catch((e: unknown) => {
+        bm = null;
+        bmError = String(e);
+        bmFetchedKey = key;
+      })
+      .finally(() => { bmLoading = false; });
+  });
+
+  function sparklinePath(history: [number, number][], w = 120, h = 24): string {
+    if (history.length < 2) return '';
+    const pts = [...history].sort((a, b) => a[0] - b[0]);
+    const maxVal = Math.max(...pts.map((p) => p[1]), 1);
+    const step = w / (pts.length - 1);
+    return pts.map((p, i) => {
+      const x = i * step;
+      const y = h - (p[1] / maxVal) * h;
+      return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
   }
 
   let selectedIdx = $state(-1);
@@ -524,6 +575,85 @@
         {/if}
       </div>
 
+      <!-- BattleMetrics section -->
+      <div class="px-3 py-2 border-t border-base-300 flex-shrink-0 space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-base-content/50 flex items-center gap-1.5">
+            <Icon icon="ph:chart-line-up" class="size-3.5" />
+            BattleMetrics
+          </span>
+          {#if bmApiKey}
+            <button
+              class="btn btn-ghost btn-xs h-5 min-h-0 px-1.5"
+              onclick={() => { bmFetchedKey = ''; bmRetryTick++; }}
+              disabled={bmLoading}
+              title="Refresh BattleMetrics"
+            >
+              {#if bmLoading}
+                <span class="loading loading-spinner loading-xs"></span>
+              {:else}
+                <Icon icon="ph:arrows-clockwise" class="size-3" />
+              {/if}
+            </button>
+          {/if}
+        </div>
+
+        {#if !bmApiKey}
+          <p class="text-xs text-base-content/30 italic">Configure a BattleMetrics API token in settings.</p>
+        {:else if bmLoading}
+          <div class="flex items-center gap-1.5 text-xs text-base-content/40">
+            <span class="loading loading-spinner loading-xs"></span>
+            Loading…
+          </div>
+        {:else if bm}
+          <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+            {#if bm.rank !== null}
+              <span class="text-base-content/50">Rank</span>
+              <span class="font-mono font-bold text-primary">#{bm.rank}</span>
+            {/if}
+            <span class="text-base-content/50">Status</span>
+            <span class="flex items-center gap-1.5">
+              <span class="size-1.5 rounded-full flex-shrink-0 {bm.status === 'online' ? 'bg-success' : bm.status === 'offline' ? 'bg-error' : 'bg-base-content/30'}"></span>
+              <span class="{bm.status === 'online' ? 'text-success' : bm.status === 'offline' ? 'text-error' : 'text-base-content/50'}">{bm.status}</span>
+            </span>
+            {#if bm.country}
+              <span class="text-base-content/50">Country</span>
+              <span class="font-mono">{bm.country}</span>
+            {/if}
+            {#if bm.uptime !== null}
+              <span class="text-base-content/50">Uptime</span>
+              <span class="{(bm.uptime ?? 0) >= 90 ? 'text-success' : (bm.uptime ?? 0) >= 70 ? 'text-warning' : 'text-error'}">{bm.uptime?.toFixed(1)}%</span>
+            {/if}
+          </div>
+          {#if bm.player_history.length >= 2}
+            <div>
+              <div class="text-xs text-base-content/35 mb-1">Player count (24 h)</div>
+              <svg viewBox="0 0 120 24" class="w-full h-6 text-primary" preserveAspectRatio="none">
+                <path d={sparklinePath(bm.player_history)} fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </div>
+          {/if}
+          <button
+            class="btn btn-ghost btn-xs gap-1 text-base-content/40 hover:text-primary w-full"
+            onclick={() => openUrl(`https://www.battlemetrics.com/servers/dayz/${bm?.id}`)}
+          >
+            <Icon icon="ph:arrow-square-out" class="size-3.5" />
+            View on BattleMetrics
+          </button>
+        {:else if bmError}
+          <div class="flex items-start gap-1.5 text-xs text-error">
+            <Icon icon="ph:warning-circle" class="size-3.5 shrink-0 mt-0.5" />
+            <span class="leading-snug break-all flex-1">{bmError}</span>
+            <button
+              class="btn btn-ghost btn-xs h-5 min-h-0 px-1 shrink-0"
+              onclick={() => { bmFetchedKey = ''; bmRetryTick++; }}
+              title="Retry"
+            ><Icon icon="ph:arrows-clockwise" class="size-3" /></button>
+          </div>
+        {/if}
+      </div>
+
+      <!-- Refresh A2S button -->
       <div class="px-3 py-2 border-t border-base-300 flex-shrink-0">
         <button
           class="btn btn-ghost btn-xs w-full gap-1.5"
@@ -531,7 +661,7 @@
           disabled={a2sLoading}
         >
           <Icon icon="ph:arrows-clockwise" class="size-3.5" />
-          Refresh
+          Refresh A2S
         </button>
       </div>
     </div>

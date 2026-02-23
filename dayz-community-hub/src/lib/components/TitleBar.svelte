@@ -19,6 +19,7 @@
       steamcmdPath: string | null,
       steamApiKey: string | null,
       steamId: string | null,
+      battlemetricsApiKey: string | null,
     ) => void;
   }
 
@@ -43,28 +44,32 @@
   }
 
   // ── Account modal state ────────────────────────────────────────────────────
-  let modalOpen     = $state(false);
-  let playerName    = $state('');
-  let steamLogin    = $state('');
-  let steamPassword = $state('');
-  let steamRoot     = $state('');
-  let steamApiKey   = $state('');
-  let steamId       = $state('');
-  let steamcmdPath  = $state('');
-  let showPassword  = $state(false);
-  let showApiKey    = $state(false);
+  let modalOpen            = $state(false);
+  let playerName           = $state('');
+  let steamLogin           = $state('');
+  let steamPassword        = $state('');
+  let steamRoot            = $state('');
+  let steamApiKey          = $state('');
+  let steamId              = $state('');
+  let steamcmdPath         = $state('');
+  let battlemetricsApiKey  = $state('');
+  let showPassword         = $state(false);
+  let showApiKey           = $state(false);
+  let showBmKey            = $state(false);
 
   function openModal() {
-    playerName    = profile?.player ?? '';
-    steamLogin    = profile?.steam_login ?? '';
-    steamPassword = profile?.steam_password ?? '';
-    steamRoot     = profile?.steam_root ?? '';
-    steamcmdPath  = profile?.steamcmd_path ?? '';
-    steamApiKey   = profile?.steam_api_key ?? '';
-    steamId       = profile?.steam_id ?? '';
-    showPassword  = false;
-    showApiKey    = false;
-    modalOpen     = true;
+    playerName           = profile?.player ?? '';
+    steamLogin           = profile?.steam_login ?? '';
+    steamPassword        = profile?.steam_password ?? '';
+    steamRoot            = profile?.steam_root ?? '';
+    steamcmdPath         = profile?.steamcmd_path ?? '';
+    steamApiKey          = profile?.steam_api_key ?? '';
+    steamId              = profile?.steam_id ?? '';
+    battlemetricsApiKey  = profile?.battlemetrics_api_key ?? '';
+    showPassword         = false;
+    showApiKey           = false;
+    showBmKey            = false;
+    modalOpen            = true;
   }
 
   function closeModal() { modalOpen = false; }
@@ -79,6 +84,7 @@
       steamcmdPath.trim() || null,
       steamApiKey.trim() || null,
       steamId.trim() || null,
+      battlemetricsApiKey.trim() || null,
     );
     closeModal();
   }
@@ -385,7 +391,7 @@
           {/if}
         </div>
 
-        <!-- ── Section: Avatar ────────────────────────────────────────────── -->
+        <!-- ── Section: Steam API ─────────────────────────────────────────── -->
         <div>
           <div class="flex items-center gap-2 mb-3">
             <Icon icon="ph:identification-card" class="size-3.5 text-primary" />
@@ -438,6 +444,57 @@
               />
             </div>
           </div>
+        </div>
+
+        <!-- ── Section: BattleMetrics ─────────────────────────────────────── -->
+        <div>
+          <div class="flex items-center gap-2 mb-3">
+            <Icon icon="ph:chart-line-up" class="size-3.5 text-primary" />
+            <span class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">BattleMetrics</span>
+            <span class="text-xs text-base-content/35 font-normal normal-case tracking-normal">player history &amp; server rankings</span>
+          </div>
+          <div class="bg-base-200/60 rounded-lg border border-base-300/60 overflow-hidden">
+            <div class="flex items-center gap-3 px-3 py-2.5">
+              <label class="text-xs text-base-content/55 w-24 shrink-0" for="field-bmkey">API token</label>
+              <div class="flex-1 flex items-center gap-1.5">
+                {#if showBmKey}
+                  <input
+                    id="field-bmkey"
+                    type="text"
+                    class="flex-1 bg-transparent text-xs font-mono text-base-content placeholder:text-base-content/25 outline-none min-w-0"
+                    placeholder="battlemetrics.com/developers"
+                    autocomplete="off"
+                    bind:value={battlemetricsApiKey}
+                  />
+                {:else}
+                  <input
+                    id="field-bmkey"
+                    type="password"
+                    class="flex-1 bg-transparent text-xs font-mono text-base-content placeholder:text-base-content/25 outline-none min-w-0"
+                    placeholder="battlemetrics.com/developers"
+                    autocomplete="off"
+                    bind:value={battlemetricsApiKey}
+                  />
+                {/if}
+                <button
+                  type="button"
+                  class="text-base-content/30 hover:text-base-content transition-colors shrink-0"
+                  onclick={() => (showBmKey = !showBmKey)}
+                  title={showBmKey ? 'Hide' : 'Show'}
+                >
+                  <Icon icon={showBmKey ? 'ph:eye-slash' : 'ph:eye'} class="size-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+          <p class="text-xs text-base-content/35 mt-1.5 px-1">
+            Get a personal access token at
+            <button
+              type="button"
+              class="text-primary hover:underline"
+              onclick={() => { import('@tauri-apps/plugin-opener').then(m => m.openUrl('https://www.battlemetrics.com/developers')); }}
+            >battlemetrics.com/developers</button>
+          </p>
         </div>
 
       </div>

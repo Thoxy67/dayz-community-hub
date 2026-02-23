@@ -21,8 +21,10 @@
     ConfirmDialog,
     ModOpState,
     ServersFilterState,
+    CliArgs,
   } from '$lib/types';
 
+  import Icon from '@iconify/svelte';
   import TitleBar from '$lib/components/TitleBar.svelte';
   import TabBar from '$lib/components/TabBar.svelte';
   import ServersTab from '$lib/components/ServersTab.svelte';
@@ -92,6 +94,8 @@
   let lastHistoryEntry = $derived(
     !quickConnectDismissed ? (profile?.history?.[0] ?? null) : null
   );
+  // CLI args received before initialization completed — drained by doInitialize().
+  let pendingCliArgs = $state<CliArgs | null>(null);
   let statusMessage = $state('');
   let statusKind = $state<'info' | 'success' | 'error' | 'warning'>('info');
 
@@ -279,6 +283,13 @@
       // 2. Load profile + stats + steam players + mods in parallel (fast, no big data)
       await Promise.all([loadProfile(), loadStats(), loadSteamPlayers(), loadMods()]);
 
+      // Drain any CLI args that arrived before profile was ready.
+      if (pendingCliArgs) {
+        const queued = pendingCliArgs;
+        pendingCliArgs = null;
+        handleCliArgs(queued);
+      }
+
       // 3b. Fetch Steam avatar in the background (non-blocking)
       invoke('fetch_steam_avatar').then(() => loadStats()).catch(() => {});
 
@@ -387,6 +398,46 @@
     } else {
       // Direct connect fallback
       connectDirect(ip, port);
+    }
+  }
+
+  /**
+   * Act on parsed CLI args — called on startup (get_cli_args) and when a
+   * second instance fires the "cli-args" event.
+   *
+   * --connect <ip[:port]>  → switch to Direct Connect tab, pre-fill, and connect
+   * --reconnect            → reconnect to the last history entry
+   */
+  async function handleCliArgs(args: CliArgs) {
+    // If profile isn't loaded yet, queue and let doInitialize() drain it.
+    if (!initialized) {
+      pendingCliArgs = args;
+      return;
+    }
+    if (args.connect) {
+      // Parse optional port from "ip:port" form
+      const raw = args.connect.trim();
+      const lastColon = raw.lastIndexOf(':');
+      let ip = raw;
+      let port = 2302;
+      if (lastColon !== -1) {
+        const maybPort = parseInt(raw.slice(lastColon + 1), 10);
+        if (!isNaN(maybPort)) {
+          ip = raw.slice(0, lastColon);
+          port = maybPort;
+        }
+      }
+      selectTab('connect');
+      // Small delay so the tab renders before we trigger the connect
+      await new Promise((r) => setTimeout(r, 150));
+      connectDirect(ip, port);
+    } else if (args.reconnect) {
+      const last = profile?.history?.[0] ?? null;
+      if (last) {
+        connectByAddress(last.ip, last.port, last.name);
+      } else {
+        setStatus('No history entry to reconnect to', 'warning');
+      }
     }
   }
 
@@ -653,6 +704,7 @@
     steamcmdPath: string | null,
     steamApiKey: string | null,
     steamId: string | null,
+    battlemetricsApiKey: string | null,
   ) {
     try {
       await invoke('save_profile_settings', {
@@ -664,6 +716,7 @@
         steamcmdPath,
         steamApiKey,
         steamId,
+        battlemetricsApiKey,
       });
       await loadProfile();
       // Re-fetch avatar whenever settings are saved (credentials may have changed)
@@ -848,6 +901,14 @@
       offlineStatusKind = 'error';
     }).then((fn) => cleanupFns.push(fn));
 
+    // CLI args — read once at startup, then listen for a second instance.
+    invoke<CliArgs>('get_cli_args').then((args) => {
+      if (args.connect || args.reconnect) handleCliArgs(args);
+    });
+    listen<CliArgs>('cli-args', ({ payload }) => {
+      handleCliArgs(payload);
+    }).then((fn) => cleanupFns.push(fn));
+
     return () => {
       cleanupFns.forEach((fn) => fn());
       if (statusTimeout) clearTimeout(statusTimeout);
@@ -873,22 +934,75 @@
 
   <!-- Quick-connect banner: last played server, shown on Servers tab -->
   {#if lastHistoryEntry && activeTab === 'servers' && initialized}
-    <div class="flex items-center gap-2 px-3 py-1.5 bg-base-200 border-b border-base-300 flex-shrink-0 text-xs">
-      <span class="text-base-content/40 shrink-0">Last played:</span>
-      <span class="font-medium text-base-content/80 truncate flex-1">{lastHistoryEntry.name}</span>
+    {@const _lh = lastHistoryEntry}
+    {@const _lhServer = servers.find(s => s.ip === _lh.ip && (s.query_port === _lh.port || s.game_port === _lh.port))}
+    {@const _lhPing = _lhServer
+      ? (pingCache.get(`${_lhServer.ip}:${_lhServer.query_port}`) ?? pingCache.get(`${_lh.ip}:${_lh.port}`))
+      : pingCache.get(`${_lh.ip}:${_lh.port}`)}
+    <div class="flex items-center gap-3 px-3 py-1.5 bg-base-200 border-b border-base-300 flex-shrink-0 text-xs">
+      <!-- Icon + label -->
+      <div class="flex items-center gap-1.5 shrink-0 text-base-content/40">
+        <Icon icon="ph:clock-counter-clockwise" class="size-3.5" />
+        <span class="uppercase tracking-wide" style="font-size:10px;">Last played</span>
+      </div>
+
+      <!-- Server name -->
+      <span class="font-semibold text-base-content/85 truncate">{_lh.name}</span>
+
+      <!-- Live stats — only if server is in the list -->
+      {#if _lhServer}
+        <span class="w-px h-3.5 bg-base-300 shrink-0"></span>
+        <!-- Players -->
+        <span class="flex items-center gap-1 shrink-0 tabular-nums
+                     {_lhServer.players >= _lhServer.max_players ? 'text-error' : _lhServer.players > _lhServer.max_players / 2 ? 'text-warning' : 'text-success'}">
+          <Icon icon="ph:users" class="size-3 shrink-0" />
+          {_lhServer.players}/{_lhServer.max_players}
+        </span>
+        <!-- Map -->
+        <span class="flex items-center gap-1 shrink-0 text-teal-400/80">
+          <Icon icon="ph:map-trifold" class="size-3 shrink-0" />
+          {_lhServer.map}
+        </span>
+        <!-- Ping -->
+        {#if _lhPing !== undefined}
+          <span class="flex items-center gap-1 shrink-0 tabular-nums font-mono
+                       {_lhPing < 50 ? 'text-success' : _lhPing < 100 ? 'text-warning' : 'text-error'}">
+            <Icon icon="ph:wave-triangle" class="size-3 shrink-0" />
+            {_lhPing}ms
+          </span>
+        {/if}
+        <!-- In-game time -->
+        {#if _lhServer.time}
+          <span class="flex items-center gap-1 shrink-0 text-base-content/50 tabular-nums font-mono">
+            <Icon icon="ph:sun-horizon" class="size-3 shrink-0" />
+            {_lhServer.time}
+          </span>
+        {/if}
+      {:else}
+        <span class="shrink-0 text-warning/70" style="font-size:10px;" title="Server not found in current list — may be offline">OFFLINE</span>
+      {/if}
+
+      <!-- Time -->
+      <span class="text-base-content/30 shrink-0 ml-auto" title={new Date(_lh.ts * 1000).toLocaleString()}>
+        {_lh.relative_time}
+      </span>
+
+      <!-- Reconnect -->
       <button
         class="btn btn-xs btn-primary h-6 min-h-0 px-2.5 shrink-0 gap-1"
-        onclick={() => connectByAddress(lastHistoryEntry!.ip, lastHistoryEntry!.port, lastHistoryEntry!.name)}
+        onclick={() => connectByAddress(_lh.ip, _lh.port, _lh.name)}
       >
-        <svg xmlns="http://www.w3.org/2000/svg" class="size-3" viewBox="0 0 256 256" fill="currentColor"><path d="M221.66,133.66l-72,72a8,8,0,0,1-11.32-11.32L196.69,136H40a8,8,0,0,1,0-16H196.69L138.34,61.66a8,8,0,0,1,11.32-11.32l72,72A8,8,0,0,1,221.66,133.66Z"/></svg>
+        <Icon icon="ph:arrow-right" class="size-3" />
         Reconnect
       </button>
+
+      <!-- Dismiss -->
       <button
         class="size-5 flex items-center justify-center rounded text-base-content/30 hover:text-base-content/70 hover:bg-base-300 transition-colors shrink-0"
         onclick={() => (quickConnectDismissed = true)}
         title="Dismiss"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" class="size-3" viewBox="0 0 256 256" fill="currentColor"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/></svg>
+        <Icon icon="ph:x" class="size-3" />
       </button>
     </div>
   {/if}
@@ -913,6 +1027,7 @@
         favorites={favoritesSet}
         loading={serversLoading}
         bind:filter={serversFilter}
+        bmApiKey={profile?.battlemetrics_api_key ?? null}
         onConnect={connectToServer}
         onAddFavorite={addFavorite}
         onRemoveFavorite={(s) => removeFavoriteQuick(s.ip, s.query_port)}
@@ -923,6 +1038,7 @@
         favorites={profile?.favorites ?? []}
         {servers}
         {pingCache}
+        bmApiKey={profile?.battlemetrics_api_key ?? null}
         onConnect={connectByAddress}
         onRemove={removeFavorite}
         onGoToServers={() => selectTab('servers')}
@@ -933,6 +1049,7 @@
         {servers}
         {pingCache}
         favorites={favoritesSet}
+        bmApiKey={profile?.battlemetrics_api_key ?? null}
         onConnect={connectByAddress}
         onAddFavorite={addFavoriteFromHistory}
         onRemoveFavorite={(h) => removeFavoriteQuick(h.ip, h.port)}

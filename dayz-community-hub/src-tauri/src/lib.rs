@@ -8,11 +8,31 @@ use dayz_community_hub_core::{
     offline::OfflineMode,
     steamcmd::ModProgress,
 };
+use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::OnceLock;
 use tauri::{ipc::Channel, AppHandle, Emitter, Manager, State};
 use tokio::sync::{Mutex, RwLock};
+
+// ─── CLI arguments ────────────────────────────────────────────────────────────
+
+/// DayZ Community Hub launcher.
+#[derive(Parser, Debug, Clone, Serialize)]
+#[command(name = "dayz-community-hub", about = "DayZ Community Hub")]
+pub struct CliArgs {
+    /// Open the Direct Connect tab and pre-fill this IP address.
+    /// Accepts "ip" or "ip:port" (port defaults to 2302).
+    #[arg(long, value_name = "IP[:PORT]")]
+    pub connect: Option<String>,
+
+    /// Immediately reconnect to the last server from history.
+    #[arg(long)]
+    pub reconnect: bool,
+}
+
+/// Parsed CLI args stored at startup; re-used by the `get_cli_args` command.
+static CLI_ARGS: OnceLock<CliArgs> = OnceLock::new();
 
 // ─── Shared HTTP client (insecure) ────────────────────────────────────────────
 //
@@ -139,6 +159,7 @@ pub struct ProfileDto {
     pub player: Option<String>,
     pub steam_api_key: Option<String>,
     pub steam_id: Option<String>,
+    pub battlemetrics_api_key: Option<String>,
     pub favorites: Vec<FavoriteDto>,
     pub history: Vec<HistoryDto>,
     pub options: Vec<LaunchOptionDto>,
@@ -220,6 +241,23 @@ pub struct InitResult {
     pub is_first_launch: bool,
 }
 
+/// BattleMetrics server info fetched on demand for the detail panel.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct BattleMetricsDto {
+    /// BattleMetrics server ID (used to build the BM page URL).
+    pub id: String,
+    /// Global rank (1 = most popular). None if not ranked.
+    pub rank: Option<i64>,
+    /// Server status: "online" | "offline" | "dead"
+    pub status: String,
+    /// ISO 3166-1 alpha-2 country code, e.g. "DE", "US".
+    pub country: Option<String>,
+    /// Uptime percentage over the last 30 days (0–100).
+    pub uptime: Option<f64>,
+    /// Player count data points for the last 24 h: (unix_secs, player_count) pairs.
+    pub player_history: Vec<(i64, i64)>,
+}
+
 /// Ping result sent via Channel.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PingResultDto {
@@ -288,6 +326,7 @@ fn profile_to_dto(profile: &Profile) -> ProfileDto {
         player: profile.player.clone(),
         steam_api_key: profile.steam_api_key.clone(),
         steam_id: profile.steam_id.clone(),
+        battlemetrics_api_key: profile.battlemetrics_api_key.clone(),
         favorites: profile
             .favorites
             .iter()
@@ -538,6 +577,7 @@ async fn save_profile_settings(
     steamcmd_path: Option<String>,
     steam_api_key: Option<String>,
     steam_id: Option<String>,
+    battlemetrics_api_key: Option<String>,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
     let mut state = state.lock().await;
@@ -555,6 +595,7 @@ async fn save_profile_settings(
         profile.steamcmd_path = steamcmd_path;
         profile.steam_api_key = steam_api_key;
         profile.steam_id = steam_id;
+        profile.battlemetrics_api_key = battlemetrics_api_key;
     }
     // If avatar credentials changed, invalidate the cache so it gets re-fetched
     if credentials_changed {
@@ -1182,6 +1223,182 @@ async fn get_app_stats(state: State<'_, SharedState>) -> Result<AppStatsDto, Str
     })
 }
 
+/// Fetch BattleMetrics server info by IP + query port.
+/// Searches the BM API, then fetches a 24 h player count history.
+/// Requires a BattleMetrics personal access token stored in the profile.
+#[tauri::command]
+async fn fetch_battlemetrics_server(
+    ip: String,
+    port: i64,
+    state: State<'_, SharedState>,
+) -> Result<BattleMetricsDto, String> {
+    let token = {
+        let s = state.lock().await;
+        s.ctl
+            .profile()
+            .battlemetrics_api_key
+            .clone()
+            .ok_or_else(|| "No BattleMetrics API key configured".to_string())?
+    };
+
+    let client = insecure_client();
+
+    // --- 1. Search for the server by IP + port ---
+    // Note: BattleMetrics game IDs are lowercase ("dayz", not "DayZ").
+    let search_url = format!(
+        "https://api.battlemetrics.com/servers?filter[game]=dayz&filter[search]={ip}:{port}\
+         &fields[server]=name,rank,status,country,ip,port,details&page[size]=5"
+    );
+    let search_resp = client
+        .get(&search_url)
+        .bearer_auth(&token)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let search_json: serde_json::Value = search_resp.json().await.map_err(|e| e.to_string())?;
+
+    // Find the entry whose IP:port matches exactly (BM search is text-based so may return extras).
+    let data = search_json["data"]
+        .as_array()
+        .ok_or_else(|| "Unexpected BattleMetrics response".to_string())?;
+
+    let entry = data
+        .iter()
+        .find(|e| {
+            let attrs = &e["attributes"];
+            let bm_ip = attrs["ip"].as_str().unwrap_or("");
+            let bm_port = attrs["port"].as_i64().unwrap_or(0);
+            // BattleMetrics stores the game port; accept either port or port-1 (query port).
+            bm_ip == ip && (bm_port == port || bm_port == port - 1 || bm_port == port + 1)
+        })
+        .or_else(|| data.first()) // fallback: best text match
+        .ok_or_else(|| "Server not found on BattleMetrics".to_string())?;
+
+    let bm_id = entry["id"]
+        .as_str()
+        .ok_or_else(|| "Missing BM server id".to_string())?
+        .to_string();
+    let attrs = &entry["attributes"];
+    let rank = attrs["rank"].as_i64();
+    let status = attrs["status"]
+        .as_str()
+        .unwrap_or("unknown")
+        .to_string();
+    let country = attrs["country"].as_str().map(|s| s.to_string());
+    // uptime is nested under details.official or details.rust etc — try common paths.
+    let uptime = attrs["details"]["uptime"]
+        .as_f64()
+        .or_else(|| attrs["details"]["uptime30"].as_f64());
+
+    // --- 2. Fetch 24 h player count history ---
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let stop = chrono_or_fallback(now);
+    let start = chrono_or_fallback(now.saturating_sub(86400));
+
+    let history_url = format!(
+        "https://api.battlemetrics.com/servers/{bm_id}/player-count-history\
+         ?start={start}&stop={stop}&resolution=60"
+    );
+    let history_resp = client
+        .get(&history_url)
+        .bearer_auth(&token)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let history_json: serde_json::Value =
+        history_resp.json().await.map_err(|e| e.to_string())?;
+
+    let player_history: Vec<(i64, i64)> = history_json["data"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .filter_map(|point| {
+            // Each point is { type: "dataPoint", attributes: { timestamp, value, min, max } }
+            let attrs = &point["attributes"];
+            let ts_str = attrs["timestamp"].as_str()?;
+            let count = attrs["value"].as_i64().unwrap_or(0);
+            let ts = parse_iso8601_approx(ts_str);
+            Some((ts, count))
+        })
+        .collect();
+
+    Ok(BattleMetricsDto {
+        id: bm_id,
+        rank,
+        status,
+        country,
+        uptime,
+        player_history,
+    })
+}
+
+/// Format a Unix timestamp (seconds) as an ISO 8601 string for BattleMetrics API queries.
+fn chrono_or_fallback(unix_secs: u64) -> String {
+    // Build a minimal ISO-8601 string without pulling in chrono.
+    // unix_secs → days/hours/mins/secs.
+    let s = unix_secs;
+    let secs = s % 60;
+    let mins = (s / 60) % 60;
+    let hours = (s / 3600) % 24;
+    // Days since epoch → calendar date via the Gregorian algorithm.
+    let days = s / 86400;
+    let (year, month, day) = days_to_ymd(days);
+    format!("{year:04}-{month:02}-{day:02}T{hours:02}:{mins:02}:{secs:02}Z")
+}
+
+fn days_to_ymd(days: u64) -> (u64, u64, u64) {
+    // Algorithm from https://howardhinnant.github.io/date_algorithms.html
+    let z = days + 719468;
+    let era = z / 146097;
+    let doe = z % 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d)
+}
+
+/// Parse an ISO-8601 timestamp like "2024-01-15T12:34:56.000Z" to Unix seconds.
+/// Best-effort: handles the common BM format without a date library.
+fn parse_iso8601_approx(s: &str) -> i64 {
+    // Expect "YYYY-MM-DDTHH:MM:SS..."
+    let bytes = s.as_bytes();
+    if bytes.len() < 19 {
+        return 0;
+    }
+    let year: i64 = parse_digits(&bytes[0..4]);
+    let month: i64 = parse_digits(&bytes[5..7]);
+    let day: i64 = parse_digits(&bytes[8..10]);
+    let hour: i64 = parse_digits(&bytes[11..13]);
+    let minute: i64 = parse_digits(&bytes[14..16]);
+    let second: i64 = parse_digits(&bytes[17..19]);
+    // Days since epoch for the given date.
+    let m_adj = if month <= 2 { month + 9 } else { month - 3 };
+    let y_adj = if month <= 2 { year - 1 } else { year };
+    let era = y_adj / 400;
+    let yoe = y_adj % 400;
+    let doy = (153 * m_adj + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    days * 86400 + hour * 3600 + minute * 60 + second
+}
+
+fn parse_digits(bytes: &[u8]) -> i64 {
+    bytes.iter().fold(0i64, |acc, &b| {
+        if b.is_ascii_digit() {
+            acc * 10 + (b - b'0') as i64
+        } else {
+            acc
+        }
+    })
+}
+
 /// Fetch the Steam avatar for the configured account and cache it as a data: URI.
 /// Returns the data URI on success, or an error string.
 #[tauri::command]
@@ -1753,11 +1970,48 @@ async fn download_steamcmd_windows() -> Result<String, String> {
     }
 }
 
+// ─── CLI args command ─────────────────────────────────────────────────────────
+
+/// Return the CLI args that were passed when this instance started.
+/// The frontend calls this once on mount to act on `--connect` / `--reconnect`.
+#[tauri::command]
+fn get_cli_args() -> CliArgs {
+    CLI_ARGS.get().cloned().unwrap_or_else(|| CliArgs {
+        connect: None,
+        reconnect: false,
+    })
+}
+
 // ─── Application entry point ──────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
+pub fn run(args: CliArgs) {
+    // Store args globally so `get_cli_args` can serve them later.
+    let _ = CLI_ARGS.set(args);
+
     tauri::Builder::default()
+        // Single-instance guard: if another instance is already running,
+        // that instance's frontend receives a "cli-args" event carrying the
+        // new invocation's arguments, then this process exits.
+        .plugin(
+            tauri_plugin_single_instance::Builder::new()
+                .callback(|app, argv, _cwd| {
+                    // Parse the argv of the second invocation with clap.
+                    // argv[0] is the binary name — clap expects it so keep it.
+                    let new_args = CliArgs::try_parse_from(&argv).unwrap_or(CliArgs {
+                        connect: None,
+                        reconnect: false,
+                    });
+                    // Bring the existing window to front.
+                    if let Some(win) = app.get_webview_window("main") {
+                        let _ = win.show();
+                        let _ = win.set_focus();
+                    }
+                    // Forward the new args to the frontend.
+                    let _ = app.emit("cli-args", new_args);
+                })
+                .build(),
+        )
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
@@ -1805,6 +2059,8 @@ pub fn run() {
             restart_app,
             detect_steamcmd,
             download_steamcmd_windows,
+            get_cli_args,
+            fetch_battlemetrics_server,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

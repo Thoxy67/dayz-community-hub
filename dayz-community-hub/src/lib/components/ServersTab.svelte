@@ -11,6 +11,8 @@
     favorites: Set<string>; // "ip:port" keys
     loading: boolean;
     filter: ServersFilterState;
+    /** BattleMetrics personal access token (null = not configured). */
+    bmApiKey: string | null;
     onConnect: (server: ServerDto) => void;
     onAddFavorite: (server: ServerDto) => void;
     onRemoveFavorite: (server: ServerDto) => void;
@@ -24,6 +26,7 @@
     favorites,
     loading,
     filter = $bindable(),
+    bmApiKey,
     onConnect,
     onAddFavorite,
     onRemoveFavorite,
@@ -344,7 +347,7 @@
   <div class="flex items-center gap-3 px-3 py-2 bg-base-200 border-b border-base-300 flex-shrink-0">
 
     <!-- Search input -->
-    <label class="input input-sm input-bordered flex items-center gap-2 w-56 shrink-0">
+    <label class="input input-sm input-bordered flex items-center gap-2 flex-1 min-w-0">
       <Icon icon="ph:magnifying-glass" class="size-3.5 text-base-content/40 shrink-0" />
       <input
         type="text"
@@ -359,9 +362,6 @@
         </button>
       {/if}
     </label>
-
-    <!-- Divider -->
-    <div class="w-px h-5 bg-base-300 shrink-0"></div>
 
     <!-- Flag filters — grouped pill bar -->
     <div class="flex items-center rounded-lg border border-base-300 bg-base-100/50 overflow-hidden divide-x divide-base-300 shrink-0 h-7">
@@ -458,9 +458,6 @@
     <span class="text-xs tabular-nums text-base-content/40 shrink-0">
       {filtered.length}<span class="text-base-content/25">/{servers.length}</span>
     </span>
-
-    <!-- Spacer -->
-    <div class="flex-1"></div>
 
     <!-- Divider -->
     <div class="w-px h-5 bg-base-300 shrink-0"></div>
@@ -685,6 +682,7 @@
           {a2sError}
           {installedMods}
           pingMs={pingCache.get(pingKey(selected)) ?? null}
+          {bmApiKey}
           onClose={() => (showDetails = false)}
           onQueryA2s={handleQueryA2s}
         />
