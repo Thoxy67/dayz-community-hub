@@ -27,11 +27,16 @@ UI_DIR="$(cd "$SCRIPT_DIR/.." && pwd)" # dayz-community-hub/
 REPO_ROOT="$(cd "$UI_DIR/.." && pwd)"  # workspace root
 
 # ---------------------------------------------------------------------------
-# Load .env
+# Load .env  (look in UI_DIR first, then workspace root)
 # ---------------------------------------------------------------------------
-ENV_FILE="$UI_DIR/.env"
-if [[ ! -f "$ENV_FILE" ]]; then
-	echo "ERROR: .env not found at $ENV_FILE" >&2
+SIGNING_KEYS_DIR="/mnt/ssd2/Home/Dev/Rust/a2sdayz/signing-keys"
+
+if [[ -f "$UI_DIR/.env" ]]; then
+	ENV_FILE="$UI_DIR/.env"
+elif [[ -f "$REPO_ROOT/.env" ]]; then
+	ENV_FILE="$REPO_ROOT/.env"
+else
+	echo "ERROR: .env not found (tried $UI_DIR/.env and $REPO_ROOT/.env)" >&2
 	echo "       Copy .env.example to .env and fill in the values." >&2
 	exit 1
 fi
@@ -40,8 +45,8 @@ set -a
 source "$ENV_FILE"
 set +a
 
-# Defaults
-TAURI_SIGNING_KEY_FILE="${TAURI_SIGNING_KEY_FILE:-$HOME/.tauri/dayz-community-hub.key}"
+# Defaults — key lives in the repo signing-keys directory
+TAURI_SIGNING_KEY_FILE="${TAURI_SIGNING_KEY_FILE:-$SIGNING_KEYS_DIR/dayz-community-hub.key}"
 TAURI_SIGNING_KEY_PASS="${TAURI_SIGNING_KEY_PASS:-}"
 
 # Validate
@@ -71,6 +76,7 @@ API="$FORGEJO_BASE/api/v1"
 
 echo "==> DayZ Community Hub $TAG — Windows x86_64"
 echo "    Repo     : $FORGEJO_BASE/$REPO_OWNER/$REPO_NAME"
+echo "    Env file : $ENV_FILE"
 echo "    Sign key : $TAURI_SIGNING_KEY_FILE"
 
 # ---------------------------------------------------------------------------
