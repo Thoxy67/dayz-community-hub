@@ -278,30 +278,53 @@ impl SteamCmd {
 
         let mut cmd = Command::new(&self.steamcmd_path);
         cmd.arg("+@ShutdownOnFailedCommand").arg("1");
+        // Direct steamcmd to write workshop content into the real Steam steamapps tree,
+        // not steamcmd's own directory. +force_install_dir must come before +login.
+        if let Some(steam_parent) = self.steam_root.parent() {
+            cmd.arg("+force_install_dir").arg(steam_parent);
+        }
         self.push_login_args(&mut cmd);
-        let mut child = cmd
-            .arg("+workshop_download_item")
+        cmd.arg("+workshop_download_item")
             .arg(self.game_id.to_string())
             .arg(workshop_id.to_string())
             .arg("validate")
             .arg("+quit")
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+            .stderr(Stdio::piped());
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(0x08000000);
+        let mut child = cmd.spawn()?;
 
-        // Stream stdout to catch credential issues early
+        // Read both stdout and stderr: on Windows steamcmd writes to stderr,
+        // not stdout. Also prevents pipe-buffer blocking when stderr is unread.
+        let (line_tx, mut line_rx) = mpsc::unbounded_channel::<String>();
         if let Some(stdout) = child.stdout.take() {
-            let reader = BufReader::new(stdout);
-            let mut lines = reader.lines();
-
-            while let Ok(Some(line)) = lines.next_line().await {
-                if line.contains("Cached credentials not found") {
-                    let _ = child.kill().await;
-                    return Err(Error::CredentialsExpired(format!(
-                        "steamcmd +login {} +quit",
-                        self.login
-                    )));
+            let tx = line_tx.clone();
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(stdout).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    let _ = tx.send(line);
                 }
+            });
+        }
+        if let Some(stderr) = child.stderr.take() {
+            let tx = line_tx.clone();
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    let _ = tx.send(line);
+                }
+            });
+        }
+        drop(line_tx);
+
+        while let Some(line) = line_rx.recv().await {
+            if line.contains("Cached credentials not found") {
+                let _ = child.kill().await;
+                return Err(Error::CredentialsExpired(format!(
+                    "steamcmd +login {} +quit",
+                    self.login
+                )));
             }
         }
 
@@ -334,14 +357,14 @@ impl SteamCmd {
         let mut cmd = Command::new(&self.steamcmd_path);
         cmd.arg("+@ShutdownOnFailedCommand").arg("1");
         self.push_login_args(&mut cmd);
-        let output = cmd
-            .arg("+app_update")
+        cmd.arg("+app_update")
             .arg(self.game_id.to_string())
             .arg("+quit")
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .await?;
+            .stderr(Stdio::piped());
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(0x08000000);
+        let output = cmd.output().await?;
 
         if output.status.success() {
             Ok(())
@@ -364,12 +387,14 @@ impl SteamCmd {
         results
     }
 
-    /// Download/update multiple mods in a single steamcmd invocation with progress.
+    /// Download/update multiple mods with per-mod progress.
     ///
-    /// Batches all `+workshop_download_item` commands into one process to avoid
-    /// repeated login overhead. Streams stdout to detect per-mod completion.
-    /// SteamCMD only downloads changed files (delta updates), so this is efficient
-    /// for both fresh installs and updates.
+    /// **Linux**: batches all mods into one steamcmd invocation and streams
+    /// stdout line-by-line (steamcmd line-buffers on a PTY / pipe on Linux).
+    ///
+    /// **Windows**: runs one steamcmd invocation per mod because Windows
+    /// steamcmd fully buffers stdout when the handle is a pipe (not a console).
+    /// Each process exit flushes the buffer, so we get output per mod.
     ///
     /// `mods_info` is a list of (mod_id, display_name) pairs.
     pub async fn download_mods_with_progress(
@@ -399,9 +424,10 @@ impl SteamCmd {
                 ok: 0,
                 failed: total,
                 total,
-                hint: Some(format!(
+                hint: Some(
                     "Set your Steam login in the profile, then run:\n  steamcmd +login YOUR_USERNAME +quit"
-                )),
+                        .to_string(),
+                ),
             });
             return results;
         }
@@ -411,7 +437,24 @@ impl SteamCmd {
         let _ = tx.send(ModProgress::ShuttingDownSteam);
         SteamClient::shutdown_for_steamcmd().await;
 
-        // Report starting the first mod
+        #[cfg(not(target_os = "windows"))]
+        {
+            self.download_mods_batched(mods_info, tx, total).await
+        }
+        #[cfg(target_os = "windows")]
+        {
+            self.download_mods_one_by_one(mods_info, tx, total).await
+        }
+    }
+
+    /// Linux: batch all mods into a single steamcmd invocation, stream stdout.
+    #[cfg(not(target_os = "windows"))]
+    async fn download_mods_batched(
+        &self,
+        mods_info: &[(u64, String)],
+        tx: &ProgressTx,
+        total: usize,
+    ) -> Vec<(u64, Result<()>)> {
         let _ = tx.send(ModProgress::Starting {
             current: 1,
             total,
@@ -419,20 +462,18 @@ impl SteamCmd {
             name: mods_info[0].1.clone(),
         });
 
-        // Build a single steamcmd command with all mods batched:
-        // steamcmd +login <user> [<password>] +workshop_download_item 221100 <id1> validate \
-        //                                     +workshop_download_item 221100 <id2> validate ... +quit
         let mut cmd = Command::new(&self.steamcmd_path);
-        cmd.arg("+@ShutdownOnFailedCommand").arg("0"); // Don't abort on single mod failure
+        cmd.arg("+@ShutdownOnFailedCommand").arg("0");
+        if let Some(steam_parent) = self.steam_root.parent() {
+            cmd.arg("+force_install_dir").arg(steam_parent);
+        }
         self.push_login_args(&mut cmd);
-
         for (mod_id, _) in mods_info {
             cmd.arg("+workshop_download_item")
                 .arg(self.game_id.to_string())
                 .arg(mod_id.to_string())
                 .arg("validate");
         }
-
         cmd.arg("+quit");
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
@@ -443,16 +484,7 @@ impl SteamCmd {
                 let err_str = format!("Failed to start steamcmd: {}", e);
                 let results: Vec<(u64, Result<()>)> = mods_info
                     .iter()
-                    .map(|(id, name)| {
-                        let _ = tx.send(ModProgress::Failed {
-                            current: 1,
-                            total,
-                            mod_id: *id,
-                            name: name.clone(),
-                            error: err_str.clone(),
-                        });
-                        (*id, Err(Error::SteamCmd(err_str.clone())))
-                    })
+                    .map(|(id, _)| (*id, Err(Error::SteamCmd(err_str.clone()))))
                     .collect();
                 let _ = tx.send(ModProgress::Finished {
                     ok: 0,
@@ -464,107 +496,79 @@ impl SteamCmd {
             }
         };
 
-        // Build a lookup: mod_id -> (index, name)
-        let mod_lookup: std::collections::HashMap<u64, (usize, String)> = mods_info
-            .iter()
-            .enumerate()
-            .map(|(i, (id, name))| (*id, (i, name.clone())))
-            .collect();
-
-        // Track which mods completed successfully
-        let mut succeeded: std::collections::HashSet<u64> = std::collections::HashSet::new();
-        let mut current_mod_idx: usize = 0;
-        let mut credentials_not_found = false;
-
-        // Stream stdout line by line to detect per-mod progress
+        // Stream stdout + stderr through a merged channel
+        let (line_tx, mut line_rx) = mpsc::unbounded_channel::<String>();
         if let Some(stdout) = child.stdout.take() {
-            let reader = BufReader::new(stdout);
-            let mut lines = reader.lines();
-
-            while let Ok(Some(line)) = lines.next_line().await {
-                // Detect expired/missing login: steamcmd prints this then
-                // hangs waiting for interactive password input on stdin.
-                if line.contains("Cached credentials not found") {
-                    credentials_not_found = true;
-                    let _ = child.kill().await;
-                    break;
+            let ltx = line_tx.clone();
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(stdout).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    let _ = ltx.send(line);
                 }
+            });
+        }
+        if let Some(stderr) = child.stderr.take() {
+            let ltx = line_tx.clone();
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    let _ = ltx.send(line);
+                }
+            });
+        }
+        drop(line_tx);
 
-                // SteamCMD prints lines like:
-                //   "Downloading item 1559212036 ..."
-                //   "Success. Downloaded item 1559212036 to ..."
-                //   "ERROR! Download item 1559212036 failed (..."
+        // Track which mods succeeded as lines arrive
+        let mut succeeded = std::collections::HashSet::<u64>::new();
+        let mut credentials_failed = false;
+        let mut current_idx: usize = 0;
 
-                if line.contains("Success. Downloaded item")
-                    || line.contains("already up to date")
-                {
-                    if let Some(id) = extract_mod_id_from_line(&line) {
-                        succeeded.insert(id);
-                        if let Some((idx, name)) = mod_lookup.get(&id) {
-                            let _ = tx.send(ModProgress::Done {
+        while let Some(line) = line_rx.recv().await {
+            if line.contains("Cached credentials not found") {
+                credentials_failed = true;
+                let _ = child.kill().await;
+                break;
+            }
+            if line.contains("Success. Downloaded item") || line.contains("already up to date") {
+                if let Some(id) = extract_mod_id_from_line(&line) {
+                    succeeded.insert(id);
+                    // Find the index of this mod and send Done
+                    if let Some((idx, (_, name))) =
+                        mods_info.iter().enumerate().find(|(_, (mid, _))| *mid == id)
+                    {
+                        let _ = tx.send(ModProgress::Done {
+                            current: idx + 1,
+                            total,
+                            mod_id: id,
+                            name: name.clone(),
+                        });
+                        current_idx = idx + 1;
+                    }
+                }
+            }
+            // Detect when the next download starts
+            if line.contains("Downloading item") {
+                if let Some(id) = extract_mod_id_from_line(&line) {
+                    if let Some((idx, (_, name))) =
+                        mods_info.iter().enumerate().find(|(_, (mid, _))| *mid == id)
+                    {
+                        if idx + 1 > current_idx {
+                            let _ = tx.send(ModProgress::Starting {
                                 current: idx + 1,
                                 total,
                                 mod_id: id,
                                 name: name.clone(),
                             });
-
-                            let next_idx = idx + 1;
-                            if next_idx < total {
-                                let next = &mods_info[next_idx];
-                                let _ = tx.send(ModProgress::Starting {
-                                    current: next_idx + 1,
-                                    total,
-                                    mod_id: next.0,
-                                    name: next.1.clone(),
-                                });
-                                current_mod_idx = next_idx;
-                            }
-                        }
-                    }
-                } else if line.contains("ERROR! Download item") || line.contains("ERROR!") {
-                    if let Some(id) = extract_mod_id_from_line(&line) {
-                        if let Some((idx, name)) = mod_lookup.get(&id) {
-                            let _ = tx.send(ModProgress::Failed {
-                                current: idx + 1,
-                                total,
-                                mod_id: id,
-                                name: name.clone(),
-                                error: line.clone(),
-                            });
-
-                            let next_idx = idx + 1;
-                            if next_idx < total {
-                                let next = &mods_info[next_idx];
-                                let _ = tx.send(ModProgress::Starting {
-                                    current: next_idx + 1,
-                                    total,
-                                    mod_id: next.0,
-                                    name: next.1.clone(),
-                                });
-                                current_mod_idx = next_idx;
-                            }
-                        }
-                    }
-                } else if line.contains("Downloading item") {
-                    if let Some(id) = extract_mod_id_from_line(&line) {
-                        if let Some((idx, name)) = mod_lookup.get(&id) {
-                            if *idx != current_mod_idx || *idx > 0 {
-                                let _ = tx.send(ModProgress::Starting {
-                                    current: idx + 1,
-                                    total,
-                                    mod_id: id,
-                                    name: name.clone(),
-                                });
-                                current_mod_idx = *idx;
-                            }
+                            current_idx = idx + 1;
                         }
                     }
                 }
             }
         }
 
-        // If credentials not found, report all mods as failed with a typed error
-        if credentials_not_found {
+        let _ = child.wait().await;
+
+        if credentials_failed {
             let relogin_cmd = format!("steamcmd +login {} +quit", self.login);
             let hint = format!(
                 "Cached credentials not found.\nRun this command to re-login:\n  {}",
@@ -573,13 +577,15 @@ impl SteamCmd {
             let results: Vec<(u64, Result<()>)> = mods_info
                 .iter()
                 .map(|(id, name)| {
-                    let _ = tx.send(ModProgress::Failed {
-                        current: 1,
-                        total,
-                        mod_id: *id,
-                        name: name.clone(),
-                        error: hint.clone(),
-                    });
+                    if !succeeded.contains(id) {
+                        let _ = tx.send(ModProgress::Failed {
+                            current: 1,
+                            total,
+                            mod_id: *id,
+                            name: name.clone(),
+                            error: hint.clone(),
+                        });
+                    }
                     (*id, Err(Error::CredentialsExpired(relogin_cmd.clone())))
                 })
                 .collect();
@@ -592,59 +598,221 @@ impl SteamCmd {
             return results;
         }
 
-        // Wait for process to finish
-        let status = child.wait().await;
-
-        // Build results
+        // Build final results — anything not seen as succeeded is failed
         let results: Vec<(u64, Result<()>)> = mods_info
             .iter()
-            .map(|(id, name)| {
+            .enumerate()
+            .map(|(idx, (id, name))| {
                 if succeeded.contains(id) {
                     (*id, Ok(()))
                 } else {
-                    // Check if the mod directory exists (it might have been downloaded
-                    // even if we didn't parse the success line)
-                    let mod_dir = self.workshop_path().join(id.to_string());
-                    if mod_dir.exists() {
-                        // Assume success if directory exists
-                        (*id, Ok(()))
-                    } else {
-                        let err = match &status {
-                            Ok(s) if !s.success() => format!("steamcmd exited with {}", s),
-                            Err(e) => format!("steamcmd error: {}", e),
-                            _ => format!("Mod {} download status unknown", id),
-                        };
-                        let (idx, _) = mod_lookup.get(id).map(|v| (v.0, &v.1)).unwrap_or((0, name));
-                        let _ = tx.send(ModProgress::Failed {
-                            current: idx + 1,
-                            total,
-                            mod_id: *id,
-                            name: name.clone(),
-                            error: err.clone(),
-                        });
-                        (*id, Err(Error::SteamCmd(err)))
-                    }
+                    let _ = tx.send(ModProgress::Failed {
+                        current: idx + 1,
+                        total,
+                        mod_id: *id,
+                        name: name.clone(),
+                        error: "Download failed".to_string(),
+                    });
+                    (*id, Err(Error::SteamCmd("Download failed".to_string())))
                 }
             })
             .collect();
 
         let ok = results.iter().filter(|(_, r)| r.is_ok()).count();
         let failed = results.iter().filter(|(_, r)| r.is_err()).count();
-        let hint = if failed > 0 {
-            Some(format!(
-                "Some downloads failed. If your steamcmd login expired, run:\n  steamcmd +login {} +quit",
-                self.login
-            ))
-        } else {
-            None
-        };
         let _ = tx.send(ModProgress::Finished {
             ok,
             failed,
             total,
-            hint,
+            hint: if failed > 0 {
+                Some(format!(
+                    "Some downloads failed. Try:\n  steamcmd +login {} +quit",
+                    self.login
+                ))
+            } else {
+                None
+            },
         });
+        results
+    }
 
+    /// Windows: one steamcmd invocation per mod. Output is flushed on process
+    /// exit, giving reliable piped output per mod.
+    ///
+    /// A single login-only invocation runs first (with password + Steam Guard)
+    /// to cache the credentials. All subsequent per-mod invocations use the
+    /// username only, reusing the cached session without re-prompting.
+    #[cfg(target_os = "windows")]
+    async fn download_mods_one_by_one(
+        &self,
+        mods_info: &[(u64, String)],
+        tx: &ProgressTx,
+        total: usize,
+    ) -> Vec<(u64, Result<()>)> {
+        // Cache credentials once (password + Steam Guard) before the per-mod loop.
+        // Subsequent invocations use username-only to reuse the cached session.
+        {
+            let mut login_cmd = Command::new(&self.steamcmd_path);
+            self.push_login_args(&mut login_cmd);
+            login_cmd
+                .arg("+quit")
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .creation_flags(0x08000000);
+            let login_out = login_cmd.output().await;
+            if let Ok(ref out) = login_out {
+                let combined = format!(
+                    "{}\n{}",
+                    String::from_utf8_lossy(&out.stdout),
+                    String::from_utf8_lossy(&out.stderr),
+                );
+                if combined.contains("Cached credentials not found") || !out.status.success() {
+                    let relogin_cmd = format!("steamcmd +login {} +quit", self.login);
+                    let hint = format!(
+                        "Login failed. Run this command to re-login:\n  {}",
+                        relogin_cmd
+                    );
+                    let results: Vec<(u64, Result<()>)> = mods_info
+                        .iter()
+                        .enumerate()
+                        .map(|(j, (rid, rname))| {
+                            let _ = tx.send(ModProgress::Failed {
+                                current: j + 1,
+                                total,
+                                mod_id: *rid,
+                                name: rname.clone(),
+                                error: hint.clone(),
+                            });
+                            (*rid, Err(Error::CredentialsExpired(relogin_cmd.clone())))
+                        })
+                        .collect();
+                    let _ = tx.send(ModProgress::Finished {
+                        ok: 0,
+                        failed: total,
+                        total,
+                        hint: Some(hint),
+                    });
+                    return results;
+                }
+            }
+        }
+
+        let mut results: Vec<(u64, Result<()>)> = Vec::new();
+
+        for (idx, (mod_id, name)) in mods_info.iter().enumerate() {
+            let current = idx + 1;
+
+            let _ = tx.send(ModProgress::Starting {
+                current,
+                total,
+                mod_id: *mod_id,
+                name: name.clone(),
+            });
+
+            // Use username-only login — credentials were cached by the step above
+            let mut cmd = Command::new(&self.steamcmd_path);
+            cmd.arg("+@ShutdownOnFailedCommand").arg("1");
+            if let Some(steam_parent) = self.steam_root.parent() {
+                cmd.arg("+force_install_dir").arg(steam_parent);
+            }
+            cmd.arg("+login").arg(&self.login);
+            cmd.arg("+workshop_download_item")
+                .arg(self.game_id.to_string())
+                .arg(mod_id.to_string())
+                .arg("validate")
+                .arg("+quit");
+            cmd.stdout(Stdio::piped());
+            cmd.stderr(Stdio::piped());
+            cmd.creation_flags(0x08000000);
+
+            let output = match cmd.output().await {
+                Ok(o) => o,
+                Err(e) => {
+                    let err_str = format!("Failed to start steamcmd: {}", e);
+                    let _ = tx.send(ModProgress::Failed {
+                        current,
+                        total,
+                        mod_id: *mod_id,
+                        name: name.clone(),
+                        error: err_str.clone(),
+                    });
+                    results.push((*mod_id, Err(Error::SteamCmd(err_str))));
+                    continue;
+                }
+            };
+
+            let all_output = format!(
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr),
+            );
+
+            // Detect expired credentials — abort remaining mods
+            if all_output.contains("Cached credentials not found") {
+                let relogin_cmd = format!("steamcmd +login {} +quit", self.login);
+                let hint = format!(
+                    "Cached credentials not found.\nRun this command to re-login:\n  {}",
+                    relogin_cmd
+                );
+                for (j, (rid, rname)) in mods_info.iter().enumerate().skip(idx) {
+                    let _ = tx.send(ModProgress::Failed {
+                        current: j + 1,
+                        total,
+                        mod_id: *rid,
+                        name: rname.clone(),
+                        error: hint.clone(),
+                    });
+                    results.push((*rid, Err(Error::CredentialsExpired(relogin_cmd.clone()))));
+                }
+                let _ = tx.send(ModProgress::Finished {
+                    ok: results.iter().filter(|(_, r)| r.is_ok()).count(),
+                    failed: results.iter().filter(|(_, r)| r.is_err()).count(),
+                    total,
+                    hint: Some(hint),
+                });
+                return results;
+            }
+
+            // Check success from piped output
+            let success = all_output.contains("Success. Downloaded item")
+                || all_output.contains("already up to date");
+
+            if success {
+                let _ = tx.send(ModProgress::Done {
+                    current,
+                    total,
+                    mod_id: *mod_id,
+                    name: name.clone(),
+                });
+                results.push((*mod_id, Ok(())));
+            } else {
+                let err = format!("steamcmd exited with {}", output.status);
+                let _ = tx.send(ModProgress::Failed {
+                    current,
+                    total,
+                    mod_id: *mod_id,
+                    name: name.clone(),
+                    error: err.clone(),
+                });
+                results.push((*mod_id, Err(Error::SteamCmd(err))));
+            }
+        }
+
+        let ok = results.iter().filter(|(_, r)| r.is_ok()).count();
+        let failed = results.iter().filter(|(_, r)| r.is_err()).count();
+        let _ = tx.send(ModProgress::Finished {
+            ok,
+            failed,
+            total,
+            hint: if failed > 0 {
+                Some(format!(
+                    "Some downloads failed. Try:\n  steamcmd +login {} +quit",
+                    self.login
+                ))
+            } else {
+                None
+            },
+        });
         results
     }
 }
@@ -698,6 +866,7 @@ impl SteamClient {
 
         #[cfg(target_os = "windows")]
         {
+            use std::os::windows::process::CommandExt;
             // On Windows spawn steam.exe directly; no nohup equivalent needed
             // because detached processes persist after the parent exits.
             std::process::Command::new(Self::steam_exe())
@@ -705,6 +874,7 @@ impl SteamClient {
                 .arg("-silent")
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
+                .creation_flags(0x08000000)
                 .spawn()?;
         }
         #[cfg(not(target_os = "windows"))]
@@ -724,13 +894,11 @@ impl SteamClient {
 
     /// Graceful shutdown via `steam -shutdown`.
     pub async fn shutdown() -> Result<()> {
-        let _ = Command::new(Self::steam_exe())
-            .arg("-shutdown")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()?
-            .wait()
-            .await;
+        let mut cmd = Command::new(Self::steam_exe());
+        cmd.arg("-shutdown").stdout(Stdio::null()).stderr(Stdio::null());
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(0x08000000);
+        let _ = cmd.spawn()?.wait().await;
         // Give it time to shut down
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         Ok(())
@@ -768,11 +936,11 @@ impl SteamClient {
         }
 
         // Ask Steam to shut down gracefully
-        let _ = Command::new(Self::steam_exe())
-            .arg("-shutdown")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn();
+        let mut cmd = Command::new(Self::steam_exe());
+        cmd.arg("-shutdown").stdout(Stdio::null()).stderr(Stdio::null());
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(0x08000000);
+        let _ = cmd.spawn();
 
         // Poll every 500 ms for up to 15 s
         for _ in 0..30 {

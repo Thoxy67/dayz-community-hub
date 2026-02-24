@@ -478,6 +478,8 @@ impl DayzCtl {
 
         let mut cmd = Command::new("steam");
         cmd.args(&args).stdout(Stdio::null()).stderr(Stdio::null());
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(0x08000000);
 
         cmd.spawn()?;
 

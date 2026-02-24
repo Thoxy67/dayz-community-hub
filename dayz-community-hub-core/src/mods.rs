@@ -6,8 +6,6 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
-#[cfg(windows)]
-use std::os::windows::fs::symlink_dir;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
@@ -183,12 +181,15 @@ pub fn create_mod_symlink(workshop_path: &Path, dayz_path: &Path, mod_id: u64) -
         )));
     }
 
-    // Remove existing symlink/file if it exists
+    // Remove existing link/file if it exists
     if target.symlink_metadata().is_ok() {
         if target.is_symlink() || target.is_file() {
             fs::remove_file(&target)?;
         } else if target.is_dir() {
-            fs::remove_dir_all(&target)?;
+            // Use remove_dir (not remove_dir_all) so we never delete mod content.
+            // On Windows this removes NTFS junctions; on Linux it removes empty dirs.
+            // If it fails (non-empty real dir) we just leave it and try to overwrite.
+            let _ = fs::remove_dir(&target);
         }
     }
 
@@ -196,7 +197,26 @@ pub fn create_mod_symlink(workshop_path: &Path, dayz_path: &Path, mod_id: u64) -
     symlink(&source, &target)?;
 
     #[cfg(windows)]
-    symlink_dir(&source, &target)?;
+    {
+        // Symlinks require admin on Windows; NTFS junctions do not.
+        use std::os::windows::process::CommandExt;
+        let out = std::process::Command::new("cmd")
+            .args([
+                "/c", "mklink", "/J",
+                &target.to_string_lossy().to_string(),
+                &source.to_string_lossy().to_string(),
+            ])
+            .creation_flags(0x08000000)
+            .output()
+            .map_err(|e| Error::Mod(format!("Failed to run mklink: {}", e)))?;
+        if !out.status.success() {
+            return Err(Error::Mod(format!(
+                "mklink /J failed for mod {}: {}",
+                mod_id,
+                String::from_utf8_lossy(&out.stdout).trim()
+            )));
+        }
+    }
 
     Ok(())
 }
@@ -245,9 +265,18 @@ pub fn remove_all_mod_symlinks(dayz_path: &Path) -> Result<usize> {
         let entry = entry?;
         let path = entry.path();
         let file_name = path.file_name().unwrap_or_default().to_string_lossy();
+        #[cfg(unix)]
         if file_name.starts_with('@') && path.is_symlink() {
             fs::remove_file(&path)?;
             count += 1;
+        }
+        // On Windows, mod links are NTFS junctions which appear as directories.
+        // remove_dir removes the junction point without touching its contents.
+        #[cfg(windows)]
+        if file_name.starts_with('@') && path.is_dir() {
+            if fs::remove_dir(&path).is_ok() {
+                count += 1;
+            }
         }
     }
     Ok(count)

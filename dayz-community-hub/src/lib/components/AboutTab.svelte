@@ -500,7 +500,7 @@
             <div class="mt-3 space-y-2">
               <p class="text-xs text-base-content/50 leading-relaxed">
                 SteamCMD will be downloaded from Valve and installed to
-                <span class="font-mono text-base-content/70">%APPDATA%\dayz_community_hub\steamcmd\</span>.
+                <span class="font-mono text-base-content/70">%APPDATA%\dayz-community-hub\steamcmd\</span>.
               </p>
               {#if cmdDownloadOk}
                 <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-success/10 border border-success/25 text-xs text-success">

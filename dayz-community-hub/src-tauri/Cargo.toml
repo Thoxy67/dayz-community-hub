@@ -47,9 +47,6 @@ thiserror = "2"
 [target."cfg(target_os = \"macos\")".dependencies]
 cocoa = "0.26"
 
-[profile.dev]
-incremental = true # Compile your binary in smaller steps.
-
 [profile.release]
 codegen-units = 1 # Allows LLVM to perform better optimization.
 lto = true # Enables link-time-optimizations.

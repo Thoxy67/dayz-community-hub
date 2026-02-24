@@ -1547,12 +1547,24 @@ async fn launch_offline_mission(
     }
 
     let steam_bin = dayz_community_hub_core::steamcmd::SteamClient::steam_exe();
+    #[cfg(not(target_os = "windows"))]
     std::process::Command::new(steam_bin)
         .args(&steam_args)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
         .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new(steam_bin)
+            .args(&steam_args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .creation_flags(0x08000000)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
 
     Ok(())
 }
@@ -1842,7 +1854,7 @@ pub struct SteamcmdStatusDto {
 /// Detect whether steamcmd is available:
 ///   - Checks the profile's explicit `steamcmd_path` first.
 ///   - Then searches PATH for `steamcmd` (Linux/macOS) or `steamcmd.exe` (Windows).
-///   - On Windows also checks `%APPDATA%\dayz_community_hub\steamcmd\steamcmd.exe`.
+///   - On Windows also checks `%APPDATA%\dayz-community-hub\steamcmd\steamcmd.exe`.
 #[tauri::command]
 async fn detect_steamcmd(state: State<'_, SharedState>) -> Result<SteamcmdStatusDto, String> {
     let explicit_path = {
@@ -1880,7 +1892,7 @@ async fn detect_steamcmd(state: State<'_, SharedState>) -> Result<SteamcmdStatus
     {
         if let Some(appdata) = std::env::var_os("APPDATA") {
             let candidate = std::path::PathBuf::from(appdata)
-                .join("dayz_community_hub")
+                .join("dayz-community-hub")
                 .join("steamcmd")
                 .join("steamcmd.exe");
             if candidate.exists() {
@@ -1897,7 +1909,7 @@ async fn detect_steamcmd(state: State<'_, SharedState>) -> Result<SteamcmdStatus
 }
 
 /// Windows-only: download steamcmd.zip from Valve and unzip it into
-/// `%APPDATA%\dayz_community_hub\steamcmd\`.
+/// `%APPDATA%\dayz-community-hub\steamcmd\`.
 /// Returns the path to the extracted `steamcmd.exe`.
 #[tauri::command]
 async fn download_steamcmd_windows() -> Result<String, String> {
@@ -1911,7 +1923,7 @@ async fn download_steamcmd_windows() -> Result<String, String> {
         let appdata = std::env::var("APPDATA")
             .map_err(|_| "APPDATA env var not found".to_string())?;
         let install_dir = std::path::PathBuf::from(&appdata)
-            .join("dayz_community_hub")
+            .join("dayz-community-hub")
             .join("steamcmd");
         std::fs::create_dir_all(&install_dir)
             .map_err(|e| format!("Cannot create steamcmd dir: {e}"))?;
@@ -1965,6 +1977,30 @@ async fn download_steamcmd_windows() -> Result<String, String> {
         })
         .await
         .map_err(|e| format!("Task join error: {e}"))??;
+
+        // Create an NTFS junction from {steamcmd_dir}\steamapps to Steam's
+        // steamapps directory. This makes steamcmd download workshop items
+        // directly into Steam's library instead of its own directory.
+        {
+            use std::os::windows::process::CommandExt;
+            let steamcmd_steamapps = install_dir.join("steamapps");
+            if !steamcmd_steamapps.exists() {
+                if let Some(steam_root) =
+                    dayz_community_hub_core::steamcmd::find_steam_root()
+                {
+                    let _ = std::process::Command::new("cmd")
+                        .args([
+                            "/c",
+                            "mklink",
+                            "/J",
+                            &steamcmd_steamapps.to_string_lossy().to_string(),
+                            &steam_root.to_string_lossy().to_string(),
+                        ])
+                        .creation_flags(0x08000000)
+                        .output();
+                }
+            }
+        }
 
         Ok(exe_path.to_string_lossy().to_string())
     }
