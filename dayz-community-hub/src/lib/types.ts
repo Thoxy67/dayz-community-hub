@@ -139,7 +139,7 @@ export interface AppStatsDto {
 }
 
 export interface ModProgressEvent {
-  kind: 'shutting_down_steam' | 'starting' | 'done' | 'failed' | 'finished';
+  kind: 'shutting_down_steam' | 'steam_guard_mobile_required' | 'starting' | 'done' | 'failed' | 'finished';
   current: number;
   total: number;
   mod_id: number;
@@ -206,7 +206,7 @@ export interface CliArgs {
 
 export interface ModOpState {
   active: boolean;
-  phase: 'shutting_down' | 'downloading' | 'finished';
+  phase: 'shutting_down' | 'steam_guard_mobile' | 'downloading' | 'finished';
   current: number;
   total: number;
   currentName: string;

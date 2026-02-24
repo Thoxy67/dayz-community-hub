@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::OnceLock;
 use tauri::{ipc::Channel, AppHandle, Emitter, Manager, State};
+use tauri_plugin_opener::OpenerExt;
 use tokio::sync::{Mutex, RwLock};
 
 // ─── CLI arguments ────────────────────────────────────────────────────────────
@@ -389,6 +390,16 @@ fn mod_progress_to_event(msg: &ModProgress) -> ModProgressEvent {
             total: 0,
             mod_id: 0,
             name: "Closing Steam...".into(),
+            ok: 0,
+            failed: 0,
+            hint: None,
+        },
+        ModProgress::SteamGuardMobileRequired => ModProgressEvent {
+            kind: "steam_guard_mobile_required".into(),
+            current: 0,
+            total: 0,
+            mod_id: 0,
+            name: String::new(),
             ok: 0,
             failed: 0,
             hint: None,
@@ -783,6 +794,23 @@ async fn delete_mod(mod_id: u64, state: State<'_, SharedState>) -> Result<(), St
         .map_err(|e| e.to_string())
 }
 
+/// Delete multiple mods by ID in one call.
+#[tauri::command]
+async fn delete_mods_bulk(mod_ids: Vec<u64>, state: State<'_, SharedState>) -> Result<(), String> {
+    let ctl_clone = {
+        let state = state.lock().await;
+        state.ctl.clone_for_launch()
+    };
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        for id in mod_ids {
+            ctl_clone.delete_mod(id, false).map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
 /// Toggle managed status of a mod.
 #[tauri::command]
 async fn toggle_mod_managed(mod_id: u64, state: State<'_, SharedState>) -> Result<bool, String> {
@@ -813,6 +841,50 @@ async fn cleanup_mods(state: State<'_, SharedState>) -> Result<String, String> {
         mods::format_size(stats.removed_size),
         stats.symlinks_removed
     ))
+}
+
+/// Open the Steam Workshop directory (all mods) in the system file manager.
+#[tauri::command]
+async fn open_workshop_dir(app: AppHandle, state: State<'_, SharedState>) -> Result<(), String> {
+    let path = {
+        let state = state.lock().await;
+        state
+            .ctl
+            .workshop_path()
+            .map_err(|e| e.to_string())?
+    };
+    app.opener()
+        .open_path(path.to_string_lossy().as_ref(), None::<&str>)
+        .map_err(|e: tauri_plugin_opener::Error| e.to_string())
+}
+
+/// Open a specific offline mission's folder in the system file manager.
+#[tauri::command]
+async fn open_mission_dir(app: AppHandle, mission: String, state: State<'_, SharedState>) -> Result<(), String> {
+    let path = {
+        let state = state.lock().await;
+        let dayz_path = state.ctl.dayz_path().map_err(|e| e.to_string())?;
+        dayz_path.join("Missions").join(&mission)
+    };
+    app.opener()
+        .open_path(path.to_string_lossy().as_ref(), None::<&str>)
+        .map_err(|e: tauri_plugin_opener::Error| e.to_string())
+}
+
+/// Open a specific mod's directory in the system file manager.
+#[tauri::command]
+async fn open_mod_dir(app: AppHandle, mod_id: u64, state: State<'_, SharedState>) -> Result<(), String> {
+    let path = {
+        let state = state.lock().await;
+        state
+            .ctl
+            .workshop_path()
+            .map_err(|e| e.to_string())?
+            .join(mod_id.to_string())
+    };
+    app.opener()
+        .open_path(path.to_string_lossy().as_ref(), None::<&str>)
+        .map_err(|e: tauri_plugin_opener::Error| e.to_string())
 }
 
 /// Get missing mod IDs for a server.
@@ -973,6 +1045,7 @@ async fn start_mod_operation(
     port: Option<i64>,
     mod_id: Option<u64>,
     mod_name: Option<String>,
+    mod_ids: Option<Vec<u64>>,
     on_progress: Channel<ModProgressEvent>,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
@@ -1031,6 +1104,21 @@ async fn start_mod_operation(
                 mod_id: mod_id.ok_or("mod_id required")?,
                 name: mod_name.unwrap_or_default(),
             },
+            "update_selected" => {
+                let ids = mod_ids.unwrap_or_default();
+                // Resolve IDs to (id, name) pairs from installed mods for progress display
+                let installed = state.ctl.clone_for_launch();
+                let id_names: Vec<(u64, String)> =
+                    tokio::task::spawn_blocking(move || installed.get_installed_mods())
+                        .await
+                        .map_err(|e| format!("Task join error: {}", e))?
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|m| ids.contains(&m.id))
+                        .map(|m| (m.id, m.name.clone()))
+                        .collect();
+                ModOperation::UpdateSelected { mods: id_names }
+            }
             other => return Err(format!("Unknown operation: {}", other)),
         };
         let (rx, _handle) = state
@@ -1158,26 +1246,89 @@ async fn query_a2s(
     })
 }
 
-/// Fetch an image URL through Rust (bypasses WebKit TLS cert validation) and
-/// return it as a `data:<mime>;base64,<bytes>` URI ready for use in <img src>.
+/// Resolve the on-disk image cache directory, creating it if needed.
+fn image_cache_dir() -> Result<std::path::PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+    let dir = std::path::PathBuf::from(home)
+        .join(".local/share/dayz-community-hub/cache/images");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create cache dir: {e}"))?;
+    Ok(dir)
+}
+
+/// Turn a URL into a deterministic, filesystem-safe filename.
+/// Uses a hex SHA-256 hash of the URL + the original file extension.
+fn url_to_cache_filename(url: &str) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    url.hash(&mut h);
+    let hash = format!("{:016x}", h.finish());
+    // Preserve the original extension so the browser knows the MIME type.
+    let ext = url
+        .rsplit('/')
+        .next()
+        .and_then(|seg| {
+            let seg = seg.split('?').next().unwrap_or(seg);
+            seg.rsplit('.').next()
+        })
+        .and_then(|e| {
+            let e = e.to_lowercase();
+            if matches!(e.as_str(), "jpg" | "jpeg" | "png" | "gif" | "webp" | "svg" | "avif") {
+                Some(e)
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| "jpg".to_string());
+    format!("{hash}.{ext}")
+}
+
+/// Fetch an image URL through Rust (bypasses WebKit TLS cert validation),
+/// cache it to disk, and return the local file path.
+/// The frontend serves it via `convertFileSrc()` (Tauri asset protocol).
 #[tauri::command]
 async fn fetch_image(url: String) -> Result<String, String> {
+    let cache_dir = image_cache_dir()?;
+    let filename = url_to_cache_filename(&url);
+    let path = cache_dir.join(&filename);
+
+    // Already cached — return immediately.
+    if path.exists() {
+        return Ok(path.to_string_lossy().into_owned());
+    }
+
     let client = insecure_client();
     let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
-    let content_type = resp
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("image/jpeg")
-        .split(';')
-        .next()
-        .unwrap_or("image/jpeg")
-        .trim()
-        .to_string();
     let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
-    use base64::Engine;
-    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-    Ok(format!("data:{};base64,{}", content_type, b64))
+
+    // Write atomically via a temp file to avoid partial reads.
+    let tmp = path.with_extension("tmp");
+    tokio::fs::write(&tmp, &bytes)
+        .await
+        .map_err(|e| format!("Failed to write cache file: {e}"))?;
+    tokio::fs::rename(&tmp, &path)
+        .await
+        .map_err(|e| format!("Failed to rename cache file: {e}"))?;
+
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// Resolve multiple image URLs at once. Returns a Vec of (url, local_path)
+/// for every URL that is already cached on disk — no network requests.
+/// URLs that are not cached yet are silently omitted from the result; the
+/// frontend can fall back to individual `fetch_image` calls for those.
+#[tauri::command]
+fn resolve_cached_images(urls: Vec<String>) -> Result<Vec<(String, String)>, String> {
+    let cache_dir = image_cache_dir()?;
+    let mut result = Vec::with_capacity(urls.len());
+    for url in urls {
+        let filename = url_to_cache_filename(&url);
+        let path = cache_dir.join(&filename);
+        if path.exists() {
+            result.push((url, path.to_string_lossy().into_owned()));
+        }
+    }
+    Ok(result)
 }
 
 /// Fetch the latest news articles.
@@ -1520,6 +1671,38 @@ async fn update_offline_mode(app: AppHandle, state: State<'_, SharedState>) -> R
     Ok(())
 }
 
+/// Remove all DayZCommunityOfflineMode mission folders from DayZ/Missions/.
+#[tauri::command]
+async fn remove_offline_mode(state: State<'_, SharedState>) -> Result<usize, String> {
+    let (dayz_path, client) = {
+        let state = state.lock().await;
+        let path = state.ctl.dayz_path().map_err(|e| e.to_string())?;
+        let client = state.ctl.http_client().clone();
+        (path, client)
+    };
+    let om = OfflineMode::new(dayz_path, client);
+    tokio::task::spawn_blocking(move || om.remove_offline_mode())
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
+        .map_err(|e| e.to_string())
+}
+
+/// Delete storage_-1/ save directories inside each offline mission folder.
+#[tauri::command]
+async fn clear_offline_saves(state: State<'_, SharedState>) -> Result<usize, String> {
+    let (dayz_path, client) = {
+        let state = state.lock().await;
+        let path = state.ctl.dayz_path().map_err(|e| e.to_string())?;
+        let client = state.ctl.http_client().clone();
+        (path, client)
+    };
+    let om = OfflineMode::new(dayz_path, client);
+    tokio::task::spawn_blocking(move || om.clear_offline_saves())
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
+        .map_err(|e| e.to_string())
+}
+
 /// Launch an offline mission.
 #[tauri::command]
 async fn launch_offline_mission(
@@ -1648,6 +1831,28 @@ async fn start_pinging(
     });
 
     Ok(())
+}
+
+/// Ping a single server and update the ping cache. Returns the latency in ms.
+#[tauri::command]
+async fn ping_single(
+    ip: String,
+    port: i64,
+    ping_cache: State<'_, PingCache>,
+) -> Result<u32, String> {
+    let server = api::Server {
+        endpoint: dayz_community_hub_core::Endpoint {
+            ip: ip.clone(),
+            port,
+        },
+        ..Default::default()
+    };
+    let ms = a2s_query::ping_server(&server)
+        .await
+        .map_err(|e| format!("Ping failed: {e}"))?;
+    let key = format!("{ip}:{port}");
+    ping_cache.write().await.insert(key, ms);
+    Ok(ms)
 }
 
 /// Check if a server is in favorites.
@@ -2204,8 +2409,12 @@ pub fn run(args: CliArgs) {
             clear_history,
             get_installed_mods,
             delete_mod,
+            delete_mods_bulk,
             toggle_mod_managed,
             cleanup_mods,
+            open_workshop_dir,
+            open_mod_dir,
+            open_mission_dir,
             get_missing_mods,
             toggle_launch_option,
             set_launch_option_value,
@@ -2214,6 +2423,7 @@ pub fn run(args: CliArgs) {
             start_mod_operation,
             query_a2s,
             fetch_image,
+            resolve_cached_images,
             fetch_steam_avatar,
             check_mod_updates,
             fetch_news,
@@ -2221,8 +2431,11 @@ pub fn run(args: CliArgs) {
             fetch_steam_player_count,
             get_offline_missions,
             update_offline_mode,
+            remove_offline_mode,
+            clear_offline_saves,
             launch_offline_mission,
             start_pinging,
+            ping_single,
             is_favorite,
             setup_mod_symlinks,
             find_server,

@@ -126,7 +126,7 @@
     { id: 'connect' as TabId, label: 'Connect' },
     { id: 'options' as TabId, label: 'Options' },
     { id: 'offline' as TabId, label: 'Offline' },
-    { id: 'about' as TabId, label: 'About' },
+    { id: 'about' as TabId, label: 'About', icon: 'mdi:information', pushRight: true },
   ]);
 
   // ── Status helpers ─────────────────────────────────────────────────────────
@@ -251,6 +251,20 @@
   }
 
   // ── Pinging via Channel ───────────────────────────────────────────────────
+
+  /** Ping a single server and update the reactive cache in-place. */
+  async function pingSingle(ip: string, port: number) {
+    try {
+      const ms = await invoke<number>('ping_single', { ip, port });
+      pingCache.set(`${ip}:${port}`, ms);
+      // Force Svelte 5 reactivity — in-place Map.set() doesn't propagate to
+      // child components that receive pingCache as a prop.
+      pingCache = new Map(pingCache);
+    } catch {
+      // silently ignore ping failures
+    }
+  }
+
   function startPinging() {
     // Collect favorites + history endpoints as explicit targets
     const targets: string[] = [];
@@ -693,6 +707,37 @@
     };
   }
 
+  function deleteSelectedMods(ids: number[]) {
+    if (ids.length === 0) return;
+    const totalSize = installedMods
+      .filter(m => ids.includes(m.id))
+      .reduce((acc, m) => acc + m.size, 0);
+    const sizeMb = (totalSize / 1024 / 1024);
+    const sizeStr = sizeMb >= 1024
+      ? `${(sizeMb / 1024).toFixed(1)} GB`
+      : `${sizeMb.toFixed(1)} MB`;
+    confirmDialog = {
+      title: 'Delete Mods',
+      message: `Delete ${ids.length} mod${ids.length > 1 ? 's' : ''}?\nTotal size: ${sizeStr}`,
+      confirmLabel: `Delete ${ids.length}`,
+      confirmVariant: 'error',
+      onConfirm: async () => {
+        try {
+          await invoke('delete_mods_bulk', { modIds: ids });
+          await loadMods();
+          setStatus(`Deleted ${ids.length} mod${ids.length > 1 ? 's' : ''}`, 'success');
+        } catch (e) {
+          setStatus(`Delete failed: ${e}`, 'error');
+        }
+      },
+    };
+  }
+
+  function updateSelectedMods(ids: number[]) {
+    if (ids.length === 0) return;
+    startModOp('update_selected', { modIds: ids });
+  }
+
   // ── Options / profile settings ────────────────────────────────────────────
   async function saveProfileSettings(
     player: string | null,
@@ -787,6 +832,49 @@
     );
   }
 
+  function removeOfflineMode() {
+    confirmDialog = {
+      title: 'Remove Offline Mode',
+      message: 'Delete all DayZCommunityOfflineMode mission folders?\nThis cannot be undone. You can reinstall with "Install / Update".',
+      confirmLabel: 'Remove all',
+      confirmVariant: 'error',
+      onConfirm: async () => {
+        try {
+          offlineLoading = true;
+          offlineStatus = 'Removing offline mode…';
+          offlineStatusKind = 'info';
+          const n = await invoke<number>('remove_offline_mode');
+          await loadOfflineMissions();
+          offlineStatus = n > 0 ? `Removed ${n} mission folder${n > 1 ? 's' : ''}` : 'Nothing to remove';
+          offlineStatusKind = 'success';
+        } catch (e) {
+          offlineStatus = `Remove failed: ${e}`;
+          offlineStatusKind = 'error';
+          offlineLoading = false;
+        }
+      },
+    };
+  }
+
+  function clearOfflineSaves() {
+    confirmDialog = {
+      title: 'Clear Saves',
+      message: 'Delete all offline save data (storage_-1/) for every mission?\nThis wipes loot, player state and world state. The missions themselves are kept.',
+      confirmLabel: 'Clear saves',
+      confirmVariant: 'warning',
+      onConfirm: async () => {
+        try {
+          const n = await invoke<number>('clear_offline_saves');
+          offlineStatus = n > 0 ? `Cleared saves for ${n} mission${n > 1 ? 's' : ''}` : 'No saves found';
+          offlineStatusKind = 'success';
+        } catch (e) {
+          offlineStatus = `Clear failed: ${e}`;
+          offlineStatusKind = 'error';
+        }
+      },
+    };
+  }
+
   // ── Mod operation progress via Channel ────────────────────────────────────
   function startModOp(opType: string, args: Record<string, unknown>) {
     modOp = {
@@ -807,6 +895,9 @@
         case 'shutting_down_steam':
           modOp.phase = 'shutting_down';
           modOp.currentName = 'Closing Steam…';
+          break;
+        case 'steam_guard_mobile_required':
+          modOp.phase = 'steam_guard_mobile';
           break;
         case 'starting':
           modOp.phase = 'downloading';
@@ -862,17 +953,53 @@
   let cleanupFns: Array<() => void> = [];
 
   function handleGlobalKeydown(e: KeyboardEvent) {
-    // Ctrl+1…9 switches tabs
+    // Skip shortcuts when the user is typing in an input/textarea
+    const tag = (e.target as HTMLElement)?.tagName;
+    const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+
     if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+      // Ctrl+1…9 switches tabs
       const n = parseInt(e.key, 10);
       if (n >= 1 && n <= tabs.length) {
         e.preventDefault();
         selectTab(tabs[n - 1].id);
+        return;
+      }
+      // Ctrl+R — refresh server list
+      if (e.key === 'r' && !isInput) {
+        e.preventDefault();
+        refreshServers();
+        return;
+      }
+      // Ctrl+U — update mods that need updating
+      if (e.key === 'u' && !isInput) {
+        e.preventDefault();
+        if (staleModCount > 0) {
+          updateStaleMods();
+        } else {
+          setStatus('All mods are up to date', 'success');
+        }
+        return;
+      }
+      // Ctrl+L — launch latest played server (reconnect)
+      if (e.key === 'l' && !isInput) {
+        e.preventDefault();
+        const last = profile?.history?.[0] ?? null;
+        if (last) {
+          connectByAddress(last.ip, last.port, last.name);
+        } else {
+          setStatus('No history entry to reconnect to', 'warning');
+        }
+        return;
       }
     }
   }
 
   onMount(() => {
+    // Register global keyboard shortcuts on window so they work regardless
+    // of which element has focus.
+    window.addEventListener('keydown', handleGlobalKeydown);
+    cleanupFns.push(() => window.removeEventListener('keydown', handleGlobalKeydown));
     const saved = localStorage.getItem('theme') as 'light' | 'dark' | null;
     if (saved) theme = saved;
 
@@ -915,8 +1042,7 @@
   });
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="flex flex-col h-screen w-screen overflow-hidden bg-base-100 text-base-content" data-theme={theme} onkeydown={handleGlobalKeydown}>
+<div class="flex flex-col h-screen w-screen overflow-hidden bg-base-100 text-base-content" data-theme={theme}>
   <TitleBar {stats} {steamPlayers} {theme} {profile} onToggleTheme={toggleTheme} onSaveSettings={saveProfileSettings} />
   <TabBar {activeTab} {tabs} onSelect={selectTab} />
 
@@ -1032,6 +1158,7 @@
         onAddFavorite={addFavorite}
         onRemoveFavorite={(s) => removeFavoriteQuick(s.ip, s.query_port)}
         onRefresh={refreshServers}
+        onPing={pingSingle}
       />
     {:else if activeTab === 'favorites'}
       <FavoritesTab
@@ -1042,6 +1169,7 @@
         onConnect={connectByAddress}
         onRemove={removeFavorite}
         onGoToServers={() => selectTab('servers')}
+        onPing={pingSingle}
       />
     {:else if activeTab === 'history'}
       <HistoryTab
@@ -1056,6 +1184,7 @@
         onRemove={removeHistoryEntry}
         onClearAll={clearHistory}
         onGoToServers={() => selectTab('servers')}
+        onPing={pingSingle}
       />
     {:else if activeTab === 'mods'}
       <ModsTab
@@ -1071,6 +1200,10 @@
         onUpdateAll={updateAllMods}
         onUpdateStale={updateStaleMods}
         onCleanup={cleanupMods}
+        onOpenWorkshopDir={() => invoke('open_workshop_dir').catch(() => {})}
+        onOpenModDir={(mod) => invoke('open_mod_dir', { modId: mod.id }).catch(() => {})}
+        onDeleteSelected={deleteSelectedMods}
+        onUpdateSelected={updateSelectedMods}
       />
     {:else if activeTab === 'news'}
       <NewsTab
@@ -1103,6 +1236,9 @@
         onRefresh={loadOfflineMissions}
         onUpdate={updateOfflineMode}
         onLaunch={launchOfflineMission}
+        onRemoveOfflineMode={removeOfflineMode}
+        onClearSaves={clearOfflineSaves}
+        onOpenMissionDir={(mission) => invoke('open_mission_dir', { mission }).catch(() => {})}
       />
     {:else if activeTab === 'about'}
       <AboutTab

@@ -4,6 +4,7 @@
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import Icon from '@iconify/svelte';
+  import { onMount } from 'svelte';
 
   interface Props {
     history: HistoryDto[];
@@ -18,9 +19,10 @@
     onRemove: (h: HistoryDto) => void;
     onClearAll: () => void;
     onGoToServers?: () => void;
+    onPing: (ip: string, port: number) => void;
   }
 
-  let { history, servers, pingCache, favorites, bmApiKey, onConnect, onAddFavorite, onRemoveFavorite, onRemove, onClearAll, onGoToServers }: Props = $props();
+  let { history, servers, pingCache, favorites, bmApiKey, onConnect, onAddFavorite, onRemoveFavorite, onRemove, onClearAll, onGoToServers, onPing }: Props = $props();
 
   // Pre-built lookup map rebuilt only when `servers` changes (O(n) once).
   // Covers both query_port and game_port keys so per-row lookups are O(1).
@@ -120,6 +122,23 @@
     });
     return arr;
   })());
+
+  // Track which servers were just pinged for a brief green flash.
+  let pingFlash = $state<Set<string>>(new Set());
+
+  function doPing(entry: HistoryDto) {
+    const sv = findServer(entry);
+    const port = sv ? sv.query_port : entry.port;
+    // Flash key must match the template: `${entry.ip}:${entry.port}`
+    const flashKey = `${entry.ip}:${entry.port}`;
+    onPing(entry.ip, port);
+    pingFlash.add(flashKey);
+    pingFlash = new Set(pingFlash);
+    setTimeout(() => {
+      pingFlash.delete(flashKey);
+      pingFlash = new Set(pingFlash);
+    }, 1000);
+  }
 
   function pingColor(ms: number | undefined): string {
     if (ms === undefined) return 'text-base-content/30';
@@ -263,6 +282,9 @@
   let selectedIdx = $state(-1);
 
   function handleKeydown(e: KeyboardEvent) {
+    const tag = (e.target as HTMLElement)?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
     if (e.key === 'Escape' && detailEntry) {
       closeDetail();
       e.preventDefault();
@@ -281,11 +303,43 @@
       const entry = sorted[selectedIdx];
       onConnect(entry.ip, entry.port, entry.name);
     }
+    if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && selectedIdx >= 0 && selectedIdx < len) {
+      // F — toggle favorite for the selected history entry
+      e.preventDefault();
+      const entry = sorted[selectedIdx];
+      const sv = findServer(entry);
+      const queryPort = sv ? sv.query_port : entry.port;
+      const key = `${entry.ip}:${queryPort}`;
+      if (favorites.has(key)) {
+        onRemoveFavorite(entry);
+      } else {
+        onAddFavorite(entry);
+      }
+    }
+    if ((e.key === 'i' || e.key === 'I') && !e.ctrlKey && selectedIdx >= 0 && selectedIdx < len) {
+      // I — toggle info/detail panel
+      e.preventDefault();
+      const entry = sorted[selectedIdx];
+      if (detailEntry?.ip === entry.ip && detailEntry?.port === entry.port) {
+        closeDetail();
+      } else {
+        openDetail(entry);
+      }
+    }
+    if ((e.key === 'p' || e.key === 'P') && !e.ctrlKey && selectedIdx >= 0 && selectedIdx < len) {
+      // P — ping the selected server
+      e.preventDefault();
+      doPing(sorted[selectedIdx]);
+    }
   }
+
+  onMount(() => {
+    window.addEventListener('keydown', handleKeydown);
+    return () => window.removeEventListener('keydown', handleKeydown);
+  });
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<div class="flex h-full overflow-hidden" role="region" onkeydown={handleKeydown} tabindex="-1">
+<div class="flex h-full overflow-hidden" role="region" tabindex="-1">
   <div class="flex flex-col flex-1 overflow-hidden">
   {#if history.length === 0}
     <div class="flex flex-col items-center justify-center h-full gap-3 text-base-content/40">
@@ -336,6 +390,7 @@
               class="group/row border-b border-base-300/40 transition-colors cursor-pointer
                      {isSelected ? 'bg-primary/10 border-primary/20' : isFocused ? 'bg-base-200/80 outline outline-1 outline-primary/40' : 'hover:bg-base-200/60'}"
               onclick={() => selectedIdx = ei}
+              ondblclick={() => onConnect(entry.ip, entry.port, entry.name)}
             >
               <!-- Server name + IP -->
               <td class="px-3 py-2 max-w-0">
@@ -383,7 +438,7 @@
 
               <!-- Ping -->
               <td class="px-3 py-2">
-                <div class="flex items-center gap-1.5">
+                <div class="flex items-center gap-1.5 {pingFlash.has(`${entry.ip}:${entry.port}`) ? 'ping-flash' : ''}">
                   <span class="size-1.5 rounded-full shrink-0 {pingDot(ping)}"></span>
                   <span class="tabular-nums font-mono {pingColor(ping)}">
                     {ping !== undefined ? `${ping}ms` : '—'}
@@ -393,7 +448,7 @@
 
               <!-- Map -->
               <td class="px-3 py-2 max-w-0">
-                <span class="truncate block text-teal-400/80">{server ? server.map : '—'}</span>
+                <span class="truncate block text-amber-500/80">{server ? server.map : '—'}</span>
               </td>
 
               <!-- Time -->
@@ -502,7 +557,7 @@
               <span class="flex items-center gap-1.5 text-base-content/50">
                 <Icon icon="mdi:map-outline" class="size-3.5 shrink-0" />Map
               </span>
-              <span class="text-teal-400">{a2s.map}</span>
+              <span class="text-amber-500/80">{a2s.map}</span>
 
               <span class="flex items-center gap-1.5 text-base-content/50">
                 <Icon icon="mdi:tag-outline" class="size-3.5 shrink-0" />Version
@@ -667,3 +722,13 @@
     </div>
   {/if}
 </div>
+
+<style>
+  :global(.ping-flash) {
+    animation: ping-pulse 1s ease-out forwards;
+  }
+  @keyframes ping-pulse {
+    0%   { background-color: oklch(0.72 0.19 154 / 0.5); border-radius: 4px; }
+    100% { background-color: transparent; }
+  }
+</style>

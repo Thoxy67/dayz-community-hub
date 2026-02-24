@@ -517,6 +517,8 @@ pub enum ModOperation {
     UpdateStale { stale_mods: Vec<(u64, String)> },
     /// Update a single mod
     UpdateOne { mod_id: u64, name: String },
+    /// Update a user-specified subset of mods (pre-resolved to (id, name) pairs)
+    UpdateSelected { mods: Vec<(u64, String)> },
 }
 
 /// Spawn a background mod operation with progress reporting.
@@ -647,6 +649,20 @@ pub fn spawn_mod_operation(
             ModOperation::UpdateOne { mod_id, name } => {
                 let mods_info = vec![(mod_id, name)];
                 let results = steamcmd.download_mods_with_progress(&mods_info, &tx).await;
+                ModOpResult::UpdateDone(results)
+            }
+
+            ModOperation::UpdateSelected { mods } => {
+                if mods.is_empty() {
+                    let _ = tx.send(crate::steamcmd::ModProgress::Finished {
+                        ok: 0,
+                        failed: 0,
+                        total: 0,
+                        hint: None,
+                    });
+                    return ModOpResult::UpdateDone(vec![]);
+                }
+                let results = steamcmd.download_mods_with_progress(&mods, &tx).await;
                 ModOpResult::UpdateDone(results)
             }
         }

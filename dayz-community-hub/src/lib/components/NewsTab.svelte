@@ -2,6 +2,7 @@
   import type { ArticleDto } from '$lib/types';
   import Icon from '@iconify/svelte';
   import { invoke } from '@tauri-apps/api/core';
+  import { convertFileSrc } from '@tauri-apps/api/core';
 
   interface Props {
     articles: ArticleDto[];
@@ -15,24 +16,22 @@
   let selectedIndex = $state(0);
   let selected = $derived(articles[selectedIndex] ?? null);
 
-  // ── Image fetching (bypass WebKit TLS) ────────────────────────────────────
+  // ── Image fetching (disk cache + Tauri asset protocol) ────────────────────
+  //
+  // fetch_image downloads to ~/.local/share/dayz-community-hub/cache/images/
+  // and returns the local file path. convertFileSrc() turns that into an
+  // asset:// URL the webview can load directly — no base64 overhead.
+  //
+  // On first load, resolve_cached_images bulk-resolves every article image
+  // that's already on disk in a single synchronous IPC call — no network,
+  // no per-image round-trips. Hero & thumbnails for cached images are
+  // available instantly on the same tick.
 
-  // LRU-capped image cache: keeps the last MAX_CACHE_SIZE entries to avoid
-  // unbounded base64 string accumulation (each image can be 100-300 KB).
-  const MAX_CACHE_SIZE = 30;
+  // In-memory map: remote URL → asset:// URI.
   const imgCache = new Map<string, string>();
 
-  function cacheSet(url: string, uri: string) {
-    if (imgCache.size >= MAX_CACHE_SIZE) {
-      // Evict the oldest entry (Map preserves insertion order)
-      imgCache.delete(imgCache.keys().next().value!);
-    }
-    imgCache.set(url, uri);
-  }
-
-  // Concurrency limiter: at most MAX_CONCURRENT fetches at a time.
-  // Extra requests are queued and drained as slots free up.
-  const MAX_CONCURRENT = 5;
+  // Concurrency limiter for network fetches.
+  const MAX_CONCURRENT = 6;
   let activeCount = 0;
   const fetchQueue: Array<() => void> = [];
 
@@ -46,32 +45,32 @@
   async function fetchImage(url: string): Promise<string> {
     if (imgCache.has(url)) return imgCache.get(url)!;
 
-    // Wait for a concurrency slot
     await new Promise<void>((resolve) => {
       fetchQueue.push(resolve);
       drainQueue();
     });
 
     try {
-      const dataUri = await invoke<string>('fetch_image', { url });
-      cacheSet(url, dataUri);
-      return dataUri;
+      const localPath = await invoke<string>('fetch_image', { url });
+      const assetUrl = convertFileSrc(localPath);
+      imgCache.set(url, assetUrl);
+      return assetUrl;
     } finally {
       activeCount--;
       drainQueue();
     }
   }
 
-  /** Svelte action: rewrite every <img src> inside the node to a data: URI. */
+  /** Svelte action: rewrite every <img src> inside the node to an asset:// URI. */
   function rustImages(node: HTMLElement) {
     const rewritten = new WeakSet<HTMLImageElement>();
 
     function rewrite() {
       node.querySelectorAll<HTMLImageElement>('img[src]').forEach((img) => {
         const src = img.getAttribute('src');
-        // Skip already-rewritten images and data/blob URIs to avoid
-        // re-triggering the MutationObserver when we set img.src.
-        if (!src || src.startsWith('data:') || src.startsWith('blob:') || rewritten.has(img)) return;
+        if (!src || src.startsWith('data:') || src.startsWith('blob:')
+            || src.startsWith('asset:') || src.startsWith('http://asset')
+            || rewritten.has(img)) return;
         rewritten.add(img);
         img.removeAttribute('src');
         fetchImage(src)
@@ -87,33 +86,70 @@
 
   // Thumbnail URIs — $state array so Svelte tracks per-index mutations
   let thumbs = $state<(string | null)[]>([]);
-  // Track which indexes we've already kicked off a fetch for
   const thumbFetching = new Set<number>();
 
+  // Bulk-resolve cached images on disk in one synchronous IPC call, then
+  // kick off network fetches only for the ones that are missing.
   $effect(() => {
-    // Grow the array to match articles length
     if (thumbs.length !== articles.length) {
       thumbs = Array(articles.length).fill(null);
       thumbFetching.clear();
     }
-    // Queue thumbnail fetches — the concurrency limiter above ensures at most
-    // MAX_CONCURRENT fetch_image IPC calls are in-flight at any time.
-    articles.forEach((article, i) => {
-      if (thumbFetching.has(i) || !article.image_url) return;
-      thumbFetching.add(i);
-      fetchImage(article.image_url)
-        .then((uri) => { thumbs[i] = uri; })
-        .catch(() => { /* leave null */ });
-    });
+
+    const imageUrls = articles
+      .map((a) => a.image_url)
+      .filter((u): u is string => !!u);
+
+    if (imageUrls.length === 0) return;
+
+    // 1) Bulk-resolve everything already on disk (single IPC, sync on Rust side).
+    invoke<[string, string][]>('resolve_cached_images', { urls: imageUrls })
+      .then((cached) => {
+        for (const [url, localPath] of cached) {
+          const assetUrl = convertFileSrc(localPath);
+          imgCache.set(url, assetUrl);
+        }
+        // Apply resolved thumbnails immediately
+        articles.forEach((article, i) => {
+          if (!article.image_url) return;
+          const hit = imgCache.get(article.image_url);
+          if (hit) {
+            thumbs[i] = hit;
+            thumbFetching.add(i);
+          }
+        });
+        // Force hero to update if the selected article was resolved
+        updateHero();
+      })
+      .catch(() => {})
+      .finally(() => {
+        // 2) Fetch anything still missing from the network.
+        articles.forEach((article, i) => {
+          if (thumbFetching.has(i) || !article.image_url) return;
+          thumbFetching.add(i);
+          fetchImage(article.image_url)
+            .then((uri) => { thumbs[i] = uri; })
+            .catch(() => {});
+        });
+      });
   });
 
-  // Hero image for reading pane
+  // Hero image for reading pane — synchronous lookup first, async fallback.
   let heroDataUri = $state<string | null>(null);
-  $effect(() => {
+
+  function updateHero() {
     const url = selected?.image_url ?? null;
+    if (!url) { heroDataUri = null; return; }
+    const cached = imgCache.get(url);
+    if (cached) { heroDataUri = cached; return; }
     heroDataUri = null;
-    if (!url) return;
     fetchImage(url).then((uri) => { heroDataUri = uri; }).catch(() => {});
+  }
+
+  $effect(() => {
+    // Re-run whenever selected article changes
+    void selected;
+    updateHero();
   });
 </script>
 

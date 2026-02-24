@@ -5,49 +5,95 @@
 
 /* ── Custom light theme ─────────────────────────────────────────────────────
    Goals:
-   - Warm off-white base so low-opacity text (/20–/35) remains readable
-   - Rich dark-slate content color (not pure black) for comfortable reading
-   - Slightly tinted base-200/300 so borders and backgrounds have structure
-   - Vivid primary that stays legible as a tint on light backgrounds
+   - High contrast: enough surface difference so /20–/50 opacity text is legible
+   - Cool grey surfaces with just enough chroma to feel designed, not stark
+   - Primary stays vivid and readable as a tint
    ─────────────────────────────────────────────────────────────────────── */
 [data-theme="light"] {
-  /* Base surfaces — warm off-white, not stark white */
-  --color-base-100: oklch(97% 0.006 240);   /* #f3f4f8 – main background  */
-  --color-base-200: oklch(93% 0.008 240);   /* #e8eaf0 – sidebar/panels   */
-  --color-base-300: oklch(87% 0.010 240);   /* #d8dbe6 – borders/dividers */
+  /* Base surfaces — clearly distinct steps */
+  --color-base-100: oklch(96% 0.006 240);   /* near-white background     */
+  --color-base-200: oklch(87% 0.012 245);   /* panels / sidebars         */
+  --color-base-300: oklch(74% 0.018 245);   /* borders / dividers        */
 
-  /* Content – rich dark slate, not pure black */
-  --color-base-content: oklch(22% 0.025 255);   /* #1e2235 */
+  /* Content — deep navy-black, clearly legible even at /25 opacity */
+  --color-base-content: oklch(15% 0.030 255);
 
-  /* Primary – vivid slate-blue, readable as tints */
-  --color-primary: oklch(50% 0.18 255);         /* #3a5fc8 */
-  --color-primary-content: oklch(98% 0.005 255);
+  /* Primary — vivid blue, readable as tint on light */
+  --color-primary: oklch(48% 0.20 255);
+  --color-primary-content: oklch(99% 0.005 255);
 
   /* Secondary */
-  --color-secondary: oklch(55% 0.14 210);
-  --color-secondary-content: oklch(98% 0.005 210);
+  --color-secondary: oklch(50% 0.16 210);
+  --color-secondary-content: oklch(99% 0.005 210);
 
   /* Accent */
-  --color-accent: oklch(58% 0.16 180);
-  --color-accent-content: oklch(98% 0.005 180);
+  --color-accent: oklch(52% 0.18 180);
+  --color-accent-content: oklch(99% 0.005 180);
 
   /* Neutral */
-  --color-neutral: oklch(35% 0.02 255);
-  --color-neutral-content: oklch(95% 0.005 255);
+  --color-neutral: oklch(28% 0.025 255);
+  --color-neutral-content: oklch(96% 0.005 255);
 
-  /* Status */
-  --color-info:    oklch(60% 0.14 220);
-  --color-success: oklch(55% 0.16 145);
-  --color-warning: oklch(70% 0.16 75);
-  --color-error:   oklch(55% 0.20 25);
+  /* Status — slightly deeper so they pop on light backgrounds */
+  --color-info:    oklch(52% 0.16 220);
+  --color-success: oklch(48% 0.18 145);
+  --color-warning: oklch(62% 0.18 75);
+  --color-error:   oklch(50% 0.22 25);
 
-  --color-info-content:    oklch(98% 0.005 220);
-  --color-success-content: oklch(98% 0.005 145);
-  --color-warning-content: oklch(15% 0.02 75);
-  --color-error-content:   oklch(98% 0.005 25);
+  --color-info-content:    oklch(99% 0.005 220);
+  --color-success-content: oklch(99% 0.005 145);
+  --color-warning-content: oklch(12% 0.02  75);
+  --color-error-content:   oklch(99% 0.005 25);
 
-  /* Rounded corners – keep consistent with dark theme */
-  --radius-btn: 0.375rem;
-  --radius-box: 0.5rem;
+  /* Rounded corners */
+  --radius-btn:   0.375rem;
+  --radius-box:   0.5rem;
   --radius-badge: 1rem;
 }
+
+/* ── Icon: invert in light mode so white SVG paths become dark ──────────── */
+[data-theme="light"] img[src="/icon.svg"] {
+  filter: invert(1) brightness(0.15);
+}
+
+/* ── Light mode: boost contrast on low-opacity base-content text ─────────
+   On dark backgrounds /20–/50 reads fine. On light, the same opacity of a
+   near-black produces mid-grey that is too faint. We remap each stop to a
+   darker effective value so readability is preserved.
+   ─────────────────────────────────────────────────────────────────────── */
+[data-theme="light"] .text-base-content\/20 { color: oklch(15% 0.030 255 / 0.45) }
+[data-theme="light"] .text-base-content\/25 { color: oklch(15% 0.030 255 / 0.50) }
+[data-theme="light"] .text-base-content\/30 { color: oklch(15% 0.030 255 / 0.55) }
+[data-theme="light"] .text-base-content\/35 { color: oklch(15% 0.030 255 / 0.60) }
+[data-theme="light"] .text-base-content\/40 { color: oklch(15% 0.030 255 / 0.65) }
+[data-theme="light"] .text-base-content\/45 { color: oklch(15% 0.030 255 / 0.70) }
+[data-theme="light"] .text-base-content\/50 { color: oklch(15% 0.030 255 / 0.75) }
+[data-theme="light"] .text-base-content\/55 { color: oklch(15% 0.030 255 / 0.80) }
+[data-theme="light"] .text-base-content\/60 { color: oklch(15% 0.030 255 / 0.85) }
+
+/* ── Light mode: shift accent colors from 400 (pale) to dark equivalents ─ */
+[data-theme="light"] .text-sky-400      { color: oklch(35% 0.18 230) }   /* sky-800     */
+[data-theme="light"] .text-blue-400     { color: oklch(35% 0.20 255) }   /* blue-800    */
+[data-theme="light"] .text-indigo-400   { color: oklch(35% 0.20 270) }   /* indigo-800  */
+[data-theme="light"] .text-emerald-400  { color: oklch(36% 0.16 160) }   /* emerald-800 */
+[data-theme="light"] .text-orange-400   { color: oklch(42% 0.18 48)  }   /* orange-800  */
+[data-theme="light"] .text-orange-600   { color: oklch(32% 0.18 48)  }   /* orange-900  */
+[data-theme="light"] .text-yellow-400   { color: oklch(42% 0.16 80)  }   /* yellow-800  */
+[data-theme="light"] .text-violet-400   { color: oklch(36% 0.22 290) }   /* violet-800  */
+[data-theme="light"] .text-cyan-400     { color: oklch(35% 0.14 205) }   /* cyan-800    */
+
+/* Map / Mods / OS column colors */
+[data-theme="light"] .text-amber-500\/80   { color: oklch(40% 0.16 72)         }  /* map    */
+[data-theme="light"] .text-violet-400\/90  { color: oklch(36% 0.22 290)        }  /* mods   */
+[data-theme="light"] .text-sky-400\/80     { color: oklch(35% 0.18 230)        }  /* Win OS */
+[data-theme="light"] .text-orange-400\/80  { color: oklch(42% 0.18 48)         }  /* Lin OS */
+
+/* Opacity variants */
+[data-theme="light"] .text-sky-400\/60     { color: oklch(35% 0.18 230 / 0.90) }
+[data-theme="light"] .text-emerald-400\/70 { color: oklch(36% 0.16 160 / 0.90) }
+[data-theme="light"] .text-yellow-400\/70  { color: oklch(42% 0.16 80  / 0.90) }
+[data-theme="light"] .text-success         { color: oklch(38% 0.18 145)        }
+[data-theme="light"] .text-success\/50     { color: oklch(38% 0.18 145 / 0.80) }
+[data-theme="light"] .text-success\/60     { color: oklch(38% 0.18 145 / 0.85) }
+[data-theme="light"] .text-success\/70     { color: oklch(38% 0.18 145 / 0.90) }
+[data-theme="light"] .text-warning\/80     { color: oklch(40% 0.18 75  / 0.95) }

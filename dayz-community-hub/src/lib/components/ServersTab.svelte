@@ -4,6 +4,7 @@
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import { invoke } from '@tauri-apps/api/core';
   import Icon from '@iconify/svelte';
+  import { onMount } from 'svelte';
 
   interface Props {
     servers: ServerDto[];
@@ -18,6 +19,7 @@
     onAddFavorite: (server: ServerDto) => void;
     onRemoveFavorite: (server: ServerDto) => void;
     onRefresh: () => void;
+    onPing: (ip: string, port: number) => void;
   }
 
   let {
@@ -32,6 +34,7 @@
     onAddFavorite,
     onRemoveFavorite,
     onRefresh,
+    onPing,
   }: Props = $props();
 
   // Deferred version of filter.searchQuery: updated 150ms after the user stops typing.
@@ -146,6 +149,21 @@
   let containerHeight = $state(600);
 
   function pingKey(s: ServerDto) { return `${s.ip}:${s.query_port}`; }
+
+  // Track which servers were just pinged for a brief green flash.
+  let pingFlash = $state<Set<string>>(new Set());
+
+  function doPing(server: ServerDto) {
+    const key = pingKey(server);
+    onPing(server.ip, server.query_port);
+    pingFlash.add(key);
+    // Force Svelte to see the mutation
+    pingFlash = new Set(pingFlash);
+    setTimeout(() => {
+      pingFlash.delete(key);
+      pingFlash = new Set(pingFlash);
+    }, 1000);
+  }
 
   // Sorted list of unique map names — rebuilt only when servers changes,
   // not on every render (was previously computed inline in the {#each}).
@@ -284,6 +302,9 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    const tag = (e.target as HTMLElement)?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
     if (e.key === 'ArrowDown') {
       selectedIndex = Math.min(selectedIndex + 1, sorted.length - 1);
       scrollToIndex(selectedIndex);
@@ -303,6 +324,24 @@
         selectedIndex = -1;
       }
       e.preventDefault();
+    } else if ((e.key === 'f' || e.key === 'F') && selected && !e.ctrlKey) {
+      // F — toggle favorite for the selected server
+      e.preventDefault();
+      const key = `${selected.ip}:${selected.query_port}`;
+      if (favorites.has(key)) {
+        onRemoveFavorite(selected);
+      } else {
+        onAddFavorite(selected);
+      }
+    } else if ((e.key === 'i' || e.key === 'I') && selected && !e.ctrlKey) {
+      // I — toggle info/detail panel for the selected server
+      e.preventDefault();
+      showDetails = !showDetails;
+      if (showDetails) handleQueryA2s();
+    } else if ((e.key === 'p' || e.key === 'P') && selected && !e.ctrlKey) {
+      // P — ping the selected server
+      e.preventDefault();
+      doPing(selected);
     }
   }
 
@@ -340,9 +379,14 @@
     containerHeight = scrollContainer.clientHeight;
     return () => ro.disconnect();
   });
+
+  onMount(() => {
+    window.addEventListener('keydown', handleKeydown);
+    return () => window.removeEventListener('keydown', handleKeydown);
+  });
 </script>
 
-<div class="flex flex-col h-full" onkeydown={handleKeydown} role="grid" tabindex="-1">
+<div class="flex flex-col h-full" role="grid" tabindex="-1">
   <!-- Toolbar -->
   <div class="flex items-center gap-3 px-3 py-2 bg-base-200 border-b border-base-300 flex-shrink-0">
 
@@ -565,7 +609,7 @@
 
                 <!-- Ping: dot + ms -->
                 <td class="px-3">
-                  <div class="flex items-center gap-1.5">
+                  <div class="flex items-center gap-1.5 {pingFlash.has(pingKey(server)) ? 'ping-flash' : ''}">
                     <span class="size-1.5 rounded-full shrink-0 {pingDot(ping)}"></span>
                     <span class="tabular-nums font-mono {pingColor(ping)}">
                       {ping !== undefined ? `${ping}ms` : '—'}
@@ -622,7 +666,7 @@
 
                 <!-- Map -->
                 <td class="px-3 max-w-0">
-                  <span class="truncate text-teal-400/80 block">{server.map}</span>
+                  <span class="truncate text-amber-500/80 block">{server.map}</span>
                 </td>
 
                 <!-- Time -->
@@ -633,7 +677,7 @@
                 <!-- Mods -->
                 <td class="px-3 text-center">
                   {#if server.mods_count > 0}
-                    <span class="inline-flex items-center gap-0.5 text-fuchsia-400/90">
+                    <span class="inline-flex items-center gap-0.5 text-violet-400/90">
                       <Icon icon="mdi:puzzle-outline" class="size-3 shrink-0" />
                       {server.mods_count}
                     </span>
@@ -645,9 +689,9 @@
                 <!-- OS -->
                 <td class="px-2 text-center">
                   {#if server.environment === 'w'}
-                    <span title="Windows"><Icon icon="gg:windows" class="size-3.5 text-sky-400/70" /></span>
+                    <span title="Windows"><Icon icon="gg:windows" class="size-3.5 text-sky-400/80" /></span>
                   {:else}
-                    <span title="Linux"><Icon icon="simple-icons:linux" class="size-3.5 text-rose-400/80" /></span>
+                    <span title="Linux"><Icon icon="simple-icons:linux" class="size-3.5 text-orange-400/80" /></span>
                   {/if}
                 </td>
               </tr>
@@ -734,13 +778,13 @@
           <!-- Map -->
           <span class="flex items-center gap-1">
             <Icon icon="ph:map-trifold" class="size-3 shrink-0" />
-            <span class="text-teal-400/70">{selected.map}</span>
+            <span class="text-amber-500/80">{selected.map}</span>
           </span>
           <!-- Mods -->
           {#if selected.mods_count > 0}
             <span class="flex items-center gap-1">
               <Icon icon="mdi:puzzle-outline" class="size-3 shrink-0" />
-              <span class="text-fuchsia-400/90">{selected.mods_count} mod{selected.mods_count !== 1 ? 's' : ''}</span>
+              <span class="text-violet-400/90">{selected.mods_count} mod{selected.mods_count !== 1 ? 's' : ''}</span>
             </span>
           {/if}
           <!-- IP (click to copy) -->
@@ -791,3 +835,13 @@
     </div>
   {/if}
 </div>
+
+<style>
+  :global(.ping-flash) {
+    animation: ping-pulse 1s ease-out forwards;
+  }
+  @keyframes ping-pulse {
+    0%   { background-color: oklch(0.72 0.19 154 / 0.5); border-radius: 4px; }
+    100% { background-color: transparent; }
+  }
+</style>

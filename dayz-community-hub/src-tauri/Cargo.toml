@@ -15,7 +15,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["native-tls"] }
+tauri = { version = "2", features = ["protocol-asset", "native-tls"] }
 tauri-plugin-opener = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-http = { version = "2", default-features = false, features = ["native-tls"] }

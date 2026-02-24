@@ -1,5 +1,8 @@
 <script lang="ts">
   import Icon from '@iconify/svelte';
+  import { openUrl } from '@tauri-apps/plugin-opener';
+
+  const REPO_URL = 'https://github.com/Arkensor/DayZCommunityOfflineMode';
 
   interface Props {
     missions: string[];
@@ -9,9 +12,12 @@
     onRefresh: () => void;
     onUpdate: () => void;
     onLaunch: (mission: string) => void;
+    onRemoveOfflineMode: () => void;
+    onClearSaves: () => void;
+    onOpenMissionDir: (mission: string) => void;
   }
 
-  let { missions, loading, status, statusKind, onRefresh, onUpdate, onLaunch }: Props = $props();
+  let { missions, loading, status, statusKind, onRefresh, onUpdate, onLaunch, onRemoveOfflineMode, onClearSaves, onOpenMissionDir }: Props = $props();
 
   let selectedMission = $state<string | null>(null);
 
@@ -152,7 +158,7 @@
     {/if}
 
     <!-- Install / Update button -->
-    <div class="px-3 py-2.5 border-t border-base-300 flex-shrink-0">
+    <div class="px-3 pt-2.5 border-t border-base-300 flex-shrink-0">
       <button
         class="btn btn-primary btn-sm w-full gap-2"
         onclick={onUpdate}
@@ -165,6 +171,28 @@
           <Icon icon="ph:download-simple" class="size-3.5" />
           Install / Update
         {/if}
+      </button>
+    </div>
+
+    <!-- Danger zone -->
+    <div class="px-3 pb-2.5 pt-2 flex-shrink-0 flex gap-1.5">
+      <button
+        class="btn btn-ghost btn-xs flex-1 gap-1 text-warning/70 hover:text-warning hover:bg-warning/10"
+        onclick={onClearSaves}
+        disabled={loading || missions.length === 0}
+        title="Delete storage_-1/ save data inside each mission folder (loot, player state, world state). Missions are kept."
+      >
+        <Icon icon="ph:floppy-disk-times" class="size-3.5" />
+        Clear saves
+      </button>
+      <button
+        class="btn btn-ghost btn-xs flex-1 gap-1 text-error/60 hover:text-error hover:bg-error/10"
+        onclick={onRemoveOfflineMode}
+        disabled={loading || missions.length === 0}
+        title="Remove all DayZCommunityOfflineMode mission folders. Use Install / Update to reinstall."
+      >
+        <Icon icon="ph:trash" class="size-3.5" />
+        Remove
       </button>
     </div>
   </div>
@@ -192,21 +220,41 @@
           <p class="text-xs text-base-content/35 font-mono mt-3 break-all">{selectedMission}</p>
         </div>
 
-        <!-- Launch button -->
-        <button
-          class="btn btn-primary btn-lg w-full gap-2 shadow-lg"
-          onclick={() => onLaunch(selectedMission!)}
-        >
-          <Icon icon="ph:play" class="size-5" />
-          Launch Mission
-        </button>
+        <!-- Launch + folder row -->
+        <div class="flex items-center gap-2 w-full">
+          <button
+            class="btn btn-primary btn-lg flex-1 gap-2 shadow-lg"
+            onclick={() => onLaunch(selectedMission!)}
+          >
+            <Icon icon="ph:play" class="size-5" />
+            Launch Mission
+          </button>
+          <button
+            class="btn btn-ghost btn-lg gap-1.5"
+            onclick={() => onOpenMissionDir(selectedMission!)}
+            title="Open mission folder in file manager"
+          >
+            <Icon icon="ph:folder-open" class="size-5" />
+          </button>
+        </div>
 
         <p class="text-xs text-base-content/30">Double-click a mission in the list to launch directly</p>
+
+        <!-- Repo link -->
+        <button
+          class="flex items-center gap-1.5 text-xs text-base-content/30 hover:text-base-content/60 transition-colors"
+          onclick={() => openUrl(REPO_URL)}
+          title={REPO_URL}
+        >
+          <Icon icon="mdi:github" class="size-3.5" />
+          DayZCommunityOfflineMode
+          <Icon icon="ph:arrow-square-out" class="size-3" />
+        </button>
       </div>
 
     {:else}
       <!-- Nothing selected -->
-      <div class="flex flex-col items-center gap-3 text-center px-8">
+      <div class="flex flex-col items-center gap-4 text-center px-8">
         <div class="size-16 rounded-2xl bg-base-200 flex items-center justify-center">
           <Icon icon="ph:cursor-click" class="size-8 text-base-content/20" />
         </div>
@@ -214,6 +262,20 @@
           <p class="text-sm font-medium text-base-content/50">Select a mission to launch</p>
           <p class="text-xs text-base-content/30 mt-1">or double-click to launch immediately</p>
         </div>
+
+        <!-- Repo link -->
+        <button
+          class="flex items-center gap-1.5 text-xs text-base-content/35 hover:text-base-content/60 transition-colors border border-base-300/50 hover:border-base-300 rounded-lg px-3 py-2"
+          onclick={() => openUrl(REPO_URL)}
+          title={REPO_URL}
+        >
+          <Icon icon="mdi:github" class="size-4 shrink-0" />
+          <span class="flex flex-col text-left">
+            <span class="font-medium text-base-content/50" style="font-size:11px;">DayZCommunityOfflineMode</span>
+            <span class="text-base-content/30" style="font-size:10px;">by Arkensor · GitHub</span>
+          </span>
+          <Icon icon="ph:arrow-square-out" class="size-3 shrink-0 ml-1" />
+        </button>
       </div>
     {/if}
   </div>

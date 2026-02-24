@@ -156,20 +156,36 @@ impl OfflineMode {
         let decoder = GzDecoder::new(&bytes[..]);
         let mut archive = Archive::new(decoder);
 
-        // Extract and strip the first directory component.
-        // We use `create_dir_all` before each file write (idempotent) so we
-        // can handle the case where a file entry appears before its parent
-        // directory entry — no need to buffer all file contents in memory first.
+        // The GitHub tarball layout is:
+        //   Arkensor-DayZCommunityOfflineMode-HASH/
+        //   Arkensor-DayZCommunityOfflineMode-HASH/Missions/
+        //   Arkensor-DayZCommunityOfflineMode-HASH/Missions/DayZCommunityOfflineMode.ChernarusPlus/...
+        //
+        // We want to extract only the contents of the inner `Missions/` folder
+        // directly into `dayz_path/Missions/`, so we must strip 2 components:
+        //   [HASH-dir] [Missions] → written to missions_path/
+        //
+        // Entries with fewer than 3 components (the hash-dir, "Missions", and
+        // at least one more segment) are skipped (they're the top-level or the
+        // Missions directory itself).
         for entry in archive.entries()? {
             let mut entry = entry?;
             let path = entry.path()?.into_owned();
             let components: Vec<_> = path.components().collect();
 
-            if components.len() <= 1 {
-                continue; // skip the top-level directory entry itself
+            // Skip entries that don't live inside the Missions/ sub-directory.
+            // We need at least: [hash-dir, "Missions", <mission-folder>, ...]
+            if components.len() <= 2 {
+                continue;
+            }
+            // Only keep entries whose second component is "Missions".
+            let second = components[1].as_os_str().to_string_lossy();
+            if second != "Missions" {
+                continue;
             }
 
-            let new_path: PathBuf = components[1..].iter().collect();
+            // Strip the first two components (hash-dir + "Missions").
+            let new_path: PathBuf = components[2..].iter().collect();
             let full_path = missions_path.join(&new_path);
 
             if entry.header().entry_type().is_dir() {
@@ -222,6 +238,72 @@ impl OfflineMode {
         Ok(())
     }
 
+    /// Remove all DayZCommunityOfflineMode mission folders from `DayZ/Missions/`.
+    /// Only removes directories whose name starts with `DayZCommunityOfflineMode.`.
+    /// Returns the number of directories removed.
+    pub fn remove_offline_mode(&self) -> Result<usize> {
+        let missions_path = self.missions_path();
+        if !missions_path.exists() {
+            return Ok(0);
+        }
+        let mut removed = 0usize;
+        for entry in fs::read_dir(&missions_path)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                if name.starts_with("DayZCommunityOfflineMode.") {
+                    fs::remove_dir_all(&path).map_err(|e| {
+                        crate::errors::Error::Other(format!(
+                            "Failed to remove {:?}: {}",
+                            path, e
+                        ))
+                    })?;
+                    removed += 1;
+                }
+            }
+        }
+        Ok(removed)
+    }
+
+    /// Delete `storage_-1/` inside every DayZCommunityOfflineMode mission folder.
+    /// This wipes all in-game saves (loot, player state, etc.) without removing
+    /// the missions themselves.
+    /// Returns the number of save directories removed.
+    pub fn clear_offline_saves(&self) -> Result<usize> {
+        let missions_path = self.missions_path();
+        if !missions_path.exists() {
+            return Ok(0);
+        }
+        let mut removed = 0usize;
+        for entry in fs::read_dir(&missions_path)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                if name.starts_with("DayZCommunityOfflineMode.") {
+                    let storage = path.join("storage_-1");
+                    if storage.exists() {
+                        fs::remove_dir_all(&storage).map_err(|e| {
+                            crate::errors::Error::Other(format!(
+                                "Failed to remove saves at {:?}: {}",
+                                storage, e
+                            ))
+                        })?;
+                        removed += 1;
+                    }
+                }
+            }
+        }
+        Ok(removed)
+    }
+
     pub fn toggle_spawn(&self, mission: &str, enable: bool) -> Result<()> {
         let config_file = self
             .missions_path()
@@ -255,11 +337,21 @@ impl OfflineMode {
         &self,
         mission: &str,
         mod_ids: &[u64],
-        enable_spawn: bool,
+        _enable_spawn: bool,
     ) -> Vec<String> {
+        // Match the flags used by the official DayZCommunityOfflineMode.bat:
+        //   DayZ_x64.exe -mission=.\Missions\<name> -nosplash -noPause -noBenchmark
+        //                -filePatching -doLogs -scriptDebug=true
+        // Via Steam -applaunch we also need -nolauncher to skip the DayZ launcher.
         let mut args = vec![
+            format!("-mission=.\\Missions\\{}", mission),
+            "-nosplash".to_string(),
+            "-noPause".to_string(),
+            "-noBenchmark".to_string(),
+            "-nolauncher".to_string(),
             "-filePatching".to_string(),
-            format!("-mission=./Missions/{}", mission),
+            "-doLogs".to_string(),
+            "-scriptDebug=true".to_string(),
         ];
 
         if !mod_ids.is_empty() {
@@ -269,13 +361,6 @@ impl OfflineMode {
                 .collect::<Vec<_>>()
                 .join(";");
             args.push(format!("-mod={}", mods_str));
-        }
-
-        args.push("-doLogs".to_string());
-        args.push("-scriptDebug=true".to_string());
-
-        if !enable_spawn {
-            args.push("-noHive".to_string());
         }
 
         args

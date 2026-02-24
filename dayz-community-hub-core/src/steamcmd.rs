@@ -4,9 +4,26 @@ use regex::Regex;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::OnceLock;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::BufReader;
 use tokio::process::Command;
 use tokio::sync::mpsc;
+
+/// Strip ANSI/VT100 escape sequences from a string.
+/// steamcmd embeds colour codes even when stdout is a pipe, e.g. `\x1b[1m`.
+fn strip_ansi(s: &str) -> std::borrow::Cow<'_, str> {
+    static ANSI_RE: OnceLock<Regex> = OnceLock::new();
+    let re = ANSI_RE.get_or_init(|| Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap());
+    re.replace_all(s, "")
+}
+
+/// Returns true if the line (after stripping ANSI codes) indicates steamcmd is
+/// waiting for Steam Guard Mobile confirmation.
+#[allow(dead_code)]
+fn is_steam_guard_mobile_prompt(line: &str) -> bool {
+    let clean = strip_ansi(line);
+    let lower = clean.to_lowercase();
+    lower.contains("please confirm") && (lower.contains("mobile") || lower.contains("phone"))
+}
 
 pub const DAYZ_GAME_ID: u32 = 221100;
 
@@ -122,6 +139,8 @@ pub fn find_steamcmd() -> Option<PathBuf> {
 pub enum ModProgress {
     /// Steam is being shut down to avoid session conflict with steamcmd
     ShuttingDownSteam,
+    /// steamcmd is waiting for Steam Guard Mobile confirmation on the user's phone
+    SteamGuardMobileRequired,
     /// Starting download/update for a mod: (current_index, total_count, mod_id, mod_name)
     Starting {
         current: usize,
@@ -295,31 +314,52 @@ impl SteamCmd {
         cmd.creation_flags(0x08000000);
         let mut child = cmd.spawn()?;
 
-        // Read both stdout and stderr: on Windows steamcmd writes to stderr,
-        // not stdout. Also prevents pipe-buffer blocking when stderr is unread.
-        let (line_tx, mut line_rx) = mpsc::unbounded_channel::<String>();
+        // Read both stdout and stderr as raw chunks (not lines) so we can detect
+        // "Cached credentials not found" even if steamcmd doesn't terminate with '\n'.
+        let (chunk_tx, mut chunk_rx) = mpsc::unbounded_channel::<String>();
         if let Some(stdout) = child.stdout.take() {
-            let tx = line_tx.clone();
+            let ctx = chunk_tx.clone();
             tokio::spawn(async move {
-                let mut lines = BufReader::new(stdout).lines();
-                while let Ok(Some(line)) = lines.next_line().await {
-                    let _ = tx.send(line);
+                use tokio::io::AsyncReadExt;
+                let mut reader = BufReader::new(stdout);
+                let mut buf = [0u8; 4096];
+                loop {
+                    match reader.read(&mut buf).await {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            let s = String::from_utf8_lossy(&buf[..n]).into_owned();
+                            let _ = ctx.send(s);
+                        }
+                        Err(_) => break,
+                    }
                 }
             });
         }
         if let Some(stderr) = child.stderr.take() {
-            let tx = line_tx.clone();
+            let ctx = chunk_tx.clone();
             tokio::spawn(async move {
-                let mut lines = BufReader::new(stderr).lines();
-                while let Ok(Some(line)) = lines.next_line().await {
-                    let _ = tx.send(line);
+                use tokio::io::AsyncReadExt;
+                let mut reader = BufReader::new(stderr);
+                let mut buf = [0u8; 4096];
+                loop {
+                    match reader.read(&mut buf).await {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            let s = String::from_utf8_lossy(&buf[..n]).into_owned();
+                            let _ = ctx.send(s);
+                        }
+                        Err(_) => break,
+                    }
                 }
             });
         }
-        drop(line_tx);
+        drop(chunk_tx);
 
-        while let Some(line) = line_rx.recv().await {
-            if line.contains("Cached credentials not found") {
+        let mut all_output = String::new();
+        while let Some(chunk) = chunk_rx.recv().await {
+            all_output.push_str(&chunk);
+            let clean = strip_ansi(&all_output);
+            if clean.contains("Cached credentials not found") {
                 let _ = child.kill().await;
                 return Err(Error::CredentialsExpired(format!(
                     "steamcmd +login {} +quit",
@@ -496,64 +536,125 @@ impl SteamCmd {
             }
         };
 
-        // Stream stdout + stderr through a merged channel
-        let (line_tx, mut line_rx) = mpsc::unbounded_channel::<String>();
+        // Stream stdout + stderr through a merged channel as **chunks**, not lines.
+        //
+        // steamcmd does NOT terminate every message with a newline — critically,
+        // the "Logging in user '...' to Steam Public..." line is written *without*
+        // a trailing '\n'. steamcmd then blocks silently while waiting for Steam
+        // Guard mobile confirmation. A line-based reader (BufReader::lines) would
+        // never yield during this stall because it waits for '\n'.
+        //
+        // By reading raw byte chunks we get partial output as soon as it's flushed
+        // to the pipe, allowing us to detect the Steam Guard prompt in real time.
+        let (chunk_tx, mut chunk_rx) = mpsc::unbounded_channel::<String>();
         if let Some(stdout) = child.stdout.take() {
-            let ltx = line_tx.clone();
+            let ctx = chunk_tx.clone();
             tokio::spawn(async move {
-                let mut lines = BufReader::new(stdout).lines();
-                while let Ok(Some(line)) = lines.next_line().await {
-                    let _ = ltx.send(line);
+                use tokio::io::AsyncReadExt;
+                let mut reader = BufReader::new(stdout);
+                let mut buf = [0u8; 4096];
+                loop {
+                    match reader.read(&mut buf).await {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            let s = String::from_utf8_lossy(&buf[..n]).into_owned();
+                            let _ = ctx.send(s);
+                        }
+                        Err(_) => break,
+                    }
                 }
             });
         }
         if let Some(stderr) = child.stderr.take() {
-            let ltx = line_tx.clone();
+            let ctx = chunk_tx.clone();
             tokio::spawn(async move {
-                let mut lines = BufReader::new(stderr).lines();
-                while let Ok(Some(line)) = lines.next_line().await {
-                    let _ = ltx.send(line);
+                use tokio::io::AsyncReadExt;
+                let mut reader = BufReader::new(stderr);
+                let mut buf = [0u8; 4096];
+                loop {
+                    match reader.read(&mut buf).await {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            let s = String::from_utf8_lossy(&buf[..n]).into_owned();
+                            let _ = ctx.send(s);
+                        }
+                        Err(_) => break,
+                    }
                 }
             });
         }
-        drop(line_tx);
+        drop(chunk_tx);
 
-        // Track which mods succeeded as lines arrive
+        // Accumulate all output so we can split on newlines ourselves, while also
+        // detecting Steam Guard via a timeout.
+        //
+        // steamcmd fully buffers its pipe output while waiting for Steam Guard
+        // mobile confirmation — no bytes arrive until the user approves on the
+        // phone and steamcmd flushes everything at once. So scanning chunks for
+        // the prompt text doesn't work: the text only arrives *after* approval.
+        //
+        // Detection strategy: the initial steamcmd startup (loading, update check)
+        // produces output within a few seconds. If a password is provided and no
+        // data arrives for 8 s, steamcmd is stalled on Steam Guard. We send the
+        // `SteamGuardMobileRequired` event and keep waiting for output to resume.
         let mut succeeded = std::collections::HashSet::<u64>::new();
         let mut credentials_failed = false;
         let mut current_idx: usize = 0;
+        let mut steam_guard_sent = false;
+        let mut login_phase = true; // true until first download activity is seen
+        let mut buf = String::new();
+        let has_password = self.password.is_some();
 
-        while let Some(line) = line_rx.recv().await {
-            if line.contains("Cached credentials not found") {
-                credentials_failed = true;
-                let _ = child.kill().await;
-                break;
-            }
-            if line.contains("Success. Downloaded item") || line.contains("already up to date") {
-                if let Some(id) = extract_mod_id_from_line(&line) {
-                    succeeded.insert(id);
-                    // Find the index of this mod and send Done
-                    if let Some((idx, (_, name))) =
-                        mods_info.iter().enumerate().find(|(_, (mid, _))| *mid == id)
-                    {
-                        let _ = tx.send(ModProgress::Done {
-                            current: idx + 1,
-                            total,
-                            mod_id: id,
-                            name: name.clone(),
-                        });
-                        current_idx = idx + 1;
+        loop {
+            // Only apply the timeout during the login phase (before any download
+            // activity has been seen). Once downloads start, Steam Guard is already
+            // past and long silences are normal (large mod transfers).
+            let maybe_chunk = if has_password && login_phase && !steam_guard_sent {
+                match tokio::time::timeout(
+                    std::time::Duration::from_secs(8),
+                    chunk_rx.recv(),
+                )
+                .await
+                {
+                    Ok(v) => v,
+                    Err(_) => {
+                        // 8 s with no output during login phase →
+                        // steamcmd is stalled on Steam Guard mobile.
+                        let _ = tx.send(ModProgress::SteamGuardMobileRequired);
+                        steam_guard_sent = true;
+                        continue;
                     }
                 }
-            }
-            // Detect when the next download starts
-            if line.contains("Downloading item") {
-                if let Some(id) = extract_mod_id_from_line(&line) {
-                    if let Some((idx, (_, name))) =
-                        mods_info.iter().enumerate().find(|(_, (mid, _))| *mid == id)
-                    {
-                        if idx + 1 > current_idx {
-                            let _ = tx.send(ModProgress::Starting {
+            } else {
+                chunk_rx.recv().await
+            };
+            let raw_chunk = match maybe_chunk {
+                Some(c) => c,
+                None => break, // channel closed — steamcmd exited
+            };
+            buf.push_str(&raw_chunk);
+
+            // Process any complete newline-terminated lines that have accumulated.
+            while let Some(nl_pos) = buf.find('\n') {
+                let raw_line = buf[..nl_pos].to_string();
+                buf = buf[nl_pos + 1..].to_string();
+                let line = strip_ansi(&raw_line).into_owned();
+
+                if line.contains("Cached credentials not found") {
+                    credentials_failed = true;
+                    let _ = child.kill().await;
+                    // Drain is not needed — we'll break the outer loop below
+                    break;
+                }
+                if line.contains("Success. Downloaded item") || line.contains("already up to date")
+                {
+                    login_phase = false;
+                    if let Some(id) = extract_mod_id_from_line(&line) {
+                        succeeded.insert(id);
+                        if let Some((idx, (_, name))) =
+                            mods_info.iter().enumerate().find(|(_, (mid, _))| *mid == id)
+                        {
+                            let _ = tx.send(ModProgress::Done {
                                 current: idx + 1,
                                 total,
                                 mod_id: id,
@@ -563,6 +664,27 @@ impl SteamCmd {
                         }
                     }
                 }
+                if line.contains("Downloading item") {
+                    login_phase = false;
+                    if let Some(id) = extract_mod_id_from_line(&line) {
+                        if let Some((idx, (_, name))) =
+                            mods_info.iter().enumerate().find(|(_, (mid, _))| *mid == id)
+                        {
+                            if idx + 1 > current_idx {
+                                let _ = tx.send(ModProgress::Starting {
+                                    current: idx + 1,
+                                    total,
+                                    mod_id: id,
+                                    name: name.clone(),
+                                });
+                                current_idx = idx + 1;
+                            }
+                        }
+                    }
+                }
+            }
+            if credentials_failed {
+                break;
             }
         }
 
@@ -661,11 +783,15 @@ impl SteamCmd {
                 .creation_flags(0x08000000);
             let login_out = login_cmd.output().await;
             if let Ok(ref out) = login_out {
-                let combined = format!(
+                let combined_raw = format!(
                     "{}\n{}",
                     String::from_utf8_lossy(&out.stdout),
                     String::from_utf8_lossy(&out.stderr),
                 );
+                let combined = strip_ansi(&combined_raw).into_owned();
+                if is_steam_guard_mobile_prompt(&combined) {
+                    let _ = tx.send(ModProgress::SteamGuardMobileRequired);
+                }
                 if combined.contains("Cached credentials not found") || !out.status.success() {
                     let relogin_cmd = format!("steamcmd +login {} +quit", self.login);
                     let hint = format!(
@@ -741,11 +867,11 @@ impl SteamCmd {
                 }
             };
 
-            let all_output = format!(
+            let all_output = strip_ansi(&format!(
                 "{}\n{}",
                 String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr),
-            );
+            )).into_owned();
 
             // Detect expired credentials — abort remaining mods
             if all_output.contains("Cached credentials not found") {

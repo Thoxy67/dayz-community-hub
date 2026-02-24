@@ -24,12 +24,18 @@
     onUpdateAll: () => void;
     onUpdateStale: () => void;
     onCleanup: () => void;
+    onOpenWorkshopDir: () => void;
+    onOpenModDir: (mod: InstalledModDto) => void;
+    onDeleteSelected: (ids: number[]) => void;
+    onUpdateSelected: (ids: number[]) => void;
   }
 
   let {
     mods, loading, checking, staleCount,
     onRefresh, onCheckUpdates, onDelete, onToggleManaged,
     onUpdate, onUpdateAll, onUpdateStale, onCleanup,
+    onOpenWorkshopDir, onOpenModDir,
+    onDeleteSelected, onUpdateSelected,
   }: Props = $props();
 
   // Track which mod IDs are currently being toggled so we can show a per-row spinner.
@@ -44,7 +50,72 @@
     }
   }
 
+  // ── Sorting ──────────────────────────────────────────────────────────────
+  type SortCol = 'name' | 'id' | 'size' | 'local' | 'remote';
+  let sortCol = $state<SortCol>('name');
+  let sortAsc = $state(true);
+
+  function toggleSort(col: SortCol) {
+    if (sortCol === col) {
+      sortAsc = !sortAsc;
+    } else {
+      sortCol = col;
+      sortAsc = col === 'name'; // text cols default asc; numeric cols default desc
+    }
+  }
+
+  function sortIcon(col: SortCol) {
+    if (sortCol !== col) return 'ph:arrows-down-up';
+    return sortAsc ? 'ph:arrow-up' : 'ph:arrow-down';
+  }
+
+  let sorted = $derived((() => {
+    const arr = mods.slice();
+    const dir = sortAsc ? 1 : -1;
+    arr.sort((a, b) => {
+      switch (sortCol) {
+        case 'name':   return dir * a.name.localeCompare(b.name);
+        case 'id':     return dir * (a.id - b.id);
+        case 'size':   return dir * (a.size - b.size);
+        case 'local':  return dir * (a.local_updated - b.local_updated);
+        case 'remote': return dir * ((a.remote_updated ?? 0) - (b.remote_updated ?? 0));
+        default:       return 0;
+      }
+    });
+    return arr;
+  })());
+
   let totalSize = $derived(mods.reduce((acc, m) => acc + m.size, 0));
+
+  // ── Selection ─────────────────────────────────────────────────────────────
+  let selectedIds = $state(new Set<number>());
+
+  function toggleSelect(id: number) {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    selectedIds = next;
+  }
+
+  function toggleSelectAll() {
+    if (selectedIds.size === sorted.length) {
+      selectedIds = new Set();
+    } else {
+      selectedIds = new Set(sorted.map(m => m.id));
+    }
+  }
+
+  // Clear selection whenever mod list changes (e.g. after delete/refresh)
+  $effect(() => {
+    const ids = new Set(mods.map(m => m.id));
+    const pruned = new Set([...selectedIds].filter(id => ids.has(id)));
+    if (pruned.size !== selectedIds.size) selectedIds = pruned;
+  });
+
+  let selectedMods = $derived(mods.filter(m => selectedIds.has(m.id)));
+  let allSelected = $derived(sorted.length > 0 && selectedIds.size === sorted.length);
+  let someSelected = $derived(selectedIds.size > 0 && !allSelected);
+  let selectedStaleCount = $derived(selectedMods.filter(m => m.update_available).length);
+  let selectedSize = $derived(selectedMods.reduce((acc, m) => acc + m.size, 0));
 
   function formatSize(bytes: number): string {
     const mb = bytes / 1024 / 1024;
@@ -55,8 +126,9 @@
 
   function formatDate(ts: number): string {
     if (!ts) return '—';
-    return new Date(ts * 1000).toLocaleDateString(undefined, {
+    return new Date(ts * 1000).toLocaleString(undefined, {
       year: 'numeric', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit',
     });
   }
 </script>
@@ -90,6 +162,17 @@
     </div>
 
     <div class="ml-auto flex items-center gap-1">
+
+      <!-- Open workshop directory -->
+      <button
+        class="btn btn-ghost btn-xs gap-1.5"
+        onclick={onOpenWorkshopDir}
+        disabled={mods.length === 0}
+        title="Open Workshop mods directory in file manager"
+      >
+        <Icon icon="ph:folder-open" class="size-3.5" />
+        Open folder
+      </button>
 
       <!-- Check for updates -->
       <button
@@ -184,20 +267,57 @@
       <table class="w-full text-xs" style="table-layout: fixed; border-collapse: collapse;">
         <thead class="sticky top-0 z-10">
           <tr class="bg-base-200/95 backdrop-blur-sm text-base-content/50 uppercase tracking-wider border-b border-base-300 select-none" style="font-size:10px;">
-            <th class="px-3 py-2 text-left font-medium">Name</th>
-            <th class="w-36 px-3 py-2 font-medium text-left">Workshop ID</th>
-            <th class="w-20 px-3 py-2 font-medium text-right">Size</th>
-            <th class="w-28 px-3 py-2 font-medium text-left">Local</th>
-            <th class="w-28 px-3 py-2 font-medium text-left">Remote</th>
+            <!-- Select-all checkbox -->
+            <th class="w-8 px-2 py-2 text-center">
+              <input
+                type="checkbox"
+                class="checkbox checkbox-xs"
+                checked={allSelected}
+                indeterminate={someSelected}
+                onchange={toggleSelectAll}
+                title={allSelected ? 'Deselect all' : 'Select all'}
+              />
+            </th>
+            <th class="px-3 py-2 text-left font-medium cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('name')}>
+              <span class="flex items-center gap-1">Name <Icon icon={sortIcon('name')} class="size-2.5" /></span>
+            </th>
+            <th class="w-36 px-3 py-2 font-medium text-left cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('id')}>
+              <span class="flex items-center gap-1">Workshop ID <Icon icon={sortIcon('id')} class="size-2.5" /></span>
+            </th>
+            <th class="w-20 px-3 py-2 font-medium text-right cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('size')}>
+              <span class="flex items-center justify-end gap-1">Size <Icon icon={sortIcon('size')} class="size-2.5" /></span>
+            </th>
+            <th class="w-40 px-3 py-2 font-medium text-left cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('local')}>
+              <span class="flex items-center gap-1">Local <Icon icon={sortIcon('local')} class="size-2.5" /></span>
+            </th>
+            <th class="w-40 px-3 py-2 font-medium text-left cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('remote')}>
+              <span class="flex items-center gap-1">Remote <Icon icon={sortIcon('remote')} class="size-2.5" /></span>
+            </th>
             <th class="w-16 px-3 py-2 font-medium text-center" title="UPDATE = new version on Workshop; OK = up to date; MANAGED = tracked but not yet checked for updates">Status</th>
             <th class="w-24 px-3 py-2"></th>
           </tr>
         </thead>
         <tbody>
-          {#each mods as mod}
+          {#each sorted as mod}
             {@const stale = mod.update_available}
-            <tr class="group/row border-b border-base-300/40 transition-colors hover:bg-base-200/60
-                       {stale ? 'bg-warning/5' : ''}">
+            {@const selected = selectedIds.has(mod.id)}
+            <tr
+              class="group/row border-b border-base-300/40 transition-colors hover:bg-base-200/60 cursor-pointer
+                     {stale ? 'bg-warning/5' : ''}
+                     {selected ? 'bg-primary/8 hover:bg-primary/12' : ''}"
+              ondblclick={() => onOpenModDir(mod)}
+            >
+
+              <!-- Checkbox -->
+              <td class="px-2 py-2 text-center" onclick={(e) => { e.stopPropagation(); toggleSelect(mod.id); }}>
+                <input
+                  type="checkbox"
+                  class="checkbox checkbox-xs"
+                  checked={selected}
+                  onchange={() => toggleSelect(mod.id)}
+                  onclick={(e) => e.stopPropagation()}
+                />
+              </td>
 
               <!-- Name -->
               <td class="px-3 py-2 max-w-0">
@@ -342,4 +462,80 @@
       </table>
     </div>
   {/if}
+
+  <!-- ── Selection footer ───────────────────────────────────────────────── -->
+  {#if selectedIds.size > 0}
+    <div class="flex items-center gap-3 px-4 py-2.5 bg-base-200 border-t-2 border-primary/40 flex-shrink-0 text-xs">
+
+      <!-- Selection summary -->
+      <div class="flex items-center gap-2 text-base-content/70">
+        <Icon icon="ph:check-square" class="size-4 text-primary/70" />
+        <span class="font-medium text-base-content/90">{selectedIds.size}</span>
+        <span>mod{selectedIds.size > 1 ? 's' : ''} selected</span>
+        <span class="text-base-content/30">·</span>
+        <span class="text-base-content/50">{formatSize(selectedSize)}</span>
+        {#if selectedStaleCount > 0}
+          <span class="text-base-content/30">·</span>
+          <span class="text-warning flex items-center gap-1">
+            <Icon icon="ph:arrow-circle-up" class="size-3.5" />
+            {selectedStaleCount} update{selectedStaleCount > 1 ? 's' : ''} available
+          </span>
+        {/if}
+      </div>
+
+      <div class="flex items-center gap-1.5 ml-auto">
+
+        <!-- Update selected (only if any are stale) -->
+        {#if selectedStaleCount > 0}
+          <button
+            class="btn btn-warning btn-xs gap-1.5"
+            onclick={() => onUpdateSelected(selectedMods.filter(m => m.update_available).map(m => m.id))}
+            disabled={loading}
+            title="Update {selectedStaleCount} selected mod{selectedStaleCount > 1 ? 's' : ''} with available updates"
+          >
+            <Icon icon="ph:arrow-circle-up" class="size-3.5" />
+            Update {selectedStaleCount} stale
+          </button>
+        {/if}
+
+        <!-- Update all selected -->
+        <button
+          class="btn btn-ghost btn-xs gap-1.5"
+          onclick={() => onUpdateSelected(selectedMods.map(m => m.id))}
+          disabled={loading}
+          title="Force re-validate {selectedIds.size} selected mod{selectedIds.size > 1 ? 's' : ''} via steamcmd"
+        >
+          <Icon icon="ph:arrows-clockwise" class="size-3.5" />
+          Re-validate {selectedIds.size}
+        </button>
+
+        <div class="w-px h-4 bg-base-300"></div>
+
+        <!-- Delete selected -->
+        <button
+          class="btn btn-ghost btn-xs gap-1.5 text-error/70 hover:text-error hover:bg-error/10"
+          onclick={() => onDeleteSelected(selectedMods.map(m => m.id))}
+          disabled={loading}
+          title="Delete {selectedIds.size} selected mod{selectedIds.size > 1 ? 's' : ''}"
+        >
+          <Icon icon="ph:trash" class="size-3.5" />
+          Delete {selectedIds.size}
+        </button>
+
+        <div class="w-px h-4 bg-base-300"></div>
+
+        <!-- Dismiss -->
+        <button
+          class="btn btn-ghost btn-xs gap-1 text-base-content/40 hover:text-base-content/70"
+          onclick={() => { selectedIds = new Set(); }}
+          title="Clear selection"
+        >
+          <Icon icon="ph:x" class="size-3.5" />
+          Clear
+        </button>
+
+      </div>
+    </div>
+  {/if}
+
 </div>
