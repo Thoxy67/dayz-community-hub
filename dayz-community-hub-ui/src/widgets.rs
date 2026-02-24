@@ -2,11 +2,11 @@
 
 use crate::app::{App, Popup, ProgressPhase, ProgressState, Tab};
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, Gauge, ListItem, Paragraph, Wrap},
-    Frame,
 };
 
 // ─── Layout helpers ───────────────────────────────────────────────────────
@@ -320,9 +320,7 @@ pub fn keybinds_for_tab(tab: Tab) -> &'static str {
         Tab::Servers => {
             "j/k:Nav | Enter:Connect | f:Fav | i:A2S | m:Details | /:Search | r:Refresh | Tab/S-Tab:Tabs | q:Quit"
         }
-        Tab::Favorites => {
-            "j/k:Nav | Enter:Connect | i:A2S | x:Remove | Tab/S-Tab:Tabs | q:Quit"
-        }
+        Tab::Favorites => "j/k:Nav | Enter:Connect | i:A2S | x:Remove | Tab/S-Tab:Tabs | q:Quit",
         Tab::History => {
             "j/k:Nav | Enter:Connect | i:A2S | f:Fav | x:Remove | c:Clear | Tab/S-Tab:Tabs | q:Quit"
         }
@@ -571,7 +569,12 @@ pub fn draw_popup(f: &mut Frame, popup: &Popup, area: Rect) {
 
 // ─── Server details panel ─────────────────────────────────────────────────
 
-pub fn render_server_details(f: &mut Frame, app: &App, server: &dayz_community_hub_core::Server, area: Rect) {
+pub fn render_server_details(
+    f: &mut Frame,
+    app: &App,
+    server: &dayz_community_hub_core::Server,
+    area: Rect,
+) {
     let mut lines = vec![
         Line::from(vec![
             Span::styled("Name: ", Style::default().fg(Color::Gray)),

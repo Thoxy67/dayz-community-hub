@@ -2,11 +2,11 @@
 
 use crate::app::{App, DirectConnectField};
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph, Wrap},
-    Frame,
 };
 
 pub fn render_direct_connect_tab(f: &mut Frame, app: &App, area: Rect) {

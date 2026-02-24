@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "DayZ Community Hub",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "identifier": "com.thoxy.dayz-community-hub",
   "build": {
     "beforeDevCommand": "bun run dev",

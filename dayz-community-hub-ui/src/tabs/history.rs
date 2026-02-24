@@ -5,11 +5,11 @@ use crate::{
     widgets::{make_server_list_item, render_server_details, split_list_details},
 };
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph},
-    Frame,
 };
 
 pub fn render_history_tab(f: &mut Frame, app: &App, area: Rect) {

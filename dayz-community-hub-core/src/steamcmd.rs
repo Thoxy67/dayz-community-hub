@@ -41,10 +41,7 @@ pub fn find_steam_root() -> Option<PathBuf> {
                 v.push(PathBuf::from(&p).join("steamapps"));
             }
             // Default install locations
-            for base in &[
-                "C:\\Program Files (x86)\\Steam",
-                "C:\\Program Files\\Steam",
-            ] {
+            for base in &["C:\\Program Files (x86)\\Steam", "C:\\Program Files\\Steam"] {
                 v.push(PathBuf::from(base).join("steamapps"));
             }
             // Per-user roaming / local variants
@@ -103,7 +100,12 @@ pub fn find_steamcmd() -> Option<PathBuf> {
                 v.push(PathBuf::from(base));
             }
             if let Ok(local) = std::env::var("LOCALAPPDATA") {
-                v.push(PathBuf::from(&local).join("Programs").join("steamcmd").join("steamcmd.exe"));
+                v.push(
+                    PathBuf::from(&local)
+                        .join("Programs")
+                        .join("steamcmd")
+                        .join("steamcmd.exe"),
+                );
             }
             v
         };
@@ -610,11 +612,7 @@ impl SteamCmd {
             // activity has been seen). Once downloads start, Steam Guard is already
             // past and long silences are normal (large mod transfers).
             let maybe_chunk = if has_password && login_phase && !steam_guard_sent {
-                match tokio::time::timeout(
-                    std::time::Duration::from_secs(8),
-                    chunk_rx.recv(),
-                )
-                .await
+                match tokio::time::timeout(std::time::Duration::from_secs(8), chunk_rx.recv()).await
                 {
                     Ok(v) => v,
                     Err(_) => {
@@ -651,8 +649,10 @@ impl SteamCmd {
                     login_phase = false;
                     if let Some(id) = extract_mod_id_from_line(&line) {
                         succeeded.insert(id);
-                        if let Some((idx, (_, name))) =
-                            mods_info.iter().enumerate().find(|(_, (mid, _))| *mid == id)
+                        if let Some((idx, (_, name))) = mods_info
+                            .iter()
+                            .enumerate()
+                            .find(|(_, (mid, _))| *mid == id)
                         {
                             let _ = tx.send(ModProgress::Done {
                                 current: idx + 1,
@@ -667,8 +667,10 @@ impl SteamCmd {
                 if line.contains("Downloading item") {
                     login_phase = false;
                     if let Some(id) = extract_mod_id_from_line(&line) {
-                        if let Some((idx, (_, name))) =
-                            mods_info.iter().enumerate().find(|(_, (mid, _))| *mid == id)
+                        if let Some((idx, (_, name))) = mods_info
+                            .iter()
+                            .enumerate()
+                            .find(|(_, (mid, _))| *mid == id)
                         {
                             if idx + 1 > current_idx {
                                 let _ = tx.send(ModProgress::Starting {
@@ -871,7 +873,8 @@ impl SteamCmd {
                 "{}\n{}",
                 String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr),
-            )).into_owned();
+            ))
+            .into_owned();
 
             // Detect expired credentials — abort remaining mods
             if all_output.contains("Cached credentials not found") {
@@ -962,9 +965,13 @@ impl SteamClient {
     /// Returns the Steam executable name for the current platform.
     pub fn steam_exe() -> &'static str {
         #[cfg(target_os = "windows")]
-        { "steam.exe" }
+        {
+            "steam.exe"
+        }
         #[cfg(not(target_os = "windows"))]
-        { "steam" }
+        {
+            "steam"
+        }
     }
 
     /// Check if the Steam client is currently running.
@@ -1021,7 +1028,9 @@ impl SteamClient {
     /// Graceful shutdown via `steam -shutdown`.
     pub async fn shutdown() -> Result<()> {
         let mut cmd = Command::new(Self::steam_exe());
-        cmd.arg("-shutdown").stdout(Stdio::null()).stderr(Stdio::null());
+        cmd.arg("-shutdown")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
         #[cfg(target_os = "windows")]
         cmd.creation_flags(0x08000000);
         let _ = cmd.spawn()?.wait().await;
@@ -1063,7 +1072,9 @@ impl SteamClient {
 
         // Ask Steam to shut down gracefully
         let mut cmd = Command::new(Self::steam_exe());
-        cmd.arg("-shutdown").stdout(Stdio::null()).stderr(Stdio::null());
+        cmd.arg("-shutdown")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
         #[cfg(target_os = "windows")]
         cmd.creation_flags(0x08000000);
         let _ = cmd.spawn();

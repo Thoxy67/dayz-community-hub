@@ -1,5 +1,5 @@
-use crate::errors::Error;
 use crate::Result;
+use crate::errors::Error;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -202,7 +202,9 @@ pub fn create_mod_symlink(workshop_path: &Path, dayz_path: &Path, mod_id: u64) -
         use std::os::windows::process::CommandExt;
         let out = std::process::Command::new("cmd")
             .args([
-                "/c", "mklink", "/J",
+                "/c",
+                "mklink",
+                "/J",
                 &target.to_string_lossy().to_string(),
                 &source.to_string_lossy().to_string(),
             ])

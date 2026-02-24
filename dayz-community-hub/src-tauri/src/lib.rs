@@ -1,3 +1,4 @@
+use clap::Parser;
 use dayz_community_hub_core::{
     a2s_query,
     api::{self, Server},
@@ -8,7 +9,6 @@ use dayz_community_hub_core::{
     offline::OfflineMode,
     steamcmd::ModProgress,
 };
-use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -48,7 +48,9 @@ fn insecure_client() -> &'static reqwest::Client {
         reqwest::Client::builder()
             .danger_accept_invalid_certs(true)
             .danger_accept_invalid_hostnames(true)
-            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0")
+            .user_agent(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0",
+            )
             .timeout(std::time::Duration::from_secs(15))
             .build()
             .expect("Failed to build insecure HTTP client")
@@ -367,9 +369,7 @@ fn installed_mod_to_dto(
     update_cache: &std::collections::HashMap<u64, i64>,
 ) -> InstalledModDto {
     let remote_updated = update_cache.get(&m.id).copied();
-    let update_available = remote_updated
-        .map(|r| r > m.local_updated)
-        .unwrap_or(false);
+    let update_available = remote_updated.map(|r| r > m.local_updated).unwrap_or(false);
     InstalledModDto {
         name: m.name.clone(),
         id: m.id,
@@ -679,7 +679,10 @@ async fn get_installed_mods(state: State<'_, SharedState>) -> Result<Vec<Install
         .map_err(|e| format!("Task join error: {}", e))?
         .map_err(|e| e.to_string())?;
 
-    Ok(mods.iter().map(|m| installed_mod_to_dto(m, &update_cache)).collect())
+    Ok(mods
+        .iter()
+        .map(|m| installed_mod_to_dto(m, &update_cache))
+        .collect())
 }
 
 /// Fetch `time_updated` for all installed mods from the Steam Workshop API and
@@ -778,7 +781,10 @@ async fn check_mod_updates(state: State<'_, SharedState>) -> Result<Vec<Installe
         .map_err(|e| format!("Task join error: {}", e))?
         .map_err(|e| e.to_string())?;
 
-    Ok(mods.iter().map(|m| installed_mod_to_dto(m, &remote_map)).collect())
+    Ok(mods
+        .iter()
+        .map(|m| installed_mod_to_dto(m, &remote_map))
+        .collect())
 }
 
 /// Delete a mod by ID.
@@ -848,10 +854,7 @@ async fn cleanup_mods(state: State<'_, SharedState>) -> Result<String, String> {
 async fn open_workshop_dir(app: AppHandle, state: State<'_, SharedState>) -> Result<(), String> {
     let path = {
         let state = state.lock().await;
-        state
-            .ctl
-            .workshop_path()
-            .map_err(|e| e.to_string())?
+        state.ctl.workshop_path().map_err(|e| e.to_string())?
     };
     app.opener()
         .open_path(path.to_string_lossy().as_ref(), None::<&str>)
@@ -860,7 +863,11 @@ async fn open_workshop_dir(app: AppHandle, state: State<'_, SharedState>) -> Res
 
 /// Open a specific offline mission's folder in the system file manager.
 #[tauri::command]
-async fn open_mission_dir(app: AppHandle, mission: String, state: State<'_, SharedState>) -> Result<(), String> {
+async fn open_mission_dir(
+    app: AppHandle,
+    mission: String,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
     let path = {
         let state = state.lock().await;
         let dayz_path = state.ctl.dayz_path().map_err(|e| e.to_string())?;
@@ -873,7 +880,11 @@ async fn open_mission_dir(app: AppHandle, mission: String, state: State<'_, Shar
 
 /// Open a specific mod's directory in the system file manager.
 #[tauri::command]
-async fn open_mod_dir(app: AppHandle, mod_id: u64, state: State<'_, SharedState>) -> Result<(), String> {
+async fn open_mod_dir(
+    app: AppHandle,
+    mod_id: u64,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
     let path = {
         let state = state.lock().await;
         state
@@ -1249,8 +1260,7 @@ async fn query_a2s(
 /// Resolve the on-disk image cache directory, creating it if needed.
 fn image_cache_dir() -> Result<std::path::PathBuf, String> {
     let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
-    let dir = std::path::PathBuf::from(home)
-        .join(".local/share/dayz-community-hub/cache/images");
+    let dir = std::path::PathBuf::from(home).join(".local/share/dayz-community-hub/cache/images");
     std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create cache dir: {e}"))?;
     Ok(dir)
 }
@@ -1273,7 +1283,10 @@ fn url_to_cache_filename(url: &str) -> String {
         })
         .and_then(|e| {
             let e = e.to_lowercase();
-            if matches!(e.as_str(), "jpg" | "jpeg" | "png" | "gif" | "webp" | "svg" | "avif") {
+            if matches!(
+                e.as_str(),
+                "jpg" | "jpeg" | "png" | "gif" | "webp" | "svg" | "avif"
+            ) {
                 Some(e)
             } else {
                 None
@@ -1336,7 +1349,9 @@ fn resolve_cached_images(urls: Vec<String>) -> Result<Vec<(String, String)>, Str
 async fn fetch_news() -> Result<Vec<ArticleDto>, String> {
     // Use the shared insecure client — dayz.com API requires cert validation
     // to be disabled, and reusing the client keeps the connection pool alive.
-    let articles = news::fetch_news(insecure_client()).await.map_err(|e| e.to_string())?;
+    let articles = news::fetch_news(insecure_client())
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(articles
         .iter()
         .map(|a| ArticleDto {
@@ -1431,10 +1446,7 @@ async fn fetch_battlemetrics_server(
         .to_string();
     let attrs = &entry["attributes"];
     let rank = attrs["rank"].as_i64();
-    let status = attrs["status"]
-        .as_str()
-        .unwrap_or("unknown")
-        .to_string();
+    let status = attrs["status"].as_str().unwrap_or("unknown").to_string();
     let country = attrs["country"].as_str().map(|s| s.to_string());
     // uptime is nested under details.official or details.rust etc — try common paths.
     let uptime = attrs["details"]["uptime"]
@@ -1459,8 +1471,7 @@ async fn fetch_battlemetrics_server(
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    let history_json: serde_json::Value =
-        history_resp.json().await.map_err(|e| e.to_string())?;
+    let history_json: serde_json::Value = history_resp.json().await.map_err(|e| e.to_string())?;
 
     let player_history: Vec<(i64, i64)> = history_json["data"]
         .as_array()
@@ -1598,7 +1609,11 @@ async fn fetch_steam_avatar(state: State<'_, SharedState>) -> Result<Option<Stri
         None => None,
         Some(img_url) => {
             // Download and convert to data URI so WebKit can display it
-            let img_resp = client.get(&img_url).send().await.map_err(|e| e.to_string())?;
+            let img_resp = client
+                .get(&img_url)
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
             let content_type = img_resp
                 .headers()
                 .get(reqwest::header::CONTENT_TYPE)
@@ -1931,8 +1946,8 @@ async fn export_profile(path: String) -> Result<(), String> {
         std::collections::HashMap::new();
 
     // Walk all .json files in the data dir (non-recursive — only top-level)
-    let read_dir = std::fs::read_dir(&data_dir)
-        .map_err(|e| format!("Cannot read data dir: {e}"))?;
+    let read_dir =
+        std::fs::read_dir(&data_dir).map_err(|e| format!("Cannot read data dir: {e}"))?;
 
     for entry in read_dir.flatten() {
         let fname = entry.file_name();
@@ -1945,8 +1960,8 @@ async fn export_profile(path: String) -> Result<(), String> {
         }
         let raw = std::fs::read_to_string(entry.path())
             .map_err(|e| format!("Cannot read {name}: {e}"))?;
-        let value: serde_json::Value = serde_json::from_str(&raw)
-            .map_err(|e| format!("{name} parse error: {e}"))?;
+        let value: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| format!("{name} parse error: {e}"))?;
         files.insert(name.to_string(), value);
     }
 
@@ -1960,8 +1975,7 @@ async fn export_profile(path: String) -> Result<(), String> {
     let compressed = zstd::encode_all(std::io::Cursor::new(&json_bytes), 9)
         .map_err(|e| format!("zstd compression failed: {e}"))?;
 
-    std::fs::write(&path, &compressed)
-        .map_err(|e| format!("Cannot write export file: {e}"))?;
+    std::fs::write(&path, &compressed).map_err(|e| format!("Cannot write export file: {e}"))?;
 
     Ok(())
 }
@@ -1970,19 +1984,15 @@ async fn export_profile(path: String) -> Result<(), String> {
 /// Supports both the old v1 format (profile + mods fields) and the new v2 format (files map).
 /// The app is restarted by the caller after this returns.
 #[tauri::command]
-async fn import_profile(
-    path: String,
-    state: State<'_, SharedState>,
-) -> Result<ProfileDto, String> {
-    let compressed = std::fs::read(&path)
-        .map_err(|e| format!("Cannot read import file: {e}"))?;
+async fn import_profile(path: String, state: State<'_, SharedState>) -> Result<ProfileDto, String> {
+    let compressed = std::fs::read(&path).map_err(|e| format!("Cannot read import file: {e}"))?;
 
     let json_bytes = zstd::decode_all(std::io::Cursor::new(&compressed))
         .map_err(|e| format!("zstd decompression failed: {e}"))?;
 
     // Parse as generic value first to handle both v1 and v2
-    let raw: serde_json::Value = serde_json::from_slice(&json_bytes)
-        .map_err(|e| format!("Bundle parse error: {e}"))?;
+    let raw: serde_json::Value =
+        serde_json::from_slice(&json_bytes).map_err(|e| format!("Bundle parse error: {e}"))?;
 
     let version = raw["version"].as_u64().unwrap_or(1) as u8;
 
@@ -1992,24 +2002,22 @@ async fn import_profile(
     match version {
         1 => {
             // Legacy format: { version, profile, mods? }
-            let profile_str = serde_json::to_string_pretty(&raw["profile"])
-                .map_err(|e| e.to_string())?;
+            let profile_str =
+                serde_json::to_string_pretty(&raw["profile"]).map_err(|e| e.to_string())?;
             std::fs::write(data_dir.join("profile.json"), &profile_str)
                 .map_err(|e| format!("Cannot write profile.json: {e}"))?;
             if !raw["mods"].is_null() {
-                let mods_str = serde_json::to_string_pretty(&raw["mods"])
-                    .map_err(|e| e.to_string())?;
+                let mods_str =
+                    serde_json::to_string_pretty(&raw["mods"]).map_err(|e| e.to_string())?;
                 std::fs::write(data_dir.join("mods.json"), &mods_str)
                     .map_err(|e| format!("Cannot write mods.json: {e}"))?;
             }
         }
         2 => {
             // New format: { version, files: { "profile.json": {...}, ... } }
-            let files = raw["files"].as_object()
-                .ok_or("Bundle files map missing")?;
+            let files = raw["files"].as_object().ok_or("Bundle files map missing")?;
             for (filename, value) in files {
-                let content = serde_json::to_string_pretty(value)
-                    .map_err(|e| e.to_string())?;
+                let content = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
                 std::fs::write(data_dir.join(filename), &content)
                     .map_err(|e| format!("Cannot write {filename}: {e}"))?;
             }
@@ -2020,7 +2028,10 @@ async fn import_profile(
     // Reload profile in state
     let profile_path = config::default_profile_path();
     let mut state = state.lock().await;
-    state.ctl.reload_profile(&profile_path).map_err(|e| e.to_string())?;
+    state
+        .ctl
+        .reload_profile(&profile_path)
+        .map_err(|e| e.to_string())?;
     Ok(profile_to_dto(state.ctl.profile()))
 }
 
@@ -2077,7 +2088,11 @@ async fn detect_steamcmd(state: State<'_, SharedState>) -> Result<SteamcmdStatus
     // 1. Explicit profile path
     if let Some(ref p) = explicit_path {
         if !p.is_empty() && std::path::Path::new(p).exists() {
-            return Ok(SteamcmdStatusDto { found: true, path: Some(p.clone()), platform: platform.into() });
+            return Ok(SteamcmdStatusDto {
+                found: true,
+                path: Some(p.clone()),
+                platform: platform.into(),
+            });
         }
     }
 
@@ -2089,7 +2104,11 @@ async fn detect_steamcmd(state: State<'_, SharedState>) -> Result<SteamcmdStatus
 
     if let Ok(found_path) = which::which(binary_name) {
         let p = found_path.to_string_lossy().to_string();
-        return Ok(SteamcmdStatusDto { found: true, path: Some(p), platform: platform.into() });
+        return Ok(SteamcmdStatusDto {
+            found: true,
+            path: Some(p),
+            platform: platform.into(),
+        });
     }
 
     // 3. Windows fallback: check our own install dir
@@ -2110,7 +2129,11 @@ async fn detect_steamcmd(state: State<'_, SharedState>) -> Result<SteamcmdStatus
         }
     }
 
-    Ok(SteamcmdStatusDto { found: false, path: None, platform: platform.into() })
+    Ok(SteamcmdStatusDto {
+        found: false,
+        path: None,
+        platform: platform.into(),
+    })
 }
 
 /// Windows-only: download steamcmd.zip from Valve and unzip it into
@@ -2125,8 +2148,8 @@ async fn download_steamcmd_windows() -> Result<String, String> {
     {
         use std::io::Cursor;
 
-        let appdata = std::env::var("APPDATA")
-            .map_err(|_| "APPDATA env var not found".to_string())?;
+        let appdata =
+            std::env::var("APPDATA").map_err(|_| "APPDATA env var not found".to_string())?;
         let install_dir = std::path::PathBuf::from(&appdata)
             .join("dayz-community-hub")
             .join("steamcmd");
@@ -2158,15 +2181,15 @@ async fn download_steamcmd_windows() -> Result<String, String> {
         let install_dir_clone = install_dir.clone();
         tokio::task::spawn_blocking(move || {
             let cursor = Cursor::new(bytes);
-            let mut archive = zip::ZipArchive::new(cursor)
-                .map_err(|e| format!("ZIP open failed: {e}"))?;
+            let mut archive =
+                zip::ZipArchive::new(cursor).map_err(|e| format!("ZIP open failed: {e}"))?;
             for i in 0..archive.len() {
-                let mut file = archive.by_index(i)
+                let mut file = archive
+                    .by_index(i)
                     .map_err(|e| format!("ZIP entry error: {e}"))?;
                 let out_path = install_dir_clone.join(file.name());
                 if file.is_dir() {
-                    std::fs::create_dir_all(&out_path)
-                        .map_err(|e| format!("mkdir failed: {e}"))?;
+                    std::fs::create_dir_all(&out_path).map_err(|e| format!("mkdir failed: {e}"))?;
                 } else {
                     if let Some(parent) = out_path.parent() {
                         std::fs::create_dir_all(parent)
@@ -2190,9 +2213,7 @@ async fn download_steamcmd_windows() -> Result<String, String> {
             use std::os::windows::process::CommandExt;
             let steamcmd_steamapps = install_dir.join("steamapps");
             if !steamcmd_steamapps.exists() {
-                if let Some(steam_root) =
-                    dayz_community_hub_core::steamcmd::find_steam_root()
-                {
+                if let Some(steam_root) = dayz_community_hub_core::steamcmd::find_steam_root() {
                     let _ = std::process::Command::new("cmd")
                         .args([
                             "/c",
@@ -2296,18 +2317,18 @@ mod updater {
             current_version: u.current_version.clone(),
             body: u.body.clone(),
             date: u.date.map(|d| {
-                    // OffsetDateTime doesn't expose rfc3339 without the
-                    // `time/formatting` feature; emit a simple ISO-8601 date string.
-                    format!(
-                        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-                        d.year(),
-                        d.month() as u8,
-                        d.day(),
-                        d.hour(),
-                        d.minute(),
-                        d.second(),
-                    )
-                }),
+                // OffsetDateTime doesn't expose rfc3339 without the
+                // `time/formatting` feature; emit a simple ISO-8601 date string.
+                format!(
+                    "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+                    d.year(),
+                    d.month() as u8,
+                    d.day(),
+                    d.hour(),
+                    d.minute(),
+                    d.second(),
+                )
+            }),
         });
         *pending.0.lock().unwrap() = update;
         Ok(info)

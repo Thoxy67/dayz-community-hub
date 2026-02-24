@@ -19,7 +19,9 @@ fn home_dir() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
         let p = std::env::var("USERPROFILE")
-            .or_else(|_| std::env::var("HOMEDRIVE").and_then(|d| std::env::var("HOMEPATH").map(|p| d + &p)))
+            .or_else(|_| {
+                std::env::var("HOMEDRIVE").and_then(|d| std::env::var("HOMEPATH").map(|p| d + &p))
+            })
             .unwrap_or_else(|_| "C:\\Users\\Public".to_string());
         PathBuf::from(p)
     }
@@ -33,9 +35,13 @@ fn home_dir() -> PathBuf {
 /// Returns the fallback steamapps path when Steam root is not configured.
 fn default_steamapps_fallback() -> PathBuf {
     #[cfg(target_os = "windows")]
-    { PathBuf::from("C:\\Program Files (x86)\\Steam\\steamapps") }
+    {
+        PathBuf::from("C:\\Program Files (x86)\\Steam\\steamapps")
+    }
     #[cfg(not(target_os = "windows"))]
-    { home_dir().join(".steam/steam/steamapps") }
+    {
+        home_dir().join(".steam/steam/steamapps")
+    }
 }
 
 pub struct DayzCtl {
@@ -50,7 +56,8 @@ impl DayzCtl {
         let profile = Profile::load(profile_path)?;
         let steamcmd = if profile.steamcmd_enabled {
             // Prefer explicit user-configured path, then auto-detect
-            let resolved_path = profile.steamcmd_path
+            let resolved_path = profile
+                .steamcmd_path
                 .as_ref()
                 .filter(|s| !s.is_empty())
                 .map(PathBuf::from)
@@ -70,8 +77,7 @@ impl DayzCtl {
                     .unwrap_or_else(|| "anonymous".to_string());
                 let password = profile.steam_password.clone();
                 Some(Arc::new(
-                    SteamCmd::new(steamcmd_path, steam_root, Some(login))
-                        .with_password(password),
+                    SteamCmd::new(steamcmd_path, steam_root, Some(login)).with_password(password),
                 ))
             } else {
                 None
@@ -179,28 +185,31 @@ impl DayzCtl {
     /// without restarting the app.
     pub fn rebuild_steamcmd(&mut self) {
         self.steamcmd = if self.profile.steamcmd_enabled {
-            let resolved_path = self.profile.steamcmd_path
+            let resolved_path = self
+                .profile
+                .steamcmd_path
                 .as_ref()
                 .filter(|s| !s.is_empty())
                 .map(PathBuf::from)
                 .filter(|p| p.exists())
                 .or_else(find_steamcmd);
             resolved_path.map(|steamcmd_path| {
-                let steam_root = self.profile
+                let steam_root = self
+                    .profile
                     .steam_root
                     .as_ref()
                     .filter(|s| !s.is_empty())
                     .map(PathBuf::from)
                     .or_else(find_steam_root)
                     .unwrap_or_else(default_steamapps_fallback);
-                let login = self.profile
+                let login = self
+                    .profile
                     .steam_login
                     .clone()
                     .unwrap_or_else(|| "anonymous".to_string());
                 let password = self.profile.steam_password.clone();
                 Arc::new(
-                    SteamCmd::new(steamcmd_path, steam_root, Some(login))
-                        .with_password(password),
+                    SteamCmd::new(steamcmd_path, steam_root, Some(login)).with_password(password),
                 )
             })
         } else {

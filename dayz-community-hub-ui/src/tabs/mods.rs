@@ -3,11 +3,11 @@
 use crate::app::App;
 use dayz_community_hub_core::{mods, utils};
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph},
-    Frame,
 };
 
 pub fn render_mods_tab(f: &mut Frame, app: &App, area: Rect) {

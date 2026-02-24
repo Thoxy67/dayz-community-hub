@@ -3,7 +3,8 @@
 use dayz_community_hub_core::{
     a2s_query, api, config,
     ctl::{DayzCtl, ModOpResult, ModOperation},
-    mods, news, offline::OfflineMode,
+    mods, news,
+    offline::OfflineMode,
     steamcmd::ModProgress,
 };
 use ratatui::style::Color;
@@ -93,7 +94,10 @@ pub enum Popup {
         message: String,
         action: ConfirmAction,
     },
-    Info { title: String, message: String },
+    Info {
+        title: String,
+        message: String,
+    },
 }
 
 #[derive(Clone)]
@@ -583,7 +587,11 @@ impl App {
         }
     }
 
-    pub fn launch_server(&mut self, server: &dayz_community_hub_core::Server, password: Option<&str>) {
+    pub fn launch_server(
+        &mut self,
+        server: &dayz_community_hub_core::Server,
+        password: Option<&str>,
+    ) {
         if self.launching {
             return;
         }
@@ -869,9 +877,15 @@ impl App {
 
     pub fn handle_direct_backspace(&mut self) {
         match self.direct_cursor {
-            DirectConnectField::Address => { self.direct_address.pop(); }
-            DirectConnectField::Port => { self.direct_port.pop(); }
-            DirectConnectField::Password => { self.direct_password.pop(); }
+            DirectConnectField::Address => {
+                self.direct_address.pop();
+            }
+            DirectConnectField::Port => {
+                self.direct_port.pop();
+            }
+            DirectConnectField::Password => {
+                self.direct_password.pop();
+            }
             DirectConnectField::ServerInfo | DirectConnectField::Connect => {}
         }
     }
@@ -1297,10 +1311,7 @@ impl App {
                 let msg = format!("{}", e);
                 if msg.contains("login") || msg.contains("SteamCMD") {
                     if let Some(login) = self.ctl.steamcmd_login() {
-                        self.set_error(format!(
-                            "{}. Try: steamcmd +login {} +quit",
-                            msg, login
-                        ));
+                        self.set_error(format!("{}. Try: steamcmd +login {} +quit", msg, login));
                         return;
                     }
                 }
@@ -1317,115 +1328,131 @@ impl App {
 
         loop {
             match rx.try_recv() {
-                Ok(msg) => {
-                    match msg {
-                        ModProgress::ShuttingDownSteam => {
-                            let state = self.progress_state.get_or_insert(ProgressState {
-                                current: 0,
-                                total: 0,
-                                current_mod_name: String::new(),
-                                current_mod_id: 0,
-                                phase: ProgressPhase::ShuttingDownSteam,
-                                completed: Vec::new(),
-                            });
-                            state.phase = ProgressPhase::ShuttingDownSteam;
-                        }
-                        ModProgress::Starting { current, total, mod_id, name } => {
-                            let state = self.progress_state.get_or_insert(ProgressState {
-                                current: 0,
-                                total: 0,
-                                current_mod_name: String::new(),
-                                current_mod_id: 0,
-                                phase: ProgressPhase::Downloading,
-                                completed: Vec::new(),
-                            });
+                Ok(msg) => match msg {
+                    ModProgress::ShuttingDownSteam => {
+                        let state = self.progress_state.get_or_insert(ProgressState {
+                            current: 0,
+                            total: 0,
+                            current_mod_name: String::new(),
+                            current_mod_id: 0,
+                            phase: ProgressPhase::ShuttingDownSteam,
+                            completed: Vec::new(),
+                        });
+                        state.phase = ProgressPhase::ShuttingDownSteam;
+                    }
+                    ModProgress::Starting {
+                        current,
+                        total,
+                        mod_id,
+                        name,
+                    } => {
+                        let state = self.progress_state.get_or_insert(ProgressState {
+                            current: 0,
+                            total: 0,
+                            current_mod_name: String::new(),
+                            current_mod_id: 0,
+                            phase: ProgressPhase::Downloading,
+                            completed: Vec::new(),
+                        });
+                        state.current = current;
+                        state.total = total;
+                        state.current_mod_name = name;
+                        state.current_mod_id = mod_id;
+                        state.phase = ProgressPhase::Downloading;
+                    }
+                    ModProgress::Done {
+                        current,
+                        total,
+                        mod_id,
+                        name,
+                    } => {
+                        if let Some(state) = &mut self.progress_state {
                             state.current = current;
                             state.total = total;
-                            state.current_mod_name = name;
-                            state.current_mod_id = mod_id;
-                            state.phase = ProgressPhase::Downloading;
+                            state.completed.push((mod_id, name, true));
                         }
-                        ModProgress::Done { current, total, mod_id, name } => {
-                            if let Some(state) = &mut self.progress_state {
-                                state.current = current;
-                                state.total = total;
-                                state.completed.push((mod_id, name, true));
-                            }
+                    }
+                    ModProgress::Failed {
+                        current,
+                        total,
+                        mod_id,
+                        name,
+                        error: _,
+                    } => {
+                        if let Some(state) = &mut self.progress_state {
+                            state.current = current;
+                            state.total = total;
+                            state.completed.push((mod_id, name, false));
                         }
-                        ModProgress::Failed { current, total, mod_id, name, error: _ } => {
-                            if let Some(state) = &mut self.progress_state {
-                                state.current = current;
-                                state.total = total;
-                                state.completed.push((mod_id, name, false));
-                            }
+                    }
+                    ModProgress::Finished {
+                        ok,
+                        failed,
+                        total,
+                        hint,
+                    } => {
+                        if let Some(state) = &mut self.progress_state {
+                            state.phase = ProgressPhase::Finished {
+                                ok,
+                                failed,
+                                hint: hint.clone(),
+                            };
+                            state.total = total;
                         }
-                        ModProgress::Finished { ok, failed, total, hint } => {
-                            if let Some(state) = &mut self.progress_state {
-                                state.phase = ProgressPhase::Finished {
-                                    ok,
-                                    failed,
-                                    hint: hint.clone(),
-                                };
-                                state.total = total;
-                            }
-                            self.loading = false;
-                            self.progress_rx = None;
+                        self.loading = false;
+                        self.progress_rx = None;
 
-                            if let Some(ref hint) = hint {
-                                if hint.contains("Cached credentials not found") {
-                                    let cmd = hint
-                                        .lines()
-                                        .last()
-                                        .map(|l| l.trim())
-                                        .unwrap_or("steamcmd +login <user> +quit");
-                                    self.popup = Some(Popup::Info {
-                                        title: "SteamCMD Login Required".to_string(),
-                                        message: format!(
-                                            "Your steamcmd credentials are missing or expired.\n\
+                        if let Some(ref hint) = hint {
+                            if hint.contains("Cached credentials not found") {
+                                let cmd = hint
+                                    .lines()
+                                    .last()
+                                    .map(|l| l.trim())
+                                    .unwrap_or("steamcmd +login <user> +quit");
+                                self.popup = Some(Popup::Info {
+                                    title: "SteamCMD Login Required".to_string(),
+                                    message: format!(
+                                        "Your steamcmd credentials are missing or expired.\n\
                                              No mods were downloaded.\n\n\
                                              Run this command in a terminal, then try again:\n\n\
                                              {}\n\n\
                                              Press any key to dismiss.",
-                                            cmd
-                                        ),
-                                    });
-                                }
-                                self.set_error("steamcmd credentials expired — see popup");
-                            } else if failed == 0 {
-                                if total == 0 {
-                                    self.set_success("All mods already up to date");
-                                } else {
-                                    self.set_success(format!("Completed: {} mods OK", ok));
-                                }
+                                        cmd
+                                    ),
+                                });
+                            }
+                            self.set_error("steamcmd credentials expired — see popup");
+                        } else if failed == 0 {
+                            if total == 0 {
+                                self.set_success("All mods already up to date");
                             } else {
-                                self.set_warn(format!("Completed: {} OK, {} failed", ok, failed));
+                                self.set_success(format!("Completed: {} mods OK", ok));
                             }
+                        } else {
+                            self.set_warn(format!("Completed: {} OK, {} failed", ok, failed));
+                        }
 
-                            let after = self.pending_after_op.take();
-                            self.refresh_installed_mods();
+                        let after = self.pending_after_op.take();
+                        self.refresh_installed_mods();
 
-                            if hint.is_none() {
-                                if let Some(pending) = after {
-                                    match pending {
-                                        PendingAfterOp::LaunchServer(server, pw) => {
-                                            if let Err(e) = self.ctl.setup_mod_symlinks(&server) {
-                                                self.set_warn(format!(
-                                                    "Symlink warning: {}",
-                                                    e
-                                                ));
-                                            }
-                                            self.launch_server(&server, pw.as_deref());
+                        if hint.is_none() {
+                            if let Some(pending) = after {
+                                match pending {
+                                    PendingAfterOp::LaunchServer(server, pw) => {
+                                        if let Err(e) = self.ctl.setup_mod_symlinks(&server) {
+                                            self.set_warn(format!("Symlink warning: {}", e));
                                         }
-                                        PendingAfterOp::RefreshMods => {}
+                                        self.launch_server(&server, pw.as_deref());
                                     }
+                                    PendingAfterOp::RefreshMods => {}
                                 }
                             }
-
-                            self.progress_state = None;
-                            return false;
                         }
+
+                        self.progress_state = None;
+                        return false;
                     }
-                }
+                },
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
                     self.loading = false;
@@ -1462,14 +1489,10 @@ impl App {
             )
             .collect();
 
-        let (mut priority, rest): (Vec<_>, Vec<_>) = self
-            .servers
-            .iter()
-            .cloned()
-            .partition(|s| {
-                let key = format!("{}:{}", s.endpoint.ip, s.endpoint.port);
-                priority_keys.contains(&key)
-            });
+        let (mut priority, rest): (Vec<_>, Vec<_>) = self.servers.iter().cloned().partition(|s| {
+            let key = format!("{}:{}", s.endpoint.ip, s.endpoint.port);
+            priority_keys.contains(&key)
+        });
 
         priority.extend(rest);
         let ordered_servers = priority;

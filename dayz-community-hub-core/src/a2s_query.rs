@@ -135,8 +135,10 @@ mod tests {
 
         // info only first — cheapest query
         match client.info(addr).await {
-            Ok(info) => println!("INFO ok: name={:?} map={:?} players={}/{} version={:?}",
-                info.name, info.map, info.players, info.max_players, info.version),
+            Ok(info) => println!(
+                "INFO ok: name={:?} map={:?} players={}/{} version={:?}",
+                info.name, info.map, info.players, info.max_players, info.version
+            ),
             Err(e) => println!("INFO error: {:?}", e),
         }
 
@@ -160,7 +162,10 @@ mod tests {
                 println!("get_server_details ok:");
                 println!("  name    = {:?}", details.info.name);
                 println!("  map     = {:?}", details.info.map);
-                println!("  players = {}/{}", details.info.players, details.info.max_players);
+                println!(
+                    "  players = {}/{}",
+                    details.info.players, details.info.max_players
+                );
                 println!("  ping    = {:?}ms", details.ping_ms);
                 if let Some(ref pl) = details.players {
                     println!("  online  = {} players", pl.len());
@@ -189,7 +194,10 @@ mod tests {
         match try_join!(info_fut, players_fut) {
             Ok((info, players)) => {
                 println!("try_join ok");
-                println!("  name={:?} players={}/{}", info.name, info.players, info.max_players);
+                println!(
+                    "  name={:?} players={}/{}",
+                    info.name, info.players, info.max_players
+                );
                 println!("  {} online", players.len());
             }
             Err(e) => println!("try_join error: {:?}", e),

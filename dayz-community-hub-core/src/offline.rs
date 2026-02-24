@@ -83,10 +83,7 @@ impl OfflineMode {
             .json::<Release>()
             .await
             .map_err(|e| {
-                crate::errors::Error::Other(format!(
-                    "Failed to parse GitHub release info: {}",
-                    e
-                ))
+                crate::errors::Error::Other(format!("Failed to parse GitHub release info: {}", e))
             })?;
 
         Ok(release.tag_name)
@@ -207,16 +204,10 @@ impl OfflineMode {
                 }
                 // Write directly from the archive stream — no intermediate buffer.
                 let mut out = std::fs::File::create(&full_path).map_err(|e| {
-                    crate::errors::Error::Other(format!(
-                        "Failed to create {:?}: {}",
-                        full_path, e
-                    ))
+                    crate::errors::Error::Other(format!("Failed to create {:?}: {}", full_path, e))
                 })?;
                 std::io::copy(&mut entry, &mut out).map_err(|e| {
-                    crate::errors::Error::Other(format!(
-                        "Failed to write {:?}: {}",
-                        full_path, e
-                    ))
+                    crate::errors::Error::Other(format!("Failed to write {:?}: {}", full_path, e))
                 })?;
             }
         }
@@ -257,10 +248,7 @@ impl OfflineMode {
                     .unwrap_or_default();
                 if name.starts_with("DayZCommunityOfflineMode.") {
                     fs::remove_dir_all(&path).map_err(|e| {
-                        crate::errors::Error::Other(format!(
-                            "Failed to remove {:?}: {}",
-                            path, e
-                        ))
+                        crate::errors::Error::Other(format!("Failed to remove {:?}: {}", path, e))
                     })?;
                     removed += 1;
                 }

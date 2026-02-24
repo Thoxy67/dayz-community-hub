@@ -26,10 +26,10 @@ pub struct Article {
 }
 
 // Regexes for HTML stripping — compiled once.
-static RE_BLOCK:  OnceLock<Regex> = OnceLock::new();
-static RE_TAG:    OnceLock<Regex> = OnceLock::new();
+static RE_BLOCK: OnceLock<Regex> = OnceLock::new();
+static RE_TAG: OnceLock<Regex> = OnceLock::new();
 static RE_ENTITY: OnceLock<Regex> = OnceLock::new();
-static RE_BLANK:  OnceLock<Regex> = OnceLock::new();
+static RE_BLANK: OnceLock<Regex> = OnceLock::new();
 
 impl Article {
     /// Return the raw HTML content with `<app-picture>` custom elements replaced
@@ -72,17 +72,16 @@ impl Article {
         let text = tag_re.replace_all(&text, "");
 
         // Decode common HTML entities.
-        let entity_re = RE_ENTITY.get_or_init(|| {
-            Regex::new(r"&(amp|lt|gt|quot|apos|nbsp|ndash|mdash|#\d+);").unwrap()
-        });
+        let entity_re = RE_ENTITY
+            .get_or_init(|| Regex::new(r"&(amp|lt|gt|quot|apos|nbsp|ndash|mdash|#\d+);").unwrap());
         let text = entity_re.replace_all(&text, |caps: &regex::Captures| {
             match &caps[1] {
-                "amp"   => "&",
-                "lt"    => "<",
-                "gt"    => ">",
-                "quot"  => "\"",
-                "apos"  => "'",
-                "nbsp"  => " ",
+                "amp" => "&",
+                "lt" => "<",
+                "gt" => ">",
+                "quot" => "\"",
+                "apos" => "'",
+                "nbsp" => " ",
                 "ndash" => "–",
                 "mdash" => "—",
                 s if s.starts_with('#') => {

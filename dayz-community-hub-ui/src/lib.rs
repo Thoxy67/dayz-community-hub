@@ -20,18 +20,11 @@ use ratatui::{
 
 use app::Tab;
 use tabs::{
-    direct_connect::render_direct_connect_tab,
-    favorites::render_favorites_tab,
-    history::render_history_tab,
-    mods::render_mods_tab,
-    news::render_news_tab,
-    offline::render_offline_tab,
-    options::render_options_tab,
-    servers::render_servers_tab,
+    direct_connect::render_direct_connect_tab, favorites::render_favorites_tab,
+    history::render_history_tab, mods::render_mods_tab, news::render_news_tab,
+    offline::render_offline_tab, options::render_options_tab, servers::render_servers_tab,
 };
-use widgets::{
-    draw_popup, draw_progress_overlay, draw_status_bar, draw_tab_bar, draw_title_bar,
-};
+use widgets::{draw_popup, draw_progress_overlay, draw_status_bar, draw_tab_bar, draw_title_bar};
 
 /// Render the entire TUI for a single frame.
 pub fn draw_ui(f: &mut Frame, app: &App) {

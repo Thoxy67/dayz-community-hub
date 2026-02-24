@@ -1,13 +1,13 @@
 //! First-run setup wizard rendered with ratatui/termion.
 
-use dayz_community_hub_core::{config, steamcmd, system, Result};
+use dayz_community_hub_core::{Result, config, steamcmd, system};
 use ratatui::{
+    Terminal,
     backend::TermionBackend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
-    Terminal,
 };
 use std::io;
 use termion::{event::Key, input::TermRead, raw::IntoRawMode};

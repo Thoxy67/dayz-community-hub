@@ -5,9 +5,9 @@ use crate::{
     widgets::{make_server_list_item, render_server_details, split_list_details},
 };
 use ratatui::{
+    Frame,
     layout::Rect,
     widgets::{Block, Borders, List},
-    Frame,
 };
 
 pub fn render_servers_tab(f: &mut Frame, app: &App, area: Rect) {

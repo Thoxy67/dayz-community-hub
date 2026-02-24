@@ -2,11 +2,11 @@
 
 use crate::app::{App, Tab};
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph},
-    Frame,
 };
 
 pub fn render_offline_tab(f: &mut Frame, app: &App, area: Rect) {
