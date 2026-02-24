@@ -142,11 +142,17 @@ SIG_FILE="$EXE.sig"
 echo ""
 echo "==> Signing binary with minisign..."
 
+# The key file is base64-encoded (Tauri/rsign format) — decode it to a
+# temporary native minisign key file before passing it to minisign -S.
+DECODED_KEY="$(mktemp)"
+trap 'rm -f "$DECODED_KEY"' EXIT
+base64 -d "$TAURI_SIGNING_KEY_FILE" >"$DECODED_KEY"
+
 if [[ -n "$TAURI_SIGNING_KEY_PASS" ]]; then
-	echo "$TAURI_SIGNING_KEY_PASS" | minisign -S -s "$TAURI_SIGNING_KEY_FILE" \
+	echo "$TAURI_SIGNING_KEY_PASS" | minisign -S -s "$DECODED_KEY" \
 		-m "$EXE" -x "$SIG_FILE" -t "dayz-community-hub $TAG"
 else
-	minisign -S -W -s "$TAURI_SIGNING_KEY_FILE" \
+	minisign -S -W -s "$DECODED_KEY" \
 		-m "$EXE" -x "$SIG_FILE" -t "dayz-community-hub $TAG"
 fi
 echo "    $SIG_FILE"
