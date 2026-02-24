@@ -888,7 +888,7 @@ checksum = "be1e0bca6c3637f992fc1cc7cbc52a78c1ef6db076dbf1059c4323d6a2048376"
 
 [[package]]
 name = "dayz-community-hub"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "a2s",
  "base64 0.22.1",

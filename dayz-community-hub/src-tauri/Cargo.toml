@@ -2,7 +2,7 @@
 
 [package]
 name = "dayz-community-hub"
-version = "0.2.4"
+version = "0.2.5"
 description = "DayZ Community Hub"
 authors = ["thoxy"]
 edition = "2021"
