@@ -4,6 +4,8 @@ A desktop app for DayZ Standalone — server browser, mod manager, and launcher 
 
 > Windows & Linux · Built with Tauri 2, SvelteKit 5, Rust
 
+![DayZ Community Hub screenshot](.github/assets/screenshot.png)
+
 ---
 
 ## Features
