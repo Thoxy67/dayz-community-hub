@@ -163,7 +163,9 @@ echo "    $SIG_FILE"
 echo ""
 echo "==> Zipping..."
 ZIP_PATH="$TARGET_DIR/$ZIP_NAME"
-(cd "$TARGET_DIR" && zip -9 "$ZIP_NAME" dayz-community-hub.exe)
+# Use -0 (Stored, method 0) — tauri-plugin-updater's zip crate is compiled
+# without deflate features so only ZIP_STORED (method 0) is supported.
+(cd "$TARGET_DIR" && zip -0 "$ZIP_NAME" dayz-community-hub.exe)
 echo "    $ZIP_PATH ($(du -sh "$ZIP_PATH" | cut -f1))"
 
 # ---------------------------------------------------------------------------
@@ -176,7 +178,7 @@ ASSET_URL="$FORGEJO_BASE/$REPO_OWNER/$REPO_NAME/releases/download/$TAG/$ZIP_NAME
 echo ""
 echo "==> Building latest.json..."
 python3 - <<PYEOF
-import json
+import json, base64
 
 sig = open("$SIG_FILE").read().rstrip()
 data = {

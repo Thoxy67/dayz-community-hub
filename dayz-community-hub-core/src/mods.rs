@@ -1,5 +1,5 @@
-use crate::Result;
 use crate::errors::Error;
+use crate::Result;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -199,15 +199,15 @@ pub fn create_mod_symlink(workshop_path: &Path, dayz_path: &Path, mod_id: u64) -
     #[cfg(windows)]
     {
         // Symlinks require admin on Windows; NTFS junctions do not.
+        // mklink is a cmd.exe built-in, not a standalone executable, so it
+        // must be invoked via `cmd /c "mklink /J ..."`.
+        // Paths are double-quoted to handle spaces in directory names.
         use std::os::windows::process::CommandExt;
+        let target_str = target.to_string_lossy();
+        let source_str = source.to_string_lossy();
+        let mklink_cmd = format!("mklink /J \"{target_str}\" \"{source_str}\"");
         let out = std::process::Command::new("cmd")
-            .args([
-                "/c",
-                "mklink",
-                "/J",
-                &target.to_string_lossy().to_string(),
-                &source.to_string_lossy().to_string(),
-            ])
+            .args(["/c", &mklink_cmd])
             .creation_flags(0x08000000)
             .output()
             .map_err(|e| Error::Mod(format!("Failed to run mklink: {}", e)))?;
@@ -273,9 +273,11 @@ pub fn remove_all_mod_symlinks(dayz_path: &Path) -> Result<usize> {
             count += 1;
         }
         // On Windows, mod links are NTFS junctions which appear as directories.
-        // remove_dir removes the junction point without touching its contents.
+        // We verify the path is a reparse point (junction) before removing so
+        // we never accidentally delete a real directory.
+        // remove_dir on a junction removes only the junction point, not its target.
         #[cfg(windows)]
-        if file_name.starts_with('@') && path.is_dir() {
+        if file_name.starts_with('@') && is_junction(&path) {
             if fs::remove_dir(&path).is_ok() {
                 count += 1;
             }
@@ -392,6 +394,20 @@ pub fn format_size(bytes: u64) -> String {
     } else {
         format!("{} KB", bytes / 1024)
     }
+}
+
+/// Returns `true` if `path` is an NTFS junction (reparse point).
+///
+/// On Windows, NTFS junctions have the `FILE_ATTRIBUTE_REPARSE_POINT` flag
+/// set in their metadata. This lets us distinguish junctions created by
+/// `mklink /J` from real directories that happen to start with `@`.
+#[cfg(windows)]
+fn is_junction(path: &Path) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    // FILE_ATTRIBUTE_REPARSE_POINT = 0x400
+    fs::symlink_metadata(path)
+        .map(|m| m.file_attributes() & 0x400 != 0)
+        .unwrap_or(false)
 }
 
 pub struct ModManagementStats {

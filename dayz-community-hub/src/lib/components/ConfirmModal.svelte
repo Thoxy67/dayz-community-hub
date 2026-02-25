@@ -29,7 +29,9 @@
 </script>
 
 {#if dialog}
-  <div class="modal modal-open">
+  <!-- inset-0 is overridden: top starts at 36px (h-9 titlebar) so the
+       titlebar stays interactive and draggable while the modal is open. -->
+  <div class="modal modal-open" style="top: 36px;">
     <div class="modal-box max-w-md">
       <h3 class="font-bold text-lg text-warning">{dialog.title}</h3>
       <div class="py-4 whitespace-pre-wrap text-base-content/80 text-sm leading-relaxed">

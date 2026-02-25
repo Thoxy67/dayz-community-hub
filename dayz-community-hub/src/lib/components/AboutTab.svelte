@@ -239,7 +239,7 @@
                 <div class="px-4 py-3.5 space-y-2.5">
                   <div class="flex items-center gap-2">
                     <span class="loading loading-spinner loading-sm text-primary shrink-0"></span>
-                    <span class="text-sm font-semibold text-base-content">Downloading v{updateInfo?.version}…</span>
+                    <span class="text-sm font-semibold text-base-content">Downloading v{updateInfo?.version ?? '…'}…</span>
                     {#if dlTotal > 0}
                       <span class="ml-auto text-xs text-base-content/40 tabular-nums font-mono shrink-0">{dlPercent}%</span>
                     {/if}
@@ -275,6 +275,8 @@
                 </div>
               {/if}
             </div>
+
+
           </section>
         {/if}
 

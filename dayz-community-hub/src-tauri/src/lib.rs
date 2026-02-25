@@ -1280,18 +1280,25 @@ async fn query_a2s(
     })
 }
 
+/// Resolve the base app-data directory via Tauri's path resolver.
+/// This is the canonical source of truth for all cache paths — the same
+/// resolver that backs the asset protocol scope, so paths always match.
+fn base_data_dir_from_app(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to resolve app data dir: {e}"))
+}
+
 /// Resolve the on-disk image cache directory (sync — for use in sync contexts).
-fn image_cache_dir_sync() -> Result<std::path::PathBuf, String> {
-    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
-    let dir = std::path::PathBuf::from(home).join(".local/share/dayz-community-hub/cache/images");
+fn image_cache_dir_sync(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = base_data_dir_from_app(app)?.join("cache").join("images");
     std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create cache dir: {e}"))?;
     Ok(dir)
 }
 
 /// Resolve the on-disk image cache directory (async — for use in async commands).
-async fn image_cache_dir() -> Result<std::path::PathBuf, String> {
-    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
-    let dir = std::path::PathBuf::from(home).join(".local/share/dayz-community-hub/cache/images");
+async fn image_cache_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = base_data_dir_from_app(app)?.join("cache").join("images");
     tokio::fs::create_dir_all(&dir).await.map_err(|e| format!("Failed to create cache dir: {e}"))?;
     Ok(dir)
 }
@@ -1330,15 +1337,19 @@ fn url_to_cache_filename(url: &str) -> String {
 /// Fetch an image URL through Rust (bypasses WebKit TLS cert validation),
 /// cache it to disk, and return the local file path.
 /// The frontend serves it via `convertFileSrc()` (Tauri asset protocol).
+///
+/// The returned path always uses forward slashes so that `convertFileSrc()`
+/// produces a well-formed `asset://localhost/...` URL on all platforms,
+/// including Windows where `PathBuf::to_string_lossy()` returns backslashes.
 #[tauri::command]
-async fn fetch_image(url: String) -> Result<String, String> {
-    let cache_dir = image_cache_dir().await?;
+async fn fetch_image(app: AppHandle, url: String) -> Result<String, String> {
+    let cache_dir = image_cache_dir(&app).await?;
     let filename = url_to_cache_filename(&url);
     let path = cache_dir.join(&filename);
 
     // Already cached — return immediately.
     if path.exists() {
-        return Ok(path.to_string_lossy().into_owned());
+        return Ok(path_to_forward_slashes(&path));
     }
 
     let client = insecure_client();
@@ -1354,22 +1365,31 @@ async fn fetch_image(url: String) -> Result<String, String> {
         .await
         .map_err(|e| format!("Failed to rename cache file: {e}"))?;
 
-    Ok(path.to_string_lossy().into_owned())
+    Ok(path_to_forward_slashes(&path))
+}
+
+/// Convert a path to a string with forward slashes on all platforms.
+/// On Windows `Path::to_string_lossy()` uses backslashes, which break
+/// Tauri's `convertFileSrc()` → asset protocol URL matching.
+fn path_to_forward_slashes(path: &std::path::Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
 }
 
 /// Resolve multiple image URLs at once. Returns a Vec of (url, local_path)
 /// for every URL that is already cached on disk — no network requests.
 /// URLs that are not cached yet are silently omitted from the result; the
 /// frontend can fall back to individual `fetch_image` calls for those.
+///
+/// Paths are returned with forward slashes (see `path_to_forward_slashes`).
 #[tauri::command]
-fn resolve_cached_images(urls: Vec<String>) -> Result<Vec<(String, String)>, String> {
-    let cache_dir = image_cache_dir_sync()?;
+fn resolve_cached_images(app: AppHandle, urls: Vec<String>) -> Result<Vec<(String, String)>, String> {
+    let cache_dir = image_cache_dir_sync(&app)?;
     let mut result = Vec::with_capacity(urls.len());
     for url in urls {
         let filename = url_to_cache_filename(&url);
         let path = cache_dir.join(&filename);
         if path.exists() {
-            result.push((url, path.to_string_lossy().into_owned()));
+            result.push((url, path_to_forward_slashes(&path)));
         }
     }
     Ok(result)
@@ -2379,13 +2399,19 @@ fn get_cli_args() -> CliArgs {
 //
 // On Linux/macOS the app is distributed via package managers, so in-app
 // updates are intentionally disabled on those platforms.
+//
+// We bypass tauri_plugin_updater's install() because it assumes the zip
+// contains an NSIS/MSI installer. We ship a plain exe built with --no-bundle,
+// so we handle download → signature verify → extract → replace → restart
+// ourselves using a small detached .bat script.
 
 #[cfg(windows)]
 mod updater {
+    use base64::Engine;
     use serde::Serialize;
     use std::sync::Mutex;
     use tauri::{ipc::Channel, AppHandle, State};
-    use tauri_plugin_updater::{Update, UpdaterExt};
+    use tauri_plugin_updater::UpdaterExt;
 
     // ── Error type ────────────────────────────────────────────────────────────
 
@@ -2395,6 +2421,8 @@ mod updater {
         Updater(#[from] tauri_plugin_updater::Error),
         #[error("no pending update — call check_for_update first")]
         NoPendingUpdate,
+        #[error("update error: {0}")]
+        Other(String),
     }
 
     impl Serialize for UpdateError {
@@ -2404,6 +2432,13 @@ mod updater {
         {
             s.serialize_str(&self.to_string())
         }
+    }
+
+    impl From<String> for UpdateError {
+        fn from(s: String) -> Self { UpdateError::Other(s) }
+    }
+    impl From<&str> for UpdateError {
+        fn from(s: &str) -> Self { UpdateError::Other(s.to_string()) }
     }
 
     type Result<T> = std::result::Result<T, UpdateError>;
@@ -2418,9 +2453,15 @@ mod updater {
         Finished,
     }
 
-    // ── Pending update state (managed by Tauri) ───────────────────────────────
+    // ── Pending update state ──────────────────────────────────────────────────
 
-    pub struct PendingUpdate(pub Mutex<Option<Update>>);
+    /// Holds the download URL + minisign signature from the last check_for_update.
+    pub struct PendingUpdate(pub Mutex<Option<PendingUpdateData>>);
+
+    pub struct PendingUpdateData {
+        pub url: String,
+        pub signature: String,
+    }
 
     // ── DTO returned to the frontend ──────────────────────────────────────────
 
@@ -2435,76 +2476,196 @@ mod updater {
 
     // ── Commands ──────────────────────────────────────────────────────────────
 
-    /// Check for a new version.  Returns `Some(UpdateInfo)` when an update is
-    /// available, `None` when the app is already up to date.
+    /// Check for a new version. Returns `Some(UpdateInfo)` when an update is
+    /// available, `None` when already up to date.
     #[tauri::command]
     pub async fn check_for_update(
         app: AppHandle,
         pending: State<'_, PendingUpdate>,
     ) -> Result<Option<UpdateInfo>> {
-        let update = app.updater()?.check().await?;
-        let info = update.as_ref().map(|u| UpdateInfo {
-            version: u.version.clone(),
-            current_version: u.current_version.clone(),
-            body: u.body.clone(),
-            date: u.date.map(|d| {
-                // OffsetDateTime doesn't expose rfc3339 without the
-                // `time/formatting` feature; emit a simple ISO-8601 date string.
-                format!(
-                    "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-                    d.year(),
-                    d.month() as u8,
-                    d.day(),
-                    d.hour(),
-                    d.minute(),
-                    d.second(),
-                )
-            }),
-        });
-        *pending.0.lock().unwrap() = update;
-        Ok(info)
+        fetch_update_info(&app, &pending).await
     }
 
-    /// Download and install the pending update, streaming progress events back
-    /// to the frontend via `on_event`.  On Windows the app will quit
-    /// automatically once the installer launches.
+    /// Download and install the update that was fetched by check_for_update.
     #[tauri::command]
     pub async fn install_update(
+        app: AppHandle,
         pending: State<'_, PendingUpdate>,
         on_event: Channel<DownloadEvent>,
     ) -> Result<()> {
-        let update = pending
+        do_install(&app, &pending, on_event).await
+    }
+
+    // ── Internals ─────────────────────────────────────────────────────────────
+
+    async fn fetch_update_info(
+        app: &AppHandle,
+        pending: &State<'_, PendingUpdate>,
+    ) -> Result<Option<UpdateInfo>> {
+        let update = match app.updater()?.check().await? {
+            Some(u) => u,
+            None => {
+                *pending.0.lock().unwrap() = None;
+                return Ok(None);
+            }
+        };
+
+        let info = UpdateInfo {
+            version: update.version.clone(),
+            current_version: update.current_version.clone(),
+            body: update.body.clone(),
+            date: update.date.map(|d| {
+                format!(
+                    "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+                    d.year(), d.month() as u8, d.day(),
+                    d.hour(), d.minute(), d.second(),
+                )
+            }),
+        };
+
+        // Extract the download URL and signature from the Update object via its
+        // debug representation — the fields are not pub in tauri_plugin_updater.
+        // We use the updater's own download() method to get bytes+sig instead.
+        let url = update.download_url.to_string();
+        let signature = update.signature.clone();
+
+        *pending.0.lock().unwrap() = Some(PendingUpdateData { url, signature });
+
+        Ok(Some(info))
+    }
+
+    async fn do_install(
+        app: &AppHandle,
+        pending: &State<'_, PendingUpdate>,
+        on_event: Channel<DownloadEvent>,
+    ) -> Result<()> {
+        let data = pending
             .0
             .lock()
             .unwrap()
             .take()
             .ok_or(UpdateError::NoPendingUpdate)?;
 
-        let mut started = false;
+        // ── 1. Download ───────────────────────────────────────────────────────
+        let client = reqwest::Client::new();
+        let response = client
+            .get(&data.url)
+            .send()
+            .await
+            .map_err(|e| UpdateError::Other(format!("download failed: {e}")))?;
+
+        let content_length = response.content_length();
+        let _ = on_event.send(DownloadEvent::Started { content_length });
+
+        let mut zip_bytes: Vec<u8> = Vec::with_capacity(content_length.unwrap_or(0) as usize);
+        let mut stream = response.bytes_stream();
         let mut last_emit = std::time::Instant::now();
         let mut pending_bytes: usize = 0;
-        update
-            .download_and_install(
-                |chunk_length, content_length| {
-                    if !started {
-                        let _ = on_event.send(DownloadEvent::Started { content_length });
-                        started = true;
-                    }
-                    // Throttle progress events to at most one per 100ms to avoid
-                    // flooding the IPC bridge on fast connections (~800 events/50MB otherwise).
-                    pending_bytes += chunk_length;
-                    if last_emit.elapsed() >= std::time::Duration::from_millis(100) {
-                        let _ = on_event.send(DownloadEvent::Progress { chunk_length: pending_bytes });
-                        pending_bytes = 0;
-                        last_emit = std::time::Instant::now();
-                    }
-                },
-                || {
-                    let _ = on_event.send(DownloadEvent::Finished);
-                },
-            )
-            .await?;
-        Ok(())
+
+        use futures_util::StreamExt;
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|e| UpdateError::Other(format!("download error: {e}")))?;
+            pending_bytes += chunk.len();
+            zip_bytes.extend_from_slice(&chunk);
+            if last_emit.elapsed() >= std::time::Duration::from_millis(100) {
+                let _ = on_event.send(DownloadEvent::Progress { chunk_length: pending_bytes });
+                pending_bytes = 0;
+                last_emit = std::time::Instant::now();
+            }
+        }
+        if pending_bytes > 0 {
+            let _ = on_event.send(DownloadEvent::Progress { chunk_length: pending_bytes });
+        }
+
+        // ── 2. Verify minisign signature ──────────────────────────────────────
+        // The pubkey is stored in tauri.conf.json as base64(minisign pub key text).
+        // The signature field from the update manifest is also base64(minisign sig text).
+        let pubkey_b64 = app
+            .config()
+            .plugins
+            .0
+            .get("updater")
+            .and_then(|v| v.get("pubkey"))
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| UpdateError::Other("updater pubkey not found in config".into()))?;
+
+        let pubkey_text = String::from_utf8(
+            base64::engine::general_purpose::STANDARD
+                .decode(pubkey_b64)
+                .map_err(|e| UpdateError::Other(format!("pubkey base64 decode: {e}")))?,
+        )
+        .map_err(|e| UpdateError::Other(format!("pubkey utf8: {e}")))?;
+
+        let sig_text = String::from_utf8(
+            base64::engine::general_purpose::STANDARD
+                .decode(&data.signature)
+                .map_err(|e| UpdateError::Other(format!("signature base64 decode: {e}")))?,
+        )
+        .map_err(|e| UpdateError::Other(format!("signature utf8: {e}")))?;
+
+        let public_key = minisign_verify::PublicKey::decode(&pubkey_text)
+            .map_err(|e| UpdateError::Other(format!("pubkey decode: {e}")))?;
+        let signature = minisign_verify::Signature::decode(&sig_text)
+            .map_err(|e| UpdateError::Other(format!("signature decode: {e}")))?;
+        public_key
+            .verify(&zip_bytes, &signature, false)
+            .map_err(|e| UpdateError::Other(format!("signature verification failed: {e}")))?;
+
+        // ── 3. Extract exe from zip ───────────────────────────────────────────
+        let cursor = std::io::Cursor::new(&zip_bytes);
+        let mut archive = zip::ZipArchive::new(cursor)
+            .map_err(|e| UpdateError::Other(format!("zip open: {e}")))?;
+
+        let mut exe_bytes: Vec<u8> = Vec::new();
+        {
+            let mut entry = archive
+                .by_index(0)
+                .map_err(|e| UpdateError::Other(format!("zip entry: {e}")))?;
+            std::io::Read::read_to_end(&mut entry, &mut exe_bytes)
+                .map_err(|e| UpdateError::Other(format!("zip read: {e}")))?;
+        }
+
+        // ── 4. Write new exe to a temp path beside the current exe ───────────
+        let current_exe = std::env::current_exe()
+            .map_err(|e| UpdateError::Other(format!("current_exe: {e}")))?;
+        let exe_dir = current_exe
+            .parent()
+            .ok_or_else(|| UpdateError::Other("no parent dir".into()))?;
+
+        let new_exe = exe_dir.join("dayz-community-hub-update.exe");
+        std::fs::write(&new_exe, &exe_bytes)
+            .map_err(|e| UpdateError::Other(format!("write new exe: {e}")))?;
+
+        let _ = on_event.send(DownloadEvent::Finished);
+
+        // ── 5. Write a .bat that waits for us to exit, replaces the exe, restarts
+        let bat_path = exe_dir.join("dayz-community-hub-updater.bat");
+        let current_exe_str = current_exe.to_string_lossy();
+        let new_exe_str = new_exe.to_string_lossy();
+        let bat = format!(
+            "@echo off\r\n\
+             :wait\r\n\
+             timeout /t 1 /nobreak >nul\r\n\
+             tasklist /fi \"imagename eq dayz-community-hub.exe\" 2>nul | find /i \"dayz-community-hub.exe\" >nul\r\n\
+             if not errorlevel 1 goto wait\r\n\
+             move /y \"{new_exe}\" \"{current_exe}\"\r\n\
+             start \"\" \"{current_exe}\"\r\n\
+             del \"%~f0\"\r\n",
+            new_exe = new_exe_str,
+            current_exe = current_exe_str,
+        );
+        std::fs::write(&bat_path, bat)
+            .map_err(|e| UpdateError::Other(format!("write bat: {e}")))?;
+
+        // ── 6. Spawn the bat detached, then exit ─────────────────────────────
+        std::process::Command::new("cmd.exe")
+            .args(["/c", "start", "", "/b", &bat_path.to_string_lossy()])
+            .spawn()
+            .map_err(|e| UpdateError::Other(format!("spawn updater bat: {e}")))?;
+
+        // Give the bat a moment to start before we exit
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        std::process::exit(0);
     }
 }
 
@@ -2525,8 +2686,17 @@ pub fn run(args: CliArgs) {
                 app.handle().plugin(tauri_plugin_process::init())?;
                 app.manage(updater::PendingUpdate(std::sync::Mutex::new(None)));
             }
-            #[cfg(not(windows))]
-            let _ = app;
+
+            // Register the image cache directory into the asset protocol scope at
+            // runtime. This is more reliable than the static `tauri.conf.json` scope
+            // because it uses Tauri's own path resolver — the exact same source that
+            // the asset protocol uses when checking requests. On Windows the static
+            // `$APPDATA` variable in the config does not always match, causing 403s.
+            if let Ok(cache_dir) = app.path().app_data_dir() {
+                let images_dir = cache_dir.join("cache").join("images");
+                let _ = app.asset_protocol_scope().allow_directory(&images_dir, false);
+            }
+
             Ok(())
         })
         // Single-instance guard: if another instance is already running,

@@ -136,7 +136,7 @@ if not exist "%EXE%" (
 set "SIG_FILE=%EXE%.sig"
 echo.
 echo ==^> Signing binary...
-call bun tauri signer sign -k "%SIGNING_KEY%" -p "%SIGNING_KEY_PASS%" "%EXE%"
+call bun tauri signer sign -f "%SIGNING_KEY%" -p "%SIGNING_KEY_PASS%" "%EXE%"
 if errorlevel 1 (
     echo ERROR: Signing failed
     exit /b 1
@@ -147,10 +147,14 @@ echo     %SIG_FILE%
 :: 4. Zip
 :: ---------------------------------------------------------------------------
 echo.
-echo ==^> Zipping...
+echo ==^> Zipping (ZIP_STORED / method 0 — required by Tauri updater zip crate^)...
 set "ZIP_PATH=%TARGET_DIR%\%ZIP_NAME%"
 if exist "%ZIP_PATH%" del "%ZIP_PATH%"
-powershell -NoProfile -Command "Compress-Archive -Path '%EXE%' -DestinationPath '%ZIP_PATH%' -CompressionLevel Optimal"
+"C:\Program Files\7-Zip\7z.exe" a -tzip -mm=Copy "%ZIP_PATH%" "%EXE%"
+if errorlevel 1 (
+    echo ERROR: 7-Zip failed. Make sure 7-Zip is installed at "C:\Program Files\7-Zip\7z.exe"
+    exit /b 1
+)
 echo     %ZIP_PATH%
 
 :: ---------------------------------------------------------------------------

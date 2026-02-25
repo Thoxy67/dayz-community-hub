@@ -1,18 +1,22 @@
 [workspace]
 members = [
     "dayz-community-hub-core",
-    "dayz-community-hub-ui",
-    "dayz-community-hub-bin",
+    "dayz-community-hub/src-tauri",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
-edition = "2024"
+version = "0.2.5"
+edition = "2021"
+authors = ["thoxy"]
+
+# ── Shared dependencies ────────────────────────────────────────────────────────
 
 [workspace.dependencies]
 # Async runtime
 tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1.18", features = ["full"] }
+futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
 
 # HTTP
 reqwest = { version = "0.13.2", default-features = false, features = ["native-tls", "json", "query"] }
@@ -25,26 +29,25 @@ serde_json = "1"
 thiserror = "2"
 
 # Utilities
+base64 = "0.22"
 regex = "1"
 which = "8.0.0"
 sysinfo = "0.38.2"
 chrono = { version = "0.4" }
+clap = { version = "4", features = ["derive"] }
 
 # Compression / archive
+zip = { version = "8.1.0", default-features = false, features = ["deflate"] }
 flate2 = "1"
 tar = "0.4"
 
-# TUI
-ratatui = { version = "0.30.0", default-features = false, features = ["termion"] }
-termion = "4"
-
 # DayZ A2S queries
 a2s = { version = "0.6.1", features = ["async"] }
-ping-async = "1.0.2"
 
 # Internal crates
 dayz-community-hub-core = { path = "dayz-community-hub-core" }
-dayz-community-hub-ui   = { path = "dayz-community-hub-ui" }
+
+# ── Profile overrides ─────────────────────────────────────────────────────────
 
 [profile.dev]
 incremental = true

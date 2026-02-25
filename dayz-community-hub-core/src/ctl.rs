@@ -15,7 +15,6 @@ use tokio::process::Command;
 use tokio::sync::mpsc;
 
 /// Returns the user's home directory path, cross-platform.
-#[cfg(not(target_os = "windows"))]
 fn home_dir() -> PathBuf {
     #[cfg(target_os = "windows")]
     {

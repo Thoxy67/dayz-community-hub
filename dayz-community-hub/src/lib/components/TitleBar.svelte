@@ -107,9 +107,11 @@
 </script>
 
 <!-- ── Title bar ──────────────────────────────────────────────────────────── -->
+<!-- Sits above modals (z-[1001] beats DaisyUI modal z-[1000]) so window
+     controls and drag-to-move remain usable while any modal is open. -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-  class="h-9 flex items-center bg-base-200 border-b border-base-300 flex-shrink-0 select-none"
+  class="h-9 flex items-center bg-base-200 border-b border-base-300 flex-shrink-0 select-none relative z-[1001]"
   onmousedown={onTitlebarMousedown}
 >
 
@@ -223,6 +225,7 @@
 {#if modalOpen}
   <div
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+    style="top: 36px;"
     role="presentation"
     onclick={closeModal}
   >
