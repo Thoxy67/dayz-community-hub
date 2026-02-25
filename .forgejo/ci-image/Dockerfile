@@ -29,6 +29,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # AppImage bundling
     squashfs-tools \
     file \
+    # RPM bundling
+    rpm \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Bun (also symlinked as `node` so actions/checkout works without Node.js) ──

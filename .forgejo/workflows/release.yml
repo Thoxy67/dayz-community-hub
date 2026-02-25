@@ -187,17 +187,21 @@ jobs:
           DEB_SRC="$(find "$BUNDLE_DIR/deb" -name '*.deb' | head -1)"
           APPIMAGE_SRC="$(find "$BUNDLE_DIR/appimage" -name '*.AppImage' | head -1)"
           APPIMAGE_SIG_SRC="${APPIMAGE_SRC}.sig"
+          RPM_SRC="$(find "$BUNDLE_DIR/rpm" -name '*.rpm' | head -1)"
 
           DEB_NAME="dayz-community-hub-${TAG}-x86_64.deb"
           APPIMAGE_NAME="dayz-community-hub-${TAG}-x86_64.AppImage"
           APPIMAGE_SIG_NAME="${APPIMAGE_NAME}.sig"
+          RPM_NAME="dayz-community-hub-${TAG}-x86_64.rpm"
 
           cp "$DEB_SRC"          "$BUNDLE_DIR/$DEB_NAME"
           cp "$APPIMAGE_SRC"     "$BUNDLE_DIR/$APPIMAGE_NAME"
           cp "$APPIMAGE_SIG_SRC" "$BUNDLE_DIR/$APPIMAGE_SIG_NAME"
+          cp "$RPM_SRC"          "$BUNDLE_DIR/$RPM_NAME"
 
           echo "DEB size      : $(du -sh "$BUNDLE_DIR/$DEB_NAME" | cut -f1)"
           echo "AppImage size : $(du -sh "$BUNDLE_DIR/$APPIMAGE_NAME" | cut -f1)"
+          echo "RPM size      : $(du -sh "$BUNDLE_DIR/$RPM_NAME" | cut -f1)"
 
           echo "TAG=$TAG"                               >> "$FORGEJO_ENV"
           echo "VERSION=$VERSION"                       >> "$FORGEJO_ENV"
@@ -205,6 +209,7 @@ jobs:
           echo "DEB_NAME=$DEB_NAME"                     >> "$FORGEJO_ENV"
           echo "APPIMAGE_NAME=$APPIMAGE_NAME"           >> "$FORGEJO_ENV"
           echo "APPIMAGE_SIG_NAME=$APPIMAGE_SIG_NAME"   >> "$FORGEJO_ENV"
+          echo "RPM_NAME=$RPM_NAME"                     >> "$FORGEJO_ENV"
 
       - name: Upload Linux assets to release
         env:
@@ -260,6 +265,7 @@ jobs:
           fi
 
           upload_asset "$RELEASE_ID" "$BUNDLE_DIR/$DEB_NAME"
+          upload_asset "$RELEASE_ID" "$BUNDLE_DIR/$RPM_NAME"
           upload_asset "$RELEASE_ID" "$BUNDLE_DIR/$APPIMAGE_NAME"
           upload_asset "$RELEASE_ID" "$BUNDLE_DIR/$APPIMAGE_SIG_NAME"
 
