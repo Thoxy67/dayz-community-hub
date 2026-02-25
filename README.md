@@ -4,7 +4,7 @@ A desktop launcher for DayZ Standalone that replaces the official launcher with 
 
 > Windows & Linux · Tauri 2 · SvelteKit 5 · Rust
 
-![DayZ Community Hub screenshot](.github/assets/screenshot.png)
+![DayZ Community Hub screenshot](.forgejo/assets/screenshot.png)
 
 ---
 
