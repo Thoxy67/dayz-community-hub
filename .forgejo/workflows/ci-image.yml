@@ -16,6 +16,8 @@ jobs:
   build-push:
     name: Build and push CI image
     runs-on: docker
+    container:
+      image: docker.io/docker:cli
     timeout-minutes: 60
 
     steps:
