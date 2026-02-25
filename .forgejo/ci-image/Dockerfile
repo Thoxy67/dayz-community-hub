@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     clang \
     lld \
+    llvm \
     unzip \
     pkg-config \
     libssl-dev \
