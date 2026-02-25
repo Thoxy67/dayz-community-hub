@@ -9,7 +9,7 @@ concurrency:
 
 jobs:
   prerelease-windows:
-    name: Build and publish pre-release
+    name: Build and publish pre-release (Windows)
     runs-on: docker
     container:
       image: git.thoxy.xyz/thoxy/dayz-community-hub/ci:latest
@@ -25,6 +25,16 @@ jobs:
     steps:
       - name: Checkout
         uses: https://code.forgejo.org/actions/checkout@v4
+
+      - name: Cache Cargo registry and build artifacts
+        uses: https://code.forgejo.org/actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: windows-cargo-
 
       - name: Install JS dependencies
         run: bun install --frozen-lockfile
@@ -76,6 +86,7 @@ jobs:
           API="https://git.thoxy.xyz/api/v1"
           OWNER="thoxy"
           REPO="dayz-community-hub"
+          TAG_NAME="dev-${SHORT_SHA}"
           RELEASE_NAME="dev-${SHORT_SHA} (${VERSION})"
 
           upload_asset() {
@@ -101,8 +112,6 @@ jobs:
               "$API/repos/$OWNER/$REPO/releases/$release_id/assets" | \
               python3 -c "import sys,json; r=json.load(sys.stdin); print('  Uploaded:', r.get('name','?'))"
           }
-
-          TAG_NAME="dev-${SHORT_SHA}"
 
           # Delete existing release+tag with the same name if present
           OLD_ID="$(curl -sf \
@@ -137,3 +146,121 @@ jobs:
 
           echo ""
           echo "Pre-release : https://git.thoxy.xyz/$OWNER/$REPO/releases/tag/${TAG_NAME}"
+
+  prerelease-linux:
+    name: Build and publish pre-release (Linux)
+    runs-on: docker
+    container:
+      image: git.thoxy.xyz/thoxy/dayz-community-hub/ci:latest
+      credentials:
+        username: ${{ forgejo.repository_owner }}
+        password: ${{ secrets.FORGEJO_TOKEN }}
+    timeout-minutes: 60
+
+    defaults:
+      run:
+        working-directory: dayz-community-hub
+
+    steps:
+      - name: Checkout
+        uses: https://code.forgejo.org/actions/checkout@v4
+
+      - name: Cache Cargo registry and build artifacts
+        uses: https://code.forgejo.org/actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: linux-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: linux-cargo-
+
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build Linux bundles (.deb + AppImage)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          CARGO_BUILD_JOBS: "4"
+        run: bun tauri build
+
+      - name: Locate and rename Linux artifacts
+        run: |
+          VERSION="$(python3 -c "import json; print(json.load(open('src-tauri/tauri.conf.json'))['version'])")"
+          SHA="${{ forgejo.sha }}"
+          SHORT_SHA="${SHA:0:7}"
+          BUNDLE_DIR="../target/release/bundle"
+
+          DEB_SRC="$(find "$BUNDLE_DIR/deb" -name '*.deb' | head -1)"
+          APPIMAGE_SRC="$(find "$BUNDLE_DIR/appimage" -name '*.AppImage' | head -1)"
+          APPIMAGE_SIG_SRC="${APPIMAGE_SRC}.sig"
+
+          DEB_NAME="dayz-community-hub-dev-${SHORT_SHA}-x86_64.deb"
+          APPIMAGE_NAME="dayz-community-hub-dev-${SHORT_SHA}-x86_64.AppImage"
+          APPIMAGE_SIG_NAME="${APPIMAGE_NAME}.sig"
+
+          cp "$DEB_SRC"          "$BUNDLE_DIR/$DEB_NAME"
+          cp "$APPIMAGE_SRC"     "$BUNDLE_DIR/$APPIMAGE_NAME"
+          cp "$APPIMAGE_SIG_SRC" "$BUNDLE_DIR/$APPIMAGE_SIG_NAME"
+
+          echo "DEB size      : $(du -sh "$BUNDLE_DIR/$DEB_NAME" | cut -f1)"
+          echo "AppImage size : $(du -sh "$BUNDLE_DIR/$APPIMAGE_NAME" | cut -f1)"
+
+          echo "VERSION=$VERSION"                       >> "$FORGEJO_ENV"
+          echo "SHORT_SHA=$SHORT_SHA"                   >> "$FORGEJO_ENV"
+          echo "BUNDLE_DIR=$BUNDLE_DIR"                 >> "$FORGEJO_ENV"
+          echo "DEB_NAME=$DEB_NAME"                     >> "$FORGEJO_ENV"
+          echo "APPIMAGE_NAME=$APPIMAGE_NAME"           >> "$FORGEJO_ENV"
+          echo "APPIMAGE_SIG_NAME=$APPIMAGE_SIG_NAME"   >> "$FORGEJO_ENV"
+
+      - name: Upload Linux assets to pre-release
+        env:
+          FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
+        run: |
+          API="https://git.thoxy.xyz/api/v1"
+          OWNER="thoxy"
+          REPO="dayz-community-hub"
+          TAG_NAME="dev-${SHORT_SHA}"
+
+          upload_asset() {
+            local release_id="$1" file="$2"
+            local name; name="$(basename "$file")"
+            local existing_id
+            existing_id="$(curl -sf \
+              -H "Authorization: token $FORGEJO_TOKEN" \
+              "$API/repos/$OWNER/$REPO/releases/$release_id/assets" | \
+              python3 -c "
+          import sys, json
+          assets = json.load(sys.stdin)
+          print(next((str(a['id']) for a in assets if a['name'] == '$name'), ''))
+          ")"
+            if [ -n "$existing_id" ]; then
+              curl -sf -X DELETE \
+                -H "Authorization: token $FORGEJO_TOKEN" \
+                "$API/repos/$OWNER/$REPO/releases/$release_id/assets/$existing_id" >/dev/null
+            fi
+            curl -sf -X POST \
+              -H "Authorization: token $FORGEJO_TOKEN" \
+              -F "attachment=@$file;filename=$name" \
+              "$API/repos/$OWNER/$REPO/releases/$release_id/assets" | \
+              python3 -c "import sys,json; r=json.load(sys.stdin); print('  Uploaded:', r.get('name','?'))"
+          }
+
+          # Wait for the Windows job to have created the release, then reuse it
+          for i in $(seq 1 12); do
+            RELEASE_ID="$(curl -sf \
+              -H "Authorization: token $FORGEJO_TOKEN" \
+              "$API/repos/$OWNER/$REPO/releases/tags/$TAG_NAME" | \
+              python3 -c "import sys,json; r=json.load(sys.stdin); print(r.get('id',''))" 2>/dev/null || true)"
+            [ -n "$RELEASE_ID" ] && break
+            echo "Waiting for Windows job to create release... ($i/12)"
+            sleep 10
+          done
+
+          [[ -n "$RELEASE_ID" ]] || { echo "ERROR: release $TAG_NAME not found after waiting"; exit 1; }
+          echo "Uploading Linux assets to release id $RELEASE_ID"
+
+          upload_asset "$RELEASE_ID" "$BUNDLE_DIR/$DEB_NAME"
+          upload_asset "$RELEASE_ID" "$BUNDLE_DIR/$APPIMAGE_NAME"
+          upload_asset "$RELEASE_ID" "$BUNDLE_DIR/$APPIMAGE_SIG_NAME"
