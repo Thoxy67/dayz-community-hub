@@ -1,0 +1,122 @@
+name: Pre-release
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: prerelease
+  cancel-in-progress: true
+
+jobs:
+  prerelease-windows:
+    name: Build and publish pre-release
+    runs-on: docker
+    container:
+      image: git.thoxy.xyz/thoxy/dayz-community-hub/ci:latest
+      credentials:
+        username: ${{ forgejo.repository_owner }}
+        password: ${{ secrets.FORGEJO_TOKEN }}
+    timeout-minutes: 60
+
+    defaults:
+      run:
+        working-directory: dayz-community-hub
+
+    steps:
+      - name: Checkout
+        uses: https://code.forgejo.org/actions/checkout@v4
+
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Cross-compile for Windows (no-bundle)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ""
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: bun tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --no-bundle
+
+      - name: Zip the binary (ZIP_STORED)
+        run: |
+          VERSION="$(python3 -c "import json; print(json.load(open('src-tauri/tauri.conf.json'))['version'])")"
+          SHA="${{ forgejo.sha }}"
+          SHORT_SHA="${SHA:0:7}"
+          ZIP_NAME="dayz-community-hub-dev-${SHORT_SHA}-x86_64-windows.zip"
+          TARGET_DIR="../target/x86_64-pc-windows-msvc/release"
+          EXE="$TARGET_DIR/dayz-community-hub.exe"
+          ZIP_PATH="$TARGET_DIR/$ZIP_NAME"
+          rm -f "$ZIP_PATH"
+          (cd "$TARGET_DIR" && zip -0 "$ZIP_NAME" dayz-community-hub.exe)
+          echo "EXE size : $(du -sh "$EXE" | cut -f1)"
+          echo "ZIP size : $(du -sh "$ZIP_PATH" | cut -f1)"
+          echo "VERSION=$VERSION"     >> "$FORGEJO_ENV"
+          echo "SHORT_SHA=$SHORT_SHA" >> "$FORGEJO_ENV"
+          echo "ZIP_NAME=$ZIP_NAME"   >> "$FORGEJO_ENV"
+          echo "ZIP_PATH=$ZIP_PATH"   >> "$FORGEJO_ENV"
+
+      - name: Sign the zip
+        run: |
+          KEY_FILE="$(mktemp)"
+          printf '%s' "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" > "$KEY_FILE"
+          PASS="${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}"
+          if [ -n "$PASS" ]; then
+            bun tauri signer sign -f "$KEY_FILE" -p "$PASS" "$ZIP_PATH"
+          else
+            bun tauri signer sign -f "$KEY_FILE" "$ZIP_PATH"
+          fi
+          rm -f "$KEY_FILE"
+          SIG_FILE="${ZIP_PATH}.sig"
+          [[ -f "$SIG_FILE" ]] || { echo "ERROR: .sig not created"; exit 1; }
+          echo "SIG_FILE=$SIG_FILE" >> "$FORGEJO_ENV"
+
+      - name: Publish pre-release to Forgejo
+        env:
+          FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
+        run: |
+          API="https://git.thoxy.xyz/api/v1"
+          OWNER="thoxy"
+          REPO="dayz-community-hub"
+          RELEASE_NAME="dev-${SHORT_SHA} (${VERSION})"
+
+          upload_asset() {
+            local release_id="$1" file="$2"
+            local name; name="$(basename "$file")"
+            local existing_id
+            existing_id="$(curl -sf \
+              -H "Authorization: token $FORGEJO_TOKEN" \
+              "$API/repos/$OWNER/$REPO/releases/$release_id/assets" | \
+              python3 -c "
+          import sys, json
+          assets = json.load(sys.stdin)
+          print(next((str(a['id']) for a in assets if a['name'] == '$name'), ''))
+          ")"
+            if [ -n "$existing_id" ]; then
+              curl -sf -X DELETE \
+                -H "Authorization: token $FORGEJO_TOKEN" \
+                "$API/repos/$OWNER/$REPO/releases/$release_id/assets/$existing_id" >/dev/null
+            fi
+            curl -sf -X POST \
+              -H "Authorization: token $FORGEJO_TOKEN" \
+              -F "attachment=@$file;filename=$name" \
+              "$API/repos/$OWNER/$REPO/releases/$release_id/assets" | \
+              python3 -c "import sys,json; r=json.load(sys.stdin); print('  Uploaded:', r.get('name','?'))"
+          }
+
+          # Create an untagged pre-release (no tag_name = no git tag created)
+          RELEASE_ID="$(curl -sf -X POST \
+            -H "Authorization: token $FORGEJO_TOKEN" \
+            -H "Content-Type: application/json" \
+            "$API/repos/$OWNER/$REPO/releases" \
+            -d "{
+              \"name\":       \"$RELEASE_NAME\",
+              \"body\":       \"Automated pre-release from commit ${{ forgejo.sha }}\",
+              \"draft\":      false,
+              \"prerelease\": true
+            }" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")"
+
+          echo "Created pre-release '$RELEASE_NAME' (id $RELEASE_ID)"
+
+          upload_asset "$RELEASE_ID" "$ZIP_PATH"
+          upload_asset "$RELEASE_ID" "$SIG_FILE"
+
+          echo ""
+          echo "Pre-release : https://git.thoxy.xyz/$OWNER/$REPO/releases/tag/v${VERSION}-pre"
