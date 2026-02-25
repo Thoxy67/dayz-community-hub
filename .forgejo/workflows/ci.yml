@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   build-check:
-    name: Build check (Windows cross-compile)
+    name: Build check (Linux)
     runs-on: docker
     container:
       image: git.thoxy.xyz/thoxy/dayz-community-hub/ci:latest
@@ -31,10 +31,8 @@ jobs:
       - name: Install JS dependencies
         run: bun install --frozen-lockfile
 
-      - name: Cross-compile for Windows (no-bundle)
+      - name: Build (Linux, no-bundle)
         env:
-          # No signing during CI — TAURI_SIGNING_PRIVATE_KEY left unset so
-          # Tauri skips signing but still compiles successfully with --no-bundle.
           TAURI_SIGNING_PRIVATE_KEY: ""
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
-        run: bun tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --no-bundle
+        run: bun tauri build --no-bundle

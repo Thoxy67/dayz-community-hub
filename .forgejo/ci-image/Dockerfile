@@ -4,7 +4,7 @@ FROM debian:bookworm-slim
 ENV DEBIAN_FRONTEND=noninteractive
 
 # ── System packages ───────────────────────────────────────────────────────────
-# clang + lld are required by cargo-xwin for Windows cross-compilation
+# Base tools + clang/lld for cargo-xwin + Tauri Linux runtime deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
@@ -14,6 +14,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     clang \
     lld \
     unzip \
+    pkg-config \
+    libssl-dev \
+    libayatana-appindicator3-dev \
+    librsvg2-dev \
+    libwebkit2gtk-4.1-dev \
+    libgtk-3-dev \
+    libsoup-3.0-dev \
+    libjavascriptcoregtk-4.1-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Bun (also symlinked as `node` so actions/checkout works without Node.js) ──

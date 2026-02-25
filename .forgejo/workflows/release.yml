@@ -33,24 +33,34 @@ jobs:
 
       - name: Cross-compile for Windows (no-bundle)
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Signing is done manually after zipping — keep these empty during build
+          TAURI_SIGNING_PRIVATE_KEY: ""
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         run: bun tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --no-bundle
 
       - name: Zip the binary (ZIP_STORED — required by Tauri updater)
         run: |
           TAG="${{ forgejo.ref_name }}"
           ZIP_NAME="dayz-community-hub-${TAG}-x86_64-windows.zip"
-          TARGET_DIR="src-tauri/target/x86_64-pc-windows-msvc/release"
+          # Workspace target dir is at the repo root, not inside the UI dir
+          TARGET_DIR="../target/x86_64-pc-windows-msvc/release"
+          EXE="$TARGET_DIR/dayz-community-hub.exe"
+          ZIP_PATH="$TARGET_DIR/$ZIP_NAME"
+          # Remove stale zip if it exists
+          rm -f "$ZIP_PATH"
+          # ZIP_STORED (method 0) — tauri-plugin-updater only supports uncompressed zips
           (cd "$TARGET_DIR" && zip -0 "$ZIP_NAME" dayz-community-hub.exe)
-          echo "TAG=$TAG"                        >> "$FORGEJO_ENV"
-          echo "ZIP_NAME=$ZIP_NAME"              >> "$FORGEJO_ENV"
-          echo "ZIP_PATH=$TARGET_DIR/$ZIP_NAME"  >> "$FORGEJO_ENV"
+          echo "EXE size: $(du -sh "$EXE" | cut -f1)"
+          echo "ZIP size: $(du -sh "$ZIP_PATH" | cut -f1)"
+          echo "TAG=$TAG"           >> "$FORGEJO_ENV"
+          echo "ZIP_NAME=$ZIP_NAME" >> "$FORGEJO_ENV"
+          echo "ZIP_PATH=$ZIP_PATH" >> "$FORGEJO_ENV"
 
       - name: Sign the zip
         run: |
+          # Write key content to a temp file exactly as-is (printf avoids trailing newline mangling)
           KEY_FILE="$(mktemp)"
-          echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" > "$KEY_FILE"
+          printf '%s' "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" > "$KEY_FILE"
           PASS="${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}"
           if [ -n "$PASS" ]; then
             bun tauri signer sign -f "$KEY_FILE" -p "$PASS" "$ZIP_PATH"
@@ -58,7 +68,9 @@ jobs:
             bun tauri signer sign -f "$KEY_FILE" "$ZIP_PATH"
           fi
           rm -f "$KEY_FILE"
-          echo "SIG_FILE=${ZIP_PATH}.sig" >> "$FORGEJO_ENV"
+          SIG_FILE="${ZIP_PATH}.sig"
+          [[ -f "$SIG_FILE" ]] || { echo "ERROR: .sig not created"; exit 1; }
+          echo "SIG_FILE=$SIG_FILE" >> "$FORGEJO_ENV"
 
       - name: Build latest.json
         run: |
