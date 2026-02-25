@@ -42,6 +42,13 @@ Go to [Releases](https://git.thoxy.xyz/thoxy/dayz-community-hub/releases) and gr
 
 - **Windows** — extract and run `dayz-community-hub.exe`
 - **Linux** — run the binary directly or install the `.deb` package
+- **Arch Linux** — install via the AUR package [`dayz-community-hub-git`](https://git.thoxy.xyz/AUR/dayz-community-hub-git):
+
+```bash
+git clone https://git.thoxy.xyz/AUR/dayz-community-hub-git.git
+cd dayz-community-hub-git
+makepkg -si
+```
 
 ---
 
