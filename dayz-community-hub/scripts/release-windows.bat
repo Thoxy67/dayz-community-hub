@@ -20,8 +20,6 @@ setlocal enabledelayedexpansion
 set "SCRIPT_DIR=%~dp0"
 set "UI_DIR=%SCRIPT_DIR%.."
 set "REPO_ROOT=%UI_DIR%\.."
-set "SIGNING_KEY=%REPO_ROOT%\signing-keys\dayz-community-hub.key"
-set "SIGNING_KEY_PASS=Iw3mp.exe"
 
 :: ---------------------------------------------------------------------------
 :: Load .env
@@ -29,16 +27,28 @@ set "SIGNING_KEY_PASS=Iw3mp.exe"
 set "ENV_FILE=%UI_DIR%\.env"
 if not exist "%ENV_FILE%" (
     echo ERROR: .env not found at %ENV_FILE%
-    echo        Create it with: FORGEJO_TOKEN=your-token
+    echo        Copy .env.example to .env and fill in the values.
     exit /b 1
 )
 for /f "usebackq tokens=1,* delims==" %%a in ("%ENV_FILE%") do (
     set "%%a=%%b"
 )
 
+:: Strip surrounding quotes from values loaded from .env
+if defined TAURI_SIGNING_KEY_FILE set "TAURI_SIGNING_KEY_FILE=%TAURI_SIGNING_KEY_FILE:"=%"
+if defined TAURI_SIGNING_KEY_PASS set "TAURI_SIGNING_KEY_PASS=%TAURI_SIGNING_KEY_PASS:"=%"
+
+:: Map to local names used throughout this script
+set "SIGNING_KEY=%TAURI_SIGNING_KEY_FILE%"
+set "SIGNING_KEY_PASS=%TAURI_SIGNING_KEY_PASS%"
+
 :: Validate
 if not defined FORGEJO_TOKEN (
     echo ERROR: FORGEJO_TOKEN is not set in %ENV_FILE%
+    exit /b 1
+)
+if not defined SIGNING_KEY (
+    echo ERROR: TAURI_SIGNING_KEY_FILE is not set in %ENV_FILE%
     exit /b 1
 )
 if not exist "%SIGNING_KEY%" (
@@ -131,20 +141,7 @@ if not exist "%EXE%" (
 )
 
 :: ---------------------------------------------------------------------------
-:: 3. Sign with minisign (via Tauri CLI)
-:: ---------------------------------------------------------------------------
-set "SIG_FILE=%EXE%.sig"
-echo.
-echo ==^> Signing binary...
-call bun tauri signer sign -f "%SIGNING_KEY%" -p "%SIGNING_KEY_PASS%" "%EXE%"
-if errorlevel 1 (
-    echo ERROR: Signing failed
-    exit /b 1
-)
-echo     %SIG_FILE%
-
-:: ---------------------------------------------------------------------------
-:: 4. Zip
+:: 3. Zip (must happen before signing — signature covers the zip)
 :: ---------------------------------------------------------------------------
 echo.
 echo ==^> Zipping (ZIP_STORED / method 0 — required by Tauri updater zip crate^)...
@@ -156,6 +153,23 @@ if errorlevel 1 (
     exit /b 1
 )
 echo     %ZIP_PATH%
+
+:: ---------------------------------------------------------------------------
+:: 4. Sign the zip (signature covers zip bytes, which is what the updater downloads)
+:: ---------------------------------------------------------------------------
+set "SIG_FILE=%ZIP_PATH%.sig"
+echo.
+echo ==^> Signing zip...
+if defined SIGNING_KEY_PASS (
+    call bun tauri signer sign -f "%SIGNING_KEY%" -p "%SIGNING_KEY_PASS%" "%ZIP_PATH%"
+) else (
+    call bun tauri signer sign -f "%SIGNING_KEY%" "%ZIP_PATH%"
+)
+if errorlevel 1 (
+    echo ERROR: Signing failed
+    exit /b 1
+)
+echo     %SIG_FILE%
 
 :: ---------------------------------------------------------------------------
 :: 5. Build latest.json

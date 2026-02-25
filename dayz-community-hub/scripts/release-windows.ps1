@@ -1,24 +1,35 @@
 $ErrorActionPreference = 'Stop'
 
-# ── Config ────────────────────────────────────────────────────────────────────
-$repoRoot   = 'C:\Users\thoxy\Desktop\dzch'
-$uiDir      = "$repoRoot\dayz-community-hub"
-$targetDir  = "$repoRoot\target\release"
-$keyFile    = 'C:\Users\thoxy\Desktop\dayz-community-hub\signing-keys\dayz-community-hub.key'
-$keyPass    = 'Iw3mp.exe'
+# ── Paths ─────────────────────────────────────────────────────────────────────
+$scriptDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
+$uiDir      = (Resolve-Path "$scriptDir\..").Path
+$repoRoot   = (Resolve-Path "$uiDir\..").Path
+
 $forgejo    = 'https://git.thoxy.xyz'
 $owner      = 'thoxy'
 $repo       = 'dayz-community-hub'
 $api        = "$forgejo/api/v1"
 
-$token = ((Get-Content "$uiDir\.env" -Raw) -split '\n' |
-          Where-Object { $_ -match '^FORGEJO_TOKEN=' } |
-          Select-Object -First 1) -replace '^FORGEJO_TOKEN=',''
-$token = $token.Trim()
-if (-not $token) { throw 'FORGEJO_TOKEN not found in .env' }
+# ── Load .env ─────────────────────────────────────────────────────────────────
+$envFile = "$uiDir\.env"
+if (-not (Test-Path $envFile)) { throw ".env not found at $envFile — copy .env.example and fill in the values." }
+$env = @{}
+Get-Content $envFile | Where-Object { $_ -match '^\s*[^#]\S*=' } | ForEach-Object {
+    $parts = $_ -split '=', 2
+    $env[$parts[0].Trim()] = $parts[1].Trim().Trim('"').Trim("'")
+}
+
+$token   = $env['FORGEJO_TOKEN']
+$keyFile = $env['TAURI_SIGNING_KEY_FILE']
+$keyPass = $env['TAURI_SIGNING_KEY_PASS']   # may be empty
+
+if (-not $token)   { throw 'FORGEJO_TOKEN is not set in .env' }
+if (-not $keyFile) { throw 'TAURI_SIGNING_KEY_FILE is not set in .env' }
+if (-not (Test-Path $keyFile)) { throw "Signing key not found: $keyFile" }
 $hdrs = @{ Authorization = "token $token" }
 
 # ── Resolve version ───────────────────────────────────────────────────────────
+$targetDir = "$uiDir\src-tauri\target\release"
 $version = (Get-Content "$uiDir\src-tauri\tauri.conf.json" -Raw | ConvertFrom-Json).version
 $tag     = "v$version"
 $zipName = "dayz-community-hub-$tag-x86_64-windows.zip"
@@ -77,7 +88,11 @@ Write-Host "==> Signing zip..."
 if (Test-Path $sigPath) { Remove-Item $sigPath }
 Set-Location $uiDir
 $ErrorActionPreference = 'Continue'
-& bun tauri signer sign -f $keyFile -p $keyPass $zipPath 2>&1 | Write-Host
+if ($keyPass) {
+    & bun tauri signer sign -f $keyFile -p $keyPass $zipPath 2>&1 | Write-Host
+} else {
+    & bun tauri signer sign -f $keyFile $zipPath 2>&1 | Write-Host
+}
 $ErrorActionPreference = 'Stop'
 if (-not (Test-Path $sigPath)) { throw 'Signing failed - .sig not created' }
 $sig = (Get-Content $sigPath -Raw).Trim()

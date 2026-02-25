@@ -16,8 +16,7 @@ set -euo pipefail
 #   bun, jq, minisign, zip
 #
 # .env (dayz-community-hub/.env):
-#   TAURI_SIGNING_KEY_FILE   — path to the minisign .key file
-#                              default: ~/.tauri/dayz-community-hub.key
+#   TAURI_SIGNING_KEY_FILE   — path to the minisign .key file (required)
 #   TAURI_SIGNING_KEY_PASS   — key password, leave empty if none
 #   FORGEJO_TOKEN            — Forgejo API token (write:release scope)
 # ---------------------------------------------------------------------------
@@ -29,8 +28,6 @@ REPO_ROOT="$(cd "$UI_DIR/.." && pwd)"  # workspace root
 # ---------------------------------------------------------------------------
 # Load .env  (look in UI_DIR first, then workspace root)
 # ---------------------------------------------------------------------------
-SIGNING_KEYS_DIR="/mnt/ssd2/Home/Dev/Rust/a2sdayz/signing-keys"
-
 if [[ -f "$UI_DIR/.env" ]]; then
 	ENV_FILE="$UI_DIR/.env"
 elif [[ -f "$REPO_ROOT/.env" ]]; then
@@ -45,12 +42,10 @@ set -a
 source "$ENV_FILE"
 set +a
 
-# Defaults — key lives in the repo signing-keys directory
-TAURI_SIGNING_KEY_FILE="${TAURI_SIGNING_KEY_FILE:-$SIGNING_KEYS_DIR/dayz-community-hub.key}"
 TAURI_SIGNING_KEY_PASS="${TAURI_SIGNING_KEY_PASS:-}"
 
 # Validate
-for var in FORGEJO_TOKEN; do
+for var in FORGEJO_TOKEN TAURI_SIGNING_KEY_FILE; do
 	if [[ -z "${!var:-}" ]]; then
 		echo "ERROR: $var is not set in $ENV_FILE" >&2
 		exit 1
@@ -136,29 +131,7 @@ EXE="$TARGET_DIR/dayz-community-hub.exe"
 }
 
 # ---------------------------------------------------------------------------
-# 3. Sign with minisign
-# ---------------------------------------------------------------------------
-SIG_FILE="$EXE.sig"
-echo ""
-echo "==> Signing binary with minisign..."
-
-# The key file is base64-encoded (Tauri/rsign format) — decode it to a
-# temporary native minisign key file before passing it to minisign -S.
-DECODED_KEY="$(mktemp)"
-trap 'rm -f "$DECODED_KEY"' EXIT
-base64 -d "$TAURI_SIGNING_KEY_FILE" >"$DECODED_KEY"
-
-if [[ -n "$TAURI_SIGNING_KEY_PASS" ]]; then
-	echo "$TAURI_SIGNING_KEY_PASS" | minisign -S -s "$DECODED_KEY" \
-		-m "$EXE" -x "$SIG_FILE" -t "dayz-community-hub $TAG"
-else
-	minisign -S -W -s "$DECODED_KEY" \
-		-m "$EXE" -x "$SIG_FILE" -t "dayz-community-hub $TAG"
-fi
-echo "    $SIG_FILE"
-
-# ---------------------------------------------------------------------------
-# 4. Zip
+# 3. Zip
 # ---------------------------------------------------------------------------
 echo ""
 echo "==> Zipping..."
@@ -167,6 +140,26 @@ ZIP_PATH="$TARGET_DIR/$ZIP_NAME"
 # without deflate features so only ZIP_STORED (method 0) is supported.
 (cd "$TARGET_DIR" && zip -0 "$ZIP_NAME" dayz-community-hub.exe)
 echo "    $ZIP_PATH ($(du -sh "$ZIP_PATH" | cut -f1))"
+
+# ---------------------------------------------------------------------------
+# 4. Sign the zip (signature must cover the zip, which is what the updater downloads)
+# ---------------------------------------------------------------------------
+SIG_FILE="$ZIP_PATH.sig"
+echo ""
+echo "==> Signing zip with bun tauri signer sign..."
+
+cd "$UI_DIR"
+if [[ -n "$TAURI_SIGNING_KEY_PASS" ]]; then
+	bun tauri signer sign -f "$TAURI_SIGNING_KEY_FILE" -p "$TAURI_SIGNING_KEY_PASS" "$ZIP_PATH"
+else
+	bun tauri signer sign -f "$TAURI_SIGNING_KEY_FILE" "$ZIP_PATH"
+fi
+
+[[ -f "$SIG_FILE" ]] || {
+	echo "ERROR: Signing failed — $SIG_FILE not created" >&2
+	exit 1
+}
+echo "    $SIG_FILE"
 
 # ---------------------------------------------------------------------------
 # 5. Build latest.json
@@ -178,7 +171,7 @@ ASSET_URL="$FORGEJO_BASE/$REPO_OWNER/$REPO_NAME/releases/download/$TAG/$ZIP_NAME
 echo ""
 echo "==> Building latest.json..."
 python3 - <<PYEOF
-import json, base64
+import json
 
 sig = open("$SIG_FILE").read().rstrip()
 data = {
