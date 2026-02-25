@@ -99,12 +99,7 @@ pub fn find_steam_root() -> Option<PathBuf> {
 fn query_steam_registry_path() -> Option<String> {
     use std::os::windows::process::CommandExt;
     let out = std::process::Command::new("reg")
-        .args([
-            "query",
-            "HKCU\\Software\\Valve\\Steam",
-            "/v",
-            "SteamPath",
-        ])
+        .args(["query", "HKCU\\Software\\Valve\\Steam", "/v", "SteamPath"])
         .creation_flags(0x08000000) // CREATE_NO_WINDOW
         .output()
         .ok()?;
@@ -557,7 +552,10 @@ impl SteamCmd {
         &self,
         args: &[std::ffi::OsString],
     ) -> std::result::Result<
-        (Box<dyn portable_pty::Child + Send + Sync>, mpsc::UnboundedReceiver<String>),
+        (
+            Box<dyn portable_pty::Child + Send + Sync>,
+            mpsc::UnboundedReceiver<String>,
+        ),
         String,
     > {
         use portable_pty::{CommandBuilder, PtySize, native_pty_system};
@@ -566,7 +564,12 @@ impl SteamCmd {
 
         let pty_system = native_pty_system();
         let pty_pair = pty_system
-            .openpty(PtySize { rows: 24, cols: 220, pixel_width: 0, pixel_height: 0 })
+            .openpty(PtySize {
+                rows: 24,
+                cols: 220,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
             .map_err(|e| format!("Failed to open PTY: {}", e))?;
 
         let mut cmd = CommandBuilder::new(&self.steamcmd_path);
@@ -667,7 +670,12 @@ impl SteamCmd {
                     .iter()
                     .map(|(id, _)| (*id, Err(Error::SteamCmd(e.clone()))))
                     .collect();
-                let _ = tx.send(ModProgress::Finished { ok: 0, failed: total, total, hint: None });
+                let _ = tx.send(ModProgress::Finished {
+                    ok: 0,
+                    failed: total,
+                    total,
+                    hint: None,
+                });
                 return results;
             }
         };
@@ -710,8 +718,7 @@ impl SteamCmd {
                     break;
                 }
                 // Text-based Steam Guard detection on complete lines.
-                if has_password && login_phase && !steam_guard_sent
-                    && is_steam_guard_prompt(&line)
+                if has_password && login_phase && !steam_guard_sent && is_steam_guard_prompt(&line)
                 {
                     let _ = tx.send(ModProgress::SteamGuardMobileRequired);
                     steam_guard_sent = true;
@@ -760,9 +767,7 @@ impl SteamCmd {
             // Also check the partial-line remainder (content not yet terminated
             // by '\n'). steamcmd writes some prompts without a trailing newline,
             // so they would never be processed by the loop above.
-            if has_password && login_phase && !steam_guard_sent
-                && is_steam_guard_prompt(&buf)
-            {
+            if has_password && login_phase && !steam_guard_sent && is_steam_guard_prompt(&buf) {
                 let _ = tx.send(ModProgress::SteamGuardMobileRequired);
                 steam_guard_sent = true;
             }

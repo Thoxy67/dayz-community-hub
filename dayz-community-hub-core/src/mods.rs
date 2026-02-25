@@ -1,5 +1,5 @@
-use crate::errors::Error;
 use crate::Result;
+use crate::errors::Error;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};

@@ -12,7 +12,7 @@ use dayz_community_hub_core::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::OnceLock;
-use tauri::{ipc::Channel, AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State, ipc::Channel};
 use tauri_plugin_opener::OpenerExt;
 use tokio::sync::{Mutex, RwLock};
 
@@ -492,7 +492,9 @@ fn mod_progress_to_event(msg: &ModProgress) -> ModProgressEvent {
 // ─── Tauri Commands ───────────────────────────────────────────────────────────
 
 /// Deduplicate a server list by (ip, query_port), keeping the first occurrence.
-fn dedup_servers(mut servers: Vec<dayz_community_hub_core::Server>) -> Vec<dayz_community_hub_core::Server> {
+fn dedup_servers(
+    mut servers: Vec<dayz_community_hub_core::Server>,
+) -> Vec<dayz_community_hub_core::Server> {
     let mut seen = std::collections::HashSet::new();
     servers.retain(|s| seen.insert((s.endpoint.ip.clone(), s.endpoint.port)));
     servers
@@ -725,7 +727,10 @@ async fn check_mod_updates(state: State<'_, SharedState>) -> Result<Vec<Installe
     // Single lock acquisition — grab everything needed before any I/O.
     let (api_key, ctl_clone) = {
         let s = state.lock().await;
-        (s.ctl.profile().steam_api_key.clone(), s.ctl.clone_for_launch())
+        (
+            s.ctl.profile().steam_api_key.clone(),
+            s.ctl.clone_for_launch(),
+        )
     };
 
     // Single filesystem scan — reuse results for both ID extraction and final DTO.
@@ -1211,7 +1216,9 @@ async fn query_a2s(
             }
             None => {
                 let addr = format!("{}:{}", ip, port);
-                eprintln!("[query_a2s] not in list → query addr={addr} (using supplied port as query port)");
+                eprintln!(
+                    "[query_a2s] not in list → query addr={addr} (using supplied port as query port)"
+                );
                 (addr, vec![])
             }
         }
@@ -1299,7 +1306,9 @@ fn image_cache_dir_sync(app: &AppHandle) -> Result<std::path::PathBuf, String> {
 /// Resolve the on-disk image cache directory (async — for use in async commands).
 async fn image_cache_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     let dir = base_data_dir_from_app(app)?.join("cache").join("images");
-    tokio::fs::create_dir_all(&dir).await.map_err(|e| format!("Failed to create cache dir: {e}"))?;
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .map_err(|e| format!("Failed to create cache dir: {e}"))?;
     Ok(dir)
 }
 
@@ -1382,7 +1391,10 @@ fn path_to_forward_slashes(path: &std::path::Path) -> String {
 ///
 /// Paths are returned with forward slashes (see `path_to_forward_slashes`).
 #[tauri::command]
-fn resolve_cached_images(app: AppHandle, urls: Vec<String>) -> Result<Vec<(String, String)>, String> {
+fn resolve_cached_images(
+    app: AppHandle,
+    urls: Vec<String>,
+) -> Result<Vec<(String, String)>, String> {
     let cache_dir = image_cache_dir_sync(&app)?;
     let mut result = Vec::with_capacity(urls.len());
     for url in urls {
@@ -1556,10 +1568,11 @@ async fn fetch_battlemetrics_server(
     };
 
     // Store in cache
-    state.lock().await.bm_cache.insert(
-        bm_cache_key,
-        (result.clone(), std::time::Instant::now()),
-    );
+    state
+        .lock()
+        .await
+        .bm_cache
+        .insert(bm_cache_key, (result.clone(), std::time::Instant::now()));
 
     Ok(result)
 }
@@ -1895,11 +1908,17 @@ async fn start_pinging(
                     ..Default::default()
                 };
                 if let Ok(ms) = a2s_query::ping_server(&server).await {
-                    cache_clone.write().await.insert(
-                        format!("{}:{}", ip_clone, port),
-                        ms,
-                    );
-                    let _ = tx_clone.send(PingResultDto { ip: ip_clone, port, ms }).await;
+                    cache_clone
+                        .write()
+                        .await
+                        .insert(format!("{}:{}", ip_clone, port), ms);
+                    let _ = tx_clone
+                        .send(PingResultDto {
+                            ip: ip_clone,
+                            port,
+                            ms,
+                        })
+                        .await;
                 }
             });
         }
@@ -2022,10 +2041,13 @@ async fn export_profile(path: String) -> Result<(), String> {
         std::collections::HashMap::new();
 
     // Walk all .json files in the data dir (non-recursive — only top-level)
-    let mut read_dir = tokio::fs::read_dir(&data_dir).await
+    let mut read_dir = tokio::fs::read_dir(&data_dir)
+        .await
         .map_err(|e| format!("Cannot read data dir: {e}"))?;
 
-    while let Some(entry) = read_dir.next_entry().await
+    while let Some(entry) = read_dir
+        .next_entry()
+        .await
         .map_err(|e| format!("Cannot read dir entry: {e}"))?
     {
         let fname = entry.file_name();
@@ -2036,7 +2058,8 @@ async fn export_profile(path: String) -> Result<(), String> {
         if EXPORT_EXCLUDE.contains(&name.as_str()) {
             continue;
         }
-        let raw = tokio::fs::read_to_string(entry.path()).await
+        let raw = tokio::fs::read_to_string(entry.path())
+            .await
             .map_err(|e| format!("Cannot read {name}: {e}"))?;
         let value: serde_json::Value =
             serde_json::from_str(&raw).map_err(|e| format!("{name} parse error: {e}"))?;
@@ -2053,7 +2076,8 @@ async fn export_profile(path: String) -> Result<(), String> {
     let compressed = zstd::encode_all(std::io::Cursor::new(&json_bytes), 9)
         .map_err(|e| format!("zstd compression failed: {e}"))?;
 
-    tokio::fs::write(&path, &compressed).await
+    tokio::fs::write(&path, &compressed)
+        .await
         .map_err(|e| format!("Cannot write export file: {e}"))?;
 
     Ok(())
@@ -2064,7 +2088,8 @@ async fn export_profile(path: String) -> Result<(), String> {
 /// The app is restarted by the caller after this returns.
 #[tauri::command]
 async fn import_profile(path: String, state: State<'_, SharedState>) -> Result<ProfileDto, String> {
-    let compressed = tokio::fs::read(&path).await
+    let compressed = tokio::fs::read(&path)
+        .await
         .map_err(|e| format!("Cannot read import file: {e}"))?;
 
     let json_bytes = zstd::decode_all(std::io::Cursor::new(&compressed))
@@ -2077,19 +2102,23 @@ async fn import_profile(path: String, state: State<'_, SharedState>) -> Result<P
     let version = raw["version"].as_u64().unwrap_or(1) as u8;
 
     let data_dir = config::default_data_dir();
-    tokio::fs::create_dir_all(&data_dir).await.map_err(|e| e.to_string())?;
+    tokio::fs::create_dir_all(&data_dir)
+        .await
+        .map_err(|e| e.to_string())?;
 
     match version {
         1 => {
             // Legacy format: { version, profile, mods? }
             let profile_str =
                 serde_json::to_string_pretty(&raw["profile"]).map_err(|e| e.to_string())?;
-            tokio::fs::write(data_dir.join("profile.json"), &profile_str).await
+            tokio::fs::write(data_dir.join("profile.json"), &profile_str)
+                .await
                 .map_err(|e| format!("Cannot write profile.json: {e}"))?;
             if !raw["mods"].is_null() {
                 let mods_str =
                     serde_json::to_string_pretty(&raw["mods"]).map_err(|e| e.to_string())?;
-                tokio::fs::write(data_dir.join("mods.json"), &mods_str).await
+                tokio::fs::write(data_dir.join("mods.json"), &mods_str)
+                    .await
                     .map_err(|e| format!("Cannot write mods.json: {e}"))?;
             }
         }
@@ -2098,7 +2127,8 @@ async fn import_profile(path: String, state: State<'_, SharedState>) -> Result<P
             let files = raw["files"].as_object().ok_or("Bundle files map missing")?;
             for (filename, value) in files {
                 let content = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
-                tokio::fs::write(data_dir.join(filename), &content).await
+                tokio::fs::write(data_dir.join(filename), &content)
+                    .await
                     .map_err(|e| format!("Cannot write {filename}: {e}"))?;
             }
         }
@@ -2123,7 +2153,8 @@ async fn import_profile(path: String, state: State<'_, SharedState>) -> Result<P
 async fn reset_profile(_state: State<'_, SharedState>) -> Result<(), String> {
     let data_dir = config::default_data_dir();
     if data_dir.exists() {
-        tokio::fs::remove_dir_all(&data_dir).await
+        tokio::fs::remove_dir_all(&data_dir)
+            .await
             .map_err(|e| format!("Cannot remove data directory: {e}"))?;
     }
     Ok(())
@@ -2246,22 +2277,28 @@ async fn watch_steamcmd(app: AppHandle, state: State<'_, SharedState>) -> Result
             // Check explicit path first
             if let Some(ref p) = explicit_path {
                 if !p.is_empty() && std::path::Path::new(p).exists() {
-                    let _ = app.emit("steamcmd-detected", SteamcmdStatusDto {
-                        found: true,
-                        path: Some(p.clone()),
-                        platform: platform.into(),
-                    });
+                    let _ = app.emit(
+                        "steamcmd-detected",
+                        SteamcmdStatusDto {
+                            found: true,
+                            path: Some(p.clone()),
+                            platform: platform.into(),
+                        },
+                    );
                     return;
                 }
             }
 
             // PATH lookup
             if let Ok(found_path) = which::which(binary_name) {
-                let _ = app.emit("steamcmd-detected", SteamcmdStatusDto {
-                    found: true,
-                    path: Some(found_path.to_string_lossy().to_string()),
-                    platform: platform.into(),
-                });
+                let _ = app.emit(
+                    "steamcmd-detected",
+                    SteamcmdStatusDto {
+                        found: true,
+                        path: Some(found_path.to_string_lossy().to_string()),
+                        platform: platform.into(),
+                    },
+                );
                 return;
             }
 
@@ -2273,11 +2310,14 @@ async fn watch_steamcmd(app: AppHandle, state: State<'_, SharedState>) -> Result
                     .join("steamcmd")
                     .join("steamcmd.exe");
                 if candidate.exists() {
-                    let _ = app.emit("steamcmd-detected", SteamcmdStatusDto {
-                        found: true,
-                        path: Some(candidate.to_string_lossy().to_string()),
-                        platform: platform.into(),
-                    });
+                    let _ = app.emit(
+                        "steamcmd-detected",
+                        SteamcmdStatusDto {
+                            found: true,
+                            path: Some(candidate.to_string_lossy().to_string()),
+                            platform: platform.into(),
+                        },
+                    );
                     return;
                 }
             }
@@ -2304,7 +2344,8 @@ async fn download_steamcmd_windows() -> Result<String, String> {
         let install_dir = std::path::PathBuf::from(&appdata)
             .join("dayz-community-hub")
             .join("steamcmd");
-        tokio::fs::create_dir_all(&install_dir).await
+        tokio::fs::create_dir_all(&install_dir)
+            .await
             .map_err(|e| format!("Cannot create steamcmd dir: {e}"))?;
 
         let exe_path = install_dir.join("steamcmd.exe");
@@ -2410,7 +2451,7 @@ mod updater {
     use base64::Engine;
     use serde::Serialize;
     use std::sync::Mutex;
-    use tauri::{ipc::Channel, AppHandle, State};
+    use tauri::{AppHandle, State, ipc::Channel};
     use tauri_plugin_updater::UpdaterExt;
 
     // ── Error type ────────────────────────────────────────────────────────────
@@ -2435,10 +2476,14 @@ mod updater {
     }
 
     impl From<String> for UpdateError {
-        fn from(s: String) -> Self { UpdateError::Other(s) }
+        fn from(s: String) -> Self {
+            UpdateError::Other(s)
+        }
     }
     impl From<&str> for UpdateError {
-        fn from(s: &str) -> Self { UpdateError::Other(s.to_string()) }
+        fn from(s: &str) -> Self {
+            UpdateError::Other(s.to_string())
+        }
     }
 
     type Result<T> = std::result::Result<T, UpdateError>;
@@ -2517,8 +2562,12 @@ mod updater {
             date: update.date.map(|d| {
                 format!(
                     "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-                    d.year(), d.month() as u8, d.day(),
-                    d.hour(), d.minute(), d.second(),
+                    d.year(),
+                    d.month() as u8,
+                    d.day(),
+                    d.hour(),
+                    d.minute(),
+                    d.second(),
                 )
             }),
         };
@@ -2568,13 +2617,17 @@ mod updater {
             pending_bytes += chunk.len();
             zip_bytes.extend_from_slice(&chunk);
             if last_emit.elapsed() >= std::time::Duration::from_millis(100) {
-                let _ = on_event.send(DownloadEvent::Progress { chunk_length: pending_bytes });
+                let _ = on_event.send(DownloadEvent::Progress {
+                    chunk_length: pending_bytes,
+                });
                 pending_bytes = 0;
                 last_emit = std::time::Instant::now();
             }
         }
         if pending_bytes > 0 {
-            let _ = on_event.send(DownloadEvent::Progress { chunk_length: pending_bytes });
+            let _ = on_event.send(DownloadEvent::Progress {
+                chunk_length: pending_bytes,
+            });
         }
 
         // ── 2. Verify minisign signature ──────────────────────────────────────
@@ -2626,8 +2679,8 @@ mod updater {
         }
 
         // ── 4. Write new exe to a temp path beside the current exe ───────────
-        let current_exe = std::env::current_exe()
-            .map_err(|e| UpdateError::Other(format!("current_exe: {e}")))?;
+        let current_exe =
+            std::env::current_exe().map_err(|e| UpdateError::Other(format!("current_exe: {e}")))?;
         let exe_dir = current_exe
             .parent()
             .ok_or_else(|| UpdateError::Other("no parent dir".into()))?;
@@ -2694,7 +2747,9 @@ pub fn run(args: CliArgs) {
             // `$APPDATA` variable in the config does not always match, causing 403s.
             if let Ok(cache_dir) = app.path().app_data_dir() {
                 let images_dir = cache_dir.join("cache").join("images");
-                let _ = app.asset_protocol_scope().allow_directory(&images_dir, false);
+                let _ = app
+                    .asset_protocol_scope()
+                    .allow_directory(&images_dir, false);
             }
 
             Ok(())

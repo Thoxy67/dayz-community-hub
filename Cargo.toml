@@ -7,7 +7,7 @@ resolver = "2"
 
 [workspace.package]
 version = "0.2.5"
-edition = "2021"
+edition = "2024"
 authors = ["thoxy"]
 
 # ── Shared dependencies ────────────────────────────────────────────────────────
@@ -43,6 +43,7 @@ tar = "0.4"
 
 # DayZ A2S queries
 a2s = { version = "0.6.1", features = ["async"] }
+ping-async = "1.0.2"
 
 # Internal crates
 dayz-community-hub-core = { path = "dayz-community-hub-core" }

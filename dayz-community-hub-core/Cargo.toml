@@ -17,6 +17,7 @@ sysinfo.workspace = true
 flate2.workspace = true
 tar.workspace = true
 a2s.workspace = true
+ping-async.workspace = true
 chrono.workspace = true
 
 # Not in workspace (core-specific)
