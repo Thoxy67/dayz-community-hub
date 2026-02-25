@@ -15,15 +15,19 @@ concurrency:
 jobs:
   build-push:
     name: Build and push CI image
-    runs-on: docker
-    container:
-      image: docker:27
-      options: --privileged -v /run/user/1001/podman/podman.sock:/var/run/docker.sock
+    runs-on: host
     timeout-minutes: 60
 
     steps:
+      - name: Install dependencies
+        run: apk add --no-cache docker-cli git
+
       - name: Checkout
-        uses: https://code.forgejo.org/actions/checkout@v4
+        run: |
+          rm -rf repo
+          git clone --depth=1 \
+            "https://x-token:${{ secrets.FORGEJO_TOKEN }}@git.thoxy.xyz/thoxy/dayz-community-hub.git" \
+            repo
 
       - name: Login to registry
         env:
@@ -36,6 +40,6 @@ jobs:
         run: |
           docker build \
             -t git.thoxy.xyz/thoxy/dayz-community-hub/ci:latest \
-            .forgejo/ci-image/
+            repo/.forgejo/ci-image/
 
           docker push git.thoxy.xyz/thoxy/dayz-community-hub/ci:latest
