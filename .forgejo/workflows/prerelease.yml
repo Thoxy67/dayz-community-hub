@@ -102,22 +102,38 @@ jobs:
               python3 -c "import sys,json; r=json.load(sys.stdin); print('  Uploaded:', r.get('name','?'))"
           }
 
-          # Create an untagged pre-release (no tag_name = no git tag created)
+          TAG_NAME="dev-${SHORT_SHA}"
+
+          # Delete existing release+tag with the same name if present
+          OLD_ID="$(curl -sf \
+            -H "Authorization: token $FORGEJO_TOKEN" \
+            "$API/repos/$OWNER/$REPO/releases/tags/$TAG_NAME" | \
+            python3 -c "import sys,json; r=json.load(sys.stdin); print(r.get('id',''))" 2>/dev/null || true)"
+          if [ -n "$OLD_ID" ]; then
+            curl -sf -X DELETE \
+              -H "Authorization: token $FORGEJO_TOKEN" \
+              "$API/repos/$OWNER/$REPO/releases/$OLD_ID" >/dev/null
+            curl -sf -X DELETE \
+              -H "Authorization: token $FORGEJO_TOKEN" \
+              "$API/repos/$OWNER/$REPO/tags/$TAG_NAME" >/dev/null || true
+          fi
+
           RELEASE_ID="$(curl -sf -X POST \
             -H "Authorization: token $FORGEJO_TOKEN" \
             -H "Content-Type: application/json" \
             "$API/repos/$OWNER/$REPO/releases" \
             -d "{
+              \"tag_name\":   \"$TAG_NAME\",
               \"name\":       \"$RELEASE_NAME\",
               \"body\":       \"Automated pre-release from commit ${{ forgejo.sha }}\",
               \"draft\":      false,
               \"prerelease\": true
             }" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")"
 
-          echo "Created pre-release '$RELEASE_NAME' (id $RELEASE_ID)"
+          echo "Created pre-release '$RELEASE_NAME' tag '$TAG_NAME' (id $RELEASE_ID)"
 
           upload_asset "$RELEASE_ID" "$ZIP_PATH"
           upload_asset "$RELEASE_ID" "$SIG_FILE"
 
           echo ""
-          echo "Pre-release : https://git.thoxy.xyz/$OWNER/$REPO/releases/tag/v${VERSION}-pre"
+          echo "Pre-release : https://git.thoxy.xyz/$OWNER/$REPO/releases/tag/${TAG_NAME}"
