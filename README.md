@@ -30,6 +30,12 @@ A desktop launcher for DayZ Standalone that replaces the official launcher with 
 
 ---
 
+## Documentation
+
+Full documentation is available in the [Wiki](https://git.thoxy.xyz/thoxy/dayz-community-hub/wiki) — setup guide, configuration reference, mod manager, architecture, and CI/CD details.
+
+---
+
 ## Download
 
 Go to [Releases](https://git.thoxy.xyz/thoxy/dayz-community-hub/releases) and grab the latest zip for your platform.
