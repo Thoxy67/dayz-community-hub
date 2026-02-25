@@ -19,9 +19,6 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - name: Install dependencies
-        run: apk add --no-cache docker-cli git
-
       - name: Checkout
         run: |
           rm -rf repo
