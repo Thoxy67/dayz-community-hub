@@ -31,6 +31,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     file \
     # RPM bundling
     rpm \
+    # AppImage runtime deps
+    xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Bun (also symlinked as `node` so actions/checkout works without Node.js) ──
