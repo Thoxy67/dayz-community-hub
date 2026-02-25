@@ -16,9 +16,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Bun ───────────────────────────────────────────────────────────────────────
+# ── Bun (also symlinked as `node` so actions/checkout works without Node.js) ──
 ENV BUN_INSTALL=/usr/local
-RUN curl -fsSL https://bun.sh/install | bash
+RUN curl -fsSL https://bun.sh/install | bash \
+    && ln -s /usr/local/bin/bun /usr/local/bin/node
 
 # ── Rust (nightly, for edition 2024) ─────────────────────────────────────────
 ENV RUSTUP_HOME=/usr/local/rustup \
