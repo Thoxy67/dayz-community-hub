@@ -2463,7 +2463,7 @@ fn get_cli_args() -> CliArgs {
 // We bypass tauri_plugin_updater's install() because it assumes the zip
 // contains an NSIS/MSI installer. We ship a plain exe built with --no-bundle,
 // so we handle download → signature verify → extract → replace → restart
-// ourselves using a small detached .bat script.
+// ourselves using `self-replace` for the in-process exe swap.
 
 #[cfg(windows)]
 mod updater {
@@ -2698,8 +2698,9 @@ mod updater {
         }
 
         // ── 4. Write new exe to a temp path beside the current exe ───────────
-        let current_exe =
-            std::env::current_exe().map_err(|e| UpdateError::Other(format!("current_exe: {e}")))?;
+        let current_exe = std::env::current_exe()
+            .and_then(|p| p.canonicalize())
+            .map_err(|e| UpdateError::Other(format!("current_exe: {e}")))?;
         let exe_dir = current_exe
             .parent()
             .ok_or_else(|| UpdateError::Other("no parent dir".into()))?;
@@ -2710,33 +2711,34 @@ mod updater {
 
         let _ = on_event.send(DownloadEvent::Finished);
 
-        // ── 5. Write a .bat that waits for us to exit, replaces the exe, restarts
-        let bat_path = exe_dir.join("dayz-community-hub-updater.bat");
-        let current_exe_str = current_exe.to_string_lossy();
-        let new_exe_str = new_exe.to_string_lossy();
-        let bat = format!(
-            "@echo off\r\n\
-             :wait\r\n\
-             timeout /t 1 /nobreak >nul\r\n\
-             tasklist /fi \"imagename eq dayz-community-hub.exe\" 2>nul | find /i \"dayz-community-hub.exe\" >nul\r\n\
-             if not errorlevel 1 goto wait\r\n\
-             move /y \"{new_exe}\" \"{current_exe}\"\r\n\
-             start \"\" \"{current_exe}\"\r\n\
-             del \"%~f0\"\r\n",
-            new_exe = new_exe_str,
-            current_exe = current_exe_str,
-        );
-        std::fs::write(&bat_path, bat)
-            .map_err(|e| UpdateError::Other(format!("write bat: {e}")))?;
+        // ── 5. Replace this exe with the new one and relaunch ─────────────────
+        // self_replace::self_replace (windows impl):
+        //   1. renames current exe → temp .__relocated__.exe
+        //   2. schedules that relocated copy for deletion via FILE_FLAG_DELETE_ON_CLOSE
+        //   3. copies new_exe → .__temp__.exe, then renames it into the original path
+        // After the call returns, current_exe on disk IS the new binary and the
+        // old binary will be deleted once this process exits.
+        //
+        // We canonicalize new_exe so self_replace's internal fs::copy resolves it
+        // correctly even after the current exe has been moved aside.
+        let new_exe_canon = new_exe
+            .canonicalize()
+            .map_err(|e| UpdateError::Other(format!("canonicalize new exe: {e}")))?;
 
-        // ── 6. Spawn the bat detached, then exit ─────────────────────────────
-        std::process::Command::new("cmd.exe")
-            .args(["/c", "start", "", "/b", &bat_path.to_string_lossy()])
+        self_replace::self_replace(&new_exe_canon)
+            .map_err(|e| UpdateError::Other(format!("self_replace failed: {e}")))?;
+
+        // The staging copy is no longer needed.
+        let _ = std::fs::remove_file(&new_exe_canon);
+
+        // Relaunch the updated binary at the same path, then exit so the old
+        // relocated exe gets cleaned up by self_replace's DELETE_ON_CLOSE helper.
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new(&current_exe)
+            .creation_flags(0x00000008) // CREATE_NO_WINDOW
             .spawn()
-            .map_err(|e| UpdateError::Other(format!("spawn updater bat: {e}")))?;
+            .map_err(|e| UpdateError::Other(format!("relaunch failed: {e}")))?;
 
-        // Give the bat a moment to start before we exit
-        std::thread::sleep(std::time::Duration::from_millis(500));
         std::process::exit(0);
     }
 }

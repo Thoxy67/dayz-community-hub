@@ -888,7 +888,7 @@ checksum = "be1e0bca6c3637f992fc1cc7cbc52a78c1ef6db076dbf1059c4323d6a2048376"
 
 [[package]]
 name = "dayz-community-hub"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "a2s",
  "base64 0.22.1",
@@ -898,6 +898,7 @@ dependencies = [
  "futures-util",
  "minisign-verify",
  "reqwest 0.13.2",
+ "self-replace",
  "serde",
  "serde_json",
  "tauri",
@@ -920,7 +921,7 @@ dependencies = [
 
 [[package]]
 name = "dayz-community-hub-core"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "a2s",
  "chrono",
@@ -4097,6 +4098,17 @@ dependencies = [
  "precomputed-hash",
  "servo_arc",
  "smallvec",
+]
+
+[[package]]
+name = "self-replace"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "03ec815b5eab420ab893f63393878d89c90fdd94c0bcc44c07abb8ad95552fb7"
+dependencies = [
+ "fastrand",
+ "tempfile",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
