@@ -21,11 +21,22 @@
     pingMs: number | null;
     /** BattleMetrics personal access token from profile (null = not configured). */
     bmApiKey: string | null;
+    /** When true, scroll the mods section into view once it renders. */
+    scrollToMods?: boolean;
     onClose: () => void;
     onQueryA2s: () => void;
   }
 
-  let { server, a2s, a2sLoading, a2sError, installedMods, pingMs, bmApiKey, onClose, onQueryA2s }: Props = $props();
+  let { server, a2s, a2sLoading, a2sError, installedMods, pingMs, bmApiKey, scrollToMods = false, onClose, onQueryA2s }: Props = $props();
+
+  let modsHeading = $state<HTMLElement | null>(null);
+
+  $effect(() => {
+    if (scrollToMods && modsHeading) {
+      // Small tick so the panel has fully rendered before scrolling.
+      setTimeout(() => modsHeading?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+    }
+  });
 
   let installedIds = $derived(new Set(installedMods.map((m) => m.id)));
 
@@ -250,7 +261,7 @@
       </div>
     {:else if displayMods.length > 0}
       <div>
-        <div class="text-xs font-semibold text-base-content/50 mb-1">
+        <div bind:this={modsHeading} class="text-xs font-semibold text-base-content/50 mb-1">
           Mods ({displayMods.length})
         </div>
         <div class="space-y-0.5 max-h-40 overflow-y-auto">

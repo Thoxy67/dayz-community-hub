@@ -126,6 +126,34 @@
   // Track which servers were just pinged for a brief green flash.
   let pingFlash = $state<Set<string>>(new Set());
 
+  // A2S-refreshed player counts: "ip:queryPort" → live players
+  let a2sPlayers = $state<Map<string, number>>(new Map());
+  let a2sPlayersLoading = $state<Set<string>>(new Set());
+
+  async function doRefreshPlayers(entry: HistoryDto) {
+    const sv = findServer(entry);
+    const ip = entry.ip;
+    const queryPort = sv ? sv.query_port : entry.port;
+    const key = `${ip}:${queryPort}`;
+    if (a2sPlayersLoading.has(key)) return;
+    a2sPlayersLoading = new Set([...a2sPlayersLoading, key]);
+    try {
+      const res = await invoke<A2sDetailsDto>('query_a2s', { ip, port: queryPort });
+      a2sPlayers = new Map([...a2sPlayers, [key, res.players]]);
+    } catch {
+      const fallback = sv ? sv.players : 0;
+      a2sPlayers = new Map([...a2sPlayers, [key, fallback]]);
+    } finally {
+      a2sPlayersLoading.delete(key);
+      a2sPlayersLoading = new Set(a2sPlayersLoading);
+    }
+  }
+
+  function entryA2sKey(entry: HistoryDto): string {
+    const sv = findServer(entry);
+    return `${entry.ip}:${sv ? sv.query_port : entry.port}`;
+  }
+
   function doPing(entry: HistoryDto) {
     const sv = findServer(entry);
     const port = sv ? sv.query_port : entry.port;
@@ -138,6 +166,16 @@
       pingFlash.delete(flashKey);
       pingFlash = new Set(pingFlash);
     }, 1000);
+  }
+
+  function timeIcon(time: string | undefined): string {
+    if (!time) return 'ph:sun-horizon';
+    const h = parseInt(time.split(':')[0], 10);
+    if (isNaN(h)) return 'ph:sun-horizon';
+    if (h >= 5  && h < 7)  return 'ph:sun-horizon';
+    if (h >= 7  && h < 19) return 'ph:sun';
+    if (h >= 19 && h < 21) return 'ph:sun-horizon';
+    return 'ph:moon';
   }
 
   function pingColor(ms: number | undefined): string {
@@ -392,7 +430,10 @@
           {#each sorted as entry, ei}
             {@const server = findServer(entry)}
             {@const ping = pingCache.get(`${entry.ip}:${entry.port}`)}
-            {@const pct = server && server.max_players > 0 ? Math.round((server.players / server.max_players) * 100) : 0}
+            {@const entKey = entryA2sKey(entry)}
+            {@const livePlayers = server ? (a2sPlayers.get(entKey) ?? server.players) : 0}
+            {@const loadingPlayers = a2sPlayersLoading.has(entKey)}
+            {@const pct = server && server.max_players > 0 ? Math.round((livePlayers / server.max_players) * 100) : 0}
             {@const isFocused = ei === selectedIdx}
             {@const isSelected = detailEntry?.ip === entry.ip && detailEntry?.port === entry.port}
             <tr
@@ -432,27 +473,40 @@
               <!-- Players + bar -->
               <td class="px-3 py-2">
                 {#if server}
-                  <div class="flex items-center gap-2">
-                    <span class="tabular-nums font-mono {playerFill(server.players, server.max_players)} w-14 shrink-0">
-                      {server.players}<span class="text-base-content/30">/{server.max_players}</span>
-                    </span>
+                  <button
+                    class="flex items-center gap-2 w-full cursor-pointer hover:opacity-70 transition-opacity text-left"
+                    onclick={(e) => { e.stopPropagation(); doRefreshPlayers(entry); }}
+                    title="Click to refresh player count via A2S query"
+                    disabled={loadingPlayers}
+                  >
+                    {#if loadingPlayers}
+                      <span class="loading loading-spinner loading-xs text-primary shrink-0"></span>
+                    {:else}
+                      <span class="tabular-nums font-mono {playerFill(livePlayers, server.max_players)} w-14 shrink-0">
+                        {livePlayers}<span class="text-base-content/30">/{server.max_players}</span>
+                      </span>
+                    {/if}
                     <div class="flex-1 h-1 rounded-full bg-base-300 overflow-hidden">
-                      <div class="h-full rounded-full {playerBarColor(server.players, server.max_players)}" style="width:{pct}%"></div>
+                      <div class="h-full rounded-full {playerBarColor(livePlayers, server.max_players)}" style="width:{pct}%"></div>
                     </div>
-                  </div>
+                  </button>
                 {:else}
                   <span class="text-base-content/25 font-mono">—</span>
                 {/if}
               </td>
 
-              <!-- Ping -->
+              <!-- Ping — click to re-ping -->
               <td class="px-3 py-2">
-                <div class="flex items-center gap-1.5 {pingFlash.has(`${entry.ip}:${entry.port}`) ? 'ping-flash' : ''}">
+                <button
+                  class="flex items-center gap-1.5 cursor-pointer hover:opacity-70 transition-opacity {pingFlash.has(`${entry.ip}:${entry.port}`) ? 'ping-flash' : ''}"
+                  onclick={(e) => { e.stopPropagation(); doPing(entry); }}
+                  title="Click to ping"
+                >
                   <span class="size-1.5 rounded-full shrink-0 {pingDot(ping)}"></span>
                   <span class="tabular-nums font-mono {pingColor(ping)}">
                     {ping !== undefined ? `${ping}ms` : '—'}
                   </span>
-                </div>
+                </button>
               </td>
 
               <!-- Map -->
@@ -462,7 +516,10 @@
 
               <!-- Time -->
               <td class="px-3 py-2">
-                <span class="text-base-content/60 tabular-nums font-mono">{server?.time || '—'}</span>
+                <span class="flex items-center gap-1 text-base-content/60 tabular-nums font-mono">
+                  <Icon icon={timeIcon(server?.time)} class="size-3 shrink-0" />
+                  {server?.time || '—'}
+                </span>
               </td>
 
               <!-- Last played -->
@@ -576,11 +633,15 @@
               <span class="flex items-center gap-1.5 text-base-content/50">
                 <Icon icon="mdi:signal" class="size-3.5 shrink-0" />Ping
               </span>
-              <span class="font-mono {pingColor(pingCache.get(`${detailEntry.ip}:${detailEntry.port}`))}">
+              <button
+                class="font-mono cursor-pointer hover:opacity-70 transition-opacity {pingColor(pingCache.get(`${detailEntry.ip}:${detailEntry.port}`))}"
+                onclick={() => detailEntry && doPing(detailEntry)}
+                title="Click to ping"
+              >
                 {pingCache.get(`${detailEntry.ip}:${detailEntry.port}`) !== undefined
                   ? `${pingCache.get(`${detailEntry.ip}:${detailEntry.port}`)}ms`
                   : '—'}
-              </span>
+              </button>
             </div>
 
             {#if a2s.players_list.length > 0}
@@ -732,12 +793,5 @@
   {/if}
 </div>
 
-<style>
-  :global(.ping-flash) {
-    animation: ping-pulse 1s ease-out forwards;
-  }
-  @keyframes ping-pulse {
-    0%   { background-color: oklch(0.72 0.19 154 / 0.5); border-radius: 4px; }
-    100% { background-color: transparent; }
-  }
-</style>
+<style></style>
+

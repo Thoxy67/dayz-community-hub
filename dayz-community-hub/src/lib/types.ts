@@ -77,6 +77,8 @@ export interface ProfileDto {
   favorites: FavoriteDto[];
   history: HistoryDto[];
   options: LaunchOptionDto[];
+  /** IPs excluded from the server browser. */
+  excluded_ips: string[];
 }
 
 /** BattleMetrics server info fetched on demand for the detail panel. */

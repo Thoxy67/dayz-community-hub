@@ -59,6 +59,9 @@ pub struct Profile {
     pub steamcmd_path: Option<String>,
     pub favorites: Vec<Favorite>,
     pub history: Vec<History>,
+    /// IPs excluded from the server browser (persisted across restarts).
+    #[serde(default)]
+    pub excluded_ips: Vec<String>,
     #[serde(
         deserialize_with = "deserialize_launch_options",
         default = "LaunchOptions::defaults"
@@ -520,6 +523,7 @@ impl Profile {
             battlemetrics_api_key: None,
             favorites: Vec::new(),
             history: Vec::new(),
+            excluded_ips: Vec::new(),
             options: LaunchOptions::defaults(),
             version: version.to_string(),
             path: PathBuf::new(),
@@ -563,6 +567,23 @@ impl Profile {
         );
 
         // No cap — history is unlimited.
+    }
+
+    /// Add an IP to the excluded list (no-op if already present).
+    pub fn add_excluded_ip(&mut self, ip: String) {
+        if !self.excluded_ips.contains(&ip) {
+            self.excluded_ips.push(ip);
+        }
+    }
+
+    /// Remove an IP from the excluded list.
+    pub fn remove_excluded_ip(&mut self, ip: &str) {
+        self.excluded_ips.retain(|e| e != ip);
+    }
+
+    /// Returns true if this IP is excluded.
+    pub fn is_excluded(&self, ip: &str) -> bool {
+        self.excluded_ips.iter().any(|e| e == ip)
     }
 
     pub fn get_favorites_with_status<'a>(

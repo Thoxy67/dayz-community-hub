@@ -23,9 +23,10 @@
       steamId: string | null,
       battlemetricsApiKey: string | null,
     ) => void;
+    onUnexcludeIp: (ip: string) => void;
   }
 
-  let { stats, avatarUrl, steamPlayers, theme, profile, onToggleTheme, onSaveSettings }: Props = $props();
+  let { stats, avatarUrl, steamPlayers, theme, profile, onToggleTheme, onSaveSettings, onUnexcludeIp }: Props = $props();
 
   // ── Window controls ────────────────────────────────────────────────────────
   const win = getCurrentWindow();
@@ -500,6 +501,33 @@
             >battlemetrics.com/developers</button>
           </p>
         </div>
+
+        <!-- ── Section: Excluded IPs ──────────────────────────────────────── -->
+        {#if profile?.excluded_ips && profile.excluded_ips.length > 0}
+          <div>
+            <div class="flex items-center gap-2 mb-3">
+              <Icon icon="ph:prohibit" class="size-3.5 text-error/70" />
+              <span class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">Excluded IPs</span>
+              <span class="text-xs text-base-content/35 font-normal normal-case tracking-normal">hidden from server browser</span>
+            </div>
+            <div class="bg-base-200/60 rounded-lg border border-base-300/60 overflow-hidden divide-y divide-base-300/40">
+              {#each profile.excluded_ips as ip}
+                <div class="flex items-center gap-3 px-3 py-2">
+                  <Icon icon="ph:prohibit-fill" class="size-3 text-error/60 shrink-0" />
+                  <span class="flex-1 text-xs font-mono text-base-content/70">{ip}</span>
+                  <button
+                    type="button"
+                    class="text-base-content/30 hover:text-error transition-colors shrink-0"
+                    onclick={() => onUnexcludeIp(ip)}
+                    title="Remove exclusion for {ip}"
+                  >
+                    <Icon icon="ph:x" class="size-3.5" />
+                  </button>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
 
       </div>
 

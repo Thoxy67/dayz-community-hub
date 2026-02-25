@@ -55,18 +55,49 @@
     <div class="modal-box max-w-lg">
 
       {#if isSteamGuard}
-        <!-- Steam Guard Mobile Required — full red alert -->
-        <div class="alert alert-error flex-col items-start gap-3">
-          <div class="flex items-center gap-3">
-            <Icon icon="ph:shield-warning" class="size-8 flex-shrink-0" />
-            <div>
-              <h3 class="font-bold text-lg">Steam Guard Authorization Required</h3>
-              <p class="text-sm mt-1">
-                Open the <strong>Steam Mobile app</strong> on your phone and confirm the login to continue.
-              </p>
+        <!-- Steam Guard Mobile Required -->
+        <div class="flex items-start gap-4 p-4 rounded-xl bg-error/8 border border-error/20">
+
+          <!-- Animated shield icon -->
+          <div class="relative shrink-0 size-12 flex items-center justify-center">
+            <div class="sg-pulse-ring"></div>
+            <div class="relative z-10 size-10 rounded-full bg-error/15 border border-error/25 flex items-center justify-center">
+              <Icon icon="ph:shield-warning-fill" class="size-6 text-error" />
             </div>
           </div>
-          <p class="text-xs opacity-70">The download will resume automatically once you approve it.</p>
+
+          <!-- Text content -->
+          <div class="flex-1 min-w-0">
+            <h3 class="font-bold text-base text-base-content">Steam Guard Authorization Required</h3>
+            <p class="text-sm text-base-content/70 mt-1 leading-snug">
+              Open the <strong class="text-base-content/90">Steam Mobile app</strong> on your phone
+              and approve the sign-in to continue.
+            </p>
+
+            <!-- Step indicator -->
+            <div class="flex items-center gap-1.5 mt-3 flex-wrap">
+              <div class="flex items-center gap-1.5">
+                <span class="inline-flex items-center justify-center size-[18px] rounded-full bg-error/15 border border-error/25 text-[10px] font-bold text-error shrink-0">1</span>
+                <span class="text-[11px] text-base-content/60 whitespace-nowrap">Open Steam app on phone</span>
+              </div>
+              <Icon icon="ph:arrow-right" class="size-3 text-base-content/30 shrink-0" />
+              <div class="flex items-center gap-1.5">
+                <span class="inline-flex items-center justify-center size-[18px] rounded-full bg-error/15 border border-error/25 text-[10px] font-bold text-error shrink-0">2</span>
+                <span class="text-[11px] text-base-content/60 whitespace-nowrap">Tap the approval notification</span>
+              </div>
+              <Icon icon="ph:arrow-right" class="size-3 text-base-content/30 shrink-0" />
+              <div class="flex items-center gap-1.5">
+                <span class="inline-flex items-center justify-center size-[18px] rounded-full bg-success/15 border border-success/25 text-[10px] font-bold text-success shrink-0">3</span>
+                <span class="text-[11px] text-success/80 whitespace-nowrap">Download resumes</span>
+              </div>
+            </div>
+
+            <!-- Waiting indicator -->
+            <div class="flex items-center gap-2 mt-3 text-xs text-base-content/40">
+              <span class="loading loading-dots loading-xs text-error/50"></span>
+              <span>Waiting for confirmation…</span>
+            </div>
+          </div>
         </div>
       {:else}
         <h3 class="font-bold text-lg flex items-center gap-2">
@@ -118,7 +149,10 @@
                   <Icon icon="ph:check" class="size-3.5 text-success flex-shrink-0" />
                 {:else}
                   <Icon icon="ph:x" class="size-3.5 text-error flex-shrink-0" />
-                {/if}
+{/if}
+
+<style></style>
+
                 <span class="text-base-content/80 truncate">{entry.name}</span>
                 <span class="text-base-content/40 ml-auto font-mono">{entry.id}</span>
               </div>
@@ -155,3 +189,5 @@
     <div class="modal-backdrop bg-base-content/20"></div>
   </div>
 {/if}
+
+

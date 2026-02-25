@@ -169,6 +169,8 @@ pub struct ProfileDto {
     pub favorites: Vec<FavoriteDto>,
     pub history: Vec<HistoryDto>,
     pub options: Vec<LaunchOptionDto>,
+    /// IPs excluded from the server browser.
+    pub excluded_ips: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -365,6 +367,7 @@ fn profile_to_dto(profile: &Profile) -> ProfileDto {
                 description: opt.description.clone(),
             })
             .collect(),
+        excluded_ips: profile.excluded_ips.clone(),
     }
 }
 
@@ -693,6 +696,22 @@ async fn remove_history_entry(
 async fn clear_history(state: State<'_, SharedState>) -> Result<(), String> {
     let mut state = state.lock().await;
     state.ctl.profile_mut().history.clear();
+    state.ctl.save_profile().map_err(|e| e.to_string())
+}
+
+/// Add an IP to the excluded list (persisted to profile).
+#[tauri::command]
+async fn add_excluded_ip(ip: String, state: State<'_, SharedState>) -> Result<(), String> {
+    let mut state = state.lock().await;
+    state.ctl.profile_mut().add_excluded_ip(ip);
+    state.ctl.save_profile().map_err(|e| e.to_string())
+}
+
+/// Remove an IP from the excluded list (persisted to profile).
+#[tauri::command]
+async fn remove_excluded_ip(ip: String, state: State<'_, SharedState>) -> Result<(), String> {
+    let mut state = state.lock().await;
+    state.ctl.profile_mut().remove_excluded_ip(&ip);
     state.ctl.save_profile().map_err(|e| e.to_string())
 }
 
@@ -2793,6 +2812,8 @@ pub fn run(args: CliArgs) {
             remove_favorite,
             remove_history_entry,
             clear_history,
+            add_excluded_ip,
+            remove_excluded_ip,
             get_installed_mods,
             delete_mod,
             delete_mods_bulk,

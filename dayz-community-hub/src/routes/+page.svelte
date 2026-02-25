@@ -23,6 +23,7 @@
     ModOpState,
     ServersFilterState,
     CliArgs,
+    A2sDetailsDto,
   } from '$lib/types';
   // PingResult is used by the ping-batch event listener below
 
@@ -41,6 +42,7 @@
   import SetupWizard from '$lib/components/SetupWizard.svelte';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import ProgressModal from '$lib/components/ProgressModal.svelte';
+  import ConnectModal, { type ConnectRequest } from '$lib/components/ConnectModal.svelte';
 
   // ── Theme ─────────────────────────────────────────────────────────────────
   let theme = $state<'light' | 'dark'>('dark');
@@ -79,6 +81,7 @@
   let offlineLoading = $state(false);
 
   let confirmDialog = $state<ConfirmDialog | null>(null);
+  let connectRequest = $state<ConnectRequest | null>(null);
 
   // ── Persistent filter state (survives tab switches) ───────────────────────
   let serversFilter = $state<ServersFilterState>({
@@ -134,6 +137,16 @@
 
   // ── Status helpers ─────────────────────────────────────────────────────────
   let statusTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  function timeIcon(time: string | undefined): string {
+    if (!time) return 'ph:sun-horizon';
+    const h = parseInt(time.split(':')[0], 10);
+    if (isNaN(h)) return 'ph:sun-horizon';
+    if (h >= 5  && h < 7)  return 'ph:sun-horizon';
+    if (h >= 7  && h < 19) return 'ph:sun';
+    if (h >= 19 && h < 21) return 'ph:sun-horizon';
+    return 'ph:moon';
+  }
 
   function setStatus(msg: string, kind: 'info' | 'success' | 'error' | 'warning' = 'info') {
     statusMessage = msg;
@@ -250,6 +263,32 @@
       offlineMissions = [];
     } finally {
       offlineLoading = false;
+    }
+  }
+
+  // ── Last-played banner A2S refresh ───────────────────────────────────────
+
+  let bannerA2s = $state<A2sDetailsDto | null>(null);
+  let bannerA2sLoading = $state(false);
+
+  // Reset A2S cache whenever the last history entry changes (different server).
+  $effect(() => {
+    profile?.history?.[0]?.ip;
+    bannerA2s = null;
+  });
+
+  async function refreshBannerA2s() {
+    const lh = profile?.history?.[0] ?? null;
+    if (!lh) return;
+    const sv = servers.find(s => s.ip === lh.ip && (s.query_port === lh.port || s.game_port === lh.port));
+    const queryPort = sv ? sv.query_port : lh.port;
+    bannerA2sLoading = true;
+    try {
+      bannerA2s = await invoke<A2sDetailsDto>('query_a2s', { ip: lh.ip, port: queryPort });
+    } catch {
+      // silently ignore — stale data stays visible
+    } finally {
+      bannerA2sLoading = false;
     }
   }
 
@@ -370,32 +409,24 @@
       .filter((id: number) => !installedIds.has(id));
 
     if (missingIds.length > 0) {
-      const modNames = missingIds
-        .map((id) => fullServer?.mods.find((m: ModDto) => m.steam_workshop_id === id)?.name ?? String(id))
-        .slice(0, 10)
-        .join('\n');
-      confirmDialog = {
-        title: `Install ${missingIds.length} missing mod${missingIds.length > 1 ? 's' : ''}?`,
-        message: `${modNames}${missingIds.length > 10 ? `\n…and ${missingIds.length - 10} more` : ''}`,
-        confirmLabel: 'Install & connect',
-        confirmVariant: 'success',
-        declineLabel: 'Connect without mods',
-        declineVariant: 'warning',
-        onConfirm: () => doInstallAndLaunch(server),
-        onDecline: () => doLaunchDirect(server),
-        onCancel: () => {},
+      connectRequest = {
+        serverName: server.name,
+        kind: 'missing',
+        modCount: missingIds.length,
+        onConnect: (updateMods) => {
+          if (updateMods) doInstallAndLaunch(server);
+          else doLaunchDirect(server);
+        },
       };
     } else if (server.mods_count > 0) {
-      confirmDialog = {
-        title: 'Update mods before connecting?',
-        message: `${server.name}\n${server.mods_count} mod(s) installed.`,
-        confirmLabel: 'Update & connect',
-        confirmVariant: 'success',
-        declineLabel: 'Connect without updating',
-        declineVariant: 'warning',
-        onConfirm: () => doUpdateAndLaunch(server),
-        onDecline: () => doLaunchDirect(server),
-        onCancel: () => {},
+      connectRequest = {
+        serverName: server.name,
+        kind: 'update',
+        modCount: server.mods_count,
+        onConnect: (updateMods) => {
+          if (updateMods) doUpdateAndLaunch(server);
+          else doLaunchDirect(server);
+        },
       };
     } else {
       doLaunchDirect(server);
@@ -468,11 +499,19 @@
   }
 
   async function doInstallAndLaunch(server: ServerDto) {
-    startModOp('install_server', { ip: server.ip, port: server.query_port });
+    startModOp(
+      'install_server',
+      { ip: server.ip, port: server.query_port },
+      () => doLaunchDirect(server),
+    );
   }
 
   async function doUpdateAndLaunch(server: ServerDto) {
-    startModOp('update_server', { ip: server.ip, port: server.query_port });
+    startModOp(
+      'update_server',
+      { ip: server.ip, port: server.query_port },
+      () => doLaunchDirect(server),
+    );
   }
 
   async function connectDirect(ip: string, port: number, password?: string) {
@@ -551,6 +590,38 @@
       profileRemoveFavorite(ip, port);
       await invoke('remove_favorite', { ip, port });
       setStatus('Removed from favorites', 'success');
+    } catch (e) {
+      await loadProfile();
+      setStatus(`Failed: ${e}`, 'error');
+    }
+  }
+
+  // ── IP exclusion ──────────────────────────────────────────────────────────
+
+  let excludedIpsSet = $derived(new Set<string>(profile?.excluded_ips ?? []));
+
+  async function excludeIp(ip: string) {
+    if (!profile) return;
+    // Optimistic local update
+    if (!profile.excluded_ips.includes(ip)) {
+      profile.excluded_ips = [...profile.excluded_ips, ip];
+    }
+    try {
+      await invoke('add_excluded_ip', { ip });
+      setStatus(`${ip} excluded from server list`, 'info');
+    } catch (e) {
+      await loadProfile();
+      setStatus(`Failed to exclude IP: ${e}`, 'error');
+    }
+  }
+
+  async function unexcludeIp(ip: string) {
+    if (!profile) return;
+    // Optimistic local update
+    profile.excluded_ips = profile.excluded_ips.filter((e) => e !== ip);
+    try {
+      await invoke('remove_excluded_ip', { ip });
+      setStatus(`${ip} removed from exclusions`, 'success');
     } catch (e) {
       await loadProfile();
       setStatus(`Failed: ${e}`, 'error');
@@ -878,7 +949,11 @@
   }
 
   // ── Mod operation progress via Channel ────────────────────────────────────
-  function startModOp(opType: string, args: Record<string, unknown>) {
+  function startModOp(
+    opType: string,
+    args: Record<string, unknown>,
+    onSuccess?: () => void,
+  ) {
     modOp = {
       active: true,
       phase: 'downloading',
@@ -930,6 +1005,8 @@
           modOp.hint = payload.hint;
           if (!payload.hint && payload.failed === 0) {
             setStatus(`Mods: ${payload.ok} updated successfully`, 'success');
+            // Fire the post-success callback (e.g. launch the game)
+            onSuccess?.();
           } else if (payload.failed > 0) {
             setStatus(`Mods: ${payload.ok} OK, ${payload.failed} failed`, 'warning');
           }
@@ -1062,7 +1139,7 @@
 </script>
 
 <div class="flex flex-col h-screen w-screen overflow-hidden bg-base-100 text-base-content" data-theme={theme}>
-  <TitleBar {stats} {avatarUrl} {steamPlayers} {theme} {profile} onToggleTheme={toggleTheme} onSaveSettings={saveProfileSettings} />
+  <TitleBar {stats} {avatarUrl} {steamPlayers} {theme} {profile} onToggleTheme={toggleTheme} onSaveSettings={saveProfileSettings} onUnexcludeIp={unexcludeIp} />
   <TabBar {activeTab} {tabs} onSelect={selectTab} />
 
   {#if statusMessage}
@@ -1096,33 +1173,49 @@
 
       <!-- Live stats — only if server is in the list -->
       {#if _lhServer}
+        {@const _players = bannerA2s?.players ?? _lhServer.players}
+        {@const _maxPlayers = bannerA2s?.max_players ?? _lhServer.max_players}
         <span class="w-px h-3.5 bg-base-300 shrink-0"></span>
-        <!-- Players -->
-        <span class="flex items-center gap-1 shrink-0 tabular-nums
-                     {_lhServer.players >= _lhServer.max_players ? 'text-error' : _lhServer.players > _lhServer.max_players / 2 ? 'text-warning' : 'text-success'}">
-          <Icon icon="ph:users" class="size-3 shrink-0" />
-          {_lhServer.players}/{_lhServer.max_players}
-        </span>
+        <!-- Players — click to refresh via A2S -->
+        <button
+          class="flex items-center gap-1 shrink-0 tabular-nums cursor-pointer hover:opacity-70 transition-opacity
+                 {_players >= _maxPlayers ? 'text-error' : _players > _maxPlayers / 2 ? 'text-warning' : 'text-success'}"
+          onclick={refreshBannerA2s}
+          title="Click to refresh player count"
+          disabled={bannerA2sLoading}
+        >
+          {#if bannerA2sLoading}
+            <span class="loading loading-spinner" style="width:10px;height:10px;"></span>
+          {:else}
+            <Icon icon="ph:users" class="size-3 shrink-0" />
+          {/if}
+          {_players}/{_maxPlayers}
+        </button>
         <!-- Map -->
         <span class="flex items-center gap-1 shrink-0 text-teal-400/80">
           <Icon icon="ph:map-trifold" class="size-3 shrink-0" />
           {_lhServer.map}
         </span>
-        <!-- Ping -->
-        {#if _lhPing !== undefined}
-          <span class="flex items-center gap-1 shrink-0 tabular-nums font-mono
-                       {_lhPing < 50 ? 'text-success' : _lhPing < 100 ? 'text-warning' : 'text-error'}">
-            <Icon icon="ph:wave-triangle" class="size-3 shrink-0" />
-            {_lhPing}ms
-          </span>
-        {/if}
-        <!-- In-game time -->
+        <!-- Ping — click to re-ping -->
+        <button
+          class="flex items-center gap-1 shrink-0 tabular-nums font-mono cursor-pointer hover:opacity-70 transition-opacity
+                 {_lhPing !== undefined
+                   ? (_lhPing < 50 ? 'text-success' : _lhPing < 100 ? 'text-warning' : 'text-error')
+                   : 'text-base-content/30'}"
+          onclick={() => pingSingle(_lhServer.ip, _lhServer.query_port)}
+          title="Click to ping"
+        >
+          <Icon icon="ph:wave-triangle" class="size-3 shrink-0" />
+          {_lhPing !== undefined ? `${_lhPing}ms` : '—'}
+        </button>
+        <!-- In-game time (from server list, not A2S) -->
         {#if _lhServer.time}
           <span class="flex items-center gap-1 shrink-0 text-base-content/50 tabular-nums font-mono">
-            <Icon icon="ph:sun-horizon" class="size-3 shrink-0" />
+            <Icon icon={timeIcon(_lhServer.time)} class="size-3 shrink-0" />
             {_lhServer.time}
           </span>
         {/if}
+
       {:else}
         <span class="shrink-0 text-warning/70" style="font-size:10px;" title="Server not found in current list — may be offline">OFFLINE</span>
       {/if}
@@ -1170,6 +1263,7 @@
         {pingCache}
         {installedMods}
         favorites={favoritesSet}
+        excludedIps={excludedIpsSet}
         loading={serversLoading}
         bind:filter={serversFilter}
         bmApiKey={profile?.battlemetrics_api_key ?? null}
@@ -1178,6 +1272,8 @@
         onRemoveFavorite={(s) => removeFavoriteQuick(s.ip, s.query_port)}
         onRefresh={refreshServers}
         onPing={pingSingle}
+        onExcludeIp={excludeIp}
+        onUnexcludeIp={unexcludeIp}
       />
     {:else if activeTab === 'favorites'}
       <FavoritesTab
@@ -1269,6 +1365,7 @@
   </div>
 
   <ConfirmModal dialog={confirmDialog} onClose={() => (confirmDialog = null)} />
+  <ConnectModal request={connectRequest} onClose={() => (connectRequest = null)} />
   <ProgressModal modOp={modOp} onDismiss={dismissModOp} />
 
   {#if showWizard}
