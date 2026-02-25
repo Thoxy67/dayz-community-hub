@@ -1,0 +1,42 @@
+FROM debian:bookworm-slim
+
+# Avoid interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# ── System packages ───────────────────────────────────────────────────────────
+# clang + lld are required by cargo-xwin for Windows cross-compilation
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    git \
+    zip \
+    python3 \
+    clang \
+    lld \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Bun ───────────────────────────────────────────────────────────────────────
+ENV BUN_INSTALL=/usr/local
+RUN curl -fsSL https://bun.sh/install | bash
+
+# ── Rust (nightly, for edition 2024) ─────────────────────────────────────────
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
+RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y \
+        --default-toolchain nightly \
+        --profile minimal \
+        --no-modify-path \
+    && rustup target add x86_64-pc-windows-msvc
+
+# ── cargo-xwin (Windows cross-compiler) ──────────────────────────────────────
+# xwin handles downloading the MSVC sysroot at build time; no Windows SDK needed
+RUN cargo install cargo-xwin
+
+# ── @tauri-apps/cli (for `bun tauri signer sign`) ────────────────────────────
+# Install globally so it's available without bun install in each job
+RUN bun add -g @tauri-apps/cli
+
+# Sanity checks
+RUN rustc --version && cargo --version && bun --version && cargo xwin --version

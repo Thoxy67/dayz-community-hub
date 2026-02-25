@@ -1,0 +1,36 @@
+name: CI image
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.forgejo/ci-image/Dockerfile'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-image
+  cancel-in-progress: true
+
+jobs:
+  build-push:
+    name: Build and push CI image
+    runs-on: docker
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: https://code.forgejo.org/actions/checkout@v4
+
+      - name: Log in to Forgejo registry
+        run: |
+          echo "${{ secrets.FORGEJO_TOKEN }}" | \
+            docker login git.thoxy.xyz \
+              --username ${{ forgejo.repository_owner }} \
+              --password-stdin
+
+      - name: Build and push
+        run: |
+          IMAGE="git.thoxy.xyz/thoxy/dayz-community-hub/ci:latest"
+          docker build -t "$IMAGE" .forgejo/ci-image/
+          docker push "$IMAGE"

@@ -1,0 +1,173 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: release-${{ forgejo.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-windows:
+    name: Publish Windows release
+    runs-on: docker
+    container:
+      image: git.thoxy.xyz/thoxy/dayz-community-hub/ci:latest
+      credentials:
+        username: ${{ forgejo.repository_owner }}
+        password: ${{ secrets.FORGEJO_TOKEN }}
+    timeout-minutes: 60
+
+    defaults:
+      run:
+        working-directory: dayz-community-hub
+
+    steps:
+      - name: Checkout
+        uses: https://code.forgejo.org/actions/checkout@v4
+
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Cross-compile for Windows (no-bundle)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: bun tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --no-bundle
+
+      - name: Zip the binary (ZIP_STORED — required by Tauri updater)
+        run: |
+          TAG="${{ forgejo.ref_name }}"
+          ZIP_NAME="dayz-community-hub-${TAG}-x86_64-windows.zip"
+          TARGET_DIR="src-tauri/target/x86_64-pc-windows-msvc/release"
+          (cd "$TARGET_DIR" && zip -0 "$ZIP_NAME" dayz-community-hub.exe)
+          echo "TAG=$TAG"                        >> "$FORGEJO_ENV"
+          echo "ZIP_NAME=$ZIP_NAME"              >> "$FORGEJO_ENV"
+          echo "ZIP_PATH=$TARGET_DIR/$ZIP_NAME"  >> "$FORGEJO_ENV"
+
+      - name: Sign the zip
+        run: |
+          KEY_FILE="$(mktemp)"
+          echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" > "$KEY_FILE"
+          PASS="${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}"
+          if [ -n "$PASS" ]; then
+            bun tauri signer sign -f "$KEY_FILE" -p "$PASS" "$ZIP_PATH"
+          else
+            bun tauri signer sign -f "$KEY_FILE" "$ZIP_PATH"
+          fi
+          rm -f "$KEY_FILE"
+          echo "SIG_FILE=${ZIP_PATH}.sig" >> "$FORGEJO_ENV"
+
+      - name: Build latest.json
+        run: |
+          VERSION="${TAG#v}"
+          ASSET_URL="https://git.thoxy.xyz/thoxy/dayz-community-hub/releases/download/${TAG}/${ZIP_NAME}"
+          TARGET_DIR="$(dirname "$ZIP_PATH")"
+          LATEST_JSON="$TARGET_DIR/latest.json"
+          python3 - <<PYEOF
+          import json, os
+          sig  = open(os.environ["SIG_FILE"]).read().rstrip()
+          from datetime import datetime, timezone
+          pub_date = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+          data = {
+              "version":  "$VERSION",
+              "notes":    "Release $TAG",
+              "pub_date": pub_date,
+              "platforms": {
+                  "windows-x86_64": {
+                      "signature": sig,
+                      "url": "$ASSET_URL",
+                  }
+              },
+          }
+          json.dump(data, open("$LATEST_JSON", "w"), indent=2)
+          print("Written:", "$LATEST_JSON")
+          PYEOF
+          echo "LATEST_JSON=$LATEST_JSON" >> "$FORGEJO_ENV"
+
+      - name: Publish to Forgejo releases
+        env:
+          FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
+        run: |
+          API="https://git.thoxy.xyz/api/v1"
+          OWNER="thoxy"
+          REPO="dayz-community-hub"
+
+          upload_asset() {
+            local release_id="$1" file="$2"
+            local name; name="$(basename "$file")"
+            # Delete existing asset with same name if present
+            local existing_id
+            existing_id="$(curl -sf \
+              -H "Authorization: token $FORGEJO_TOKEN" \
+              "$API/repos/$OWNER/$REPO/releases/$release_id/assets" | \
+              python3 -c "
+          import sys, json
+          assets = json.load(sys.stdin)
+          name = '$name'
+          print(next((str(a['id']) for a in assets if a['name'] == name), ''))
+          ")"
+            if [ -n "$existing_id" ]; then
+              curl -sf -X DELETE \
+                -H "Authorization: token $FORGEJO_TOKEN" \
+                "$API/repos/$OWNER/$REPO/releases/$release_id/assets/$existing_id" >/dev/null
+            fi
+            curl -sf -X POST \
+              -H "Authorization: token $FORGEJO_TOKEN" \
+              -F "attachment=@$file;filename=$name" \
+              "$API/repos/$OWNER/$REPO/releases/$release_id/assets" | \
+              python3 -c "import sys,json; r=json.load(sys.stdin); print('  Uploaded:', r.get('name','?'))"
+          }
+
+          # ── versioned release ──────────────────────────────────────────────
+          HTTP_STATUS="$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token $FORGEJO_TOKEN" \
+            "$API/repos/$OWNER/$REPO/releases/tags/$TAG")"
+
+          if [ "$HTTP_STATUS" = "200" ]; then
+            RELEASE_ID="$(curl -sf \
+              -H "Authorization: token $FORGEJO_TOKEN" \
+              "$API/repos/$OWNER/$REPO/releases/tags/$TAG" | \
+              python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")"
+            echo "Reusing release $TAG (id $RELEASE_ID)"
+          else
+            RELEASE_ID="$(curl -sf -X POST \
+              -H "Authorization: token $FORGEJO_TOKEN" \
+              -H "Content-Type: application/json" \
+              "$API/repos/$OWNER/$REPO/releases" \
+              -d "{\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"body\":\"Release $TAG\",\"draft\":false,\"prerelease\":false}" | \
+              python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")"
+            echo "Created release $TAG (id $RELEASE_ID)"
+          fi
+
+          upload_asset "$RELEASE_ID" "$ZIP_PATH"
+          upload_asset "$RELEASE_ID" "$LATEST_JSON"
+
+          # ── latest release (updater endpoint) ─────────────────────────────
+          LATEST_STATUS="$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token $FORGEJO_TOKEN" \
+            "$API/repos/$OWNER/$REPO/releases/tags/latest")"
+
+          if [ "$LATEST_STATUS" = "200" ]; then
+            LATEST_ID="$(curl -sf \
+              -H "Authorization: token $FORGEJO_TOKEN" \
+              "$API/repos/$OWNER/$REPO/releases/tags/latest" | \
+              python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")"
+            echo "Reusing 'latest' release (id $LATEST_ID)"
+          else
+            LATEST_ID="$(curl -sf -X POST \
+              -H "Authorization: token $FORGEJO_TOKEN" \
+              -H "Content-Type: application/json" \
+              "$API/repos/$OWNER/$REPO/releases" \
+              -d '{"tag_name":"latest","name":"latest","body":"Always points to the latest release. Used by the auto-updater.","draft":false,"prerelease":false}' | \
+              python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")"
+            echo "Created 'latest' release (id $LATEST_ID)"
+          fi
+
+          upload_asset "$LATEST_ID" "$LATEST_JSON"
+
+          echo ""
+          echo "Release : https://git.thoxy.xyz/thoxy/dayz-community-hub/releases/tag/$TAG"
+          echo "Updater : https://git.thoxy.xyz/thoxy/dayz-community-hub/releases/download/latest/latest.json"
