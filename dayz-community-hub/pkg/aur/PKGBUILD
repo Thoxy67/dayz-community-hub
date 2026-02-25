@@ -1,6 +1,6 @@
 # Maintainer: thoxy <your@email.here>
 pkgname=dayz-community-hub-git
-pkgver=r47.ad613d6
+pkgver=r54.249caad
 pkgrel=1
 pkgdesc="DayZ SA Multi Launcher and Server Browser"
 arch=('x86_64')
@@ -49,7 +49,7 @@ package() {
     cd "$pkgname/dayz-community-hub"
 
     # Binary
-    install -Dm755 "src-tauri/target/release/dayz-community-hub" \
+    install -Dm755 "$srcdir/$pkgname/target/release/dayz-community-hub" \
         "$pkgdir/usr/bin/dayz-community-hub"
 
     # Icons (XDG hicolor)
