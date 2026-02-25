@@ -28,6 +28,16 @@ jobs:
       - name: Checkout
         uses: https://code.forgejo.org/actions/checkout@v4
 
+      - name: Cache Cargo registry and build artifacts
+        uses: https://code.forgejo.org/actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: windows-cargo-
+
       - name: Install JS dependencies
         run: bun install --frozen-lockfile
 
@@ -36,6 +46,7 @@ jobs:
           # Signing is done manually after zipping — keep these empty during build
           TAURI_SIGNING_PRIVATE_KEY: ""
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          CARGO_BUILD_JOBS: "4"
         run: bun tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --no-bundle
 
       - name: Zip the binary (ZIP_STORED — required by Tauri updater)

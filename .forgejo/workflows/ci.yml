@@ -28,6 +28,16 @@ jobs:
       - name: Checkout
         uses: https://code.forgejo.org/actions/checkout@v4
 
+      - name: Cache Cargo registry and build artifacts
+        uses: https://code.forgejo.org/actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: linux-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: linux-cargo-
+
       - name: Install JS dependencies
         run: bun install --frozen-lockfile
 
@@ -35,4 +45,5 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ""
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          CARGO_BUILD_JOBS: "4"
         run: bun tauri build --no-bundle
