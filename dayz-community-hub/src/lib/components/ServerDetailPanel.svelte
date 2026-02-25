@@ -97,6 +97,7 @@
   // Plain (non-reactive) guard — same pattern as fetchedKey above.
   let bmFetchedKey = '';
   let bmRetryTick = $state(0);
+  let _bmDebounce: ReturnType<typeof setTimeout> | undefined;
 
   $effect(() => {
     const key = `${server.ip}:${server.query_port}`;
@@ -106,24 +107,31 @@
 
     if (!token || key === bmFetchedKey) return;
 
-    bmLoading = true;
-    bmError = '';
-    invoke<BattleMetricsDto>('fetch_battlemetrics_server', { ip: server.ip, port: server.query_port })
-      .then((result) => {
-        if (`${server.ip}:${server.query_port}` === key) {
-          bm = result;
-          bmError = '';
-          bmFetchedKey = key;
-        }
-      })
-      .catch((e: unknown) => {
-        if (`${server.ip}:${server.query_port}` === key) {
-          bm = null;
-          bmError = String(e);
-          bmFetchedKey = key;
-        }
-      })
-      .finally(() => { bmLoading = false; });
+    // Debounce: wait 300ms before firing so rapid row navigation doesn't
+    // hammer the BattleMetrics API with a request per intermediate server.
+    clearTimeout(_bmDebounce);
+    _bmDebounce = setTimeout(() => {
+      if (`${server.ip}:${server.query_port}` !== key) return;
+      bmLoading = true;
+      bmError = '';
+      invoke<BattleMetricsDto>('fetch_battlemetrics_server', { ip: server.ip, port: server.query_port })
+        .then((result) => {
+          if (`${server.ip}:${server.query_port}` === key) {
+            bm = result;
+            bmError = '';
+            bmFetchedKey = key;
+          }
+        })
+        .catch((e: unknown) => {
+          if (`${server.ip}:${server.query_port}` === key) {
+            bm = null;
+            bmError = String(e);
+            bmFetchedKey = key;
+          }
+        })
+        .finally(() => { bmLoading = false; });
+    }, 300);
+    return () => clearTimeout(_bmDebounce);
   });
 
   /** Build a tiny SVG sparkline from player history data. */

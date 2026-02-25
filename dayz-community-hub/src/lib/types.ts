@@ -134,12 +134,11 @@ export interface AppStatsDto {
   player_name: string | null;
   steam_login: string | null;
   has_steamcmd: boolean;
-  /** Steam avatar as a data: URI, null if not configured or not yet fetched. */
-  avatar_url: string | null;
+  // avatar_url removed — cached locally in frontend from fetch_steam_avatar
 }
 
 export interface ModProgressEvent {
-  kind: 'shutting_down_steam' | 'steam_guard_mobile_required' | 'starting' | 'done' | 'failed' | 'finished';
+  kind: 'shutting_down_steam' | 'steam_guard_mobile_required' | 'log_line' | 'starting' | 'done' | 'failed' | 'finished';
   current: number;
   total: number;
   mod_id: number;
@@ -147,6 +146,7 @@ export interface ModProgressEvent {
   ok: number;
   failed: number;
   hint: string | null;
+  log_line: string | null;
 }
 
 export interface PingResult {
@@ -214,4 +214,6 @@ export interface ModOpState {
   ok: number;
   failed: number;
   hint: string | null;
+  /** Raw steamcmd output lines */
+  log: string[];
 }

@@ -87,6 +87,9 @@
   // Thumbnail URIs — $state array so Svelte tracks per-index mutations
   let thumbs = $state<(string | null)[]>([]);
   const thumbFetching = new Set<number>();
+  // Generation counter: incremented when articles list changes so that
+  // stale in-flight fetches from a previous article list are discarded.
+  let thumbGeneration = 0;
 
   // Bulk-resolve cached images on disk in one synchronous IPC call, then
   // kick off network fetches only for the ones that are missing.
@@ -94,8 +97,10 @@
     if (thumbs.length !== articles.length) {
       thumbs = Array(articles.length).fill(null);
       thumbFetching.clear();
+      thumbGeneration++;
     }
 
+    const gen = thumbGeneration;
     const imageUrls = articles
       .map((a) => a.image_url)
       .filter((u): u is string => !!u);
@@ -105,6 +110,7 @@
     // 1) Bulk-resolve everything already on disk (single IPC, sync on Rust side).
     invoke<[string, string][]>('resolve_cached_images', { urls: imageUrls })
       .then((cached) => {
+        if (thumbGeneration !== gen) return; // articles changed — discard
         for (const [url, localPath] of cached) {
           const assetUrl = convertFileSrc(localPath);
           imgCache.set(url, assetUrl);
@@ -123,12 +129,13 @@
       })
       .catch(() => {})
       .finally(() => {
+        if (thumbGeneration !== gen) return; // articles changed — discard
         // 2) Fetch anything still missing from the network.
         articles.forEach((article, i) => {
           if (thumbFetching.has(i) || !article.image_url) return;
           thumbFetching.add(i);
           fetchImage(article.image_url)
-            .then((uri) => { thumbs[i] = uri; })
+            .then((uri) => { if (thumbGeneration === gen) thumbs[i] = uri; })
             .catch(() => {});
         });
       });

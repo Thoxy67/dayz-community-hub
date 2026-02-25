@@ -1,6 +1,7 @@
 <script lang="ts">
   import Icon from '@iconify/svelte';
   import { invoke } from '@tauri-apps/api/core';
+  import { listen } from '@tauri-apps/api/event';
   import { open as openDialog } from '@tauri-apps/plugin-dialog';
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { onDestroy } from 'svelte';
@@ -36,7 +37,7 @@
   let detectingCmd     = $state(false);
   let downloadingCmd   = $state(false);
   let downloadError    = $state('');
-  let rescanInterval: ReturnType<typeof setInterval> | null = null;
+  let unlistenSteamcmd: (() => void) | null = null;
 
   // ── Navigation ─────────────────────────────────────────────────────────────
   function stepIndex(s: Step) { return STEPS.indexOf(s); }
@@ -83,22 +84,22 @@
 
   function startRescan() {
     stopRescan();
-    rescanInterval = setInterval(async () => {
-      try {
-        const status = await invoke<SteamcmdStatus>('detect_steamcmd');
-        steamcmdStatus = status;
-        if (status.found && status.path) {
-          steamcmdPath = status.path;
-          stopRescan();
-        }
-      } catch { /* ignore */ }
-    }, 5000);
+    // Listen for the Rust-side watcher event instead of polling every 5s.
+    listen<SteamcmdStatus>('steamcmd-detected', ({ payload }) => {
+      steamcmdStatus = payload;
+      if (payload.found && payload.path) {
+        steamcmdPath = payload.path;
+        stopRescan();
+      }
+    }).then((fn) => { unlistenSteamcmd = fn; });
+    // Tell Rust to start watching
+    invoke('watch_steamcmd').catch(() => {});
   }
 
   function stopRescan() {
-    if (rescanInterval !== null) {
-      clearInterval(rescanInterval);
-      rescanInterval = null;
+    if (unlistenSteamcmd) {
+      unlistenSteamcmd();
+      unlistenSteamcmd = null;
     }
   }
 

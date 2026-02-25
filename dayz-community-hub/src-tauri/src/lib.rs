@@ -66,6 +66,9 @@ pub struct AppState {
     pub cached_avatar: Option<String>,
     /// mod_id → remote time_updated from Steam Workshop API.
     pub mod_update_cache: std::collections::HashMap<u64, i64>,
+    /// BattleMetrics response cache: "ip:port" → (dto, fetched_at).
+    /// Avoids two HTTP round-trips on every panel open for the same server.
+    pub bm_cache: std::collections::HashMap<String, (BattleMetricsDto, std::time::Instant)>,
 }
 
 type SharedState = Arc<Mutex<AppState>>;
@@ -219,8 +222,8 @@ pub struct AppStatsDto {
     pub player_name: Option<String>,
     pub steam_login: Option<String>,
     pub has_steamcmd: bool,
-    /// Steam avatar as a data: URI, or None if not configured / failed.
-    pub avatar_url: Option<String>,
+    // avatar_url removed — frontend caches it locally from fetch_steam_avatar
+    // to avoid sending 13–17 KB of base64 on every get_app_stats call.
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -233,6 +236,7 @@ pub struct ModProgressEvent {
     pub ok: usize,
     pub failed: usize,
     pub hint: Option<String>,
+    pub log_line: Option<String>,
 }
 
 /// Response from the initialize command.
@@ -393,6 +397,7 @@ fn mod_progress_to_event(msg: &ModProgress) -> ModProgressEvent {
             ok: 0,
             failed: 0,
             hint: None,
+            log_line: None,
         },
         ModProgress::SteamGuardMobileRequired => ModProgressEvent {
             kind: "steam_guard_mobile_required".into(),
@@ -403,6 +408,18 @@ fn mod_progress_to_event(msg: &ModProgress) -> ModProgressEvent {
             ok: 0,
             failed: 0,
             hint: None,
+            log_line: None,
+        },
+        ModProgress::LogLine(line) => ModProgressEvent {
+            kind: "log_line".into(),
+            current: 0,
+            total: 0,
+            mod_id: 0,
+            name: String::new(),
+            ok: 0,
+            failed: 0,
+            hint: None,
+            log_line: Some(line.clone()),
         },
         ModProgress::Starting {
             current,
@@ -418,6 +435,7 @@ fn mod_progress_to_event(msg: &ModProgress) -> ModProgressEvent {
             ok: 0,
             failed: 0,
             hint: None,
+            log_line: None,
         },
         ModProgress::Done {
             current,
@@ -433,6 +451,7 @@ fn mod_progress_to_event(msg: &ModProgress) -> ModProgressEvent {
             ok: 0,
             failed: 0,
             hint: None,
+            log_line: None,
         },
         ModProgress::Failed {
             current,
@@ -449,6 +468,7 @@ fn mod_progress_to_event(msg: &ModProgress) -> ModProgressEvent {
             ok: 0,
             failed: 0,
             hint: None,
+            log_line: None,
         },
         ModProgress::Finished {
             ok,
@@ -464,11 +484,19 @@ fn mod_progress_to_event(msg: &ModProgress) -> ModProgressEvent {
             ok: *ok,
             failed: *failed,
             hint: hint.clone(),
+            log_line: None,
         },
     }
 }
 
 // ─── Tauri Commands ───────────────────────────────────────────────────────────
+
+/// Deduplicate a server list by (ip, query_port), keeping the first occurrence.
+fn dedup_servers(mut servers: Vec<dayz_community_hub_core::Server>) -> Vec<dayz_community_hub_core::Server> {
+    let mut seen = std::collections::HashSet::new();
+    servers.retain(|s| seen.insert((s.endpoint.ip.clone(), s.endpoint.port)));
+    servers
+}
 
 /// Initialize the application: create DayzCtl, load cached servers.
 /// Called once by the frontend on mount. The window is already visible.
@@ -483,14 +511,14 @@ async fn initialize(app: AppHandle) -> Result<InitResult, String> {
     // Try to load cached server list (sync file read — fast)
     let cache_path = config::default_data_dir().join("server_list_cache.json");
     let (servers, from_cache) = if let Some(cache) = api::load_server_list_cache(&cache_path) {
-        (cache.list.result, true)
+        (dedup_servers(cache.list.result), true)
     } else {
         // No cache — fetch from network
         let client = ctl.http_client().clone();
         match api::fetch_servers(&client).await {
             Ok(list) => {
                 api::save_server_list_cache(&cache_path, &list);
-                (list.result, false)
+                (dedup_servers(list.result), false)
             }
             Err(_) => (Vec::new(), false),
         }
@@ -502,6 +530,7 @@ async fn initialize(app: AppHandle) -> Result<InitResult, String> {
         servers,
         cached_avatar: None,
         mod_update_cache: std::collections::HashMap::new(),
+        bm_cache: std::collections::HashMap::new(),
     }));
     let ping_cache: PingCache = Arc::new(RwLock::new(std::collections::HashMap::new()));
 
@@ -554,7 +583,7 @@ async fn refresh_servers(state: State<'_, SharedState>) -> Result<Vec<ServerSlim
     api::save_server_list_cache(&cache_path, &list);
 
     let mut state = state.lock().await;
-    state.servers = list.result;
+    state.servers = dedup_servers(list.result);
     Ok(state.servers.iter().map(server_to_slim_dto).collect())
 }
 
@@ -693,31 +722,23 @@ async fn get_installed_mods(state: State<'_, SharedState>) -> Result<Vec<Install
 /// to benefit from higher rate limits.
 #[tauri::command]
 async fn check_mod_updates(state: State<'_, SharedState>) -> Result<Vec<InstalledModDto>, String> {
-    // Collect api key and a ctl clone without holding the lock during I/O.
-    // The filesystem scan (get_installed_mods) is done outside the lock via
-    // spawn_blocking to avoid blocking all other IPC commands.
+    // Single lock acquisition — grab everything needed before any I/O.
     let (api_key, ctl_clone) = {
         let s = state.lock().await;
-        let key = s.ctl.profile().steam_api_key.clone();
-        let ctl = s.ctl.clone_for_launch();
-        (key, ctl)
+        (s.ctl.profile().steam_api_key.clone(), s.ctl.clone_for_launch())
     };
 
-    let ctl_for_scan = {
-        let s = state.lock().await;
-        s.ctl.clone_for_launch()
-    };
-    let mod_ids: Vec<u64> = tokio::task::spawn_blocking(move || ctl_for_scan.get_installed_mods())
+    // Single filesystem scan — reuse results for both ID extraction and final DTO.
+    let installed_mods = tokio::task::spawn_blocking(move || ctl_clone.get_installed_mods())
         .await
         .map_err(|e| format!("Task join error: {}", e))?
-        .unwrap_or_default()
-        .iter()
-        .map(|m| m.id)
-        .collect();
+        .unwrap_or_default();
 
-    if mod_ids.is_empty() {
+    if installed_mods.is_empty() {
         return Ok(vec![]);
     }
+
+    let mod_ids: Vec<u64> = installed_mods.iter().map(|m| m.id).collect();
 
     // Build query — IPublishedFileService/GetDetails accepts up to 100 IDs per
     // request via numbered `publishedfileids[N]` params (POST form or GET query).
@@ -775,13 +796,8 @@ async fn check_mod_updates(state: State<'_, SharedState>) -> Result<Vec<Installe
         s.mod_update_cache = remote_map.clone();
     }
 
-    // Re-scan filesystem and return enriched list
-    let mods = tokio::task::spawn_blocking(move || ctl_clone.get_installed_mods())
-        .await
-        .map_err(|e| format!("Task join error: {}", e))?
-        .map_err(|e| e.to_string())?;
-
-    Ok(mods
+    // Reuse the installed_mods from the earlier scan — no second filesystem walk needed.
+    Ok(installed_mods
         .iter()
         .map(|m| installed_mod_to_dto(m, &remote_map))
         .collect())
@@ -1060,30 +1076,43 @@ async fn start_mod_operation(
     on_progress: Channel<ModProgressEvent>,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    // For "update_stale" we need to scan the filesystem to find stale mods.
-    // We do this outside the lock to avoid blocking all other IPC commands
-    // during the (potentially multi-second) workshop directory walk.
-    let stale_mods: Option<Vec<(u64, String)>> = if op_type == "update_stale" {
-        let (update_cache, ctl_clone) = {
-            let s = state.lock().await;
-            (s.mod_update_cache.clone(), s.ctl.clone_for_launch())
-        };
-        let stale = tokio::task::spawn_blocking(move || ctl_clone.get_installed_mods())
-            .await
-            .map_err(|e| format!("Task join error: {}", e))?
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|m| {
-                update_cache
-                    .get(&m.id)
-                    .map(|&r| r > m.local_updated)
-                    .unwrap_or(false)
-            })
-            .map(|m| (m.id, m.name.clone()))
-            .collect::<Vec<_>>();
-        Some(stale)
-    } else {
-        None
+    // For operations that require a filesystem scan, do it BEFORE acquiring the
+    // lock so we don't block other IPC commands during the workshop directory walk.
+    let pre_scan: Option<Vec<(u64, String)>> = match op_type.as_str() {
+        "update_stale" => {
+            let (update_cache, ctl_clone) = {
+                let s = state.lock().await;
+                (s.mod_update_cache.clone(), s.ctl.clone_for_launch())
+            };
+            let stale = tokio::task::spawn_blocking(move || ctl_clone.get_installed_mods())
+                .await
+                .map_err(|e| format!("Task join error: {}", e))?
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|m| {
+                    update_cache
+                        .get(&m.id)
+                        .map(|&r| r > m.local_updated)
+                        .unwrap_or(false)
+                })
+                .map(|m| (m.id, m.name.clone()))
+                .collect::<Vec<_>>();
+            Some(stale)
+        }
+        "update_selected" => {
+            let ids = mod_ids.clone().unwrap_or_default();
+            let ctl_clone = { state.lock().await.ctl.clone_for_launch() };
+            let id_names = tokio::task::spawn_blocking(move || ctl_clone.get_installed_mods())
+                .await
+                .map_err(|e| format!("Task join error: {}", e))?
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|m| ids.contains(&m.id))
+                .map(|m| (m.id, m.name.clone()))
+                .collect::<Vec<_>>();
+            Some(id_names)
+        }
+        _ => None,
     };
 
     let mut rx = {
@@ -1109,27 +1138,15 @@ async fn start_mod_operation(
             }
             "update_all" => ModOperation::UpdateAll,
             "update_stale" => ModOperation::UpdateStale {
-                stale_mods: stale_mods.unwrap_or_default(),
+                stale_mods: pre_scan.unwrap_or_default(),
             },
             "update_one" => ModOperation::UpdateOne {
                 mod_id: mod_id.ok_or("mod_id required")?,
                 name: mod_name.unwrap_or_default(),
             },
-            "update_selected" => {
-                let ids = mod_ids.unwrap_or_default();
-                // Resolve IDs to (id, name) pairs from installed mods for progress display
-                let installed = state.ctl.clone_for_launch();
-                let id_names: Vec<(u64, String)> =
-                    tokio::task::spawn_blocking(move || installed.get_installed_mods())
-                        .await
-                        .map_err(|e| format!("Task join error: {}", e))?
-                        .unwrap_or_default()
-                        .into_iter()
-                        .filter(|m| ids.contains(&m.id))
-                        .map(|m| (m.id, m.name.clone()))
-                        .collect();
-                ModOperation::UpdateSelected { mods: id_names }
-            }
+            "update_selected" => ModOperation::UpdateSelected {
+                mods: pre_scan.unwrap_or_default(),
+            },
             other => return Err(format!("Unknown operation: {}", other)),
         };
         let (rx, _handle) = state
@@ -1200,27 +1217,33 @@ async fn query_a2s(
         }
     }; // Mutex released here — before any network I/O
 
-    eprintln!("[query_a2s] creating A2SClient …");
-    let client = a2s::A2SClient::new()
-        .await
-        .map_err(|e| format!("A2SClient::new failed: {e}"))?;
-
-    eprintln!("[query_a2s] querying info …");
-    let info = client
-        .info(&query_addr)
-        .await
-        .map_err(|e| format!("A2S info failed for {query_addr}: {e}"))?;
-
+    // Run info and players queries concurrently — each needs its own client
+    // because A2SClient sockets are stateful (sharing causes InvalidResponse).
+    eprintln!("[query_a2s] querying info + players concurrently …");
+    let addr_info = query_addr.clone();
+    let addr_players = query_addr.clone();
+    let (info_res, players_res) = tokio::join!(
+        async move {
+            let c = a2s::A2SClient::new()
+                .await
+                .map_err(|e| format!("A2SClient::new failed: {e}"))?;
+            c.info(&addr_info)
+                .await
+                .map_err(|e| format!("A2S info failed for {addr_info}: {e}"))
+        },
+        async move {
+            let c = a2s::A2SClient::new()
+                .await
+                .map_err(|e| format!("A2SClient::new (players) failed: {e}"))?;
+            c.players(&addr_players).await.map_err(|e| e.to_string())
+        }
+    );
+    let info = info_res?;
     eprintln!(
         "[query_a2s] info ok: name={:?} players={}/{}",
         info.name, info.players, info.max_players
     );
-
-    // Players query with a fresh client (socket is stateful — sharing causes InvalidResponse)
-    let client2 = a2s::A2SClient::new()
-        .await
-        .map_err(|e| format!("A2SClient::new (players) failed: {e}"))?;
-    let players_list = match client2.players(&query_addr).await {
+    let players_list = match players_res {
         Ok(pl) => {
             eprintln!("[query_a2s] players ok: {} entries", pl.len());
             pl.into_iter()
@@ -1257,11 +1280,19 @@ async fn query_a2s(
     })
 }
 
-/// Resolve the on-disk image cache directory, creating it if needed.
-fn image_cache_dir() -> Result<std::path::PathBuf, String> {
+/// Resolve the on-disk image cache directory (sync — for use in sync contexts).
+fn image_cache_dir_sync() -> Result<std::path::PathBuf, String> {
     let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
     let dir = std::path::PathBuf::from(home).join(".local/share/dayz-community-hub/cache/images");
     std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create cache dir: {e}"))?;
+    Ok(dir)
+}
+
+/// Resolve the on-disk image cache directory (async — for use in async commands).
+async fn image_cache_dir() -> Result<std::path::PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+    let dir = std::path::PathBuf::from(home).join(".local/share/dayz-community-hub/cache/images");
+    tokio::fs::create_dir_all(&dir).await.map_err(|e| format!("Failed to create cache dir: {e}"))?;
     Ok(dir)
 }
 
@@ -1301,7 +1332,7 @@ fn url_to_cache_filename(url: &str) -> String {
 /// The frontend serves it via `convertFileSrc()` (Tauri asset protocol).
 #[tauri::command]
 async fn fetch_image(url: String) -> Result<String, String> {
-    let cache_dir = image_cache_dir()?;
+    let cache_dir = image_cache_dir().await?;
     let filename = url_to_cache_filename(&url);
     let path = cache_dir.join(&filename);
 
@@ -1332,7 +1363,7 @@ async fn fetch_image(url: String) -> Result<String, String> {
 /// frontend can fall back to individual `fetch_image` calls for those.
 #[tauri::command]
 fn resolve_cached_images(urls: Vec<String>) -> Result<Vec<(String, String)>, String> {
-    let cache_dir = image_cache_dir()?;
+    let cache_dir = image_cache_dir_sync()?;
     let mut result = Vec::with_capacity(urls.len());
     for url in urls {
         let filename = url_to_cache_filename(&url);
@@ -1385,7 +1416,6 @@ async fn get_app_stats(state: State<'_, SharedState>) -> Result<AppStatsDto, Str
         player_name: state.ctl.profile().player.clone(),
         steam_login: state.ctl.steamcmd_login().map(|s| s.to_string()),
         has_steamcmd: state.ctl.has_steamcmd(),
-        avatar_url: state.cached_avatar.clone(),
     })
 }
 
@@ -1398,8 +1428,17 @@ async fn fetch_battlemetrics_server(
     port: i64,
     state: State<'_, SharedState>,
 ) -> Result<BattleMetricsDto, String> {
+    let bm_cache_key = format!("{}:{}", ip, port);
+    const BM_TTL_SECS: u64 = 300; // 5 minutes
+
     let token = {
         let s = state.lock().await;
+        // Return cached result if still fresh
+        if let Some((cached, fetched_at)) = s.bm_cache.get(&bm_cache_key) {
+            if fetched_at.elapsed().as_secs() < BM_TTL_SECS {
+                return Ok(cached.clone());
+            }
+        }
         s.ctl
             .profile()
             .battlemetrics_api_key
@@ -1487,14 +1526,22 @@ async fn fetch_battlemetrics_server(
         })
         .collect();
 
-    Ok(BattleMetricsDto {
+    let result = BattleMetricsDto {
         id: bm_id,
         rank,
         status,
         country,
         uptime,
         player_history,
-    })
+    };
+
+    // Store in cache
+    state.lock().await.bm_cache.insert(
+        bm_cache_key,
+        (result.clone(), std::time::Instant::now()),
+    );
+
+    Ok(result)
 }
 
 /// Format a Unix timestamp (seconds) as an ISO 8601 string for BattleMetrics API queries.
@@ -1767,12 +1814,13 @@ async fn launch_offline_mission(
     Ok(())
 }
 
-/// Start background pinging. Streams results via Channel.
-/// Pings specific endpoints (favorites, history, and visible servers).
+/// Start background pinging for all servers.
+/// Returns immediately; results are pushed to the frontend via "ping-batch" events.
+/// Each event payload is a Vec<PingResultDto> (batch of up to PING_BATCH_SIZE results).
 #[tauri::command]
 async fn start_pinging(
-    targets: Vec<String>, // "ip:port" strings to ping (sent by frontend)
-    on_result: Channel<PingResultDto>,
+    targets: Vec<String>, // "ip:port" strings (favorites, history) — pinged first
+    app: AppHandle,
     state: State<'_, SharedState>,
     ping_cache: State<'_, PingCache>,
 ) -> Result<(), String> {
@@ -1791,10 +1839,10 @@ async fn start_pinging(
         }
     }
 
-    // Add first 300 servers from state (if not already in targets)
+    // Add all servers from state (if not already in targets)
     {
         let state = state.lock().await;
-        for s in state.servers.iter().take(300) {
+        for s in state.servers.iter() {
             let key = format!("{}:{}", s.endpoint.ip, s.endpoint.port);
             if seen.insert(key) {
                 endpoints.push((s.endpoint.ip.clone(), s.endpoint.port));
@@ -1802,22 +1850,23 @@ async fn start_pinging(
         }
     }
 
-    // Clone the Arc so the spawned task owns it — no AppState lock needed.
     let ping_cache_arc = ping_cache.inner().clone();
     let semaphore = Arc::new(tokio::sync::Semaphore::new(50)); // max 50 concurrent pings
+    const BATCH_SIZE: usize = 50;
 
     tokio::spawn(async move {
-        let mut handles = Vec::new();
+        // Channel for workers → batcher
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<PingResultDto>(256);
+
+        // Spawn all ping workers
         for (ip, port) in endpoints {
             let ip_clone = ip.clone();
-            let on_result_clone = on_result.clone();
             let cache_clone = ping_cache_arc.clone();
-            let permit = semaphore.clone();
+            let sem = semaphore.clone();
+            let tx_clone = tx.clone();
 
-            let handle = tokio::spawn(async move {
-                let _permit = permit.acquire().await;
-                // Build a minimal Server so we can call a2s_query::ping_server,
-                // exactly like the TUI does — ICMP echo, no TCP, no UDP A2S.
+            tokio::spawn(async move {
+                let _permit = sem.acquire().await;
                 let server = api::Server {
                     endpoint: dayz_community_hub_core::Endpoint {
                         ip: ip_clone.clone(),
@@ -1826,22 +1875,29 @@ async fn start_pinging(
                     ..Default::default()
                 };
                 if let Ok(ms) = a2s_query::ping_server(&server).await {
-                    let key = format!("{}:{}", ip_clone, port);
-                    // Use a write lock on the dedicated ping cache — this never
-                    // blocks commands that only need AppState.
-                    cache_clone.write().await.insert(key, ms);
-                    let _ = on_result_clone.send(PingResultDto {
-                        ip: ip_clone,
-                        port,
+                    cache_clone.write().await.insert(
+                        format!("{}:{}", ip_clone, port),
                         ms,
-                    });
+                    );
+                    let _ = tx_clone.send(PingResultDto { ip: ip_clone, port, ms }).await;
                 }
             });
-            handles.push(handle);
         }
-        // Wait for all pings to complete
-        for h in handles {
-            let _ = h.await;
+        // Drop our sender so the channel closes when all workers finish
+        drop(tx);
+
+        // Collect results and emit in batches to avoid flooding the frontend
+        let mut batch: Vec<PingResultDto> = Vec::with_capacity(BATCH_SIZE);
+        while let Some(result) = rx.recv().await {
+            batch.push(result);
+            if batch.len() >= BATCH_SIZE {
+                let _ = app.emit("ping-batch", &batch);
+                batch.clear();
+            }
+        }
+        // Emit any remaining results
+        if !batch.is_empty() {
+            let _ = app.emit("ping-batch", &batch);
         }
     });
 
@@ -1946,23 +2002,25 @@ async fn export_profile(path: String) -> Result<(), String> {
         std::collections::HashMap::new();
 
     // Walk all .json files in the data dir (non-recursive — only top-level)
-    let read_dir =
-        std::fs::read_dir(&data_dir).map_err(|e| format!("Cannot read data dir: {e}"))?;
+    let mut read_dir = tokio::fs::read_dir(&data_dir).await
+        .map_err(|e| format!("Cannot read data dir: {e}"))?;
 
-    for entry in read_dir.flatten() {
+    while let Some(entry) = read_dir.next_entry().await
+        .map_err(|e| format!("Cannot read dir entry: {e}"))?
+    {
         let fname = entry.file_name();
-        let name = fname.to_string_lossy();
+        let name = fname.to_string_lossy().to_string();
         if !name.ends_with(".json") {
             continue;
         }
-        if EXPORT_EXCLUDE.contains(&name.as_ref()) {
+        if EXPORT_EXCLUDE.contains(&name.as_str()) {
             continue;
         }
-        let raw = std::fs::read_to_string(entry.path())
+        let raw = tokio::fs::read_to_string(entry.path()).await
             .map_err(|e| format!("Cannot read {name}: {e}"))?;
         let value: serde_json::Value =
             serde_json::from_str(&raw).map_err(|e| format!("{name} parse error: {e}"))?;
-        files.insert(name.to_string(), value);
+        files.insert(name, value);
     }
 
     if !files.contains_key("profile.json") {
@@ -1975,7 +2033,8 @@ async fn export_profile(path: String) -> Result<(), String> {
     let compressed = zstd::encode_all(std::io::Cursor::new(&json_bytes), 9)
         .map_err(|e| format!("zstd compression failed: {e}"))?;
 
-    std::fs::write(&path, &compressed).map_err(|e| format!("Cannot write export file: {e}"))?;
+    tokio::fs::write(&path, &compressed).await
+        .map_err(|e| format!("Cannot write export file: {e}"))?;
 
     Ok(())
 }
@@ -1985,7 +2044,8 @@ async fn export_profile(path: String) -> Result<(), String> {
 /// The app is restarted by the caller after this returns.
 #[tauri::command]
 async fn import_profile(path: String, state: State<'_, SharedState>) -> Result<ProfileDto, String> {
-    let compressed = std::fs::read(&path).map_err(|e| format!("Cannot read import file: {e}"))?;
+    let compressed = tokio::fs::read(&path).await
+        .map_err(|e| format!("Cannot read import file: {e}"))?;
 
     let json_bytes = zstd::decode_all(std::io::Cursor::new(&compressed))
         .map_err(|e| format!("zstd decompression failed: {e}"))?;
@@ -1997,19 +2057,19 @@ async fn import_profile(path: String, state: State<'_, SharedState>) -> Result<P
     let version = raw["version"].as_u64().unwrap_or(1) as u8;
 
     let data_dir = config::default_data_dir();
-    std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+    tokio::fs::create_dir_all(&data_dir).await.map_err(|e| e.to_string())?;
 
     match version {
         1 => {
             // Legacy format: { version, profile, mods? }
             let profile_str =
                 serde_json::to_string_pretty(&raw["profile"]).map_err(|e| e.to_string())?;
-            std::fs::write(data_dir.join("profile.json"), &profile_str)
+            tokio::fs::write(data_dir.join("profile.json"), &profile_str).await
                 .map_err(|e| format!("Cannot write profile.json: {e}"))?;
             if !raw["mods"].is_null() {
                 let mods_str =
                     serde_json::to_string_pretty(&raw["mods"]).map_err(|e| e.to_string())?;
-                std::fs::write(data_dir.join("mods.json"), &mods_str)
+                tokio::fs::write(data_dir.join("mods.json"), &mods_str).await
                     .map_err(|e| format!("Cannot write mods.json: {e}"))?;
             }
         }
@@ -2018,7 +2078,7 @@ async fn import_profile(path: String, state: State<'_, SharedState>) -> Result<P
             let files = raw["files"].as_object().ok_or("Bundle files map missing")?;
             for (filename, value) in files {
                 let content = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
-                std::fs::write(data_dir.join(filename), &content)
+                tokio::fs::write(data_dir.join(filename), &content).await
                     .map_err(|e| format!("Cannot write {filename}: {e}"))?;
             }
         }
@@ -2043,7 +2103,7 @@ async fn import_profile(path: String, state: State<'_, SharedState>) -> Result<P
 async fn reset_profile(_state: State<'_, SharedState>) -> Result<(), String> {
     let data_dir = config::default_data_dir();
     if data_dir.exists() {
-        std::fs::remove_dir_all(&data_dir)
+        tokio::fs::remove_dir_all(&data_dir).await
             .map_err(|e| format!("Cannot remove data directory: {e}"))?;
     }
     Ok(())
@@ -2136,6 +2196,77 @@ async fn detect_steamcmd(state: State<'_, SharedState>) -> Result<SteamcmdStatus
     })
 }
 
+/// Start a background task that polls for steamcmd every 3 seconds and emits
+/// "steamcmd-detected" with a SteamcmdStatusDto payload when found.
+/// Replaces the frontend setInterval polling pattern — no IPC on every tick.
+#[tauri::command]
+async fn watch_steamcmd(app: AppHandle, state: State<'_, SharedState>) -> Result<(), String> {
+    let explicit_path = {
+        let s = state.lock().await;
+        s.ctl.profile().steamcmd_path.clone()
+    };
+
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3));
+        loop {
+            interval.tick().await;
+
+            #[cfg(target_os = "windows")]
+            let binary_name = "steamcmd.exe";
+            #[cfg(not(target_os = "windows"))]
+            let binary_name = "steamcmd";
+
+            #[cfg(target_os = "windows")]
+            let platform = "windows";
+            #[cfg(target_os = "linux")]
+            let platform = "linux";
+            #[cfg(target_os = "macos")]
+            let platform = "macos";
+
+            // Check explicit path first
+            if let Some(ref p) = explicit_path {
+                if !p.is_empty() && std::path::Path::new(p).exists() {
+                    let _ = app.emit("steamcmd-detected", SteamcmdStatusDto {
+                        found: true,
+                        path: Some(p.clone()),
+                        platform: platform.into(),
+                    });
+                    return;
+                }
+            }
+
+            // PATH lookup
+            if let Ok(found_path) = which::which(binary_name) {
+                let _ = app.emit("steamcmd-detected", SteamcmdStatusDto {
+                    found: true,
+                    path: Some(found_path.to_string_lossy().to_string()),
+                    platform: platform.into(),
+                });
+                return;
+            }
+
+            // Windows fallback
+            #[cfg(target_os = "windows")]
+            if let Some(appdata) = std::env::var_os("APPDATA") {
+                let candidate = std::path::PathBuf::from(appdata)
+                    .join("dayz-community-hub")
+                    .join("steamcmd")
+                    .join("steamcmd.exe");
+                if candidate.exists() {
+                    let _ = app.emit("steamcmd-detected", SteamcmdStatusDto {
+                        found: true,
+                        path: Some(candidate.to_string_lossy().to_string()),
+                        platform: platform.into(),
+                    });
+                    return;
+                }
+            }
+        }
+    });
+
+    Ok(())
+}
+
 /// Windows-only: download steamcmd.zip from Valve and unzip it into
 /// `%APPDATA%\dayz-community-hub\steamcmd\`.
 /// Returns the path to the extracted `steamcmd.exe`.
@@ -2153,11 +2284,11 @@ async fn download_steamcmd_windows() -> Result<String, String> {
         let install_dir = std::path::PathBuf::from(&appdata)
             .join("dayz-community-hub")
             .join("steamcmd");
-        std::fs::create_dir_all(&install_dir)
+        tokio::fs::create_dir_all(&install_dir).await
             .map_err(|e| format!("Cannot create steamcmd dir: {e}"))?;
 
         let exe_path = install_dir.join("steamcmd.exe");
-        if exe_path.exists() {
+        if tokio::fs::try_exists(&exe_path).await.unwrap_or(false) {
             return Ok(exe_path.to_string_lossy().to_string());
         }
 
@@ -2350,6 +2481,8 @@ mod updater {
             .ok_or(UpdateError::NoPendingUpdate)?;
 
         let mut started = false;
+        let mut last_emit = std::time::Instant::now();
+        let mut pending_bytes: usize = 0;
         update
             .download_and_install(
                 |chunk_length, content_length| {
@@ -2357,7 +2490,14 @@ mod updater {
                         let _ = on_event.send(DownloadEvent::Started { content_length });
                         started = true;
                     }
-                    let _ = on_event.send(DownloadEvent::Progress { chunk_length });
+                    // Throttle progress events to at most one per 100ms to avoid
+                    // flooding the IPC bridge on fast connections (~800 events/50MB otherwise).
+                    pending_bytes += chunk_length;
+                    if last_emit.elapsed() >= std::time::Duration::from_millis(100) {
+                        let _ = on_event.send(DownloadEvent::Progress { chunk_length: pending_bytes });
+                        pending_bytes = 0;
+                        last_emit = std::time::Instant::now();
+                    }
                 },
                 || {
                     let _ = on_event.send(DownloadEvent::Finished);
@@ -2465,6 +2605,7 @@ pub fn run(args: CliArgs) {
             reset_profile,
             restart_app,
             detect_steamcmd,
+            watch_steamcmd,
             download_steamcmd_windows,
             get_cli_args,
             fetch_battlemetrics_server,

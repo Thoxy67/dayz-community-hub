@@ -24,6 +24,7 @@
     ServersFilterState,
     CliArgs,
   } from '$lib/types';
+  // PingResult is used by the ping-batch event listener below
 
   import Icon from '@iconify/svelte';
   import TitleBar from '$lib/components/TitleBar.svelte';
@@ -61,6 +62,7 @@
   let stats = $state<AppStatsDto | null>(null);
   let steamPlayers = $state<number | null>(null);
   let pingCache = $state<Map<string, number>>(new Map());
+  let avatarUrl = $state<string | null>(null);
   let offlineMissions = $state<string[]>([]);
   let offlineStatus = $state('');
   let offlineStatusKind = $state<'info' | 'success' | 'error' | 'warning'>('info');
@@ -110,6 +112,7 @@
     ok: 0,
     failed: 0,
     hint: null,
+    log: [],
   });
 
   // ── Derived helpers ───────────────────────────────────────────────────────
@@ -250,7 +253,7 @@
     }
   }
 
-  // ── Pinging via Channel ───────────────────────────────────────────────────
+  // ── Pinging ───────────────────────────────────────────────────────────────
 
   /** Ping a single server and update the reactive cache in-place. */
   async function pingSingle(ip: string, port: number) {
@@ -266,7 +269,7 @@
   }
 
   function startPinging() {
-    // Collect favorites + history endpoints as explicit targets
+    // Collect favorites + history endpoints as explicit targets (pinged first)
     const targets: string[] = [];
     if (profile) {
       for (const f of profile.favorites) {
@@ -276,15 +279,8 @@
         targets.push(`${h.ip}:${h.port}`);
       }
     }
-
-    const onResult = new Channel<PingResult>();
-    onResult.onmessage = (msg) => {
-      // Mutate in-place: Svelte 5 tracks Map mutations reactively, so we
-      // avoid creating a new Map object on every ping result (which would
-      // trigger a full re-render of all server rows for each of ~300 pings).
-      pingCache.set(`${msg.ip}:${msg.port}`, msg.ms);
-    };
-    invoke('start_pinging', { targets, onResult }).catch(() => {});
+    // Fire-and-forget: results arrive via 'ping-batch' events (see onMount listener)
+    invoke('start_pinging', { targets }).catch(() => {});
   }
 
   // ── Initialization ─────────────────────────────────────────────────────────
@@ -305,22 +301,24 @@
         handleCliArgs(queued);
       }
 
-      // 3b. Fetch Steam avatar in the background (non-blocking)
-      invoke('fetch_steam_avatar').then(() => loadStats()).catch(() => {});
+      // 3b. Fetch Steam avatar in the background — result stored locally,
+      // no need to re-call loadStats() just to get the avatar.
+      invoke<string | null>('fetch_steam_avatar').then((url) => { avatarUrl = url; }).catch(() => {});
 
       // 3. Load servers from cache (already in backend state)
       serversLoading = true;
+      const fromCache = result.from_cache;
       loadServers().then(() => {
         serversLoading = false;
         // 4. Start pinging now that we have servers + profile
         startPinging();
+        // 5. Background refresh if cache was used — only after loadServers
+        // completes to avoid a race where refreshServersBackground finishes
+        // first and its result gets overwritten by the stale cached list.
+        if (fromCache) {
+          refreshServersBackground();
+        }
       });
-
-      // 5. Background refresh if cache was used
-      if (result.from_cache) {
-        // Refresh in background — don't await, don't block UI
-        refreshServersBackground();
-      }
     } catch (e) {
       initError = String(e);
       setStatus(`Initialization failed: ${e}`, 'error');
@@ -355,21 +353,23 @@
 
   // ── Server connect flow ───────────────────────────────────────────────────
   async function connectToServer(server: ServerDto) {
-    let missingIds: number[] = [];
-    try {
-      missingIds = await invoke<number[]>('get_missing_mods', {
-        ip: server.ip,
-        port: server.query_port,
-      });
-    } catch { /* non-fatal */ }
-
-    if (missingIds.length > 0) {
-      // Need full server details to get mod names
-      let fullServer: ServerFullDto | null = null;
+    // Fetch full server details (pure in-memory lookup on backend — fast).
+    // We always need this when mods are involved, so fetch upfront.
+    let fullServer: ServerFullDto | null = null;
+    if (server.mods_count > 0) {
       try {
         fullServer = await invoke<ServerFullDto>('get_server_details', { ip: server.ip, port: server.query_port });
       } catch { /* non-fatal */ }
+    }
 
+    // Compute missing mods locally from the already-loaded installedMods list —
+    // avoids a filesystem scan on every Connect click (was: get_missing_mods IPC call).
+    const installedIds = new Set(installedMods.map((m) => m.id));
+    const missingIds: number[] = (fullServer?.mods ?? [])
+      .map((m: ModDto) => m.steam_workshop_id)
+      .filter((id: number) => !installedIds.has(id));
+
+    if (missingIds.length > 0) {
       const modNames = missingIds
         .map((id) => fullServer?.mods.find((m: ModDto) => m.steam_workshop_id === id)?.name ?? String(id))
         .slice(0, 10)
@@ -762,10 +762,12 @@
         steamId,
         battlemetricsApiKey,
       });
-      await loadProfile();
-      // Re-fetch avatar whenever settings are saved (credentials may have changed)
-      await invoke('fetch_steam_avatar').catch(() => {});
-      await loadStats();
+      // Run all three in parallel — none depends on the others.
+      await Promise.all([
+        loadProfile(),
+        invoke<string | null>('fetch_steam_avatar').then((url) => { avatarUrl = url; }).catch(() => {}),
+        loadStats(),
+      ]);
       setStatus('Settings saved', 'success');
     } catch (e) {
       setStatus(`Failed to save settings: ${e}`, 'error');
@@ -887,6 +889,7 @@
       ok: 0,
       failed: 0,
       hint: null,
+      log: [],
     };
 
     const onProgress = new Channel<ModProgressEvent>();
@@ -915,6 +918,11 @@
           modOp.total = payload.total;
           modOp.completed = [...modOp.completed, { id: payload.mod_id, name: payload.name, ok: false }];
           break;
+        case 'log_line':
+          if (payload.log_line) {
+            modOp.log = [...modOp.log, payload.log_line];
+          }
+          break;
         case 'finished':
           modOp.phase = 'finished';
           modOp.ok = payload.ok;
@@ -937,8 +945,9 @@
 
   function dismissModOp() {
     modOp.active = false;
-    // Force a fresh update check after a mod operation completes.
-    loadMods().then(() => checkModUpdates(true));
+    // checkModUpdates scans the filesystem and returns a full enriched mod list,
+    // so it subsumes loadMods() — no need to call both.
+    checkModUpdates(true);
     loadStats();
   }
 
@@ -1005,6 +1014,16 @@
 
     doInitialize();
 
+    // Ping results arrive in batches from the Rust background task.
+    // Applying a full batch at once then reassigning the Map triggers a single
+    // Svelte reactivity flush instead of one per result.
+    listen<PingResult[]>('ping-batch', ({ payload }) => {
+      for (const r of payload) {
+        pingCache.set(`${r.ip}:${r.port}`, r.ms);
+      }
+      pingCache = new Map(pingCache);
+    }).then((fn) => cleanupFns.push(fn));
+
     listen<string>('launch-done', ({ payload }) => {
       setStatus(`Launched: ${payload}`, 'success');
       loadProfile();
@@ -1043,7 +1062,7 @@
 </script>
 
 <div class="flex flex-col h-screen w-screen overflow-hidden bg-base-100 text-base-content" data-theme={theme}>
-  <TitleBar {stats} {steamPlayers} {theme} {profile} onToggleTheme={toggleTheme} onSaveSettings={saveProfileSettings} />
+  <TitleBar {stats} {avatarUrl} {steamPlayers} {theme} {profile} onToggleTheme={toggleTheme} onSaveSettings={saveProfileSettings} />
   <TabBar {activeTab} {tabs} onSelect={selectTab} />
 
   {#if statusMessage}
@@ -1250,15 +1269,16 @@
   </div>
 
   <ConfirmModal dialog={confirmDialog} onClose={() => (confirmDialog = null)} />
-  <ProgressModal state={modOp} onDismiss={dismissModOp} />
+  <ProgressModal modOp={modOp} onDismiss={dismissModOp} />
 
   {#if showWizard}
     <SetupWizard onDone={async () => {
       showWizard = false;
-      await loadProfile();
-      // Re-fetch avatar with the newly saved API key + Steam ID, then refresh stats
-      invoke('fetch_steam_avatar').then(() => loadStats()).catch(() => {});
-      await loadStats();
+      await Promise.all([
+        loadProfile(),
+        invoke<string | null>('fetch_steam_avatar').then((url) => { avatarUrl = url; }).catch(() => {}),
+        loadStats(),
+      ]);
     }} />
   {/if}
 </div>

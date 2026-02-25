@@ -7,6 +7,7 @@
 
   interface Props {
     stats: AppStatsDto | null;
+    avatarUrl: string | null;
     steamPlayers: number | null;
     theme: 'light' | 'dark';
     profile: ProfileDto | null;
@@ -24,7 +25,7 @@
     ) => void;
   }
 
-  let { stats, steamPlayers, theme, profile, onToggleTheme, onSaveSettings }: Props = $props();
+  let { stats, avatarUrl, steamPlayers, theme, profile, onToggleTheme, onSaveSettings }: Props = $props();
 
   // ── Window controls ────────────────────────────────────────────────────────
   const win = getCurrentWindow();
@@ -160,9 +161,9 @@
       onclick={openModal}
       title="Edit account settings"
     >
-      {#if stats?.avatar_url}
+      {#if avatarUrl}
         <img
-          src={stats.avatar_url}
+          src={avatarUrl}
           alt="Steam avatar"
           class="size-5 rounded-full object-cover ring-1 ring-base-300 flex-shrink-0"
         />
@@ -239,8 +240,8 @@
       <div class="flex items-center gap-3 px-5 py-4 bg-base-200 border-b border-base-300 flex-shrink-0">
         <!-- Avatar preview -->
         <div class="size-10 rounded-full bg-base-300 border border-base-300 overflow-hidden flex items-center justify-center flex-shrink-0">
-          {#if stats?.avatar_url}
-            <img src={stats.avatar_url} alt="Steam avatar" class="w-full h-full object-cover" />
+          {#if avatarUrl}
+            <img src={avatarUrl} alt="Steam avatar" class="w-full h-full object-cover" />
           {:else}
             <Icon icon="ph:user" class="size-5 text-base-content/30" />
           {/if}

@@ -17,6 +17,10 @@ tar = "0.4"
 a2s = { version = "0.6.1", features = ["async"] }
 ping-async = "1.0.2"
 chrono = { version = "0.4" }
+portable-pty = { version = "0.8", default-features = false }
+
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+nix = { version = "0.29", features = ["fs", "process", "signal"] }
 
 [features]
 default = []

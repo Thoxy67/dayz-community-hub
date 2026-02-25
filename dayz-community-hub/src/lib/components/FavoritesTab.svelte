@@ -138,6 +138,7 @@
   let bmError = $state('');
   let bmFetchedKey = '';
   let bmRetryTick = $state(0);
+  let _bmDebounce: ReturnType<typeof setTimeout> | undefined;
 
   $effect(() => {
     if (!detailFav) return;
@@ -148,22 +149,30 @@
     const token = bmApiKey;
     if (!token || key === bmFetchedKey) return;
 
-    bmLoading = true;
-    bmError = '';
-    invoke<BattleMetricsDto>('fetch_battlemetrics_server', { ip: detailFav.ip, port: queryPort })
-      .then((result) => {
-        if (detailFav && `${detailFav.ip}:${(findServer(detailFav) ?? { query_port: detailFav.port }).query_port}` === key) {
-          bm = result;
-          bmError = '';
+    clearTimeout(_bmDebounce);
+    _bmDebounce = setTimeout(() => {
+      if (!detailFav) return;
+      const currentSv = findServer(detailFav);
+      const currentPort = currentSv ? currentSv.query_port : detailFav.port;
+      if (`${detailFav.ip}:${currentPort}` !== key) return;
+      bmLoading = true;
+      bmError = '';
+      invoke<BattleMetricsDto>('fetch_battlemetrics_server', { ip: detailFav.ip, port: queryPort })
+        .then((result) => {
+          if (detailFav && `${detailFav.ip}:${(findServer(detailFav) ?? { query_port: detailFav.port }).query_port}` === key) {
+            bm = result;
+            bmError = '';
+            bmFetchedKey = key;
+          }
+        })
+        .catch((e: unknown) => {
+          bm = null;
+          bmError = String(e);
           bmFetchedKey = key;
-        }
-      })
-      .catch((e: unknown) => {
-        bm = null;
-        bmError = String(e);
-        bmFetchedKey = key;
-      })
-      .finally(() => { bmLoading = false; });
+        })
+        .finally(() => { bmLoading = false; });
+    }, 300);
+    return () => clearTimeout(_bmDebounce);
   });
 
   function sparklinePath(history: [number, number][], w = 120, h = 28): string {

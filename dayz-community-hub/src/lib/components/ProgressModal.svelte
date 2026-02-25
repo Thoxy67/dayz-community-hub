@@ -1,48 +1,59 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import type { ModOpState } from '$lib/types';
   import Icon from '@iconify/svelte';
 
   interface Props {
-    state: ModOpState;
+    modOp: ModOpState;
     onDismiss: () => void;
   }
 
-  let { state, onDismiss }: Props = $props();
+  let { modOp, onDismiss }: Props = $props();
 
-  let isSteamGuard = $derived(state.phase === 'steam_guard_mobile');
+  let isSteamGuard = $derived(modOp.phase === 'steam_guard_mobile');
+  let logContainer: HTMLElement | null = $state(null);
+
+  // Auto-scroll log to bottom whenever a new line arrives.
+  $effect(() => {
+    if (modOp.log.length && logContainer) {
+      tick().then(() => {
+        logContainer!.scrollTop = logContainer!.scrollHeight;
+      });
+    }
+  });
 
   let progressPct = $derived(
-    state.total > 0 ? Math.round((state.completed.length / state.total) * 100) : 0
+    modOp.total > 0 ? Math.round((modOp.completed.length / modOp.total) * 100) : 0
   );
 
   let statusText = $derived(() => {
-    if (state.phase === 'shutting_down') return 'Closing Steam before SteamCMD can run…';
-    if (state.phase === 'steam_guard_mobile') return 'Waiting for Steam Guard…';
-    if (state.phase === 'finished') {
-      if (state.hint) return 'Login failed or credentials expired';
-      if (state.failed === 0) return `Done — ${state.ok} mod${state.ok !== 1 ? 's' : ''} completed`;
-      return `Done — ${state.ok} OK, ${state.failed} failed`;
+    if (modOp.phase === 'shutting_down') return 'Closing Steam before SteamCMD can run…';
+    if (modOp.phase === 'steam_guard_mobile') return 'Waiting for Steam Guard…';
+    if (modOp.phase === 'finished') {
+      if (modOp.hint) return 'Login failed or credentials expired';
+      if (modOp.failed === 0) return `Done — ${modOp.ok} mod${modOp.ok !== 1 ? 's' : ''} completed`;
+      return `Done — ${modOp.ok} OK, ${modOp.failed} failed`;
     }
-    return state.currentName ? `Downloading: ${state.currentName}` : 'Preparing…';
+    return modOp.currentName ? `Downloading: ${modOp.currentName}` : 'Preparing…';
   });
 
-  let canDismiss = $derived(state.phase === 'finished');
+  let canDismiss = $derived(modOp.phase === 'finished');
 
   // Auto-dismiss after 2.5 s when everything succeeded (no failures, no hint).
   $effect(() => {
-    if (state.phase === 'finished' && state.failed === 0 && !state.hint) {
+    if (modOp.phase === 'finished' && modOp.failed === 0 && !modOp.hint) {
       const t = setTimeout(onDismiss, 2500);
       return () => clearTimeout(t);
     }
   });
 </script>
 
-{#if state.active}
+{#if modOp.active}
   <div class="modal modal-open">
     <div class="modal-box max-w-lg">
 
       {#if isSteamGuard}
-        <!-- Steam Guard Mobile Required — full red alert, replaces progress -->
+        <!-- Steam Guard Mobile Required — full red alert -->
         <div class="alert alert-error flex-col items-start gap-3">
           <div class="flex items-center gap-3">
             <Icon icon="ph:shield-warning" class="size-8 flex-shrink-0" />
@@ -57,28 +68,28 @@
         </div>
       {:else}
         <h3 class="font-bold text-lg flex items-center gap-2">
-          {#if state.phase !== 'finished'}
+          {#if modOp.phase !== 'finished'}
             <span class="loading loading-spinner loading-sm text-primary"></span>
-          {:else if state.failed > 0 || state.hint}
+          {:else if modOp.failed > 0 || modOp.hint}
             <Icon icon="ph:x-circle" class="size-5 text-error" />
           {:else}
             <Icon icon="ph:check-circle" class="size-5 text-success" />
           {/if}
           Mod Operation
-          {#if state.total > 0}
+          {#if modOp.total > 0}
             <span class="text-base-content/50 text-sm font-normal">
-              [{state.completed.length}/{state.total}]
+              [{modOp.completed.length}/{modOp.total}]
             </span>
           {/if}
         </h3>
 
         <!-- Status line -->
-        <p class="mt-2 text-sm {state.hint ? 'text-error' : state.phase === 'finished' && state.failed === 0 ? 'text-success' : 'text-base-content/70'}">
+        <p class="mt-2 text-sm {modOp.hint ? 'text-error' : modOp.phase === 'finished' && modOp.failed === 0 ? 'text-success' : 'text-base-content/70'}">
           {statusText()}
         </p>
 
         <!-- Progress bar -->
-        {#if state.phase === 'downloading' || state.phase === 'finished'}
+        {#if modOp.phase === 'downloading' || modOp.phase === 'finished'}
           <div class="mt-3">
             <progress
               class="progress progress-primary w-full"
@@ -90,16 +101,16 @@
         {/if}
 
         <!-- SteamCMD hint -->
-        {#if state.hint}
+        {#if modOp.hint}
           <div class="alert alert-error mt-3 text-xs">
-            <pre class="whitespace-pre-wrap font-mono">{state.hint}</pre>
+            <pre class="whitespace-pre-wrap font-mono">{modOp.hint}</pre>
           </div>
         {/if}
 
         <!-- Completed mods list -->
-        {#if state.completed.length > 0}
+        {#if modOp.completed.length > 0}
           <div class="mt-3 max-h-40 overflow-y-auto rounded-lg bg-base-200 p-2 space-y-0.5">
-            {#each state.completed.slice(-12) as entry}
+            {#each modOp.completed.slice(-12) as entry}
               <div class="flex items-center gap-2 text-xs">
                 {#if entry.ok}
                   <Icon icon="ph:check" class="size-3.5 text-success flex-shrink-0" />
@@ -112,6 +123,21 @@
             {/each}
           </div>
         {/if}
+      {/if}
+
+      <!-- steamcmd log — shown in all phases whenever lines are available -->
+      {#if modOp.log.length > 0}
+        <div class="mt-3">
+          <p class="text-xs text-base-content/40 mb-1">steamcmd output</p>
+          <div
+            bind:this={logContainer}
+            class="max-h-48 overflow-y-auto rounded-lg bg-black/60 p-2 font-mono text-xs text-base-content/70"
+          >
+            {#each modOp.log as line}
+              <div class="leading-snug whitespace-pre-wrap break-all">{line}</div>
+            {/each}
+          </div>
+        </div>
       {/if}
 
       <div class="modal-action">
