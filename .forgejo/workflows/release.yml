@@ -310,13 +310,8 @@ jobs:
               url="$(curl -sf \
                 -H "Authorization: token $FORGEJO_TOKEN" \
                 "$API/repos/$OWNER/$REPO/releases/tags/$TAG" | \
-                python3 -c "
-import sys,json
-d=json.load(sys.stdin)
-name='$asset_name'
-a=next((a for a in d.get('assets',[]) if a['name']==name),None)
-print(a['browser_download_url'] if a else '')
-" 2>/dev/null)"
+                python3 -c "import sys,json; d=json.load(sys.stdin); name='$asset_name'; a=next((a for a in d.get('assets',[]) if a['name']==name),None); print(a['browser_download_url'] if a else '')" \
+                2>/dev/null)"
               if [ -n "$url" ]; then
                 sig="$(curl -sfL -H "Authorization: token $FORGEJO_TOKEN" "$url")"
                 [ -n "$sig" ] && { echo "$sig"; return; }
@@ -333,30 +328,31 @@ print(a['browser_download_url'] if a else '')
           [ -n "$WIN_SIG" ]   || { echo "ERROR: WIN_SIG is empty";   exit 1; }
           [ -n "$LINUX_SIG" ] || { echo "ERROR: LINUX_SIG is empty"; exit 1; }
 
-          export WIN_SIG LINUX_SIG
+          export WIN_SIG LINUX_SIG VERSION BASE_URL WIN_ZIP_NAME APPIMAGE_NAME TAG
           LATEST_JSON="/tmp/latest.json"
-          python3 - <<PYEOF
-import json, os
-from datetime import datetime, timezone
-pub_date = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-data = {
-    "version":  "$VERSION",
-    "notes":    "Release $TAG",
-    "pub_date": pub_date,
-    "platforms": {
-        "windows-x86_64": {
-            "signature": os.environ["WIN_SIG"],
-            "url": "$BASE_URL/$WIN_ZIP_NAME",
-        },
-        "linux-x86_64": {
-            "signature": os.environ["LINUX_SIG"],
-            "url": "$BASE_URL/$APPIMAGE_NAME",
-        },
-    },
-}
-json.dump(data, open("$LATEST_JSON", "w"), indent=2)
-print("Written:", "$LATEST_JSON")
-PYEOF
+          python3 -c "
+          import json, os
+          from datetime import datetime, timezone
+          pub_date = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+          data = {
+              'version':  os.environ['VERSION'],
+              'notes':    'Release ' + os.environ['TAG'],
+              'pub_date': pub_date,
+              'platforms': {
+                  'windows-x86_64': {
+                      'signature': os.environ['WIN_SIG'],
+                      'url': os.environ['BASE_URL'] + '/' + os.environ['WIN_ZIP_NAME'],
+                  },
+                  'linux-x86_64': {
+                      'signature': os.environ['LINUX_SIG'],
+                      'url': os.environ['BASE_URL'] + '/' + os.environ['APPIMAGE_NAME'],
+                  },
+              },
+          }
+          json.dump(data, open(os.environ['LATEST_JSON'], 'w'), indent=2)
+          print('Written:', os.environ['LATEST_JSON'])
+          "
+          unset WIN_SIG LINUX_SIG
 
           upload_asset() {
             local release_id="$1" file="$2"
