@@ -328,8 +328,8 @@ jobs:
           [ -n "$WIN_SIG" ]   || { echo "ERROR: WIN_SIG is empty";   exit 1; }
           [ -n "$LINUX_SIG" ] || { echo "ERROR: LINUX_SIG is empty"; exit 1; }
 
-          export WIN_SIG LINUX_SIG VERSION BASE_URL WIN_ZIP_NAME APPIMAGE_NAME TAG
           LATEST_JSON="/tmp/latest.json"
+          export WIN_SIG LINUX_SIG VERSION BASE_URL WIN_ZIP_NAME APPIMAGE_NAME TAG LATEST_JSON
           python3 -c "
           import json, os
           from datetime import datetime, timezone
