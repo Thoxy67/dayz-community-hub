@@ -136,9 +136,7 @@ EXE="$TARGET_DIR/dayz-community-hub.exe"
 echo ""
 echo "==> Zipping..."
 ZIP_PATH="$TARGET_DIR/$ZIP_NAME"
-# Use -0 (Stored, method 0) — tauri-plugin-updater's zip crate is compiled
-# without deflate features so only ZIP_STORED (method 0) is supported.
-(cd "$TARGET_DIR" && zip -0 "$ZIP_NAME" dayz-community-hub.exe)
+(cd "$TARGET_DIR" && zip "$ZIP_NAME" dayz-community-hub.exe)
 echo "    $ZIP_PATH ($(du -sh "$ZIP_PATH" | cut -f1))"
 
 # ---------------------------------------------------------------------------

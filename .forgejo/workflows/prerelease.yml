@@ -46,7 +46,7 @@ jobs:
           CARGO_BUILD_JOBS: "4"
         run: bun tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --no-bundle
 
-      - name: Zip the binary (ZIP_STORED)
+      - name: Zip the binary
         run: |
           VERSION="$(python3 -c "import json; print(json.load(open('src-tauri/tauri.conf.json'))['version'])")"
           SHA="${{ forgejo.sha }}"
@@ -56,7 +56,7 @@ jobs:
           EXE="$TARGET_DIR/dayz-community-hub.exe"
           ZIP_PATH="$TARGET_DIR/$ZIP_NAME"
           rm -f "$ZIP_PATH"
-          (cd "$TARGET_DIR" && zip -0 "$ZIP_NAME" dayz-community-hub.exe)
+          (cd "$TARGET_DIR" && zip "$ZIP_NAME" dayz-community-hub.exe)
           echo "EXE size : $(du -sh "$EXE" | cut -f1)"
           echo "ZIP size : $(du -sh "$ZIP_PATH" | cut -f1)"
           echo "VERSION=$VERSION"     >> "$FORGEJO_ENV"

@@ -48,7 +48,7 @@ jobs:
           CARGO_BUILD_JOBS: "4"
         run: bun tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --no-bundle
 
-      - name: Zip the binary (ZIP_STORED — required by Tauri updater)
+      - name: Zip the binary
         run: |
           TAG="${{ forgejo.ref_name }}"
           ZIP_NAME="dayz-community-hub-${TAG}-x86_64-windows.zip"
@@ -56,7 +56,7 @@ jobs:
           EXE="$TARGET_DIR/dayz-community-hub.exe"
           ZIP_PATH="$TARGET_DIR/$ZIP_NAME"
           rm -f "$ZIP_PATH"
-          (cd "$TARGET_DIR" && zip -0 "$ZIP_NAME" dayz-community-hub.exe)
+          (cd "$TARGET_DIR" && zip "$ZIP_NAME" dayz-community-hub.exe)
           echo "EXE size: $(du -sh "$EXE" | cut -f1)"
           echo "ZIP size: $(du -sh "$ZIP_PATH" | cut -f1)"
           echo "TAG=$TAG"           >> "$FORGEJO_ENV"
