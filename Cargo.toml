@@ -43,7 +43,7 @@ tar = "0.4"
 
 # DayZ A2S queries
 a2s = { version = "0.6.1", features = ["async"] }
-ping-async = "1.0.2"
+surge-ping = "0.8.4"
 
 # Internal crates
 dayz-community-hub-core = { path = "dayz-community-hub-core" }

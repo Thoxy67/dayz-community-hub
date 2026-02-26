@@ -43,6 +43,7 @@
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import ProgressModal from '$lib/components/ProgressModal.svelte';
   import ConnectModal, { type ConnectRequest } from '$lib/components/ConnectModal.svelte';
+  import ExcludedIpsModal from '$lib/components/ExcludedIpsModal.svelte';
 
   // ── Theme ─────────────────────────────────────────────────────────────────
   let theme = $state<'light' | 'dark'>('dark');
@@ -56,6 +57,7 @@
   let initialized = $state(false);
   let initError = $state<string | null>(null);
   let showWizard = $state(false);
+  let showExcludedIpsModal = $state(false);
   let activeTab = $state<TabId>('servers');
   let servers = $state<ServerDto[]>([]);
   let profile = $state<ProfileDto | null>(null);
@@ -64,6 +66,9 @@
   let stats = $state<AppStatsDto | null>(null);
   let steamPlayers = $state<number | null>(null);
   let pingCache = $state<Map<string, number>>(new Map());
+  // Dirty flag: ping results were written into the map but Svelte hasn't been
+  // notified yet. A single rAF-scheduled flush does the notification.
+  let pingFlushPending = false;
   let avatarUrl = $state<string | null>(null);
   let offlineMissions = $state<string[]>([]);
   let offlineStatus = $state('');
@@ -137,6 +142,31 @@
 
   // ── Status helpers ─────────────────────────────────────────────────────────
   let statusTimeout: ReturnType<typeof setTimeout> | null = null;
+  let modUpdateInterval: ReturnType<typeof setInterval> | null = null;
+
+  // ── Away-time refresh thresholds ──────────────────────────────────────────
+  const AWAY_SERVERS_MS  = 5  * 60 * 1000; // 5 min  → refresh server list + re-ping
+  const AWAY_MODS_MS     = 10 * 60 * 1000; // 10 min → re-check mod updates
+  let awayAt: number | null = null;         // timestamp when the window lost focus/visibility
+  let titleGlitchTick = $state(0);          // increment to trigger TitleBar glitch animation
+
+  function handleWindowHide() {
+    awayAt = Date.now();
+  }
+
+  function handleWindowShow() {
+    if (awayAt === null) return;
+    const elapsed = Date.now() - awayAt;
+    awayAt = null;
+    // Always fire the title glitch on focus return
+    titleGlitchTick += 1;
+    if (elapsed >= AWAY_SERVERS_MS) {
+      refreshServers();
+    }
+    if (elapsed >= AWAY_MODS_MS && profile?.steam_api_key) {
+      checkModUpdates();
+    }
+  }
 
   function timeIcon(time: string | undefined): string {
     if (!time) return 'ph:sun-horizon';
@@ -221,6 +251,53 @@
 
   let staleModCount = $derived(installedMods.filter(m => m.update_available).length);
 
+  // ── Launcher update checker (shared between TitleBar badge and AboutTab) ───
+  type UpdateInfo = {
+    version: string;
+    currentVersion: string;
+    body: string | null;
+    date: string | null;
+  };
+  type DownloadEvent =
+    | { event: 'Started';   data: { contentLength: number | null } }
+    | { event: 'Progress';  data: { chunkLength: number } }
+    | { event: 'Finished' };
+  type UpdateState =
+    | 'idle' | 'checking' | 'up_to_date' | 'available' | 'downloading' | 'done' | 'error';
+
+  let updateState  = $state<UpdateState>('idle');
+  let updateInfo   = $state<UpdateInfo | null>(null);
+  let updateError  = $state('');
+  let dlReceived   = $state(0);
+  let dlTotal      = $state(0);
+  let dlPercent    = $derived(dlTotal > 0 ? Math.round((dlReceived / dlTotal) * 100) : 0);
+
+  async function checkForUpdate() {
+    updateState = 'checking';
+    updateError = '';
+    try {
+      const info = await invoke<UpdateInfo | null>('check_for_update');
+      if (info) { updateInfo = info; updateState = 'available'; }
+      else       { updateState = 'up_to_date'; }
+    } catch (e) { updateError = String(e); updateState = 'error'; }
+  }
+
+  async function installUpdate() {
+    updateState = 'downloading';
+    dlReceived  = 0;
+    dlTotal     = 0;
+    updateError = '';
+    const onEvent = new Channel<DownloadEvent>();
+    onEvent.onmessage = (ev) => {
+      if      (ev.event === 'Started')  { dlTotal = ev.data.contentLength ?? 0; }
+      else if (ev.event === 'Progress') { dlReceived += ev.data.chunkLength; }
+      else if (ev.event === 'Finished') { updateState = 'done'; }
+    };
+    try {
+      await invoke('install_update', { onEvent });
+    } catch (e) { updateError = String(e); updateState = 'error'; }
+  }
+
   async function loadNews() {
     if (articles.length > 0) return;
     newsLoading = true;
@@ -294,30 +371,52 @@
 
   // ── Pinging ───────────────────────────────────────────────────────────────
 
-  /** Ping a single server and update the reactive cache in-place. */
+  /** Ping a single server and update the reactive cache in-place.
+   *  Uses a 10 s timeout (vs 5 s for background batch) so manual pings
+   *  have a better chance of getting a reply from a slow server.
+   *  On failure the key is removed from the cache so the cell shows TIMEOUT.
+   *  Display layer treats any stored value >= 5000ms as TIMEOUT too.
+   */
   async function pingSingle(ip: string, port: number) {
+    const key = `${ip}:${port}`;
     try {
-      const ms = await invoke<number>('ping_single', { ip, port });
-      pingCache.set(`${ip}:${port}`, ms);
-      // Force Svelte 5 reactivity — in-place Map.set() doesn't propagate to
-      // child components that receive pingCache as a prop.
+      const ms = await invoke<number>('ping_single', { ip, port, timeoutMs: 10_000 });
+      pingCache.set(key, ms);
       pingCache = new Map(pingCache);
     } catch {
-      // silently ignore ping failures
+      // Remove stale entry so the cell shows OFFLINE instead of a stale value.
+      pingCache.delete(key);
+      pingCache = new Map(pingCache);
     }
   }
 
   function startPinging() {
-    // Collect favorites + history endpoints as explicit targets (pinged first)
+    // Build a lookup: "ip:game_port" | "ip:query_port" → query_port
+    // so we always ping (and cache) under the query_port key — the same key
+    // all tabs use for pingCache lookups.
+    const portMap = new Map<string, number>();
+    for (const s of servers) {
+      portMap.set(`${s.ip}:${s.game_port}`,  s.query_port);
+      portMap.set(`${s.ip}:${s.query_port}`, s.query_port);
+    }
+
+    const seen = new Set<string>();
     const targets: string[] = [];
-    if (profile) {
-      for (const f of profile.favorites) {
-        targets.push(`${f.ip}:${f.port}`);
-      }
-      for (const h of profile.history) {
-        targets.push(`${h.ip}:${h.port}`);
+
+    function addTarget(ip: string, port: number) {
+      const resolvedPort = portMap.get(`${ip}:${port}`) ?? port;
+      const key = `${ip}:${resolvedPort}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        targets.push(key);
       }
     }
+
+    if (profile) {
+      for (const f of profile.favorites) addTarget(f.ip, f.port);
+      for (const h of profile.history)   addTarget(h.ip, h.port);
+    }
+
     // Fire-and-forget: results arrive via 'ping-batch' events (see onMount listener)
     invoke('start_pinging', { targets }).catch(() => {});
   }
@@ -333,6 +432,14 @@
       // 2. Load profile + stats + steam players + mods in parallel (fast, no big data)
       await Promise.all([loadProfile(), loadStats(), loadSteamPlayers(), loadMods()]);
 
+      // 2b. Background mod update check — populates staleModCount for the titlebar badge.
+      // Fire-and-forget: non-blocking, non-fatal. Requires Steam API key.
+      if (profile?.steam_api_key) checkModUpdates();
+
+      // 2c. Background launcher update check — populates titlebar badge.
+      // Fire-and-forget: backend returns null on non-Windows, no-op there.
+      checkForUpdate();
+
       // Drain any CLI args that arrived before profile was ready.
       if (pendingCliArgs) {
         const queued = pendingCliArgs;
@@ -341,8 +448,10 @@
       }
 
       // 3b. Fetch Steam avatar in the background — result stored locally,
-      // no need to re-call loadStats() just to get the avatar.
-      invoke<string | null>('fetch_steam_avatar').then((url) => { avatarUrl = url; }).catch(() => {});
+      // no need to re-call loadStats() just to get the avatar. Requires Steam API key + Steam ID.
+      if (profile?.steam_api_key && profile?.steam_id) {
+        invoke<string | null>('fetch_steam_avatar').then((url) => { avatarUrl = url; }).catch(() => {});
+      }
 
       // 3. Load servers from cache (already in backend state)
       serversLoading = true;
@@ -383,8 +492,8 @@
   function selectTab(id: TabId) {
     activeTab = id;
     if (id === 'mods') {
-      if (installedMods.length === 0) loadMods().then(() => checkModUpdates());
-      else checkModUpdates();
+      if (installedMods.length === 0) loadMods().then(() => { if (profile?.steam_api_key) checkModUpdates(); });
+      else if (profile?.steam_api_key) checkModUpdates();
     }
     if (id === 'news' && articles.length === 0) loadNews();
     if (id === 'offline' && offlineMissions.length === 0) loadOfflineMissions();
@@ -629,7 +738,7 @@
   }
 
   // ── Profile export / import / reset ──────────────────────────────────────
-  async function exportProfile() {
+  async function exportProfile(includeMods: boolean) {
     const path = await saveDialog({
       title: 'Export profile',
       defaultPath: 'dayz-community-hub-profile.dchub',
@@ -637,7 +746,7 @@
     });
     if (!path) return;
     try {
-      await invoke('export_profile', { path });
+      await invoke('export_profile', { path, includeMods });
       setStatus('Profile exported successfully', 'success');
     } catch (e) {
       setStatus(`Export failed: ${e}`, 'error');
@@ -833,12 +942,14 @@
         steamId,
         battlemetricsApiKey,
       });
-      // Run all three in parallel — none depends on the others.
-      await Promise.all([
-        loadProfile(),
-        invoke<string | null>('fetch_steam_avatar').then((url) => { avatarUrl = url; }).catch(() => {}),
-        loadStats(),
-      ]);
+      // Run reloads in parallel — avatar fetch only when API key + Steam ID are set.
+      const tasks: Promise<unknown>[] = [loadProfile(), loadStats()];
+      if (steamApiKey && steamId) {
+        tasks.push(invoke<string | null>('fetch_steam_avatar').then((url) => { avatarUrl = url; }).catch(() => {}));
+      } else {
+        avatarUrl = null; // Clear stale avatar if keys were removed
+      }
+      await Promise.all(tasks);
       setStatus('Settings saved', 'success');
     } catch (e) {
       setStatus(`Failed to save settings: ${e}`, 'error');
@@ -1024,7 +1135,9 @@
     modOp.active = false;
     // checkModUpdates scans the filesystem and returns a full enriched mod list,
     // so it subsumes loadMods() — no need to call both.
-    checkModUpdates(true);
+    // Without a Steam API key we still need to reload the mod list from disk.
+    if (profile?.steam_api_key) checkModUpdates(true);
+    else loadMods();
     loadStats();
   }
 
@@ -1086,19 +1199,40 @@
     // of which element has focus.
     window.addEventListener('keydown', handleGlobalKeydown);
     cleanupFns.push(() => window.removeEventListener('keydown', handleGlobalKeydown));
+
+    // Away-time detection — visibilitychange is the most reliable signal in
+    // Tauri/WebKit (covers both window switching and OS-level focus loss).
+    // window blur/focus acts as a fallback for cases the visibility API misses.
+    const onVisibilityChange = () =>
+      document.hidden ? handleWindowHide() : handleWindowShow();
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('blur',  handleWindowHide);
+    window.addEventListener('focus', handleWindowShow);
+    cleanupFns.push(() => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('blur',  handleWindowHide);
+      window.removeEventListener('focus', handleWindowShow);
+    });
     const saved = localStorage.getItem('theme') as 'light' | 'dark' | null;
     if (saved) theme = saved;
 
     doInitialize();
 
     // Ping results arrive in batches from the Rust background task.
-    // Applying a full batch at once then reassigning the Map triggers a single
-    // Svelte reactivity flush instead of one per result.
+    // We write directly into the Map on every event (cheap), but only trigger
+    // Svelte reactivity once per animation frame — no matter how many events
+    // arrive in the same frame, the UI re-renders exactly once.
     listen<PingResult[]>('ping-batch', ({ payload }) => {
       for (const r of payload) {
         pingCache.set(`${r.ip}:${r.port}`, r.ms);
       }
-      pingCache = new Map(pingCache);
+      if (!pingFlushPending) {
+        pingFlushPending = true;
+        requestAnimationFrame(() => {
+          pingCache = new Map(pingCache);
+          pingFlushPending = false;
+        });
+      }
     }).then((fn) => cleanupFns.push(fn));
 
     listen<string>('launch-done', ({ payload }) => {
@@ -1131,15 +1265,34 @@
       handleCliArgs(payload);
     }).then((fn) => cleanupFns.push(fn));
 
+    // Periodic mod update check — every 30 minutes, only when a Steam API key is set.
+    modUpdateInterval = setInterval(() => {
+      if (profile?.steam_api_key) {
+        checkModUpdates();
+      }
+    }, 30 * 60 * 1000);
+
     return () => {
       cleanupFns.forEach((fn) => fn());
       if (statusTimeout) clearTimeout(statusTimeout);
+      if (modUpdateInterval) clearInterval(modUpdateInterval);
     };
   });
 </script>
 
 <div class="flex flex-col h-screen w-screen overflow-hidden bg-base-100 text-base-content" data-theme={theme}>
-  <TitleBar {stats} {avatarUrl} {steamPlayers} {theme} {profile} onToggleTheme={toggleTheme} onSaveSettings={saveProfileSettings} onUnexcludeIp={unexcludeIp} />
+  <TitleBar
+    {stats} {avatarUrl} {steamPlayers} {theme} {profile}
+    {staleModCount}
+    {updateState}
+    glitchTick={titleGlitchTick}
+    onToggleTheme={toggleTheme}
+    onSaveSettings={saveProfileSettings}
+    onUnexcludeIp={unexcludeIp}
+    onOpenExcludedIps={() => { showExcludedIpsModal = true; }}
+    onUpdateMods={() => { selectTab('mods'); updateStaleMods(); }}
+    onGoToUpdate={() => selectTab('about')}
+  />
   <TabBar {activeTab} {tabs} onSelect={selectTab} />
 
   {#if statusMessage}
@@ -1274,6 +1427,7 @@
         onPing={pingSingle}
         onExcludeIp={excludeIp}
         onUnexcludeIp={unexcludeIp}
+        onManageExcluded={() => { showExcludedIpsModal = true; }}
       />
     {:else if activeTab === 'favorites'}
       <FavoritesTab
@@ -1307,8 +1461,9 @@
         loading={modsLoading}
         checking={modsChecking}
         staleCount={staleModCount}
-        onRefresh={() => loadMods().then(() => checkModUpdates(true))}
+        onRefresh={() => loadMods().then(() => { if (profile?.steam_api_key) checkModUpdates(true); })}
         onCheckUpdates={() => checkModUpdates(true)}
+        steamApiKey={profile?.steam_api_key ?? ''}
         onDelete={deleteMod}
         onToggleManaged={toggleModManaged}
         onUpdate={updateMod}
@@ -1360,6 +1515,14 @@
         onExport={exportProfile}
         onImport={importProfile}
         onReset={resetProfile}
+        {updateState}
+        {updateInfo}
+        {updateError}
+        {dlPercent}
+        {dlReceived}
+        {dlTotal}
+        onCheckForUpdate={checkForUpdate}
+        onInstallUpdate={installUpdate}
       />
     {/if}
   </div>
@@ -1368,14 +1531,22 @@
   <ConnectModal request={connectRequest} onClose={() => (connectRequest = null)} />
   <ProgressModal modOp={modOp} onDismiss={dismissModOp} />
 
+  {#if showExcludedIpsModal}
+    <ExcludedIpsModal
+      excludedIps={profile?.excluded_ips ?? []}
+      onUnexclude={unexcludeIp}
+      onClose={() => { showExcludedIpsModal = false; }}
+    />
+  {/if}
+
   {#if showWizard}
     <SetupWizard onDone={async () => {
       showWizard = false;
-      await Promise.all([
-        loadProfile(),
-        invoke<string | null>('fetch_steam_avatar').then((url) => { avatarUrl = url; }).catch(() => {}),
-        loadStats(),
-      ]);
+      await Promise.all([loadProfile(), loadStats()]);
+      // Fetch avatar only when the user provided both keys during setup.
+      if (profile?.steam_api_key && profile?.steam_id) {
+        invoke<string | null>('fetch_steam_avatar').then((url) => { avatarUrl = url; }).catch(() => {});
+      }
     }} />
   {/if}
 </div>

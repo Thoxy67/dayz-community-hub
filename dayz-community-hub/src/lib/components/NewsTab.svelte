@@ -61,7 +61,8 @@
     }
   }
 
-  /** Svelte action: rewrite every <img src> inside the node to an asset:// URI. */
+  /** Svelte action: rewrite every <img src> inside the node to an asset:// URI,
+   *  and attach a click handler so clicking any image opens the lightbox. */
   function rustImages(node: HTMLElement) {
     const rewritten = new WeakSet<HTMLImageElement>();
 
@@ -73,8 +74,20 @@
             || rewritten.has(img)) return;
         rewritten.add(img);
         img.removeAttribute('src');
+        // Fetch the display version (640 px) for inline rendering
+        const fullUrl = img.getAttribute('data-full') ?? src;
         fetchImage(src)
-          .then((uri) => { img.src = uri; })
+          .then((uri) => {
+            img.src = uri;
+            img.style.cursor = 'zoom-in';
+            img.addEventListener('click', () => {
+              if (lightboxSrc) { closeLightbox(); return; }
+              // Try the full-size version first; fall back to the display URI
+              fetchImage(fullUrl)
+                .then((fullUri) => openLightbox(fullUri))
+                .catch(() => openLightbox(uri));
+            });
+          })
           .catch(() => { img.style.display = 'none'; });
       });
     }
@@ -143,6 +156,16 @@
 
   // Hero image for reading pane — synchronous lookup first, async fallback.
   let heroDataUri = $state<string | null>(null);
+
+  // Lightbox
+  let lightboxSrc = $state<string | null>(null);
+
+  function openLightbox(src: string) { lightboxSrc = src; }
+  function closeLightbox() { lightboxSrc = null; }
+
+  function onLightboxKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') closeLightbox();
+  }
 
   function updateHero() {
     const url = selected?.image_url ?? null;
@@ -224,14 +247,13 @@
                 <p class="text-xs font-medium leading-snug text-base-content/90 line-clamp-2">
                   {article.title}
                 </p>
-                <div class="flex items-center gap-1.5 mt-1">
+                <div class="flex flex-col gap-0.5 mt-1">
                   {#if article.category}
-                    <span class="text-primary/70 font-semibold uppercase" style="font-size:9px; letter-spacing:0.05em;">
+                    <span class="text-primary/70 font-semibold uppercase truncate leading-none" style="font-size:9px; letter-spacing:0.05em;">
                       {article.category}
                     </span>
-                    <span class="text-base-content/20" style="font-size:9px;">·</span>
                   {/if}
-                  <span class="text-base-content/35" style="font-size:10px;">{article.date}</span>
+                  <span class="text-base-content/35 truncate leading-none" style="font-size:9px;">{article.date}</span>
                 </div>
               </div>
             </div>
@@ -249,9 +271,15 @@
       {#if heroDataUri || selected.image_url}
         <div class="w-full h-48 flex-shrink-0 relative overflow-hidden bg-base-200">
           {#if heroDataUri}
-            <img src={heroDataUri} alt="" class="w-full h-full object-cover" />
+            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+            <img
+              src={heroDataUri}
+              alt=""
+              class="w-full h-full object-cover cursor-zoom-in"
+              onclick={() => { if (heroDataUri) lightboxSrc === heroDataUri ? closeLightbox() : openLightbox(heroDataUri); }}
+            />
             <!-- Gradient overlay so title text reads well -->
-            <div class="absolute inset-0 bg-gradient-to-t from-base-100 via-base-100/30 to-transparent"></div>
+            <div class="absolute inset-0 bg-gradient-to-t from-base-100 via-base-100/30 to-transparent pointer-events-none"></div>
           {:else}
             <div class="w-full h-full animate-pulse bg-base-300"></div>
           {/if}
@@ -348,6 +376,33 @@
   </div>
 
 </div>
+
+<!-- ── Lightbox ──────────────────────────────────────────────────────────────── -->
+{#if lightboxSrc}
+  <div
+    class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 backdrop-blur-sm"
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
+    onclick={closeLightbox}
+    onkeydown={onLightboxKeydown}
+  >
+    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+    <img
+      src={lightboxSrc}
+      alt=""
+      class="max-w-[90vw] max-h-[90vh] object-contain rounded shadow-2xl cursor-zoom-out select-none"
+      onclick={(e) => { e.stopPropagation(); closeLightbox(); }}
+    />
+    <button
+      class="absolute top-3 right-3 btn btn-ghost btn-sm btn-circle text-white/70 hover:text-white hover:bg-white/10"
+      onclick={closeLightbox}
+      title="Close"
+    >
+      <Icon icon="ph:x" class="size-5" />
+    </button>
+  </div>
+{/if}
 
 <style></style>
 

@@ -39,15 +39,55 @@ impl Article {
             Some(h) if !h.is_empty() => h,
             _ => return String::new(),
         };
+        // Match the full opening tag so we can extract all attributes.
         static RE_PIC: OnceLock<Regex> = OnceLock::new();
+        static RE_CODE: OnceLock<Regex> = OnceLock::new();
+        static RE_SIZES: OnceLock<Regex> = OnceLock::new();
+        static RE_FMTS: OnceLock<Regex> = OnceLock::new();
         let re = RE_PIC.get_or_init(|| {
-            Regex::new(r#"<app-picture[^>]*\bcode="([^"]+)"[^>]*>\s*</app-picture>"#).unwrap()
+            Regex::new(r#"<app-picture[^>]*\bcode="[^"]+"[^>]*>\s*</app-picture>"#).unwrap()
         });
+        let re_code = RE_CODE.get_or_init(|| Regex::new(r#"\bcode="([^"]+)""#).unwrap());
+        let re_sizes = RE_SIZES.get_or_init(|| Regex::new(r#"\bthumb-sizes="([^"]+)""#).unwrap());
+        let re_fmts = RE_FMTS.get_or_init(|| Regex::new(r#"\bthumb-formats="([^"]+)""#).unwrap());
+
         re.replace_all(html, |caps: &regex::Captures| {
-            let code = &caps[1];
+            let tag = caps.get(0).map_or("", |m| m.as_str());
+
+            let code = match re_code.captures(tag).and_then(|c| c.get(1)) {
+                Some(m) => m.as_str(),
+                None => return String::new(),
+            };
+
+            // Parse available sizes (comma-separated, descending) — pick largest for
+            // full-size and the closest to 640 for the inline display version.
+            let sizes_str = re_sizes.captures(tag)
+                .and_then(|c| c.get(1))
+                .map_or("640", |m| m.as_str());
+            let mut sizes: Vec<u32> = sizes_str
+                .split(',')
+                .filter_map(|s| s.trim().parse().ok())
+                .collect();
+            sizes.sort_unstable();
+
+            let display_size = sizes.iter().find(|&&s| s >= 640).copied()
+                .or_else(|| sizes.last().copied())
+                .unwrap_or(640);
+            let full_size = sizes.last().copied().unwrap_or(display_size);
+
+            // Prefer webp; fall back to the first listed format.
+            let fmts_str = re_fmts.captures(tag)
+                .and_then(|c| c.get(1))
+                .map_or("webp", |m| m.as_str());
+            let ext = if fmts_str.split(',').any(|f| f.trim() == "webp") {
+                "webp"
+            } else {
+                fmts_str.split(',').next().unwrap_or("webp").trim()
+            };
+
             format!(
-                r#"<img src="https://dayz.com/app-static/uploads/{}_{}.{}" alt="" loading="lazy" />"#,
-                code, 640, "webp"
+                r#"<img src="https://dayz.com/app-static/uploads/{}_{}.{}" data-full="https://dayz.com/app-static/uploads/{}_{}.{}" alt="" loading="lazy" />"#,
+                code, display_size, ext, code, full_size, ext
             )
         })
         .into_owned()

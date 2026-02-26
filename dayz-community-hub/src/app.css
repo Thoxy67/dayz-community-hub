@@ -3,6 +3,16 @@
   themes: light --default, dark;
 }
 
+/* ── Fix: DaisyUI 5 modal backdrop bleeds light bg into [data-theme] ───────
+   When a .modal-open exists, DaisyUI sets --page-scroll-bg on :root using
+   the light theme's --root-bg (white). Because [data-theme] inherits this
+   already-resolved value, the dark wrapper div gets a white-ish background.
+   Reset it so the dark theme's own --root-bg is used instead.
+   ───────────────────────────────────────────────────────────────────────── */
+[data-theme] {
+  --page-scroll-bg: initial;
+}
+
 /* ── Custom light theme ─────────────────────────────────────────────────────
    Goals:
    - High contrast: enough surface difference so /20–/50 opacity text is legible

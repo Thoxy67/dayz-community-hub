@@ -280,10 +280,20 @@
     return 'ph:moon';
   }
 
+  const PING_TIMEOUT_MS = 5_000;
+
+  function isTimeout(ms: number | undefined): boolean {
+    return ms === undefined || ms >= PING_TIMEOUT_MS;
+  }
+
+  function pingLabel(ms: number | undefined): string {
+    return isTimeout(ms) ? 'TIMEOUT' : `${ms}ms`;
+  }
+
   function pingColor(ms: number | undefined): string {
-    if (ms === undefined) return 'text-base-content/30';
-    if (ms < 50) return 'text-success';
-    if (ms < 100) return 'text-warning';
+    if (isTimeout(ms)) return 'text-base-content/30';
+    if (ms! < 50)  return 'text-success';
+    if (ms! < 100) return 'text-warning';
     return 'text-error';
   }
 
@@ -295,9 +305,9 @@
   }
 
   function pingDot(ms: number | undefined): string {
-    if (ms === undefined) return 'bg-base-content/20';
-    if (ms < 50) return 'bg-success';
-    if (ms < 100) return 'bg-warning';
+    if (isTimeout(ms)) return 'bg-base-content/20';
+    if (ms! < 50)  return 'bg-success';
+    if (ms! < 100) return 'bg-warning';
     return 'bg-error';
   }
 
@@ -440,7 +450,7 @@
                   >
                     <span class="size-1.5 rounded-full shrink-0 {pingDot(ping)}"></span>
                     <span class="tabular-nums font-mono {pingColor(ping)}">
-                      {ping !== undefined ? `${ping}ms` : '—'}
+                      {pingLabel(ping)}
                     </span>
                   </button>
                 </td>
@@ -487,29 +497,28 @@
                 <td class="px-2 py-2">
                   <div class="flex gap-1 items-center justify-end">
                     <!-- Info toggle -->
-                    <span title={isSelected ? 'Close details' : 'Live server details'}>
-                      <button
-                        class="size-6 rounded flex items-center justify-center transition-colors
-                               {isSelected
-                                 ? 'bg-primary/15 text-primary hover:bg-primary/25'
-                                 : 'text-base-content/35 hover:bg-base-300 hover:text-base-content/80'}"
-                        onclick={() => isSelected ? closeDetail() : openDetail(fav)}
-                      >
-                        <Icon icon="ph:info" class="size-3.5" />
-                      </button>
-                    </span>
+                    <button
+                      class="size-6 rounded flex items-center justify-center transition-colors
+                             {isSelected
+                               ? 'bg-primary/15 text-primary hover:bg-primary/25'
+                               : 'text-base-content/35 hover:bg-base-300 hover:text-base-content/80'}"
+                      title={isSelected ? 'Close details' : 'Live server details'}
+                      onclick={() => isSelected ? closeDetail() : openDetail(fav)}
+                    >
+                      <Icon icon="ph:info" class="size-3.5" />
+                    </button>
                     <!-- Remove -->
-                    <span title="Remove from favorites">
-                      <button
-                        class="size-6 rounded flex items-center justify-center text-base-content/35 hover:bg-error/10 hover:text-error transition-colors"
-                        onclick={() => onRemove(fav)}
-                      >
-                        <Icon icon="ph:trash" class="size-3.5" />
-                      </button>
-                    </span>
+                    <button
+                      class="size-6 rounded flex items-center justify-center text-base-content/35 hover:bg-error/10 hover:text-error transition-colors"
+                      title="Remove from favorites"
+                      onclick={() => onRemove(fav)}
+                    >
+                      <Icon icon="ph:trash" class="size-3.5" />
+                    </button>
                     <!-- Connect -->
                     <button
                       class="btn btn-primary btn-xs h-6 min-h-0 px-2.5 text-xs font-medium"
+                      title="Launch DayZ and connect to this server"
                       onclick={() => onConnect(fav.ip, fav.port, fav.name)}
                     >
                       Connect
@@ -582,7 +591,7 @@
                 onclick={() => detailFav && doPing(detailFav)}
                 title="Click to ping"
               >
-                {pingCache.get(pingKey(detailFav)) !== undefined ? `${pingCache.get(pingKey(detailFav))}ms` : '—'}
+                {pingLabel(pingCache.get(pingKey(detailFav)))}
               </button>
             </div>
 
@@ -704,6 +713,7 @@
           {/if}
           <button
             class="btn btn-ghost btn-xs gap-1 text-base-content/40 hover:text-primary w-full"
+            title="Open this server's BattleMetrics page in browser"
             onclick={() => openUrl(`https://www.battlemetrics.com/servers/dayz/${bm?.id}`)}
           >
             <Icon icon="ph:arrow-square-out" class="size-3.5" />
@@ -726,6 +736,7 @@
       <div class="px-3 py-2 border-t border-base-300 flex-shrink-0">
         <button
           class="btn btn-ghost btn-xs w-full gap-1.5"
+          title="Re-query live server info via A2S protocol"
           onclick={() => detailFav && openDetail(detailFav)}
           disabled={a2sLoading}
         >

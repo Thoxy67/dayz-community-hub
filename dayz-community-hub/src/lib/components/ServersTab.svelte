@@ -24,6 +24,7 @@
     onPing: (ip: string, port: number) => void;
     onExcludeIp: (ip: string) => void;
     onUnexcludeIp: (ip: string) => void;
+    onManageExcluded: () => void;
   }
 
   let {
@@ -42,6 +43,7 @@
     onPing,
     onExcludeIp,
     onUnexcludeIp,
+    onManageExcluded,
   }: Props = $props();
 
   // Deferred version of filter.searchQuery: updated 150ms after the user stops typing.
@@ -130,6 +132,32 @@
 
   /** When true, servers whose IP is in excludedIps are hidden from the list. */
   let hideExcluded = $state(true);
+
+  // ── Long-press on Excluded button → open manage modal ────────────────────
+  let excludedLongPressTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function onExcludedPointerDown() {
+    excludedLongPressTimer = setTimeout(() => {
+      excludedLongPressTimer = null;
+      onManageExcluded();
+    }, 1500);
+  }
+
+  function onExcludedPointerUp() {
+    if (excludedLongPressTimer !== null) {
+      clearTimeout(excludedLongPressTimer);
+      excludedLongPressTimer = null;
+      // Short click: toggle visibility as before
+      hideExcluded = !hideExcluded;
+    }
+  }
+
+  function onExcludedPointerLeave() {
+    if (excludedLongPressTimer !== null) {
+      clearTimeout(excludedLongPressTimer);
+      excludedLongPressTimer = null;
+    }
+  }
 
   // ── Sorting ──────────────────────────────────────────────────────────────
   type SortCol = 'ping' | 'players' | 'name' | 'map' | 'mods' | 'none';
@@ -282,17 +310,27 @@
     return 'ph:moon';                                 // night
   }
 
+  const PING_TIMEOUT_MS = 5_000;
+
+  function isTimeout(ms: number | undefined): boolean {
+    return ms === undefined || ms >= PING_TIMEOUT_MS;
+  }
+
+  function pingLabel(ms: number | undefined): string {
+    return isTimeout(ms) ? 'TIMEOUT' : `${ms}ms`;
+  }
+
   function pingColor(ms: number | undefined): string {
-    if (ms === undefined) return 'text-base-content/30';
-    if (ms < 50) return 'text-success';
-    if (ms < 100) return 'text-warning';
+    if (isTimeout(ms)) return 'text-base-content/30';
+    if (ms! < 50)  return 'text-success';
+    if (ms! < 100) return 'text-warning';
     return 'text-error';
   }
 
   function pingDot(ms: number | undefined): string {
-    if (ms === undefined) return 'bg-base-content/20';
-    if (ms < 50) return 'bg-success';
-    if (ms < 100) return 'bg-warning';
+    if (isTimeout(ms)) return 'bg-base-content/20';
+    if (ms! < 50)  return 'bg-success';
+    if (ms! < 100) return 'bg-warning';
     return 'bg-error';
   }
 
@@ -443,7 +481,7 @@
         class="grow bg-transparent outline-none text-sm min-w-0"
       />
       {#if filter.searchQuery}
-        <button class="btn btn-ghost btn-xs p-0 min-h-0 h-auto shrink-0" onclick={() => { filter.searchQuery = ''; }}>
+        <button class="btn btn-ghost btn-xs p-0 min-h-0 h-auto shrink-0" title="Clear search" onclick={() => { filter.searchQuery = ''; }}>
           <Icon icon="ph:x" class="size-3" />
         </button>
       {/if}
@@ -552,11 +590,15 @@
     <div class="flex items-center gap-1">
       {#if excludedIps.size > 0}
         <button
-          class="btn btn-ghost btn-xs gap-1.5 transition-colors"
+          class="btn btn-ghost btn-xs gap-1.5 transition-colors select-none"
           class:text-error={hideExcluded}
           class:text-base-content={!hideExcluded}
-          onclick={() => (hideExcluded = !hideExcluded)}
-          title={hideExcluded ? `Showing ${excludedIps.size} excluded IP${excludedIps.size !== 1 ? 's' : ''} — click to reveal` : 'Click to hide excluded servers'}
+          onpointerdown={onExcludedPointerDown}
+          onpointerup={onExcludedPointerUp}
+          onpointerleave={onExcludedPointerLeave}
+          title={hideExcluded
+            ? `Click to reveal excluded · hold 1.5s to manage`
+            : `Click to hide excluded · hold 1.5s to manage`}
         >
           <Icon icon={hideExcluded ? 'ph:eye-slash' : 'ph:eye'} class="size-3.5" />
           {hideExcluded ? `Excluded: ${excludedIps.size}` : 'Show all'}
@@ -675,19 +717,19 @@
                    </div>
                  </td>
 
-                <!-- Ping: dot + ms — click to re-ping -->
-                <td class="px-3">
-                  <button
-                    class="flex items-center gap-1.5 cursor-pointer hover:opacity-70 transition-opacity {pingFlash.has(pingKey(server)) ? 'ping-flash' : ''}"
-                    onclick={(e) => { e.stopPropagation(); doPing(server); }}
-                    title="Click to ping"
-                  >
-                    <span class="size-1.5 rounded-full shrink-0 {pingDot(ping)}"></span>
-                    <span class="tabular-nums font-mono {pingColor(ping)}">
-                      {ping !== undefined ? `${ping}ms` : '—'}
-                    </span>
-                  </button>
-                </td>
+                 <!-- Ping: dot + ms — click to re-ping -->
+                 <td class="px-3">
+                   <button
+                     class="flex items-center gap-1.5 cursor-pointer hover:opacity-70 transition-opacity {pingFlash.has(pingKey(server)) ? 'ping-flash' : ''}"
+                     onclick={(e) => { e.stopPropagation(); doPing(server); }}
+                     title="Click to ping"
+                   >
+                     <span class="size-1.5 rounded-full shrink-0 {pingDot(ping)}"></span>
+                     <span class="tabular-nums font-mono {pingColor(ping)}">
+                       {pingLabel(ping)}
+                     </span>
+                   </button>
+                 </td>
 
                 <!-- Players: fraction + mini bar — click to refresh via A2S -->
                 <td class="px-3">
@@ -861,7 +903,7 @@
             title="Click to ping"
           >
             <span class="size-1.5 rounded-full shrink-0 {pingDot(selPing)}"></span>
-            {selPing !== undefined ? `${selPing}ms` : '—'}
+            {pingLabel(selPing)}
           </button>
           <!-- Players -->
           <span class="flex items-center gap-1.5">
@@ -924,6 +966,7 @@
         </button>
         <button
           class="btn btn-primary btn-sm gap-1.5 ml-1"
+          title="Launch DayZ and connect to this server"
           onclick={() => selected && onConnect(selected)}
         >
           <Icon icon="ph:play" class="size-3.5" />

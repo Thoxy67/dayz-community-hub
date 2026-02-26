@@ -29,15 +29,26 @@
 </script>
 
 {#if dialog}
-  <!-- inset-0 is overridden: top starts at 36px (h-9 titlebar) so the
-       titlebar stays interactive and draggable while the modal is open. -->
-  <div class="modal modal-open" style="top: 36px;">
-    <div class="modal-box max-w-md">
+  <!-- top: 36px — keeps the titlebar draggable while the modal is open -->
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+    style="top: 36px;"
+    role="presentation"
+    onclick={cancel}
+  >
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div
+      class="bg-base-100 rounded-xl shadow-2xl w-full max-w-md mx-4 p-6"
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
+      onclick={(e) => e.stopPropagation()}
+    >
       <h3 class="font-bold text-lg text-warning">{dialog.title}</h3>
       <div class="py-4 whitespace-pre-wrap text-base-content/80 text-sm leading-relaxed">
         {dialog.message}
       </div>
-      <div class="modal-action">
+      <div class="flex justify-end gap-2">
         {#if dialog.onCancel}
           <button class="btn btn-outline btn-error btn-sm" onclick={cancel}>Cancel</button>
         {/if}
@@ -65,6 +76,5 @@
         </button>
       </div>
     </div>
-    <button class="modal-backdrop bg-base-content/20" onclick={cancel} aria-label="Close dialog"></button>
   </div>
 {/if}

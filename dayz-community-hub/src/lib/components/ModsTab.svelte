@@ -3,6 +3,7 @@
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import Icon from '@iconify/svelte';
+  import { onMount } from 'svelte';
 
   let copiedKey = $state('');
   async function copyText(key: string, text: string) {
@@ -16,6 +17,7 @@
     loading: boolean;
     checking: boolean;
     staleCount: number;
+    steamApiKey: string;
     onRefresh: () => void;
     onCheckUpdates: () => void;
     onDelete: (mod: InstalledModDto) => void;
@@ -31,12 +33,15 @@
   }
 
   let {
-    mods, loading, checking, staleCount,
+    mods, loading, checking, staleCount, steamApiKey,
     onRefresh, onCheckUpdates, onDelete, onToggleManaged,
     onUpdate, onUpdateAll, onUpdateStale, onCleanup,
     onOpenWorkshopDir, onOpenModDir,
     onDeleteSelected, onUpdateSelected,
   }: Props = $props();
+
+  /** Whether Steam Workshop update checking is available (requires Steam API key). */
+  let canCheckUpdates = $derived(!!steamApiKey);
 
   // Track which mod IDs are currently being toggled so we can show a per-row spinner.
   let togglingIds = $state(new Set<number>());
@@ -131,6 +136,55 @@
       hour: '2-digit', minute: '2-digit',
     });
   }
+
+  // ── Keyboard navigation ───────────────────────────────────────────────────
+  let focusedIdx = $state<number>(-1);
+  let tableRef = $state<HTMLElement | null>(null);
+
+  // Keep focusedIdx in bounds when the sorted list changes
+  $effect(() => {
+    if (sorted.length === 0) { focusedIdx = -1; return; }
+    if (focusedIdx >= sorted.length) focusedIdx = sorted.length - 1;
+  });
+
+  function handleKeydown(e: KeyboardEvent) {
+    if (sorted.length === 0) return;
+    // Skip when a real input/select/textarea has focus
+    const tag = (e.target as HTMLElement)?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    // Skip global shortcuts (Ctrl+…)
+    if (e.ctrlKey || e.metaKey) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      focusedIdx = focusedIdx < 0 ? 0 : Math.min(focusedIdx + 1, sorted.length - 1);
+      scrollRowIntoView(focusedIdx);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      focusedIdx = focusedIdx < 0 ? 0 : Math.max(focusedIdx - 1, 0);
+      scrollRowIntoView(focusedIdx);
+    } else if (e.key === ' ') {
+      if (focusedIdx >= 0 && focusedIdx < sorted.length) {
+        e.preventDefault();
+        toggleSelect(sorted[focusedIdx].id);
+      }
+    } else if (e.key === 'm' || e.key === 'M') {
+      if (focusedIdx >= 0 && focusedIdx < sorted.length) {
+        handleToggleManaged(sorted[focusedIdx]);
+      }
+    }
+  }
+
+  function scrollRowIntoView(idx: number) {
+    if (!tableRef) return;
+    const row = tableRef.querySelector<HTMLElement>(`tbody tr:nth-child(${idx + 1})`);
+    row?.scrollIntoView({ block: 'nearest' });
+  }
+
+  onMount(() => {
+    window.addEventListener('keydown', handleKeydown);
+    return () => window.removeEventListener('keydown', handleKeydown);
+  });
 </script>
 
 <div class="flex flex-col h-full overflow-hidden">
@@ -174,21 +228,23 @@
         Open folder
       </button>
 
-      <!-- Check for updates -->
-      <button
-        class="btn btn-ghost btn-xs gap-1.5"
-        onclick={onCheckUpdates}
-        disabled={checking || loading || mods.length === 0}
-        title="Check Steam Workshop for updates"
-      >
-        {#if checking}
-          <span class="loading loading-spinner loading-xs"></span>
-          Checking…
-        {:else}
-          <Icon icon="ph:cloud-arrow-down" class="size-3.5" />
-          Check updates
-        {/if}
-      </button>
+      <!-- Check for updates — requires Steam API key -->
+      {#if canCheckUpdates}
+        <button
+          class="btn btn-ghost btn-xs gap-1.5"
+          onclick={onCheckUpdates}
+          disabled={checking || loading || mods.length === 0}
+          title="Check Steam Workshop for updates"
+        >
+          {#if checking}
+            <span class="loading loading-spinner loading-xs"></span>
+            Checking…
+          {:else}
+            <Icon icon="ph:cloud-arrow-down" class="size-3.5" />
+            Check updates
+          {/if}
+        </button>
+      {/if}
 
       <!-- Update stale / Update all -->
       {#if staleCount > 0}
@@ -263,7 +319,7 @@
       <span class="text-xs">Connect to a modded server to install mods</span>
     </div>
   {:else}
-    <div class="overflow-auto flex-1">
+    <div class="overflow-auto flex-1" bind:this={tableRef}>
       <table class="w-full text-xs" style="table-layout: fixed; border-collapse: collapse;">
         <thead class="sticky top-0 z-10">
           <tr class="bg-base-200/95 backdrop-blur-sm text-base-content/50 uppercase tracking-wider border-b border-base-300 select-none" style="font-size:10px;">
@@ -290,21 +346,26 @@
             <th class="w-40 px-3 py-2 font-medium text-left cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('local')}>
               <span class="flex items-center gap-1">Local <Icon icon={sortIcon('local')} class="size-2.5" /></span>
             </th>
-            <th class="w-40 px-3 py-2 font-medium text-left cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('remote')}>
-              <span class="flex items-center gap-1">Remote <Icon icon={sortIcon('remote')} class="size-2.5" /></span>
-            </th>
+            {#if canCheckUpdates}
+              <th class="w-40 px-3 py-2 font-medium text-left cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('remote')}>
+                <span class="flex items-center gap-1">Remote <Icon icon={sortIcon('remote')} class="size-2.5" /></span>
+              </th>
+            {/if}
             <th class="w-16 px-3 py-2 font-medium text-center" title="UPDATE = new version on Workshop; OK = up to date; MANAGED = tracked but not yet checked for updates">Status</th>
             <th class="w-24 px-3 py-2"></th>
           </tr>
         </thead>
         <tbody>
-          {#each sorted as mod}
+          {#each sorted as mod, idx}
             {@const stale = mod.update_available}
             {@const selected = selectedIds.has(mod.id)}
+            {@const focused = idx === focusedIdx}
             <tr
               class="group/row border-b border-base-300/40 transition-colors hover:bg-base-200/60 cursor-pointer
                      {stale ? 'bg-warning/5' : ''}
-                     {selected ? 'bg-primary/8 hover:bg-primary/12' : ''}"
+                     {selected ? 'bg-primary/8 hover:bg-primary/12' : ''}
+                     {focused ? 'outline outline-1 outline-primary/60 outline-offset-[-1px]' : ''}"
+              onclick={() => focusedIdx = idx}
               ondblclick={() => onOpenModDir(mod)}
             >
 
@@ -327,7 +388,7 @@
                       <Icon icon="ph:arrow-circle-up" class="size-3.5 text-warning shrink-0" />
                     </span>
                   {:else if mod.remote_updated !== null}
-                    <Icon icon="ph:check-circle" class="size-3.5 text-success/50 shrink-0" />
+                    <span title="Up to date"><Icon icon="ph:check-circle" class="size-3.5 text-success/50 shrink-0" /></span>
                   {:else}
                     <Icon icon="mdi:puzzle-outline" class="size-3.5 text-base-content/20 shrink-0" />
                   {/if}
@@ -377,26 +438,28 @@
               <!-- Local updated -->
               <td class="px-3 py-2 text-base-content/50">{formatDate(mod.local_updated)}</td>
 
-              <!-- Remote updated -->
-              <td class="px-3 py-2">
-                {#if checking}
-                  <span class="text-base-content/25">…</span>
-                {:else if mod.remote_updated}
-                  <span class="{stale ? 'text-warning font-medium' : 'text-base-content/50'}">
-                    {formatDate(mod.remote_updated)}
-                  </span>
-                {:else}
-                  <span class="text-base-content/25">—</span>
-                {/if}
-              </td>
+              <!-- Remote updated — only shown when Steam API key is set -->
+              {#if canCheckUpdates}
+                <td class="px-3 py-2">
+                  {#if checking}
+                    <span class="text-base-content/25">…</span>
+                  {:else if mod.remote_updated}
+                    <span class="{stale ? 'text-warning font-medium' : 'text-base-content/50'}">
+                      {formatDate(mod.remote_updated)}
+                    </span>
+                  {:else}
+                    <span class="text-base-content/25">—</span>
+                  {/if}
+                </td>
+              {/if}
 
               <!-- Status badge -->
               <td class="px-3 py-2 text-center">
-                {#if stale}
+                {#if canCheckUpdates && stale}
                   <span class="inline-flex items-center gap-1 text-warning font-semibold rounded px-1.5 py-0.5 bg-warning/15" style="font-size:9px;">
                     UPDATE
                   </span>
-                {:else if mod.remote_updated !== null}
+                {:else if canCheckUpdates && mod.remote_updated !== null}
                   <span class="inline-flex items-center gap-1 text-success/70 rounded px-1.5 py-0.5 bg-success/10" style="font-size:9px;">
                     OK
                   </span>
@@ -413,47 +476,44 @@
               <td class="px-2 py-2">
                 <div class="flex gap-1 items-center justify-end">
                   <!-- Update button — amber when stale -->
-                  <span title={stale ? 'Update available — click to update' : 'Force re-validate via steamcmd'}>
-                    <button
-                      class="size-6 rounded flex items-center justify-center transition-colors
-                             {stale
-                               ? 'text-warning hover:bg-warning/15'
-                               : 'text-base-content/35 hover:bg-base-300 hover:text-base-content/70'}"
-                      onclick={() => onUpdate(mod)}
-                    >
-                      <Icon icon="ph:arrows-clockwise" class="size-3.5" />
-                    </button>
-                  </span>
+                  <button
+                    class="size-6 rounded flex items-center justify-center transition-colors
+                           {stale
+                             ? 'text-warning hover:bg-warning/15'
+                             : 'text-base-content/35 hover:bg-base-300 hover:text-base-content/70'}"
+                    title={stale ? 'Update available — click to update' : 'Force re-validate via steamcmd'}
+                    onclick={() => onUpdate(mod)}
+                  >
+                    <Icon icon="ph:arrows-clockwise" class="size-3.5" />
+                  </button>
                   <!-- Toggle managed -->
-                  <span title={togglingIds.has(mod.id) ? 'Updating…' : mod.managed
-                    ? 'Managed: this mod is tracked and included when connecting to modded servers. Click to unmanage.'
-                    : 'Unmanaged: this mod is installed but not tracked. Click to mark as managed so it is included in server connections.'
-                  }>
-                    <button
-                      class="size-6 rounded flex items-center justify-center transition-colors
-                             {mod.managed
-                               ? 'text-success/60 hover:bg-success/10'
-                               : 'text-base-content/35 hover:bg-base-300 hover:text-base-content/70'}
-                             {togglingIds.has(mod.id) ? 'opacity-60 pointer-events-none' : ''}"
-                      onclick={() => handleToggleManaged(mod)}
-                      disabled={togglingIds.has(mod.id)}
-                    >
-                      {#if togglingIds.has(mod.id)}
-                        <span class="loading loading-spinner loading-xs"></span>
-                      {:else}
-                        <Icon icon={mod.managed ? 'ph:check-square' : 'ph:square'} class="size-3.5" />
-                      {/if}
-                    </button>
-                  </span>
+                  <button
+                    class="size-6 rounded flex items-center justify-center transition-colors
+                           {mod.managed
+                             ? 'text-success/60 hover:bg-success/10'
+                             : 'text-base-content/35 hover:bg-base-300 hover:text-base-content/70'}
+                           {togglingIds.has(mod.id) ? 'opacity-60 pointer-events-none' : ''}"
+                    title={togglingIds.has(mod.id) ? 'Updating…' : mod.managed
+                      ? 'Managed: this mod is tracked and included when connecting to modded servers. Click to unmanage.'
+                      : 'Unmanaged: this mod is installed but not tracked. Click to mark as managed so it is included in server connections.'
+                    }
+                    onclick={() => handleToggleManaged(mod)}
+                    disabled={togglingIds.has(mod.id)}
+                  >
+                    {#if togglingIds.has(mod.id)}
+                      <span class="loading loading-spinner loading-xs"></span>
+                    {:else}
+                      <Icon icon={mod.managed ? 'ph:check-square' : 'ph:square'} class="size-3.5" />
+                    {/if}
+                  </button>
                   <!-- Delete -->
-                  <span title="Delete mod">
-                    <button
-                      class="size-6 rounded flex items-center justify-center text-base-content/35 hover:bg-error/10 hover:text-error transition-colors"
-                      onclick={() => onDelete(mod)}
-                    >
-                      <Icon icon="ph:trash" class="size-3.5" />
-                    </button>
-                  </span>
+                  <button
+                    class="size-6 rounded flex items-center justify-center text-base-content/35 hover:bg-error/10 hover:text-error transition-colors"
+                    title="Delete mod"
+                    onclick={() => onDelete(mod)}
+                  >
+                    <Icon icon="ph:trash" class="size-3.5" />
+                  </button>
                 </div>
               </td>
             </tr>

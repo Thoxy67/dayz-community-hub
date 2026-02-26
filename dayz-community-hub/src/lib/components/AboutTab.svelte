@@ -2,16 +2,46 @@
   import Icon from '@iconify/svelte';
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { getVersion, getName } from '@tauri-apps/api/app';
-  import { invoke, Channel } from '@tauri-apps/api/core';
-  import { onMount } from 'svelte';
+  import { invoke } from '@tauri-apps/api/core';
+  import { onMount, onDestroy } from 'svelte';
+  import GlitchText from '$lib/components/GlitchText.svelte';
+  import SuikaGame  from '$lib/components/SuikaGame.svelte';
+
+  type UpdateState =
+    | 'idle' | 'checking' | 'up_to_date' | 'available' | 'downloading' | 'done' | 'error';
+
+  type UpdateInfo = {
+    version: string;
+    currentVersion: string;
+    body: string | null;
+    date: string | null;
+  };
 
   interface Props {
-    onExport: () => void;
+    onExport: (includeMods: boolean) => void;
     onImport: () => void;
     onReset: () => void;
+    updateState?: UpdateState;
+    updateInfo?: UpdateInfo | null;
+    updateError?: string;
+    dlPercent?: number;
+    dlReceived?: number;
+    dlTotal?: number;
+    onCheckForUpdate?: () => void;
+    onInstallUpdate?: () => void;
   }
 
-  let { onExport, onImport, onReset }: Props = $props();
+  let {
+    onExport, onImport, onReset,
+    updateState = 'idle',
+    updateInfo = null,
+    updateError = '',
+    dlPercent = 0,
+    dlReceived = 0,
+    dlTotal = 0,
+    onCheckForUpdate,
+    onInstallUpdate,
+  }: Props = $props();
 
   let appVersion = $state('');
   let appName    = $state('DayZ Community Hub');
@@ -24,82 +54,35 @@
   let cmdDownloadErr = $state('');
   let cmdDownloadOk  = $state(false);
 
-  // ── Update checker (Windows only) ──────────────────────────────────────────
+  // ── Entrance animation ─────────────────────────────────────────────────────
+  let mounted = $state(false);
 
-  type UpdateInfo = {
-    version: string;
-    currentVersion: string;
-    body: string | null;
-    date: string | null;
-  };
+  // Update state is lifted to +page.svelte and passed in as props.
 
-  type DownloadEvent =
-    | { event: 'Started';   data: { contentLength: number | null } }
-    | { event: 'Progress';  data: { chunkLength: number } }
-    | { event: 'Finished' };
+  // ── Konami code → easter egg ───────────────────────────────────────────────
+  const KONAMI = [
+    'ArrowUp','ArrowUp','ArrowDown','ArrowDown',
+    'ArrowLeft','ArrowRight','ArrowLeft','ArrowRight',
+    'b','a',
+  ];
+  let konamiIndex  = 0;
+  let eggOpen      = $state(false);
 
-  type UpdateState =
-    | 'idle'          // haven't checked yet
-    | 'checking'      // check_for_update in flight
-    | 'up_to_date'    // no update found
-    | 'available'     // update info present, not yet installing
-    | 'downloading'   // install_update in progress
-    | 'done'          // finished — app will restart shortly
-    | 'error';        // something went wrong
-
-  let updateState  = $state<UpdateState>('idle');
-  let updateInfo   = $state<UpdateInfo | null>(null);
-  let updateError  = $state('');
-  let dlReceived   = $state(0);
-  let dlTotal      = $state(0);
-
-  let dlPercent = $derived(
-    dlTotal > 0 ? Math.round((dlReceived / dlTotal) * 100) : 0
-  );
-
-  async function checkForUpdate() {
-    updateState = 'checking';
-    updateError = '';
-    try {
-      const info = await invoke<UpdateInfo | null>('check_for_update');
-      if (info) {
-        updateInfo  = info;
-        updateState = 'available';
-      } else {
-        updateState = 'up_to_date';
+  function onKeydown(e: KeyboardEvent) {
+    if (e.key === KONAMI[konamiIndex]) {
+      konamiIndex++;
+      if (konamiIndex === KONAMI.length) {
+        konamiIndex = 0;
+        if (!eggOpen) eggOpen = true;
+        return;
       }
-    } catch (e) {
-      updateError = String(e);
-      updateState = 'error';
-    }
-  }
-
-  async function installUpdate() {
-    updateState = 'downloading';
-    dlReceived  = 0;
-    dlTotal     = 0;
-    updateError = '';
-
-    const onEvent = new Channel<DownloadEvent>();
-    onEvent.onmessage = (ev) => {
-      if (ev.event === 'Started') {
-        dlTotal = ev.data.contentLength ?? 0;
-      } else if (ev.event === 'Progress') {
-        dlReceived += ev.data.chunkLength;
-      } else if (ev.event === 'Finished') {
-        updateState = 'done';
-      }
-    };
-
-    try {
-      await invoke('install_update', { onEvent });
-    } catch (e) {
-      updateError = String(e);
-      updateState = 'error';
+    } else {
+      konamiIndex = e.key === KONAMI[0] ? 1 : 0;
     }
   }
 
   onMount(async () => {
+    requestAnimationFrame(() => { mounted = true; });
     try {
       [appVersion, appName] = await Promise.all([getVersion(), getName()]);
     } catch { /* ignore in dev */ }
@@ -107,11 +90,12 @@
       const status = await invoke<{ found: boolean; path: string | null; platform: string }>('detect_steamcmd');
       platform = status.platform;
     } catch { /* ignore */ }
+    if (platform === 'windows') onCheckForUpdate?.();
+    window.addEventListener('keydown', onKeydown);
+  });
 
-    // Auto-check for updates on Windows
-    if (platform === 'windows') {
-      checkForUpdate();
-    }
+  onDestroy(() => {
+    window.removeEventListener('keydown', onKeydown);
   });
 
   async function installSteamcmdWindows() {
@@ -128,23 +112,78 @@
     }
   }
 
+  // Export option: include managed mod list
+  let exportIncludeMods = $state(true);
+
   const AUTHOR   = 'Thoxy';
   const REPO_URL = 'https://git.thoxy.xyz/thoxy/dayz-community-hub';
 </script>
+
+<style>
+  /* Hero icon: subtle rotate on hover */
+  .icon-hover-spin {
+    transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .icon-hover-spin:hover {
+    transform: rotate(15deg) scale(1.1);
+  }
+
+  /* Stagger fade-slide-up for list items */
+  .stagger-item {
+    opacity: 0;
+    transform: translateY(12px);
+    transition: opacity 0.35s ease, transform 0.35s ease;
+  }
+  .stagger-item.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* Tech badge: bounce on hover */
+  .tech-badge {
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.2s, border-color 0.2s, color 0.2s;
+  }
+  .tech-badge:hover {
+    transform: translateY(-3px) scale(1.06);
+  }
+
+  /* Feature highlight icons: float on hover */
+  .feat-icon {
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .feat-icon:hover {
+    transform: translateY(-4px) scale(1.15);
+  }
+
+
+</style>
+
+<!-- ── Easter Egg ─────────────────────────────────────────────────────────── -->
+{#if eggOpen}
+  <SuikaGame onClose={() => { eggOpen = false; }} />
+{/if}
 
 <div class="h-full overflow-y-auto">
   <div class="max-w-6xl mx-auto px-6 py-6">
 
     <!-- ── Hero (full width) ─────────────────────────────────────────────── -->
-    <div class="relative rounded-2xl overflow-hidden border border-base-300/60 bg-base-200/40 mb-6">
+    <div
+      class="relative rounded-2xl overflow-hidden border border-base-300/60 bg-base-200/40 mb-6 stagger-item"
+      class:visible={mounted}
+      style="transition-delay: 0ms"
+    >
       <div class="absolute inset-0 bg-gradient-to-br from-primary/8 via-transparent to-secondary/5 pointer-events-none"></div>
       <div class="relative px-6 py-5 flex items-center gap-5">
-        <div class="relative shrink-0">
+        <div class="relative shrink-0 icon-hover-spin">
           <div class="absolute inset-0 rounded-2xl bg-primary/20 blur-xl scale-110 pointer-events-none"></div>
           <img src="/icon.svg" alt="DayZ Community Hub" class="relative w-14 h-14 rounded-2xl shadow-lg" />
         </div>
         <div class="flex-1 min-w-0">
-          <h1 class="text-xl font-bold text-base-content tracking-tight leading-tight">{appName}</h1>
+          <GlitchText
+            text={appName}
+            tag="h1"
+            class="text-xl font-bold text-base-content tracking-tight leading-tight font-mono"
+          />
           <p class="text-xs text-base-content/50 mt-0.5">Server browser &amp; mod manager for DayZ Standalone</p>
           <div class="flex flex-wrap items-center gap-2 mt-2">
             {#if appVersion}
@@ -171,7 +210,7 @@
             { icon: 'ph:chart-line-up',   label: 'BattleMetrics',    color: 'text-emerald-400' },
             { icon: 'ph:rocket-launch',   label: 'One-click Launch', color: 'text-orange-400'  },
           ] as feat}
-            <div class="flex flex-col items-center gap-1 text-center">
+            <div class="feat-icon flex flex-col items-center gap-1 text-center cursor-default">
               <Icon icon={feat.icon} class="size-5 {feat.color}" />
               <span class="text-xs text-base-content/50 font-medium whitespace-nowrap">{feat.label}</span>
             </div>
@@ -188,7 +227,11 @@
 
         <!-- Updates (Windows only) -->
         {#if platform === 'windows'}
-          <section>
+          <section
+            class="stagger-item"
+            class:visible={mounted}
+            style="transition-delay: 60ms"
+          >
             <div class="flex items-center gap-2 mb-3">
               <Icon icon="ph:arrow-circle-up" class="size-4 text-primary shrink-0" />
               <h2 class="text-xs font-semibold text-base-content/60 uppercase tracking-widest">Updates</h2>
@@ -208,7 +251,7 @@
                     <p class="text-sm font-semibold text-base-content">You're up to date</p>
                     <p class="text-xs text-base-content/45 mt-0.5">v{appVersion} is the latest version</p>
                   </div>
-                  <button class="btn btn-xs btn-ghost text-base-content/40 gap-1" onclick={checkForUpdate}>
+                   <button class="btn btn-xs btn-ghost text-base-content/40 gap-1" onclick={onCheckForUpdate}>
                     <Icon icon="ph:arrows-clockwise" class="size-3.5" />Re-check
                   </button>
                 </div>
@@ -231,7 +274,7 @@
                   </div>
                 </div>
                 <div class="flex items-center justify-end gap-2 px-4 py-2.5 bg-base-200/60">
-                  <button class="btn btn-sm btn-primary gap-1.5" onclick={installUpdate}>
+                  <button class="btn btn-sm btn-primary gap-1.5" onclick={onInstallUpdate}>
                     <Icon icon="ph:download-simple" class="size-3.5" />Install update
                   </button>
                 </div>
@@ -269,7 +312,7 @@
                     <Icon icon="ph:warning-circle" class="size-4 shrink-0 mt-0.5" />
                     <p class="text-xs leading-relaxed break-all">{updateError}</p>
                   </div>
-                  <button class="btn btn-xs btn-ghost text-base-content/40 gap-1" onclick={checkForUpdate}>
+                  <button class="btn btn-xs btn-ghost text-base-content/40 gap-1" onclick={onCheckForUpdate}>
                     <Icon icon="ph:arrows-clockwise" class="size-3.5" />Retry
                   </button>
                 </div>
@@ -281,7 +324,11 @@
         {/if}
 
         <!-- Quick Start -->
-        <section>
+        <section
+          class="stagger-item"
+          class:visible={mounted}
+          style="transition-delay: 120ms"
+        >
           <div class="flex items-center gap-2 mb-3">
             <Icon icon="ph:rocket-launch" class="size-4 text-primary shrink-0" />
             <h2 class="text-xs font-semibold text-base-content/60 uppercase tracking-widest">Quick Start</h2>
@@ -291,8 +338,12 @@
               { n: 1, icon: 'ph:user-gear',       title: 'Open account settings',  body: 'Click your name (or "Set up account") in the title bar to configure your player name, Steam credentials, and API keys.' },
               { n: 2, icon: 'ph:game-controller', title: 'Set your in-game name',  body: 'This is the character name passed as -name= when launching DayZ.' },
               { n: 3, icon: 'mdi:server-network', title: 'Browse & connect',       body: 'Use the Servers tab to find a server. Double-click a row or click Connect to launch DayZ directly.' },
-            ] as step}
-              <div class="flex items-start gap-4 px-4 py-3 rounded-xl bg-base-200/50 border border-base-300/50 hover:border-primary/20 hover:bg-base-200/80 transition-colors">
+            ] as step, i}
+              <div
+                class="stagger-item flex items-start gap-4 px-4 py-3 rounded-xl bg-base-200/50 border border-base-300/50 hover:border-primary/20 hover:bg-base-200/80 transition-colors"
+                class:visible={mounted}
+                style="transition-delay: {180 + i * 60}ms"
+              >
                 <span class="size-6 rounded-full bg-primary text-primary-content text-xs font-bold flex items-center justify-center shrink-0 mt-0.5 shadow-sm">{step.n}</span>
                 <div class="flex-1 min-w-0">
                   <p class="text-sm font-semibold text-base-content flex items-center gap-1.5">
@@ -306,7 +357,11 @@
         </section>
 
         <!-- SteamCMD & Mods -->
-        <section>
+        <section
+          class="stagger-item"
+          class:visible={mounted}
+          style="transition-delay: 360ms"
+        >
           <div class="flex items-center gap-2 mb-3">
             <Icon icon="ph:terminal-window" class="size-4 text-primary shrink-0" />
             <h2 class="text-xs font-semibold text-base-content/60 uppercase tracking-widest">SteamCMD &amp; Mods</h2>
@@ -382,7 +437,11 @@
         </section>
 
         <!-- Keyboard Shortcuts -->
-        <section>
+        <section
+          class="stagger-item"
+          class:visible={mounted}
+          style="transition-delay: 420ms"
+        >
           <div class="flex items-center gap-2 mb-3">
             <Icon icon="ph:keyboard" class="size-4 text-primary shrink-0" />
             <h2 class="text-xs font-semibold text-base-content/60 uppercase tracking-widest">Keyboard Shortcuts</h2>
@@ -433,12 +492,19 @@
             <div>
               <p class="text-xs font-semibold text-base-content/35 uppercase tracking-widest mb-1 px-1">Mods</p>
               <div class="rounded-xl border border-base-300/50 overflow-hidden">
-                <div class="flex items-center gap-2 px-3 py-1.5 bg-base-200/30">
-                  <div class="flex items-center gap-1 shrink-0 w-28">
-                    <kbd class="kbd kbd-xs">Dbl-click</kbd>
+                {#each [
+                  { keys: ['↑', '↓'],     desc: 'Navigate the list' },
+                  { keys: ['Space'],       desc: 'Toggle checkbox' },
+                  { keys: ['M'],           desc: 'Toggle managed' },
+                  { keys: ['Dbl-click'],   desc: 'Open mod folder' },
+                ] as row, i}
+                  <div class="flex items-center gap-2 px-3 py-1.5 {i % 2 === 0 ? 'bg-base-200/30' : ''} border-b border-base-300/30 last:border-0">
+                    <div class="flex items-center gap-1 shrink-0 w-28">
+                      {#each row.keys as k}<kbd class="kbd kbd-xs">{k}</kbd>{/each}
+                    </div>
+                    <span class="text-xs text-base-content/55">{row.desc}</span>
                   </div>
-                  <span class="text-xs text-base-content/55">Open mod folder</span>
-                </div>
+                {/each}
               </div>
             </div>
 
@@ -446,7 +512,11 @@
         </section>
 
         <!-- Profile Management -->
-        <section>
+        <section
+          class="stagger-item"
+          class:visible={mounted}
+          style="transition-delay: 480ms"
+        >
           <div class="flex items-center gap-2 mb-3">
             <Icon icon="ph:archive" class="size-4 text-primary shrink-0" />
             <h2 class="text-xs font-semibold text-base-content/60 uppercase tracking-widest">Profile Management</h2>
@@ -459,11 +529,19 @@
               <div class="flex-1 min-w-0">
                 <p class="text-sm font-semibold text-base-content">Export</p>
                 <p class="text-xs text-base-content/45 mt-0.5 leading-relaxed">
-                  Save all settings, favorites, history and mod list to a
+                  Save settings, favorites, history to a
                   <span class="font-mono bg-base-300/60 px-1 rounded text-base-content/60">.dchub</span> file (zstd-compressed, portable between machines).
                 </p>
+                <label class="flex items-center gap-2 mt-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    bind:checked={exportIncludeMods}
+                  />
+                  <span class="text-xs text-base-content/60">Include managed mod list</span>
+                </label>
               </div>
-              <button class="btn btn-sm btn-primary shrink-0 gap-1.5" onclick={onExport}>
+              <button class="btn btn-sm btn-primary shrink-0 gap-1.5" onclick={() => onExport(exportIncludeMods)}>
                 <Icon icon="ph:upload-simple" class="size-3.5" />Export
               </button>
             </div>
@@ -505,7 +583,11 @@
       <div class="space-y-6">
 
         <!-- Tabs reference -->
-        <section>
+        <section
+          class="stagger-item"
+          class:visible={mounted}
+          style="transition-delay: 150ms"
+        >
           <div class="flex items-center gap-2 mb-3">
             <Icon icon="ph:tabs" class="size-4 text-primary shrink-0" />
             <h2 class="text-xs font-semibold text-base-content/60 uppercase tracking-widest">Tabs</h2>
@@ -521,7 +603,7 @@
               { icon: 'ph:sliders',         label: 'Options',  color: 'text-orange-400',  desc: 'Toggle DayZ launch options.' },
               { icon: 'ph:mountains',       label: 'Offline',  color: 'text-emerald-400', desc: 'Community Offline Mode — solo missions without a server.' },
             ] as tab, i}
-              <div class="flex items-start gap-2.5 px-3 py-2.5 {i % 2 === 0 ? 'bg-base-200/20' : ''}">
+              <div class="flex items-start gap-2.5 px-3 py-2.5 {i % 2 === 0 ? 'bg-base-200/20' : ''} hover:bg-base-200/40 transition-colors">
                 <Icon icon={tab.icon} class="size-3.5 {tab.color} shrink-0 mt-0.5" />
                 <div class="flex-1 min-w-0">
                   <span class="text-xs font-semibold text-base-content/80">{tab.label}</span>
@@ -533,7 +615,11 @@
         </section>
 
         <!-- Optional API Keys -->
-        <section>
+        <section
+          class="stagger-item"
+          class:visible={mounted}
+          style="transition-delay: 240ms"
+        >
           <div class="flex items-center gap-2 mb-3">
             <Icon icon="ph:key" class="size-4 text-primary shrink-0" />
             <h2 class="text-xs font-semibold text-base-content/60 uppercase tracking-widest">Optional API Keys</h2>
@@ -601,7 +687,11 @@
         </section>
 
         <!-- Built with -->
-        <section>
+        <section
+          class="stagger-item"
+          class:visible={mounted}
+          style="transition-delay: 330ms"
+        >
           <div class="flex items-center gap-2 mb-3">
             <Icon icon="ph:code" class="size-4 text-primary shrink-0" />
             <h2 class="text-xs font-semibold text-base-content/60 uppercase tracking-widest">Built with</h2>
@@ -615,7 +705,7 @@
               { icon: 'simple-icons:tailwindcss', label: 'Tailwind',  url: 'https://tailwindcss.com',   color: 'text-cyan-400'   },
             ] as tech}
               <button
-                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-base-200/60 border border-base-300/60 text-xs text-base-content/50 hover:bg-base-200 hover:border-base-300 hover:text-base-content/80 transition-all"
+                class="tech-badge inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-base-200/60 border border-base-300/60 text-xs text-base-content/50 hover:bg-base-200 hover:border-base-300 hover:text-base-content/80"
                 onclick={() => openUrl(tech.url)}
               >
                 <Icon icon={tech.icon} class="size-3.5 {tech.color}" />{tech.label}
@@ -629,7 +719,11 @@
     </div><!-- end two-column grid -->
 
     <!-- ── Footer (full width) ──────────────────────────────────────────── -->
-    <div class="flex items-center justify-between pt-3 pb-4 mt-6 border-t border-base-300/40 text-xs text-base-content/25">
+    <div
+      class="stagger-item flex items-center justify-between pt-3 pb-4 mt-6 border-t border-base-300/40 text-xs text-base-content/25"
+      class:visible={mounted}
+      style="transition-delay: 540ms"
+    >
       <span>{appName}{appVersion ? ` v${appVersion}` : ''}</span>
       <span class="flex items-center gap-1.5">
         Made with <Icon icon="ph:heart-fill" class="size-3 text-error/40" /> by {AUTHOR}

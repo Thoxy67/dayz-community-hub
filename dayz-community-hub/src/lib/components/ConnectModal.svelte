@@ -40,13 +40,19 @@
 
 {#if request}
   <!-- top: 36px — keeps the titlebar draggable while the modal is open -->
-  <div class="modal modal-open" style="top: 36px;">
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+    style="top: 36px;"
+    role="presentation"
+    onclick={onClose}
+  >
     <div
-      class="modal-box max-w-sm"
+      class="bg-base-100 rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6"
       role="dialog"
       aria-modal="true"
       tabindex="-1"
       onkeydown={handleKeydown}
+      onclick={(e) => e.stopPropagation()}
     >
       <!-- Header -->
       <div class="flex items-start gap-3 mb-4">
@@ -92,7 +98,7 @@
       {/if}
 
       <!-- Actions -->
-      <div class="modal-action mt-4">
+      <div class="flex justify-end gap-2 mt-4">
         <button class="btn btn-ghost btn-sm" onclick={onClose}>Cancel</button>
         <button class="btn btn-primary btn-sm gap-1.5" onclick={handleConnect}>
           <Icon icon="ph:play" class="size-3.5" />
@@ -102,8 +108,5 @@
         </button>
       </div>
     </div>
-    <button class="modal-backdrop bg-base-content/20" onclick={onClose} aria-label="Close"></button>
   </div>
 {/if}
-
-<style></style>

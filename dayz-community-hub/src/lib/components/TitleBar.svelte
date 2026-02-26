@@ -4,6 +4,11 @@
   import { open as openDialog } from '@tauri-apps/plugin-dialog';
   import { openUrl } from '@tauri-apps/plugin-opener';
   import Icon from '@iconify/svelte';
+  import GlitchText from '$lib/components/GlitchText.svelte';
+
+
+  type UpdateState =
+    | 'idle' | 'checking' | 'up_to_date' | 'available' | 'downloading' | 'done' | 'error';
 
   interface Props {
     stats: AppStatsDto | null;
@@ -11,7 +16,13 @@
     steamPlayers: number | null;
     theme: 'light' | 'dark';
     profile: ProfileDto | null;
+    staleModCount?: number;
+    updateState?: UpdateState;
+    /** Increment to imperatively trigger the title glitch animation */
+    glitchTick?: number;
     onToggleTheme: () => void;
+    onUpdateMods?: () => void;
+    onGoToUpdate?: () => void;
     onSaveSettings: (
       player: string | null,
       steamLogin: string | null,
@@ -24,9 +35,10 @@
       battlemetricsApiKey: string | null,
     ) => void;
     onUnexcludeIp: (ip: string) => void;
+    onOpenExcludedIps: () => void;
   }
 
-  let { stats, avatarUrl, steamPlayers, theme, profile, onToggleTheme, onSaveSettings, onUnexcludeIp }: Props = $props();
+  let { stats, avatarUrl, steamPlayers, theme, profile, staleModCount = 0, updateState = 'idle', glitchTick = 0, onToggleTheme, onSaveSettings, onUnexcludeIp, onOpenExcludedIps, onUpdateMods, onGoToUpdate }: Props = $props();
 
   // ── Window controls ────────────────────────────────────────────────────────
   const win = getCurrentWindow();
@@ -47,6 +59,8 @@
   }
 
   // ── Account modal state ────────────────────────────────────────────────────
+  let logoHovered = $state(false);
+
   let modalOpen            = $state(false);
   let playerName           = $state('');
   let steamLogin           = $state('');
@@ -114,30 +128,41 @@
 <div
   class="h-9 flex items-center bg-base-200 border-b border-base-300 flex-shrink-0 select-none relative z-[1001]"
   onmousedown={onTitlebarMousedown}
+  onmouseenter={() => logoHovered = true}
+  onmouseleave={() => logoHovered = false}
 >
 
-  <!-- Left: identity -->
-  <div class="flex items-center gap-2 px-4 pr-4 border-r border-base-300">
-    <img src="/icon.svg" class="w-5 h-5" alt="icon" />
-    <span class="text-sm font-semibold text-base-content tracking-tight">DayZ Community Hub</span>
+  <!-- Left: identity — fixed width so glitch chars never shift adjacent elements -->
+  <div
+    class="flex items-center gap-2 px-4 pr-4 border-r border-base-300 shrink-0 overflow-hidden titlebar-identity"
+    role="presentation"
+  >
+    <img
+      src="/icon.svg"
+      class="w-5 h-5 titlebar-logo"
+      class:titlebar-logo--hovered={logoHovered}
+      alt="icon"
+    />
+    <GlitchText
+      text="DayZ Community Hub"
+      class="text-sm font-semibold text-base-content tracking-tight font-mono whitespace-nowrap"
+      externalTrigger={glitchTick}
+    />
   </div>
 
-  <!-- Center: live stats -->
-  <div class="flex items-center gap-5 px-4 text-xs text-base-content/60">
-    <span class="flex items-center gap-1.5">
-      <Icon icon="mdi:server-network" class="size-3.5 text-base-content/40" />
+  <!-- Center: live stats — absolutely centred so neither side affects its position -->
+  <div class="absolute left-1/2 -translate-x-1/2 flex items-center gap-5 px-4 text-xs text-base-content/60 pointer-events-none">
+    <span class="flex items-center gap-1.5 pointer-events-auto" title="Servers">
+      <Icon icon="mdi:server-network" class="size-3.5 text-red-500 dark:text-red-400" />
       <span class="tabular-nums font-medium text-base-content/80">{fmt(stats?.server_count)}</span>
-      <span>servers</span>
     </span>
-    <span class="flex items-center gap-1.5">
-      <Icon icon="mdi:controller" class="size-3.5 text-base-content/40" />
+    <span class="flex items-center gap-1.5 pointer-events-auto" title="Players in-game">
+      <Icon icon="mdi:controller" class="size-3.5 text-green-500 dark:text-green-400" />
       <span class="tabular-nums font-medium text-base-content/80">{fmt(stats?.total_players)}</span>
-      <span>in-game</span>
     </span>
-    <span class="flex items-center gap-1.5">
-      <Icon icon="mdi:steam" class="size-3.5 text-base-content/40" />
+    <span class="flex items-center gap-1.5 pointer-events-auto" title="Players on Steam">
+      <Icon icon="mdi:steam" class="size-3.5 text-sky-500 dark:text-sky-500" />
       <span class="tabular-nums font-medium text-base-content/80">{fmt(steamPlayers)}</span>
-      <span>on Steam</span>
     </span>
   </div>
 
@@ -155,6 +180,32 @@
       >
         <Icon icon="ph:warning" class="size-3.5" />
         <span>SteamCMD not found</span>
+      </button>
+    {/if}
+
+    <!-- Launcher update badge — only shown when an update is available -->
+    {#if updateState === 'available'}
+      <button
+        class="flex items-center gap-1.5 px-2 py-1 rounded text-emerald-400 hover:text-emerald-300 hover:bg-base-300 transition-colors border-r border-base-300 mr-1 font-medium text-xs"
+        onclick={onGoToUpdate}
+        title="Launcher update available — click to view"
+        data-no-drag
+      >
+        <Icon icon="line-md:downloading-loop" class="size-4 text-emerald-400" />
+        Update available
+      </button>
+    {/if}
+
+    <!-- Mod update badge — only shown when stale mods exist -->
+    {#if staleModCount > 0}
+      <button
+        class="flex items-center gap-1.5 px-2 py-1 rounded text-yellow-400 hover:text-yellow-300 hover:bg-base-300 transition-colors border-r border-base-300 mr-1 font-medium text-xs"
+        onclick={onUpdateMods}
+        title="Update {staleModCount} mod{staleModCount > 1 ? 's' : ''} — click to open Mods tab and start update"
+        data-no-drag
+      >
+        <Icon icon="line-md:download-outline-loop" class="size-4 text-yellow-400" />
+        Update {staleModCount} mod{staleModCount > 1 ? 's' : ''}
       </button>
     {/if}
 
@@ -502,46 +553,43 @@
           </p>
         </div>
 
-        <!-- ── Section: Excluded IPs ──────────────────────────────────────── -->
-        {#if profile?.excluded_ips && profile.excluded_ips.length > 0}
-          <div>
-            <div class="flex items-center gap-2 mb-3">
-              <Icon icon="ph:prohibit" class="size-3.5 text-error/70" />
-              <span class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">Excluded IPs</span>
-              <span class="text-xs text-base-content/35 font-normal normal-case tracking-normal">hidden from server browser</span>
-            </div>
-            <div class="bg-base-200/60 rounded-lg border border-base-300/60 overflow-hidden divide-y divide-base-300/40">
-              {#each profile.excluded_ips as ip}
-                <div class="flex items-center gap-3 px-3 py-2">
-                  <Icon icon="ph:prohibit-fill" class="size-3 text-error/60 shrink-0" />
-                  <span class="flex-1 text-xs font-mono text-base-content/70">{ip}</span>
-                  <button
-                    type="button"
-                    class="text-base-content/30 hover:text-error transition-colors shrink-0"
-                    onclick={() => onUnexcludeIp(ip)}
-                    title="Remove exclusion for {ip}"
-                  >
-                    <Icon icon="ph:x" class="size-3.5" />
-                  </button>
-                </div>
-              {/each}
-            </div>
-          </div>
-        {/if}
+
 
       </div>
 
-      <!-- ── Footer ────────────────────────────────────────────────────────── -->
+      <!-- ── Footer ─────────────────────────────────────────────────────────── -->
       <div class="flex items-center justify-between px-5 py-3 border-t border-base-300 bg-base-200 flex-shrink-0">
         <button class="btn btn-ghost btn-sm text-base-content/60" onclick={closeModal}>
           Cancel
         </button>
-        <button class="btn btn-primary btn-sm gap-1.5" onclick={handleOk}>
-          <Icon icon="ph:check" class="size-3.5" />
-          Save changes
-        </button>
+        <div class="flex items-center gap-2">
+          <button
+            class="btn btn-ghost btn-sm gap-1.5 text-base-content/50"
+            onclick={() => { onOpenExcludedIps(); }}
+            title="Manage excluded IPs"
+          >
+            <Icon icon="ph:prohibit" class="size-3.5" />
+            Excluded IPs
+            {#if (profile?.excluded_ips?.length ?? 0) > 0}
+              <span class="badge badge-xs badge-error/70 text-error font-mono">{profile!.excluded_ips!.length}</span>
+            {/if}
+          </button>
+          <button class="btn btn-primary btn-sm gap-1.5" onclick={handleOk}>
+            <Icon icon="ph:check" class="size-3.5" />
+            Save changes
+          </button>
+        </div>
       </div>
 
     </div>
   </div>
 {/if}
+
+<style>
+  .titlebar-logo {
+    transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .titlebar-logo--hovered {
+    transform: rotate(15deg) scale(1.1);
+  }
+</style>

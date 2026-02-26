@@ -1,7 +1,7 @@
 use crate::api::Server;
 use crate::{Result, errors::Error};
 use a2s::{A2SClient, rules};
-use ping_async::IcmpEchoRequestor;
+use surge_ping::{Client, Config, PingIdentifier, PingSequence, ICMP};
 
 use std::time::{Duration, Instant};
 
@@ -60,33 +60,113 @@ pub async fn query_rules(server: &Server) -> Result<Vec<rules::Rule>> {
         .map_err(|e| Error::A2sQuery(format!("A2S rules query failed: {}", e)))
 }
 
-/// Ping a server using unprivileged ICMP (SOCK_DGRAM / IPPROTO_ICMP).
-/// No root required — works when `/proc/sys/net/ipv4/ping_group_range` includes your GID.
-/// Sends a single Echo Request and returns the RTT in milliseconds.
-pub async fn ping_server(server: &Server) -> Result<u32> {
-    let ip = server
+/// Shared ICMP clients (one per address family) — cheap to clone, expensive to create.
+pub struct IcmpClients {
+    pub v4: Client,
+    pub v6: Client,
+}
+
+impl IcmpClients {
+    pub fn new() -> Result<Self> {
+        let v4 = Client::new(&Config::builder().kind(ICMP::V4).build())
+            .map_err(|e| Error::A2sQuery(format!("ICMPv4 client init failed: {e}")))?;
+        let v6 = Client::new(&Config::builder().kind(ICMP::V6).build())
+            .map_err(|e| Error::A2sQuery(format!("ICMPv6 client init failed: {e}")))?;
+        Ok(Self { v4, v6 })
+    }
+
+    pub fn for_ip(&self, ip: std::net::IpAddr) -> &Client {
+        if ip.is_ipv4() { &self.v4 } else { &self.v6 }
+    }
+}
+
+/// Measure RTT via a single A2S info query — used as a fallback when ICMP fails.
+/// Returns the round-trip time in milliseconds.
+pub async fn ping_via_a2s(server: &Server) -> Result<u32> {
+    let start = Instant::now();
+    query_server_info(server).await?;
+    Ok(start.elapsed().as_millis() as u32)
+}
+
+/// Sentinel value emitted when all ping attempts fail — treated as TIMEOUT on
+/// the frontend.  Any value >= 5 000 ms is displayed as "TIMEOUT"; we use 9 999
+/// so it is clearly a sentinel rather than a real RTT.
+pub const PING_TIMEOUT_SENTINEL: u32 = 9_999;
+
+/// Batch ping using a pre-built shared client.
+/// Retries up to `retries` ICMP attempts; if ICMP succeeds the RTT is returned
+/// immediately.  Only if *all* ICMP attempts fail is A2S tried as a last resort.
+/// Always returns `Ok` — unreachable servers return `Ok(PING_TIMEOUT_SENTINEL)`
+/// so the caller can emit a result without needing to handle `Err`.
+pub async fn ping_once(
+    client: &Client,
+    ip: std::net::IpAddr,
+    ident: PingIdentifier,
+    timeout: Duration,
+    retries: u16,
+    server: &Server,
+) -> u32 {
+    const PAYLOAD: [u8; 8] = [0; 8];
+    let mut pinger = client.pinger(ip, ident).await;
+    pinger.timeout(timeout);
+
+    // Try ICMP up to (retries + 1) times.  The first Ok reply is the RTT.
+    let icmp_ms: u32 = 'icmp: {
+        for seq in 0..=retries {
+            if let Ok((_pkt, dur)) = pinger.ping(PingSequence(seq), &PAYLOAD).await {
+                break 'icmp dur.as_millis() as u32;
+            }
+        }
+        PING_TIMEOUT_SENTINEL
+    };
+
+    // Only fall back to A2S when ICMP got no reply at all.
+    if icmp_ms < PING_TIMEOUT_SENTINEL {
+        icmp_ms
+    } else {
+        ping_via_a2s(server).await.unwrap_or(PING_TIMEOUT_SENTINEL)
+    }
+}
+
+/// Ping a server using unprivileged ICMP via surge-ping.
+/// Creates its own client — use for manual single-server pings only.
+/// Retries up to 2 times on failure.
+/// `timeout_ms` controls the per-attempt timeout (default: 5000 ms).
+pub async fn ping_server(server: &Server, timeout_ms: Option<u64>) -> Result<u32> {
+    let ip: std::net::IpAddr = server
         .endpoint
         .ip
         .parse()
         .map_err(|_| Error::A2sQuery(format!("Invalid IP: {}", server.endpoint.ip)))?;
 
-    let pinger = IcmpEchoRequestor::new(ip, None, None, None)
-        .map_err(|e| Error::A2sQuery(format!("ICMP init failed: {}", e)))?;
+    let timeout = Duration::from_millis(timeout_ms.unwrap_or(5_000));
+    const MAX_RETRIES: u32 = 2;
+    const PAYLOAD: [u8; 8] = [0; 8];
 
-    let start = Instant::now();
-    let reply = pinger
-        .send()
-        .await
-        .map_err(|e| Error::A2sQuery(format!("Ping failed: {}", e)))?;
+    let icmp_kind = if ip.is_ipv4() { ICMP::V4 } else { ICMP::V6 };
+    let client = Client::new(&Config::builder().kind(icmp_kind).build())
+        .map_err(|e| Error::A2sQuery(format!("ICMP client init failed: {e}")))?;
 
-    // reply.round_trip_time() is the authoritative RTT from the library,
-    // but fall back to our own elapsed if it returns zero.
-    let rtt = reply.round_trip_time();
-    if rtt.is_zero() {
-        Ok(start.elapsed().as_millis() as u32)
-    } else {
-        Ok(rtt.as_millis() as u32)
+    let ident = PingIdentifier(std::process::id() as u16);
+    let mut pinger = client.pinger(ip, ident).await;
+    pinger.timeout(timeout);
+
+    let mut last_err: Option<String> = None;
+    for seq in 0..=MAX_RETRIES {
+        match pinger.ping(PingSequence(seq as u16), &PAYLOAD).await {
+            Ok((_packet, duration)) => {
+                return Ok(duration.as_millis() as u32);
+            }
+            Err(e) => {
+                last_err = Some(e.to_string());
+            }
+        }
     }
+
+    Err(Error::A2sQuery(format!(
+        "Ping failed: {}",
+        last_err.unwrap_or_default()
+    )))
 }
 
 /// Get comprehensive server information including players and rules.

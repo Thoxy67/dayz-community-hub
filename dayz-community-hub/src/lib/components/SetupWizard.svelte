@@ -4,7 +4,7 @@
   import { listen } from '@tauri-apps/api/event';
   import { open as openDialog } from '@tauri-apps/plugin-dialog';
   import { openUrl } from '@tauri-apps/plugin-opener';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
 
   interface Props {
     onDone: () => void;
@@ -13,8 +13,12 @@
   let { onDone }: Props = $props();
 
   // ── Steps ──────────────────────────────────────────────────────────────────
-  type Step = 'welcome' | 'identity' | 'steam' | 'done';
-  const STEPS: Step[] = ['welcome', 'identity', 'steam', 'done'];
+  // 1. welcome   — intro + import option
+  // 2. steamcmd  — detect / install SteamCMD
+  // 3. configure — Steam login, API keys, identity, BattleMetrics
+  // 4. done      — summary, launch button
+  type Step = 'welcome' | 'steamcmd' | 'configure' | 'done';
+  const STEPS: Step[] = ['welcome', 'steamcmd', 'configure', 'done'];
 
   let currentStep = $state<Step>('welcome');
   let saving = $state(false);
@@ -39,6 +43,9 @@
   let downloadError    = $state('');
   let unlistenSteamcmd: (() => void) | null = null;
 
+  // ── Validation ─────────────────────────────────────────────────────────────
+  let steamLoginValid = $derived(steamLogin.trim().length > 0);
+
   // ── Navigation ─────────────────────────────────────────────────────────────
   function stepIndex(s: Step) { return STEPS.indexOf(s); }
   let currentIndex = $derived(stepIndex(currentStep));
@@ -48,7 +55,7 @@
     if (idx < STEPS.length - 1) {
       const nextStep = STEPS[idx + 1];
       currentStep = nextStep;
-      if (nextStep === 'steam') {
+      if (nextStep === 'steamcmd') {
         await detectSteamcmd();
       }
     }
@@ -58,7 +65,7 @@
     const idx = stepIndex(currentStep);
     if (idx > 0) {
       currentStep = STEPS[idx - 1];
-      stopRescan();
+      // Keep rescan running when going back from configure to steamcmd
     }
   }
 
@@ -77,6 +84,7 @@
       }
     } catch (e) {
       steamcmdStatus = { found: false, path: null, platform: 'linux' };
+      startRescan();
     } finally {
       detectingCmd = false;
     }
@@ -84,7 +92,6 @@
 
   function startRescan() {
     stopRescan();
-    // Listen for the Rust-side watcher event instead of polling every 5s.
     listen<SteamcmdStatus>('steamcmd-detected', ({ payload }) => {
       steamcmdStatus = payload;
       if (payload.found && payload.path) {
@@ -92,7 +99,6 @@
         stopRescan();
       }
     }).then((fn) => { unlistenSteamcmd = fn; });
-    // Tell Rust to start watching
     invoke('watch_steamcmd').catch(() => {});
   }
 
@@ -127,7 +133,13 @@
   }
 
   async function browseSteamcmd() {
-    const selected = await openDialog({ multiple: false, title: 'Select steamcmd binary' });
+    const selected = await openDialog({
+      multiple: false,
+      title: 'Select steamcmd binary',
+      filters: isWindows
+        ? [{ name: 'SteamCMD', extensions: ['exe'] }]
+        : [],
+    });
     if (selected) {
       steamcmdPath = typeof selected === 'string' ? selected : selected[0];
       steamcmdStatus = { found: true, path: steamcmdPath, platform: steamcmdStatus?.platform ?? 'linux' };
@@ -151,7 +163,6 @@
       if (!selected) { importing = false; return; }
       const path = typeof selected === 'string' ? selected : selected[0];
       await invoke('import_profile', { path });
-      // Profile loaded — skip wizard and launch directly
       onDone();
     } catch (e) {
       importError = String(e);
@@ -191,10 +202,10 @@
 <!-- Overlay starts below the titlebar (top: 36px = h-9) so the titlebar
      remains fully interactive (drag, minimize, maximize, close) during setup. -->
 <div class="fixed inset-0 z-50 bg-base-300/80 backdrop-blur-sm flex items-center justify-center p-4" style="top: 36px;">
-  <div class="w-full max-w-lg bg-base-100 rounded-2xl shadow-2xl border border-base-300 overflow-hidden flex flex-col">
+  <div class="w-full max-w-lg bg-base-100 rounded-2xl shadow-2xl border border-base-300 overflow-hidden flex flex-col max-h-[calc(100vh-36px-2rem)]">
 
     <!-- Progress bar -->
-    <div class="h-1 bg-base-300">
+    <div class="h-1 bg-base-300 shrink-0">
       <div
         class="h-full bg-primary transition-all duration-500 ease-out"
         style="width: {((currentIndex) / (STEPS.length - 1)) * 100}%"
@@ -202,7 +213,7 @@
     </div>
 
     <!-- Step indicators -->
-    <div class="flex items-center justify-center gap-2 pt-5 pb-1 px-6">
+    <div class="flex items-center justify-center gap-2 pt-5 pb-1 px-6 shrink-0">
       {#each STEPS as step, i}
         <div class="flex items-center gap-2">
           <div class="size-6 rounded-full flex items-center justify-center text-xs font-bold transition-all
@@ -223,9 +234,9 @@
     </div>
 
     <!-- Step content -->
-    <div class="flex-1 px-8 py-6 overflow-y-auto">
+    <div class="flex-1 px-8 py-6 overflow-y-auto min-h-0">
 
-      <!-- ── Welcome ───────────────────────────────────────────────────────── -->
+      <!-- ── Step 1: Welcome ─────────────────────────────────────────────── -->
       {#if currentStep === 'welcome'}
         <div class="text-center space-y-4">
           <img src="/icon.svg" alt="DayZ Community Hub" class="w-16 h-16 mx-auto" />
@@ -251,42 +262,147 @@
           </p>
         </div>
 
-      <!-- ── Identity ──────────────────────────────────────────────────────── -->
-      {:else if currentStep === 'identity'}
+      <!-- ── Step 2: SteamCMD ────────────────────────────────────────────── -->
+      {:else if currentStep === 'steamcmd'}
         <div class="space-y-5">
           <div>
-            <h2 class="text-base font-semibold text-base-content">Your identity</h2>
-            <p class="text-xs text-base-content/50 mt-0.5">Used when launching DayZ and finding your Steam profile.</p>
+            <h2 class="text-base font-semibold text-base-content">SteamCMD</h2>
+            <p class="text-xs text-base-content/50 mt-0.5">Required to download and update DayZ mods from the Steam Workshop.</p>
           </div>
 
-          <!-- Player name -->
-          <div class="form-control">
-            <label class="label py-0 pb-1.5" for="wiz-name">
-              <span class="label-text text-xs flex items-center gap-1.5">
-                <Icon icon="ph:game-controller" class="size-3.5 text-base-content/40" />
-                In-game name
-                <span class="text-base-content/30 ml-1">recommended</span>
-              </span>
-            </label>
-            <input
-              id="wiz-name"
-              type="text"
-              class="input input-bordered input-sm"
-              placeholder="e.g. Survivor"
-              bind:value={playerName}
-            />
-            <p class="label py-0 pt-1">
-              <span class="label-text-alt text-base-content/40">Passed as <span class="font-mono">-name=</span> to DayZ.</span>
-            </p>
+          <!-- Detection status banner -->
+          <div class="rounded-xl border overflow-hidden
+            {cmdFound ? 'border-success/40 bg-success/8' : 'border-base-300/60 bg-base-200/40'}">
+
+            <!-- Header row -->
+            <div class="flex items-center gap-2 px-4 py-3
+              {cmdFound ? 'border-b border-success/20' : ''}">
+              {#if detectingCmd}
+                <span class="loading loading-ring loading-sm text-primary"></span>
+                <span class="text-xs text-base-content/50">Detecting SteamCMD…</span>
+              {:else if cmdFound}
+                <Icon icon="ph:check-circle" class="size-5 text-success shrink-0" />
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-semibold text-success">SteamCMD detected</p>
+                  <p class="font-mono text-xs text-base-content/40 truncate mt-0.5">{steamcmdStatus?.path}</p>
+                </div>
+              {:else}
+                <Icon icon="ph:warning-circle" class="size-5 text-warning shrink-0" />
+                <span class="text-sm font-semibold text-warning">SteamCMD not found</span>
+              {/if}
+            </div>
+
+            <!-- Platform-specific install instructions (only when not found) -->
+            {#if !detectingCmd && !cmdFound}
+
+              <!-- ── Linux: package manager commands ── -->
+              {#if isLinux}
+                <div class="px-4 py-3 space-y-3 border-t border-base-300/40">
+                  <p class="text-xs text-base-content/60">Install SteamCMD with your package manager:</p>
+                  <div class="rounded-lg border border-base-300/50 overflow-hidden divide-y divide-base-300/40">
+                    {#each [
+                      { icon: 'simple-icons:archlinux', label: 'Arch / Manjaro',  cmd: 'yay -S steamcmd' },
+                      { icon: 'simple-icons:debian',    label: 'Debian / Ubuntu', cmd: 'sudo apt install steamcmd' },
+                      { icon: 'simple-icons:fedora',    label: 'Fedora / RHEL',   cmd: 'sudo dnf install steamcmd' },
+                    ] as row}
+                      <div class="flex items-center gap-2.5 px-3 py-2 bg-base-300/20 hover:bg-base-300/40 transition-colors">
+                        <Icon icon={row.icon} class="size-3.5 text-base-content/30 shrink-0" />
+                        <span class="text-xs text-base-content/50 shrink-0 w-28">{row.label}</span>
+                        <code class="text-xs text-primary font-mono ml-auto">{row.cmd}</code>
+                      </div>
+                    {/each}
+                  </div>
+                  <div class="flex items-center gap-2 text-xs text-base-content/40 pt-1">
+                    <span class="loading loading-ring loading-sm text-primary"></span>
+                    <span>Waiting for SteamCMD to be installed…</span>
+                  </div>
+                </div>
+
+              <!-- ── Windows: auto-download or browse ── -->
+              {:else if isWindows}
+                <div class="px-4 py-3 space-y-3 border-t border-base-300/40">
+                  <p class="text-xs text-base-content/60">
+                    You can install SteamCMD automatically or point to an existing installation.
+                  </p>
+
+                  {#if downloadError}
+                    <div class="flex items-start gap-2 rounded-lg bg-error/10 border border-error/25 px-3 py-2 text-xs text-error">
+                      <Icon icon="ph:warning-circle" class="size-4 shrink-0 mt-0.5" />
+                      <span>{downloadError}</span>
+                    </div>
+                  {/if}
+
+                  <!-- Install automatically -->
+                  <button
+                    class="btn btn-primary btn-sm w-full gap-2"
+                    onclick={downloadSteamcmd}
+                    disabled={downloadingCmd}
+                  >
+                    {#if downloadingCmd}
+                      <span class="loading loading-spinner loading-xs"></span>
+                      Downloading…
+                    {:else}
+                      <Icon icon="ph:download-simple" class="size-4" />
+                      Install SteamCMD automatically
+                    {/if}
+                  </button>
+                  <p class="text-xs text-base-content/35 text-center">
+                    Downloads from Valve to
+                    <span class="font-mono text-base-content/50">%APPDATA%\dayz-community-hub\steamcmd\</span>
+                  </p>
+
+                  <div class="flex items-center gap-3">
+                    <div class="flex-1 h-px bg-base-300/60"></div>
+                    <span class="text-xs text-base-content/30 uppercase tracking-widest">or</span>
+                    <div class="flex-1 h-px bg-base-300/60"></div>
+                  </div>
+
+                  <!-- Browse for existing -->
+                  <button
+                    class="btn btn-ghost btn-sm w-full gap-2"
+                    onclick={browseSteamcmd}
+                  >
+                    <Icon icon="ph:folder-open" class="size-4" />
+                    Browse for steamcmd.exe
+                  </button>
+                </div>
+              {/if}
+
+            {/if}
           </div>
 
-          <!-- Steam root -->
+          <!-- Manual path override (always visible, collapsed style) -->
+          {#if cmdFound}
+            <div class="form-control">
+              <label class="label py-0 pb-1.5" for="wiz-steamcmd">
+                <span class="label-text text-xs flex items-center gap-1.5">
+                  <Icon icon="ph:terminal-window" class="size-3.5 text-base-content/40" />
+                  SteamCMD path
+                  <span class="text-base-content/30 ml-1">override</span>
+                </span>
+              </label>
+              <div class="flex gap-2">
+                <input
+                  id="wiz-steamcmd"
+                  type="text"
+                  class="input input-bordered input-sm flex-1 font-mono text-xs"
+                  placeholder={steamcmdStatus?.path ?? 'Auto-detected'}
+                  bind:value={steamcmdPath}
+                />
+                <button class="btn btn-ghost btn-sm btn-square" onclick={browseSteamcmd} title="Browse">
+                  <Icon icon="ph:folder-open" class="size-4" />
+                </button>
+              </div>
+            </div>
+          {/if}
+
+          <!-- Steam root folder -->
           <div class="form-control">
             <label class="label py-0 pb-1.5" for="wiz-steam-root">
               <span class="label-text text-xs flex items-center gap-1.5">
                 <Icon icon="mdi:steam" class="size-3.5 text-base-content/40" />
                 Steam root folder
-                <span class="text-base-content/30 ml-1">recommended</span>
+                <span class="text-base-content/30 ml-1">optional</span>
               </span>
             </label>
             <div class="flex gap-2">
@@ -303,99 +419,24 @@
             </div>
             <p class="label py-0 pt-1">
               <span class="label-text-alt text-base-content/40">
-                Linux: <span class="font-mono">~/.steam/steam</span> —
-                Windows: <span class="font-mono">C:\Program Files (x86)\Steam</span>
+                {#if isLinux}
+                  Usually <span class="font-mono">~/.steam/steam</span>
+                {:else if isWindows}
+                  Usually <span class="font-mono">C:\Program Files (x86)\Steam</span>
+                {:else}
+                  Leave blank to auto-detect
+                {/if}
               </span>
             </p>
           </div>
         </div>
 
-      <!-- ── Steam ─────────────────────────────────────────────────────────── -->
-      {:else if currentStep === 'steam'}
+      <!-- ── Step 3: Configure ───────────────────────────────────────────── -->
+      {:else if currentStep === 'configure'}
         <div class="space-y-5">
           <div>
-            <h2 class="text-base font-semibold text-base-content">Steam &amp; SteamCMD</h2>
-            <p class="text-xs text-base-content/50 mt-0.5">All optional — enables mod downloads, avatar, and update checks.</p>
-          </div>
-
-          <!-- ── SteamCMD detection banner ── -->
-          <div class="rounded-xl border overflow-hidden
-            {cmdFound ? 'border-success/40 bg-success/8' : 'border-warning/40 bg-warning/8'}">
-
-            <!-- Header row -->
-            <div class="flex items-center gap-2 px-4 py-2.5 border-b
-              {cmdFound ? 'border-success/20' : 'border-warning/20'}">
-              {#if detectingCmd}
-                <span class="loading loading-spinner loading-xs text-base-content/40"></span>
-                <span class="text-xs text-base-content/50">Detecting SteamCMD…</span>
-              {:else if cmdFound}
-                <Icon icon="ph:check-circle" class="size-4 text-success shrink-0" />
-                <span class="text-xs font-semibold text-success">SteamCMD detected</span>
-                <span class="ml-auto font-mono text-xs text-base-content/40 truncate max-w-[180px]">{steamcmdStatus?.path}</span>
-              {:else}
-                <Icon icon="ph:warning" class="size-4 text-warning shrink-0" />
-                <span class="text-xs font-semibold text-warning">SteamCMD not found</span>
-                <button
-                  class="btn btn-ghost btn-xs ml-auto gap-1"
-                  onclick={detectSteamcmd}
-                  disabled={detectingCmd}
-                >
-                  <Icon icon="ph:arrow-clockwise" class="size-3.5" />
-                  Rescan
-                </button>
-              {/if}
-            </div>
-
-            <!-- Windows: auto-download CTA -->
-            {#if isWindows && !cmdFound}
-              <div class="px-4 py-3 space-y-2">
-                <p class="text-xs text-base-content/60">
-                  SteamCMD will be downloaded from Valve and installed to
-                  <span class="font-mono text-base-content/80">%APPDATA%\dayz-community-hub\steamcmd\</span>
-                </p>
-                {#if downloadError}
-                  <div class="flex items-start gap-2 rounded-lg bg-error/10 border border-error/25 px-3 py-2 text-xs text-error">
-                    <Icon icon="ph:warning-circle" class="size-4 shrink-0 mt-0.5" />
-                    <span>{downloadError}</span>
-                  </div>
-                {/if}
-                <button
-                  class="btn btn-primary btn-sm w-full gap-2"
-                  onclick={downloadSteamcmd}
-                  disabled={downloadingCmd}
-                >
-                  {#if downloadingCmd}
-                    <span class="loading loading-spinner loading-xs"></span>
-                    Downloading…
-                  {:else}
-                    <Icon icon="ph:download-simple" class="size-4" />
-                    Download SteamCMD
-                  {/if}
-                </button>
-              </div>
-
-            <!-- Linux: install instructions + live rescan -->
-            {:else if isLinux && !cmdFound}
-              <div class="px-4 py-3 space-y-2">
-                <p class="text-xs text-base-content/60">Install SteamCMD using your package manager, then we'll detect it automatically.</p>
-                <div class="bg-base-300/60 rounded-lg divide-y divide-base-300/50 text-xs font-mono">
-                  {#each [
-                    { label: 'Debian / Ubuntu', cmd: 'sudo apt install steamcmd' },
-                    { label: 'Arch / Manjaro',  cmd: 'yay -S steamcmd' },
-                    { label: 'Fedora / RHEL',   cmd: 'sudo dnf install steamcmd' },
-                  ] as row}
-                    <div class="flex items-center gap-2 px-3 py-2">
-                      <span class="text-base-content/40 shrink-0 w-28">{row.label}</span>
-                      <span class="text-primary">{row.cmd}</span>
-                    </div>
-                  {/each}
-                </div>
-                <div class="flex items-center gap-2 text-xs text-base-content/40">
-                  <span class="loading loading-dots loading-xs"></span>
-                  Scanning every 5 seconds…
-                </div>
-              </div>
-            {/if}
+            <h2 class="text-base font-semibold text-base-content">Configuration</h2>
+            <p class="text-xs text-base-content/50 mt-0.5">Steam username is required. Everything else is optional.</p>
           </div>
 
           <!-- Steam login -->
@@ -407,20 +448,32 @@
             <div class="grid grid-cols-2 gap-3">
               <div class="form-control">
                 <label class="label py-0 pb-1" for="wiz-login">
-                  <span class="label-text text-xs text-base-content/50">Username</span>
+                  <span class="label-text text-xs text-base-content/50 flex items-center gap-1">
+                    Username
+                    <span class="text-error text-[10px]">*</span>
+                  </span>
                 </label>
-                <input id="wiz-login" type="text" class="input input-bordered input-xs font-mono" placeholder="anonymous" bind:value={steamLogin} />
+                <input
+                  id="wiz-login"
+                  type="text"
+                  class="input input-bordered input-xs font-mono {!steamLoginValid && steamLogin.length > 0 ? 'input-error' : ''}"
+                  placeholder="Steam username"
+                  bind:value={steamLogin}
+                />
               </div>
               <div class="form-control">
                 <label class="label py-0 pb-1" for="wiz-pass">
-                  <span class="label-text text-xs text-base-content/50">Password</span>
+                  <span class="label-text text-xs text-base-content/50 flex items-center gap-1">
+                    Password
+                    <span class="text-base-content/30 text-[10px]">optional</span>
+                  </span>
                 </label>
                 <div class="relative">
                   <input
                     id="wiz-pass"
                     type={showPass ? 'text' : 'password'}
                     class="input input-bordered input-xs w-full pr-7"
-                    placeholder="leave blank if anonymous"
+                    placeholder="leave blank for cached"
                     bind:value={steamPass}
                   />
                   <button
@@ -433,10 +486,39 @@
                 </div>
               </div>
             </div>
-            <div class="flex items-start gap-1.5 text-xs text-warning/70">
-              <Icon icon="ph:warning" class="size-3 shrink-0 mt-0.5" />
-              <span>Password stored in plaintext. Prefer anonymous login or cached credentials.</span>
-            </div>
+            {#if steamPass.length > 0}
+              <div class="flex items-start gap-1.5 text-xs text-warning/70">
+                <Icon icon="ph:warning" class="size-3 shrink-0 mt-0.5" />
+                <span>Password stored in plaintext. Leave blank to use Steam's cached credentials instead.</span>
+              </div>
+            {/if}
+            {#if !steamLoginValid}
+              <div class="flex items-start gap-1.5 text-xs text-base-content/40">
+                <Icon icon="ph:info" class="size-3 shrink-0 mt-0.5" />
+                <span>Steam username is required for SteamCMD to download and update mods.</span>
+              </div>
+            {/if}
+          </div>
+
+          <!-- Player name -->
+          <div class="form-control">
+            <label class="label py-0 pb-1.5" for="wiz-name">
+              <span class="label-text text-xs flex items-center gap-1.5">
+                <Icon icon="ph:game-controller" class="size-3.5 text-base-content/40" />
+                In-game name
+                <span class="text-base-content/30 ml-1">optional</span>
+              </span>
+            </label>
+            <input
+              id="wiz-name"
+              type="text"
+              class="input input-bordered input-sm"
+              placeholder="e.g. Survivor"
+              bind:value={playerName}
+            />
+            <p class="label py-0 pt-1">
+              <span class="label-text-alt text-base-content/40">Passed as <span class="font-mono">-name=</span> to DayZ.</span>
+            </p>
           </div>
 
           <!-- API key + Steam ID -->
@@ -444,6 +526,10 @@
             <p class="text-xs font-semibold text-base-content/60 uppercase tracking-wide flex items-center gap-1.5">
               <Icon icon="ph:identification-card" class="size-3.5" />
               Steam API Key &amp; ID
+              <span class="font-normal normal-case tracking-normal text-base-content/35 ml-1">optional</span>
+            </p>
+            <p class="text-xs text-base-content/40 leading-relaxed">
+              Enables avatar display and higher rate limits for mod update checks. You can add these later.
             </p>
             <div class="form-control">
               <label class="label py-0 pb-1" for="wiz-apikey">
@@ -487,32 +573,9 @@
               <input id="wiz-bmkey" type="password" class="input input-bordered input-xs font-mono" placeholder="eyJhbGci…" bind:value={battlemetricsApiKey} />
             </div>
           </div>
-
-          <!-- SteamCMD path (manual override) -->
-          <div class="form-control">
-            <label class="label py-0 pb-1.5" for="wiz-steamcmd">
-              <span class="label-text text-xs flex items-center gap-1.5">
-                <Icon icon="ph:terminal-window" class="size-3.5 text-base-content/40" />
-                SteamCMD path
-                <span class="text-base-content/30 ml-1">override detected path</span>
-              </span>
-            </label>
-            <div class="flex gap-2">
-              <input
-                id="wiz-steamcmd"
-                type="text"
-                class="input input-bordered input-sm flex-1 font-mono text-xs"
-                placeholder={cmdFound ? (steamcmdStatus?.path ?? 'Auto-detected') : 'Not found — browse or install above'}
-                bind:value={steamcmdPath}
-              />
-              <button class="btn btn-ghost btn-sm btn-square" onclick={browseSteamcmd} title="Browse">
-                <Icon icon="ph:folder-open" class="size-4" />
-              </button>
-            </div>
-          </div>
         </div>
 
-      <!-- ── Done ──────────────────────────────────────────────────────────── -->
+      <!-- ── Step 4: Done ────────────────────────────────────────────────── -->
       {:else if currentStep === 'done'}
         <div class="text-center space-y-4 py-4">
           <div class="size-16 rounded-full bg-success/15 flex items-center justify-center mx-auto">
@@ -520,7 +583,7 @@
           </div>
           <div>
             <h2 class="text-lg font-bold text-base-content">You're all set!</h2>
-            <p class="text-sm text-base-content/50 mt-1">Your profile has been saved. Let's go find some servers.</p>
+            <p class="text-sm text-base-content/50 mt-1">Click <span class="font-semibold text-base-content/70">Launch app</span> to save your profile and start browsing servers.</p>
           </div>
           <div class="bg-base-200/60 rounded-xl border border-base-300/60 text-left divide-y divide-base-300/50">
             <div class="flex items-center gap-3 px-4 py-2.5">
@@ -544,7 +607,7 @@
     </div>
 
     <!-- Footer nav -->
-    <div class="flex items-center justify-between px-8 py-4 border-t border-base-300 bg-base-200/40">
+    <div class="flex items-center justify-between px-8 py-4 border-t border-base-300 bg-base-200/40 shrink-0">
 
       <!-- Back / step label / import -->
       <div class="flex items-center gap-3">
@@ -554,7 +617,7 @@
             Back
           </button>
         {/if}
-        {#if currentStep === 'welcome'}
+        {#if currentStep === 'configure'}
           <button
             class="btn btn-ghost btn-sm gap-1.5 text-base-content/50"
             onclick={importProfile}
@@ -570,8 +633,8 @@
           {#if importError}
             <span class="text-xs text-error">{importError}</span>
           {/if}
-        {:else}
-          <span class="text-xs text-base-content/30 capitalize">{currentStep}</span>
+        {:else if currentStep !== 'welcome'}
+          <span class="text-xs text-base-content/30 capitalize">{currentStep === 'steamcmd' ? 'SteamCMD' : currentStep}</span>
         {/if}
       </div>
 
@@ -583,22 +646,29 @@
             <Icon icon="ph:arrow-right" class="size-4" />
           </button>
 
-        {:else if currentStep === 'identity'}
-          <button class="btn btn-ghost btn-sm text-base-content/40" onclick={next}>Skip</button>
+        {:else if currentStep === 'steamcmd'}
           <button class="btn btn-primary btn-sm gap-1.5" onclick={next}>
             Next
             <Icon icon="ph:arrow-right" class="size-4" />
           </button>
 
-        {:else if currentStep === 'steam'}
-          <button class="btn btn-ghost btn-sm text-base-content/40" onclick={() => { currentStep = 'done'; finish(); }}>Skip</button>
-          <button class="btn btn-primary btn-sm gap-1.5" onclick={() => { currentStep = 'done'; finish(); }}>
-            Save &amp; continue
+        {:else if currentStep === 'configure'}
+          <button
+            class="btn btn-primary btn-sm gap-1.5"
+            onclick={next}
+            disabled={!steamLoginValid}
+            title={!steamLoginValid ? 'Steam username is required' : ''}
+          >
+            Next
             <Icon icon="ph:arrow-right" class="size-4" />
           </button>
 
         {:else if currentStep === 'done'}
-          <button class="btn btn-success btn-sm gap-1.5" onclick={onDone} disabled={saving}>
+          <button class="btn btn-ghost btn-sm gap-1.5" onclick={back}>
+            <Icon icon="ph:arrow-left" class="size-4" />
+            Back
+          </button>
+          <button class="btn btn-success btn-sm gap-1.5" onclick={finish} disabled={saving}>
             {#if saving}
               <span class="loading loading-spinner loading-xs"></span>
             {:else}

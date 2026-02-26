@@ -111,8 +111,8 @@
           return dir * (pa - pb);
         }
         case 'ping': {
-          const pa = pingCache.get(`${a.ip}:${a.port}`) ?? Infinity;
-          const pb = pingCache.get(`${b.ip}:${b.port}`) ?? Infinity;
+          const pa = pingCache.get(pingKey(a)) ?? Infinity;
+          const pb = pingCache.get(pingKey(b)) ?? Infinity;
           return dir * (pa - pb);
         }
         case 'last':
@@ -154,6 +154,12 @@
     return `${entry.ip}:${sv ? sv.query_port : entry.port}`;
   }
 
+  /** Canonical ping cache key: always ip:query_port, matching what start_pinging stores. */
+  function pingKey(entry: HistoryDto): string {
+    const sv = findServer(entry);
+    return `${entry.ip}:${sv ? sv.query_port : entry.port}`;
+  }
+
   function doPing(entry: HistoryDto) {
     const sv = findServer(entry);
     const port = sv ? sv.query_port : entry.port;
@@ -178,10 +184,20 @@
     return 'ph:moon';
   }
 
+  const PING_TIMEOUT_MS = 5_000;
+
+  function isTimeout(ms: number | undefined): boolean {
+    return ms === undefined || ms >= PING_TIMEOUT_MS;
+  }
+
+  function pingLabel(ms: number | undefined): string {
+    return isTimeout(ms) ? 'TIMEOUT' : `${ms}ms`;
+  }
+
   function pingColor(ms: number | undefined): string {
-    if (ms === undefined) return 'text-base-content/30';
-    if (ms < 50) return 'text-success';
-    if (ms < 100) return 'text-warning';
+    if (isTimeout(ms)) return 'text-base-content/30';
+    if (ms! < 50)  return 'text-success';
+    if (ms! < 100) return 'text-warning';
     return 'text-error';
   }
 
@@ -217,9 +233,9 @@
   }
 
   function pingDot(ms: number | undefined): string {
-    if (ms === undefined) return 'bg-base-content/20';
-    if (ms < 50) return 'bg-success';
-    if (ms < 100) return 'bg-warning';
+    if (isTimeout(ms)) return 'bg-base-content/20';
+    if (ms! < 50)  return 'bg-success';
+    if (ms! < 100) return 'bg-warning';
     return 'bg-error';
   }
 
@@ -420,7 +436,7 @@
             </th>
             <th class="w-28 px-3 py-2 font-medium text-left">Map</th>
             <th class="w-16 px-3 py-2 font-medium text-left" title="In-game server time">Time</th>
-            <th class="w-24 px-3 py-2 cursor-pointer hover:text-base-content transition-colors text-left" onclick={() => toggleSort('last')}>
+            <th class="w-36 px-3 py-2 cursor-pointer hover:text-base-content transition-colors text-left" onclick={() => toggleSort('last')}>
               <span class="flex items-center gap-1">Last played <Icon icon={sortIcon('last')} class="size-2.5" /></span>
             </th>
             <th class="w-40 px-3 py-2"></th>
@@ -429,7 +445,7 @@
         <tbody>
           {#each sorted as entry, ei}
             {@const server = findServer(entry)}
-            {@const ping = pingCache.get(`${entry.ip}:${entry.port}`)}
+            {@const ping = pingCache.get(pingKey(entry))}
             {@const entKey = entryA2sKey(entry)}
             {@const livePlayers = server ? (a2sPlayers.get(entKey) ?? server.players) : 0}
             {@const loadingPlayers = a2sPlayersLoading.has(entKey)}
@@ -504,7 +520,7 @@
                 >
                   <span class="size-1.5 rounded-full shrink-0 {pingDot(ping)}"></span>
                   <span class="tabular-nums font-mono {pingColor(ping)}">
-                    {ping !== undefined ? `${ping}ms` : '—'}
+                    {pingLabel(ping)}
                   </span>
                 </button>
               </td>
@@ -534,16 +550,15 @@
               <td class="px-2 py-2">
                 <div class="flex gap-1 items-center justify-end">
                   <!-- Info / A2S detail -->
-                  <span title={isSelected ? 'Close details' : 'Live server details'}>
-                    <button
-                      class="size-6 rounded flex items-center justify-center transition-colors
-                             {isSelected ? 'bg-primary/15 text-primary hover:bg-primary/25'
-                                         : 'text-base-content/35 hover:bg-base-300 hover:text-base-content/80'}"
-                      onclick={(e) => { e.stopPropagation(); isSelected ? closeDetail() : openDetail(entry); }}
-                    >
-                      <Icon icon="ph:info" class="size-3.5" />
-                    </button>
-                  </span>
+                  <button
+                    class="size-6 rounded flex items-center justify-center transition-colors
+                           {isSelected ? 'bg-primary/15 text-primary hover:bg-primary/25'
+                                       : 'text-base-content/35 hover:bg-base-300 hover:text-base-content/80'}"
+                    title={isSelected ? 'Close details' : 'Live server details'}
+                    onclick={(e) => { e.stopPropagation(); isSelected ? closeDetail() : openDetail(entry); }}
+                  >
+                    <Icon icon="ph:info" class="size-3.5" />
+                  </button>
                  <!-- Favorite toggle -->
                    <button
                      class="size-6 rounded flex items-center justify-center transition-colors
@@ -556,17 +571,17 @@
                      <Icon icon={isFav(entry) ? 'ph:star-fill' : 'ph:star'} class="size-3.5" />
                    </button>
                   <!-- Remove -->
-                  <span title="Remove from history">
-                    <button
-                      class="size-6 rounded flex items-center justify-center text-base-content/35 hover:bg-error/10 hover:text-error transition-colors"
-                      onclick={() => onRemove(entry)}
-                    >
-                      <Icon icon="ph:trash" class="size-3.5" />
-                    </button>
-                  </span>
+                  <button
+                    class="size-6 rounded flex items-center justify-center text-base-content/35 hover:bg-error/10 hover:text-error transition-colors"
+                    title="Remove from history"
+                    onclick={() => onRemove(entry)}
+                  >
+                    <Icon icon="ph:trash" class="size-3.5" />
+                  </button>
                   <!-- Connect -->
                   <button
                     class="btn btn-primary btn-xs h-6 min-h-0 px-2.5 text-xs font-medium"
+                    title="Launch DayZ and connect to this server"
                     onclick={() => onConnect(entry.ip, entry.port, entry.name)}
                   >
                     Connect
@@ -580,7 +595,7 @@
     </div>
 
     <div class="flex justify-end px-3 py-2 bg-base-200 border-t border-base-300 flex-shrink-0">
-      <button class="btn btn-error btn-xs btn-outline" onclick={onClearAll}>
+      <button class="btn btn-error btn-xs btn-outline" title="Permanently remove all entries from connection history" onclick={onClearAll}>
         Clear all history
       </button>
     </div>
@@ -634,13 +649,11 @@
                 <Icon icon="mdi:signal" class="size-3.5 shrink-0" />Ping
               </span>
               <button
-                class="font-mono cursor-pointer hover:opacity-70 transition-opacity {pingColor(pingCache.get(`${detailEntry.ip}:${detailEntry.port}`))}"
+                class="font-mono cursor-pointer hover:opacity-70 transition-opacity {pingColor(pingCache.get(pingKey(detailEntry)))}"
                 onclick={() => detailEntry && doPing(detailEntry)}
                 title="Click to ping"
               >
-                {pingCache.get(`${detailEntry.ip}:${detailEntry.port}`) !== undefined
-                  ? `${pingCache.get(`${detailEntry.ip}:${detailEntry.port}`)}ms`
-                  : '—'}
+                {pingLabel(pingCache.get(pingKey(detailEntry)))}
               </button>
             </div>
 
@@ -760,6 +773,7 @@
           {/if}
           <button
             class="btn btn-ghost btn-xs gap-1 text-base-content/40 hover:text-primary w-full"
+            title="Open this server's BattleMetrics page in browser"
             onclick={() => openUrl(`https://www.battlemetrics.com/servers/dayz/${bm?.id}`)}
           >
             <Icon icon="ph:arrow-square-out" class="size-3.5" />
@@ -782,6 +796,7 @@
       <div class="px-3 py-2 border-t border-base-300 flex-shrink-0">
         <button
           class="btn btn-ghost btn-xs w-full gap-1.5"
+          title="Re-query live server info via A2S protocol"
           onclick={() => detailEntry && openDetail(detailEntry)}
           disabled={a2sLoading}
         >

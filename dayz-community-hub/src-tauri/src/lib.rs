@@ -12,6 +12,8 @@ use dayz_community_hub_core::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU16, Ordering};
+use surge_ping::PingIdentifier;
 use tauri::{AppHandle, Emitter, Manager, State, ipc::Channel};
 use tauri_plugin_opener::OpenerExt;
 use tokio::sync::{Mutex, RwLock};
@@ -1869,82 +1871,124 @@ async fn launch_offline_mission(
 /// Start background pinging for all servers.
 /// Returns immediately; results are pushed to the frontend via "ping-batch" events.
 /// Each event payload is a Vec<PingResultDto> (batch of up to PING_BATCH_SIZE results).
+///
+/// Tuning:
+///   - Priority targets (favorites + history) are pinged immediately, bypassing the
+///     bulk semaphore, so they always appear first regardless of list size.
+///   - 100 concurrent pings for the bulk scan — ICMP is pure async I/O, not CPU-bound.
+///   - 1 500 ms per-attempt timeout — enough for any legitimate server on glass fibre.
+///   - No retries — batch scan favours speed; single-server manual ping still retries.
+///   - One shared ICMPv4/v6 client — avoids opening a new socket per server.
+///   - Unique PingIdentifier per task via atomic counter — prevents reply cross-talk.
 #[tauri::command]
 async fn start_pinging(
-    targets: Vec<String>, // "ip:port" strings (favorites, history) — pinged first
+    targets: Vec<String>, // "ip:port" strings (favorites + history) — pinged immediately
     app: AppHandle,
     state: State<'_, SharedState>,
     ping_cache: State<'_, PingCache>,
 ) -> Result<(), String> {
-    // Deduplicate and collect endpoints
-    let mut endpoints: Vec<(String, i64)> = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
-    // Add explicitly requested targets first
+    // Priority endpoints: favorites + history (passed in by the frontend).
+    let mut priority: Vec<(String, i64)> = Vec::new();
     for target in &targets {
         if seen.insert(target.clone()) {
             if let Some((ip, port_str)) = target.rsplit_once(':') {
                 if let Ok(port) = port_str.parse::<i64>() {
-                    endpoints.push((ip.to_string(), port));
+                    priority.push((ip.to_string(), port));
                 }
             }
         }
     }
 
-    // Add all servers from state (if not already in targets)
+    // Bulk endpoints: everything else.
+    let mut bulk: Vec<(String, i64)> = Vec::new();
     {
         let state = state.lock().await;
         for s in state.servers.iter() {
             let key = format!("{}:{}", s.endpoint.ip, s.endpoint.port);
             if seen.insert(key) {
-                endpoints.push((s.endpoint.ip.clone(), s.endpoint.port));
+                bulk.push((s.endpoint.ip.clone(), s.endpoint.port));
             }
         }
     }
 
     let ping_cache_arc = ping_cache.inner().clone();
-    let semaphore = Arc::new(tokio::sync::Semaphore::new(50)); // max 50 concurrent pings
-    const BATCH_SIZE: usize = 50;
+
+    // Build shared ICMP clients once — reused by all concurrent tasks.
+    let clients = Arc::new(
+        a2s_query::IcmpClients::new().map_err(|e| format!("ICMP init: {e}"))?,
+    );
+
+    // Atomic counter for unique PingIdentifiers — prevents reply cross-talk.
+    let ident_counter = Arc::new(AtomicU16::new(1));
+
+    const CONCURRENCY: usize = 100;
+    const BATCH_SIZE: usize  = 100;
+    const TIMEOUT_MS: u64    = 1_500;
+    let timeout = std::time::Duration::from_millis(TIMEOUT_MS);
+
+    // Bulk scan is rate-limited; priority bypasses the semaphore entirely.
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(CONCURRENCY));
 
     tokio::spawn(async move {
-        // Channel for workers → batcher
-        let (tx, mut rx) = tokio::sync::mpsc::channel::<PingResultDto>(256);
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<PingResultDto>(1024);
 
-        // Spawn all ping workers
-        for (ip, port) in endpoints {
-            let ip_clone = ip.clone();
-            let cache_clone = ping_cache_arc.clone();
-            let sem = semaphore.clone();
-            let tx_clone = tx.clone();
+        // ── Priority pass: spawn immediately, no semaphore ───────────────────
+        for (ip, port) in priority {
+            let ip_clone      = ip.clone();
+            let cache_clone   = ping_cache_arc.clone();
+            let tx_clone      = tx.clone();
+            let clients_clone = clients.clone();
+            let counter_clone = ident_counter.clone();
+
+            tokio::spawn(async move {
+                let parsed_ip: std::net::IpAddr = match ip_clone.parse() {
+                    Ok(a) => a,
+                    Err(_) => return,
+                };
+                let server = api::Server {
+                    endpoint: dayz_community_hub_core::Endpoint { ip: ip_clone.clone(), port },
+                    ..Default::default()
+                };
+                let ident  = PingIdentifier(counter_clone.fetch_add(1, Ordering::Relaxed));
+                let client = clients_clone.for_ip(parsed_ip);
+                let ms = a2s_query::ping_once(client, parsed_ip, ident, timeout, 2, &server).await;
+                cache_clone.write().await.insert(format!("{}:{}", ip_clone, port), ms);
+                let _ = tx_clone.send(PingResultDto { ip: ip_clone, port, ms }).await;
+            });
+        }
+
+        // ── Bulk pass: rate-limited by semaphore ─────────────────────────────
+        for (ip, port) in bulk {
+            let ip_clone      = ip.clone();
+            let cache_clone   = ping_cache_arc.clone();
+            let sem           = semaphore.clone();
+            let tx_clone      = tx.clone();
+            let clients_clone = clients.clone();
+            let counter_clone = ident_counter.clone();
 
             tokio::spawn(async move {
                 let _permit = sem.acquire().await;
+
+                let parsed_ip: std::net::IpAddr = match ip_clone.parse() {
+                    Ok(a) => a,
+                    Err(_) => return,
+                };
                 let server = api::Server {
-                    endpoint: dayz_community_hub_core::Endpoint {
-                        ip: ip_clone.clone(),
-                        port,
-                    },
+                    endpoint: dayz_community_hub_core::Endpoint { ip: ip_clone.clone(), port },
                     ..Default::default()
                 };
-                if let Ok(ms) = a2s_query::ping_server(&server).await {
-                    cache_clone
-                        .write()
-                        .await
-                        .insert(format!("{}:{}", ip_clone, port), ms);
-                    let _ = tx_clone
-                        .send(PingResultDto {
-                            ip: ip_clone,
-                            port,
-                            ms,
-                        })
-                        .await;
-                }
+                let ident  = PingIdentifier(counter_clone.fetch_add(1, Ordering::Relaxed));
+                let client = clients_clone.for_ip(parsed_ip);
+                let ms = a2s_query::ping_once(client, parsed_ip, ident, timeout, 2, &server).await;
+                cache_clone.write().await.insert(format!("{}:{}", ip_clone, port), ms);
+                let _ = tx_clone.send(PingResultDto { ip: ip_clone, port, ms }).await;
             });
         }
-        // Drop our sender so the channel closes when all workers finish
+
         drop(tx);
 
-        // Collect results and emit in batches to avoid flooding the frontend
         let mut batch: Vec<PingResultDto> = Vec::with_capacity(BATCH_SIZE);
         while let Some(result) = rx.recv().await {
             batch.push(result);
@@ -1953,7 +1997,6 @@ async fn start_pinging(
                 batch.clear();
             }
         }
-        // Emit any remaining results
         if !batch.is_empty() {
             let _ = app.emit("ping-batch", &batch);
         }
@@ -1963,10 +2006,13 @@ async fn start_pinging(
 }
 
 /// Ping a single server and update the ping cache. Returns the latency in ms.
+/// `timeout_ms` defaults to 10 000 ms when omitted (manual single-server ping
+/// can afford to wait longer than the background batch which uses 5 000 ms).
 #[tauri::command]
 async fn ping_single(
     ip: String,
     port: i64,
+    timeout_ms: Option<u64>,
     ping_cache: State<'_, PingCache>,
 ) -> Result<u32, String> {
     let server = api::Server {
@@ -1976,7 +2022,8 @@ async fn ping_single(
         },
         ..Default::default()
     };
-    let ms = a2s_query::ping_server(&server)
+    let effective_timeout = Some(timeout_ms.unwrap_or(10_000));
+    let ms = a2s_query::ping_server(&server, effective_timeout)
         .await
         .map_err(|e| format!("Ping failed: {e}"))?;
     let key = format!("{ip}:{port}");
@@ -2051,9 +2098,9 @@ const EXPORT_EXCLUDE: &[&str] = &["server_list_cache.json"];
 
 /// Export all settings files from the data directory as a zstd-compressed bundle.
 /// Includes profile.json (settings, favorites, history, launch options) and
-/// mods.json (managed mod list) — everything needed to fully restore a setup.
+/// optionally mods.json (managed mod list).
 #[tauri::command]
-async fn export_profile(path: String) -> Result<(), String> {
+async fn export_profile(path: String, include_mods: bool) -> Result<(), String> {
     let data_dir = config::default_data_dir();
 
     let mut files: std::collections::HashMap<String, serde_json::Value> =
@@ -2075,6 +2122,9 @@ async fn export_profile(path: String) -> Result<(), String> {
             continue;
         }
         if EXPORT_EXCLUDE.contains(&name.as_str()) {
+            continue;
+        }
+        if !include_mods && name == "mods.json" {
             continue;
         }
         let raw = tokio::fs::read_to_string(entry.path())
@@ -2125,6 +2175,24 @@ async fn import_profile(path: String, state: State<'_, SharedState>) -> Result<P
         .await
         .map_err(|e| e.to_string())?;
 
+    // Wipe existing .json settings files (except caches) so the import is a
+    // full replacement — stale files from the old profile don't leak through.
+    {
+        let mut rd = tokio::fs::read_dir(&data_dir)
+            .await
+            .map_err(|e| format!("Cannot read data dir: {e}"))?;
+        while let Some(entry) = rd
+            .next_entry()
+            .await
+            .map_err(|e| format!("Cannot read dir entry: {e}"))?
+        {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.ends_with(".json") && !EXPORT_EXCLUDE.contains(&name.as_str()) {
+                let _ = tokio::fs::remove_file(entry.path()).await;
+            }
+        }
+    }
+
     match version {
         1 => {
             // Legacy format: { version, profile, mods? }
@@ -2154,13 +2222,17 @@ async fn import_profile(path: String, state: State<'_, SharedState>) -> Result<P
         v => return Err(format!("Unsupported bundle version {v}")),
     }
 
-    // Reload profile in state
+    // Reload profile in state and rebuild SteamCmd so steamcmd_login()
+    // reflects the imported credentials (used by get_app_stats for the titlebar).
     let profile_path = config::default_profile_path();
     let mut state = state.lock().await;
     state
         .ctl
         .reload_profile(&profile_path)
         .map_err(|e| e.to_string())?;
+    state.ctl.rebuild_steamcmd();
+    // Invalidate cached avatar so it gets re-fetched with the imported keys.
+    state.cached_avatar = None;
     Ok(profile_to_dto(state.ctl.profile()))
 }
 
