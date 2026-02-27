@@ -38,8 +38,7 @@ fn is_steam_guard_prompt(line: &str) -> bool {
 fn is_password_prompt(buf: &str) -> bool {
     let clean = strip_ansi(buf);
     let trimmed = clean.trim_end();
-    trimmed.ends_with("password:")
-        || trimmed.ends_with("password: ")
+    trimmed.ends_with("password:") || trimmed.ends_with("password: ")
 }
 
 pub const DAYZ_GAME_ID: u32 = 221100;
@@ -773,8 +772,10 @@ impl SteamCmd {
                         invalid_password = true;
                     }
                     // Log when Steam Guard is resolved (OK after "Waiting for confirmation")
-                    if steam_guard_sent && !steam_guard_timed_out
-                        && lower.contains("waiting for") && lower.contains("ok")
+                    if steam_guard_sent
+                        && !steam_guard_timed_out
+                        && lower.contains("waiting for")
+                        && lower.contains("ok")
                     {
                         eprintln!("[SteamGuard] confirmed OK (t={elapsed:.1}s)");
                     }

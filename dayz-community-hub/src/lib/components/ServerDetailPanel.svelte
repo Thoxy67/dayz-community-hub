@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ServerDto, ServerFullDto, ModDto, A2sDetailsDto, InstalledModDto, BattleMetricsDto } from '$lib/types';
+  import { pingColor, playerFill, formatDuration, sparklinePath } from '$lib/utils';
   import { invoke } from '@tauri-apps/api/core';
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
@@ -145,44 +146,9 @@
     return () => clearTimeout(_bmDebounce);
   });
 
-  /** Build a tiny SVG sparkline from player history data. */
-  function sparklinePath(history: [number, number][], w = 120, h = 28): string {
-    if (history.length < 2) return '';
-    // Sort ascending by timestamp
-    const pts = [...history].sort((a, b) => a[0] - b[0]);
-    const maxVal = Math.max(...pts.map((p) => p[1]), 1);
-    const step = w / (pts.length - 1);
-    return pts
-      .map((p, i) => {
-        const x = i * step;
-        const y = h - (p[1] / maxVal) * h;
-        return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
-      })
-      .join(' ');
-  }
 
-  function formatDuration(secs: number): string {
-    const s = Math.floor(secs);
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    if (h > 0) return `${h}h ${m}m`;
-    if (m > 0) return `${m}m`;
-    return `<1m`;
-  }
 
-  function pingColor(ms: number | null): string {
-    if (ms === null) return 'text-base-content/40';
-    if (ms < 50) return 'text-success';
-    if (ms < 100) return 'text-warning';
-    return 'text-error';
-  }
 
-  function playerFill(players: number, max: number): string {
-    if (players === 0) return 'text-base-content/40';
-    if (players >= max) return 'text-error';
-    if (players > max / 2) return 'text-warning';
-    return 'text-success';
-  }
 </script>
 
 <div class="flex flex-col h-full overflow-hidden border-l border-base-300 bg-base-100">
@@ -213,7 +179,7 @@
       <div class="font-mono text-base-content">{server.query_port}</div>
 
       <div class="text-base-content/50">Players</div>
-      <div class="font-bold {playerFill(server.players, server.max_players)}">
+      <div class="font-bold {playerFill(server.players, server.max_players, '40')}">
         {server.players}/{server.max_players}
       </div>
 
@@ -227,7 +193,7 @@
       <div class="text-base-content/70">{server.time}</div>
 
       <div class="text-base-content/50">Ping</div>
-      <div class="font-mono {pingColor(pingMs)}">
+      <div class="font-mono {pingColor(pingMs, '40')}">
         {pingMs !== null ? `${pingMs} ms` : '—'}
       </div>
 

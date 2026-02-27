@@ -54,6 +54,16 @@ pub struct Mod {
 
 pub type Server = Results;
 
+impl Server {
+    /// Extract workshop mod IDs as `u64` — avoids repeating this conversion at every call site.
+    pub fn mod_ids(&self) -> Vec<u64> {
+        self.mods
+            .iter()
+            .map(|m| m.steam_workshop_id as u64)
+            .collect()
+    }
+}
+
 /// Response from the Steam GetNumberOfCurrentPlayers endpoint.
 #[derive(Debug, Deserialize)]
 struct SteamPlayerCountResponse {

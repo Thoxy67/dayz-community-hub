@@ -271,13 +271,17 @@
       {#if heroDataUri || selected.image_url}
         <div class="w-full h-48 flex-shrink-0 relative overflow-hidden bg-base-200">
           {#if heroDataUri}
-            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
-            <img
-              src={heroDataUri}
-              alt=""
-              class="w-full h-full object-cover cursor-zoom-in"
+            <button
+              type="button"
+              class="w-full h-full p-0 border-0 bg-transparent cursor-zoom-in"
               onclick={() => { if (heroDataUri) lightboxSrc === heroDataUri ? closeLightbox() : openLightbox(heroDataUri); }}
-            />
+            >
+              <img
+                src={heroDataUri}
+                alt=""
+                class="w-full h-full object-cover"
+              />
+            </button>
             <!-- Gradient overlay so title text reads well -->
             <div class="absolute inset-0 bg-gradient-to-t from-base-100 via-base-100/30 to-transparent pointer-events-none"></div>
           {:else}
@@ -387,13 +391,17 @@
     onclick={closeLightbox}
     onkeydown={onLightboxKeydown}
   >
-    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
-    <img
-      src={lightboxSrc}
-      alt=""
-      class="max-w-[90vw] max-h-[90vh] object-contain rounded shadow-2xl cursor-zoom-out select-none"
+    <button
+      type="button"
+      class="p-0 border-0 bg-transparent cursor-zoom-out"
       onclick={(e) => { e.stopPropagation(); closeLightbox(); }}
-    />
+    >
+      <img
+        src={lightboxSrc}
+        alt=""
+        class="max-w-[90vw] max-h-[90vh] object-contain rounded shadow-2xl select-none"
+      />
+    </button>
     <button
       class="absolute top-3 right-3 btn btn-ghost btn-sm btn-circle text-white/70 hover:text-white hover:bg-white/10"
       onclick={closeLightbox}

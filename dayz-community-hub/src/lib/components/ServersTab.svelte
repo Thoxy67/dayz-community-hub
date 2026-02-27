@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ServerDto, InstalledModDto, A2sDetailsDto, ServersFilterState } from '$lib/types';
+  import { pingLabel, pingColor, pingDot, playerFill, playerBarColor, sortIcon as _sortIcon } from '$lib/utils';
   import ServerDetailPanel from './ServerDetailPanel.svelte';
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import { invoke } from '@tauri-apps/api/core';
@@ -26,7 +27,7 @@
     onUnexcludeIp: (ip: string) => void;
     onManageExcluded: () => void;
     /** D key — open selected server in Direct Connect tab with query. */
-    onDirectConnect?: (ip: string, queryPort: number) => void;
+    onDirectConnect?: (ip: string, gamePort: number, queryPort?: number) => void;
   }
 
   let {
@@ -179,8 +180,7 @@
   }
 
   function sortIcon(col: SortCol) {
-    if (filter.sortCol !== col) return 'ph:arrows-down-up';
-    return filter.sortAsc ? 'ph:arrow-up' : 'ph:arrow-down';
+    return _sortIcon(col, filter.sortCol, filter.sortAsc);
   }
 
   // ── Virtual scrolling state ──────────────────────────────────────────────
@@ -313,43 +313,7 @@
     return 'ph:moon';                                 // night
   }
 
-  const PING_TIMEOUT_MS = 5_000;
 
-  function isTimeout(ms: number | undefined): boolean {
-    return ms === undefined || ms >= PING_TIMEOUT_MS;
-  }
-
-  function pingLabel(ms: number | undefined): string {
-    return isTimeout(ms) ? 'TIMEOUT' : `${ms}ms`;
-  }
-
-  function pingColor(ms: number | undefined): string {
-    if (isTimeout(ms)) return 'text-base-content/30';
-    if (ms! < 50)  return 'text-success';
-    if (ms! < 100) return 'text-warning';
-    return 'text-error';
-  }
-
-  function pingDot(ms: number | undefined): string {
-    if (isTimeout(ms)) return 'bg-base-content/20';
-    if (ms! < 50)  return 'bg-success';
-    if (ms! < 100) return 'bg-warning';
-    return 'bg-error';
-  }
-
-  function playerFill(players: number, max: number): string {
-    if (players === 0) return 'text-base-content/30';
-    if (players >= max) return 'text-error';
-    if (players > max / 2) return 'text-warning';
-    return 'text-success';
-  }
-
-  function playerBarColor(players: number, max: number): string {
-    if (players === 0) return 'bg-base-content/20';
-    if (players >= max) return 'bg-error';
-    if (players > max / 2) return 'bg-warning';
-    return 'bg-success';
-  }
 
   function favKey(s: ServerDto) { return `${s.ip}:${s.query_port}`; }
 
@@ -428,7 +392,7 @@
     } else if ((e.key === 'd' || e.key === 'D') && selected && !e.ctrlKey && onDirectConnect) {
       // D — open in Direct Connect tab with prefilled address + auto-query
       e.preventDefault();
-      onDirectConnect(selected.ip, selected.query_port);
+      onDirectConnect(selected.ip, selected.game_port, selected.query_port);
     }
   }
 

@@ -343,6 +343,7 @@
                 <label class="input input-sm input-bordered flex items-center gap-2 flex-1 bg-base-200/60">
                   <Icon icon="ph:key" class="size-3.5 text-base-content/40" />
                   {#if showPasswordInput}
+                    <!-- svelte-ignore a11y_autofocus -->
                     <input
                       type="text"
                       class="grow text-xs"
@@ -352,6 +353,7 @@
                       autofocus
                     />
                   {:else}
+                    <!-- svelte-ignore a11y_autofocus -->
                     <input
                       type="password"
                       class="grow text-xs"

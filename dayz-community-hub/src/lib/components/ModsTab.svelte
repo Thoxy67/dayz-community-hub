@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { InstalledModDto } from '$lib/types';
+  import { sortIcon as _sortIcon } from '$lib/utils';
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import Icon from '@iconify/svelte';
@@ -120,8 +121,7 @@
   }
 
   function sortIcon(col: SortCol) {
-    if (sortCol !== col) return 'ph:arrows-down-up';
-    return sortAsc ? 'ph:arrow-up' : 'ph:arrow-down';
+    return _sortIcon(col, sortCol, sortAsc);
   }
 
   let sorted = $derived((() => {
@@ -587,12 +587,13 @@
 
   <!-- ── Manual install modal ──────────────────────────────────────────── -->
   {#if showInstallModal}
-    <!-- svelte-ignore a11y_interactive_supports_focus a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
     <!-- Backdrop -->
     <div
       class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onclick={closeInstallModal}
+      onkeydown={(e) => { if (e.key === 'Escape') closeInstallModal(); }}
       role="dialog"
+      tabindex="-1"
       aria-modal="true"
       aria-label="Install mod"
     >

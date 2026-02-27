@@ -1,23 +1,23 @@
 use crate::api::Server;
 use crate::{Result, errors::Error};
 use a2s::{A2SClient, rules};
-use surge_ping::{Client, Config, PingIdentifier, PingSequence, ICMP};
+use surge_ping::{Client, Config, ICMP, PingIdentifier, PingSequence};
 
 use std::time::{Duration, Instant};
 
-/// Query server information using A2S protocol
-pub async fn query_server_info(server: &Server) -> Result<a2s::info::Info> {
+/// Create a configured A2S client and format the server's query address.
+async fn make_a2s_client(server: &Server) -> Result<(A2SClient, String)> {
     let mut client = A2SClient::new()
         .await
         .map_err(|e| Error::A2sQuery(format!("Failed to create A2S client: {}", e)))?;
+    let _ = client.set_timeout(Duration::from_secs(5));
+    let addr = format!("{}:{}", server.endpoint.ip, server.endpoint.port as u16);
+    Ok((client, addr))
+}
 
-    let timeout = Duration::from_secs(5);
-    let _ = client.set_timeout(timeout);
-
-    // Use endpoint port (query port)
-    let query_port = server.endpoint.port as u16;
-    let addr = format!("{}:{}", server.endpoint.ip, query_port);
-
+/// Query server information using A2S protocol
+pub async fn query_server_info(server: &Server) -> Result<a2s::info::Info> {
+    let (client, addr) = make_a2s_client(server).await?;
     client
         .info(&addr)
         .await
@@ -26,16 +26,7 @@ pub async fn query_server_info(server: &Server) -> Result<a2s::info::Info> {
 
 /// Query player information using A2S protocol
 pub async fn query_player_info(server: &Server) -> Result<Vec<a2s::players::Player>> {
-    let mut client = A2SClient::new()
-        .await
-        .map_err(|e| Error::A2sQuery(format!("Failed to create A2S client: {}", e)))?;
-
-    let timeout = Duration::from_secs(5);
-    let _ = client.set_timeout(timeout);
-
-    let query_port = server.endpoint.port as u16;
-    let addr = format!("{}:{}", server.endpoint.ip, query_port);
-
+    let (client, addr) = make_a2s_client(server).await?;
     client
         .players(&addr)
         .await
@@ -44,16 +35,7 @@ pub async fn query_player_info(server: &Server) -> Result<Vec<a2s::players::Play
 
 /// Query rules (cvars) using A2S protocol
 pub async fn query_rules(server: &Server) -> Result<Vec<rules::Rule>> {
-    let mut client = A2SClient::new()
-        .await
-        .map_err(|e| Error::A2sQuery(format!("Failed to create A2S client: {}", e)))?;
-
-    let timeout = Duration::from_secs(5);
-    let _ = client.set_timeout(timeout);
-
-    let query_port = server.endpoint.port as u16;
-    let addr = format!("{}:{}", server.endpoint.ip, query_port);
-
+    let (client, addr) = make_a2s_client(server).await?;
     client
         .rules(&addr)
         .await

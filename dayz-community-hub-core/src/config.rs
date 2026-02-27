@@ -151,6 +151,65 @@ impl<'de> Deserialize<'de> for LaunchOption {
     }
 }
 
+/// Custom deserializer that reads the old bash-script flat JSON format
+/// where keys are camelCase (filePathing, doLogs, noPause, etc.)
+/// and maps them to our struct fields.
+///
+/// Uses `LaunchOptions::defaults()` as the single source of truth for
+/// descriptions and default enabled/value states — no duplication.
+fn deserialize_launch_options<'de, D>(
+    deserializer: D,
+) -> std::result::Result<LaunchOptions, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let map: HashMap<String, LaunchOption> = HashMap::deserialize(deserializer)?;
+
+    /// Look up a launch option from the deserialized map by trying each alias
+    /// key in order, falling back to the provided default from `defaults()`.
+    fn get_opt(
+        map: &HashMap<String, LaunchOption>,
+        keys: &[&str],
+        default: LaunchOption,
+    ) -> LaunchOption {
+        for key in keys {
+            if let Some(opt) = map.get(*key) {
+                return opt.clone();
+            }
+        }
+        default
+    }
+
+    // Legacy alias keys: the old bash-script profile used camelCase names,
+    // so we accept both snake_case and camelCase variants.
+    let d = LaunchOptions::defaults();
+    Ok(LaunchOptions {
+        window: get_opt(&map, &["window"], d.window),
+        noborder: get_opt(&map, &["noborder"], d.noborder),
+        nosplash: get_opt(&map, &["nosplash"], d.nosplash),
+        skipintro: get_opt(&map, &["skipintro", "skipIntro"], d.skipintro),
+        nolauncher: get_opt(&map, &["nolauncher", "noLauncher"], d.nolauncher),
+        file_patching: get_opt(
+            &map,
+            &["file_patching", "filePathing", "filePatching"],
+            d.file_patching,
+        ),
+        do_logs: get_opt(&map, &["do_logs", "doLogs"], d.do_logs),
+        buldozer: get_opt(&map, &["buldozer"], d.buldozer),
+        winxp: get_opt(&map, &["winxp"], d.winxp),
+        high: get_opt(&map, &["high"], d.high),
+        world: get_opt(&map, &["world"], d.world),
+        no_pause: get_opt(&map, &["no_pause", "noPause"], d.no_pause),
+        max_mem: get_opt(&map, &["max_mem", "maxMem"], d.max_mem),
+        max_vram: get_opt(&map, &["max_vram", "maxVRAM"], d.max_vram),
+        cpu_count: get_opt(&map, &["cpu_count", "cpuCount"], d.cpu_count),
+        ex_threads: get_opt(&map, &["ex_threads", "exThreads"], d.ex_threads),
+        no_benchmark: get_opt(&map, &["no_benchmark", "noBenchmark"], d.no_benchmark),
+        script_debug: get_opt(&map, &["script_debug", "scriptDebug"], d.script_debug),
+        profiles: get_opt(&map, &["profiles"], d.profiles),
+    })
+}
+
 /// Launch options. Deserialized from the old bash-script flat format
 /// or from our own struct format.
 #[derive(Debug, Clone, Serialize)]
@@ -176,221 +235,105 @@ pub struct LaunchOptions {
     pub profiles: LaunchOption,
 }
 
-/// Custom deserializer that reads the old bash-script flat JSON format
-/// where keys are camelCase (filePathing, doLogs, noPause, etc.)
-/// and maps them to our struct fields.
-fn deserialize_launch_options<'de, D>(
-    deserializer: D,
-) -> std::result::Result<LaunchOptions, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    use std::collections::HashMap;
-
-    // Deserialize as a map of option_name -> LaunchOption
-    let map: HashMap<String, LaunchOption> = HashMap::deserialize(deserializer)?;
-
-    fn get_opt(
-        map: &HashMap<String, LaunchOption>,
-        keys: &[&str],
-        default: LaunchOption,
-    ) -> LaunchOption {
-        for key in keys {
-            if let Some(opt) = map.get(*key) {
-                return opt.clone();
-            }
-        }
-        default
-    }
-
-    fn default_off(desc: &str) -> LaunchOption {
-        LaunchOption {
-            enabled: false,
-            value: None,
-            description: desc.to_string(),
-        }
-    }
-    fn default_on(desc: &str) -> LaunchOption {
-        LaunchOption {
-            enabled: true,
-            value: None,
-            description: desc.to_string(),
-        }
-    }
-
-    Ok(LaunchOptions {
-        window: get_opt(&map, &["window"], default_off("Run in windowed mode")),
-        noborder: get_opt(&map, &["noborder"], default_off("Borderless window")),
-        nosplash: get_opt(&map, &["nosplash"], default_on("Skip splash screen")),
-        skipintro: get_opt(
-            &map,
-            &["skipintro", "skipIntro"],
-            default_on("Skip intro video"),
-        ),
-        nolauncher: get_opt(
-            &map,
-            &["nolauncher", "noLauncher"],
-            default_on("Skip launcher"),
-        ),
-        file_patching: get_opt(
-            &map,
-            &["file_patching", "filePathing", "filePatching"],
-            default_off("Enable file patching"),
-        ),
-        do_logs: get_opt(&map, &["do_logs", "doLogs"], default_off("Enable logging")),
-        buldozer: get_opt(&map, &["buldozer"], default_off("Buldozer mode")),
-        winxp: get_opt(&map, &["winxp"], default_off("DirectX 9 compatibility")),
-        high: get_opt(&map, &["high"], default_on("High process priority")),
-        world: get_opt(
-            &map,
-            &["world"],
-            LaunchOption {
-                enabled: true,
-                value: Some("empty".to_string()),
-                description: "World to load".to_string(),
-            },
-        ),
-        no_pause: get_opt(
-            &map,
-            &["no_pause", "noPause"],
-            default_off("Don't pause when unfocused"),
-        ),
-        max_mem: get_opt(
-            &map,
-            &["max_mem", "maxMem"],
-            default_off("Max memory in MB"),
-        ),
-        max_vram: get_opt(
-            &map,
-            &["max_vram", "maxVRAM"],
-            default_off("Max VRAM in MB"),
-        ),
-        cpu_count: get_opt(
-            &map,
-            &["cpu_count", "cpuCount"],
-            default_off("Number of CPU cores"),
-        ),
-        ex_threads: get_opt(
-            &map,
-            &["ex_threads", "exThreads"],
-            default_off("Number of threads"),
-        ),
-        no_benchmark: get_opt(
-            &map,
-            &["no_benchmark", "noBenchmark"],
-            default_off("Disable benchmark"),
-        ),
-        script_debug: get_opt(
-            &map,
-            &["script_debug", "scriptDebug"],
-            default_off("Script debug mode"),
-        ),
-        profiles: get_opt(
-            &map,
-            &["profiles"],
-            default_off("Custom profiles directory"),
-        ),
-    })
-}
-
 impl LaunchOptions {
     /// Create default launch options matching the bash script defaults.
+    /// This is the **single source of truth** for option names, defaults, and descriptions.
     pub fn defaults() -> Self {
         Self {
             window: LaunchOption {
                 enabled: false,
                 value: None,
-                description: "Run in windowed mode".to_string(),
+                description: "Run in windowed mode".into(),
             },
             noborder: LaunchOption {
                 enabled: false,
                 value: None,
-                description: "Borderless window".to_string(),
+                description: "Borderless window".into(),
             },
             nosplash: LaunchOption {
                 enabled: true,
                 value: None,
-                description: "Skip splash screen".to_string(),
+                description: "Skip splash screen".into(),
             },
             skipintro: LaunchOption {
                 enabled: true,
                 value: None,
-                description: "Skip intro video".to_string(),
+                description: "Skip intro video".into(),
             },
             nolauncher: LaunchOption {
                 enabled: true,
                 value: None,
-                description: "Skip launcher".to_string(),
+                description: "Skip launcher".into(),
             },
             file_patching: LaunchOption {
                 enabled: false,
                 value: None,
-                description: "Enable file patching".to_string(),
+                description: "Enable file patching".into(),
             },
             do_logs: LaunchOption {
                 enabled: false,
                 value: None,
-                description: "Enable logging".to_string(),
+                description: "Enable logging".into(),
             },
             buldozer: LaunchOption {
                 enabled: false,
                 value: None,
-                description: "Buldozer mode".to_string(),
+                description: "Buldozer mode".into(),
             },
             winxp: LaunchOption {
                 enabled: false,
                 value: None,
-                description: "DirectX 9 compatibility".to_string(),
+                description: "DirectX 9 compatibility".into(),
             },
             high: LaunchOption {
                 enabled: true,
                 value: None,
-                description: "High process priority".to_string(),
+                description: "High process priority".into(),
             },
             world: LaunchOption {
                 enabled: true,
-                value: Some("empty".to_string()),
-                description: "World to load (empty = no world at start)".to_string(),
+                value: Some("empty".into()),
+                description: "World to load".into(),
             },
             no_pause: LaunchOption {
                 enabled: false,
                 value: None,
-                description: "Don't pause when unfocused".to_string(),
+                description: "Don't pause when unfocused".into(),
             },
             max_mem: LaunchOption {
                 enabled: false,
                 value: None,
-                description: "Max memory in MB".to_string(),
+                description: "Max memory in MB".into(),
             },
             max_vram: LaunchOption {
                 enabled: false,
                 value: None,
-                description: "Max VRAM in MB".to_string(),
+                description: "Max VRAM in MB".into(),
             },
             cpu_count: LaunchOption {
                 enabled: false,
                 value: None,
-                description: "Number of CPU cores to use".to_string(),
+                description: "Number of CPU cores".into(),
             },
             ex_threads: LaunchOption {
                 enabled: false,
                 value: None,
-                description: "Number of threads".to_string(),
+                description: "Number of threads".into(),
             },
             no_benchmark: LaunchOption {
                 enabled: false,
                 value: None,
-                description: "Disable benchmark on startup".to_string(),
+                description: "Disable benchmark".into(),
             },
             script_debug: LaunchOption {
                 enabled: false,
                 value: None,
-                description: "Script debug mode".to_string(),
+                description: "Script debug mode".into(),
             },
             profiles: LaunchOption {
                 enabled: false,
                 value: None,
-                description: "Custom profiles directory path".to_string(),
+                description: "Custom profiles directory".into(),
             },
         }
     }

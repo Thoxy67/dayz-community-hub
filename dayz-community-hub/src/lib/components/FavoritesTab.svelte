@@ -1,5 +1,7 @@
 <script lang="ts">
   import type { FavoriteDto, ServerDto, A2sDetailsDto, BattleMetricsDto } from '$lib/types';
+  import { pingLabel, pingColor, pingDot, playerFill, playerBarColor, formatDuration, sortIcon as _sortIcon } from '$lib/utils';
+  import BattleMetricsPanel from './BattleMetricsPanel.svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import { openUrl } from '@tauri-apps/plugin-opener';
@@ -17,7 +19,7 @@
     onGoToServers?: () => void;
     onPing: (ip: string, port: number) => void;
     /** D key — open selected server in Direct Connect tab with query. */
-    onDirectConnect?: (ip: string, queryPort: number) => void;
+    onDirectConnect?: (ip: string, gamePort: number, queryPort?: number) => void;
   }
 
   let { favorites, servers, pingCache, bmApiKey, onConnect, onRemove, onGoToServers, onPing, onDirectConnect }: Props = $props();
@@ -37,8 +39,7 @@
   }
 
   function sortIcon(col: SortCol) {
-    if (sortCol !== col) return 'ph:arrows-down-up';
-    return sortAsc ? 'ph:arrow-up' : 'ph:arrow-down';
+    return _sortIcon(col, sortCol, sortAsc);
   }
 
   // Pre-built lookup map: both "ip:query_port" and "ip:game_port" → server.
@@ -205,17 +206,7 @@
     return () => clearTimeout(_bmDebounce);
   });
 
-  function sparklinePath(history: [number, number][], w = 120, h = 28): string {
-    if (history.length < 2) return '';
-    const pts = [...history].sort((a, b) => a[0] - b[0]);
-    const maxVal = Math.max(...pts.map((p) => p[1]), 1);
-    const step = w / (pts.length - 1);
-    return pts.map((p, i) => {
-      const x = i * step;
-      const y = h - (p[1] / maxVal) * h;
-      return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
-    }).join(' ');
-  }
+
 
   let selectedIdx = $state(-1);
 
@@ -264,7 +255,7 @@
       e.preventDefault();
       const fav = sorted[selectedIdx];
       const sv = findServer(fav);
-      onDirectConnect(fav.ip, sv ? sv.query_port : fav.port);
+      onDirectConnect(fav.ip, sv ? sv.game_port : fav.port, sv ? sv.query_port : undefined);
     }
   }
 
@@ -289,52 +280,7 @@
     return 'ph:moon';
   }
 
-  const PING_TIMEOUT_MS = 5_000;
 
-  function isTimeout(ms: number | undefined): boolean {
-    return ms === undefined || ms >= PING_TIMEOUT_MS;
-  }
-
-  function pingLabel(ms: number | undefined): string {
-    return isTimeout(ms) ? 'TIMEOUT' : `${ms}ms`;
-  }
-
-  function pingColor(ms: number | undefined): string {
-    if (isTimeout(ms)) return 'text-base-content/30';
-    if (ms! < 50)  return 'text-success';
-    if (ms! < 100) return 'text-warning';
-    return 'text-error';
-  }
-
-  function playerFill(players: number, max: number): string {
-    if (players === 0) return 'text-base-content/30';
-    if (players >= max) return 'text-error';
-    if (players > max / 2) return 'text-warning';
-    return 'text-success';
-  }
-
-  function pingDot(ms: number | undefined): string {
-    if (isTimeout(ms)) return 'bg-base-content/20';
-    if (ms! < 50)  return 'bg-success';
-    if (ms! < 100) return 'bg-warning';
-    return 'bg-error';
-  }
-
-  function playerBarColor(players: number, max: number): string {
-    if (players === 0) return 'bg-base-content/20';
-    if (players >= max) return 'bg-error';
-    if (players > max / 2) return 'bg-warning';
-    return 'bg-success';
-  }
-
-  function formatDuration(secs: number): string {
-    const s = Math.floor(secs);
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    if (h > 0) return `${h}h ${m}m`;
-    if (m > 0) return `${m}m`;
-    return `<1m`;
-  }
 
   onMount(() => {
     window.addEventListener('keydown', handleKeydown);
@@ -662,84 +608,10 @@
         {/if}
       </div>
 
-      <!-- BattleMetrics section -->
-      <div class="px-3 py-2 border-t border-base-300 flex-shrink-0 space-y-2">
-        <div class="flex items-center justify-between">
-          <span class="text-xs font-semibold text-base-content/50 flex items-center gap-1.5">
-            <Icon icon="ph:chart-line-up" class="size-3.5" />
-            BattleMetrics
-          </span>
-          {#if bmApiKey}
-            <button
-              class="btn btn-ghost btn-xs h-5 min-h-0 px-1.5"
-              onclick={() => { bmFetchedKey = ''; bmRetryTick++; }}
-              disabled={bmLoading}
-              title="Refresh BattleMetrics"
-            >
-              {#if bmLoading}
-                <span class="loading loading-spinner loading-xs"></span>
-              {:else}
-                <Icon icon="ph:arrows-clockwise" class="size-3" />
-              {/if}
-            </button>
-          {/if}
-        </div>
-
-        {#if !bmApiKey}
-          <p class="text-xs text-base-content/30 italic">Configure a BattleMetrics API token in settings.</p>
-        {:else if bmLoading}
-          <div class="flex items-center gap-1.5 text-xs text-base-content/40">
-            <span class="loading loading-spinner loading-xs"></span>
-            Loading…
-          </div>
-        {:else if bm}
-          <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-            {#if bm.rank !== null}
-              <span class="text-base-content/50">Rank</span>
-              <span class="font-mono font-bold text-primary">#{bm.rank}</span>
-            {/if}
-            <span class="text-base-content/50">Status</span>
-            <span class="flex items-center gap-1.5">
-              <span class="size-1.5 rounded-full flex-shrink-0 {bm.status === 'online' ? 'bg-success' : bm.status === 'offline' ? 'bg-error' : 'bg-base-content/30'}"></span>
-              <span class="{bm.status === 'online' ? 'text-success' : bm.status === 'offline' ? 'text-error' : 'text-base-content/50'}">{bm.status}</span>
-            </span>
-            {#if bm.country}
-              <span class="text-base-content/50">Country</span>
-              <span class="font-mono">{bm.country}</span>
-            {/if}
-            {#if bm.uptime !== null}
-              <span class="text-base-content/50">Uptime</span>
-              <span class="{(bm.uptime ?? 0) >= 90 ? 'text-success' : (bm.uptime ?? 0) >= 70 ? 'text-warning' : 'text-error'}">{bm.uptime?.toFixed(1)}%</span>
-            {/if}
-          </div>
-          {#if bm.player_history.length >= 2}
-            <div>
-              <div class="text-xs text-base-content/35 mb-1">Player count (24 h)</div>
-              <svg viewBox="0 0 120 24" class="w-full h-6 text-primary" preserveAspectRatio="none">
-                <path d={sparklinePath(bm.player_history, 120, 24)} fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </div>
-          {/if}
-          <button
-            class="btn btn-ghost btn-xs gap-1 text-base-content/40 hover:text-primary w-full"
-            title="Open this server's BattleMetrics page in browser"
-            onclick={() => openUrl(`https://www.battlemetrics.com/servers/dayz/${bm?.id}`)}
-          >
-            <Icon icon="ph:arrow-square-out" class="size-3.5" />
-            View on BattleMetrics
-          </button>
-        {:else if bmError}
-          <div class="flex items-start gap-1.5 text-xs text-error">
-            <Icon icon="ph:warning-circle" class="size-3.5 shrink-0 mt-0.5" />
-            <span class="leading-snug break-all flex-1">{bmError}</span>
-            <button
-              class="btn btn-ghost btn-xs h-5 min-h-0 px-1 shrink-0"
-              onclick={() => { bmFetchedKey = ''; bmRetryTick++; }}
-              title="Retry"
-            ><Icon icon="ph:arrows-clockwise" class="size-3" /></button>
-          </div>
-        {/if}
-      </div>
+      <BattleMetricsPanel
+        {bm} {bmLoading} {bmError} {bmApiKey}
+        onRetry={() => { bmFetchedKey = ''; bmRetryTick++; }}
+      />
 
       <!-- Refresh A2S button -->
       <div class="px-3 py-2 border-t border-base-300 flex-shrink-0">

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { A2sDetailsDto, ServerDto, ServerFullDto, InstalledModDto, FavoriteDto, DzchConfig } from '$lib/types';
+  import { playerFill, playerBarColor, formatDuration } from '$lib/utils';
   import { invoke } from '@tauri-apps/api/core';
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
@@ -17,6 +18,8 @@
   export interface Prefill {
     ip: string;
     port: number;
+    /** When set, query uses this port while the port input shows the game port. */
+    queryPort?: number;
   }
 
   interface Props {
@@ -72,8 +75,11 @@
       a2sError = '';
       resolvedQueryPort = null;
       fullServer = null;
+      // When a separate queryPort is provided, query on that port
+      // while keeping the game port in the input field.
+      const qp = prefill.queryPort ?? undefined;
       // Auto-query after a tick so the DOM updates first
-      queueMicrotask(() => queryInfo());
+      queueMicrotask(() => queryInfo(qp));
     }
   });
 
@@ -296,24 +302,7 @@
     }
   }
 
-  function playerBarColor(players: number, max: number): string {
-    if (players >= max) return 'bg-error';
-    if (players > max / 2) return 'bg-warning';
-    return 'bg-success';
-  }
 
-  function playerTextColor(players: number, max: number): string {
-    if (players >= max) return 'text-error';
-    if (players > max / 2) return 'text-warning';
-    return 'text-success';
-  }
-
-  function formatDuration(secs: number): string {
-    const h = Math.floor(secs / 3600);
-    const m = Math.floor((secs % 3600) / 60);
-    if (h > 0) return `${h}h ${m}m`;
-    return `${m}m`;
-  }
 
   // ── Query ──────────────────────────────────────────────────────────────────
 
@@ -324,7 +313,7 @@
     return invoke<A2sDetailsDto>('query_a2s', { ip, port: qport });
   }
 
-  async function queryInfo() {
+  async function queryInfo(overrideQueryPort?: number) {
     parseAddress();
     const p = parseInt(port, 10);
     if (!address || isNaN(p)) return;
@@ -356,18 +345,21 @@
     }
 
     // ── A2S query ────────────────────────────────────────────────────────────
+    // Determine which port to query: prefer foundServer's query_port,
+    // then an explicit override (from prefill), then the typed port.
+    const qPort = fs?.query_port ?? overrideQueryPort ?? p;
     try {
       if (fs) {
         // Server found in list — use authoritative IP + query port so the
         // backend lookup matches exactly (avoids mismatches from typed IP).
-        a2s = await tryQuery(fs.ip, fs.query_port);
-        resolvedQueryPort = fs.query_port;
-        resolvedPortKind = p === fs.query_port ? 'query' : 'game';
+        a2s = await tryQuery(fs.ip, qPort);
+        resolvedQueryPort = qPort;
+        resolvedPortKind = p === qPort ? 'query' : 'game';
       } else {
-        // Not in list — use the typed port directly as the query port.
+        // Not in list — use override or typed port as the query port.
         // If the port is 2302 (default game port) the backend will
         // automatically try 27016 (default A2S query port) first.
-        a2s = await tryQuery(ip, p);
+        a2s = await tryQuery(ip, qPort);
         resolvedQueryPort = a2s.query_port;
         resolvedPortKind = p === a2s.query_port ? 'query' : 'unknown';
       }
@@ -608,7 +600,7 @@
             <div class="flex gap-2 pt-1">
               <button
                 class="btn btn-ghost btn-sm gap-1.5"
-                onclick={queryInfo}
+                onclick={() => queryInfo()}
                 disabled={!address || a2sLoading}
               >
                 {#if a2sLoading}
@@ -942,13 +934,13 @@
                       <Icon icon="ph:users" class="size-3.5" />
                       Players
                     </span>
-                    <span class="text-sm font-bold {playerTextColor(players, maxPlayers)} tabular-nums">
+                    <span class="text-sm font-bold {playerFill(players, maxPlayers)} tabular-nums">
                       {players}<span class="text-base-content/30 font-normal">/{maxPlayers}</span>
                     </span>
                   </div>
                   <div class="w-full h-2 rounded-full bg-base-300 overflow-hidden">
                     <div
-                      class="h-full rounded-full transition-all {playerBarColor(players, maxPlayers)}"
+                      class="h-full rounded-full transition-all {playerBarColor(players, maxPlayers, false)}"
                       style="width: {maxPlayers > 0 ? Math.min(100, (players / maxPlayers) * 100) : 0}%"
                     ></div>
                   </div>
@@ -1102,7 +1094,7 @@
                               <Icon icon="ph:user" class="size-3 text-base-content/30 flex-shrink-0" />
                               <span class="truncate flex-1 text-base-content/80">{pl.name || '—'}</span>
                               <span class="text-base-content/40 tabular-nums flex-shrink-0">
-                                {formatDuration(pl.duration)}
+                                {formatDuration(pl.duration, false)}
                               </span>
                             </div>
                           {/each}
@@ -1124,7 +1116,7 @@
               <div class="flex gap-2 pt-1 border-t border-base-200">
                 <button
                   class="btn btn-ghost btn-sm gap-1.5"
-                  onclick={queryInfo}
+                  onclick={() => queryInfo()}
                   disabled={a2sLoading}
                 >
                   {#if a2sLoading}
