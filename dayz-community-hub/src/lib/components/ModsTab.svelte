@@ -171,6 +171,24 @@
   let someSelected = $derived(selectedIds.size > 0 && !allSelected);
   let selectedStaleCount = $derived(selectedMods.filter(m => m.update_available).length);
   let selectedSize = $derived(selectedMods.reduce((acc, m) => acc + m.size, 0));
+  let selectedUnlinkedCount = $derived(selectedMods.filter(m => !m.managed).length);
+  let selectedLinkedCount = $derived(selectedMods.filter(m => m.managed).length);
+
+  let bulkLinking = $state(false);
+
+  async function bulkToggleManaged(linkMode: boolean) {
+    // linkMode=true → link unlinked mods; linkMode=false → unlink linked mods
+    const targets = selectedMods.filter(m => linkMode ? !m.managed : m.managed);
+    if (targets.length === 0) return;
+    bulkLinking = true;
+    try {
+      for (const mod of targets) {
+        await onToggleManaged(mod);
+      }
+    } finally {
+      bulkLinking = false;
+    }
+  }
 
   function formatSize(bytes: number): string {
     const mb = bytes / 1024 / 1024;
@@ -249,7 +267,7 @@
         <span class="font-medium text-base-content/80">{mods.length}</span> mods
       </span>
       <span class="text-base-content/25">·</span>
-      <span>{formatSize(totalSize)}</span>
+      <span class="text-secondary/60">{formatSize(totalSize)}</span>
       {#if staleCount > 0}
         <span class="text-base-content/25">·</span>
         <span class="flex items-center gap-1 text-warning font-medium">
@@ -399,10 +417,10 @@
             <th class="px-3 py-2 text-left font-medium cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('name')}>
               <span class="flex items-center gap-1">Name <Icon icon={sortIcon('name')} class="size-2.5" /></span>
             </th>
-            <th class="w-36 px-3 py-2 font-medium text-left cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('id')}>
+            <th class="w-36 px-3 py-2 font-medium text-left cursor-pointer hover:text-info transition-colors" onclick={() => toggleSort('id')}>
               <span class="flex items-center gap-1">Workshop ID <Icon icon={sortIcon('id')} class="size-2.5" /></span>
             </th>
-            <th class="w-20 px-3 py-2 font-medium text-right cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('size')}>
+            <th class="w-20 px-3 py-2 font-medium text-right cursor-pointer hover:text-secondary transition-colors" onclick={() => toggleSort('size')}>
               <span class="flex items-center justify-end gap-1">Size <Icon icon={sortIcon('size')} class="size-2.5" /></span>
             </th>
             <th class="w-40 px-3 py-2 font-medium text-left cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('local')}>
@@ -413,7 +431,7 @@
                 <span class="flex items-center gap-1">Remote <Icon icon={sortIcon('remote')} class="size-2.5" /></span>
               </th>
             {/if}
-            <th class="w-16 px-3 py-2 font-medium text-center" title="UPDATE = new version on Workshop; OK = up to date; MANAGED = tracked but not yet checked for updates">Status</th>
+            <th class="w-16 px-3 py-2 font-medium text-center" title="UPDATE = new version on Workshop; OK = up to date; LINKED = symlink active; UNLINKED = no symlink">Status</th>
             <th class="w-24 px-3 py-2"></th>
           </tr>
         </thead>
@@ -450,7 +468,9 @@
                       <Icon icon="ph:arrow-circle-up" class="size-3.5 text-warning shrink-0" />
                     </span>
                   {:else if mod.remote_updated !== null}
-                    <span title="Up to date"><Icon icon="ph:check-circle" class="size-3.5 text-success/50 shrink-0" /></span>
+                    <span title="Up to date"><Icon icon="ph:check-circle" class="size-3.5 text-success/60 shrink-0" /></span>
+                  {:else if mod.managed}
+                    <span title="Managed"><Icon icon="ph:link-simple" class="size-3.5 text-info/40 shrink-0" /></span>
                   {:else}
                     <Icon icon="mdi:puzzle-outline" class="size-3.5 text-base-content/20 shrink-0" />
                   {/if}
@@ -473,7 +493,7 @@
               <td class="px-3 py-2">
                 <div class="flex items-center gap-1 group/ws">
                   <button
-                    class="font-mono text-base-content/45 hover:text-primary transition-colors flex items-center gap-1"
+                    class="font-mono text-info/50 hover:text-info transition-colors flex items-center gap-1"
                     onclick={() => openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.id}`)}
                     title="Open on Steam Workshop"
                   >
@@ -481,7 +501,7 @@
                     <Icon icon="mdi:steam" class="size-3 opacity-0 group-hover/ws:opacity-100 transition-opacity" />
                   </button>
                   <button
-                    class="opacity-0 group-hover/ws:opacity-100 transition-opacity text-base-content/40 hover:text-base-content/80"
+                    class="opacity-0 group-hover/ws:opacity-100 transition-opacity text-base-content/40 hover:text-info"
                     title="Copy workshop ID"
                     onclick={() => copyText(`ws-${mod.id}`, String(mod.id))}
                   >
@@ -495,10 +515,10 @@
               </td>
 
               <!-- Size -->
-              <td class="px-3 py-2 text-right tabular-nums text-base-content/50">{mod.size_human}</td>
+              <td class="px-3 py-2 text-right tabular-nums text-secondary/60">{mod.size_human}</td>
 
               <!-- Local updated -->
-              <td class="px-3 py-2 text-base-content/50">{formatDate(mod.local_updated)}</td>
+              <td class="px-3 py-2 {mod.remote_updated && mod.local_updated < mod.remote_updated ? 'text-base-content/40' : 'text-base-content/70'}">{formatDate(mod.local_updated)}</td>
 
               <!-- Remote updated — only shown when Steam API key is set -->
               {#if canCheckUpdates}
@@ -506,7 +526,7 @@
                   {#if checking}
                     <span class="text-base-content/25">…</span>
                   {:else if mod.remote_updated}
-                    <span class="{stale ? 'text-warning font-medium' : 'text-base-content/50'}">
+                    <span class="{stale ? 'text-warning font-medium' : mod.local_updated < mod.remote_updated ? 'text-base-content/70' : 'text-base-content/40'}">
                       {formatDate(mod.remote_updated)}
                     </span>
                   {:else}
@@ -518,19 +538,25 @@
               <!-- Status badge -->
               <td class="px-3 py-2 text-center">
                 {#if canCheckUpdates && stale}
-                  <span class="inline-flex items-center gap-1 text-warning font-semibold rounded px-1.5 py-0.5 bg-warning/15" style="font-size:9px;">
+                  <span class="inline-flex items-center gap-0.5 text-warning font-semibold rounded-md px-1.5 py-0.5 bg-warning/15" style="font-size:9px;">
+                    <Icon icon="ph:arrow-circle-up" class="size-2.5" />
                     UPDATE
                   </span>
                 {:else if canCheckUpdates && mod.remote_updated !== null}
-                  <span class="inline-flex items-center gap-1 text-success/70 rounded px-1.5 py-0.5 bg-success/10" style="font-size:9px;">
+                  <span class="inline-flex items-center gap-0.5 text-success/80 font-semibold rounded-md px-1.5 py-0.5 bg-success/10" style="font-size:9px;">
+                    <Icon icon="ph:check-circle" class="size-2.5" />
                     OK
                   </span>
                 {:else if mod.managed}
-                  <span class="inline-flex items-center gap-1 text-base-content/40 rounded px-1.5 py-0.5 bg-base-300/50" style="font-size:9px;">
-                    MANAGED
+                  <span class="inline-flex items-center gap-0.5 text-info/70 font-semibold rounded-md px-1.5 py-0.5 bg-info/10" style="font-size:9px;">
+                    <Icon icon="ph:link-simple" class="size-2.5" />
+                    LINKED
                   </span>
                 {:else}
-                  <span class="text-base-content/20" style="font-size:9px;">—</span>
+                  <span class="inline-flex items-center gap-0.5 text-base-content/30 font-medium rounded-md px-1.5 py-0.5 bg-base-300/30" style="font-size:9px;">
+                    <Icon icon="ph:link-simple-break" class="size-2.5" />
+                    UNLINKED
+                  </span>
                 {/if}
               </td>
 
@@ -552,12 +578,12 @@
                   <button
                     class="size-6 rounded flex items-center justify-center transition-colors
                            {mod.managed
-                             ? 'text-success/60 hover:bg-success/10'
-                             : 'text-base-content/35 hover:bg-base-300 hover:text-base-content/70'}
+                             ? 'text-info/70 hover:bg-info/10'
+                             : 'text-base-content/30 hover:bg-base-300 hover:text-base-content/60'}
                            {togglingIds.has(mod.id) ? 'opacity-60 pointer-events-none' : ''}"
                     title={togglingIds.has(mod.id) ? 'Updating…' : mod.managed
-                      ? 'Managed: this mod is tracked and included when connecting to modded servers. Click to unmanage.'
-                      : 'Unmanaged: this mod is installed but not tracked. Click to mark as managed so it is included in server connections.'
+                      ? 'Linked: symlink active — this mod is loaded when connecting to modded servers. Click to remove the symlink.'
+                      : 'Unlinked: no symlink — this mod is installed but won\'t be loaded. Click to create a symlink so it is included in server connections.'
                     }
                     onclick={() => handleToggleManaged(mod)}
                     disabled={togglingIds.has(mod.id)}
@@ -565,7 +591,7 @@
                     {#if togglingIds.has(mod.id)}
                       <span class="loading loading-spinner loading-xs"></span>
                     {:else}
-                      <Icon icon={mod.managed ? 'ph:check-square' : 'ph:square'} class="size-3.5" />
+                      <Icon icon={mod.managed ? 'ph:link-simple' : 'ph:link-simple-break'} class="size-3.5" />
                     {/if}
                   </button>
                   <!-- Delete -->
@@ -687,11 +713,11 @@
 
       <!-- Selection summary -->
       <div class="flex items-center gap-2 text-base-content/70">
-        <Icon icon="ph:check-square" class="size-4 text-primary/70" />
+        <Icon icon="ph:selection-all" class="size-4 text-primary/70" />
         <span class="font-medium text-base-content/90">{selectedIds.size}</span>
         <span>mod{selectedIds.size > 1 ? 's' : ''} selected</span>
         <span class="text-base-content/30">·</span>
-        <span class="text-base-content/50">{formatSize(selectedSize)}</span>
+        <span class="text-secondary/60">{formatSize(selectedSize)}</span>
         {#if selectedStaleCount > 0}
           <span class="text-base-content/30">·</span>
           <span class="text-warning flex items-center gap-1">
@@ -726,6 +752,42 @@
           <Icon icon="ph:arrows-clockwise" class="size-3.5" />
           Re-validate {selectedIds.size}
         </button>
+
+        <div class="w-px h-4 bg-base-300"></div>
+
+        <!-- Link selected (show when some are unlinked) -->
+        {#if selectedUnlinkedCount > 0}
+          <button
+            class="btn btn-ghost btn-xs gap-1.5 text-info/70 hover:text-info hover:bg-info/10"
+            onclick={() => bulkToggleManaged(true)}
+            disabled={loading || bulkLinking}
+            title="Link {selectedUnlinkedCount} mod{selectedUnlinkedCount > 1 ? 's' : ''} — create symlinks so they are loaded when connecting to servers"
+          >
+            {#if bulkLinking}
+              <span class="loading loading-spinner loading-xs"></span>
+            {:else}
+              <Icon icon="ph:link-simple" class="size-3.5" />
+            {/if}
+            Link {selectedUnlinkedCount}
+          </button>
+        {/if}
+
+        <!-- Unlink selected (show when some are linked) -->
+        {#if selectedLinkedCount > 0}
+          <button
+            class="btn btn-ghost btn-xs gap-1.5 text-base-content/50 hover:text-base-content/80 hover:bg-base-300/50"
+            onclick={() => bulkToggleManaged(false)}
+            disabled={loading || bulkLinking}
+            title="Unlink {selectedLinkedCount} mod{selectedLinkedCount > 1 ? 's' : ''} — remove symlinks so they won't be loaded"
+          >
+            {#if bulkLinking}
+              <span class="loading loading-spinner loading-xs"></span>
+            {:else}
+              <Icon icon="ph:link-simple-break" class="size-3.5" />
+            {/if}
+            Unlink {selectedLinkedCount}
+          </button>
+        {/if}
 
         <div class="w-px h-4 bg-base-300"></div>
 

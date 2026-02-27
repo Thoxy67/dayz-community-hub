@@ -73,21 +73,24 @@ impl Article {
             let display_size = sizes.iter().find(|&&s| s >= 640).copied()
                 .or_else(|| sizes.last().copied())
                 .unwrap_or(640);
-            let full_size = sizes.last().copied().unwrap_or(display_size);
 
-            // Prefer webp; fall back to the first listed format.
+            // Prefer webp for inline display (smaller); use original format
+            // (first listed, typically png/jpeg) without size suffix for the
+            // full-resolution lightbox version.
             let fmts_str = re_fmts.captures(tag)
                 .and_then(|c| c.get(1))
                 .map_or("webp", |m| m.as_str());
-            let ext = if fmts_str.split(',').any(|f| f.trim() == "webp") {
+            let display_ext = if fmts_str.split(',').any(|f| f.trim() == "webp") {
                 "webp"
             } else {
                 fmts_str.split(',').next().unwrap_or("webp").trim()
             };
+            // Original format is the first listed (e.g. "png" in "png,webp").
+            let original_ext = fmts_str.split(',').next().unwrap_or("png").trim();
 
             format!(
-                r#"<img src="https://dayz.com/app-static/uploads/{}_{}.{}" data-full="https://dayz.com/app-static/uploads/{}_{}.{}" alt="" loading="lazy" />"#,
-                code, display_size, ext, code, full_size, ext
+                r#"<img src="https://dayz.com/app-static/uploads/{}_{}.{}" data-full="https://dayz.com/app-static/uploads/{}.{}" alt="" loading="lazy" />"#,
+                code, display_size, display_ext, code, original_ext
             )
         })
         .into_owned()

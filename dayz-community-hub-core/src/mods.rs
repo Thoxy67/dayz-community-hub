@@ -1,5 +1,5 @@
-use crate::Result;
 use crate::errors::Error;
+use crate::Result;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -255,6 +255,28 @@ pub fn mark_mod_as_managed(workshop_path: &Path, mod_id: u64) -> Result<()> {
     Ok(())
 }
 
+/// Remove a single `@<mod_id>` symlink/junction from the DayZ game directory.
+pub fn remove_mod_symlink(dayz_path: &Path, mod_id: u64) -> Result<()> {
+    let link_name = format!("@{}", mod_id);
+    let target = dayz_path.join(link_name);
+
+    if target.symlink_metadata().is_err() {
+        return Ok(()); // nothing to remove
+    }
+
+    #[cfg(unix)]
+    if target.is_symlink() {
+        fs::remove_file(&target)?;
+    }
+
+    #[cfg(windows)]
+    if is_junction(&target) {
+        fs::remove_dir(&target)?;
+    }
+
+    Ok(())
+}
+
 /// Remove all `@*` symlinks from the DayZ game directory.
 pub fn remove_all_mod_symlinks(dayz_path: &Path) -> Result<usize> {
     let mut count = 0;
@@ -338,8 +360,17 @@ pub fn delete_mod(workshop_path: &Path, mod_id: u64, only_managed: bool) -> Resu
     Ok(())
 }
 
-/// Toggle the managed status of a mod. Returns the new managed state.
-pub fn toggle_mod_managed(workshop_path: &Path, mod_id: u64) -> Result<bool> {
+/// Toggle the managed status of a mod.
+///
+/// When **linking** (marking as managed): writes the `.dayz-community-hub`
+/// marker file and creates a symlink/junction `@<mod_id>` in the DayZ
+/// game directory so the mod is loaded at launch time.
+///
+/// When **unlinking** (marking as unmanaged): removes the marker file and
+/// the symlink/junction so the mod is no longer loaded.
+///
+/// Returns the new managed state.
+pub fn toggle_mod_managed(workshop_path: &Path, dayz_path: &Path, mod_id: u64) -> Result<bool> {
     let mod_path = workshop_path.join(mod_id.to_string());
     if !mod_path.exists() {
         return Err(Error::Mod(format!("Mod {} does not exist", mod_id)));
@@ -349,10 +380,14 @@ pub fn toggle_mod_managed(workshop_path: &Path, mod_id: u64) -> Result<bool> {
     let currently_managed = managed_file.exists();
 
     if currently_managed {
+        // Unlink: remove marker + symlink
         fs::remove_file(&managed_file)?;
+        let _ = remove_mod_symlink(dayz_path, mod_id);
         Ok(false)
     } else {
+        // Link: write marker + create symlink
         fs::write(&managed_file, mod_id.to_string())?;
+        let _ = create_mod_symlink(workshop_path, dayz_path, mod_id);
         Ok(true)
     }
 }

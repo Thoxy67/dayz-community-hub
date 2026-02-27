@@ -374,7 +374,8 @@ impl DayzCtl {
 
     pub fn toggle_mod_managed(&self, mod_id: u64) -> Result<bool> {
         let workshop_path = self.workshop_path()?;
-        mods::toggle_mod_managed(&workshop_path, mod_id)
+        let dayz_path = self.dayz_path()?;
+        mods::toggle_mod_managed(&workshop_path, &dayz_path, mod_id)
     }
 
     pub fn cleanup_mods(&self) -> Result<ModManagementStats> {

@@ -44,7 +44,7 @@ export async function toggleModManaged(mod_item: InstalledModDto) {
   try {
     const managed = await invoke<boolean>('toggle_mod_managed', { modId: mod_item.id });
     await loadMods();
-    s.setStatus(`${mod_item.name} marked as ${managed ? 'managed' : 'unmanaged'}`, 'success');
+    s.setStatus(`${mod_item.name} ${managed ? 'linked (symlink created)' : 'unlinked (symlink removed)'}`, 'success');
   } catch (e) {
     s.setStatus(`Failed: ${e}`, 'error');
   }

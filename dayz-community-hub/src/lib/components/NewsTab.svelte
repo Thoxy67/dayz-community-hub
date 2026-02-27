@@ -288,9 +288,9 @@
             <div class="w-full h-full animate-pulse bg-base-300"></div>
           {/if}
 
-          <!-- Title overlaid on hero -->
+          <!-- Title overlaid on hero — pointer-events-none so clicks pass through to the zoom button -->
           {#if heroDataUri}
-            <div class="absolute bottom-0 left-0 right-0 px-6 pb-4">
+            <div class="absolute bottom-0 left-0 right-0 px-6 pb-4 pointer-events-none">
               <h1 class="text-lg font-bold leading-tight text-base-content drop-shadow">
                 {selected.title}
               </h1>
@@ -307,7 +307,7 @@
                 {/if}
                 <span class="text-base-content/50 text-xs">{selected.date}</span>
                 <button
-                  class="ml-auto flex items-center gap-1 text-xs text-base-content/50 hover:text-primary transition-colors"
+                  class="ml-auto flex items-center gap-1 text-xs text-base-content/50 hover:text-primary transition-colors pointer-events-auto"
                   onclick={() => onOpenUrl(selected.url)}
                   title="Open in browser"
                 >
@@ -393,13 +393,13 @@
   >
     <button
       type="button"
-      class="p-0 border-0 bg-transparent cursor-zoom-out"
+      class="p-0 border-0 bg-transparent cursor-zoom-out max-w-[90vw] max-h-[90vh] flex items-center justify-center"
       onclick={(e) => { e.stopPropagation(); closeLightbox(); }}
     >
       <img
         src={lightboxSrc}
         alt=""
-        class="max-w-[90vw] max-h-[90vh] object-contain rounded shadow-2xl select-none"
+        class="max-w-full max-h-[90vh] object-contain rounded shadow-2xl select-none"
       />
     </button>
     <button

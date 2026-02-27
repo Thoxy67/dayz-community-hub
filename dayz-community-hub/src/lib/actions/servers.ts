@@ -22,6 +22,9 @@ export async function refreshServers() {
     s.servers = await invoke<ServerDto[]>('refresh_servers');
     s.setStatus(`Loaded ${s.servers.length} servers`, 'success');
     startPinging();
+    // Refresh titlebar counters (servers, in-game, Steam players)
+    loadStats();
+    loadSteamPlayers();
   } catch (e) {
     s.setStatus(`Refresh failed: ${e}`, 'error');
   } finally {
@@ -38,6 +41,7 @@ export async function refreshServersBackground() {
     const freshServers = await invoke<ServerDto[]>('refresh_servers');
     s.servers = freshServers;
     loadStats();
+    loadSteamPlayers();
   } catch {
     // Non-fatal — we already have cached data
   } finally {
