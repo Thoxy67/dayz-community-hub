@@ -34,8 +34,9 @@ tauri-plugin-shell = "2"
 tauri-plugin-http = { version = "2", default-features = false, features = ["native-tls"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2.3.2"
-tauri-plugin-single-instance = "2"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 surge-ping = "0.8.4"
+tauri-plugin-deep-link = "2"
 
 [target."cfg(not(windows))".dependencies]
 zstd = { version = "0.13", features = ["pkg-config"] }

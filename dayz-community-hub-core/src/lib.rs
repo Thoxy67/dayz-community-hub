@@ -15,6 +15,7 @@ pub mod a2s_query;
 pub mod api;
 pub mod config;
 pub mod ctl;
+pub mod dzch;
 pub mod errors;
 pub mod launch;
 pub mod mods;
@@ -27,6 +28,7 @@ pub mod utils;
 pub use a2s_query::ServerDetails;
 pub use api::{Endpoint, Mod, Server, ServerList};
 pub use config::Profile;
+pub use dzch::DzchConfig;
 pub use errors::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;

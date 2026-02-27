@@ -10,3 +10,4 @@ Categories=Game;
 Keywords=dayz;launcher;server;browser;
 StartupNotify=true
 StartupWMClass=dayz-community-hub
+MimeType=x-scheme-handler/dzch;application/x-dzch;

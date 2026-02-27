@@ -24,6 +24,7 @@
     ServersFilterState,
     CliArgs,
     A2sDetailsDto,
+    DzchConfig,
   } from '$lib/types';
   // PingResult is used by the ping-batch event listener below
 
@@ -107,6 +108,8 @@
   );
   // CLI args received before initialization completed — drained by doInitialize().
   let pendingCliArgs = $state<CliArgs | null>(null);
+  // Prefill payload for the Direct Connect tab (set by pressing D in server/fav/history tabs).
+  let directConnectPrefill = $state<{ ip: string; port: number } | null>(null);
   let statusMessage = $state('');
   let statusKind = $state<'info' | 'success' | 'error' | 'warning'>('info');
 
@@ -562,6 +565,7 @@
    *
    * --connect <ip[:port]>  → switch to Direct Connect tab, pre-fill, and connect
    * --reconnect            → reconnect to the last history entry
+   * <file.dzch> or dzch:// → parse config, switch to Direct Connect, auto-connect
    */
   async function handleCliArgs(args: CliArgs) {
     // If profile isn't loaded yet, queue and let doInitialize() drain it.
@@ -569,7 +573,10 @@
       pendingCliArgs = args;
       return;
     }
-    if (args.connect) {
+
+    if (args.open) {
+      await handleDzchOpen(args.open);
+    } else if (args.connect) {
       // Parse optional port from "ip:port" form
       const raw = args.connect.trim();
       const lastColon = raw.lastIndexOf(':');
@@ -593,6 +600,33 @@
       } else {
         setStatus('No history entry to reconnect to', 'warning');
       }
+    }
+  }
+
+  /**
+   * Handle a `.dzch` file path or `dzch://` URL: parse the config, switch
+   * to Direct Connect, and call connectDirect() which will prompt the user
+   * to install/update missing mods before launching.
+   */
+  async function handleDzchOpen(raw: string) {
+    try {
+      let config: DzchConfig;
+      if (raw.startsWith('dzch://')) {
+        config = await invoke<DzchConfig>('parse_dzch_url', { url: raw });
+      } else {
+        // It's a file path
+        config = await invoke<DzchConfig>('read_dzch_file', { path: raw });
+      }
+
+      selectTab('connect');
+      await new Promise((r) => setTimeout(r, 150));
+      connectDirect(
+        config.ip,
+        config.port,
+        config.password ?? undefined,
+      );
+    } catch (e) {
+      setStatus(`Failed to open .dzch config: ${e}`, 'error');
     }
   }
 
@@ -623,24 +657,123 @@
     );
   }
 
-  async function connectDirect(ip: string, port: number, password?: string) {
-    setStatus(`Connecting to ${ip}:${port}…`, 'info');
+  async function doLaunchDirectByAddress(ip: string, port: number, password?: string, extraArgs?: string[]) {
+    setStatus(`Launching ${ip}:${port}…`, 'info');
     try {
-      await invoke('launch_direct', { ip, gamePort: port, password: password ?? null });
+      await invoke('launch_direct', {
+        ip,
+        gamePort: port,
+        password: password ?? null,
+        extraArgs: extraArgs ?? null,
+      });
       setStatus('Waiting for Steam to open DayZ…', 'info');
     } catch (e) {
       setStatus(`Launch failed: ${e}`, 'error');
     }
   }
 
+  async function connectDirect(ip: string, port: number, password?: string, extraArgs?: string[]) {
+    // Mirror connectToServer: check for missing/outdated mods and use the same
+    // steamcmd download path (update_selected) so profile credentials are reused.
+
+    // Try to find the server in the list first (gives us mods + query port)
+    const inList = servers.find(
+      (s) => s.ip === ip && (s.query_port === port || s.game_port === port)
+    );
+
+    // Gather server mods — from the list entry or from any prior A2S query result
+    // the DirectConnectTab already fetched (exposed via installedMods cross-ref).
+    // We only act on mods we know about; if none are known we launch directly.
+    let serverMods: ModDto[] = [];
+    if (inList && inList.mods_count > 0) {
+      try {
+        const full = await invoke<ServerFullDto>('get_server_details', {
+          ip,
+          port: inList.query_port,
+        });
+        serverMods = full.mods;
+      } catch { /* non-fatal */ }
+    }
+
+    if (serverMods.length === 0) {
+      // No mod info available — launch directly (private server not in list)
+      doLaunchDirectByAddress(ip, port, password, extraArgs);
+      return;
+    }
+
+    const installedIds = new Set(installedMods.map((m) => m.id));
+    const missingIds = serverMods
+      .map((m) => m.steam_workshop_id)
+      .filter((id) => !installedIds.has(id));
+
+    const serverName = inList?.name ?? `${ip}:${port}`;
+
+    // Build (id, name) maps for progress display
+    const allModIds   = serverMods.map((m) => m.steam_workshop_id);
+    const allModNames = serverMods.map((m) => m.name || String(m.steam_workshop_id));
+    const missingNames = serverMods
+      .filter((m) => !installedIds.has(m.steam_workshop_id))
+      .map((m) => m.name || String(m.steam_workshop_id));
+
+    if (missingIds.length > 0) {
+      connectRequest = {
+        serverName,
+        kind: 'missing',
+        modCount: missingIds.length,
+        onConnect: (updateMods) => {
+          if (updateMods) {
+            startModOp(
+              'update_selected',
+              { modIds: missingIds, modNames: missingNames },
+              () => doLaunchDirectByAddress(ip, port, password, extraArgs),
+            );
+          } else {
+            doLaunchDirectByAddress(ip, port, password, extraArgs);
+          }
+        },
+      };
+    } else if (serverMods.length > 0) {
+      connectRequest = {
+        serverName,
+        kind: 'update',
+        modCount: serverMods.length,
+        onConnect: (updateMods) => {
+          if (updateMods) {
+            startModOp(
+              'update_selected',
+              { modIds: allModIds, modNames: allModNames },
+              () => doLaunchDirectByAddress(ip, port, password, extraArgs),
+            );
+          } else {
+            doLaunchDirectByAddress(ip, port, password, extraArgs);
+          }
+        },
+      };
+    } else {
+      doLaunchDirectByAddress(ip, port, password, extraArgs);
+    }
+  }
+
+  // ── Open in Direct Connect ────────────────────────────────────────────────
+
+  /** Switch to the Direct Connect tab with prefilled address + port and auto-query. */
+  function openInDirectConnect(ip: string, queryPort: number) {
+    directConnectPrefill = { ip, port: queryPort };
+    selectTab('connect');
+  }
+
   // ── Favorites ─────────────────────────────────────────────────────────────
 
   /** Append a favorite to local profile state without a round-trip. */
-  function profileAddFavorite(name: string, ip: string, port: number) {
+  function profileAddFavorite(name: string, ip: string, port: number, password?: string) {
     if (!profile) return;
-    // Avoid duplicates
-    if (!profile.favorites.some((f) => f.ip === ip && f.port === port)) {
-      profile.favorites = [...profile.favorites, { name, ip, port }];
+    const existing = profile.favorites.find((f) => f.ip === ip && f.port === port);
+    if (existing) {
+      existing.name = name;
+      if (password !== undefined) existing.password = password || null;
+      profile.favorites = [...profile.favorites]; // trigger reactivity
+    } else {
+      profile.favorites = [...profile.favorites, { name, ip, port, password: password ?? null }];
     }
   }
 
@@ -657,6 +790,7 @@
         name: server.name,
         ip: server.ip,
         port: server.query_port,
+        password: null,
       });
       setStatus(`Added ${server.name} to favorites`, 'success');
     } catch (e) {
@@ -665,10 +799,10 @@
     }
   }
 
-  async function addFavoriteDirect(name: string, ip: string, port: number) {
+  async function addFavoriteDirect(name: string, ip: string, port: number, password?: string) {
     try {
-      profileAddFavorite(name, ip, port);
-      await invoke('add_favorite', { name, ip, port });
+      profileAddFavorite(name, ip, port, password);
+      await invoke('add_favorite', { name, ip, port, password: password ?? null });
       setStatus(`Added ${name} to favorites`, 'success');
     } catch (e) {
       await loadProfile();
@@ -828,7 +962,7 @@
   async function addFavoriteFromHistory(h: HistoryDto) {
     try {
       profileAddFavorite(h.name, h.ip, h.port);
-      await invoke('add_favorite', { name: h.name, ip: h.ip, port: h.port });
+      await invoke('add_favorite', { name: h.name, ip: h.ip, port: h.port, password: null });
       setStatus(`Added ${h.name} to favorites`, 'success');
     } catch (e) {
       await loadProfile();
@@ -916,6 +1050,14 @@
   function updateSelectedMods(ids: number[]) {
     if (ids.length === 0) return;
     startModOp('update_selected', { modIds: ids });
+  }
+
+  function installMods(workshopIds: number[]) {
+    if (workshopIds.length === 0) return;
+    startModOp('install_manual', {
+      modIds: workshopIds,
+      modNames: workshopIds.map(String),
+    });
   }
 
   // ── Options / profile settings ────────────────────────────────────────────
@@ -1428,6 +1570,7 @@
         onExcludeIp={excludeIp}
         onUnexcludeIp={unexcludeIp}
         onManageExcluded={() => { showExcludedIpsModal = true; }}
+        onDirectConnect={openInDirectConnect}
       />
     {:else if activeTab === 'favorites'}
       <FavoritesTab
@@ -1439,6 +1582,7 @@
         onRemove={removeFavorite}
         onGoToServers={() => selectTab('servers')}
         onPing={pingSingle}
+        onDirectConnect={openInDirectConnect}
       />
     {:else if activeTab === 'history'}
       <HistoryTab
@@ -1454,6 +1598,7 @@
         onClearAll={clearHistory}
         onGoToServers={() => selectTab('servers')}
         onPing={pingSingle}
+        onDirectConnect={openInDirectConnect}
       />
     {:else if activeTab === 'mods'}
       <ModsTab
@@ -1474,6 +1619,7 @@
         onOpenModDir={(mod) => invoke('open_mod_dir', { modId: mod.id }).catch(() => {})}
         onDeleteSelected={deleteSelectedMods}
         onUpdateSelected={updateSelectedMods}
+        onInstallMods={installMods}
       />
     {:else if activeTab === 'news'}
       <NewsTab
@@ -1487,8 +1633,10 @@
          {servers}
          {installedMods}
          favorites={favoritesSet}
+         favoriteList={profile?.favorites ?? []}
          onConnect={connectDirect}
          onAddFavorite={addFavoriteDirect}
+         prefill={directConnectPrefill}
        />
     {:else if activeTab === 'options'}
       <OptionsTab

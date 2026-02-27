@@ -4,6 +4,7 @@ use dayz_community_hub_core::{
     api::{self, Server},
     config::{self, Profile},
     ctl::{DayzCtl, ModOperation},
+    dzch::DzchConfig,
     mods::{self, InstalledMod},
     news,
     offline::OfflineMode,
@@ -32,6 +33,13 @@ pub struct CliArgs {
     /// Immediately reconnect to the last server from history.
     #[arg(long)]
     pub reconnect: bool,
+
+    /// A `.dzch` file path or `dzch://` URL to open.
+    /// When provided, the app switches to Direct Connect and auto-connects
+    /// to the server described in the file / URL (downloading missing mods
+    /// if the user agrees).
+    #[arg(value_name = "FILE_OR_URL")]
+    pub open: Option<String>,
 }
 
 /// Parsed CLI args stored at startup; re-used by the `get_cli_args` command.
@@ -145,6 +153,7 @@ pub struct FavoriteDto {
     pub name: String,
     pub ip: String,
     pub port: u16,
+    pub password: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -217,6 +226,9 @@ pub struct A2sDetailsDto {
     pub mods: Vec<ModDto>,
     /// The query port actually used (so frontend can display/cache correctly)
     pub query_port: i64,
+    /// The server's actual game port from the A2S extended info (edf 0x80).
+    /// `null` when the server does not include this optional field.
+    pub game_port: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -345,6 +357,7 @@ fn profile_to_dto(profile: &Profile) -> ProfileDto {
                 name: f.name.clone(),
                 ip: f.ip.clone(),
                 port: f.port,
+                password: f.password.clone(),
             })
             .collect(),
         history: profile
@@ -658,10 +671,11 @@ async fn add_favorite(
     name: String,
     ip: String,
     port: u16,
+    password: Option<String>,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
     let mut state = state.lock().await;
-    state.ctl.add_favorite(name, ip, port);
+    state.ctl.add_favorite(name, ip, port, password);
     state.ctl.save_profile().map_err(|e| e.to_string())
 }
 
@@ -1044,9 +1058,11 @@ async fn launch_direct(
     ip: String,
     game_port: u16,
     password: Option<String>,
+    extra_args: Option<Vec<String>>,
     app: AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
+    let extra = extra_args.unwrap_or_default();
     let (server, mut ctl_clone) = {
         let st = state.lock().await;
         let server = st
@@ -1077,7 +1093,7 @@ async fn launch_direct(
     };
 
     tokio::spawn(async move {
-        match ctl_clone.launch_game(&server, password.as_deref()).await {
+        match ctl_clone.launch_game_with_extra(&server, password.as_deref(), &extra).await {
             Ok(_) => {
                 let _ = app.emit("launch-done", server.name.clone());
             }
@@ -1099,6 +1115,9 @@ async fn start_mod_operation(
     mod_id: Option<u64>,
     mod_name: Option<String>,
     mod_ids: Option<Vec<u64>>,
+    // Parallel name list for update_selected — when provided, names are zipped
+    // with mod_ids directly instead of scanning installed mods.
+    mod_names: Option<Vec<String>>,
     on_progress: Channel<ModProgressEvent>,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
@@ -1127,14 +1146,37 @@ async fn start_mod_operation(
         }
         "update_selected" => {
             let ids = mod_ids.clone().unwrap_or_default();
-            let ctl_clone = { state.lock().await.ctl.clone_for_launch() };
-            let id_names = tokio::task::spawn_blocking(move || ctl_clone.get_installed_mods())
-                .await
-                .map_err(|e| format!("Task join error: {}", e))?
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|m| ids.contains(&m.id))
-                .map(|m| (m.id, m.name.clone()))
+            // If names are provided directly (e.g. from a direct-connect server query),
+            // zip them with the IDs without scanning the installed-mods directory.
+            // This allows downloading mods that aren't installed yet.
+            if let Some(ref names) = mod_names {
+                let id_names = ids
+                    .iter()
+                    .zip(names.iter())
+                    .map(|(&id, name)| (id, name.clone()))
+                    .collect::<Vec<_>>();
+                Some(id_names)
+            } else {
+                let ctl_clone = { state.lock().await.ctl.clone_for_launch() };
+                let id_names = tokio::task::spawn_blocking(move || ctl_clone.get_installed_mods())
+                    .await
+                    .map_err(|e| format!("Task join error: {}", e))?
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|m| ids.contains(&m.id))
+                    .map(|m| (m.id, m.name.clone()))
+                    .collect::<Vec<_>>();
+                Some(id_names)
+            }
+        }
+        "install_manual" => {
+            // Manual install from Mods tab — IDs and names are provided directly.
+            let ids = mod_ids.clone().unwrap_or_default();
+            let names = mod_names.clone().unwrap_or_default();
+            let id_names = ids
+                .iter()
+                .zip(names.iter())
+                .map(|(&id, name)| (id, name.clone()))
                 .collect::<Vec<_>>();
             Some(id_names)
         }
@@ -1171,6 +1213,9 @@ async fn start_mod_operation(
                 name: mod_name.unwrap_or_default(),
             },
             "update_selected" => ModOperation::UpdateSelected {
+                mods: pre_scan.unwrap_or_default(),
+            },
+            "install_manual" => ModOperation::InstallManual {
                 mods: pre_scan.unwrap_or_default(),
             },
             other => return Err(format!("Unknown operation: {}", other)),
@@ -1213,7 +1258,7 @@ async fn query_a2s(
     port: i64,
     state: State<'_, SharedState>,
 ) -> Result<A2sDetailsDto, String> {
-    let (query_addr, mods_dto) = {
+    let (query_addr, mods_dto, list_game_port) = {
         let state = state.lock().await;
         // Match by query port OR game port so favorites stored with the game
         // port still resolve to the correct query port.
@@ -1232,15 +1277,22 @@ async fn query_a2s(
                         steam_workshop_id: m.steam_workshop_id,
                     })
                     .collect::<Vec<_>>();
-                eprintln!("[query_a2s] found in list → query addr={addr}");
-                (addr, mods)
+                eprintln!("[query_a2s] found in list → query addr={addr} game_port={}", s.game_port);
+                (addr, mods, Some(s.game_port))
             }
             None => {
-                let addr = format!("{}:{}", ip, port);
+                // If the user entered the default DayZ game port (2302), the A2S
+                // query port is conventionally 27016 (= 2302 + 24714).  Try that
+                // first; fall back to the typed port if 27016 does not respond.
+                let candidate_addr = if port == 2302 {
+                    format!("{}:27016", ip)
+                } else {
+                    format!("{}:{}", ip, port)
+                };
                 eprintln!(
-                    "[query_a2s] not in list → query addr={addr} (using supplied port as query port)"
+                    "[query_a2s] not in list → query addr={candidate_addr} (port={port}, using default query-port heuristic)"
                 );
-                (addr, vec![])
+                (candidate_addr, vec![], None)
             }
         }
     }; // Mutex released here — before any network I/O
@@ -1295,6 +1347,12 @@ async fn query_a2s(
         .and_then(|p| p.parse::<i64>().ok())
         .unwrap_or(port);
 
+    // Game port priority: list > A2S extended info > null
+    let game_port = list_game_port
+        .or_else(|| info.extended_server_info.port.map(|p| p as i64));
+
+    eprintln!("[query_a2s] resolved game_port={:?}", game_port);
+
     Ok(A2sDetailsDto {
         server_name: info.name,
         game: info.game,
@@ -1305,6 +1363,7 @@ async fn query_a2s(
         players_list,
         mods: mods_dto,
         query_port,
+        game_port,
     })
 }
 
@@ -2524,7 +2583,28 @@ fn get_cli_args() -> CliArgs {
     CLI_ARGS.get().cloned().unwrap_or_else(|| CliArgs {
         connect: None,
         reconnect: false,
+        open: None,
     })
+}
+
+// ─── .dzch file commands ──────────────────────────────────────────────────────
+
+/// Read a `.dzch` server-connection file and return its contents.
+#[tauri::command]
+fn read_dzch_file(path: String) -> Result<DzchConfig, String> {
+    DzchConfig::read_file(std::path::Path::new(&path)).map_err(|e| e.to_string())
+}
+
+/// Write a `.dzch` server-connection file to disk.
+#[tauri::command]
+fn write_dzch_file(path: String, config: DzchConfig) -> Result<(), String> {
+    config.write_file(std::path::Path::new(&path)).map_err(|e| e.to_string())
+}
+
+/// Parse a `dzch://` URL into a DzchConfig.
+#[tauri::command]
+fn parse_dzch_url(url: String) -> Result<DzchConfig, String> {
+    DzchConfig::from_url(&url).map_err(|e| e.to_string())
 }
 
 // ─── Auto-updater (Windows only) ─────────────────────────────────────────────
@@ -2845,6 +2925,32 @@ pub fn run(args: CliArgs) {
                     .allow_directory(&images_dir, false);
             }
 
+            // Deep-link: register dzch:// scheme at runtime on Linux (and
+            // Windows debug builds) so it works outside of an installed package.
+            #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let _ = app.deep_link().register_all();
+            }
+
+            // Forward dzch:// deep-link opens to the frontend as a CliArgs event
+            // so it follows the same code path as --connect / --open.
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    if let Some(url) = event.urls().first() {
+                        let url_str = url.to_string();
+                        let args = CliArgs {
+                            connect: None,
+                            reconnect: false,
+                            open: Some(url_str),
+                        };
+                        let _ = handle.emit("cli-args", args);
+                    }
+                });
+            }
+
             Ok(())
         })
         // Single-instance guard: if another instance is already running,
@@ -2858,6 +2964,7 @@ pub fn run(args: CliArgs) {
                     let new_args = CliArgs::try_parse_from(&argv).unwrap_or(CliArgs {
                         connect: None,
                         reconnect: false,
+                        open: None,
                     });
                     // Bring the existing window to front.
                     if let Some(win) = app.get_webview_window("main") {
@@ -2869,6 +2976,7 @@ pub fn run(args: CliArgs) {
                 })
                 .build(),
         )
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
@@ -2928,6 +3036,9 @@ pub fn run(args: CliArgs) {
             watch_steamcmd,
             download_steamcmd_windows,
             get_cli_args,
+            read_dzch_file,
+            write_dzch_file,
+            parse_dzch_url,
             fetch_battlemetrics_server,
             // Windows-only auto-updater commands
             #[cfg(windows)]

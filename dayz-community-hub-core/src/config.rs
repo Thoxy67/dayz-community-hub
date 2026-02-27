@@ -81,6 +81,9 @@ pub struct Favorite {
     pub name: String,
     pub ip: String,
     pub port: u16,
+    /// Optional server join password — saved so Direct Connect can auto-fill it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -530,9 +533,22 @@ impl Profile {
         }
     }
 
-    pub fn add_favorite(&mut self, name: String, ip: String, port: u16) {
-        if !self.favorites.iter().any(|f| f.ip == ip && f.port == port) {
-            self.favorites.push(Favorite { name, ip, port });
+    pub fn add_favorite(&mut self, name: String, ip: String, port: u16, password: Option<String>) {
+        if let Some(existing) = self
+            .favorites
+            .iter_mut()
+            .find(|f| f.ip == ip && f.port == port)
+        {
+            // Update name and password if already present
+            existing.name = name;
+            existing.password = password;
+        } else {
+            self.favorites.push(Favorite {
+                name,
+                ip,
+                port,
+                password,
+            });
         }
     }
 

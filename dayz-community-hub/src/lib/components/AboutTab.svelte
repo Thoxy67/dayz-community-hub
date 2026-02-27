@@ -473,6 +473,7 @@
                 {#each [
                   { keys: ['↑', '↓'],     desc: 'Navigate the list' },
                   { keys: ['Enter'],       desc: 'Connect to server' },
+                  { keys: ['D'],           desc: 'Open in Direct Connect' },
                   { keys: ['F'],           desc: 'Toggle favorite' },
                   { keys: ['I'],           desc: 'Toggle info panel' },
                   { keys: ['P'],           desc: 'Ping selected server' },
@@ -511,11 +512,111 @@
           </div>
         </section>
 
-        <!-- Profile Management -->
+        <!-- Sharing & Quick Connect -->
         <section
           class="stagger-item"
           class:visible={mounted}
           style="transition-delay: 480ms"
+        >
+          <div class="flex items-center gap-2 mb-3">
+            <Icon icon="ph:share-network" class="size-4 text-primary shrink-0" />
+            <h2 class="text-xs font-semibold text-base-content/60 uppercase tracking-widest">Sharing &amp; Quick Connect</h2>
+          </div>
+          <div class="rounded-xl border border-base-300/60 bg-base-200/40 divide-y divide-base-300/40">
+
+            <!-- How it works -->
+            <div class="px-4 py-3">
+              <p class="text-xs font-semibold text-base-content/70 mb-1.5">How it works</p>
+              <p class="text-xs text-base-content/50 leading-relaxed">
+                Share a server with friends by copying a <span class="font-mono bg-base-300/60 px-1 rounded text-base-content/60">dzch://</span> URL or exporting a
+                <span class="font-mono bg-base-300/60 px-1 rounded text-base-content/60">.dzch</span> file from the Direct Connect tab.
+                When someone opens the link or file, the app automatically fills in the server address, queries for live info, and offers to install any missing mods before connecting.
+              </p>
+            </div>
+
+            <!-- dzch:// URLs -->
+            <div class="px-4 py-3">
+              <div class="flex items-center gap-2 mb-2">
+                <Icon icon="ph:link" class="size-3.5 text-indigo-400 shrink-0" />
+                <p class="text-xs font-semibold text-base-content/70">dzch:// URLs</p>
+              </div>
+              <p class="text-xs text-base-content/50 leading-relaxed mb-2">
+                Compact links that encode a server address, mods, and optional password. Ideal for sharing in Discord, forums, or anywhere you can paste a link.
+              </p>
+              <div class="space-y-1.5 text-xs font-mono">
+                <div class="px-3 py-1.5 rounded-lg bg-base-300/40">
+                  <span class="text-base-content/35 select-none">Basic: </span><span class="text-primary break-all">dzch://192.168.1.1:2302</span>
+                </div>
+                <div class="px-3 py-1.5 rounded-lg bg-base-300/40">
+                  <span class="text-base-content/35 select-none">With mods: </span><span class="text-primary break-all">dzch://192.168.1.1:2302?mods=123456,789012</span>
+                </div>
+                <div class="px-3 py-1.5 rounded-lg bg-base-300/40">
+                  <span class="text-base-content/35 select-none">Full: </span><span class="text-primary break-all">dzch://192.168.1.1:2302?qport=27016&name=My%20Server&password=secret&mods=123456,789012</span>
+                </div>
+              </div>
+              <div class="mt-2 space-y-1">
+                {#each [
+                  { param: 'qport', desc: 'Query port for A2S (falls back to heuristics if omitted)' },
+                  { param: 'name',  desc: 'Server display name (informational, URL-encoded)' },
+                  { param: 'password', desc: 'Connection password (omit if none)' },
+                  { param: 'mods',  desc: 'Comma-separated Workshop IDs' },
+                ] as row}
+                  <div class="flex items-start gap-2 text-xs">
+                    <span class="font-mono text-primary/80 shrink-0 w-20 text-right">{row.param}</span>
+                    <span class="text-base-content/45">{row.desc}</span>
+                  </div>
+                {/each}
+              </div>
+            </div>
+
+            <!-- .dzch files -->
+            <div class="px-4 py-3">
+              <div class="flex items-center gap-2 mb-2">
+                <Icon icon="ph:file-text" class="size-3.5 text-emerald-400 shrink-0" />
+                <p class="text-xs font-semibold text-base-content/70">.dzch files</p>
+              </div>
+              <p class="text-xs text-base-content/50 leading-relaxed mb-2">
+                A small JSON file containing the full server config including mod names. Double-click one to open it in the app, or use the
+                <span class="font-semibold text-base-content/60">Export .dzch</span> button in the Direct Connect tab to create one.
+              </p>
+              <pre class="px-3 py-2 rounded-lg bg-base-300/40 text-xs font-mono text-base-content/60 leading-relaxed overflow-x-auto">{`{
+  "version": 1,
+  "ip": "192.168.1.1",
+  "port": 2302,
+  "query_port": 27016,
+  "name": "My Server",
+  "mods": [
+    { "id": 123456, "name": "Mod A" },
+    { "id": 789012, "name": "Mod B" }
+  ]
+}`}</pre>
+            </div>
+
+            <!-- How to share -->
+            <div class="px-4 py-3">
+              <p class="text-xs font-semibold text-base-content/70 mb-2">Sharing from Direct Connect</p>
+              <div class="space-y-2">
+                {#each [
+                  'Query a server in the Direct Connect tab (or press D on a server in the list).',
+                  'Click Copy URL to copy a dzch:// link to the clipboard, or Export .dzch to save a file.',
+                  'Send the link or file to friends — they open it and the app handles the rest.',
+                ] as step, i}
+                  <div class="flex items-start gap-3 text-xs text-base-content/50">
+                    <span class="size-4 rounded-full bg-base-300/80 text-base-content/50 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">{i + 1}</span>
+                    <span class="leading-relaxed">{step}</span>
+                  </div>
+                {/each}
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- Profile Management -->
+        <section
+          class="stagger-item"
+          class:visible={mounted}
+          style="transition-delay: 540ms"
         >
           <div class="flex items-center gap-2 mb-3">
             <Icon icon="ph:archive" class="size-4 text-primary shrink-0" />
@@ -722,7 +823,7 @@
     <div
       class="stagger-item flex items-center justify-between pt-3 pb-4 mt-6 border-t border-base-300/40 text-xs text-base-content/25"
       class:visible={mounted}
-      style="transition-delay: 540ms"
+      style="transition-delay: 600ms"
     >
       <span>{appName}{appVersion ? ` v${appVersion}` : ''}</span>
       <span class="flex items-center gap-1.5">

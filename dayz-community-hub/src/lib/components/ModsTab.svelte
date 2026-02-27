@@ -30,6 +30,7 @@
     onOpenModDir: (mod: InstalledModDto) => void;
     onDeleteSelected: (ids: number[]) => void;
     onUpdateSelected: (ids: number[]) => void;
+    onInstallMods: (workshopIds: number[]) => void;
   }
 
   let {
@@ -37,8 +38,57 @@
     onRefresh, onCheckUpdates, onDelete, onToggleManaged,
     onUpdate, onUpdateAll, onUpdateStale, onCleanup,
     onOpenWorkshopDir, onOpenModDir,
-    onDeleteSelected, onUpdateSelected,
+    onDeleteSelected, onUpdateSelected, onInstallMods,
   }: Props = $props();
+
+  // ── Manual install modal ───────────────────────────────────────────────────
+  let showInstallModal = $state(false);
+  let installInput = $state('');
+  let installError = $state('');
+
+  function openInstallModal() {
+    installInput = '';
+    installError = '';
+    showInstallModal = true;
+  }
+
+  function closeInstallModal() {
+    showInstallModal = false;
+  }
+
+  /** Parse one line: raw ID or Workshop URL → number, or null if invalid. */
+  function parseOne(raw: string): number | null {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    const urlMatch = trimmed.match(/[?&]id=(\d+)/i);
+    const idStr = urlMatch ? urlMatch[1] : trimmed.replace(/\D/g, '');
+    const id = parseInt(idStr, 10);
+    return id > 0 ? id : null;
+  }
+
+  /** Parsed, deduplicated IDs from the textarea (live derived). */
+  let parsedIds = $derived((() => {
+    const seen = new Set<number>();
+    for (const line of installInput.split(/[\n,]+/)) {
+      const id = parseOne(line);
+      if (id !== null) seen.add(id);
+    }
+    return [...seen];
+  })());
+
+  function submitInstall() {
+    if (parsedIds.length === 0) {
+      installError = 'No valid Workshop IDs found.';
+      return;
+    }
+    installError = '';
+    closeInstallModal();
+    onInstallMods(parsedIds);
+  }
+
+  function handleInstallKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') closeInstallModal();
+  }
 
   /** Whether Steam Workshop update checking is available (requires Steam API key). */
   let canCheckUpdates = $derived(!!steamApiKey);
@@ -216,6 +266,18 @@
     </div>
 
     <div class="ml-auto flex items-center gap-1">
+
+      <!-- Manual install -->
+      <button
+        class="btn btn-ghost btn-xs gap-1.5"
+        onclick={openInstallModal}
+        title="Install a mod manually by Workshop ID or URL"
+      >
+        <Icon icon="ph:download-simple" class="size-3.5" />
+        Install mod
+      </button>
+
+      <div class="w-px h-4 bg-base-300 mx-0.5"></div>
 
       <!-- Open workshop directory -->
       <button
@@ -520,6 +582,101 @@
           {/each}
         </tbody>
       </table>
+    </div>
+  {/if}
+
+  <!-- ── Manual install modal ──────────────────────────────────────────── -->
+  {#if showInstallModal}
+    <!-- svelte-ignore a11y_interactive_supports_focus a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+    <!-- Backdrop -->
+    <div
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onclick={closeInstallModal}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Install mod"
+    >
+      <!-- Panel -->
+      <div
+        class="bg-base-100 rounded-2xl border border-base-300 shadow-2xl w-full max-w-md mx-4 overflow-hidden"
+        onclick={(e) => e.stopPropagation()}
+        role="presentation"
+      >
+        <!-- Header -->
+        <div class="px-5 py-4 bg-base-200 border-b border-base-300 flex items-center gap-3">
+          <Icon icon="ph:download-simple" class="size-5 text-primary shrink-0" />
+          <div class="flex-1">
+            <p class="font-semibold text-sm">Install Mod</p>
+            <p class="text-xs text-base-content/50 mt-0.5">Download via Steam Workshop ID or URL</p>
+          </div>
+          <button
+            class="btn btn-ghost btn-xs btn-square text-base-content/40 hover:text-base-content"
+            onclick={closeInstallModal}
+            title="Close"
+          >
+            <Icon icon="ph:x" class="size-4" />
+          </button>
+        </div>
+
+        <!-- Body -->
+        <div class="p-5 space-y-4">
+          <div class="form-control">
+            <label class="label py-0 pb-1.5" for="install-mod-input">
+              <span class="label-text text-xs text-base-content/60 flex items-center gap-1.5">
+                <Icon icon="mdi:steam" class="size-3.5" />
+                Workshop IDs or URLs
+              </span>
+              <span class="label-text-alt text-base-content/35 text-xs">one per line, or comma-separated</span>
+            </label>
+            <!-- svelte-ignore a11y_autofocus -->
+            <textarea
+              id="install-mod-input"
+              class="textarea textarea-bordered w-full font-mono text-xs leading-relaxed resize-none h-32
+                     {installError ? 'textarea-error' : ''}"
+              placeholder={"1559212036\n2116157322\nhttps://steamcommunity.com/sharedfiles/filedetails/?id=1564026768"}
+              bind:value={installInput}
+              onkeydown={handleInstallKeydown}
+              autofocus
+            ></textarea>
+            {#if installError}
+              <p class="label py-0 pt-1">
+                <span class="label-text-alt text-error text-xs">{installError}</span>
+              </p>
+            {/if}
+          </div>
+
+          <!-- Live parsed preview -->
+          {#if parsedIds.length > 0}
+            <div class="rounded-lg bg-base-200 px-3 py-2.5 space-y-1.5">
+              <p class="text-xs text-base-content/40 uppercase tracking-wide font-semibold">
+                {parsedIds.length} mod{parsedIds.length > 1 ? 's' : ''} queued
+              </p>
+              <div class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                {#each parsedIds as id}
+                  <span class="font-mono text-xs bg-base-300 text-base-content/70 px-1.5 py-0.5 rounded">
+                    {id}
+                  </span>
+                {/each}
+              </div>
+            </div>
+          {:else if installInput.trim()}
+            <p class="text-xs text-error/70">No valid IDs detected.</p>
+          {/if}
+        </div>
+
+        <!-- Footer -->
+        <div class="px-5 py-4 bg-base-200/50 border-t border-base-300 flex gap-2 justify-end">
+          <button class="btn btn-ghost btn-sm" onclick={closeInstallModal}>Cancel</button>
+          <button
+            class="btn btn-primary btn-sm gap-1.5"
+            onclick={submitInstall}
+            disabled={parsedIds.length === 0}
+          >
+            <Icon icon="ph:download-simple" class="size-4" />
+            Install {parsedIds.length > 1 ? `${parsedIds.length} mods` : 'mod'}
+          </button>
+        </div>
+      </div>
     </div>
   {/if}
 

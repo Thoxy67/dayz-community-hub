@@ -20,9 +20,11 @@
     onClearAll: () => void;
     onGoToServers?: () => void;
     onPing: (ip: string, port: number) => void;
+    /** D key — open selected server in Direct Connect tab with query. */
+    onDirectConnect?: (ip: string, queryPort: number) => void;
   }
 
-  let { history, servers, pingCache, favorites, bmApiKey, onConnect, onAddFavorite, onRemoveFavorite, onRemove, onClearAll, onGoToServers, onPing }: Props = $props();
+  let { history, servers, pingCache, favorites, bmApiKey, onConnect, onAddFavorite, onRemoveFavorite, onRemove, onClearAll, onGoToServers, onPing, onDirectConnect }: Props = $props();
 
   // Pre-built lookup map rebuilt only when `servers` changes (O(n) once).
   // Covers both query_port and game_port keys so per-row lookups are O(1).
@@ -393,6 +395,13 @@
       // P — ping the selected server
       e.preventDefault();
       doPing(sorted[selectedIdx]);
+    }
+    if ((e.key === 'd' || e.key === 'D') && !e.ctrlKey && selectedIdx >= 0 && selectedIdx < len && onDirectConnect) {
+      // D — open in Direct Connect tab with prefilled address + auto-query
+      e.preventDefault();
+      const entry = sorted[selectedIdx];
+      const sv = findServer(entry);
+      onDirectConnect(entry.ip, sv ? sv.query_port : entry.port);
     }
   }
 

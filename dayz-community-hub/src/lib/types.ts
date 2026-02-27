@@ -46,6 +46,8 @@ export interface FavoriteDto {
   name: string;
   ip: string;
   port: number;
+  /** Saved server join password — auto-filled in Direct Connect. */
+  password: string | null;
 }
 
 export interface HistoryDto {
@@ -128,6 +130,8 @@ export interface A2sDetailsDto {
   mods: ModDto[];
   /** Actual query port used */
   query_port: number;
+  /** Server game port: from server list (priority) or A2S extended info. null if unavailable. */
+  game_port: number | null;
 }
 
 export interface AppStatsDto {
@@ -204,6 +208,27 @@ export interface CliArgs {
   connect: string | null;
   /** true if --reconnect was passed */
   reconnect: boolean;
+  /** A .dzch file path or dzch:// URL to auto-connect */
+  open: string | null;
+}
+
+/** A mod entry inside a .dzch server config. */
+export interface DzchMod {
+  id: number;
+  name: string;
+}
+
+/** .dzch server connection config (mirrors Rust DzchConfig). */
+export interface DzchConfig {
+  version: number;
+  ip: string;
+  /** Game port (used to connect). */
+  port: number;
+  /** Query port (used for A2S server info). */
+  query_port?: number | null;
+  name: string;
+  password?: string | null;
+  mods: DzchMod[];
 }
 
 export interface ModOpState {

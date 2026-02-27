@@ -16,9 +16,11 @@
     onRemove: (fav: FavoriteDto) => void;
     onGoToServers?: () => void;
     onPing: (ip: string, port: number) => void;
+    /** D key — open selected server in Direct Connect tab with query. */
+    onDirectConnect?: (ip: string, queryPort: number) => void;
   }
 
-  let { favorites, servers, pingCache, bmApiKey, onConnect, onRemove, onGoToServers, onPing }: Props = $props();
+  let { favorites, servers, pingCache, bmApiKey, onConnect, onRemove, onGoToServers, onPing, onDirectConnect }: Props = $props();
 
   // ── Sorting ──────────────────────────────────────────────────────────────
   type SortCol = 'name' | 'players' | 'ping';
@@ -256,6 +258,13 @@
       // P — ping the selected server
       e.preventDefault();
       doPing(sorted[selectedIdx]);
+    }
+    if ((e.key === 'd' || e.key === 'D') && !e.ctrlKey && selectedIdx >= 0 && selectedIdx < sorted.length && onDirectConnect) {
+      // D — open in Direct Connect tab with prefilled address + auto-query
+      e.preventDefault();
+      const fav = sorted[selectedIdx];
+      const sv = findServer(fav);
+      onDirectConnect(fav.ip, sv ? sv.query_port : fav.port);
     }
   }
 

@@ -25,6 +25,8 @@
     onExcludeIp: (ip: string) => void;
     onUnexcludeIp: (ip: string) => void;
     onManageExcluded: () => void;
+    /** D key — open selected server in Direct Connect tab with query. */
+    onDirectConnect?: (ip: string, queryPort: number) => void;
   }
 
   let {
@@ -44,6 +46,7 @@
     onExcludeIp,
     onUnexcludeIp,
     onManageExcluded,
+    onDirectConnect,
   }: Props = $props();
 
   // Deferred version of filter.searchQuery: updated 150ms after the user stops typing.
@@ -422,6 +425,10 @@
       // P — ping the selected server
       e.preventDefault();
       doPing(selected);
+    } else if ((e.key === 'd' || e.key === 'D') && selected && !e.ctrlKey && onDirectConnect) {
+      // D — open in Direct Connect tab with prefilled address + auto-query
+      e.preventDefault();
+      onDirectConnect(selected.ip, selected.query_port);
     }
   }
 
