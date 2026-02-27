@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { AppStatsDto, ProfileDto } from '$lib/types';
   import { getCurrentWindow } from '@tauri-apps/api/window';
-  import { open as openDialog } from '@tauri-apps/plugin-dialog';
+  import { open as openDialog, ask } from '@tauri-apps/plugin-dialog';
   import { openUrl } from '@tauri-apps/plugin-opener';
   import Icon from '@iconify/svelte';
   import GlitchText from '$lib/components/GlitchText.svelte';
@@ -114,6 +114,28 @@
   async function browseSteamRoot() {
     const selected = await openDialog({ directory: true, multiple: false, title: 'Select Steam root (steamapps folder)' });
     if (selected) steamRoot = selected as string;
+  }
+
+  async function clearSteamPassword() {
+    const yes = await ask('Remove the Steam password from profile.json? SteamCMD will fall back to cached credentials.', {
+      title: 'Clear Steam password',
+      kind: 'warning',
+      okLabel: 'Remove',
+      cancelLabel: 'Cancel',
+    });
+    if (!yes) return;
+    steamPassword = '';
+    onSaveSettings(
+      playerName.trim() || null,
+      steamLogin.trim() || null,
+      null,
+      steamRoot.trim() || null,
+      profile?.steamcmd_enabled ?? true,
+      steamcmdPath.trim() || null,
+      steamApiKey.trim() || null,
+      steamId.trim() || null,
+      battlemetricsApiKey.trim() || null,
+    );
   }
 
   function fmt(n: number | null | undefined): string {
@@ -394,6 +416,16 @@
                 >
                   <Icon icon={showPassword ? 'ph:eye-slash' : 'ph:eye'} class="size-3.5" />
                 </button>
+                {#if steamPassword}
+                  <button
+                    type="button"
+                    class="text-base-content/30 hover:text-error transition-colors shrink-0"
+                    onclick={clearSteamPassword}
+                    title="Clear password from profile"
+                  >
+                    <Icon icon="ph:x-circle" class="size-3.5" />
+                  </button>
+                {/if}
               </div>
             </div>
             <!-- Steam root -->
