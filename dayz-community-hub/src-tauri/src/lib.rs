@@ -79,6 +79,12 @@ pub struct AppState {
     /// BattleMetrics response cache: "ip:port" → (dto, fetched_at).
     /// Avoids two HTTP round-trips on every panel open for the same server.
     pub bm_cache: std::collections::HashMap<String, (BattleMetricsDto, std::time::Instant)>,
+    /// Channel to send input (password / Steam Guard code) to the running
+    /// steamcmd PTY.  Set when a mod operation starts, cleared when it finishes.
+    pub pty_input_tx: Option<dayz_community_hub_core::steamcmd::PtyInputTx>,
+    /// Abort handle for the running mod operation task.  Calling `.abort()`
+    /// cancels the tokio task which drops the PTY pair, killing steamcmd.
+    pub mod_op_abort: Option<tokio::task::AbortHandle>,
 }
 
 type SharedState = Arc<Mutex<AppState>>;
@@ -428,6 +434,17 @@ fn mod_progress_to_event(msg: &ModProgress) -> ModProgressEvent {
             hint: None,
             log_line: None,
         },
+        ModProgress::PasswordRequired => ModProgressEvent {
+            kind: "password_required".into(),
+            current: 0,
+            total: 0,
+            mod_id: 0,
+            name: String::new(),
+            ok: 0,
+            failed: 0,
+            hint: None,
+            log_line: None,
+        },
         ModProgress::LogLine(line) => ModProgressEvent {
             kind: "log_line".into(),
             current: 0,
@@ -551,6 +568,8 @@ async fn initialize(app: AppHandle) -> Result<InitResult, String> {
         cached_avatar: None,
         mod_update_cache: std::collections::HashMap::new(),
         bm_cache: std::collections::HashMap::new(),
+        pty_input_tx: None,
+        mod_op_abort: None,
     }));
     let ping_cache: PingCache = Arc::new(RwLock::new(std::collections::HashMap::new()));
 
@@ -1184,7 +1203,7 @@ async fn start_mod_operation(
     };
 
     let mut rx = {
-        let state = state.lock().await;
+        let mut state = state.lock().await;
         let op = match op_type.as_str() {
             "install_server" | "update_server" => {
                 let ip = ip.ok_or("ip required")?;
@@ -1220,13 +1239,16 @@ async fn start_mod_operation(
             },
             other => return Err(format!("Unknown operation: {}", other)),
         };
-        let (rx, _handle) = state
+        let (rx, pty_input_tx, handle) = state
             .ctl
             .start_mod_operation(op)
             .map_err(|e| e.to_string())?;
+        state.pty_input_tx = Some(pty_input_tx);
+        state.mod_op_abort = Some(handle.abort_handle());
         rx
     };
 
+    let state_clone = state.inner().clone();
     tokio::spawn(async move {
         loop {
             match rx.recv().await {
@@ -1241,8 +1263,44 @@ async fn start_mod_operation(
                 None => break,
             }
         }
+        // Clear the PTY input channel and abort handle when the operation finishes.
+        let mut st = state_clone.lock().await;
+        st.pty_input_tx = None;
+        st.mod_op_abort = None;
     });
 
+    Ok(())
+}
+
+/// Send input (password or Steam Guard code) to the running steamcmd PTY.
+///
+/// Called by the frontend when the user enters their password in response to a
+/// `password_required` progress event.
+#[tauri::command]
+async fn send_steamcmd_input(
+    input: String,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
+    let state = state.lock().await;
+    if let Some(ref tx) = state.pty_input_tx {
+        tx.send(input).map_err(|e| format!("Failed to send input to steamcmd: {}", e))?;
+    } else {
+        return Err("No active steamcmd session".into());
+    }
+    Ok(())
+}
+
+/// Cancel the running mod operation.
+///
+/// Aborts the tokio task (which drops the PTY pair, killing steamcmd) and
+/// clears the PTY input channel.
+#[tauri::command]
+async fn cancel_mod_operation(state: State<'_, SharedState>) -> Result<(), String> {
+    let mut state = state.lock().await;
+    if let Some(abort) = state.mod_op_abort.take() {
+        abort.abort();
+    }
+    state.pty_input_tx = None;
     Ok(())
 }
 
@@ -3010,6 +3068,8 @@ pub fn run(args: CliArgs) {
             launch_server,
             launch_direct,
             start_mod_operation,
+            send_steamcmd_input,
+            cancel_mod_operation,
             query_a2s,
             fetch_image,
             resolve_cached_images,

@@ -5,7 +5,7 @@ use crate::{
     errors::Error,
     launch,
     mods::{self, InstalledMod, ModManagementStats},
-    steamcmd::{ModProgress, SteamClient, SteamCmd, find_steam_root, find_steamcmd},
+    steamcmd::{ModProgress, PtyInputTx, SteamClient, SteamCmd, find_steam_root, find_steamcmd},
 };
 use reqwest::Client;
 use std::path::{Path, PathBuf};
@@ -247,12 +247,18 @@ impl DayzCtl {
     }
 
     /// Start a background mod operation with progress reporting.
-    /// Returns (progress_receiver, join_handle) or an error if steamcmd is not configured.
+    /// Returns (progress_receiver, pty_input_sender, join_handle) or an error
+    /// if steamcmd is not configured.
+    ///
+    /// The `PtyInputTx` can be used to send a password (or Steam Guard code)
+    /// to the running steamcmd PTY when a `PasswordRequired` progress event
+    /// is received.
     pub fn start_mod_operation(
         &self,
         op: ModOperation,
     ) -> Result<(
         mpsc::UnboundedReceiver<ModProgress>,
+        PtyInputTx,
         tokio::task::JoinHandle<ModOpResult>,
     )> {
         let steamcmd = self.steamcmd_ref()?.clone();
@@ -576,11 +582,16 @@ pub fn spawn_mod_operation(
     installed_mods: Vec<InstalledMod>,
 ) -> (
     mpsc::UnboundedReceiver<ModProgress>,
+    PtyInputTx,
     tokio::task::JoinHandle<ModOpResult>,
 ) {
     let (tx, rx) = mpsc::unbounded_channel();
+    let (pty_input_tx, pty_input_rx) = mpsc::unbounded_channel::<String>();
 
     let handle = tokio::spawn(async move {
+        // Wrap in Option so we can move it into whichever branch needs it.
+        let mut pty_input_rx = Some(pty_input_rx);
+
         match op {
             ModOperation::InstallOnly { server }
             | ModOperation::InstallThenLaunch { server, .. } => {
@@ -620,7 +631,8 @@ pub fn spawn_mod_operation(
                     })
                     .collect();
 
-                let results = steamcmd.download_mods_with_progress(&mods_info, &tx).await;
+                let pty_rx = pty_input_rx.take().unwrap_or_else(|| mpsc::unbounded_channel().1);
+                let results = steamcmd.download_mods_with_progress(&mods_info, &tx, pty_rx).await;
 
                 let mut installed_ids = Vec::new();
                 let mut failed = Vec::new();
@@ -652,7 +664,8 @@ pub fn spawn_mod_operation(
                     .map(|m| (m.steam_workshop_id as u64, m.name.clone()))
                     .collect();
 
-                let results = steamcmd.download_mods_with_progress(&mods_info, &tx).await;
+                let pty_rx = pty_input_rx.take().unwrap_or_else(|| mpsc::unbounded_channel().1);
+                let results = steamcmd.download_mods_with_progress(&mods_info, &tx, pty_rx).await;
 
                 let server_mod_ids: Vec<u64> = server
                     .mods
@@ -671,7 +684,8 @@ pub fn spawn_mod_operation(
                     .map(|m| (m.id, m.name.clone()))
                     .collect();
 
-                let results = steamcmd.download_mods_with_progress(&mods_info, &tx).await;
+                let pty_rx = pty_input_rx.take().unwrap_or_else(|| mpsc::unbounded_channel().1);
+                let results = steamcmd.download_mods_with_progress(&mods_info, &tx, pty_rx).await;
                 ModOpResult::UpdateDone(results)
             }
 
@@ -686,13 +700,15 @@ pub fn spawn_mod_operation(
                     });
                     return ModOpResult::UpdateDone(vec![]);
                 }
-                let results = steamcmd.download_mods_with_progress(&stale_mods, &tx).await;
+                let pty_rx = pty_input_rx.take().unwrap_or_else(|| mpsc::unbounded_channel().1);
+                let results = steamcmd.download_mods_with_progress(&stale_mods, &tx, pty_rx).await;
                 ModOpResult::UpdateDone(results)
             }
 
             ModOperation::UpdateOne { mod_id, name } => {
                 let mods_info = vec![(mod_id, name)];
-                let results = steamcmd.download_mods_with_progress(&mods_info, &tx).await;
+                let pty_rx = pty_input_rx.take().unwrap_or_else(|| mpsc::unbounded_channel().1);
+                let results = steamcmd.download_mods_with_progress(&mods_info, &tx, pty_rx).await;
                 ModOpResult::UpdateDone(results)
             }
 
@@ -706,7 +722,8 @@ pub fn spawn_mod_operation(
                     });
                     return ModOpResult::UpdateDone(vec![]);
                 }
-                let results = steamcmd.download_mods_with_progress(&mods, &tx).await;
+                let pty_rx = pty_input_rx.take().unwrap_or_else(|| mpsc::unbounded_channel().1);
+                let results = steamcmd.download_mods_with_progress(&mods, &tx, pty_rx).await;
                 ModOpResult::UpdateDone(results)
             }
 
@@ -751,7 +768,8 @@ pub fn spawn_mod_operation(
                     });
                 }
 
-                let results = steamcmd.download_mods_with_progress(&missing, &tx).await;
+                let pty_rx = pty_input_rx.take().unwrap_or_else(|| mpsc::unbounded_channel().1);
+                let results = steamcmd.download_mods_with_progress(&missing, &tx, pty_rx).await;
 
                 let mut installed_new = Vec::new();
                 let mut failed = Vec::new();
@@ -780,7 +798,7 @@ pub fn spawn_mod_operation(
         }
     });
 
-    (rx, handle)
+    (rx, pty_input_tx, handle)
 }
 
 /// Result from a completed background mod operation.

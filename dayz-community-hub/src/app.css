@@ -99,7 +99,7 @@
   position: absolute;
   inset: 0;
   border-radius: 9999px;
-  background: rgba(255, 80, 80, 0.25);
+  background: rgba(250, 190, 50, 0.25);
   animation: sg-pulse 2s ease-in-out infinite;
 }
 

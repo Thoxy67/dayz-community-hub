@@ -1230,6 +1230,9 @@
         case 'steam_guard_mobile_required':
           modOp.phase = 'steam_guard_mobile';
           break;
+        case 'password_required':
+          modOp.phase = 'password_required';
+          break;
         case 'starting':
           modOp.phase = 'downloading';
           modOp.current = payload.current;
@@ -1281,6 +1284,23 @@
     if (profile?.steam_api_key) checkModUpdates(true);
     else loadMods();
     loadStats();
+  }
+
+  async function sendSteamcmdPassword(password: string) {
+    try {
+      await invoke('send_steamcmd_input', { input: password });
+    } catch (e) {
+      setStatus(`Failed to send password: ${e}`, 'error');
+    }
+  }
+
+  async function cancelModOperation() {
+    try {
+      await invoke('cancel_mod_operation');
+    } catch (e) {
+      console.warn('cancel_mod_operation:', e);
+    }
+    dismissModOp();
   }
 
   // ── News & misc ───────────────────────────────────────────────────────────
@@ -1677,7 +1697,14 @@
 
   <ConfirmModal dialog={confirmDialog} onClose={() => (confirmDialog = null)} />
   <ConnectModal request={connectRequest} onClose={() => (connectRequest = null)} />
-  <ProgressModal modOp={modOp} onDismiss={dismissModOp} />
+  <ProgressModal
+    modOp={modOp}
+    onDismiss={dismissModOp}
+    onSendPassword={sendSteamcmdPassword}
+    steamLogin={profile?.steam_login}
+    onDontTrust={cancelModOperation}
+    onCancel={cancelModOperation}
+  />
 
   {#if showExcludedIpsModal}
     <ExcludedIpsModal

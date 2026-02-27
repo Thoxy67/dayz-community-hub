@@ -32,6 +32,16 @@ fn is_steam_guard_prompt(line: &str) -> bool {
         || lower.contains("steam guard code:")
 }
 
+/// Returns true if the partial buffer ends with a `password:` prompt.
+/// steamcmd emits this without a trailing newline when cached credentials
+/// are not found and it falls back to interactive login.
+fn is_password_prompt(buf: &str) -> bool {
+    let clean = strip_ansi(buf);
+    let trimmed = clean.trim_end();
+    trimmed.ends_with("password:")
+        || trimmed.ends_with("password: ")
+}
+
 pub const DAYZ_GAME_ID: u32 = 221100;
 
 /// Try to find Steam root directory by checking common locations.
@@ -194,6 +204,10 @@ pub enum ModProgress {
     ShuttingDownSteam,
     /// steamcmd is waiting for Steam Guard Mobile confirmation on the user's phone
     SteamGuardMobileRequired,
+    /// steamcmd is prompting for a password (cached credentials not found).
+    /// The UI should show a password input and send the password via the
+    /// `PtyInputTx` channel.
+    PasswordRequired,
     /// Starting download/update for a mod: (current_index, total_count, mod_id, mod_name)
     Starting {
         current: usize,
@@ -230,6 +244,12 @@ pub enum ModProgress {
 
 /// Sender half for progress reporting.
 pub type ProgressTx = mpsc::UnboundedSender<ModProgress>;
+
+/// Channel for the frontend to send input (e.g. password) to the running
+/// steamcmd PTY. The receiver lives inside the download task.
+pub type PtyInputTx = mpsc::UnboundedSender<String>;
+/// Receiver half — held by the download task.
+pub type PtyInputRx = mpsc::UnboundedReceiver<String>;
 
 pub struct SteamCmd {
     steamcmd_path: PathBuf,
@@ -493,6 +513,7 @@ impl SteamCmd {
         &self,
         mods_info: &[(u64, String)],
         tx: &ProgressTx,
+        pty_input: PtyInputRx,
     ) -> Vec<(u64, Result<()>)> {
         let total = mods_info.len();
 
@@ -532,7 +553,8 @@ impl SteamCmd {
         // Use a single batched PTY invocation on all platforms.
         // ConPTY on Windows provides the same real-time line-buffered output
         // as a Linux PTY, so there is no need for the one-per-mod fallback.
-        self.download_mods_batched(mods_info, tx, total).await
+        self.download_mods_batched(mods_info, tx, total, pty_input)
+            .await
     }
 
     /// Spawn steamcmd under a PTY and stream its output as raw byte chunks.
@@ -548,6 +570,9 @@ impl SteamCmd {
     /// running a second watcher thread that calls `child.wait()` and then drops
     /// the master, which finally unblocks the reader and lets it return an error,
     /// breaking the read loop and closing `chunk_rx`.
+    /// PTY writer handle — wrapped so it can be shared across threads.
+    /// The download task uses this to send password / Steam Guard codes to
+    /// the running steamcmd process.
     fn spawn_pty_streamed(
         &self,
         args: &[std::ffi::OsString],
@@ -555,6 +580,7 @@ impl SteamCmd {
         (
             Box<dyn portable_pty::Child + Send + Sync>,
             mpsc::UnboundedReceiver<String>,
+            Box<dyn std::io::Write + Send>,
         ),
         String,
     > {
@@ -587,6 +613,11 @@ impl SteamCmd {
             .master
             .try_clone_reader()
             .map_err(|e| format!("Failed to clone PTY reader: {}", e))?;
+
+        let writer = pty_pair
+            .master
+            .take_writer()
+            .map_err(|e| format!("Failed to take PTY writer: {}", e))?;
 
         // Wrap the master in an Arc<Mutex<Option<...>>> so the watcher thread
         // can drop it (closing the ConPTY handle) once the child exits, which
@@ -625,7 +656,7 @@ impl SteamCmd {
         });
 
         // Return a no-op child since the real child is owned by the watcher thread.
-        Ok((Box::new(NoopChild), chunk_rx))
+        Ok((Box::new(NoopChild), chunk_rx, writer))
     }
 
     /// Batch all mods into a single steamcmd invocation, stream stdout via PTY.
@@ -635,6 +666,7 @@ impl SteamCmd {
         mods_info: &[(u64, String)],
         tx: &ProgressTx,
         total: usize,
+        mut pty_input: PtyInputRx,
     ) -> Vec<(u64, Result<()>)> {
         let _ = tx.send(ModProgress::Starting {
             current: 1,
@@ -663,7 +695,7 @@ impl SteamCmd {
         }
         args.push("+quit".into());
 
-        let (mut child, mut chunk_rx) = match self.spawn_pty_streamed(&args) {
+        let (mut child, mut chunk_rx, mut pty_writer) = match self.spawn_pty_streamed(&args) {
             Ok(v) => v,
             Err(e) => {
                 let results = mods_info
@@ -685,12 +717,14 @@ impl SteamCmd {
         // "Please confirm..." / "Waiting for confirmation..." lines once the
         // user approves on the phone.
         let mut succeeded = std::collections::HashSet::<u64>::new();
-        let mut credentials_failed = false;
         let mut current_idx: usize = 0;
         let mut steam_guard_sent = false;
+        let mut password_prompt_sent = false;
+        let mut steam_guard_timed_out = false;
+        let mut invalid_password = false;
+        let mut sg_start: Option<std::time::Instant> = None;
         let mut login_phase = true; // true until first download activity is seen
         let mut buf = String::new();
-        let has_password = self.password.is_some();
 
         loop {
             let maybe_chunk = chunk_rx.recv().await;
@@ -711,18 +745,44 @@ impl SteamCmd {
                     let _ = tx.send(ModProgress::LogLine(line.clone()));
                 }
 
-                if line.contains("Cached credentials not found") {
-                    credentials_failed = true;
-                    let _ = child.kill();
-                    // Drain is not needed — we'll break the outer loop below
-                    break;
-                }
+                // "Cached credentials not found" is informational — the real
+                // prompt is the `password:` line that follows. Just log it.
+
                 // Text-based Steam Guard detection on complete lines.
-                if has_password && login_phase && !steam_guard_sent && is_steam_guard_prompt(&line)
-                {
+                // NOTE: no `has_password` guard — Steam Guard can appear after
+                // the interactive password prompt flow too.
+                if login_phase && !steam_guard_sent && is_steam_guard_prompt(&line) {
                     let _ = tx.send(ModProgress::SteamGuardMobileRequired);
                     steam_guard_sent = true;
+                    sg_start = Some(std::time::Instant::now());
+                    eprintln!("[SteamGuard] prompt detected (t=0.0s)");
                 }
+
+                // Detect login errors from complete lines.
+                {
+                    let elapsed = sg_start.map(|s| s.elapsed().as_secs_f32()).unwrap_or(0.0);
+                    let lower = line.to_lowercase();
+                    if lower.contains("timed out waiting for confirmation")
+                        || lower.contains("wait for confirmation timed out")
+                        || (lower.contains("error") && lower.contains("timeout"))
+                    {
+                        steam_guard_timed_out = true;
+                        eprintln!("[SteamGuard] TIMED OUT (t={elapsed:.1}s)");
+                    }
+                    if lower.contains("invalid password") {
+                        invalid_password = true;
+                    }
+                    // Log when Steam Guard is resolved (OK after "Waiting for confirmation")
+                    if steam_guard_sent && !steam_guard_timed_out
+                        && lower.contains("waiting for") && lower.contains("ok")
+                    {
+                        eprintln!("[SteamGuard] confirmed OK (t={elapsed:.1}s)");
+                    }
+                    if lower.contains("retrying") {
+                        eprintln!("[SteamGuard] retrying (t={elapsed:.1}s)");
+                    }
+                }
+
                 if line.contains("Success. Downloaded item") || line.contains("already up to date")
                 {
                     login_phase = false;
@@ -764,49 +824,46 @@ impl SteamCmd {
                     }
                 }
             }
-            // Also check the partial-line remainder (content not yet terminated
-            // by '\n'). steamcmd writes some prompts without a trailing newline,
-            // so they would never be processed by the loop above.
-            if has_password && login_phase && !steam_guard_sent && is_steam_guard_prompt(&buf) {
+
+            // Check the partial-line remainder (content not yet terminated
+            // by '\n'). steamcmd writes prompts like "password:" without a
+            // trailing newline, so they would never be processed by the loop
+            // above.
+            // Partial-buffer Steam Guard check (no `has_password` guard — works
+            // for both saved-password and interactive-password flows).
+            if login_phase && !steam_guard_sent && is_steam_guard_prompt(&buf) {
                 let _ = tx.send(ModProgress::SteamGuardMobileRequired);
                 steam_guard_sent = true;
             }
-            if credentials_failed {
-                break;
+
+            // Detect the `password:` prompt (no trailing newline).
+            // steamcmd emits this when cached credentials are missing.
+            if login_phase && !password_prompt_sent && is_password_prompt(&buf) {
+                password_prompt_sent = true;
+                let _ = tx.send(ModProgress::PasswordRequired);
+
+                // Wait for the user to provide a password via the input channel.
+                // If the channel is closed (user cancelled / dropped), kill the
+                // process and treat it as a credential failure.
+                match pty_input.recv().await {
+                    Some(password) => {
+                        // Write the password followed by Enter to the PTY.
+                        use std::io::Write;
+                        let _ = pty_writer.write_all(password.as_bytes());
+                        let _ = pty_writer.write_all(b"\n");
+                        let _ = pty_writer.flush();
+                        buf.clear();
+                    }
+                    None => {
+                        // User cancelled — kill the process
+                        let _ = child.kill();
+                        break;
+                    }
+                }
             }
         }
 
         let _ = child.wait();
-
-        if credentials_failed {
-            let relogin_cmd = format!("steamcmd +login {} +quit", self.login);
-            let hint = format!(
-                "Cached credentials not found.\nRun this command to re-login:\n  {}",
-                relogin_cmd
-            );
-            let results: Vec<(u64, Result<()>)> = mods_info
-                .iter()
-                .map(|(id, name)| {
-                    if !succeeded.contains(id) {
-                        let _ = tx.send(ModProgress::Failed {
-                            current: 1,
-                            total,
-                            mod_id: *id,
-                            name: name.clone(),
-                            error: hint.clone(),
-                        });
-                    }
-                    (*id, Err(Error::CredentialsExpired(relogin_cmd.clone())))
-                })
-                .collect();
-            let _ = tx.send(ModProgress::Finished {
-                ok: 0,
-                failed: total,
-                total,
-                hint: Some(hint),
-            });
-            return results;
-        }
 
         // Build final results — anything not seen as succeeded is failed
         let results: Vec<(u64, Result<()>)> = mods_info
@@ -834,7 +891,17 @@ impl SteamCmd {
             ok,
             failed,
             total,
-            hint: if failed > 0 {
+            hint: if invalid_password {
+                Some(
+                    "Invalid password. Check your Steam password in Settings and try again."
+                        .to_string(),
+                )
+            } else if steam_guard_timed_out {
+                Some(
+                    "Steam Guard confirmation timed out. Open the Steam Mobile app faster next time, or try again."
+                        .to_string(),
+                )
+            } else if failed > 0 {
                 Some(format!(
                     "Some downloads failed. Try:\n  steamcmd +login {} +quit",
                     self.login

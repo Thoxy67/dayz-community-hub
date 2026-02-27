@@ -144,7 +144,7 @@ export interface AppStatsDto {
 }
 
 export interface ModProgressEvent {
-  kind: 'shutting_down_steam' | 'steam_guard_mobile_required' | 'log_line' | 'starting' | 'done' | 'failed' | 'finished';
+  kind: 'shutting_down_steam' | 'steam_guard_mobile_required' | 'password_required' | 'log_line' | 'starting' | 'done' | 'failed' | 'finished';
   current: number;
   total: number;
   mod_id: number;
@@ -233,7 +233,7 @@ export interface DzchConfig {
 
 export interface ModOpState {
   active: boolean;
-  phase: 'shutting_down' | 'steam_guard_mobile' | 'downloading' | 'finished';
+  phase: 'shutting_down' | 'steam_guard_mobile' | 'password_required' | 'downloading' | 'finished';
   current: number;
   total: number;
   currentName: string;
