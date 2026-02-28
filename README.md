@@ -1,8 +1,19 @@
 # DayZ Community Hub
 
-A desktop launcher for DayZ Standalone that replaces the official launcher with a faster, more complete experience — server browser, mod manager, and auto-updater in a single app.
+[![CI](https://git.thoxy.xyz/thoxy/dayz-community-hub/actions/workflows/ci.yml/badge.svg)](https://git.thoxy.xyz/thoxy/dayz-community-hub/actions?workflow=ci.yml)
+[![Release](https://git.thoxy.xyz/thoxy/dayz-community-hub/actions/workflows/release.yml/badge.svg)](https://git.thoxy.xyz/thoxy/dayz-community-hub/actions?workflow=release.yml)
+[![Version](https://img.shields.io/badge/version-0.3.2-blue?style=flat-square)](https://git.thoxy.xyz/thoxy/dayz-community-hub/releases)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey?style=flat-square)
+[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 
-> Windows & Linux · Tauri 2 · SvelteKit 5 · Rust
+[![Rust](https://img.shields.io/badge/Rust-2024-orange?style=flat-square&logo=rust&logoColor=white)](https://rust-lang.org/)
+[![Tauri](https://img.shields.io/badge/Tauri-2-24C8D8?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app/)
+[![Svelte](https://img.shields.io/badge/SvelteKit-5-FF3E00?style=flat-square&logo=svelte&logoColor=white)](https://svelte.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![TailwindCSS](https://img.shields.io/badge/Tailwind-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![DaisyUI](https://img.shields.io/badge/DaisyUI-5-5A0EF8?style=flat-square&logo=daisyui&logoColor=white)](https://daisyui.com/)
+
+A desktop launcher for DayZ Standalone that replaces the official launcher with a faster, more complete experience — server browser, mod manager, and auto-updater in a single app.
 
 ![DayZ Community Hub screenshot](.forgejo/assets/screenshot.png)
 
