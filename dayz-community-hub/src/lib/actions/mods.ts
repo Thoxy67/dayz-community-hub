@@ -80,13 +80,9 @@ export function cleanupMods() {
 
 export function deleteSelectedMods(ids: number[]) {
   if (ids.length === 0) return;
-  const totalSize = s.installedMods
-    .filter(m => ids.includes(m.id))
-    .reduce((acc, m) => acc + m.size, 0);
+  const totalSize = s.installedMods.filter((m) => ids.includes(m.id)).reduce((acc, m) => acc + m.size, 0);
   const sizeMb = totalSize / 1024 / 1024;
-  const sizeStr = sizeMb >= 1024
-    ? `${(sizeMb / 1024).toFixed(1)} GB`
-    : `${sizeMb.toFixed(1)} MB`;
+  const sizeStr = sizeMb >= 1024 ? `${(sizeMb / 1024).toFixed(1)} GB` : `${sizeMb.toFixed(1)} MB`;
   s.confirmDialog = {
     title: 'Delete Mods',
     message: `Delete ${ids.length} mod${ids.length > 1 ? 's' : ''}?\nTotal size: ${sizeStr}`,
@@ -118,11 +114,7 @@ export function installMods(workshopIds: number[]) {
 }
 
 // ── Mod operation progress via Channel ────────────────────────────────────
-export function startModOp(
-  opType: string,
-  args: Record<string, unknown>,
-  onSuccess?: () => void,
-) {
+export function startModOp(opType: string, args: Record<string, unknown>, onSuccess?: () => void) {
   s.modOp = {
     active: true,
     phase: 'downloading',

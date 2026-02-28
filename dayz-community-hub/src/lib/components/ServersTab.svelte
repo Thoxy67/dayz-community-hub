@@ -18,6 +18,8 @@
     filter: ServersFilterState;
     /** BattleMetrics personal access token (null = not configured). */
     bmApiKey: string | null;
+    /** User location [longitude, latitude] for distance calculation. */
+    userLocation?: [number, number] | null;
     onConnect: (server: ServerDto) => void;
     onAddFavorite: (server: ServerDto) => void;
     onRemoveFavorite: (server: ServerDto) => void;
@@ -39,6 +41,7 @@
     loading,
     filter = $bindable(),
     bmApiKey,
+    userLocation = null,
     onConnect,
     onAddFavorite,
     onRemoveFavorite,
@@ -56,7 +59,9 @@
   $effect(() => {
     const q = filter.searchQuery;
     clearTimeout(_searchDebounceTimer);
-    _searchDebounceTimer = setTimeout(() => { deferredQuery = q; }, 150);
+    _searchDebounceTimer = setTimeout(() => {
+      deferredQuery = q;
+    }, 150);
     return () => clearTimeout(_searchDebounceTimer);
   });
 
@@ -67,14 +72,14 @@
   }
 
   const modsLabel: Record<ModFilter, string> = {
-    'both':      'Mods: all',
+    both: 'Mods: all',
     'mods-only': 'Mods only',
-    'no-mods':   'No mods',
+    'no-mods': 'No mods',
   };
   const modsTitle: Record<ModFilter, string> = {
-    'both':      'Click to show only modded servers',
+    both: 'Click to show only modded servers',
     'mods-only': 'Click to hide modded servers',
-    'no-mods':   'Click to show all servers',
+    'no-mods': 'Click to show all servers',
   };
 
   type FPFilter = 'both' | 'fp-only' | 'no-fp';
@@ -84,14 +89,14 @@
   }
 
   const fpLabel: Record<FPFilter, string> = {
-    'both':    '1P: all',
+    both: '1P: all',
     'fp-only': '1P only',
-    'no-fp':   'No 1P',
+    'no-fp': 'No 1P',
   };
   const fpTitle: Record<FPFilter, string> = {
-    'both':    '1P = First-Person Only servers (no third-person camera). Click to show only 1P servers.',
+    both: '1P = First-Person Only servers (no third-person camera). Click to show only 1P servers.',
     'fp-only': 'Showing first-person only servers. Click to exclude first-person servers.',
-    'no-fp':   'Hiding first-person only servers. Click to show all servers.',
+    'no-fp': 'Hiding first-person only servers. Click to show all servers.',
   };
 
   type PwdFilter = 'both' | 'no-pwd' | 'pwd-only';
@@ -101,13 +106,13 @@
   }
 
   const pwdLabel: Record<PwdFilter, string> = {
-    'both':     'Pwd: all',
-    'no-pwd':   'No pwd',
+    both: 'Pwd: all',
+    'no-pwd': 'No pwd',
     'pwd-only': 'Pwd only',
   };
   const pwdTitle: Record<PwdFilter, string> = {
-    'both':     'Click to hide password servers',
-    'no-pwd':   'Click to show only password servers',
+    both: 'Click to hide password servers',
+    'no-pwd': 'Click to show only password servers',
     'pwd-only': 'Click to show all servers',
   };
 
@@ -118,14 +123,14 @@
   }
 
   const beLabel: Record<BEFilter, string> = {
-    'both':    'BE: all',
+    both: 'BE: all',
     'be-only': 'BE only',
-    'no-be':   'No BE',
+    'no-be': 'No BE',
   };
   const beTitle: Record<BEFilter, string> = {
-    'both':    'Click to show only BattlEye servers',
+    both: 'Click to show only BattlEye servers',
     'be-only': 'Click to hide BattlEye servers',
-    'no-be':   'Click to show all servers',
+    'no-be': 'Click to show all servers',
   };
 
   let selectedIndex = $state(0);
@@ -190,7 +195,9 @@
   let scrollTop = $state(0);
   let containerHeight = $state(600);
 
-  function pingKey(s: ServerDto) { return `${s.ip}:${s.query_port}`; }
+  function pingKey(s: ServerDto) {
+    return `${s.ip}:${s.query_port}`;
+  }
 
   // Track which servers were just pinged for a brief green flash.
   let pingFlash = $state<Set<string>>(new Set());
@@ -230,73 +237,74 @@
   // not on every render (was previously computed inline in the {#each}).
   let uniqueMaps = $derived([...new Set(servers.map((s) => s.map))].sort());
 
-  let filtered = $derived((() => {
-    let list = servers;
-    const q = deferredQuery.trim().toLowerCase();
-    if (q) {
-      list = list.filter(
-        (s) =>
-          s.name.toLowerCase().includes(q) ||
-          s.ip.includes(q) ||
-          s.map.toLowerCase().includes(q)
-      );
-    }
-    if (filter.filterFirstPerson === 'fp-only') list = list.filter((s) => s.first_person_only);
-    if (filter.filterFirstPerson === 'no-fp')  list = list.filter((s) => !s.first_person_only);
-    if (filter.filterPassword === 'no-pwd')    list = list.filter((s) => !s.password);
-    if (filter.filterPassword === 'pwd-only')  list = list.filter((s) => s.password);
-    if (filter.filterBE === 'be-only')         list = list.filter((s) => !!s.battl_eye);
-    if (filter.filterBE === 'no-be')           list = list.filter((s) => !s.battl_eye);
-    if (filter.filterMods === 'mods-only')     list = list.filter((s) => s.mods_count > 0);
-    if (filter.filterMods === 'no-mods')       list = list.filter((s) => s.mods_count === 0);
-    if (filter.filterMap)                      list = list.filter((s) => s.map === filter.filterMap);
-    if (hideExcluded && excludedIps.size > 0)  list = list.filter((s) => !excludedIps.has(s.ip));
-    return list;
-  })());
+  let filtered = $derived(
+    (() => {
+      let list = servers;
+      const q = deferredQuery.trim().toLowerCase();
+      if (q) {
+        list = list.filter(
+          (s) => s.name.toLowerCase().includes(q) || s.ip.includes(q) || s.map.toLowerCase().includes(q),
+        );
+      }
+      if (filter.filterFirstPerson === 'fp-only') list = list.filter((s) => s.first_person_only);
+      if (filter.filterFirstPerson === 'no-fp') list = list.filter((s) => !s.first_person_only);
+      if (filter.filterPassword === 'no-pwd') list = list.filter((s) => !s.password);
+      if (filter.filterPassword === 'pwd-only') list = list.filter((s) => s.password);
+      if (filter.filterBE === 'be-only') list = list.filter((s) => !!s.battl_eye);
+      if (filter.filterBE === 'no-be') list = list.filter((s) => !s.battl_eye);
+      if (filter.filterMods === 'mods-only') list = list.filter((s) => s.mods_count > 0);
+      if (filter.filterMods === 'no-mods') list = list.filter((s) => s.mods_count === 0);
+      if (filter.filterMap) list = list.filter((s) => s.map === filter.filterMap);
+      if (hideExcluded && excludedIps.size > 0) list = list.filter((s) => !excludedIps.has(s.ip));
+      return list;
+    })(),
+  );
 
   // When sorting by ping we need to read pingCache, which updates on every
   // ping result.  For all other sort columns pingCache is irrelevant, so we
   // deliberately avoid reading it here — keeping those sorts cheap.
-  let sortedNoPing = $derived((() => {
-    if (filter.sortCol === 'none' || filter.sortCol === 'ping') return filtered;
-    const arr = filtered.slice();
-    const dir = filter.sortAsc ? 1 : -1;
-    arr.sort((a, b) => {
-      switch (filter.sortCol) {
-        case 'players':
-          return dir * (a.players - b.players);
-        case 'name':
-          return dir * a.name.localeCompare(b.name);
-        case 'map':
-          return dir * a.map.localeCompare(b.map);
-        case 'mods':
-          return dir * (a.mods_count - b.mods_count);
-        default:
-          return 0;
-      }
-    });
-    return arr;
-  })());
+  let sortedNoPing = $derived(
+    (() => {
+      if (filter.sortCol === 'none' || filter.sortCol === 'ping') return filtered;
+      const arr = filtered.slice();
+      const dir = filter.sortAsc ? 1 : -1;
+      arr.sort((a, b) => {
+        switch (filter.sortCol) {
+          case 'players':
+            return dir * (a.players - b.players);
+          case 'name':
+            return dir * a.name.localeCompare(b.name);
+          case 'map':
+            return dir * a.map.localeCompare(b.map);
+          case 'mods':
+            return dir * (a.mods_count - b.mods_count);
+          default:
+            return 0;
+        }
+      });
+      return arr;
+    })(),
+  );
 
   // Separate derived that reads pingCache — only invalidated by ping updates
   // when the user has explicitly chosen to sort by ping.
-  let sorted = $derived((() => {
-    if (filter.sortCol !== 'ping') return sortedNoPing;
-    const arr = sortedNoPing.length === filtered.length ? filtered.slice() : sortedNoPing.slice();
-    const dir = filter.sortAsc ? 1 : -1;
-    arr.sort((a, b) => {
-      const pa = pingCache.get(pingKey(a)) ?? Infinity;
-      const pb = pingCache.get(pingKey(b)) ?? Infinity;
-      return dir * (pa - pb);
-    });
-    return arr;
-  })());
+  let sorted = $derived(
+    (() => {
+      if (filter.sortCol !== 'ping') return sortedNoPing;
+      const arr = sortedNoPing.length === filtered.length ? filtered.slice() : sortedNoPing.slice();
+      const dir = filter.sortAsc ? 1 : -1;
+      arr.sort((a, b) => {
+        const pa = pingCache.get(pingKey(a)) ?? Infinity;
+        const pb = pingCache.get(pingKey(b)) ?? Infinity;
+        return dir * (pa - pb);
+      });
+      return arr;
+    })(),
+  );
 
   let totalHeight = $derived(sorted.length * ROW_HEIGHT);
   let startIndex = $derived(Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN));
-  let endIndex = $derived(
-    Math.min(sorted.length, Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + OVERSCAN)
-  );
+  let endIndex = $derived(Math.min(sorted.length, Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + OVERSCAN));
   let visibleServers = $derived(sorted.slice(startIndex, endIndex));
   let offsetY = $derived(startIndex * ROW_HEIGHT);
 
@@ -307,15 +315,15 @@
     if (!time) return 'ph:sun-horizon';
     const h = parseInt(time.split(':')[0], 10);
     if (isNaN(h)) return 'ph:sun-horizon';
-    if (h >= 5  && h < 7)  return 'ph:sun-horizon'; // dawn
-    if (h >= 7  && h < 19) return 'ph:sun';          // day
-    if (h >= 19 && h < 21) return 'ph:sun-horizon';  // dusk
-    return 'ph:moon';                                 // night
+    if (h >= 5 && h < 7) return 'ph:sun-horizon'; // dawn
+    if (h >= 7 && h < 19) return 'ph:sun'; // day
+    if (h >= 19 && h < 21) return 'ph:sun-horizon'; // dusk
+    return 'ph:moon'; // night
   }
 
-
-
-  function favKey(s: ServerDto) { return `${s.ip}:${s.query_port}`; }
+  function favKey(s: ServerDto) {
+    return `${s.ip}:${s.query_port}`;
+  }
 
   let copiedKey = $state('');
   async function copyIp(e: MouseEvent, server: ServerDto) {
@@ -323,7 +331,9 @@
     const text = `${server.ip}:${server.game_port}`;
     await writeText(text);
     copiedKey = text;
-    setTimeout(() => { if (copiedKey === text) copiedKey = ''; }, 1500);
+    setTimeout(() => {
+      if (copiedKey === text) copiedKey = '';
+    }, 1500);
   }
 
   function selectRow(index: number) {
@@ -382,9 +392,9 @@
       }
     } else if ((e.key === 'i' || e.key === 'I') && selected && !e.ctrlKey) {
       // I — toggle info/detail panel for the selected server
-        scrollToMods = false;
-        showDetails = !showDetails;
-        if (showDetails) handleQueryA2s();
+      scrollToMods = false;
+      showDetails = !showDetails;
+      if (showDetails) handleQueryA2s();
     } else if ((e.key === 'p' || e.key === 'P') && selected && !e.ctrlKey) {
       // P — ping the selected server
       e.preventDefault();
@@ -414,7 +424,14 @@
 
   $effect(() => {
     // Re-run whenever the debounced search text or any flag filter changes
-    deferredQuery; filter.filterFirstPerson; filter.filterPassword; filter.filterBE; filter.filterMods; filter.filterMap; hideExcluded; excludedIps;
+    deferredQuery;
+    filter.filterFirstPerson;
+    filter.filterPassword;
+    filter.filterBE;
+    filter.filterMods;
+    filter.filterMap;
+    hideExcluded;
+    excludedIps;
     selectedIndex = 0;
     a2s = null;
     if (scrollContainer) scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
@@ -440,7 +457,6 @@
 <div class="flex flex-col h-full" role="grid" tabindex="-1">
   <!-- Toolbar -->
   <div class="flex items-center gap-3 px-3 py-2 bg-base-200 border-b border-base-300 flex-shrink-0">
-
     <!-- Search input -->
     <label class="input input-sm input-bordered flex items-center gap-2 flex-1 min-w-0">
       <Icon icon="ph:magnifying-glass" class="size-3.5 text-base-content/40 shrink-0" />
@@ -448,18 +464,28 @@
         type="text"
         placeholder="Search name, IP, map…"
         value={filter.searchQuery}
-        oninput={(e) => { filter.searchQuery = (e.target as HTMLInputElement).value; }}
+        oninput={(e) => {
+          filter.searchQuery = (e.target as HTMLInputElement).value;
+        }}
         class="grow bg-transparent outline-none text-sm min-w-0"
       />
       {#if filter.searchQuery}
-        <button class="btn btn-ghost btn-xs p-0 min-h-0 h-auto shrink-0" title="Clear search" onclick={() => { filter.searchQuery = ''; }}>
+        <button
+          class="btn btn-ghost btn-xs p-0 min-h-0 h-auto shrink-0"
+          title="Clear search"
+          onclick={() => {
+            filter.searchQuery = '';
+          }}
+        >
           <Icon icon="ph:x" class="size-3" />
         </button>
       {/if}
     </label>
 
     <!-- Flag filters — grouped pill bar -->
-    <div class="flex items-center rounded-lg border border-base-300 bg-base-100/50 overflow-hidden divide-x divide-base-300 shrink-0 h-7">
+    <div
+      class="flex items-center rounded-lg border border-base-300 bg-base-100/50 overflow-hidden divide-x divide-base-300 shrink-0 h-7"
+    >
       <!-- 1P -->
       <button
         class="flex items-center gap-1 px-2.5 h-full text-xs font-semibold transition-colors"
@@ -531,7 +557,9 @@
         class:text-sky-400={!!filter.filterMap}
         class:opacity-100={!!filter.filterMap}
         value={filter.filterMap}
-        onchange={(e) => { filter.filterMap = (e.target as HTMLSelectElement).value; }}
+        onchange={(e) => {
+          filter.filterMap = (e.target as HTMLSelectElement).value;
+        }}
       >
         <option value="">All maps</option>
         {#each uniqueMaps as map}
@@ -578,18 +606,16 @@
       <button
         class="btn btn-ghost btn-xs gap-1.5"
         class:btn-active={showDetails}
-        onclick={() => { scrollToMods = false; showDetails = !showDetails; }}
+        onclick={() => {
+          scrollToMods = false;
+          showDetails = !showDetails;
+        }}
         title="Toggle details panel"
       >
         <Icon icon="ph:sidebar-simple" class="size-3.5" />
         Details
       </button>
-      <button
-        class="btn btn-ghost btn-xs gap-1.5"
-        onclick={onRefresh}
-        disabled={loading}
-        title="Refresh server list"
-      >
+      <button class="btn btn-ghost btn-xs gap-1.5" onclick={onRefresh} disabled={loading} title="Refresh server list">
         {#if loading}
           <span class="loading loading-spinner loading-xs"></span>
         {:else}
@@ -604,223 +630,287 @@
   <div class="flex flex-1 overflow-hidden">
     <!-- Server table with virtual scrolling (wrapper for jump-to-top button) -->
     <div class="relative flex-1 flex flex-col overflow-hidden">
-    <div
-      class="flex-1 overflow-auto"
-      bind:this={scrollContainer}
-      onscroll={handleScroll}
-    >
-      {#if loading && servers.length === 0}
-        <div class="flex items-center justify-center h-full gap-2 text-base-content/50">
-          <span class="loading loading-spinner loading-md"></span>
-          <span>Loading servers…</span>
-        </div>
-      {:else if sorted.length === 0}
-        <div class="flex items-center justify-center h-full text-base-content/40">
-          No servers match your search
-        </div>
-      {:else}
-        <table class="w-full text-xs" style="table-layout: fixed; border-collapse: collapse;">
-          <thead class="sticky top-0 z-10">
-            <tr class="bg-base-200/95 backdrop-blur-sm text-base-content/50 uppercase tracking-wider border-b border-base-300 select-none" style="font-size:10px;">
-              <th class="w-8 px-2 py-2 text-right font-medium">#</th>
-              <th class="w-6 px-1 py-2"></th>
-              <th class="w-20 px-3 py-2 cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('ping')}>
-                <span class="flex items-center gap-1">Ping <Icon icon={sortIcon('ping')} class="size-2.5" /></span>
-              </th>
-              <th class="w-32 px-3 py-2 cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('players')}>
-                <span class="flex items-center gap-1">Players <Icon icon={sortIcon('players')} class="size-2.5" /></span>
-              </th>
-              <th class="px-3 py-2 cursor-pointer hover:text-base-content transition-colors text-left" onclick={() => toggleSort('name')}>
-                <span class="flex items-center gap-1">Server <Icon icon={sortIcon('name')} class="size-2.5" /></span>
-              </th>
-              <th class="w-28 px-3 py-2 cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('map')}>
-                <span class="flex items-center gap-1">Map <Icon icon={sortIcon('map')} class="size-2.5" /></span>
-              </th>
-              <th class="w-16 px-3 py-2 font-medium text-left" title="In-game server time">Time</th>
-              <th class="w-14 px-3 py-2 cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('mods')}>
-                <span class="flex items-center gap-1">Mods <Icon icon={sortIcon('mods')} class="size-2.5" /></span>
-              </th>
-              <th class="w-10 px-2 py-2 text-center">OS</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#if offsetY > 0}
-              <tr><td colspan="9" class="p-0 border-0" style="height:{offsetY}px"></td></tr>
-            {/if}
-            {#each visibleServers as server, vi}
-              {@const i = startIndex + vi}
-              {@const ping = pingCache.get(pingKey(server))}
-              {@const isFav = favorites.has(favKey(server))}
-              {@const isSel = i === selectedIndex}
-              {@const isExcluded = excludedIps.has(server.ip)}
-              {@const pk = `${server.ip}:${server.query_port}`}
-              {@const livePlayers = a2sPlayers.get(pk) ?? server.players}
-              {@const loadingPlayers = a2sPlayersLoading.has(pk)}
-              {@const pct = server.max_players > 0 ? Math.round((livePlayers / server.max_players) * 100) : 0}
+      <div class="flex-1 overflow-auto" bind:this={scrollContainer} onscroll={handleScroll}>
+        {#if loading && servers.length === 0}
+          <div class="flex items-center justify-center h-full gap-2 text-base-content/50">
+            <span class="loading loading-spinner loading-md"></span>
+            <span>Loading servers…</span>
+          </div>
+        {:else if sorted.length === 0}
+          <div class="flex items-center justify-center h-full text-base-content/40">No servers match your search</div>
+        {:else}
+          <table class="w-full text-xs" style="table-layout: fixed; border-collapse: collapse;">
+            <thead class="sticky top-0 z-10">
               <tr
-                class="group/row border-b border-base-300/40 cursor-pointer transition-colors
-                       {isSel ? 'bg-primary/10 border-primary/20' : 'hover:bg-base-200/60'}"
-                style="height:{ROW_HEIGHT}px"
-                onclick={() => selectRow(i)}
-                ondblclick={() => onConnect(server)}
+                class="bg-base-200/95 backdrop-blur-sm text-base-content/50 uppercase tracking-wider border-b border-base-300 select-none"
+                style="font-size:10px;"
               >
-                <!-- # -->
-                <td class="px-2 text-right tabular-nums text-base-content/25 font-mono" style="font-size:10px;">{i + 1}</td>
+                <th class="w-8 px-2 py-2 text-right font-medium">#</th>
+                <th class="w-6 px-1 py-2"></th>
+                <th
+                  class="w-20 px-3 py-2 cursor-pointer hover:text-base-content transition-colors"
+                  onclick={() => toggleSort('ping')}
+                >
+                  <span class="flex items-center gap-1">Ping <Icon icon={sortIcon('ping')} class="size-2.5" /></span>
+                </th>
+                <th
+                  class="w-32 px-3 py-2 cursor-pointer hover:text-base-content transition-colors"
+                  onclick={() => toggleSort('players')}
+                >
+                  <span class="flex items-center gap-1"
+                    >Players <Icon icon={sortIcon('players')} class="size-2.5" /></span
+                  >
+                </th>
+                <th
+                  class="px-3 py-2 cursor-pointer hover:text-base-content transition-colors text-left"
+                  onclick={() => toggleSort('name')}
+                >
+                  <span class="flex items-center gap-1">Server <Icon icon={sortIcon('name')} class="size-2.5" /></span>
+                </th>
+                <th
+                  class="w-28 px-3 py-2 cursor-pointer hover:text-base-content transition-colors"
+                  onclick={() => toggleSort('map')}
+                >
+                  <span class="flex items-center gap-1">Map <Icon icon={sortIcon('map')} class="size-2.5" /></span>
+                </th>
+                <th class="w-16 px-3 py-2 font-medium text-left" title="In-game server time">Time</th>
+                <th
+                  class="w-14 px-3 py-2 cursor-pointer hover:text-base-content transition-colors"
+                  onclick={() => toggleSort('mods')}
+                >
+                  <span class="flex items-center gap-1">Mods <Icon icon={sortIcon('mods')} class="size-2.5" /></span>
+                </th>
+                <th class="w-10 px-2 py-2 text-center">OS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#if offsetY > 0}
+                <tr><td colspan="9" class="p-0 border-0" style="height:{offsetY}px"></td></tr>
+              {/if}
+              {#each visibleServers as server, vi}
+                {@const i = startIndex + vi}
+                {@const ping = pingCache.get(pingKey(server))}
+                {@const isFav = favorites.has(favKey(server))}
+                {@const isSel = i === selectedIndex}
+                {@const isExcluded = excludedIps.has(server.ip)}
+                {@const pk = `${server.ip}:${server.query_port}`}
+                {@const livePlayers = a2sPlayers.get(pk) ?? server.players}
+                {@const loadingPlayers = a2sPlayersLoading.has(pk)}
+                {@const pct = server.max_players > 0 ? Math.round((livePlayers / server.max_players) * 100) : 0}
+                <tr
+                  class="group/row border-b border-base-300/40 cursor-pointer transition-colors
+                       {isSel ? 'bg-primary/10 border-primary/20' : 'hover:bg-base-200/60'}"
+                  style="height:{ROW_HEIGHT}px"
+                  onclick={() => selectRow(i)}
+                  ondblclick={() => onConnect(server)}
+                >
+                  <!-- # -->
+                  <td class="px-2 text-right tabular-nums text-base-content/25 font-mono" style="font-size:10px;"
+                    >{i + 1}</td
+                  >
 
-                 <!-- Fav star + exclude button -->
-                 <td class="px-1 text-center">
-                   <div class="flex items-center gap-0.5">
-                     <button
-                       class="size-5 flex items-center justify-center rounded transition-colors hover:bg-warning/15"
-                       onclick={(e) => { e.stopPropagation(); isFav ? onRemoveFavorite(server) : onAddFavorite(server); }}
-                       title={isFav ? 'Remove from favorites' : 'Add to favorites'}
-                     >
-                       <Icon icon={isFav ? 'ph:star-fill' : 'ph:star'} class="size-3 {isFav ? 'text-warning' : 'text-base-content/20 group-hover/row:text-base-content/40'}" />
-                     </button>
-                     <button
-                       class="size-5 flex items-center justify-center rounded transition-colors
-                              {isExcluded ? 'opacity-100 hover:bg-error/15' : 'opacity-0 group-hover/row:opacity-100 hover:bg-error/15'}"
-                       onclick={(e) => { e.stopPropagation(); isExcluded ? onUnexcludeIp(server.ip) : onExcludeIp(server.ip); }}
-                       title={isExcluded ? `${server.ip} is excluded — click to remove` : `Exclude ${server.ip} from list`}
-                     >
-                       <Icon icon={isExcluded ? 'ph:prohibit-fill' : 'ph:prohibit'} class="size-3 {isExcluded ? 'text-error' : 'text-base-content/30'}" />
-                     </button>
-                   </div>
-                 </td>
-
-                 <!-- Ping: dot + ms — click to re-ping -->
-                 <td class="px-3">
-                   <button
-                     class="flex items-center gap-1.5 cursor-pointer hover:opacity-70 transition-opacity {pingFlash.has(pingKey(server)) ? 'ping-flash' : ''}"
-                     onclick={(e) => { e.stopPropagation(); doPing(server); }}
-                     title="Click to ping"
-                   >
-                     <span class="size-1.5 rounded-full shrink-0 {pingDot(ping)}"></span>
-                     <span class="tabular-nums font-mono {pingColor(ping)}">
-                       {pingLabel(ping)}
-                     </span>
-                   </button>
-                 </td>
-
-                <!-- Players: fraction + mini bar — click to refresh via A2S -->
-                <td class="px-3">
-                  <div class="flex items-center gap-2">
-                    <button
-                      class="tabular-nums font-mono {playerFill(livePlayers, server.max_players)} w-14 shrink-0 cursor-pointer hover:opacity-70 transition-opacity text-left"
-                      onclick={(e) => { e.stopPropagation(); doRefreshPlayers(server); }}
-                      title="Click to refresh player count"
-                    >
-                      {#if loadingPlayers}
-                        <span class="loading loading-spinner" style="width:10px;height:10px;"></span>
-                      {:else}
-                        {livePlayers}<span class="text-base-content/30">/{server.max_players}</span>
-                      {/if}
-                    </button>
-                    <div class="flex-1 h-1 rounded-full bg-base-300 overflow-hidden">
-                      <div
-                        class="h-full rounded-full transition-all {playerBarColor(livePlayers, server.max_players)}"
-                        style="width:{pct}%"
-                      ></div>
+                  <!-- Fav star + exclude button -->
+                  <td class="px-1 text-center">
+                    <div class="flex items-center gap-0.5">
+                      <button
+                        class="size-5 flex items-center justify-center rounded transition-colors hover:bg-warning/15"
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          isFav ? onRemoveFavorite(server) : onAddFavorite(server);
+                        }}
+                        title={isFav ? 'Remove from favorites' : 'Add to favorites'}
+                      >
+                        <Icon
+                          icon={isFav ? 'ph:star-fill' : 'ph:star'}
+                          class="size-3 {isFav
+                            ? 'text-warning'
+                            : 'text-base-content/20 group-hover/row:text-base-content/40'}"
+                        />
+                      </button>
+                      <button
+                        class="size-5 flex items-center justify-center rounded transition-colors
+                              {isExcluded
+                          ? 'opacity-100 hover:bg-error/15'
+                          : 'opacity-0 group-hover/row:opacity-100 hover:bg-error/15'}"
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          isExcluded ? onUnexcludeIp(server.ip) : onExcludeIp(server.ip);
+                        }}
+                        title={isExcluded
+                          ? `${server.ip} is excluded — click to remove`
+                          : `Exclude ${server.ip} from list`}
+                      >
+                        <Icon
+                          icon={isExcluded ? 'ph:prohibit-fill' : 'ph:prohibit'}
+                          class="size-3 {isExcluded ? 'text-error' : 'text-base-content/30'}"
+                        />
+                      </button>
                     </div>
-                  </div>
-                </td>
+                  </td>
 
-                <!-- Name + IP -->
-                <td class="px-3 max-w-0">
-                  <div class="flex items-center gap-1.5 min-w-0">
-                    <span class="truncate font-medium text-base-content/90">{server.name}</span>
-                    {#if server.password}
-                      <span title="Password protected"><Icon icon="mdi:lock" class="size-3 text-error shrink-0" /></span>
-                    {/if}
-                    {#if server.first_person_only}
-                      <span class="text-warning shrink-0 font-bold" style="font-size:9px;" title="First person only">1P</span>
-                    {/if}
-                    {#if server.battl_eye}
-                      <span title="BattlEye"><img src="/battleeye.png" alt="BE" class="h-3 w-auto shrink-0 rounded-sm" /></span>
-                    {/if}
-                  </div>
-                  <div class="flex items-center gap-2 mt-0.5">
+                  <!-- Ping: dot + ms — click to re-ping -->
+                  <td class="px-3">
                     <button
-                      class="font-mono flex items-center gap-1 group/ip
-                             {copiedKey === `${server.ip}:${server.game_port}` ? 'text-success' : 'text-base-content/30 hover:text-base-content/60'}"
-                      style="font-size:10px;"
-                      onclick={(e) => copyIp(e, server)}
-                      title="Copy {server.ip}:{server.game_port} to clipboard"
-                    >
-                      {server.ip}:{server.game_port}
-                      <Icon
-                        icon={copiedKey === `${server.ip}:${server.game_port}` ? 'ph:check' : 'ph:copy'}
-                        class="size-2 opacity-0 group-hover/ip:opacity-100 transition-opacity {copiedKey === `${server.ip}:${server.game_port}` ? 'opacity-100' : ''}"
-                      />
-                    </button>
-                    <span class="text-base-content/25" style="font-size:10px;">{server.version}</span>
-                  </div>
-                </td>
-
-                <!-- Map -->
-                <td class="px-3 max-w-0">
-                  <span class="truncate text-amber-500/80 block">{server.map}</span>
-                </td>
-
-                <!-- Time -->
-                <td class="px-3">
-                  <span class="flex items-center gap-1 text-base-content/60 tabular-nums font-mono">
-                    <Icon icon={timeIcon(server.time)} class="size-3 shrink-0" />
-                    {server.time || '—'}
-                  </span>
-                </td>
-
-                <!-- Mods — click to open detail panel scrolled to mods -->
-                <td class="px-3 text-center">
-                  {#if server.mods_count > 0}
-                    <button
-                      class="inline-flex items-center gap-0.5 text-violet-400/90 hover:text-violet-300 transition-colors cursor-pointer"
+                      class="flex items-center gap-1.5 cursor-pointer hover:opacity-70 transition-opacity {pingFlash.has(
+                        pingKey(server),
+                      )
+                        ? 'ping-flash'
+                        : ''}"
                       onclick={(e) => {
                         e.stopPropagation();
-                        selectedIndex = i;
-                        scrollToMods = true;
-                        showDetails = true;
-                        handleQueryA2s();
+                        doPing(server);
                       }}
-                      title="Show mod list"
+                      title="Click to ping"
                     >
-                      <Icon icon="mdi:puzzle-outline" class="size-3 shrink-0" />
-                      {server.mods_count}
+                      <span class="size-1.5 rounded-full shrink-0 {pingDot(ping)}"></span>
+                      <span class="tabular-nums font-mono {pingColor(ping)}">
+                        {pingLabel(ping)}
+                      </span>
                     </button>
-                  {:else}
-                    <span class="text-base-content/20">—</span>
-                  {/if}
-                </td>
+                  </td>
 
-                <!-- OS -->
-                <td class="px-2 text-center">
-                  {#if server.environment === 'w'}
-                    <span title="Windows"><Icon icon="devicon:windows11" class="size-3.5" /></span>
-                  {:else}
-                    <span title="Linux"><Icon icon="flat-color-icons:linux" class="size-3.5" /></span>
-                  {/if}
-                </td>
-              </tr>
-            {/each}
-            {#if totalHeight - (endIndex * ROW_HEIGHT) > 0}
-              <tr><td colspan="9" class="p-0 border-0" style="height:{totalHeight - (endIndex * ROW_HEIGHT)}px"></td></tr>
-            {/if}
-          </tbody>
-        </table>
+                  <!-- Players: fraction + mini bar — click to refresh via A2S -->
+                  <td class="px-3">
+                    <div class="flex items-center gap-2">
+                      <button
+                        class="tabular-nums font-mono {playerFill(
+                          livePlayers,
+                          server.max_players,
+                        )} w-14 shrink-0 cursor-pointer hover:opacity-70 transition-opacity text-left"
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          doRefreshPlayers(server);
+                        }}
+                        title="Click to refresh player count"
+                      >
+                        {#if loadingPlayers}
+                          <span class="loading loading-spinner" style="width:10px;height:10px;"></span>
+                        {:else}
+                          {livePlayers}<span class="text-base-content/30">/{server.max_players}</span>
+                        {/if}
+                      </button>
+                      <div class="flex-1 h-1 rounded-full bg-base-300 overflow-hidden">
+                        <div
+                          class="h-full rounded-full transition-all {playerBarColor(livePlayers, server.max_players)}"
+                          style="width:{pct}%"
+                        ></div>
+                      </div>
+                    </div>
+                  </td>
+
+                  <!-- Name + IP -->
+                  <td class="px-3 max-w-0">
+                    <div class="flex items-center gap-1.5 min-w-0">
+                      <span class="truncate font-medium text-base-content/90">{server.name}</span>
+                      {#if server.password}
+                        <span title="Password protected"
+                          ><Icon icon="mdi:lock" class="size-3 text-error shrink-0" /></span
+                        >
+                      {/if}
+                      {#if server.first_person_only}
+                        <span class="text-warning shrink-0 font-bold" style="font-size:9px;" title="First person only"
+                          >1P</span
+                        >
+                      {/if}
+                      {#if server.battl_eye}
+                        <span title="BattlEye"
+                          ><img src="/battleeye.png" alt="BE" class="h-3 w-auto shrink-0 rounded-sm" /></span
+                        >
+                      {/if}
+                    </div>
+                    <div class="flex items-center gap-2 mt-0.5">
+                      <button
+                        class="font-mono flex items-center gap-1 group/ip
+                             {copiedKey === `${server.ip}:${server.game_port}`
+                          ? 'text-success'
+                          : 'text-base-content/30 hover:text-base-content/60'}"
+                        style="font-size:10px;"
+                        onclick={(e) => copyIp(e, server)}
+                        title="Copy {server.ip}:{server.game_port} to clipboard"
+                      >
+                        {server.ip}:{server.game_port}
+                        <Icon
+                          icon={copiedKey === `${server.ip}:${server.game_port}` ? 'ph:check' : 'ph:copy'}
+                          class="size-2 opacity-0 group-hover/ip:opacity-100 transition-opacity {copiedKey ===
+                          `${server.ip}:${server.game_port}`
+                            ? 'opacity-100'
+                            : ''}"
+                        />
+                      </button>
+                      <span class="text-base-content/25" style="font-size:10px;">{server.version}</span>
+                    </div>
+                  </td>
+
+                  <!-- Map -->
+                  <td class="px-3 max-w-0">
+                    <span class="truncate text-amber-500/80 block">{server.map}</span>
+                  </td>
+
+                  <!-- Time -->
+                  <td class="px-3">
+                    <span class="flex items-center gap-1 text-base-content/60 tabular-nums font-mono">
+                      <Icon icon={timeIcon(server.time)} class="size-3 shrink-0" />
+                      {server.time || '—'}
+                    </span>
+                  </td>
+
+                  <!-- Mods — click to open detail panel scrolled to mods -->
+                  <td class="px-3 text-center">
+                    {#if server.mods_count > 0}
+                      <button
+                        class="inline-flex items-center gap-0.5 text-violet-400/90 hover:text-violet-300 transition-colors cursor-pointer"
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          selectedIndex = i;
+                          scrollToMods = true;
+                          showDetails = true;
+                          handleQueryA2s();
+                        }}
+                        title="Show mod list"
+                      >
+                        <Icon icon="mdi:puzzle-outline" class="size-3 shrink-0" />
+                        {server.mods_count}
+                      </button>
+                    {:else}
+                      <span class="text-base-content/20">—</span>
+                    {/if}
+                  </td>
+
+                  <!-- OS -->
+                  <td class="px-2 text-center">
+                    {#if server.environment === 'w'}
+                      <span title="Windows"><Icon icon="devicon:windows11" class="size-3.5" /></span>
+                    {:else}
+                      <span title="Linux"><Icon icon="flat-color-icons:linux" class="size-3.5" /></span>
+                    {/if}
+                  </td>
+                </tr>
+              {/each}
+              {#if totalHeight - endIndex * ROW_HEIGHT > 0}
+                <tr
+                  ><td colspan="9" class="p-0 border-0" style="height:{totalHeight - endIndex * ROW_HEIGHT}px"></td></tr
+                >
+              {/if}
+            </tbody>
+          </table>
+        {/if}
+      </div>
+
+      <!-- Jump-to-top button — appears when scrolled > 300px -->
+      {#if scrollTop > 300}
+        <button
+          class="absolute bottom-4 left-4 z-20 btn btn-sm btn-circle btn-neutral shadow-lg opacity-80 hover:opacity-100 transition-opacity"
+          title="Jump to top"
+          onclick={() => {
+            if (scrollContainer) scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
+            scrollTop = 0;
+          }}
+        >
+          <Icon icon="ph:arrow-up" class="size-4" />
+        </button>
       {/if}
     </div>
-
-    <!-- Jump-to-top button — appears when scrolled > 300px -->
-    {#if scrollTop > 300}
-      <button
-        class="absolute bottom-4 left-4 z-20 btn btn-sm btn-circle btn-neutral shadow-lg opacity-80 hover:opacity-100 transition-opacity"
-        title="Jump to top"
-        onclick={() => { if (scrollContainer) scrollContainer.scrollTo({ top: 0, behavior: 'smooth' }); scrollTop = 0; }}
-      >
-        <Icon icon="ph:arrow-up" class="size-4" />
-      </button>
-    {/if}
-    </div><!-- end relative wrapper -->
+    <!-- end relative wrapper -->
 
     <!-- Details panel -->
     {#if showDetails && selected}
@@ -833,8 +923,12 @@
           {installedMods}
           pingMs={pingCache.get(pingKey(selected)) ?? null}
           {bmApiKey}
+          {userLocation}
           {scrollToMods}
-          onClose={() => { showDetails = false; scrollToMods = false; }}
+          onClose={() => {
+            showDetails = false;
+            scrollToMods = false;
+          }}
           onQueryA2s={handleQueryA2s}
         />
       </div>
@@ -846,7 +940,6 @@
     {@const selPing = pingCache.get(pingKey(selected))}
     {@const selPct = selected.max_players > 0 ? Math.round((selected.players / selected.max_players) * 100) : 0}
     <div class="flex items-center gap-0 border-t border-base-300 bg-base-200 flex-shrink-0 min-h-0">
-
       <!-- Server info block -->
       <div class="flex flex-col justify-center px-3 py-2 flex-1 min-w-0 gap-0.5">
         <!-- Name row -->
@@ -858,7 +951,9 @@
               <span title="Password protected"><Icon icon="mdi:lock" class="size-3 text-error" /></span>
             {/if}
             {#if selected.first_person_only}
-              <span class="text-warning font-bold leading-none" style="font-size:9px;" title="First person only">1P</span>
+              <span class="text-warning font-bold leading-none" style="font-size:9px;" title="First person only"
+                >1P</span
+              >
             {/if}
             {#if selected.battl_eye}
               <span title="BattlEye"><img src="/battleeye.png" alt="BE" class="h-3 w-auto rounded-sm" /></span>
@@ -869,7 +964,9 @@
         <div class="flex items-center gap-3 text-xs text-base-content/40">
           <!-- Ping — click to re-ping -->
           <button
-            class="flex items-center gap-1 tabular-nums font-mono cursor-pointer hover:opacity-70 transition-opacity {pingColor(selPing)}"
+            class="flex items-center gap-1 tabular-nums font-mono cursor-pointer hover:opacity-70 transition-opacity {pingColor(
+              selPing,
+            )}"
             onclick={() => selected && doPing(selected)}
             title="Click to ping"
           >
@@ -883,7 +980,10 @@
               {selected.players}<span class="text-base-content/25">/{selected.max_players}</span>
             </span>
             <div class="w-16 h-1 rounded-full bg-base-300 overflow-hidden">
-              <div class="h-full rounded-full {playerBarColor(selected.players, selected.max_players)}" style="width:{selPct}%"></div>
+              <div
+                class="h-full rounded-full {playerBarColor(selected.players, selected.max_players)}"
+                style="width:{selPct}%"
+              ></div>
             </div>
           </span>
           <!-- Map -->
@@ -921,7 +1021,10 @@
         <button
           class="btn btn-ghost btn-sm gap-1.5"
           class:text-warning={selected && favorites.has(favKey(selected))}
-          onclick={() => { if (!selected) return; favorites.has(favKey(selected)) ? onRemoveFavorite(selected) : onAddFavorite(selected); }}
+          onclick={() => {
+            if (!selected) return;
+            favorites.has(favKey(selected)) ? onRemoveFavorite(selected) : onAddFavorite(selected);
+          }}
           title={selected && favorites.has(favKey(selected)) ? 'Remove from favorites' : 'Add to favorites'}
         >
           <Icon icon={selected && favorites.has(favKey(selected)) ? 'ph:star-fill' : 'ph:star'} class="size-3.5" />
@@ -929,7 +1032,12 @@
         </button>
         <button
           class="btn btn-ghost btn-sm gap-1.5"
-          onclick={() => { if (!selected) return; scrollToMods = false; showDetails = true; handleQueryA2s(); }}
+          onclick={() => {
+            if (!selected) return;
+            scrollToMods = false;
+            showDetails = true;
+            handleQueryA2s();
+          }}
           title="Query live A2S info"
         >
           <Icon icon="ph:info" class="size-3.5" />
@@ -949,4 +1057,3 @@
 </div>
 
 <style></style>
-

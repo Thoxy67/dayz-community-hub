@@ -22,7 +22,7 @@ export function pingLabel(ms: number | null | undefined): string {
  */
 export function pingColor(ms: number | null | undefined, dimOpacity = '30'): string {
   if (isTimeout(ms)) return `text-base-content/${dimOpacity}`;
-  if (ms! < 50)  return 'text-success';
+  if (ms! < 50) return 'text-success';
   if (ms! < 100) return 'text-warning';
   return 'text-error';
 }
@@ -30,7 +30,7 @@ export function pingColor(ms: number | null | undefined, dimOpacity = '30'): str
 /** Tailwind background colour class for a ping indicator dot. */
 export function pingDot(ms: number | null | undefined): string {
   if (isTimeout(ms)) return 'bg-base-content/20';
-  if (ms! < 50)  return 'bg-success';
+  if (ms! < 50) return 'bg-success';
   if (ms! < 100) return 'bg-warning';
   return 'bg-error';
 }
@@ -116,4 +116,83 @@ export function sparklinePath(history: [number, number][], w = 120, h = 28): str
       return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(' ');
+}
+
+// ─── Country & Distance utilities ─────────────────────────────────────────────
+
+/** Convert ISO 3166-1 alpha-2 country code to flag emoji (e.g., "US" → "🇺🇸") */
+export function countryCodeToFlag(code: string): string {
+  const codePoints = [...code.toUpperCase()].map((char) => 0x1f1e6 - 65 + char.charCodeAt(0));
+  return String.fromCodePoint(...codePoints);
+}
+
+/** Common country names for DayZ servers */
+const COUNTRY_NAMES: Record<string, string> = {
+  US: 'United States',
+  DE: 'Germany',
+  FR: 'France',
+  GB: 'United Kingdom',
+  NL: 'Netherlands',
+  PL: 'Poland',
+  RU: 'Russia',
+  AU: 'Australia',
+  CA: 'Canada',
+  BR: 'Brazil',
+  SE: 'Sweden',
+  FI: 'Finland',
+  NO: 'Norway',
+  DK: 'Denmark',
+  IT: 'Italy',
+  ES: 'Spain',
+  CZ: 'Czechia',
+  AT: 'Austria',
+  CH: 'Switzerland',
+  BE: 'Belgium',
+  PT: 'Portugal',
+  IE: 'Ireland',
+  HU: 'Hungary',
+  RO: 'Romania',
+  GR: 'Greece',
+  UA: 'Ukraine',
+  SK: 'Slovakia',
+  BG: 'Bulgaria',
+  HR: 'Croatia',
+  LT: 'Lithuania',
+  LV: 'Latvia',
+  EE: 'Estonia',
+  SI: 'Slovenia',
+  SG: 'Singapore',
+  JP: 'Japan',
+  KR: 'South Korea',
+  HK: 'Hong Kong',
+  TW: 'Taiwan',
+  NZ: 'New Zealand',
+  ZA: 'South Africa',
+  AR: 'Argentina',
+  CL: 'Chile',
+  MX: 'Mexico',
+  IN: 'India',
+  TR: 'Turkey',
+};
+
+/** Get full country name from ISO code, or return the code if not found */
+export function countryCodeToName(code: string): string {
+  return COUNTRY_NAMES[code.toUpperCase()] ?? code;
+}
+
+/**
+ * Calculate distance between two coordinates in km using Haversine formula.
+ * @param lat1 - Latitude of first point
+ * @param lon1 - Longitude of first point
+ * @param lat2 - Latitude of second point
+ * @param lon2 - Longitude of second point
+ */
+export function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Earth radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }

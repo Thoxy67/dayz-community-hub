@@ -47,6 +47,33 @@ pub(crate) async fn clear_offline_saves(state: State<'_, SharedState>) -> Result
     spawn_blocking_mapped(move || om.clear_offline_saves()).await
 }
 
+/// Remove a single mission.
+#[tauri::command]
+pub(crate) async fn remove_mission(
+    mission: String,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
+    let om = offline_mode_from_state(state.inner()).await?;
+    spawn_blocking_mapped(move || om.remove_mission(&mission)).await
+}
+
+/// Open the missions directory in the file manager.
+#[tauri::command]
+pub(crate) async fn open_missions_dir(
+    app: AppHandle,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let om = offline_mode_from_state(state.inner()).await?;
+    let path = om.missions_path();
+    if !path.exists() {
+        std::fs::create_dir_all(&path).map_err(|e| e.to_string())?;
+    }
+    app.opener()
+        .open_path(path.to_string_lossy().as_ref(), None::<&str>)
+        .map_err(|e: tauri_plugin_opener::Error| e.to_string())
+}
+
 /// Launch an offline mission.
 #[tauri::command]
 pub(crate) async fn launch_offline_mission(

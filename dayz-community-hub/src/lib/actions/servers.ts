@@ -91,11 +91,15 @@ export async function pingSingle(ip: string, port: number) {
 export async function loadStats() {
   try {
     s.stats = await invoke<import('$lib/types').AppStatsDto>('get_app_stats');
-  } catch { /* non-fatal */ }
+  } catch {
+    /* non-fatal */
+  }
 }
 
 export async function loadSteamPlayers() {
   try {
     s.steamPlayers = await invoke<number>('fetch_steam_player_count');
-  } catch { /* non-fatal */ }
+  } catch {
+    /* non-fatal */
+  }
 }

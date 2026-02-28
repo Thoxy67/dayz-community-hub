@@ -11,9 +11,9 @@
   // ── Constants ──────────────────────────────────────────────────────────────
   const CW = 320;
   const CH = 460;
-  const DANGER_Y  = 60;   // red line — stack above this = game over
-  const DROP_FROM = 20;   // y circles are released from (above danger line)
-  const TWO_PI    = Math.PI * 2;
+  const DANGER_Y = 60; // red line — stack above this = game over
+  const DROP_FROM = 20; // y circles are released from (above danger line)
+  const TWO_PI = Math.PI * 2;
 
   // 8 tiers — radius & terminal colour palette
   const TIERS = [
@@ -29,9 +29,9 @@
 
   // Pre-computed per-tier values (avoid recalculating every frame per body)
   const TIER_LABELS: string[] = TIERS.map((_, i) => String(Math.pow(2, i + 1)));
-  const TIER_FONTS: string[]  = TIERS.map(t => `bold ${Math.max(8, Math.floor(t.r * 0.52))}px monospace`);
-  const TIER_FILL: string[]   = TIERS.map(t => t.color + 'bb');
-  const TIER_DIAMETER: number[] = TIERS.map(t => t.r * 2);
+  const TIER_FONTS: string[] = TIERS.map((t) => `bold ${Math.max(8, Math.floor(t.r * 0.52))}px monospace`);
+  const TIER_FILL: string[] = TIERS.map((t) => t.color + 'bb');
+  const TIER_DIAMETER: number[] = TIERS.map((t) => t.r * 2);
 
   const GRACE_FRAMES = 90;
   const MERGE_FLASH_DURATION = 22;
@@ -40,18 +40,18 @@
   // ── Reactive state (HUD only) ──────────────────────────────────────────────
   type GameState = 'playing' | 'over';
   let gameState = $state<GameState>('playing');
-  let score     = $state(0);
+  let score = $state(0);
   let highScore = $state(0);
 
   // ── Plain mutable (RAF loop, no reactivity needed) ─────────────────────────
   let gameCanvas: HTMLCanvasElement | null = null;
-  let ctx: CanvasRenderingContext2D | null = null;  // cached context
+  let ctx: CanvasRenderingContext2D | null = null; // cached context
   let rafId: number | null = null;
-  let cursorX     = CW / 2;
+  let cursorX = CW / 2;
   let currentTier = 0;
 
   let engine: Matter.Engine | null = null;
-  const bodyTier  = new Map<number, number>(); // bodyId → tier
+  const bodyTier = new Map<number, number>(); // bodyId → tier
   const bodyGrace = new Map<number, number>(); // bodyId → frames of immunity remaining
 
   // Merge flashes — managed as a flat pool to avoid GC churn
@@ -63,7 +63,9 @@
   let scanlineCanvas: OffscreenCanvas | null = null;
 
   // ── Helpers ────────────────────────────────────────────────────────────────
-  function randTier() { return Math.floor(Math.random() * 4); }
+  function randTier() {
+    return Math.floor(Math.random() * 4);
+  }
 
   function makeCircleBody(x: number, y: number, tier: number, grace = GRACE_FRAMES): Matter.Body {
     const body = Matter.Bodies.circle(x, y, TIERS[tier].r, {
@@ -83,16 +85,13 @@
     gridCanvas = new OffscreenCanvas(CW, CH);
     const gCtx = gridCanvas.getContext('2d')!;
     gCtx.fillStyle = 'rgba(0,255,0,0.03)';
-    for (let gx = 0; gx < CW; gx += 18)
-      for (let gy = 0; gy < CH; gy += 18)
-        gCtx.fillRect(gx, gy, 1, 1);
+    for (let gx = 0; gx < CW; gx += 18) for (let gy = 0; gy < CH; gy += 18) gCtx.fillRect(gx, gy, 1, 1);
 
     // CRT scanlines
     scanlineCanvas = new OffscreenCanvas(CW, CH);
     const sCtx = scanlineCanvas.getContext('2d')!;
     sCtx.fillStyle = 'rgba(0,0,0,0.12)';
-    for (let sy = 0; sy < CH; sy += 4)
-      sCtx.fillRect(0, sy, CW, 1);
+    for (let sy = 0; sy < CH; sy += 4) sCtx.fillRect(0, sy, CW, 1);
   }
 
   function initWorld() {
@@ -124,10 +123,10 @@
   function resetGame() {
     destroyWorld();
     initWorld();
-    score       = 0;
-    cursorX     = CW / 2;
+    score = 0;
+    cursorX = CW / 2;
     currentTier = randTier();
-    gameState   = 'playing';
+    gameState = 'playing';
   }
 
   function dropCircle() {
@@ -195,7 +194,10 @@
       // Add flash — reuse pool slot if available
       if (flashCount < mergeFlashes.length) {
         const f = mergeFlashes[flashCount];
-        f.x = mx; f.y = my; f.tier = newTier; f.ttl = MERGE_FLASH_DURATION;
+        f.x = mx;
+        f.y = my;
+        f.tier = newTier;
+        f.ttl = MERGE_FLASH_DURATION;
       } else {
         mergeFlashes.push({ x: mx, y: my, tier: newTier, ttl: MERGE_FLASH_DURATION });
       }
@@ -236,7 +238,10 @@
     ctx.setLineDash([4, 6]);
     ctx.strokeStyle = 'rgba(239,68,68,0.45)';
     ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(0, DANGER_Y); ctx.lineTo(CW, DANGER_Y); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, DANGER_Y);
+    ctx.lineTo(CW, DANGER_Y);
+    ctx.stroke();
     ctx.setLineDash([]);
     ctx.restore();
 
@@ -244,18 +249,26 @@
     if (gameState === 'playing') {
       const def = TIERS[currentTier];
       ctx.save();
-      ctx.shadowColor = def.glow; ctx.shadowBlur = 14;
-      ctx.beginPath(); ctx.arc(cursorX, DROP_FROM + def.r, def.r, 0, TWO_PI);
-      ctx.strokeStyle = def.color + '55'; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.shadowColor = def.glow;
+      ctx.shadowBlur = 14;
+      ctx.beginPath();
+      ctx.arc(cursorX, DROP_FROM + def.r, def.r, 0, TWO_PI);
+      ctx.strokeStyle = def.color + '55';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
       ctx.setLineDash([3, 6]);
-      ctx.strokeStyle = def.color + '20'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(cursorX, DROP_FROM + def.r * 2); ctx.lineTo(cursorX, CH);
-      ctx.stroke(); ctx.setLineDash([]);
+      ctx.strokeStyle = def.color + '20';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(cursorX, DROP_FROM + def.r * 2);
+      ctx.lineTo(cursorX, CH);
+      ctx.stroke();
+      ctx.setLineDash([]);
       ctx.restore();
     }
 
     // Physics circles — batch setup to minimize save/restore calls
-    ctx.textAlign  = 'center';
+    ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
     for (let i = 0; i < dynamicBodies.length; i++) {
@@ -268,15 +281,20 @@
 
       // Glow + fill + stroke
       ctx.save();
-      ctx.shadowColor = def.glow; ctx.shadowBlur = 10;
-      ctx.beginPath(); ctx.arc(x, y, def.r, 0, TWO_PI);
-      ctx.fillStyle = TIER_FILL[tier]; ctx.fill();
-      ctx.strokeStyle = def.color; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.shadowColor = def.glow;
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.arc(x, y, def.r, 0, TWO_PI);
+      ctx.fillStyle = TIER_FILL[tier];
+      ctx.fill();
+      ctx.strokeStyle = def.color;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
       ctx.restore();
 
       // Label (no shadow needed — draw outside save/restore)
-      ctx.fillStyle  = 'rgba(0,0,0,0.8)';
-      ctx.font       = TIER_FONTS[tier];
+      ctx.fillStyle = 'rgba(0,0,0,0.8)';
+      ctx.font = TIER_FONTS[tier];
       ctx.fillText(TIER_LABELS[tier], x, y);
     }
 
@@ -287,9 +305,12 @@
       const t = f.ttl * INV_FLASH_DURATION;
       ctx.save();
       ctx.globalAlpha = t;
-      ctx.shadowColor = def.glow; ctx.shadowBlur = 28 * t;
-      ctx.strokeStyle = def.color; ctx.lineWidth = 2.5;
-      ctx.beginPath(); ctx.arc(f.x, f.y, def.r * (1.8 - t * 0.6), 0, TWO_PI);
+      ctx.shadowColor = def.glow;
+      ctx.shadowBlur = 28 * t;
+      ctx.strokeStyle = def.color;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, def.r * (1.8 - t * 0.6), 0, TWO_PI);
       ctx.stroke();
       ctx.restore();
     }
@@ -337,7 +358,10 @@
       if (score > highScore) highScore = score;
       gameState = 'over';
       draw(dynamicBodies);
-      if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
       return;
     }
     draw(dynamicBodies);
@@ -353,10 +377,13 @@
     rafId = requestAnimationFrame(loop);
     return {
       destroy() {
-        if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+        if (rafId) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
         gameCanvas = null;
         ctx = null;
-      }
+      },
     };
   }
 
@@ -371,13 +398,25 @@
   function onKeydown(e: KeyboardEvent) {
     if (gameState === 'playing') {
       const r = TIERS[currentTier].r;
-      if (e.key === 'ArrowLeft')  { e.preventDefault(); cursorX = Math.max(r, cursorX - 12); }
-      if (e.key === 'ArrowRight') { e.preventDefault(); cursorX = Math.min(CW - r, cursorX + 12); }
-      if (e.key === ' ' || e.key === 'ArrowDown') { e.preventDefault(); dropCircle(); }
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        cursorX = Math.max(r, cursorX - 12);
+      }
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        cursorX = Math.min(CW - r, cursorX + 12);
+      }
+      if (e.key === ' ' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        dropCircle();
+      }
     }
     if (e.key === 'r' || e.key === 'R') {
       e.preventDefault();
-      if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
       resetGame();
       if (gameCanvas) rafId = requestAnimationFrame(loop);
     }
@@ -403,48 +442,6 @@
   });
 </script>
 
-<style>
-  .egg-overlay {
-    animation: egg-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
-  @keyframes egg-in {
-    from { opacity: 0; transform: scale(0.95); }
-    to   { opacity: 1; transform: scale(1); }
-  }
-
-  .scanlines {
-    position: absolute;
-    inset: 0;
-    z-index: 1;
-    background: repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 2px,
-      rgba(0,0,0,0.18) 2px,
-      rgba(0,0,0,0.18) 4px
-    );
-    pointer-events: none;
-  }
-
-  .glitch-title {
-    animation: glitch-rgb 0.11s infinite alternate;
-  }
-  @keyframes glitch-rgb {
-    0%   { text-shadow:  2px 0 #ff003c, -2px 0 #00d4ff; }
-    100% { text-shadow: -2px 0 #ff003c,  2px 0 #00d4ff; }
-  }
-
-  .game-kbd {
-    font-family: monospace;
-    font-size: 10px;
-    padding: 1px 5px;
-    border-radius: 3px;
-    background: rgba(255,255,255,0.06);
-    border: 1px solid rgba(255,255,255,0.12);
-    color: rgba(255,255,255,0.5);
-  }
-</style>
-
 <div
   class="egg-overlay fixed inset-x-0 bottom-0 z-[9999] flex flex-col items-center justify-center bg-black/95 select-none"
   style="top: 36px"
@@ -456,9 +453,7 @@
 
   <!-- Header -->
   <div class="relative z-10 flex items-center gap-6 mb-3">
-    <p class="glitch-title font-black font-mono text-white tracking-[0.3em] uppercase text-lg">
-      SUIKA Blyat
-    </p>
+    <p class="glitch-title font-black font-mono text-white tracking-[0.3em] uppercase text-lg">SUIKA Blyat</p>
     <span class="text-white/20 font-mono text-[10px] tracking-widest">↑↑↓↓←→←→BA</span>
   </div>
 
@@ -498,6 +493,62 @@
 
   <!-- Decorative terminal chars -->
   <div class="relative z-10 flex gap-3 mt-4 font-mono text-white/[0.06] text-base pointer-events-none tracking-widest">
-    {#each ['█','▓','▒','░','▒','▓','█'] as c}<span>{c}</span>{/each}
+    {#each ['█', '▓', '▒', '░', '▒', '▓', '█'] as c}<span>{c}</span>{/each}
   </div>
 </div>
+
+<style>
+  .egg-overlay {
+    animation: egg-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  @keyframes egg-in {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .scanlines {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.18) 2px,
+      rgba(0, 0, 0, 0.18) 4px
+    );
+    pointer-events: none;
+  }
+
+  .glitch-title {
+    animation: glitch-rgb 0.11s infinite alternate;
+  }
+  @keyframes glitch-rgb {
+    0% {
+      text-shadow:
+        2px 0 #ff003c,
+        -2px 0 #00d4ff;
+    }
+    100% {
+      text-shadow:
+        -2px 0 #ff003c,
+        2px 0 #00d4ff;
+    }
+  }
+
+  .game-kbd {
+    font-family: monospace;
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.5);
+  }
+</style>

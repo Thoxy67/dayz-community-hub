@@ -10,7 +10,9 @@
   async function copyText(key: string, text: string) {
     await writeText(text);
     copiedKey = key;
-    setTimeout(() => { if (copiedKey === key) copiedKey = ''; }, 1500);
+    setTimeout(() => {
+      if (copiedKey === key) copiedKey = '';
+    }, 1500);
   }
 
   interface Props {
@@ -35,11 +37,24 @@
   }
 
   let {
-    mods, loading, checking, staleCount, steamApiKey,
-    onRefresh, onCheckUpdates, onDelete, onToggleManaged,
-    onUpdate, onUpdateAll, onUpdateStale, onCleanup,
-    onOpenWorkshopDir, onOpenModDir,
-    onDeleteSelected, onUpdateSelected, onInstallMods,
+    mods,
+    loading,
+    checking,
+    staleCount,
+    steamApiKey,
+    onRefresh,
+    onCheckUpdates,
+    onDelete,
+    onToggleManaged,
+    onUpdate,
+    onUpdateAll,
+    onUpdateStale,
+    onCleanup,
+    onOpenWorkshopDir,
+    onOpenModDir,
+    onDeleteSelected,
+    onUpdateSelected,
+    onInstallMods,
   }: Props = $props();
 
   // ── Manual install modal ───────────────────────────────────────────────────
@@ -68,14 +83,16 @@
   }
 
   /** Parsed, deduplicated IDs from the textarea (live derived). */
-  let parsedIds = $derived((() => {
-    const seen = new Set<number>();
-    for (const line of installInput.split(/[\n,]+/)) {
-      const id = parseOne(line);
-      if (id !== null) seen.add(id);
-    }
-    return [...seen];
-  })());
+  let parsedIds = $derived(
+    (() => {
+      const seen = new Set<number>();
+      for (const line of installInput.split(/[\n,]+/)) {
+        const id = parseOne(line);
+        if (id !== null) seen.add(id);
+      }
+      return [...seen];
+    })(),
+  );
 
   function submitInstall() {
     if (parsedIds.length === 0) {
@@ -124,21 +141,29 @@
     return _sortIcon(col, sortCol, sortAsc);
   }
 
-  let sorted = $derived((() => {
-    const arr = mods.slice();
-    const dir = sortAsc ? 1 : -1;
-    arr.sort((a, b) => {
-      switch (sortCol) {
-        case 'name':   return dir * a.name.localeCompare(b.name);
-        case 'id':     return dir * (a.id - b.id);
-        case 'size':   return dir * (a.size - b.size);
-        case 'local':  return dir * (a.local_updated - b.local_updated);
-        case 'remote': return dir * ((a.remote_updated ?? 0) - (b.remote_updated ?? 0));
-        default:       return 0;
-      }
-    });
-    return arr;
-  })());
+  let sorted = $derived(
+    (() => {
+      const arr = mods.slice();
+      const dir = sortAsc ? 1 : -1;
+      arr.sort((a, b) => {
+        switch (sortCol) {
+          case 'name':
+            return dir * a.name.localeCompare(b.name);
+          case 'id':
+            return dir * (a.id - b.id);
+          case 'size':
+            return dir * (a.size - b.size);
+          case 'local':
+            return dir * (a.local_updated - b.local_updated);
+          case 'remote':
+            return dir * ((a.remote_updated ?? 0) - (b.remote_updated ?? 0));
+          default:
+            return 0;
+        }
+      });
+      return arr;
+    })(),
+  );
 
   let totalSize = $derived(mods.reduce((acc, m) => acc + m.size, 0));
 
@@ -147,7 +172,8 @@
 
   function toggleSelect(id: number) {
     const next = new Set(selectedIds);
-    if (next.has(id)) next.delete(id); else next.add(id);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
     selectedIds = next;
   }
 
@@ -155,30 +181,30 @@
     if (selectedIds.size === sorted.length) {
       selectedIds = new Set();
     } else {
-      selectedIds = new Set(sorted.map(m => m.id));
+      selectedIds = new Set(sorted.map((m) => m.id));
     }
   }
 
   // Clear selection whenever mod list changes (e.g. after delete/refresh)
   $effect(() => {
-    const ids = new Set(mods.map(m => m.id));
-    const pruned = new Set([...selectedIds].filter(id => ids.has(id)));
+    const ids = new Set(mods.map((m) => m.id));
+    const pruned = new Set([...selectedIds].filter((id) => ids.has(id)));
     if (pruned.size !== selectedIds.size) selectedIds = pruned;
   });
 
-  let selectedMods = $derived(mods.filter(m => selectedIds.has(m.id)));
+  let selectedMods = $derived(mods.filter((m) => selectedIds.has(m.id)));
   let allSelected = $derived(sorted.length > 0 && selectedIds.size === sorted.length);
   let someSelected = $derived(selectedIds.size > 0 && !allSelected);
-  let selectedStaleCount = $derived(selectedMods.filter(m => m.update_available).length);
+  let selectedStaleCount = $derived(selectedMods.filter((m) => m.update_available).length);
   let selectedSize = $derived(selectedMods.reduce((acc, m) => acc + m.size, 0));
-  let selectedUnlinkedCount = $derived(selectedMods.filter(m => !m.managed).length);
-  let selectedLinkedCount = $derived(selectedMods.filter(m => m.managed).length);
+  let selectedUnlinkedCount = $derived(selectedMods.filter((m) => !m.managed).length);
+  let selectedLinkedCount = $derived(selectedMods.filter((m) => m.managed).length);
 
   let bulkLinking = $state(false);
 
   async function bulkToggleManaged(linkMode: boolean) {
     // linkMode=true → link unlinked mods; linkMode=false → unlink linked mods
-    const targets = selectedMods.filter(m => linkMode ? !m.managed : m.managed);
+    const targets = selectedMods.filter((m) => (linkMode ? !m.managed : m.managed));
     if (targets.length === 0) return;
     bulkLinking = true;
     try {
@@ -200,8 +226,11 @@
   function formatDate(ts: number): string {
     if (!ts) return '—';
     return new Date(ts * 1000).toLocaleString(undefined, {
-      year: 'numeric', month: 'short', day: 'numeric',
-      hour: '2-digit', minute: '2-digit',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     });
   }
 
@@ -211,7 +240,10 @@
 
   // Keep focusedIdx in bounds when the sorted list changes
   $effect(() => {
-    if (sorted.length === 0) { focusedIdx = -1; return; }
+    if (sorted.length === 0) {
+      focusedIdx = -1;
+      return;
+    }
     if (focusedIdx >= sorted.length) focusedIdx = sorted.length - 1;
   });
 
@@ -256,10 +288,8 @@
 </script>
 
 <div class="flex flex-col h-full overflow-hidden">
-
   <!-- ── Toolbar ─────────────────────────────────────────────────────────── -->
   <div class="flex items-center gap-2 px-3 py-2 bg-base-200 border-b border-base-300 flex-shrink-0">
-
     <!-- Stats -->
     <div class="flex items-center gap-3 text-xs text-base-content/50">
       <span class="flex items-center gap-1">
@@ -284,7 +314,6 @@
     </div>
 
     <div class="ml-auto flex items-center gap-1">
-
       <!-- Manual install -->
       <button
         class="btn btn-ghost btn-xs gap-1.5"
@@ -361,12 +390,7 @@
       <div class="w-px h-4 bg-base-300 mx-0.5"></div>
 
       <!-- Refresh -->
-      <button
-        class="btn btn-ghost btn-xs"
-        onclick={onRefresh}
-        disabled={loading}
-        title="Refresh mod list"
-      >
+      <button class="btn btn-ghost btn-xs" onclick={onRefresh} disabled={loading} title="Refresh mod list">
         {#if loading}
           <span class="loading loading-spinner loading-xs"></span>
         {:else}
@@ -402,7 +426,10 @@
     <div class="overflow-auto flex-1" bind:this={tableRef}>
       <table class="w-full text-xs" style="table-layout: fixed; border-collapse: collapse;">
         <thead class="sticky top-0 z-10">
-          <tr class="bg-base-200/95 backdrop-blur-sm text-base-content/50 uppercase tracking-wider border-b border-base-300 select-none" style="font-size:10px;">
+          <tr
+            class="bg-base-200/95 backdrop-blur-sm text-base-content/50 uppercase tracking-wider border-b border-base-300 select-none"
+            style="font-size:10px;"
+          >
             <!-- Select-all checkbox -->
             <th class="w-8 px-2 py-2 text-center">
               <input
@@ -414,24 +441,45 @@
                 title={allSelected ? 'Deselect all' : 'Select all'}
               />
             </th>
-            <th class="px-3 py-2 text-left font-medium cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('name')}>
+            <th
+              class="px-3 py-2 text-left font-medium cursor-pointer hover:text-base-content transition-colors"
+              onclick={() => toggleSort('name')}
+            >
               <span class="flex items-center gap-1">Name <Icon icon={sortIcon('name')} class="size-2.5" /></span>
             </th>
-            <th class="w-36 px-3 py-2 font-medium text-left cursor-pointer hover:text-info transition-colors" onclick={() => toggleSort('id')}>
+            <th
+              class="w-36 px-3 py-2 font-medium text-left cursor-pointer hover:text-info transition-colors"
+              onclick={() => toggleSort('id')}
+            >
               <span class="flex items-center gap-1">Workshop ID <Icon icon={sortIcon('id')} class="size-2.5" /></span>
             </th>
-            <th class="w-20 px-3 py-2 font-medium text-right cursor-pointer hover:text-secondary transition-colors" onclick={() => toggleSort('size')}>
-              <span class="flex items-center justify-end gap-1">Size <Icon icon={sortIcon('size')} class="size-2.5" /></span>
+            <th
+              class="w-20 px-3 py-2 font-medium text-right cursor-pointer hover:text-secondary transition-colors"
+              onclick={() => toggleSort('size')}
+            >
+              <span class="flex items-center justify-end gap-1"
+                >Size <Icon icon={sortIcon('size')} class="size-2.5" /></span
+              >
             </th>
-            <th class="w-40 px-3 py-2 font-medium text-left cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('local')}>
+            <th
+              class="w-40 px-3 py-2 font-medium text-left cursor-pointer hover:text-base-content transition-colors"
+              onclick={() => toggleSort('local')}
+            >
               <span class="flex items-center gap-1">Local <Icon icon={sortIcon('local')} class="size-2.5" /></span>
             </th>
             {#if canCheckUpdates}
-              <th class="w-40 px-3 py-2 font-medium text-left cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('remote')}>
+              <th
+                class="w-40 px-3 py-2 font-medium text-left cursor-pointer hover:text-base-content transition-colors"
+                onclick={() => toggleSort('remote')}
+              >
                 <span class="flex items-center gap-1">Remote <Icon icon={sortIcon('remote')} class="size-2.5" /></span>
               </th>
             {/if}
-            <th class="w-16 px-3 py-2 font-medium text-center" title="UPDATE = new version on Workshop; OK = up to date; LINKED = symlink active; UNLINKED = no symlink">Status</th>
+            <th
+              class="w-16 px-3 py-2 font-medium text-center"
+              title="UPDATE = new version on Workshop; OK = up to date; LINKED = symlink active; UNLINKED = no symlink"
+              >Status</th
+            >
             <th class="w-24 px-3 py-2"></th>
           </tr>
         </thead>
@@ -445,12 +493,17 @@
                      {stale ? 'bg-warning/5' : ''}
                      {selected ? 'bg-primary/8 hover:bg-primary/12' : ''}
                      {focused ? 'outline outline-1 outline-primary/60 outline-offset-[-1px]' : ''}"
-              onclick={() => focusedIdx = idx}
+              onclick={() => (focusedIdx = idx)}
               ondblclick={() => onOpenModDir(mod)}
             >
-
               <!-- Checkbox -->
-              <td class="px-2 py-2 text-center" onclick={(e) => { e.stopPropagation(); toggleSelect(mod.id); }}>
+              <td
+                class="px-2 py-2 text-center"
+                onclick={(e) => {
+                  e.stopPropagation();
+                  toggleSelect(mod.id);
+                }}
+              >
                 <input
                   type="checkbox"
                   class="checkbox checkbox-xs"
@@ -468,7 +521,9 @@
                       <Icon icon="ph:arrow-circle-up" class="size-3.5 text-warning shrink-0" />
                     </span>
                   {:else if mod.remote_updated !== null}
-                    <span title="Up to date"><Icon icon="ph:check-circle" class="size-3.5 text-success/60 shrink-0" /></span>
+                    <span title="Up to date"
+                      ><Icon icon="ph:check-circle" class="size-3.5 text-success/60 shrink-0" /></span
+                    >
                   {:else if mod.managed}
                     <span title="Managed"><Icon icon="ph:link-simple" class="size-3.5 text-info/40 shrink-0" /></span>
                   {:else}
@@ -518,7 +573,11 @@
               <td class="px-3 py-2 text-right tabular-nums text-secondary/60">{mod.size_human}</td>
 
               <!-- Local updated -->
-              <td class="px-3 py-2 {mod.remote_updated && mod.local_updated < mod.remote_updated ? 'text-base-content/40' : 'text-base-content/70'}">{formatDate(mod.local_updated)}</td>
+              <td
+                class="px-3 py-2 {mod.remote_updated && mod.local_updated < mod.remote_updated
+                  ? 'text-base-content/40'
+                  : 'text-base-content/70'}">{formatDate(mod.local_updated)}</td
+              >
 
               <!-- Remote updated — only shown when Steam API key is set -->
               {#if canCheckUpdates}
@@ -526,7 +585,13 @@
                   {#if checking}
                     <span class="text-base-content/25">…</span>
                   {:else if mod.remote_updated}
-                    <span class="{stale ? 'text-warning font-medium' : mod.local_updated < mod.remote_updated ? 'text-base-content/70' : 'text-base-content/40'}">
+                    <span
+                      class={stale
+                        ? 'text-warning font-medium'
+                        : mod.local_updated < mod.remote_updated
+                          ? 'text-base-content/70'
+                          : 'text-base-content/40'}
+                    >
                       {formatDate(mod.remote_updated)}
                     </span>
                   {:else}
@@ -538,22 +603,34 @@
               <!-- Status badge -->
               <td class="px-3 py-2 text-center">
                 {#if canCheckUpdates && stale}
-                  <span class="inline-flex items-center gap-0.5 text-warning font-semibold rounded-md px-1.5 py-0.5 bg-warning/15" style="font-size:9px;">
+                  <span
+                    class="inline-flex items-center gap-0.5 text-warning font-semibold rounded-md px-1.5 py-0.5 bg-warning/15"
+                    style="font-size:9px;"
+                  >
                     <Icon icon="ph:arrow-circle-up" class="size-2.5" />
                     UPDATE
                   </span>
                 {:else if canCheckUpdates && mod.remote_updated !== null}
-                  <span class="inline-flex items-center gap-0.5 text-success/80 font-semibold rounded-md px-1.5 py-0.5 bg-success/10" style="font-size:9px;">
+                  <span
+                    class="inline-flex items-center gap-0.5 text-success/80 font-semibold rounded-md px-1.5 py-0.5 bg-success/10"
+                    style="font-size:9px;"
+                  >
                     <Icon icon="ph:check-circle" class="size-2.5" />
                     OK
                   </span>
                 {:else if mod.managed}
-                  <span class="inline-flex items-center gap-0.5 text-info/70 font-semibold rounded-md px-1.5 py-0.5 bg-info/10" style="font-size:9px;">
+                  <span
+                    class="inline-flex items-center gap-0.5 text-info/70 font-semibold rounded-md px-1.5 py-0.5 bg-info/10"
+                    style="font-size:9px;"
+                  >
                     <Icon icon="ph:link-simple" class="size-2.5" />
                     LINKED
                   </span>
                 {:else}
-                  <span class="inline-flex items-center gap-0.5 text-base-content/30 font-medium rounded-md px-1.5 py-0.5 bg-base-300/30" style="font-size:9px;">
+                  <span
+                    class="inline-flex items-center gap-0.5 text-base-content/30 font-medium rounded-md px-1.5 py-0.5 bg-base-300/30"
+                    style="font-size:9px;"
+                  >
                     <Icon icon="ph:link-simple-break" class="size-2.5" />
                     UNLINKED
                   </span>
@@ -567,8 +644,8 @@
                   <button
                     class="size-6 rounded flex items-center justify-center transition-colors
                            {stale
-                             ? 'text-warning hover:bg-warning/15'
-                             : 'text-base-content/35 hover:bg-base-300 hover:text-base-content/70'}"
+                      ? 'text-warning hover:bg-warning/15'
+                      : 'text-base-content/35 hover:bg-base-300 hover:text-base-content/70'}"
                     title={stale ? 'Update available — click to update' : 'Force re-validate via steamcmd'}
                     onclick={() => onUpdate(mod)}
                   >
@@ -578,13 +655,14 @@
                   <button
                     class="size-6 rounded flex items-center justify-center transition-colors
                            {mod.managed
-                             ? 'text-info/70 hover:bg-info/10'
-                             : 'text-base-content/30 hover:bg-base-300 hover:text-base-content/60'}
+                      ? 'text-info/70 hover:bg-info/10'
+                      : 'text-base-content/30 hover:bg-base-300 hover:text-base-content/60'}
                            {togglingIds.has(mod.id) ? 'opacity-60 pointer-events-none' : ''}"
-                    title={togglingIds.has(mod.id) ? 'Updating…' : mod.managed
-                      ? 'Linked: symlink active — this mod is loaded when connecting to modded servers. Click to remove the symlink.'
-                      : 'Unlinked: no symlink — this mod is installed but won\'t be loaded. Click to create a symlink so it is included in server connections.'
-                    }
+                    title={togglingIds.has(mod.id)
+                      ? 'Updating…'
+                      : mod.managed
+                        ? 'Linked: symlink active — this mod is loaded when connecting to modded servers. Click to remove the symlink.'
+                        : "Unlinked: no symlink — this mod is installed but won't be loaded. Click to create a symlink so it is included in server connections."}
                     onclick={() => handleToggleManaged(mod)}
                     disabled={togglingIds.has(mod.id)}
                   >
@@ -617,7 +695,9 @@
     <div
       class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onclick={closeInstallModal}
-      onkeydown={(e) => { if (e.key === 'Escape') closeInstallModal(); }}
+      onkeydown={(e) => {
+        if (e.key === 'Escape') closeInstallModal();
+      }}
       role="dialog"
       tabindex="-1"
       aria-modal="true"
@@ -660,7 +740,7 @@
               id="install-mod-input"
               class="textarea textarea-bordered w-full font-mono text-xs leading-relaxed resize-none h-32
                      {installError ? 'textarea-error' : ''}"
-              placeholder={"1559212036\n2116157322\nhttps://steamcommunity.com/sharedfiles/filedetails/?id=1564026768"}
+              placeholder={'1559212036\n2116157322\nhttps://steamcommunity.com/sharedfiles/filedetails/?id=1564026768'}
               bind:value={installInput}
               onkeydown={handleInstallKeydown}
               autofocus
@@ -694,11 +774,7 @@
         <!-- Footer -->
         <div class="px-5 py-4 bg-base-200/50 border-t border-base-300 flex gap-2 justify-end">
           <button class="btn btn-ghost btn-sm" onclick={closeInstallModal}>Cancel</button>
-          <button
-            class="btn btn-primary btn-sm gap-1.5"
-            onclick={submitInstall}
-            disabled={parsedIds.length === 0}
-          >
+          <button class="btn btn-primary btn-sm gap-1.5" onclick={submitInstall} disabled={parsedIds.length === 0}>
             <Icon icon="ph:download-simple" class="size-4" />
             Install {parsedIds.length > 1 ? `${parsedIds.length} mods` : 'mod'}
           </button>
@@ -710,7 +786,6 @@
   <!-- ── Selection footer ───────────────────────────────────────────────── -->
   {#if selectedIds.size > 0}
     <div class="flex items-center gap-3 px-4 py-2.5 bg-base-200 border-t-2 border-primary/40 flex-shrink-0 text-xs">
-
       <!-- Selection summary -->
       <div class="flex items-center gap-2 text-base-content/70">
         <Icon icon="ph:selection-all" class="size-4 text-primary/70" />
@@ -728,12 +803,11 @@
       </div>
 
       <div class="flex items-center gap-1.5 ml-auto">
-
         <!-- Update selected (only if any are stale) -->
         {#if selectedStaleCount > 0}
           <button
             class="btn btn-warning btn-xs gap-1.5"
-            onclick={() => onUpdateSelected(selectedMods.filter(m => m.update_available).map(m => m.id))}
+            onclick={() => onUpdateSelected(selectedMods.filter((m) => m.update_available).map((m) => m.id))}
             disabled={loading}
             title="Update {selectedStaleCount} selected mod{selectedStaleCount > 1 ? 's' : ''} with available updates"
           >
@@ -745,7 +819,7 @@
         <!-- Update all selected -->
         <button
           class="btn btn-ghost btn-xs gap-1.5"
-          onclick={() => onUpdateSelected(selectedMods.map(m => m.id))}
+          onclick={() => onUpdateSelected(selectedMods.map((m) => m.id))}
           disabled={loading}
           title="Force re-validate {selectedIds.size} selected mod{selectedIds.size > 1 ? 's' : ''} via steamcmd"
         >
@@ -761,7 +835,9 @@
             class="btn btn-ghost btn-xs gap-1.5 text-info/70 hover:text-info hover:bg-info/10"
             onclick={() => bulkToggleManaged(true)}
             disabled={loading || bulkLinking}
-            title="Link {selectedUnlinkedCount} mod{selectedUnlinkedCount > 1 ? 's' : ''} — create symlinks so they are loaded when connecting to servers"
+            title="Link {selectedUnlinkedCount} mod{selectedUnlinkedCount > 1
+              ? 's'
+              : ''} — create symlinks so they are loaded when connecting to servers"
           >
             {#if bulkLinking}
               <span class="loading loading-spinner loading-xs"></span>
@@ -778,7 +854,9 @@
             class="btn btn-ghost btn-xs gap-1.5 text-base-content/50 hover:text-base-content/80 hover:bg-base-300/50"
             onclick={() => bulkToggleManaged(false)}
             disabled={loading || bulkLinking}
-            title="Unlink {selectedLinkedCount} mod{selectedLinkedCount > 1 ? 's' : ''} — remove symlinks so they won't be loaded"
+            title="Unlink {selectedLinkedCount} mod{selectedLinkedCount > 1
+              ? 's'
+              : ''} — remove symlinks so they won't be loaded"
           >
             {#if bulkLinking}
               <span class="loading loading-spinner loading-xs"></span>
@@ -794,7 +872,7 @@
         <!-- Delete selected -->
         <button
           class="btn btn-ghost btn-xs gap-1.5 text-error/70 hover:text-error hover:bg-error/10"
-          onclick={() => onDeleteSelected(selectedMods.map(m => m.id))}
+          onclick={() => onDeleteSelected(selectedMods.map((m) => m.id))}
           disabled={loading}
           title="Delete {selectedIds.size} selected mod{selectedIds.size > 1 ? 's' : ''}"
         >
@@ -807,15 +885,15 @@
         <!-- Dismiss -->
         <button
           class="btn btn-ghost btn-xs gap-1 text-base-content/40 hover:text-base-content/70"
-          onclick={() => { selectedIds = new Set(); }}
+          onclick={() => {
+            selectedIds = new Set();
+          }}
           title="Clear selection"
         >
           <Icon icon="ph:x" class="size-3.5" />
           Clear
         </button>
-
       </div>
     </div>
   {/if}
-
 </div>

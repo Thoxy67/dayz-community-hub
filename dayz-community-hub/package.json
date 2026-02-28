@@ -1,7 +1,7 @@
 {
   "name": "dayz-community-hub",
   "version": "0.3.2",
-  "description": "",
+  "description": "Server browser & mod manager for DayZ Standalone",
   "type": "module",
   "scripts": {
     "dev": "vite dev",
@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "format": "prettier --write 'src/**/*.{ts,svelte}'",
+    "format:check": "prettier --check 'src/**/*.{ts,svelte}'",
     "tauri": "tauri"
   },
   "license": "MIT",
@@ -33,6 +35,8 @@
     "@sveltejs/kit": "^2.53.3",
     "@sveltejs/vite-plugin-svelte": "^5.1.1",
     "@tauri-apps/cli": "^2.10.0",
+    "prettier": "^3.8.1",
+    "prettier-plugin-svelte": "^3.5.0",
     "svelte": "^5.53.5",
     "svelte-check": "^4.4.4",
     "typescript": "~5.6.3",

@@ -30,8 +30,7 @@ pub(crate) async fn fetch_battlemetrics_server(
     let client = insecure_client();
 
     let search_url = format!(
-        "https://api.battlemetrics.com/servers?filter[game]=dayz&filter[search]={ip}:{port}\
-         &fields[server]=name,rank,status,country,ip,port,details&page[size]=5"
+        "https://api.battlemetrics.com/servers?filter[game]=dayz&filter[search]={ip}:{port}&page[size]=5"
     );
     let search_resp = client
         .get(&search_url)
@@ -64,9 +63,28 @@ pub(crate) async fn fetch_battlemetrics_server(
     let rank = attrs["rank"].as_i64();
     let status = attrs["status"].as_str().unwrap_or("unknown").to_string();
     let country = attrs["country"].as_str().map(|s| s.to_string());
+    // BattleMetrics may return location as GeoJSON: {"type":"Point","coordinates":[lon,lat]}
+    // or as a direct array [lon, lat] - handle both formats
+    let location: Option<(f64, f64)> = attrs["location"]["coordinates"]
+        .as_array()
+        .or_else(|| attrs["location"].as_array())
+        .and_then(|arr| {
+            let lon = arr.get(0)?.as_f64()?;
+            let lat = arr.get(1)?.as_f64()?;
+            Some((lon, lat))
+        });
     let uptime = attrs["details"]["uptime"]
         .as_f64()
         .or_else(|| attrs["details"]["uptime30"].as_f64());
+
+    // New fields
+    let private = attrs["private"].as_bool();
+    let official = attrs["official"].as_bool();
+    let third_person = attrs["details"]["third_person"].as_bool();
+    let modded = attrs["details"]["modded"].as_bool();
+    let query_status = attrs["queryStatus"].as_str().map(|s| s.to_string());
+    let server_steam_id = attrs["serverSteamId"].as_str().map(|s| s.to_string());
+    let created_at = attrs["createdAt"].as_str().map(|s| s.to_string());
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -105,7 +123,15 @@ pub(crate) async fn fetch_battlemetrics_server(
         rank,
         status,
         country,
+        location,
         uptime,
+        private,
+        official,
+        third_person,
+        modded,
+        query_status,
+        server_steam_id,
+        created_at,
         player_history,
     };
 

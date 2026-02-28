@@ -169,9 +169,10 @@ impl ServerList {
 
     /// Find all servers matching an IP address.
     pub fn find_servers_by_ip(&self, ip: &str) -> Vec<&Server> {
+        let ip = ip.trim();
         self.result
             .iter()
-            .filter(|s| s.endpoint.ip.trim() == ip.trim())
+            .filter(|s| s.endpoint.ip.trim() == ip)
             .collect()
     }
 

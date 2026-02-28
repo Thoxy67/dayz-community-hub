@@ -30,8 +30,7 @@ export type DownloadEvent =
   | { event: 'Started'; data: { contentLength: number | null } }
   | { event: 'Progress'; data: { chunkLength: number } }
   | { event: 'Finished' };
-export type UpdateState =
-  | 'idle' | 'checking' | 'up_to_date' | 'available' | 'downloading' | 'done' | 'error';
+export type UpdateState = 'idle' | 'checking' | 'up_to_date' | 'available' | 'downloading' | 'done' | 'error';
 
 // ── Constants ────────────────────────────────────────────────────────────
 export const MOD_UPDATES_TTL_MS = 5 * 60 * 1000;
@@ -128,7 +127,9 @@ class AppState {
     this.statusKind = kind;
     if (this.statusTimeout) clearTimeout(this.statusTimeout);
     if (kind !== 'error') {
-      this.statusTimeout = setTimeout(() => { this.statusMessage = ''; }, 5000);
+      this.statusTimeout = setTimeout(() => {
+        this.statusMessage = '';
+      }, 5000);
     }
   }
 

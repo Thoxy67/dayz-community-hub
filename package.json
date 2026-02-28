@@ -1,0 +1,17 @@
+{
+  "name": "a2sdayz",
+  "version": "0.3.2",
+  "description": "DayZ Community Hub - Server browser & mod manager for DayZ Standalone",
+  "private": true,
+  "scripts": {
+    "dev": "cd dayz-community-hub && bun run dev",
+    "build": "cd dayz-community-hub && bun run build",
+    "preview": "cd dayz-community-hub && bun run preview",
+    "check": "cd dayz-community-hub && bun run check",
+    "check:watch": "cd dayz-community-hub && bun run check:watch",
+    "tauri": "cd dayz-community-hub && bun run tauri",
+    "tauri:dev": "cd dayz-community-hub && bun run tauri dev",
+    "tauri:build": "cd dayz-community-hub && bun run tauri build",
+    "i": "cd dayz-community-hub && bun install"
+  }
+}

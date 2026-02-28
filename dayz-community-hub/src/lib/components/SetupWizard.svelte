@@ -25,29 +25,31 @@
   let saveError = $state('');
 
   // ── Form fields ────────────────────────────────────────────────────────────
-  let playerName   = $state('');
-  let steamRoot    = $state('');
-  let steamLogin   = $state('');
-  let steamPass    = $state('');
-  let showPass     = $state(false);
-  let steamApiKey         = $state('');
-  let steamId             = $state('');
-  let steamcmdPath        = $state('');
+  let playerName = $state('');
+  let steamRoot = $state('');
+  let steamLogin = $state('');
+  let steamPass = $state('');
+  let showPass = $state(false);
+  let steamApiKey = $state('');
+  let steamId = $state('');
+  let steamcmdPath = $state('');
   let battlemetricsApiKey = $state('');
 
   // ── SteamCMD detection state ────────────────────────────────────────────────
   type SteamcmdStatus = { found: boolean; path: string | null; platform: string };
-  let steamcmdStatus   = $state<SteamcmdStatus | null>(null);
-  let detectingCmd     = $state(false);
-  let downloadingCmd   = $state(false);
-  let downloadError    = $state('');
+  let steamcmdStatus = $state<SteamcmdStatus | null>(null);
+  let detectingCmd = $state(false);
+  let downloadingCmd = $state(false);
+  let downloadError = $state('');
   let unlistenSteamcmd: (() => void) | null = null;
 
   // ── Validation ─────────────────────────────────────────────────────────────
   let steamLoginValid = $derived(steamLogin.trim().length > 0);
 
   // ── Navigation ─────────────────────────────────────────────────────────────
-  function stepIndex(s: Step) { return STEPS.indexOf(s); }
+  function stepIndex(s: Step) {
+    return STEPS.indexOf(s);
+  }
   let currentIndex = $derived(stepIndex(currentStep));
 
   async function next() {
@@ -98,7 +100,9 @@
         steamcmdPath = payload.path;
         stopRescan();
       }
-    }).then((fn) => { unlistenSteamcmd = fn; });
+    }).then((fn) => {
+      unlistenSteamcmd = fn;
+    });
     invoke('watch_steamcmd').catch(() => {});
   }
 
@@ -136,9 +140,7 @@
     const selected = await openDialog({
       multiple: false,
       title: 'Select steamcmd binary',
-      filters: isWindows
-        ? [{ name: 'SteamCMD', extensions: ['exe'] }]
-        : [],
+      filters: isWindows ? [{ name: 'SteamCMD', extensions: ['exe'] }] : [],
     });
     if (selected) {
       steamcmdPath = typeof selected === 'string' ? selected : selected[0];
@@ -160,7 +162,10 @@
         title: 'Import DayZ Community Hub profile',
         filters: [{ name: 'DayZ Community Hub profile', extensions: ['dchub'] }],
       });
-      if (!selected) { importing = false; return; }
+      if (!selected) {
+        importing = false;
+        return;
+      }
       const path = typeof selected === 'string' ? selected : selected[0];
       await invoke('import_profile', { path });
       onDone();
@@ -176,14 +181,14 @@
     saveError = '';
     try {
       await invoke('save_profile_settings', {
-        player:                playerName.trim()            || null,
-        steamLogin:            steamLogin.trim()            || null,
-        steamPassword:         steamPass                    || null,
-        steamRoot:             steamRoot.trim()             || null,
-        steamcmdPath:          steamcmdPath.trim()          || null,
-        steamApiKey:           steamApiKey.trim()           || null,
-        steamId:               steamId.trim()               || null,
-        battlemetricsApiKey:   battlemetricsApiKey.trim()   || null,
+        player: playerName.trim() || null,
+        steamLogin: steamLogin.trim() || null,
+        steamPassword: steamPass || null,
+        steamRoot: steamRoot.trim() || null,
+        steamcmdPath: steamcmdPath.trim() || null,
+        steamApiKey: steamApiKey.trim() || null,
+        steamId: steamId.trim() || null,
+        battlemetricsApiKey: battlemetricsApiKey.trim() || null,
         steamcmdEnabled: true,
       });
       onDone();
@@ -195,20 +200,21 @@
 
   // ── Derived helpers ────────────────────────────────────────────────────────
   let isWindows = $derived(steamcmdStatus?.platform === 'windows');
-  let isLinux   = $derived(steamcmdStatus?.platform === 'linux');
-  let cmdFound  = $derived(steamcmdStatus?.found === true);
+  let isLinux = $derived(steamcmdStatus?.platform === 'linux');
+  let cmdFound = $derived(steamcmdStatus?.found === true);
 </script>
 
 <!-- Overlay starts below the titlebar (top: 36px = h-9) so the titlebar
      remains fully interactive (drag, minimize, maximize, close) during setup. -->
 <div class="fixed inset-0 z-50 bg-base-300/80 backdrop-blur-sm flex items-center justify-center p-4" style="top: 36px;">
-  <div class="w-full max-w-lg bg-base-100 rounded-2xl shadow-2xl border border-base-300 overflow-hidden flex flex-col max-h-[calc(100vh-36px-2rem)]">
-
+  <div
+    class="w-full max-w-lg bg-base-100 rounded-2xl shadow-2xl border border-base-300 overflow-hidden flex flex-col max-h-[calc(100vh-36px-2rem)]"
+  >
     <!-- Progress bar -->
     <div class="h-1 bg-base-300 shrink-0">
       <div
         class="h-full bg-primary transition-all duration-500 ease-out"
-        style="width: {((currentIndex) / (STEPS.length - 1)) * 100}%"
+        style="width: {(currentIndex / (STEPS.length - 1)) * 100}%"
       ></div>
     </div>
 
@@ -216,10 +222,14 @@
     <div class="flex items-center justify-center gap-2 pt-5 pb-1 px-6 shrink-0">
       {#each STEPS as step, i}
         <div class="flex items-center gap-2">
-          <div class="size-6 rounded-full flex items-center justify-center text-xs font-bold transition-all
-            {i < currentIndex ? 'bg-primary text-primary-content' :
-             i === currentIndex ? 'bg-primary text-primary-content ring-2 ring-primary ring-offset-2 ring-offset-base-100' :
-             'bg-base-300 text-base-content/40'}">
+          <div
+            class="size-6 rounded-full flex items-center justify-center text-xs font-bold transition-all
+            {i < currentIndex
+              ? 'bg-primary text-primary-content'
+              : i === currentIndex
+                ? 'bg-primary text-primary-content ring-2 ring-primary ring-offset-2 ring-offset-base-100'
+                : 'bg-base-300 text-base-content/40'}"
+          >
             {#if i < currentIndex}
               <Icon icon="ph:check-bold" class="size-3" />
             {:else}
@@ -235,7 +245,6 @@
 
     <!-- Step content -->
     <div class="flex-1 px-8 py-6 overflow-y-auto min-h-0">
-
       <!-- ── Step 1: Welcome ─────────────────────────────────────────────── -->
       {#if currentStep === 'welcome'}
         <div class="text-center space-y-4">
@@ -245,12 +254,7 @@
             <p class="text-sm text-base-content/50 mt-1">A server browser and mod manager for DayZ Standalone</p>
           </div>
           <div class="bg-base-200/60 rounded-xl border border-base-300/60 text-left divide-y divide-base-300/50 mt-4">
-            {#each [
-              { icon: 'ph:magnifying-glass', text: 'Browse thousands of live servers' },
-              { icon: 'ph:puzzle-piece', text: 'Manage and update your mods via SteamCMD' },
-              { icon: 'ph:star', text: 'Keep favorites and connection history' },
-              { icon: 'ph:rocket-launch', text: 'Launch DayZ directly with one click' },
-            ] as item}
+            {#each [{ icon: 'ph:magnifying-glass', text: 'Browse thousands of live servers' }, { icon: 'ph:puzzle-piece', text: 'Manage and update your mods via SteamCMD' }, { icon: 'ph:star', text: 'Keep favorites and connection history' }, { icon: 'ph:rocket-launch', text: 'Launch DayZ directly with one click' }] as item}
               <div class="flex items-center gap-3 px-4 py-2.5">
                 <Icon icon={item.icon} class="size-4 text-primary shrink-0" />
                 <span class="text-sm text-base-content/70">{item.text}</span>
@@ -262,21 +266,26 @@
           </p>
         </div>
 
-      <!-- ── Step 2: SteamCMD ────────────────────────────────────────────── -->
+        <!-- ── Step 2: SteamCMD ────────────────────────────────────────────── -->
       {:else if currentStep === 'steamcmd'}
         <div class="space-y-5">
           <div>
             <h2 class="text-base font-semibold text-base-content">SteamCMD</h2>
-            <p class="text-xs text-base-content/50 mt-0.5">Required to download and update DayZ mods from the Steam Workshop.</p>
+            <p class="text-xs text-base-content/50 mt-0.5">
+              Required to download and update DayZ mods from the Steam Workshop.
+            </p>
           </div>
 
           <!-- Detection status banner -->
-          <div class="rounded-xl border overflow-hidden
-            {cmdFound ? 'border-success/40 bg-success/8' : 'border-base-300/60 bg-base-200/40'}">
-
+          <div
+            class="rounded-xl border overflow-hidden
+            {cmdFound ? 'border-success/40 bg-success/8' : 'border-base-300/60 bg-base-200/40'}"
+          >
             <!-- Header row -->
-            <div class="flex items-center gap-2 px-4 py-3
-              {cmdFound ? 'border-b border-success/20' : ''}">
+            <div
+              class="flex items-center gap-2 px-4 py-3
+              {cmdFound ? 'border-b border-success/20' : ''}"
+            >
               {#if detectingCmd}
                 <span class="loading loading-ring loading-sm text-primary"></span>
                 <span class="text-xs text-base-content/50">Detecting SteamCMD…</span>
@@ -294,18 +303,15 @@
 
             <!-- Platform-specific install instructions (only when not found) -->
             {#if !detectingCmd && !cmdFound}
-
               <!-- ── Linux: package manager commands ── -->
               {#if isLinux}
                 <div class="px-4 py-3 space-y-3 border-t border-base-300/40">
                   <p class="text-xs text-base-content/60">Install SteamCMD with your package manager:</p>
                   <div class="rounded-lg border border-base-300/50 overflow-hidden divide-y divide-base-300/40">
-                    {#each [
-                      { icon: 'simple-icons:archlinux', label: 'Arch / Manjaro',  cmd: 'yay -S steamcmd' },
-                      { icon: 'simple-icons:debian',    label: 'Debian / Ubuntu', cmd: 'sudo apt install steamcmd' },
-                      { icon: 'simple-icons:fedora',    label: 'Fedora / RHEL',   cmd: 'sudo dnf install steamcmd' },
-                    ] as row}
-                      <div class="flex items-center gap-2.5 px-3 py-2 bg-base-300/20 hover:bg-base-300/40 transition-colors">
+                    {#each [{ icon: 'simple-icons:archlinux', label: 'Arch / Manjaro', cmd: 'yay -S steamcmd' }, { icon: 'simple-icons:debian', label: 'Debian / Ubuntu', cmd: 'sudo apt install steamcmd' }, { icon: 'simple-icons:fedora', label: 'Fedora / RHEL', cmd: 'sudo dnf install steamcmd' }] as row}
+                      <div
+                        class="flex items-center gap-2.5 px-3 py-2 bg-base-300/20 hover:bg-base-300/40 transition-colors"
+                      >
                         <Icon icon={row.icon} class="size-3.5 text-base-content/30 shrink-0" />
                         <span class="text-xs text-base-content/50 shrink-0 w-28">{row.label}</span>
                         <code class="text-xs text-primary font-mono ml-auto">{row.cmd}</code>
@@ -318,7 +324,7 @@
                   </div>
                 </div>
 
-              <!-- ── Windows: auto-download or browse ── -->
+                <!-- ── Windows: auto-download or browse ── -->
               {:else if isWindows}
                 <div class="px-4 py-3 space-y-3 border-t border-base-300/40">
                   <p class="text-xs text-base-content/60">
@@ -326,7 +332,9 @@
                   </p>
 
                   {#if downloadError}
-                    <div class="flex items-start gap-2 rounded-lg bg-error/10 border border-error/25 px-3 py-2 text-xs text-error">
+                    <div
+                      class="flex items-start gap-2 rounded-lg bg-error/10 border border-error/25 px-3 py-2 text-xs text-error"
+                    >
                       <Icon icon="ph:warning-circle" class="size-4 shrink-0 mt-0.5" />
                       <span>{downloadError}</span>
                     </div>
@@ -358,16 +366,12 @@
                   </div>
 
                   <!-- Browse for existing -->
-                  <button
-                    class="btn btn-ghost btn-sm w-full gap-2"
-                    onclick={browseSteamcmd}
-                  >
+                  <button class="btn btn-ghost btn-sm w-full gap-2" onclick={browseSteamcmd}>
                     <Icon icon="ph:folder-open" class="size-4" />
                     Browse for steamcmd.exe
                   </button>
                 </div>
               {/if}
-
             {/if}
           </div>
 
@@ -431,7 +435,7 @@
           </div>
         </div>
 
-      <!-- ── Step 3: Configure ───────────────────────────────────────────── -->
+        <!-- ── Step 3: Configure ───────────────────────────────────────────── -->
       {:else if currentStep === 'configure'}
         <div class="space-y-5">
           <div>
@@ -456,7 +460,9 @@
                 <input
                   id="wiz-login"
                   type="text"
-                  class="input input-bordered input-xs font-mono {!steamLoginValid && steamLogin.length > 0 ? 'input-error' : ''}"
+                  class="input input-bordered input-xs font-mono {!steamLoginValid && steamLogin.length > 0
+                    ? 'input-error'
+                    : ''}"
                   placeholder="Steam username"
                   bind:value={steamLogin}
                 />
@@ -517,7 +523,9 @@
               bind:value={playerName}
             />
             <p class="label py-0 pt-1">
-              <span class="label-text-alt text-base-content/40">Passed as <span class="font-mono">-name=</span> to DayZ.</span>
+              <span class="label-text-alt text-base-content/40"
+                >Passed as <span class="font-mono">-name=</span> to DayZ.</span
+              >
             </p>
           </div>
 
@@ -535,19 +543,38 @@
               <label class="label py-0 pb-1" for="wiz-apikey">
                 <span class="label-text text-xs text-base-content/50 flex items-center gap-1">
                   API Key
-                  <button class="text-primary hover:underline ml-1" onclick={() => openUrl('https://steamcommunity.com/dev/apikey')}>steamcommunity.com/dev/apikey</button>
+                  <button
+                    class="text-primary hover:underline ml-1"
+                    onclick={() => openUrl('https://steamcommunity.com/dev/apikey')}
+                    >steamcommunity.com/dev/apikey</button
+                  >
                 </span>
               </label>
-              <input id="wiz-apikey" type="text" class="input input-bordered input-xs font-mono" placeholder="32-character hex key" bind:value={steamApiKey} />
+              <input
+                id="wiz-apikey"
+                type="text"
+                class="input input-bordered input-xs font-mono"
+                placeholder="32-character hex key"
+                bind:value={steamApiKey}
+              />
             </div>
             <div class="form-control">
               <label class="label py-0 pb-1" for="wiz-steamid">
                 <span class="label-text text-xs text-base-content/50 flex items-center gap-1">
                   Steam ID (64-bit)
-                  <button class="text-primary hover:underline ml-1" onclick={() => openUrl('https://steamdb.info/calculator/')}>steamdb.info/calculator</button>
+                  <button
+                    class="text-primary hover:underline ml-1"
+                    onclick={() => openUrl('https://steamdb.info/calculator/')}>steamdb.info/calculator</button
+                  >
                 </span>
               </label>
-              <input id="wiz-steamid" type="text" class="input input-bordered input-xs font-mono" placeholder="76561198…" bind:value={steamId} />
+              <input
+                id="wiz-steamid"
+                type="text"
+                class="input input-bordered input-xs font-mono"
+                placeholder="76561198…"
+                bind:value={steamId}
+              />
             </div>
           </div>
 
@@ -567,15 +594,25 @@
               <label class="label py-0 pb-1" for="wiz-bmkey">
                 <span class="label-text text-xs text-base-content/50 flex items-center gap-1">
                   Personal access token
-                  <button class="text-primary hover:underline ml-1" onclick={() => openUrl('https://www.battlemetrics.com/developers')}>battlemetrics.com/developers</button>
+                  <button
+                    class="text-primary hover:underline ml-1"
+                    onclick={() => openUrl('https://www.battlemetrics.com/developers')}
+                    >battlemetrics.com/developers</button
+                  >
                 </span>
               </label>
-              <input id="wiz-bmkey" type="password" class="input input-bordered input-xs font-mono" placeholder="eyJhbGci…" bind:value={battlemetricsApiKey} />
+              <input
+                id="wiz-bmkey"
+                type="password"
+                class="input input-bordered input-xs font-mono"
+                placeholder="eyJhbGci…"
+                bind:value={battlemetricsApiKey}
+              />
             </div>
           </div>
         </div>
 
-      <!-- ── Step 4: Done ────────────────────────────────────────────────── -->
+        <!-- ── Step 4: Done ────────────────────────────────────────────────── -->
       {:else if currentStep === 'done'}
         <div class="text-center space-y-4 py-4">
           <div class="size-16 rounded-full bg-success/15 flex items-center justify-center mx-auto">
@@ -583,32 +620,39 @@
           </div>
           <div>
             <h2 class="text-lg font-bold text-base-content">You're all set!</h2>
-            <p class="text-sm text-base-content/50 mt-1">Click <span class="font-semibold text-base-content/70">Launch app</span> to save your profile and start browsing servers.</p>
+            <p class="text-sm text-base-content/50 mt-1">
+              Click <span class="font-semibold text-base-content/70">Launch app</span> to save your profile and start browsing
+              servers.
+            </p>
           </div>
           <div class="bg-base-200/60 rounded-xl border border-base-300/60 text-left divide-y divide-base-300/50">
             <div class="flex items-center gap-3 px-4 py-2.5">
               <Icon icon="ph:info" class="size-4 text-base-content/40 shrink-0" />
-              <span class="text-xs text-base-content/50">You can update any of these settings later by clicking your name in the title bar.</span>
+              <span class="text-xs text-base-content/50"
+                >You can update any of these settings later by clicking your name in the title bar.</span
+              >
             </div>
             <div class="flex items-center gap-3 px-4 py-2.5">
               <Icon icon="ph:book-open" class="size-4 text-base-content/40 shrink-0" />
-              <span class="text-xs text-base-content/50">Check the <span class="font-semibold text-base-content/60">About</span> tab for tips and documentation.</span>
+              <span class="text-xs text-base-content/50"
+                >Check the <span class="font-semibold text-base-content/60">About</span> tab for tips and documentation.</span
+              >
             </div>
           </div>
           {#if saveError}
-            <div class="flex items-start gap-2 px-3 py-2 rounded-lg bg-error/10 border border-error/25 text-xs text-error text-left">
+            <div
+              class="flex items-start gap-2 px-3 py-2 rounded-lg bg-error/10 border border-error/25 text-xs text-error text-left"
+            >
               <Icon icon="ph:warning-circle" class="size-4 shrink-0 mt-0.5" />
               <span>{saveError}</span>
             </div>
           {/if}
         </div>
       {/if}
-
     </div>
 
     <!-- Footer nav -->
     <div class="flex items-center justify-between px-8 py-4 border-t border-base-300 bg-base-200/40 shrink-0">
-
       <!-- Back / step label / import -->
       <div class="flex items-center gap-3">
         {#if currentStep !== 'welcome' && currentStep !== 'done'}
@@ -634,7 +678,9 @@
             <span class="text-xs text-error">{importError}</span>
           {/if}
         {:else if currentStep !== 'welcome'}
-          <span class="text-xs text-base-content/30 capitalize">{currentStep === 'steamcmd' ? 'SteamCMD' : currentStep}</span>
+          <span class="text-xs text-base-content/30 capitalize"
+            >{currentStep === 'steamcmd' ? 'SteamCMD' : currentStep}</span
+          >
         {/if}
       </div>
 
@@ -645,13 +691,11 @@
             Get started
             <Icon icon="ph:arrow-right" class="size-4" />
           </button>
-
         {:else if currentStep === 'steamcmd'}
           <button class="btn btn-primary btn-sm gap-1.5" onclick={next}>
             Next
             <Icon icon="ph:arrow-right" class="size-4" />
           </button>
-
         {:else if currentStep === 'configure'}
           <button
             class="btn btn-primary btn-sm gap-1.5"
@@ -662,7 +706,6 @@
             Next
             <Icon icon="ph:arrow-right" class="size-4" />
           </button>
-
         {:else if currentStep === 'done'}
           <button class="btn btn-ghost btn-sm gap-1.5" onclick={back}>
             <Icon icon="ph:arrow-left" class="size-4" />
@@ -678,7 +721,6 @@
           </button>
         {/if}
       </div>
-
     </div>
   </div>
 </div>

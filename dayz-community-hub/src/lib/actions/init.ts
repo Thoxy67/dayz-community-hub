@@ -28,7 +28,11 @@ export async function doInitialize() {
     }
 
     if (s.profile?.steam_api_key && s.profile?.steam_id) {
-      invoke<string | null>('fetch_steam_avatar').then((url) => { s.avatarUrl = url; }).catch(() => {});
+      invoke<string | null>('fetch_steam_avatar')
+        .then((url) => {
+          s.avatarUrl = url;
+        })
+        .catch(() => {});
     }
 
     s.serversLoading = true;
@@ -49,7 +53,10 @@ export async function doInitialize() {
 export function selectTab(id: TabId) {
   s.activeTab = id;
   if (id === 'mods') {
-    if (s.installedMods.length === 0) loadMods().then(() => { if (s.profile?.steam_api_key) checkModUpdates(); });
+    if (s.installedMods.length === 0)
+      loadMods().then(() => {
+        if (s.profile?.steam_api_key) checkModUpdates();
+      });
     else if (s.profile?.steam_api_key) checkModUpdates();
   }
   if (id === 'news' && s.articles.length === 0) loadNews();

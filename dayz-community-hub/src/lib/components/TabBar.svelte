@@ -61,7 +61,9 @@
     padding: 0.375rem 0.75rem;
     font-size: 0.875rem;
     color: oklch(from var(--color-base-content) l c h / 0.6);
-    transition: color 150ms, transform 150ms;
+    transition:
+      color 150ms,
+      transform 150ms;
     cursor: pointer;
     background: none;
     border: none;

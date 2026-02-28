@@ -257,6 +257,27 @@ impl OfflineMode {
         Ok(removed)
     }
 
+    /// Remove a single mission folder from `DayZ/Missions/`.
+    pub fn remove_mission(&self, mission: &str) -> Result<()> {
+        let mission_path = self.missions_path().join(mission);
+        if !mission_path.exists() {
+            return Err(crate::errors::Error::Other(format!(
+                "Mission not found: {}",
+                mission
+            )));
+        }
+        if !mission_path.is_dir() {
+            return Err(crate::errors::Error::Other(format!(
+                "Not a directory: {}",
+                mission
+            )));
+        }
+        std::fs::remove_dir_all(&mission_path).map_err(|e| {
+            crate::errors::Error::Other(format!("Failed to remove {:?}: {}", mission_path, e))
+        })?;
+        Ok(())
+    }
+
     /// Delete `storage_-1/` inside every DayZCommunityOfflineMode mission folder.
     /// This wipes all in-game saves (loot, player state, etc.) without removing
     /// the missions themselves.

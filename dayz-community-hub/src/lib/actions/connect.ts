@@ -8,7 +8,9 @@ export async function connectToServer(server: ServerDto) {
   if (server.mods_count > 0) {
     try {
       fullServer = await invoke<ServerFullDto>('get_server_details', { ip: server.ip, port: server.query_port });
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
   }
 
   const installedIds = new Set(s.installedMods.map((m) => m.id));
@@ -42,9 +44,7 @@ export async function connectToServer(server: ServerDto) {
 }
 
 export function connectByAddress(ip: string, port: number, _name: string) {
-  const server = s.servers.find(
-    (sv) => sv.ip === ip && (sv.query_port === port || sv.game_port === port)
-  );
+  const server = s.servers.find((sv) => sv.ip === ip && (sv.query_port === port || sv.game_port === port));
   if (server) {
     connectToServer(server);
   } else {
@@ -53,9 +53,7 @@ export function connectByAddress(ip: string, port: number, _name: string) {
 }
 
 export async function connectDirect(ip: string, port: number, password?: string, extraArgs?: string[]) {
-  const inList = s.servers.find(
-    (sv) => sv.ip === ip && (sv.query_port === port || sv.game_port === port)
-  );
+  const inList = s.servers.find((sv) => sv.ip === ip && (sv.query_port === port || sv.game_port === port));
 
   let serverMods: ModDto[] = [];
   if (inList && inList.mods_count > 0) {
@@ -65,7 +63,9 @@ export async function connectDirect(ip: string, port: number, password?: string,
         port: inList.query_port,
       });
       serverMods = full.mods;
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
   }
 
   if (serverMods.length === 0) {
@@ -74,9 +74,7 @@ export async function connectDirect(ip: string, port: number, password?: string,
   }
 
   const installedIds = new Set(s.installedMods.map((m) => m.id));
-  const missingIds = serverMods
-    .map((m) => m.steam_workshop_id)
-    .filter((id) => !installedIds.has(id));
+  const missingIds = serverMods.map((m) => m.steam_workshop_id).filter((id) => !installedIds.has(id));
 
   const serverName = inList?.name ?? `${ip}:${port}`;
 
@@ -93,10 +91,8 @@ export async function connectDirect(ip: string, port: number, password?: string,
       modCount: missingIds.length,
       onConnect: (updateMods: boolean) => {
         if (updateMods) {
-          startModOp(
-            'update_selected',
-            { modIds: missingIds, modNames: missingNames },
-            () => doLaunchDirectByAddress(ip, port, password, extraArgs),
+          startModOp('update_selected', { modIds: missingIds, modNames: missingNames }, () =>
+            doLaunchDirectByAddress(ip, port, password, extraArgs),
           );
         } else {
           doLaunchDirectByAddress(ip, port, password, extraArgs);
@@ -110,10 +106,8 @@ export async function connectDirect(ip: string, port: number, password?: string,
       modCount: serverMods.length,
       onConnect: (updateMods: boolean) => {
         if (updateMods) {
-          startModOp(
-            'update_selected',
-            { modIds: allModIds, modNames: allModNames },
-            () => doLaunchDirectByAddress(ip, port, password, extraArgs),
+          startModOp('update_selected', { modIds: allModIds, modNames: allModNames }, () =>
+            doLaunchDirectByAddress(ip, port, password, extraArgs),
           );
         } else {
           doLaunchDirectByAddress(ip, port, password, extraArgs);
@@ -137,19 +131,11 @@ export async function doLaunchDirect(server: ServerDto) {
 }
 
 export async function doInstallAndLaunch(server: ServerDto) {
-  startModOp(
-    'install_server',
-    { ip: server.ip, port: server.query_port },
-    () => doLaunchDirect(server),
-  );
+  startModOp('install_server', { ip: server.ip, port: server.query_port }, () => doLaunchDirect(server));
 }
 
 export async function doUpdateAndLaunch(server: ServerDto) {
-  startModOp(
-    'update_server',
-    { ip: server.ip, port: server.query_port },
-    () => doLaunchDirect(server),
-  );
+  startModOp('update_server', { ip: server.ip, port: server.query_port }, () => doLaunchDirect(server));
 }
 
 export async function doLaunchDirectByAddress(ip: string, port: number, password?: string, extraArgs?: string[]) {

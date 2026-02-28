@@ -88,6 +88,8 @@ pub struct ProfileDto {
     pub steam_api_key: Option<String>,
     pub steam_id: Option<String>,
     pub battlemetrics_api_key: Option<String>,
+    /// User location for distance calculation (longitude, latitude).
+    pub user_location: Option<(f64, f64)>,
     pub favorites: Vec<FavoriteDto>,
     pub history: Vec<HistoryDto>,
     pub options: Vec<LaunchOptionDto>,
@@ -184,8 +186,24 @@ pub struct BattleMetricsDto {
     pub status: String,
     /// ISO 3166-1 alpha-2 country code, e.g. "DE", "US".
     pub country: Option<String>,
+    /// Server coordinates (longitude, latitude). None if unavailable.
+    pub location: Option<(f64, f64)>,
     /// Uptime percentage over the last 30 days (0–100).
     pub uptime: Option<f64>,
+    /// Whether the server is private (password protected).
+    pub private: Option<bool>,
+    /// Whether this is an official server.
+    pub official: Option<bool>,
+    /// Whether third-person view is allowed.
+    pub third_person: Option<bool>,
+    /// Whether the server is modded.
+    pub modded: Option<bool>,
+    /// Query status: "valid", "invalid", etc.
+    pub query_status: Option<String>,
+    /// Server's Steam ID.
+    pub server_steam_id: Option<String>,
+    /// When the server was first seen on BattleMetrics (ISO 8601).
+    pub created_at: Option<String>,
     /// Player count data points for the last 24 h: (unix_secs, player_count) pairs.
     pub player_history: Vec<(i64, i64)>,
 }

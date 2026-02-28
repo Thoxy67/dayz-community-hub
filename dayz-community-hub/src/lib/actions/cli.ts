@@ -47,11 +47,7 @@ export async function handleDzchOpen(raw: string) {
 
     s.activeTab = 'connect';
     await new Promise((r) => setTimeout(r, 150));
-    connectDirect(
-      config.ip,
-      config.port,
-      config.password ?? undefined,
-    );
+    connectDirect(config.ip, config.port, config.password ?? undefined);
   } catch (e) {
     s.setStatus(`Failed to open .dzch config: ${e}`, 'error');
   }

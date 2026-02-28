@@ -715,7 +715,7 @@ impl SteamCmd {
         // Steam Guard mobile is detected by text: steamcmd flushes the
         // "Please confirm..." / "Waiting for confirmation..." lines once the
         // user approves on the phone.
-        let mut succeeded = std::collections::HashSet::<u64>::new();
+        let mut succeeded = std::collections::HashSet::<u64>::with_capacity(mods_info.len());
         let mut current_idx: usize = 0;
         let mut steam_guard_sent = false;
         let mut password_prompt_sent = false;
@@ -731,6 +731,12 @@ impl SteamCmd {
                 Some(c) => c,
                 None => break, // channel closed — steamcmd exited
             };
+            // Prevent unbounded buffer growth (1 MB limit)
+            const MAX_BUF_SIZE: usize = 1024 * 1024;
+            if buf.len() + raw_chunk.len() > MAX_BUF_SIZE {
+                buf.clear();
+                eprintln!("[SteamCmd] output buffer exceeded limit, clearing");
+            }
             buf.push_str(&raw_chunk);
 
             // Process any complete newline-terminated lines that have accumulated.

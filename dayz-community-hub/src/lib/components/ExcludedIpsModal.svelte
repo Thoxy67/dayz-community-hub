@@ -80,9 +80,7 @@
       <span class="text-xs text-base-content/40">
         {excludedIps.length} IP{excludedIps.length !== 1 ? 's' : ''} excluded
       </span>
-      <button class="btn btn-ghost btn-sm" onclick={onClose}>
-        Close
-      </button>
+      <button class="btn btn-ghost btn-sm" onclick={onClose}> Close </button>
     </div>
   </div>
 </div>

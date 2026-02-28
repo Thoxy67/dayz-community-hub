@@ -6,9 +6,7 @@
   import Icon from '@iconify/svelte';
   import GlitchText from '$lib/components/GlitchText.svelte';
 
-
-  type UpdateState =
-    | 'idle' | 'checking' | 'up_to_date' | 'available' | 'downloading' | 'done' | 'error';
+  type UpdateState = 'idle' | 'checking' | 'up_to_date' | 'available' | 'downloading' | 'done' | 'error';
 
   interface Props {
     stats: AppStatsDto | null;
@@ -33,18 +31,34 @@
       steamApiKey: string | null,
       steamId: string | null,
       battlemetricsApiKey: string | null,
+      userLocation: [number, number] | null,
     ) => void;
     onUnexcludeIp: (ip: string) => void;
     onOpenExcludedIps: () => void;
   }
 
-  let { stats, avatarUrl, steamPlayers, theme, profile, staleModCount = 0, updateState = 'idle', glitchTick = 0, onToggleTheme, onSaveSettings, onUnexcludeIp, onOpenExcludedIps, onUpdateMods, onGoToUpdate }: Props = $props();
+  let {
+    stats,
+    avatarUrl,
+    steamPlayers,
+    theme,
+    profile,
+    staleModCount = 0,
+    updateState = 'idle',
+    glitchTick = 0,
+    onToggleTheme,
+    onSaveSettings,
+    onUnexcludeIp,
+    onOpenExcludedIps,
+    onUpdateMods,
+    onGoToUpdate,
+  }: Props = $props();
 
   // ── Window controls ────────────────────────────────────────────────────────
   const win = getCurrentWindow();
-  const minimize       = () => win.minimize();
+  const minimize = () => win.minimize();
   const toggleMaximize = () => win.toggleMaximize();
-  const close          = () => win.close();
+  const close = () => win.close();
 
   function onTitlebarMousedown(e: MouseEvent) {
     // Only drag on primary button, and not when clicking interactive children
@@ -61,35 +75,45 @@
   // ── Account modal state ────────────────────────────────────────────────────
   let logoHovered = $state(false);
 
-  let modalOpen            = $state(false);
-  let playerName           = $state('');
-  let steamLogin           = $state('');
-  let steamPassword        = $state('');
-  let steamRoot            = $state('');
-  let steamApiKey          = $state('');
-  let steamId              = $state('');
-  let steamcmdPath         = $state('');
-  let battlemetricsApiKey  = $state('');
-  let showPassword         = $state(false);
-  let showApiKey           = $state(false);
-  let showBmKey            = $state(false);
+  let modalOpen = $state(false);
+  let playerName = $state('');
+  let steamLogin = $state('');
+  let steamPassword = $state('');
+  let steamRoot = $state('');
+  let steamApiKey = $state('');
+  let steamId = $state('');
+  let steamcmdPath = $state('');
+  let battlemetricsApiKey = $state('');
+  let userLocation = $state<[number, number] | null>(null);
+  let detectingLocation = $state(false);
+  let showPassword = $state(false);
+  let showApiKey = $state(false);
+  let showBmKey = $state(false);
 
   function openModal() {
-    playerName           = profile?.player ?? '';
-    steamLogin           = profile?.steam_login ?? '';
-    steamPassword        = profile?.steam_password ?? '';
-    steamRoot            = profile?.steam_root ?? '';
-    steamcmdPath         = profile?.steamcmd_path ?? '';
-    steamApiKey          = profile?.steam_api_key ?? '';
-    steamId              = profile?.steam_id ?? '';
-    battlemetricsApiKey  = profile?.battlemetrics_api_key ?? '';
-    showPassword         = false;
-    showApiKey           = false;
-    showBmKey            = false;
-    modalOpen            = true;
+    playerName = profile?.player ?? '';
+    steamLogin = profile?.steam_login ?? '';
+    steamPassword = profile?.steam_password ?? '';
+    steamRoot = profile?.steam_root ?? '';
+    steamcmdPath = profile?.steamcmd_path ?? '';
+    steamApiKey = profile?.steam_api_key ?? '';
+    steamId = profile?.steam_id ?? '';
+    battlemetricsApiKey = profile?.battlemetrics_api_key ?? '';
+    userLocation = profile?.user_location ?? null;
+    manualLat = profile?.user_location ? profile.user_location[1].toFixed(4) : '';
+    manualLon = profile?.user_location ? profile.user_location[0].toFixed(4) : '';
+    locationError = '';
+    detectedCity = '';
+    detectedCountry = '';
+    showPassword = false;
+    showApiKey = false;
+    showBmKey = false;
+    modalOpen = true;
   }
 
-  function closeModal() { modalOpen = false; }
+  function closeModal() {
+    modalOpen = false;
+  }
 
   function handleOk() {
     onSaveSettings(
@@ -102,6 +126,7 @@
       steamApiKey.trim() || null,
       steamId.trim() || null,
       battlemetricsApiKey.trim() || null,
+      userLocation,
     );
     closeModal();
   }
@@ -112,17 +137,24 @@
   }
 
   async function browseSteamRoot() {
-    const selected = await openDialog({ directory: true, multiple: false, title: 'Select Steam root (steamapps folder)' });
+    const selected = await openDialog({
+      directory: true,
+      multiple: false,
+      title: 'Select Steam root (steamapps folder)',
+    });
     if (selected) steamRoot = selected as string;
   }
 
   async function clearSteamPassword() {
-    const yes = await ask('Remove the Steam password from profile.json? SteamCMD will fall back to cached credentials.', {
-      title: 'Clear Steam password',
-      kind: 'warning',
-      okLabel: 'Remove',
-      cancelLabel: 'Cancel',
-    });
+    const yes = await ask(
+      'Remove the Steam password from profile.json? SteamCMD will fall back to cached credentials.',
+      {
+        title: 'Clear Steam password',
+        kind: 'warning',
+        okLabel: 'Remove',
+        cancelLabel: 'Cancel',
+      },
+    );
     if (!yes) return;
     steamPassword = '';
     onSaveSettings(
@@ -135,7 +167,61 @@
       steamApiKey.trim() || null,
       steamId.trim() || null,
       battlemetricsApiKey.trim() || null,
+      userLocation,
     );
+  }
+
+  let manualLat = $state('');
+  let manualLon = $state('');
+  let locationError = $state('');
+  let detectedCity = $state('');
+  let detectedCountry = $state('');
+
+  async function detectLocationByIp() {
+    detectingLocation = true;
+    locationError = '';
+    detectedCity = '';
+    detectedCountry = '';
+    try {
+      const res = await fetch('http://ip-api.com/json/?fields=status,message,lat,lon,city,country,countryCode');
+      const data = await res.json();
+      if (data.status === 'success') {
+        userLocation = [data.lon, data.lat];
+        manualLat = data.lat.toFixed(4);
+        manualLon = data.lon.toFixed(4);
+        detectedCity = data.city || '';
+        detectedCountry = data.country || '';
+      } else {
+        locationError = data.message || 'IP geolocation failed';
+      }
+    } catch (e) {
+      locationError = 'Network error';
+      console.error('IP geolocation failed:', e);
+    } finally {
+      detectingLocation = false;
+    }
+  }
+
+  function applyManualLocation() {
+    const lat = parseFloat(manualLat);
+    const lon = parseFloat(manualLon);
+    if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      locationError = 'Invalid coordinates';
+      return;
+    }
+    locationError = '';
+    detectedCity = '';
+    detectedCountry = '';
+    userLocation = [lon, lat];
+  }
+
+  function clearLocation() {
+    userLocation = null;
+    manualLat = '';
+    manualLon = '';
+    locationError = '';
+    detectedCity = '';
+    detectedCountry = '';
   }
 
   function fmt(n: number | null | undefined): string {
@@ -150,21 +236,15 @@
 <div
   class="h-9 flex items-center bg-base-200 border-b border-base-300 flex-shrink-0 select-none relative z-[1001]"
   onmousedown={onTitlebarMousedown}
-  onmouseenter={() => logoHovered = true}
-  onmouseleave={() => logoHovered = false}
+  onmouseenter={() => (logoHovered = true)}
+  onmouseleave={() => (logoHovered = false)}
 >
-
   <!-- Left: identity — fixed width so glitch chars never shift adjacent elements -->
   <div
     class="flex items-center gap-2 px-4 pr-4 border-r border-base-300 shrink-0 overflow-hidden titlebar-identity"
     role="presentation"
   >
-    <img
-      src="/icon.svg"
-      class="w-5 h-5 titlebar-logo"
-      class:titlebar-logo--hovered={logoHovered}
-      alt="icon"
-    />
+    <img src="/icon.svg" class="w-5 h-5 titlebar-logo" class:titlebar-logo--hovered={logoHovered} alt="icon" />
     <GlitchText
       text="DayZ Community Hub"
       class="text-sm font-semibold text-base-content tracking-tight font-mono whitespace-nowrap"
@@ -173,7 +253,9 @@
   </div>
 
   <!-- Center: live stats — absolutely centred so neither side affects its position -->
-  <div class="absolute left-1/2 -translate-x-1/2 flex items-center gap-5 px-4 text-xs text-base-content/60 pointer-events-none">
+  <div
+    class="absolute left-1/2 -translate-x-1/2 flex items-center gap-5 px-4 text-xs text-base-content/60 pointer-events-none"
+  >
     <span class="flex items-center gap-1.5 pointer-events-auto" title="Servers">
       <Icon icon="mdi:server-network" class="size-3.5 text-red-500 dark:text-red-400" />
       <span class="tabular-nums font-medium text-base-content/80">{fmt(stats?.server_count)}</span>
@@ -193,7 +275,6 @@
 
   <!-- Right: user + theme + window controls -->
   <div class="flex items-center gap-1 text-xs">
-
     {#if stats && !stats.has_steamcmd}
       <button
         class="flex items-center gap-1 text-warning mr-2 hover:text-warning/80 transition-colors"
@@ -312,11 +393,12 @@
       onclick={(e) => e.stopPropagation()}
       onkeydown={handleKeydown}
     >
-
       <!-- ── Header: identity preview ──────────────────────────────────────── -->
       <div class="flex items-center gap-3 px-5 py-4 bg-base-200 border-b border-base-300 flex-shrink-0">
         <!-- Avatar preview -->
-        <div class="size-10 rounded-full bg-base-300 border border-base-300 overflow-hidden flex items-center justify-center flex-shrink-0">
+        <div
+          class="size-10 rounded-full bg-base-300 border border-base-300 overflow-hidden flex items-center justify-center flex-shrink-0"
+        >
           {#if avatarUrl}
             <img src={avatarUrl} alt="Steam avatar" class="w-full h-full object-cover" />
           {:else}
@@ -342,7 +424,6 @@
 
       <!-- ── Scrollable body ───────────────────────────────────────────────── -->
       <div class="flex-1 overflow-y-auto p-5 space-y-5">
-
         <!-- ── Section: Identity ──────────────────────────────────────────── -->
         <div>
           <div class="flex items-center gap-2 mb-3">
@@ -370,7 +451,9 @@
           <div class="flex items-center gap-2 mb-3">
             <Icon icon="mdi:steam" class="size-3.5 text-primary" />
             <span class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">Steam Login</span>
-            <span class="text-xs text-base-content/35 font-normal normal-case tracking-normal">for SteamCMD mod updates</span>
+            <span class="text-xs text-base-content/35 font-normal normal-case tracking-normal"
+              >for SteamCMD mod updates</span
+            >
           </div>
           <div class="bg-base-200/60 rounded-lg border border-base-300/60 overflow-hidden">
             <!-- Username -->
@@ -484,7 +567,9 @@
           <div class="flex items-center gap-2 mb-3">
             <Icon icon="ph:identification-card" class="size-3.5 text-primary" />
             <span class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">Steam API</span>
-            <span class="text-xs text-base-content/35 font-normal normal-case tracking-normal">avatar in titlebar &amp; mod update checks</span>
+            <span class="text-xs text-base-content/35 font-normal normal-case tracking-normal"
+              >avatar in titlebar &amp; mod update checks</span
+            >
           </div>
           <div class="bg-base-200/60 rounded-lg border border-base-300/60 overflow-hidden">
             <!-- API key -->
@@ -539,10 +624,13 @@
           <div class="flex items-center gap-2 mb-3">
             <Icon icon="ph:chart-line-up" class="size-3.5 text-primary" />
             <span class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">BattleMetrics</span>
-            <span class="text-xs text-base-content/35 font-normal normal-case tracking-normal">player history &amp; server rankings</span>
+            <span class="text-xs text-base-content/35 font-normal normal-case tracking-normal"
+              >rankings, uptime &amp; distance</span
+            >
           </div>
           <div class="bg-base-200/60 rounded-lg border border-base-300/60 overflow-hidden">
-            <div class="flex items-center gap-3 px-3 py-2.5">
+            <!-- API token row -->
+            <div class="flex items-center gap-3 px-3 py-2.5 border-b border-base-300/40">
               <label class="text-xs text-base-content/55 w-24 shrink-0" for="field-bmkey">API token</label>
               <div class="flex-1 flex items-center gap-1.5">
                 {#if showBmKey}
@@ -574,30 +662,127 @@
                 </button>
               </div>
             </div>
+            <!-- Location section -->
+            <div class="px-3 py-3 space-y-2.5">
+              <div class="flex items-center gap-2">
+                <Icon icon="ph:map-pin" class="size-3.5 text-primary/70" />
+                <span class="text-xs font-medium text-base-content/60">Your Location</span>
+                <span class="text-xs text-base-content/30">for distance calculation</span>
+              </div>
+
+              {#if userLocation}
+                <!-- Location set: show nice card -->
+                <div class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-success/5 border border-success/20">
+                  <div class="size-8 rounded-full bg-success/10 flex items-center justify-center shrink-0">
+                    <Icon icon="ph:map-pin-fill" class="size-4 text-success" />
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-base-content truncate">
+                      {#if detectedCity || detectedCountry}
+                        {detectedCity}{detectedCity && detectedCountry ? ', ' : ''}{detectedCountry}
+                      {:else}
+                        Location set
+                      {/if}
+                    </p>
+                    <p class="text-xs text-base-content/40 font-mono">
+                      {userLocation[1].toFixed(4)}, {userLocation[0].toFixed(4)}
+                    </p>
+                  </div>
+                  <div class="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-xs btn-square text-base-content/40 hover:text-primary"
+                      onclick={() => openUrl(`https://www.google.com/maps?q=${userLocation![1]},${userLocation![0]}`)}
+                      title="Open in Google Maps"
+                    >
+                      <Icon icon="ph:map-trifold" class="size-4" />
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-xs btn-square text-base-content/40 hover:text-error"
+                      onclick={clearLocation}
+                      title="Clear location"
+                    >
+                      <Icon icon="ph:trash" class="size-4" />
+                    </button>
+                  </div>
+                </div>
+              {:else}
+                <!-- No location: show detection options -->
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-primary gap-1.5 flex-1"
+                    onclick={detectLocationByIp}
+                    disabled={detectingLocation}
+                  >
+                    {#if detectingLocation}
+                      <span class="loading loading-spinner loading-xs"></span>
+                      Detecting…
+                    {:else}
+                      <Icon icon="ph:crosshair" class="size-4" />
+                      Auto-detect via IP
+                    {/if}
+                  </button>
+                </div>
+              {/if}
+
+              <!-- Manual input (always visible, collapsed style) -->
+              <div class="flex items-center gap-2 pt-1">
+                <span class="text-xs text-base-content/35">Manual:</span>
+                <input
+                  type="text"
+                  class="w-20 px-2 py-1 rounded bg-base-300/40 text-xs font-mono text-base-content placeholder:text-base-content/25 outline-none border border-transparent focus:border-primary/50"
+                  placeholder="Lat"
+                  bind:value={manualLat}
+                />
+                <input
+                  type="text"
+                  class="w-20 px-2 py-1 rounded bg-base-300/40 text-xs font-mono text-base-content placeholder:text-base-content/25 outline-none border border-transparent focus:border-primary/50"
+                  placeholder="Lon"
+                  bind:value={manualLon}
+                />
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs gap-1"
+                  onclick={applyManualLocation}
+                  disabled={!manualLat || !manualLon}
+                >
+                  <Icon icon="ph:check" class="size-3.5" />
+                </button>
+              </div>
+
+              {#if locationError}
+                <div class="flex items-center gap-1.5 px-2 py-1.5 rounded bg-error/10 text-error text-xs">
+                  <Icon icon="ph:warning-circle" class="size-3.5 shrink-0" />
+                  {locationError}
+                </div>
+              {/if}
+            </div>
           </div>
           <p class="text-xs text-base-content/35 mt-1.5 px-1">
-            Get a personal access token at
+            Get a token at
             <button
               type="button"
               class="text-primary hover:underline"
-              onclick={() => { openUrl('https://www.battlemetrics.com/developers'); }}
-            >battlemetrics.com/developers</button>
+              onclick={() => {
+                openUrl('https://www.battlemetrics.com/developers');
+              }}>battlemetrics.com/developers</button
+            >
+            · Location is used to calculate distance to servers.
           </p>
         </div>
-
-
-
       </div>
 
       <!-- ── Footer ─────────────────────────────────────────────────────────── -->
       <div class="flex items-center justify-between px-5 py-3 border-t border-base-300 bg-base-200 flex-shrink-0">
-        <button class="btn btn-ghost btn-sm text-base-content/60" onclick={closeModal}>
-          Cancel
-        </button>
+        <button class="btn btn-ghost btn-sm text-base-content/60" onclick={closeModal}> Cancel </button>
         <div class="flex items-center gap-2">
           <button
             class="btn btn-ghost btn-sm gap-1.5 text-base-content/50"
-            onclick={() => { onOpenExcludedIps(); }}
+            onclick={() => {
+              onOpenExcludedIps();
+            }}
             title="Manage excluded IPs"
           >
             <Icon icon="ph:prohibit" class="size-3.5" />
@@ -612,7 +797,6 @@
           </button>
         </div>
       </div>
-
     </div>
   </div>
 {/if}

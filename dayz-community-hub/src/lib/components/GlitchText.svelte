@@ -43,9 +43,9 @@
   let lockedWidth = $state<string | null>(null);
   let el = $state<HTMLElement | null>(null);
 
-  let frameTimer:    ReturnType<typeof setInterval> | null = null;
-  let revealTimer:   ReturnType<typeof setTimeout>  | null = null;
-  let cooldownTimer: ReturnType<typeof setTimeout>  | null = null;
+  let frameTimer: ReturnType<typeof setInterval> | null = null;
+  let revealTimer: ReturnType<typeof setTimeout> | null = null;
+  let cooldownTimer: ReturnType<typeof setTimeout> | null = null;
 
   function randomChar(): string {
     return CHARS[Math.floor(Math.random() * CHARS.length)];
@@ -56,11 +56,11 @@
   }
 
   function cleanup() {
-    if (frameTimer)    clearInterval(frameTimer);
-    if (revealTimer)   clearTimeout(revealTimer);
+    if (frameTimer) clearInterval(frameTimer);
+    if (revealTimer) clearTimeout(revealTimer);
     if (cooldownTimer) clearTimeout(cooldownTimer);
-    frameTimer    = null;
-    revealTimer   = null;
+    frameTimer = null;
+    revealTimer = null;
     cooldownTimer = null;
   }
 
@@ -153,27 +153,35 @@
     class={klass}
     style={lockedWidth ? `width:${lockedWidth};overflow:hidden;white-space:nowrap` : 'white-space:nowrap'}
     onmouseenter={() => startGlitch(true)}
-  >{displayed}</h1>
+  >
+    {displayed}
+  </h1>
 {:else if tag === 'h2'}
   <h2
     bind:this={el}
     class={klass}
     style={lockedWidth ? `width:${lockedWidth};overflow:hidden;white-space:nowrap` : 'white-space:nowrap'}
     onmouseenter={() => startGlitch(true)}
-  >{displayed}</h2>
+  >
+    {displayed}
+  </h2>
 {:else if tag === 'h3'}
   <h3
     bind:this={el}
     class={klass}
     style={lockedWidth ? `width:${lockedWidth};overflow:hidden;white-space:nowrap` : 'white-space:nowrap'}
     onmouseenter={() => startGlitch(true)}
-  >{displayed}</h3>
+  >
+    {displayed}
+  </h3>
 {:else}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <span
     bind:this={el}
     class={klass}
-    style={lockedWidth ? `width:${lockedWidth};overflow:hidden;white-space:nowrap;display:inline-block` : 'white-space:nowrap;display:inline-block'}
-    onmouseenter={() => startGlitch(true)}
-  >{displayed}</span>
+    style={lockedWidth
+      ? `width:${lockedWidth};overflow:hidden;white-space:nowrap;display:inline-block`
+      : 'white-space:nowrap;display:inline-block'}
+    onmouseenter={() => startGlitch(true)}>{displayed}</span
+  >
 {/if}

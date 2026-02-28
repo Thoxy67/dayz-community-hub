@@ -1,6 +1,15 @@
 <script lang="ts">
   import type { HistoryDto, ServerDto, A2sDetailsDto, BattleMetricsDto } from '$lib/types';
-  import { pingLabel, pingColor, pingDot, playerFill, playerBarColor, formatDuration, relativeTime, sortIcon as _sortIcon } from '$lib/utils';
+  import {
+    pingLabel,
+    pingColor,
+    pingDot,
+    playerFill,
+    playerBarColor,
+    formatDuration,
+    relativeTime,
+    sortIcon as _sortIcon,
+  } from '$lib/utils';
   import BattleMetricsPanel from './BattleMetricsPanel.svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { openUrl } from '@tauri-apps/plugin-opener';
@@ -15,6 +24,8 @@
     favorites: Set<string>; // "ip:port" keys
     /** BattleMetrics personal access token (null = not configured). */
     bmApiKey: string | null;
+    /** User location [longitude, latitude] for distance calculation. */
+    userLocation?: [number, number] | null;
     onConnect: (ip: string, port: number, name: string) => void;
     onAddFavorite: (h: HistoryDto) => void;
     onRemoveFavorite: (h: HistoryDto) => void;
@@ -26,18 +37,35 @@
     onDirectConnect?: (ip: string, gamePort: number, queryPort?: number) => void;
   }
 
-  let { history, servers, pingCache, favorites, bmApiKey, onConnect, onAddFavorite, onRemoveFavorite, onRemove, onClearAll, onGoToServers, onPing, onDirectConnect }: Props = $props();
+  let {
+    history,
+    servers,
+    pingCache,
+    favorites,
+    bmApiKey,
+    userLocation = null,
+    onConnect,
+    onAddFavorite,
+    onRemoveFavorite,
+    onRemove,
+    onClearAll,
+    onGoToServers,
+    onPing,
+    onDirectConnect,
+  }: Props = $props();
 
   // Pre-built lookup map rebuilt only when `servers` changes (O(n) once).
   // Covers both query_port and game_port keys so per-row lookups are O(1).
-  let serverByKey = $derived((() => {
-    const m = new Map<string, ServerDto>();
-    for (const s of servers) {
-      m.set(`${s.ip}:${s.query_port}`, s);
-      m.set(`${s.ip}:${s.game_port}`, s);
-    }
-    return m;
-  })());
+  let serverByKey = $derived(
+    (() => {
+      const m = new Map<string, ServerDto>();
+      for (const s of servers) {
+        m.set(`${s.ip}:${s.query_port}`, s);
+        m.set(`${s.ip}:${s.game_port}`, s);
+      }
+      return m;
+    })(),
+  );
 
   function findServer(h: HistoryDto): ServerDto | null {
     return serverByKey.get(`${h.ip}:${h.port}`) ?? null;
@@ -99,32 +127,35 @@
     return _sortIcon(col, sortCol, sortAsc);
   }
 
-  let sorted = $derived((() => {
-    const arr = history.slice();
-    const dir = sortAsc ? 1 : -1;
-    arr.sort((a, b) => {
-      switch (sortCol) {
-        case 'name':
-          return dir * a.name.localeCompare(b.name);
-        case 'players': {
-          const sa = findServer(a);
-          const sb = findServer(b);
-          const pa = sa ? sa.players : -1;
-          const pb = sb ? sb.players : -1;
-          return dir * (pa - pb);
+  let sorted = $derived(
+    (() => {
+      const arr = history.slice();
+      const dir = sortAsc ? 1 : -1;
+      arr.sort((a, b) => {
+        switch (sortCol) {
+          case 'name':
+            return dir * a.name.localeCompare(b.name);
+          case 'players': {
+            const sa = findServer(a);
+            const sb = findServer(b);
+            const pa = sa ? sa.players : -1;
+            const pb = sb ? sb.players : -1;
+            return dir * (pa - pb);
+          }
+          case 'ping': {
+            const pa = pingCache.get(pingKey(a)) ?? Infinity;
+            const pb = pingCache.get(pingKey(b)) ?? Infinity;
+            return dir * (pa - pb);
+          }
+          case 'last':
+            return dir * (a.ts - b.ts);
+          default:
+            return 0;
         }
-        case 'ping': {
-          const pa = pingCache.get(pingKey(a)) ?? Infinity;
-          const pb = pingCache.get(pingKey(b)) ?? Infinity;
-          return dir * (pa - pb);
-        }
-        case 'last':
-          return dir * (a.ts - b.ts);
-        default: return 0;
-      }
-    });
-    return arr;
-  })());
+      });
+      return arr;
+    })(),
+  );
 
   // Track which servers were just pinged for a brief green flash.
   let pingFlash = $state<Set<string>>(new Set());
@@ -181,13 +212,11 @@
     if (!time) return 'ph:sun-horizon';
     const h = parseInt(time.split(':')[0], 10);
     if (isNaN(h)) return 'ph:sun-horizon';
-    if (h >= 5  && h < 7)  return 'ph:sun-horizon';
-    if (h >= 7  && h < 19) return 'ph:sun';
+    if (h >= 5 && h < 7) return 'ph:sun-horizon';
+    if (h >= 7 && h < 19) return 'ph:sun';
     if (h >= 19 && h < 21) return 'ph:sun-horizon';
     return 'ph:moon';
   }
-
-
 
   let copiedKey = $state('');
   async function copyIp(e: MouseEvent, ip: string, port: number) {
@@ -195,10 +224,10 @@
     const text = `${ip}:${port}`;
     await writeText(text);
     copiedKey = text;
-    setTimeout(() => { if (copiedKey === text) copiedKey = ''; }, 1500);
+    setTimeout(() => {
+      if (copiedKey === text) copiedKey = '';
+    }, 1500);
   }
-
-
 
   // ── A2S detail panel ─────────────────────────────────────────────────────
   let detailEntry = $state<HistoryDto | null>(null);
@@ -259,7 +288,10 @@
       bmError = '';
       invoke<BattleMetricsDto>('fetch_battlemetrics_server', { ip: detailEntry.ip, port: queryPort })
         .then((result) => {
-          if (detailEntry && `${detailEntry.ip}:${(findServer(detailEntry) ?? { query_port: detailEntry.port }).query_port}` === key) {
+          if (
+            detailEntry &&
+            `${detailEntry.ip}:${(findServer(detailEntry) ?? { query_port: detailEntry.port }).query_port}` === key
+          ) {
             bm = result;
             bmError = '';
             bmFetchedKey = key;
@@ -270,12 +302,12 @@
           bmError = String(e);
           bmFetchedKey = key;
         })
-        .finally(() => { bmLoading = false; });
+        .finally(() => {
+          bmLoading = false;
+        });
     }, 300);
     return () => clearTimeout(_bmDebounce);
   });
-
-
 
   let selectedIdx = $state(-1);
 
@@ -292,9 +324,7 @@
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       if (len === 0) return;
-      selectedIdx = e.key === 'ArrowDown'
-        ? Math.min(selectedIdx + 1, len - 1)
-        : Math.max(selectedIdx - 1, 0);
+      selectedIdx = e.key === 'ArrowDown' ? Math.min(selectedIdx + 1, len - 1) : Math.max(selectedIdx - 1, 0);
     }
     if (e.key === 'Enter' && selectedIdx >= 0 && selectedIdx < len) {
       e.preventDefault();
@@ -346,203 +376,256 @@
 
 <div class="flex h-full overflow-hidden" role="region" tabindex="-1">
   <div class="flex flex-col flex-1 overflow-hidden">
-  {#if history.length === 0}
-    <div class="flex flex-col items-center justify-center h-full gap-3 text-base-content/40">
-      <Icon icon="ph:clock-clockwise" class="size-10 opacity-30" />
-      <span class="text-sm">No connection history yet</span>
-      <button
-        class="btn btn-sm btn-outline btn-primary gap-1.5"
-        onclick={onGoToServers}
-      >
-        <Icon icon="mdi:server" class="size-3.5" />
-        Browse Servers
-      </button>
-    </div>
-  {:else}
-    <div class="overflow-auto flex-1">
-      <table class="w-full text-xs" style="table-layout: fixed; border-collapse: collapse;">
-        <thead class="sticky top-0 z-10">
-          <tr class="bg-base-200/95 backdrop-blur-sm text-base-content/50 uppercase tracking-wider border-b border-base-300 select-none" style="font-size:10px;">
-            <th class="px-3 py-2 text-left cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('name')}>
-              <span class="flex items-center gap-1">
-                Server
-                <span class="normal-case font-normal text-base-content/35 ml-0.5">{history.length}</span>
-                <Icon icon={sortIcon('name')} class="size-2.5" />
-              </span>
-            </th>
-            <th class="w-32 px-3 py-2 cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('players')}>
-              <span class="flex items-center gap-1">Players <Icon icon={sortIcon('players')} class="size-2.5" /></span>
-            </th>
-            <th class="w-20 px-3 py-2 cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('ping')}>
-              <span class="flex items-center gap-1">Ping <Icon icon={sortIcon('ping')} class="size-2.5" /></span>
-            </th>
-            <th class="w-28 px-3 py-2 font-medium text-left">Map</th>
-            <th class="w-16 px-3 py-2 font-medium text-left" title="In-game server time">Time</th>
-            <th class="w-36 px-3 py-2 cursor-pointer hover:text-base-content transition-colors text-left" onclick={() => toggleSort('last')}>
-              <span class="flex items-center gap-1">Last played <Icon icon={sortIcon('last')} class="size-2.5" /></span>
-            </th>
-            <th class="w-40 px-3 py-2"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each sorted as entry, ei}
-            {@const server = findServer(entry)}
-            {@const ping = pingCache.get(pingKey(entry))}
-            {@const entKey = entryA2sKey(entry)}
-            {@const livePlayers = server ? (a2sPlayers.get(entKey) ?? server.players) : 0}
-            {@const loadingPlayers = a2sPlayersLoading.has(entKey)}
-            {@const pct = server && server.max_players > 0 ? Math.round((livePlayers / server.max_players) * 100) : 0}
-            {@const isFocused = ei === selectedIdx}
-            {@const isSelected = detailEntry?.ip === entry.ip && detailEntry?.port === entry.port}
+    {#if history.length === 0}
+      <div class="flex flex-col items-center justify-center h-full gap-3 text-base-content/40">
+        <Icon icon="ph:clock-clockwise" class="size-10 opacity-30" />
+        <span class="text-sm">No connection history yet</span>
+        <button class="btn btn-sm btn-outline btn-primary gap-1.5" onclick={onGoToServers}>
+          <Icon icon="mdi:server" class="size-3.5" />
+          Browse Servers
+        </button>
+      </div>
+    {:else}
+      <div class="overflow-auto flex-1">
+        <table class="w-full text-xs" style="table-layout: fixed; border-collapse: collapse;">
+          <thead class="sticky top-0 z-10">
             <tr
-              class="group/row border-b border-base-300/40 transition-colors cursor-pointer
-                     {isSelected ? 'bg-primary/10 border-primary/20' : isFocused ? 'bg-base-200/80 outline outline-1 outline-primary/40' : 'hover:bg-base-200/60'}"
-              onclick={() => selectedIdx = ei}
-              ondblclick={() => onConnect(entry.ip, entry.port, entry.name)}
+              class="bg-base-200/95 backdrop-blur-sm text-base-content/50 uppercase tracking-wider border-b border-base-300 select-none"
+              style="font-size:10px;"
             >
-              <!-- Server name + IP -->
-              <td class="px-3 py-2 max-w-0">
-                <div class="flex items-center gap-1.5 min-w-0">
-                  <span class="truncate font-medium text-base-content/90">{entry.name}</span>
-                  {#if !server}
-                    <span class="shrink-0 text-warning" style="font-size:9px;" title="Server not found in the current server list — it may be offline, or try refreshing the server list">OFFLINE</span>
-                  {/if}
-                </div>
-                <div class="flex items-center gap-2 mt-0.5">
-                  <button
-                    class="font-mono flex items-center gap-1 group/ip
-                           {copiedKey === `${entry.ip}:${entry.port}` ? 'text-success' : 'text-base-content/30 hover:text-base-content/60'}"
-                    style="font-size:10px;"
-                    onclick={(e) => copyIp(e, entry.ip, entry.port)}
-                    title="Copy {entry.ip}:{entry.port} to clipboard"
-                  >
-                    {entry.ip}:{entry.port}
-                    <Icon
-                      icon={copiedKey === `${entry.ip}:${entry.port}` ? 'ph:check' : 'ph:copy'}
-                      class="size-2 opacity-0 group-hover/ip:opacity-100 transition-opacity {copiedKey === `${entry.ip}:${entry.port}` ? 'opacity-100' : ''}"
-                    />
-                  </button>
-                  {#if server}
-                    <span class="text-base-content/25" style="font-size:10px;">{server.version}</span>
-                  {/if}
-                </div>
-              </td>
-
-              <!-- Players + bar -->
-              <td class="px-3 py-2">
-                {#if server}
-                  <button
-                    class="flex items-center gap-2 w-full cursor-pointer hover:opacity-70 transition-opacity text-left"
-                    onclick={(e) => { e.stopPropagation(); doRefreshPlayers(entry); }}
-                    title="Click to refresh player count via A2S query"
-                    disabled={loadingPlayers}
-                  >
-                    {#if loadingPlayers}
-                      <span class="loading loading-spinner loading-xs text-primary shrink-0"></span>
-                    {:else}
-                      <span class="tabular-nums font-mono {playerFill(livePlayers, server.max_players)} w-14 shrink-0">
-                        {livePlayers}<span class="text-base-content/30">/{server.max_players}</span>
-                      </span>
-                    {/if}
-                    <div class="flex-1 h-1 rounded-full bg-base-300 overflow-hidden">
-                      <div class="h-full rounded-full {playerBarColor(livePlayers, server.max_players)}" style="width:{pct}%"></div>
-                    </div>
-                  </button>
-                {:else}
-                  <span class="text-base-content/25 font-mono">—</span>
-                {/if}
-              </td>
-
-              <!-- Ping — click to re-ping -->
-              <td class="px-3 py-2">
-                <button
-                  class="flex items-center gap-1.5 cursor-pointer hover:opacity-70 transition-opacity {pingFlash.has(`${entry.ip}:${entry.port}`) ? 'ping-flash' : ''}"
-                  onclick={(e) => { e.stopPropagation(); doPing(entry); }}
-                  title="Click to ping"
-                >
-                  <span class="size-1.5 rounded-full shrink-0 {pingDot(ping)}"></span>
-                  <span class="tabular-nums font-mono {pingColor(ping)}">
-                    {pingLabel(ping)}
-                  </span>
-                </button>
-              </td>
-
-              <!-- Map -->
-              <td class="px-3 py-2 max-w-0">
-                <span class="truncate block text-amber-500/80">{server ? server.map : '—'}</span>
-              </td>
-
-              <!-- Time -->
-              <td class="px-3 py-2">
-                <span class="flex items-center gap-1 text-base-content/60 tabular-nums font-mono">
-                  <Icon icon={timeIcon(server?.time)} class="size-3 shrink-0" />
-                  {server?.time || '—'}
+              <th
+                class="px-3 py-2 text-left cursor-pointer hover:text-base-content transition-colors"
+                onclick={() => toggleSort('name')}
+              >
+                <span class="flex items-center gap-1">
+                  Server
+                  <span class="normal-case font-normal text-base-content/35 ml-0.5">{history.length}</span>
+                  <Icon icon={sortIcon('name')} class="size-2.5" />
                 </span>
-              </td>
-
-              <!-- Last played -->
-              <td class="px-3 py-2">
-                <span
-                  class="text-base-content/40 cursor-default"
-                  title={new Date(entry.ts * 1000).toLocaleString()}
-                >{relativeTime(entry.ts)}</span>
-              </td>
-
-              <!-- Actions — always visible -->
-              <td class="px-2 py-2">
-                <div class="flex gap-1 items-center justify-end">
-                  <!-- Info / A2S detail -->
-                  <button
-                    class="size-6 rounded flex items-center justify-center transition-colors
-                           {isSelected ? 'bg-primary/15 text-primary hover:bg-primary/25'
-                                       : 'text-base-content/35 hover:bg-base-300 hover:text-base-content/80'}"
-                    title={isSelected ? 'Close details' : 'Live server details'}
-                    onclick={(e) => { e.stopPropagation(); isSelected ? closeDetail() : openDetail(entry); }}
-                  >
-                    <Icon icon="ph:info" class="size-3.5" />
-                  </button>
-                 <!-- Favorite toggle -->
-                   <button
-                     class="size-6 rounded flex items-center justify-center transition-colors
-                            {isFav(entry) ? 'text-warning hover:bg-error/10 hover:text-error' : 'text-base-content/35 hover:bg-warning/10 hover:text-warning'}"
-                     onclick={() => isFav(entry)
-                       ? onRemoveFavorite({ ...entry, port: favPort(entry) })
-                       : onAddFavorite(entry)}
-                     title={isFav(entry) ? 'Remove from favorites' : 'Add to favorites'}
-                   >
-                     <Icon icon={isFav(entry) ? 'ph:star-fill' : 'ph:star'} class="size-3.5" />
-                   </button>
-                  <!-- Remove -->
-                  <button
-                    class="size-6 rounded flex items-center justify-center text-base-content/35 hover:bg-error/10 hover:text-error transition-colors"
-                    title="Remove from history"
-                    onclick={() => onRemove(entry)}
-                  >
-                    <Icon icon="ph:trash" class="size-3.5" />
-                  </button>
-                  <!-- Connect -->
-                  <button
-                    class="btn btn-primary btn-xs h-6 min-h-0 px-2.5 text-xs font-medium"
-                    title="Launch DayZ and connect to this server"
-                    onclick={() => onConnect(entry.ip, entry.port, entry.name)}
-                  >
-                    Connect
-                  </button>
-                </div>
-              </td>
+              </th>
+              <th
+                class="w-32 px-3 py-2 cursor-pointer hover:text-base-content transition-colors"
+                onclick={() => toggleSort('players')}
+              >
+                <span class="flex items-center gap-1">Players <Icon icon={sortIcon('players')} class="size-2.5" /></span
+                >
+              </th>
+              <th
+                class="w-20 px-3 py-2 cursor-pointer hover:text-base-content transition-colors"
+                onclick={() => toggleSort('ping')}
+              >
+                <span class="flex items-center gap-1">Ping <Icon icon={sortIcon('ping')} class="size-2.5" /></span>
+              </th>
+              <th class="w-28 px-3 py-2 font-medium text-left">Map</th>
+              <th class="w-16 px-3 py-2 font-medium text-left" title="In-game server time">Time</th>
+              <th
+                class="w-36 px-3 py-2 cursor-pointer hover:text-base-content transition-colors text-left"
+                onclick={() => toggleSort('last')}
+              >
+                <span class="flex items-center gap-1"
+                  >Last played <Icon icon={sortIcon('last')} class="size-2.5" /></span
+                >
+              </th>
+              <th class="w-40 px-3 py-2"></th>
             </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {#each sorted as entry, ei}
+              {@const server = findServer(entry)}
+              {@const ping = pingCache.get(pingKey(entry))}
+              {@const entKey = entryA2sKey(entry)}
+              {@const livePlayers = server ? (a2sPlayers.get(entKey) ?? server.players) : 0}
+              {@const loadingPlayers = a2sPlayersLoading.has(entKey)}
+              {@const pct = server && server.max_players > 0 ? Math.round((livePlayers / server.max_players) * 100) : 0}
+              {@const isFocused = ei === selectedIdx}
+              {@const isSelected = detailEntry?.ip === entry.ip && detailEntry?.port === entry.port}
+              <tr
+                class="group/row border-b border-base-300/40 transition-colors cursor-pointer
+                     {isSelected
+                  ? 'bg-primary/10 border-primary/20'
+                  : isFocused
+                    ? 'bg-base-200/80 outline outline-1 outline-primary/40'
+                    : 'hover:bg-base-200/60'}"
+                onclick={() => (selectedIdx = ei)}
+                ondblclick={() => onConnect(entry.ip, entry.port, entry.name)}
+              >
+                <!-- Server name + IP -->
+                <td class="px-3 py-2 max-w-0">
+                  <div class="flex items-center gap-1.5 min-w-0">
+                    <span class="truncate font-medium text-base-content/90">{entry.name}</span>
+                    {#if !server}
+                      <span
+                        class="shrink-0 text-warning"
+                        style="font-size:9px;"
+                        title="Server not found in the current server list — it may be offline, or try refreshing the server list"
+                        >OFFLINE</span
+                      >
+                    {/if}
+                  </div>
+                  <div class="flex items-center gap-2 mt-0.5">
+                    <button
+                      class="font-mono flex items-center gap-1 group/ip
+                           {copiedKey === `${entry.ip}:${entry.port}`
+                        ? 'text-success'
+                        : 'text-base-content/30 hover:text-base-content/60'}"
+                      style="font-size:10px;"
+                      onclick={(e) => copyIp(e, entry.ip, entry.port)}
+                      title="Copy {entry.ip}:{entry.port} to clipboard"
+                    >
+                      {entry.ip}:{entry.port}
+                      <Icon
+                        icon={copiedKey === `${entry.ip}:${entry.port}` ? 'ph:check' : 'ph:copy'}
+                        class="size-2 opacity-0 group-hover/ip:opacity-100 transition-opacity {copiedKey ===
+                        `${entry.ip}:${entry.port}`
+                          ? 'opacity-100'
+                          : ''}"
+                      />
+                    </button>
+                    {#if server}
+                      <span class="text-base-content/25" style="font-size:10px;">{server.version}</span>
+                    {/if}
+                  </div>
+                </td>
 
-    <div class="flex justify-end px-3 py-2 bg-base-200 border-t border-base-300 flex-shrink-0">
-      <button class="btn btn-error btn-xs btn-outline" title="Permanently remove all entries from connection history" onclick={onClearAll}>
-        Clear all history
-      </button>
-    </div>
-  {/if}
-  </div><!-- end flex-col flex-1 -->
+                <!-- Players + bar -->
+                <td class="px-3 py-2">
+                  {#if server}
+                    <button
+                      class="flex items-center gap-2 w-full cursor-pointer hover:opacity-70 transition-opacity text-left"
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        doRefreshPlayers(entry);
+                      }}
+                      title="Click to refresh player count via A2S query"
+                      disabled={loadingPlayers}
+                    >
+                      {#if loadingPlayers}
+                        <span class="loading loading-spinner loading-xs text-primary shrink-0"></span>
+                      {:else}
+                        <span
+                          class="tabular-nums font-mono {playerFill(livePlayers, server.max_players)} w-14 shrink-0"
+                        >
+                          {livePlayers}<span class="text-base-content/30">/{server.max_players}</span>
+                        </span>
+                      {/if}
+                      <div class="flex-1 h-1 rounded-full bg-base-300 overflow-hidden">
+                        <div
+                          class="h-full rounded-full {playerBarColor(livePlayers, server.max_players)}"
+                          style="width:{pct}%"
+                        ></div>
+                      </div>
+                    </button>
+                  {:else}
+                    <span class="text-base-content/25 font-mono">—</span>
+                  {/if}
+                </td>
+
+                <!-- Ping — click to re-ping -->
+                <td class="px-3 py-2">
+                  <button
+                    class="flex items-center gap-1.5 cursor-pointer hover:opacity-70 transition-opacity {pingFlash.has(
+                      `${entry.ip}:${entry.port}`,
+                    )
+                      ? 'ping-flash'
+                      : ''}"
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      doPing(entry);
+                    }}
+                    title="Click to ping"
+                  >
+                    <span class="size-1.5 rounded-full shrink-0 {pingDot(ping)}"></span>
+                    <span class="tabular-nums font-mono {pingColor(ping)}">
+                      {pingLabel(ping)}
+                    </span>
+                  </button>
+                </td>
+
+                <!-- Map -->
+                <td class="px-3 py-2 max-w-0">
+                  <span class="truncate block text-amber-500/80">{server ? server.map : '—'}</span>
+                </td>
+
+                <!-- Time -->
+                <td class="px-3 py-2">
+                  <span class="flex items-center gap-1 text-base-content/60 tabular-nums font-mono">
+                    <Icon icon={timeIcon(server?.time)} class="size-3 shrink-0" />
+                    {server?.time || '—'}
+                  </span>
+                </td>
+
+                <!-- Last played -->
+                <td class="px-3 py-2">
+                  <span class="text-base-content/40 cursor-default" title={new Date(entry.ts * 1000).toLocaleString()}
+                    >{relativeTime(entry.ts)}</span
+                  >
+                </td>
+
+                <!-- Actions — always visible -->
+                <td class="px-2 py-2">
+                  <div class="flex gap-1 items-center justify-end">
+                    <!-- Info / A2S detail -->
+                    <button
+                      class="size-6 rounded flex items-center justify-center transition-colors
+                           {isSelected
+                        ? 'bg-primary/15 text-primary hover:bg-primary/25'
+                        : 'text-base-content/35 hover:bg-base-300 hover:text-base-content/80'}"
+                      title={isSelected ? 'Close details' : 'Live server details'}
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        isSelected ? closeDetail() : openDetail(entry);
+                      }}
+                    >
+                      <Icon icon="ph:info" class="size-3.5" />
+                    </button>
+                    <!-- Favorite toggle -->
+                    <button
+                      class="size-6 rounded flex items-center justify-center transition-colors
+                            {isFav(entry)
+                        ? 'text-warning hover:bg-error/10 hover:text-error'
+                        : 'text-base-content/35 hover:bg-warning/10 hover:text-warning'}"
+                      onclick={() =>
+                        isFav(entry) ? onRemoveFavorite({ ...entry, port: favPort(entry) }) : onAddFavorite(entry)}
+                      title={isFav(entry) ? 'Remove from favorites' : 'Add to favorites'}
+                    >
+                      <Icon icon={isFav(entry) ? 'ph:star-fill' : 'ph:star'} class="size-3.5" />
+                    </button>
+                    <!-- Remove -->
+                    <button
+                      class="size-6 rounded flex items-center justify-center text-base-content/35 hover:bg-error/10 hover:text-error transition-colors"
+                      title="Remove from history"
+                      onclick={() => onRemove(entry)}
+                    >
+                      <Icon icon="ph:trash" class="size-3.5" />
+                    </button>
+                    <!-- Connect -->
+                    <button
+                      class="btn btn-primary btn-xs h-6 min-h-0 px-2.5 text-xs font-medium"
+                      title="Launch DayZ and connect to this server"
+                      onclick={() => onConnect(entry.ip, entry.port, entry.name)}
+                    >
+                      Connect
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="flex justify-end px-3 py-2 bg-base-200 border-t border-base-300 flex-shrink-0">
+        <button
+          class="btn btn-error btn-xs btn-outline"
+          title="Permanently remove all entries from connection history"
+          onclick={onClearAll}
+        >
+          Clear all history
+        </button>
+      </div>
+    {/if}
+  </div>
+  <!-- end flex-col flex-1 -->
 
   <!-- A2S detail side panel -->
   {#if detailEntry}
@@ -563,7 +646,9 @@
             <span class="text-xs">Querying…</span>
           </div>
         {:else if a2sError}
-          <div class="m-3 flex items-start gap-2 px-2.5 py-2 rounded-lg bg-error/10 border border-error/25 text-xs text-error">
+          <div
+            class="m-3 flex items-start gap-2 px-2.5 py-2 rounded-lg bg-error/10 border border-error/25 text-xs text-error"
+          >
             <Icon icon="ph:warning-circle" class="size-3.5 shrink-0 mt-0.5" />
             <span class="leading-snug break-all">{a2sError}</span>
           </div>
@@ -573,7 +658,13 @@
               <span class="flex items-center gap-1.5 text-base-content/50">
                 <Icon icon="mdi:controller" class="size-3.5 shrink-0" />Players
               </span>
-              <span class="font-mono font-medium {a2s.players >= a2s.max_players ? 'text-error' : a2s.players > a2s.max_players / 2 ? 'text-warning' : 'text-success'}">
+              <span
+                class="font-mono font-medium {a2s.players >= a2s.max_players
+                  ? 'text-error'
+                  : a2s.players > a2s.max_players / 2
+                    ? 'text-warning'
+                    : 'text-success'}"
+              >
                 {a2s.players}/{a2s.max_players}
               </span>
 
@@ -591,7 +682,9 @@
                 <Icon icon="mdi:signal" class="size-3.5 shrink-0" />Ping
               </span>
               <button
-                class="font-mono cursor-pointer hover:opacity-70 transition-opacity {pingColor(pingCache.get(pingKey(detailEntry)))}"
+                class="font-mono cursor-pointer hover:opacity-70 transition-opacity {pingColor(
+                  pingCache.get(pingKey(detailEntry)),
+                )}"
                 onclick={() => detailEntry && doPing(detailEntry)}
                 title="Click to ping"
               >
@@ -636,12 +729,14 @@
                     <Icon icon="mdi:puzzle-outline" class="size-3 text-secondary shrink-0" />
                     <button
                       class="truncate text-base-content/80 hover:text-primary transition-colors text-left"
-                      onclick={() => openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.steam_workshop_id}`)}
-                      title="Open on Steam Workshop: {mod.name}"
-                    >{mod.name}</button>
+                      onclick={() =>
+                        openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.steam_workshop_id}`)}
+                      title="Open on Steam Workshop: {mod.name}">{mod.name}</button
+                    >
                     <button
                       class="ml-auto shrink-0 font-mono text-xs text-base-content/30 hover:text-primary transition-colors flex items-center gap-0.5"
-                      onclick={() => openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.steam_workshop_id}`)}
+                      onclick={() =>
+                        openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.steam_workshop_id}`)}
                       title="Open on Steam Workshop"
                     >
                       {mod.steam_workshop_id}
@@ -656,8 +751,15 @@
       </div>
 
       <BattleMetricsPanel
-        {bm} {bmLoading} {bmError} {bmApiKey}
-        onRetry={() => { bmFetchedKey = ''; bmRetryTick++; }}
+        {bm}
+        {bmLoading}
+        {bmError}
+        {bmApiKey}
+        {userLocation}
+        onRetry={() => {
+          bmFetchedKey = '';
+          bmRetryTick++;
+        }}
       />
 
       <!-- Refresh A2S button -->
@@ -677,4 +779,3 @@
 </div>
 
 <style></style>
-

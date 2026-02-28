@@ -35,15 +35,14 @@ export async function updateOfflineMode() {
 
 export async function launchOfflineMission(mission: string) {
   s.setStatus(`Launching offline: ${mission}`, 'info');
-  invoke('launch_offline_mission', { mission }).catch((e) =>
-    s.setStatus(`Launch failed: ${e}`, 'error')
-  );
+  invoke('launch_offline_mission', { mission }).catch((e) => s.setStatus(`Launch failed: ${e}`, 'error'));
 }
 
 export function removeOfflineMode() {
   s.confirmDialog = {
     title: 'Remove Offline Mode',
-    message: 'Delete all DayZCommunityOfflineMode mission folders?\nThis cannot be undone. You can reinstall with "Install / Update".',
+    message:
+      'Delete all DayZCommunityOfflineMode mission folders?\nThis cannot be undone. You can reinstall with "Install / Update".',
     confirmLabel: 'Remove all',
     confirmVariant: 'error',
     onConfirm: async () => {
@@ -67,7 +66,8 @@ export function removeOfflineMode() {
 export function clearOfflineSaves() {
   s.confirmDialog = {
     title: 'Clear Saves',
-    message: 'Delete all offline save data (storage_-1/) for every mission?\nThis wipes loot, player state and world state. The missions themselves are kept.',
+    message:
+      'Delete all offline save data (storage_-1/) for every mission?\nThis wipes loot, player state and world state. The missions themselves are kept.',
     confirmLabel: 'Clear saves',
     confirmVariant: 'warning',
     onConfirm: async () => {
@@ -78,6 +78,30 @@ export function clearOfflineSaves() {
       } catch (e) {
         s.offlineStatus = `Clear failed: ${e}`;
         s.offlineStatusKind = 'error';
+      }
+    },
+  };
+}
+
+export function removeMission(mission: string) {
+  s.confirmDialog = {
+    title: 'Remove Mission',
+    message: `Delete the mission "${mission}"?\nThis cannot be undone.`,
+    confirmLabel: 'Remove',
+    confirmVariant: 'error',
+    onConfirm: async () => {
+      try {
+        s.offlineLoading = true;
+        s.offlineStatus = `Removing ${mission}…`;
+        s.offlineStatusKind = 'info';
+        await invoke('remove_mission', { mission });
+        await loadOfflineMissions();
+        s.offlineStatus = `Removed ${mission}`;
+        s.offlineStatusKind = 'success';
+      } catch (e) {
+        s.offlineStatus = `Remove failed: ${e}`;
+        s.offlineStatusKind = 'error';
+        s.offlineLoading = false;
       }
     },
   };

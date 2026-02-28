@@ -13,11 +13,26 @@
     onUpdate: () => void;
     onLaunch: (mission: string) => void;
     onRemoveOfflineMode: () => void;
+    onRemoveMission: (mission: string) => void;
     onClearSaves: () => void;
     onOpenMissionDir: (mission: string) => void;
+    onOpenMissionsDir: () => void;
   }
 
-  let { missions, loading, status, statusKind, onRefresh, onUpdate, onLaunch, onRemoveOfflineMode, onClearSaves, onOpenMissionDir }: Props = $props();
+  let {
+    missions,
+    loading,
+    status,
+    statusKind,
+    onRefresh,
+    onUpdate,
+    onLaunch,
+    onRemoveOfflineMode,
+    onRemoveMission,
+    onClearSaves,
+    onOpenMissionDir,
+    onOpenMissionsDir,
+  }: Props = $props();
 
   let selectedMission = $state<string | null>(null);
 
@@ -28,11 +43,13 @@
     // Missions are typically "MapName.MissionType" e.g. "chernarusplus.DayZCommunityOfflineMode"
     const base = mission.split('.')[0] ?? mission;
     // CamelCase → words, replace underscores/hyphens
-    return base
-      .replace(/([a-z])([A-Z])/g, '$1 $2')
-      .replace(/[_-]+/g, ' ')
-      .replace(/\b\w/g, c => c.toUpperCase())
-      .trim() || mission;
+    return (
+      base
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .replace(/[_-]+/g, ' ')
+        .replace(/\b\w/g, (c) => c.toUpperCase())
+        .trim() || mission
+    );
   }
 
   /** Extract a short mission type tag from the filename suffix. */
@@ -41,37 +58,35 @@
     if (parts.length < 2) return 'MISSION';
     const tag = parts.slice(1).join('.').toLowerCase();
     if (tag.includes('offline')) return 'OFFLINE';
-    if (tag.includes('coop'))    return 'COOP';
-    if (tag.includes('pvp'))     return 'PVP';
-    if (tag.includes('surv'))    return 'SURVIVAL';
+    if (tag.includes('coop')) return 'COOP';
+    if (tag.includes('pvp')) return 'PVP';
+    if (tag.includes('surv')) return 'SURVIVAL';
     return parts[parts.length - 1]?.toUpperCase().slice(0, 8) ?? 'MISSION';
   }
 
   /** Icon per map name keyword. */
   function mapIcon(mission: string): string {
     const n = mission.toLowerCase();
-    if (n.includes('chernarus'))  return 'ph:map-trifold';
-    if (n.includes('livonia'))    return 'ph:tree-evergreen';
-    if (n.includes('namalsk'))    return 'ph:snowflake';
-    if (n.includes('takistan'))   return 'ph:mountains';
-    if (n.includes('esseker'))    return 'ph:factory';
-    if (n.includes('deer'))       return 'ph:island';
+    if (n.includes('chernarus')) return 'ph:map-trifold';
+    if (n.includes('livonia')) return 'ph:tree-evergreen';
+    if (n.includes('namalsk')) return 'ph:snowflake';
+    if (n.includes('takistan')) return 'ph:mountains';
+    if (n.includes('esseker')) return 'ph:factory';
+    if (n.includes('deer')) return 'ph:island';
     return 'ph:map-pin';
   }
 
   const statusColors: Record<string, string> = {
     success: 'text-success bg-success/10 border-success/25',
-    error:   'text-error   bg-error/10   border-error/25',
+    error: 'text-error   bg-error/10   border-error/25',
     warning: 'text-warning bg-warning/10 border-warning/25',
-    info:    'text-info    bg-info/10    border-info/25',
+    info: 'text-info    bg-info/10    border-info/25',
   };
 </script>
 
 <div class="flex h-full overflow-hidden">
-
   <!-- ── Left: mission list ─────────────────────────────────────────────────── -->
-  <div class="flex flex-col w-72 flex-shrink-0 border-r border-base-300 bg-base-100 overflow-hidden">
-
+  <div class="flex flex-col flex-1 min-w-0 border-r border-base-300 bg-base-100 overflow-hidden">
     <!-- Header -->
     <div class="flex items-center gap-2 px-3 py-2 bg-base-200 border-b border-base-300 flex-shrink-0">
       <Icon icon="ph:game-controller" class="size-3.5 text-primary" />
@@ -79,25 +94,25 @@
       {#if missions.length > 0}
         <span class="text-xs text-base-content/30">{missions.length}</span>
       {/if}
-      <button
-        class="btn btn-ghost btn-xs p-1"
-        onclick={onRefresh}
-        disabled={loading}
-        title="Refresh mission list"
-      >
+      <button class="btn btn-ghost btn-xs p-1" onclick={onRefresh} disabled={loading} title="Refresh mission list">
         <Icon icon="ph:arrows-clockwise" class="size-3.5" />
       </button>
     </div>
 
     <!-- Status bar -->
     {#if status}
-      <div class="flex items-start gap-2 mx-3 mt-2.5 mb-0.5 px-2.5 py-2 rounded-lg border text-xs flex-shrink-0
-                  {statusColors[statusKind] ?? statusColors.info}">
+      <div
+        class="flex items-start gap-2 mx-3 mt-2.5 mb-0.5 px-2.5 py-2 rounded-lg border text-xs flex-shrink-0
+                  {statusColors[statusKind] ?? statusColors.info}"
+      >
         <Icon
-          icon={statusKind === 'success' ? 'ph:check-circle'
-              : statusKind === 'error'   ? 'ph:warning-circle'
-              : statusKind === 'warning' ? 'ph:warning'
-              :                            'ph:info'}
+          icon={statusKind === 'success'
+            ? 'ph:check-circle'
+            : statusKind === 'error'
+              ? 'ph:warning-circle'
+              : statusKind === 'warning'
+                ? 'ph:warning'
+                : 'ph:info'}
           class="size-3.5 shrink-0 mt-0.5"
         />
         <span class="leading-snug">{status}</span>
@@ -107,7 +122,7 @@
     <!-- Mission cards -->
     {#if loading && missions.length === 0}
       <div class="flex-1 p-3 space-y-2">
-        {#each [1,2,3] as _}
+        {#each [1, 2, 3] as _}
           <div class="rounded-lg bg-base-200 animate-pulse h-16"></div>
         {/each}
       </div>
@@ -119,7 +134,7 @@
         <div>
           <p class="text-sm font-medium text-base-content/60">No missions installed</p>
           <p class="text-xs text-base-content/35 mt-1 leading-relaxed">
-            Click <span class="font-semibold text-primary">Install</span> to download<br>DayZ Community Offline Mode
+            Click <span class="font-semibold text-primary">Install</span> to download<br />DayZ Community Offline Mode
           </p>
         </div>
       </div>
@@ -127,17 +142,29 @@
       <div class="flex-1 overflow-y-auto p-2 space-y-1">
         {#each missions as mission}
           {@const isSel = selectedMission === mission}
-          <button
-            class="w-full text-left rounded-lg px-3 py-2.5 transition-colors border
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            class="group w-full text-left rounded-lg px-3 py-2.5 transition-colors border cursor-pointer
                    {isSel
-                     ? 'bg-primary/10 border-primary/30'
-                     : 'hover:bg-base-200/70 border-transparent hover:border-base-300/50'}"
+              ? 'bg-primary/10 border-primary/30'
+              : 'hover:bg-base-200/70 border-transparent hover:border-base-300/50'}"
             onclick={() => (selectedMission = mission)}
             ondblclick={() => onLaunch(mission)}
+            onkeydown={(e) => {
+              if (e.key === 'Enter') onLaunch(mission);
+              if (e.key === ' ') {
+                e.preventDefault();
+                selectedMission = mission;
+              }
+            }}
+            role="button"
+            tabindex="0"
           >
             <div class="flex items-center gap-2.5">
-              <div class="size-8 rounded-md flex items-center justify-center flex-shrink-0
-                          {isSel ? 'bg-primary/15 text-primary' : 'bg-base-200 text-base-content/35'}">
+              <div
+                class="size-8 rounded-md flex items-center justify-center flex-shrink-0
+                          {isSel ? 'bg-primary/15 text-primary' : 'bg-base-200 text-base-content/35'}"
+              >
                 <Icon icon={mapIcon(mission)} class="size-4" />
               </div>
               <div class="flex-1 min-w-0">
@@ -148,22 +175,43 @@
                   {mission}
                 </p>
               </div>
-              <span class="text-primary/60 font-semibold shrink-0" style="font-size:8px; letter-spacing:0.06em;">
+              <span class="text-primary/60 font-semibold shrink-0 mr-1" style="font-size:8px; letter-spacing:0.06em;">
                 {missionTag(mission)}
               </span>
+              <!-- Per-mission actions -->
+              <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs p-1 text-base-content/40 hover:text-primary"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    onOpenMissionDir(mission);
+                  }}
+                  title="Open mission folder"
+                >
+                  <Icon icon="ph:folder-open" class="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs p-1 text-base-content/40 hover:text-error"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    onRemoveMission(mission);
+                  }}
+                  title="Remove this mission"
+                >
+                  <Icon icon="ph:trash" class="size-3.5" />
+                </button>
+              </div>
             </div>
-          </button>
+          </div>
         {/each}
       </div>
     {/if}
 
     <!-- Install / Update button -->
     <div class="px-3 pt-2.5 border-t border-base-300 flex-shrink-0">
-      <button
-        class="btn btn-primary btn-sm w-full gap-2"
-        onclick={onUpdate}
-        disabled={loading}
-      >
+      <button class="btn btn-primary btn-sm w-full gap-2" onclick={onUpdate} disabled={loading}>
         {#if loading}
           <span class="loading loading-spinner loading-xs"></span>
           Installing…
@@ -174,15 +222,23 @@
       </button>
     </div>
 
-    <!-- Danger zone -->
+    <!-- Actions -->
     <div class="px-3 pb-2.5 pt-2 flex-shrink-0 flex gap-1.5">
+      <button
+        class="btn btn-ghost btn-xs flex-1 gap-1 text-base-content/50 hover:text-primary hover:bg-primary/10"
+        onclick={onOpenMissionsDir}
+        title="Open the Missions folder in file manager"
+      >
+        <Icon icon="ph:folder-open" class="size-3.5" />
+        Explore
+      </button>
       <button
         class="btn btn-ghost btn-xs flex-1 gap-1 text-warning/70 hover:text-warning hover:bg-warning/10"
         onclick={onClearSaves}
         disabled={loading || missions.length === 0}
         title="Delete storage_-1/ save data inside each mission folder (loot, player state, world state). Missions are kept."
       >
-        <Icon icon="ph:floppy-disk-times" class="size-3.5" />
+        <Icon icon="ph:eraser" class="size-3.5" />
         Clear saves
       </button>
       <button
@@ -192,53 +248,45 @@
         title="Remove all DayZCommunityOfflineMode mission folders. Use Install / Update to reinstall."
       >
         <Icon icon="ph:trash" class="size-3.5" />
-        Remove
+        Remove all
       </button>
     </div>
   </div>
 
   <!-- ── Right: detail / launch pane ──────────────────────────────────────── -->
-  <div class="flex-1 flex flex-col items-center justify-center overflow-hidden bg-base-100">
+  <div
+    class="w-72 flex-shrink-0 flex flex-col items-center justify-center overflow-hidden bg-base-100 border-l border-base-300"
+  >
     {#if selectedMission}
       {@const icon = mapIcon(selectedMission)}
       {@const name = mapName(selectedMission)}
-      {@const tag  = missionTag(selectedMission)}
+      {@const tag = missionTag(selectedMission)}
 
-      <div class="flex flex-col items-center gap-6 max-w-xs w-full px-8">
-
-        <!-- Map icon large -->
-        <div class="size-24 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-          <Icon icon={icon} class="size-12 text-primary/70" />
+      <div class="flex flex-col items-center gap-4 w-full px-5">
+        <!-- Map icon -->
+        <div class="size-16 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+          <Icon {icon} class="size-8 text-primary/70" />
         </div>
 
         <!-- Info -->
-        <div class="text-center">
-          <h2 class="text-xl font-bold text-base-content leading-tight">{name}</h2>
-          <span class="inline-block mt-2 px-2 py-0.5 rounded text-primary/70 bg-primary/10 border border-primary/20 font-semibold" style="font-size:10px; letter-spacing:0.08em;">
+        <div class="text-center w-full">
+          <h2 class="text-base font-bold text-base-content leading-tight truncate">{name}</h2>
+          <span
+            class="inline-block mt-1.5 px-2 py-0.5 rounded text-primary/70 bg-primary/10 border border-primary/20 font-semibold"
+            style="font-size:9px; letter-spacing:0.08em;"
+          >
             {tag}
           </span>
-          <p class="text-xs text-base-content/35 font-mono mt-3 break-all">{selectedMission}</p>
+          <p class="text-xs text-base-content/35 font-mono mt-2 break-all line-clamp-2">{selectedMission}</p>
         </div>
 
-        <!-- Launch + folder row -->
-        <div class="flex items-center gap-2 w-full">
-          <button
-            class="btn btn-primary btn-lg flex-1 gap-2 shadow-lg"
-            onclick={() => onLaunch(selectedMission!)}
-          >
-            <Icon icon="ph:play" class="size-5" />
-            Launch Mission
-          </button>
-          <button
-            class="btn btn-ghost btn-lg gap-1.5"
-            onclick={() => onOpenMissionDir(selectedMission!)}
-            title="Open mission folder in file manager"
-          >
-            <Icon icon="ph:folder-open" class="size-5" />
-          </button>
-        </div>
+        <!-- Launch button -->
+        <button class="btn btn-primary btn-sm w-full gap-2" onclick={() => onLaunch(selectedMission!)}>
+          <Icon icon="ph:play" class="size-4" />
+          Launch
+        </button>
 
-        <p class="text-xs text-base-content/30">Double-click a mission in the list to launch directly</p>
+        <p class="text-xs text-base-content/30 text-center">Double-click to launch directly</p>
 
         <!-- Repo link -->
         <button
@@ -246,38 +294,35 @@
           onclick={() => openUrl(REPO_URL)}
           title={REPO_URL}
         >
-          <Icon icon="mdi:github" class="size-3.5" />
-          DayZCommunityOfflineMode
-          <Icon icon="ph:arrow-square-out" class="size-3" />
+          <Icon icon="mdi:github" class="size-3" />
+          <span style="font-size:10px;">DayZCommunityOfflineMode</span>
+          <Icon icon="ph:arrow-square-out" class="size-2.5" />
         </button>
       </div>
-
     {:else}
       <!-- Nothing selected -->
-      <div class="flex flex-col items-center gap-4 text-center px-8">
-        <div class="size-16 rounded-2xl bg-base-200 flex items-center justify-center">
-          <Icon icon="ph:cursor-click" class="size-8 text-base-content/20" />
+      <div class="flex flex-col items-center gap-3 text-center px-5">
+        <div class="size-12 rounded-xl bg-base-200 flex items-center justify-center">
+          <Icon icon="ph:cursor-click" class="size-6 text-base-content/20" />
         </div>
         <div>
-          <p class="text-sm font-medium text-base-content/50">Select a mission to launch</p>
-          <p class="text-xs text-base-content/30 mt-1">or double-click to launch immediately</p>
+          <p class="text-sm font-medium text-base-content/50">Select a mission</p>
+          <p class="text-xs text-base-content/30 mt-0.5">or double-click to launch</p>
         </div>
 
         <!-- Repo link -->
         <button
-          class="flex items-center gap-1.5 text-xs text-base-content/35 hover:text-base-content/60 transition-colors border border-base-300/50 hover:border-base-300 rounded-lg px-3 py-2"
+          class="flex items-center gap-1.5 text-xs text-base-content/35 hover:text-base-content/60 transition-colors border border-base-300/50 hover:border-base-300 rounded-lg px-2.5 py-1.5"
           onclick={() => openUrl(REPO_URL)}
           title={REPO_URL}
         >
-          <Icon icon="mdi:github" class="size-4 shrink-0" />
-          <span class="flex flex-col text-left">
-            <span class="font-medium text-base-content/50" style="font-size:11px;">DayZCommunityOfflineMode</span>
-            <span class="text-base-content/30" style="font-size:10px;">by Arkensor · GitHub</span>
+          <Icon icon="mdi:github" class="size-3.5 shrink-0" />
+          <span class="text-left" style="font-size:10px;">
+            <span class="font-medium text-base-content/50">DayZCommunityOfflineMode</span>
           </span>
-          <Icon icon="ph:arrow-square-out" class="size-3 shrink-0 ml-1" />
+          <Icon icon="ph:arrow-square-out" class="size-2.5 shrink-0" />
         </button>
       </div>
     {/if}
   </div>
-
 </div>

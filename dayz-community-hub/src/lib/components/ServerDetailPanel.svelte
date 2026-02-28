@@ -1,16 +1,43 @@
 <script lang="ts">
   import type { ServerDto, ServerFullDto, ModDto, A2sDetailsDto, InstalledModDto, BattleMetricsDto } from '$lib/types';
-  import { pingColor, playerFill, formatDuration, sparklinePath } from '$lib/utils';
+  import {
+    pingColor,
+    playerFill,
+    formatDuration,
+    sparklinePath,
+    countryCodeToFlag,
+    countryCodeToName,
+    haversineDistance,
+  } from '$lib/utils';
   import { invoke } from '@tauri-apps/api/core';
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import Icon from '@iconify/svelte';
 
+  /** Calculate relative time from ISO date string */
+  function getServerAge(isoDate: string): string {
+    const created = new Date(isoDate);
+    const now = new Date();
+    const diffMs = now.getTime() - created.getTime();
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    if (days < 1) return 'today';
+    if (days === 1) return '1 day';
+    if (days < 30) return `${days} days`;
+    const months = Math.floor(days / 30);
+    if (months === 1) return '1 month';
+    if (months < 12) return `${months} months`;
+    const years = Math.floor(days / 365);
+    if (years === 1) return '1 year';
+    return `${years} years`;
+  }
+
   let copiedIp = $state(false);
   async function copyIp() {
     await writeText(`${server.ip}:${server.game_port}`);
     copiedIp = true;
-    setTimeout(() => { copiedIp = false; }, 1500);
+    setTimeout(() => {
+      copiedIp = false;
+    }, 1500);
   }
 
   interface Props {
@@ -22,13 +49,27 @@
     pingMs: number | null;
     /** BattleMetrics personal access token from profile (null = not configured). */
     bmApiKey: string | null;
+    /** User location [longitude, latitude] for distance calculation. */
+    userLocation?: [number, number] | null;
     /** When true, scroll the mods section into view once it renders. */
     scrollToMods?: boolean;
     onClose: () => void;
     onQueryA2s: () => void;
   }
 
-  let { server, a2s, a2sLoading, a2sError, installedMods, pingMs, bmApiKey, scrollToMods = false, onClose, onQueryA2s }: Props = $props();
+  let {
+    server,
+    a2s,
+    a2sLoading,
+    a2sError,
+    installedMods,
+    pingMs,
+    bmApiKey,
+    userLocation = null,
+    scrollToMods = false,
+    onClose,
+    onQueryA2s,
+  }: Props = $props();
 
   let modsHeading = $state<HTMLElement | null>(null);
 
@@ -96,7 +137,9 @@
             fetchedKey = key;
           }
         })
-        .finally(() => { modsLoading = false; });
+        .finally(() => {
+          modsLoading = false;
+        });
     }, 200);
 
     return () => clearTimeout(_detailDebounce);
@@ -141,14 +184,12 @@
             bmFetchedKey = key;
           }
         })
-        .finally(() => { bmLoading = false; });
+        .finally(() => {
+          bmLoading = false;
+        });
     }, 300);
     return () => clearTimeout(_bmDebounce);
   });
-
-
-
-
 </script>
 
 <div class="flex flex-col h-full overflow-hidden border-l border-base-300 bg-base-100">
@@ -198,7 +239,7 @@
       </div>
 
       <div class="text-base-content/50">Platform</div>
-      <div class="{server.environment === 'w' ? 'text-info' : 'text-success'}">
+      <div class={server.environment === 'w' ? 'text-info' : 'text-success'}>
         {server.environment === 'w' ? 'Windows' : 'Linux'}
       </div>
 
@@ -206,7 +247,7 @@
       <div>{server.first_person_only ? 'Yes' : 'No'}</div>
 
       <div class="text-base-content/50">Password</div>
-      <div class="{server.password ? 'text-error' : 'text-base-content/40'}">
+      <div class={server.password ? 'text-error' : 'text-base-content/40'}>
         {server.password ? 'Yes' : 'No'}
       </div>
 
@@ -240,9 +281,12 @@
               <span class="truncate text-base-content/80">{mod.name}</span>
               <button
                 class="text-base-content/40 ml-auto font-mono flex-shrink-0 hover:text-primary transition-colors"
-                onclick={(e) => { e.stopPropagation(); openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.steam_workshop_id}`); }}
-                title="Open on Steam Workshop"
-              >{mod.steam_workshop_id}</button>
+                onclick={(e) => {
+                  e.stopPropagation();
+                  openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.steam_workshop_id}`);
+                }}
+                title="Open on Steam Workshop">{mod.steam_workshop_id}</button
+              >
             </div>
           {/each}
         </div>
@@ -254,7 +298,9 @@
           <span class="italic">{server.mods_count} mod(s) — fetch failed</span>
           <button
             class="btn btn-ghost btn-xs h-5 min-h-0 px-1.5 ml-auto"
-            onclick={() => { fetchedKey = ''; }}
+            onclick={() => {
+              fetchedKey = '';
+            }}
             title="Retry"
           >
             <Icon icon="ph:arrows-clockwise" class="size-3" />
@@ -287,7 +333,10 @@
         {#if bmApiKey}
           <button
             class="btn btn-ghost btn-xs"
-            onclick={() => { bmFetchedKey = ''; bmRetryTick++; }}
+            onclick={() => {
+              bmFetchedKey = '';
+              bmRetryTick++;
+            }}
             disabled={bmLoading}
             title="Refresh BattleMetrics data"
           >
@@ -310,7 +359,44 @@
           Loading BattleMetrics data…
         </div>
       {:else if bm}
-        <!-- Rank + status row -->
+        <!-- Server type badges -->
+        <div class="flex flex-wrap gap-1 mb-2">
+          {#if bm.official}
+            <span class="badge badge-xs bg-amber-500/15 text-amber-500 border-amber-500/30 gap-1">
+              <Icon icon="ph:seal-check-fill" class="size-2.5" />official
+            </span>
+          {/if}
+          {#if bm.private}
+            <span class="badge badge-xs bg-rose-500/15 text-rose-400 border-rose-500/30 gap-1">
+              <Icon icon="ph:lock-fill" class="size-2.5" />private
+            </span>
+          {/if}
+          {#if bm.third_person}
+            <span class="badge badge-xs bg-sky-500/15 text-sky-400 border-sky-500/30 gap-1">
+              <Icon icon="ph:eye" class="size-2.5" />3PP
+            </span>
+          {:else if bm.third_person === false}
+            <span class="badge badge-xs bg-violet-500/15 text-violet-400 border-violet-500/30 gap-1">
+              <Icon icon="ph:crosshair-simple" class="size-2.5" />1PP
+            </span>
+          {/if}
+          {#if bm.modded}
+            <span class="badge badge-xs bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30 gap-1">
+              <Icon icon="ph:puzzle-piece" class="size-2.5" />modded
+            </span>
+          {/if}
+          {#if bm.query_status === 'valid'}
+            <span class="badge badge-xs bg-emerald-500/15 text-emerald-400 border-emerald-500/30 gap-1">
+              <Icon icon="ph:wifi-high" class="size-2.5" />online
+            </span>
+          {:else if bm.query_status}
+            <span class="badge badge-xs bg-orange-500/15 text-orange-400 border-orange-500/30 gap-1">
+              <Icon icon="ph:wifi-slash" class="size-2.5" />{bm.query_status}
+            </span>
+          {/if}
+        </div>
+
+        <!-- Stats grid -->
         <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs mb-2">
           {#if bm.rank !== null}
             <div class="text-base-content/50">Rank</div>
@@ -318,28 +404,76 @@
           {/if}
           <div class="text-base-content/50">Status</div>
           <div class="flex items-center gap-1.5">
-            <span class="size-2 rounded-full flex-shrink-0 {bm.status === 'online' ? 'bg-success' : bm.status === 'offline' ? 'bg-error' : 'bg-base-content/30'}"></span>
-            <span class="{bm.status === 'online' ? 'text-success' : bm.status === 'offline' ? 'text-error' : 'text-base-content/50'}">{bm.status}</span>
+            <span
+              class="size-2 rounded-full flex-shrink-0 {bm.status === 'online'
+                ? 'bg-success'
+                : bm.status === 'offline'
+                  ? 'bg-error'
+                  : 'bg-base-content/30'}"
+            ></span>
+            <span
+              class={bm.status === 'online'
+                ? 'text-success'
+                : bm.status === 'offline'
+                  ? 'text-error'
+                  : 'text-base-content/50'}>{bm.status}</span
+            >
           </div>
           {#if bm.country}
             <div class="text-base-content/50">Country</div>
-            <div class="font-mono">{bm.country}</div>
+            <div class="flex items-center gap-1.5">
+              <span>{countryCodeToFlag(bm.country)}</span>
+              <span>{countryCodeToName(bm.country)}</span>
+            </div>
+          {/if}
+          {#if bm.location && userLocation}
+            {@const dist = haversineDistance(userLocation[1], userLocation[0], bm.location[1], bm.location[0])}
+            <div class="text-base-content/50">Distance</div>
+            <div class="font-mono">{dist.toFixed(0)} km</div>
           {/if}
           {#if bm.uptime !== null}
             <div class="text-base-content/50">Uptime</div>
-            <div class="{(bm.uptime ?? 0) >= 90 ? 'text-success' : (bm.uptime ?? 0) >= 70 ? 'text-warning' : 'text-error'}">{bm.uptime?.toFixed(1)}%</div>
+            <div
+              class={(bm.uptime ?? 0) >= 90 ? 'text-success' : (bm.uptime ?? 0) >= 70 ? 'text-warning' : 'text-error'}
+            >
+              {bm.uptime?.toFixed(1)}%
+            </div>
+          {/if}
+          {#if bm.created_at}
+            <div class="text-base-content/50">First seen</div>
+            <div class="text-base-content/70" title={bm.created_at}>{getServerAge(bm.created_at)} ago</div>
+          {/if}
+          {#if bm.server_steam_id}
+            <div class="text-base-content/50">Steam ID</div>
+            <button
+              class="text-left font-mono text-base-content/60 hover:text-primary truncate"
+              onclick={() => openUrl(`https://steamcommunity.com/profiles/${bm?.server_steam_id}`)}
+              title="Open Steam profile"
+            >
+              {bm.server_steam_id.slice(-8)}…
+            </button>
           {/if}
         </div>
 
         <!-- Player history sparkline -->
         {#if bm.player_history.length >= 2}
+          {@const counts = bm.player_history.map(([, c]) => c)}
+          {@const minCount = Math.min(...counts)}
+          {@const maxCount = Math.max(...counts)}
+          {@const currentCount = counts[counts.length - 1]}
+          {@const avgCount = Math.round(counts.reduce((a, b) => a + b, 0) / counts.length)}
           <div class="mb-2">
-            <div class="text-xs text-base-content/40 mb-1">Player count (24 h)</div>
-            <svg
-              viewBox="0 0 120 28"
-              class="w-full h-7 text-primary"
-              preserveAspectRatio="none"
-            >
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs text-base-content/40">Player count (24 h)</span>
+              <div class="flex items-center gap-2 text-xs font-mono">
+                <span class="text-base-content/30" title="Min">{minCount}</span>
+                <span class="text-base-content/50">–</span>
+                <span class="text-primary font-semibold" title="Current">{currentCount}</span>
+                <span class="text-base-content/50">–</span>
+                <span class="text-base-content/30" title="Max">{maxCount}</span>
+              </div>
+            </div>
+            <svg viewBox="0 0 120 28" class="w-full h-7 text-primary" preserveAspectRatio="none">
               <path
                 d={sparklinePath(bm.player_history)}
                 fill="none"
@@ -349,6 +483,11 @@
                 stroke-linejoin="round"
               />
             </svg>
+            <div class="flex items-center justify-between text-xs text-base-content/25 mt-0.5">
+              <span>24h ago</span>
+              <span>avg: {avgCount}</span>
+              <span>now</span>
+            </div>
           </div>
         {/if}
 
@@ -361,12 +500,17 @@
           View on BattleMetrics
         </button>
       {:else if bmError}
-        <div class="flex items-start gap-2 px-2.5 py-2 rounded-lg bg-error/10 border border-error/25 text-xs text-error">
+        <div
+          class="flex items-start gap-2 px-2.5 py-2 rounded-lg bg-error/10 border border-error/25 text-xs text-error"
+        >
           <Icon icon="ph:warning-circle" class="size-3.5 shrink-0 mt-0.5" />
           <span class="leading-snug break-all flex-1">{bmError}</span>
           <button
             class="btn btn-ghost btn-xs h-5 min-h-0 px-1.5 shrink-0"
-            onclick={() => { bmFetchedKey = ''; bmRetryTick++; }}
+            onclick={() => {
+              bmFetchedKey = '';
+              bmRetryTick++;
+            }}
             title="Retry"
           >
             <Icon icon="ph:arrows-clockwise" class="size-3" />
@@ -379,11 +523,7 @@
     <div>
       <div class="flex items-center justify-between mb-1">
         <span class="text-xs font-semibold text-base-content/50">Live A2S Info</span>
-        <button
-          class="btn btn-ghost btn-xs"
-          onclick={onQueryA2s}
-          disabled={a2sLoading}
-        >
+        <button class="btn btn-ghost btn-xs" onclick={onQueryA2s} disabled={a2sLoading}>
           {#if a2sLoading}
             <span class="loading loading-spinner loading-xs"></span>
           {:else}
@@ -416,7 +556,9 @@
           <p class="text-xs text-base-content/40 italic">Player names not reported by server</p>
         {/if}
       {:else if a2sError}
-        <div class="flex items-start gap-2 px-2.5 py-2 rounded-lg bg-error/10 border border-error/25 text-xs text-error">
+        <div
+          class="flex items-start gap-2 px-2.5 py-2 rounded-lg bg-error/10 border border-error/25 text-xs text-error"
+        >
           <Icon icon="ph:warning-circle" class="size-3.5 shrink-0 mt-0.5" />
           <span class="leading-snug break-all">{a2sError}</span>
         </div>

@@ -124,6 +124,7 @@ pub(crate) fn profile_to_dto(profile: &Profile) -> ProfileDto {
         steam_api_key: profile.steam_api_key.clone(),
         steam_id: profile.steam_id.clone(),
         battlemetrics_api_key: profile.battlemetrics_api_key.clone(),
+        user_location: profile.user_location,
         favorites: profile
             .favorites
             .iter()

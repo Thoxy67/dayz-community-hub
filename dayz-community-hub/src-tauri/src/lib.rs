@@ -140,6 +140,8 @@ pub fn run(args: CliArgs) {
             commands::offline::get_offline_missions,
             commands::offline::update_offline_mode,
             commands::offline::remove_offline_mode,
+            commands::offline::remove_mission,
+            commands::offline::open_missions_dir,
             commands::offline::clear_offline_saves,
             commands::offline::launch_offline_mission,
             commands::ping::start_pinging,

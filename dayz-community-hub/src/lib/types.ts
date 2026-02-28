@@ -76,6 +76,8 @@ export interface ProfileDto {
   steam_api_key: string | null;
   steam_id: string | null;
   battlemetrics_api_key: string | null;
+  /** User location [longitude, latitude] for distance calculation. */
+  user_location: [number, number] | null;
   favorites: FavoriteDto[];
   history: HistoryDto[];
   options: LaunchOptionDto[];
@@ -93,8 +95,24 @@ export interface BattleMetricsDto {
   status: string;
   /** ISO 3166-1 alpha-2 country code, e.g. "DE". null if unknown. */
   country: string | null;
+  /** Server coordinates [longitude, latitude]. null if unavailable. */
+  location: [number, number] | null;
   /** Uptime % over last 30 days (0–100). null if not available. */
   uptime: number | null;
+  /** Whether the server is private (password protected). */
+  private: boolean | null;
+  /** Whether this is an official server. */
+  official: boolean | null;
+  /** Whether third-person view is allowed. */
+  third_person: boolean | null;
+  /** Whether the server is modded. */
+  modded: boolean | null;
+  /** Query status: "valid", "invalid", etc. */
+  query_status: string | null;
+  /** Server's Steam ID. */
+  server_steam_id: string | null;
+  /** When the server was first seen on BattleMetrics (ISO 8601). */
+  created_at: string | null;
   /** Player count data points for the last 24 h: [unix_secs, count] pairs. */
   player_history: [number, number][];
 }
@@ -144,7 +162,15 @@ export interface AppStatsDto {
 }
 
 export interface ModProgressEvent {
-  kind: 'shutting_down_steam' | 'steam_guard_mobile_required' | 'password_required' | 'log_line' | 'starting' | 'done' | 'failed' | 'finished';
+  kind:
+    | 'shutting_down_steam'
+    | 'steam_guard_mobile_required'
+    | 'password_required'
+    | 'log_line'
+    | 'starting'
+    | 'done'
+    | 'failed'
+    | 'finished';
   current: number;
   total: number;
   mod_id: number;
@@ -163,16 +189,7 @@ export interface PingResult {
 
 // ─── App-level UI state ────────────────────────────────────────────────────────
 
-export type TabId =
-  | 'servers'
-  | 'favorites'
-  | 'history'
-  | 'mods'
-  | 'news'
-  | 'connect'
-  | 'options'
-  | 'offline'
-  | 'about';
+export type TabId = 'servers' | 'favorites' | 'history' | 'mods' | 'news' | 'connect' | 'options' | 'offline' | 'about';
 
 export interface ConfirmDialog {
   title: string;

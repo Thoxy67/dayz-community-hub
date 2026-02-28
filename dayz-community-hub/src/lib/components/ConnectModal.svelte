@@ -56,7 +56,9 @@
     >
       <!-- Header -->
       <div class="flex items-start gap-3 mb-4">
-        <div class="size-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 mt-0.5">
+        <div
+          class="size-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 mt-0.5"
+        >
           <Icon icon="ph:play-fill" class="size-4 text-primary" />
         </div>
         <div class="min-w-0">
@@ -66,7 +68,9 @@
       </div>
 
       <!-- Toggle row -->
-      <div class="flex items-center justify-between gap-4 px-3 py-3 rounded-lg bg-base-200/70 border border-base-300/60">
+      <div
+        class="flex items-center justify-between gap-4 px-3 py-3 rounded-lg bg-base-200/70 border border-base-300/60"
+      >
         <div class="flex items-center gap-2.5 min-w-0">
           <Icon
             icon={request.kind === 'missing' ? 'ph:download-simple' : 'ph:arrows-clockwise'}
@@ -83,11 +87,7 @@
             </p>
           </div>
         </div>
-        <input
-          type="checkbox"
-          class="toggle toggle-sm toggle-primary shrink-0"
-          bind:checked={updateMods}
-        />
+        <input type="checkbox" class="toggle toggle-sm toggle-primary shrink-0" bind:checked={updateMods} />
       </div>
 
       {#if !updateMods && request.kind === 'missing'}
@@ -102,9 +102,7 @@
         <button class="btn btn-ghost btn-sm" onclick={onClose}>Cancel</button>
         <button class="btn btn-primary btn-sm gap-1.5" onclick={handleConnect}>
           <Icon icon="ph:play" class="size-3.5" />
-          {updateMods
-            ? (request.kind === 'missing' ? 'Install & connect' : 'Update & connect')
-            : 'Connect'}
+          {updateMods ? (request.kind === 'missing' ? 'Install & connect' : 'Update & connect') : 'Connect'}
         </button>
       </div>
     </div>

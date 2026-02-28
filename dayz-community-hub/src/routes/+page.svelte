@@ -31,11 +31,40 @@
   // ── Action modules ──────────────────────────────────────────────────────
   import { refreshServers, pingSingle, loadStats } from '$lib/actions/servers';
   import { loadProfile, saveProfileSettings, toggleOption, setOptionValue } from '$lib/actions/profile';
-  import { addFavorite, addFavoriteDirect, removeFavorite, removeFavoriteQuick, excludeIp, unexcludeIp } from '$lib/actions/favorites';
-  import { loadMods, checkModUpdates, deleteMod, toggleModManaged, updateMod, updateAllMods, updateStaleMods, cleanupMods, deleteSelectedMods, updateSelectedMods, installMods, dismissModOp, sendSteamcmdPassword, cancelModOperation } from '$lib/actions/mods';
+  import {
+    addFavorite,
+    addFavoriteDirect,
+    removeFavorite,
+    removeFavoriteQuick,
+    excludeIp,
+    unexcludeIp,
+  } from '$lib/actions/favorites';
+  import {
+    loadMods,
+    checkModUpdates,
+    deleteMod,
+    toggleModManaged,
+    updateMod,
+    updateAllMods,
+    updateStaleMods,
+    cleanupMods,
+    deleteSelectedMods,
+    updateSelectedMods,
+    installMods,
+    dismissModOp,
+    sendSteamcmdPassword,
+    cancelModOperation,
+  } from '$lib/actions/mods';
   import { connectToServer, connectByAddress, connectDirect, openInDirectConnect } from '$lib/actions/connect';
   import { removeHistoryEntry, clearHistory, addFavoriteFromHistory } from '$lib/actions/history';
-  import { loadOfflineMissions, updateOfflineMode, launchOfflineMission, removeOfflineMode, clearOfflineSaves } from '$lib/actions/offline';
+  import {
+    loadOfflineMissions,
+    updateOfflineMode,
+    launchOfflineMission,
+    removeOfflineMode,
+    removeMission,
+    clearOfflineSaves,
+  } from '$lib/actions/offline';
   import { loadNews } from '$lib/actions/news';
   import { exportProfile, importProfile, resetProfile } from '$lib/actions/profile-io';
   import { checkForUpdate, installUpdate } from '$lib/actions/updater';
@@ -43,9 +72,7 @@
   import { doInitialize, selectTab } from '$lib/actions/init';
 
   // ── Derived helpers ───────────────────────────────────────────────────────
-  let favoritesSet = $derived(
-    new Set(s.profile?.favorites.map((f) => `${f.ip}:${f.port}`) ?? [])
-  );
+  let favoritesSet = $derived(new Set(s.profile?.favorites.map((f) => `${f.ip}:${f.port}`) ?? []));
 
   let tabs = $derived([
     { id: 'servers' as TabId, label: 'Servers', count: s.servers.length },
@@ -59,11 +86,9 @@
     { id: 'about' as TabId, label: 'About', icon: 'mdi:information', pushRight: true },
   ]);
 
-  let staleModCount = $derived(s.installedMods.filter(m => m.update_available).length);
+  let staleModCount = $derived(s.installedMods.filter((m) => m.update_available).length);
 
-  let lastHistoryEntry = $derived(
-    !s.quickConnectDismissed ? (s.profile?.history?.[0] ?? null) : null
-  );
+  let lastHistoryEntry = $derived(!s.quickConnectDismissed ? (s.profile?.history?.[0] ?? null) : null);
 
   let excludedIpsSet = $derived(new Set<string>(s.profile?.excluded_ips ?? []));
 
@@ -78,7 +103,7 @@
   async function refreshBannerA2s() {
     const lh = s.profile?.history?.[0] ?? null;
     if (!lh) return;
-    const sv = s.servers.find(svr => svr.ip === lh.ip && (svr.query_port === lh.port || svr.game_port === lh.port));
+    const sv = s.servers.find((svr) => svr.ip === lh.ip && (svr.query_port === lh.port || svr.game_port === lh.port));
     const queryPort = sv ? sv.query_port : lh.port;
     s.bannerA2sLoading = true;
     try {
@@ -161,8 +186,7 @@
     window.addEventListener('keydown', handleGlobalKeydown);
     cleanupFns.push(() => window.removeEventListener('keydown', handleGlobalKeydown));
 
-    const onVisibilityChange = () =>
-      document.hidden ? handleWindowHide() : handleWindowShow();
+    const onVisibilityChange = () => (document.hidden ? handleWindowHide() : handleWindowShow());
     document.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('blur', handleWindowHide);
     window.addEventListener('focus', handleWindowShow);
@@ -221,11 +245,14 @@
     }).then((fn) => cleanupFns.push(fn));
 
     // Periodic mod update check — every 30 minutes.
-    s.modUpdateInterval = setInterval(() => {
-      if (s.profile?.steam_api_key) {
-        checkModUpdates();
-      }
-    }, 30 * 60 * 1000);
+    s.modUpdateInterval = setInterval(
+      () => {
+        if (s.profile?.steam_api_key) {
+          checkModUpdates();
+        }
+      },
+      30 * 60 * 1000,
+    );
 
     return () => {
       cleanupFns.forEach((fn) => fn());
@@ -237,15 +264,24 @@
 
 <div class="flex flex-col h-screen w-screen overflow-hidden bg-base-100 text-base-content" data-theme={s.theme}>
   <TitleBar
-    stats={s.stats} avatarUrl={s.avatarUrl} steamPlayers={s.steamPlayers} theme={s.theme} profile={s.profile}
+    stats={s.stats}
+    avatarUrl={s.avatarUrl}
+    steamPlayers={s.steamPlayers}
+    theme={s.theme}
+    profile={s.profile}
     {staleModCount}
     updateState={s.updateState}
     glitchTick={s.titleGlitchTick}
-    onToggleTheme={s.toggleTheme}
+    onToggleTheme={() => s.toggleTheme()}
     onSaveSettings={saveProfileSettings}
     onUnexcludeIp={unexcludeIp}
-    onOpenExcludedIps={() => { s.showExcludedIpsModal = true; }}
-    onUpdateMods={() => { selectTab('mods'); updateStaleMods(); }}
+    onOpenExcludedIps={() => {
+      s.showExcludedIpsModal = true;
+    }}
+    onUpdateMods={() => {
+      selectTab('mods');
+      updateStaleMods();
+    }}
     onGoToUpdate={() => selectTab('about')}
   />
   <TabBar activeTab={s.activeTab} {tabs} onSelect={selectTab} />
@@ -253,10 +289,13 @@
   {#if s.statusMessage}
     <div
       class="px-3 py-1 text-xs flex-shrink-0 border-b border-base-300
-             {s.statusKind === 'error' ? 'bg-error/15 text-error' :
-              s.statusKind === 'success' ? 'bg-success/15 text-success' :
-              s.statusKind === 'warning' ? 'bg-warning/15 text-warning' :
-              'bg-info/10 text-info'}"
+             {s.statusKind === 'error'
+        ? 'bg-error/15 text-error'
+        : s.statusKind === 'success'
+          ? 'bg-success/15 text-success'
+          : s.statusKind === 'warning'
+            ? 'bg-warning/15 text-warning'
+            : 'bg-info/10 text-info'}"
     >
       {s.statusMessage}
     </div>
@@ -265,7 +304,9 @@
   <!-- Quick-connect banner: last played server, shown on Servers tab -->
   {#if lastHistoryEntry && s.activeTab === 'servers' && s.initialized}
     {@const _lh = lastHistoryEntry}
-    {@const _lhServer = s.servers.find(sv => sv.ip === _lh.ip && (sv.query_port === _lh.port || sv.game_port === _lh.port))}
+    {@const _lhServer = s.servers.find(
+      (sv) => sv.ip === _lh.ip && (sv.query_port === _lh.port || sv.game_port === _lh.port),
+    )}
     {@const _lhPing = _lhServer
       ? (s.pingCache.get(`${_lhServer.ip}:${_lhServer.query_port}`) ?? s.pingCache.get(`${_lh.ip}:${_lh.port}`))
       : s.pingCache.get(`${_lh.ip}:${_lh.port}`)}
@@ -287,7 +328,11 @@
         <!-- Players — click to refresh via A2S -->
         <button
           class="flex items-center gap-1 shrink-0 tabular-nums cursor-pointer hover:opacity-70 transition-opacity
-                 {_players >= _maxPlayers ? 'text-error' : _players > _maxPlayers / 2 ? 'text-warning' : 'text-success'}"
+                 {_players >= _maxPlayers
+            ? 'text-error'
+            : _players > _maxPlayers / 2
+              ? 'text-warning'
+              : 'text-success'}"
           onclick={refreshBannerA2s}
           title="Click to refresh player count"
           disabled={s.bannerA2sLoading}
@@ -308,8 +353,12 @@
         <button
           class="flex items-center gap-1 shrink-0 tabular-nums font-mono cursor-pointer hover:opacity-70 transition-opacity
                  {_lhPing !== undefined
-                   ? (_lhPing < 50 ? 'text-success' : _lhPing < 100 ? 'text-warning' : 'text-error')
-                   : 'text-base-content/30'}"
+            ? _lhPing < 50
+              ? 'text-success'
+              : _lhPing < 100
+                ? 'text-warning'
+                : 'text-error'
+            : 'text-base-content/30'}"
           onclick={() => pingSingle(_lhServer.ip, _lhServer.query_port)}
           title="Click to ping"
         >
@@ -323,9 +372,12 @@
             {_lhServer.time}
           </span>
         {/if}
-
       {:else}
-        <span class="shrink-0 text-warning/70" style="font-size:10px;" title="Server not found in current list — may be offline">OFFLINE</span>
+        <span
+          class="shrink-0 text-warning/70"
+          style="font-size:10px;"
+          title="Server not found in current list — may be offline">OFFLINE</span
+        >
       {/if}
 
       <!-- Time -->
@@ -375,6 +427,7 @@
         loading={s.serversLoading}
         bind:filter={s.serversFilter}
         bmApiKey={s.profile?.battlemetrics_api_key ?? null}
+        userLocation={s.profile?.user_location ?? null}
         onConnect={connectToServer}
         onAddFavorite={addFavorite}
         onRemoveFavorite={(sv) => removeFavoriteQuick(sv.ip, sv.query_port)}
@@ -382,7 +435,9 @@
         onPing={pingSingle}
         onExcludeIp={excludeIp}
         onUnexcludeIp={unexcludeIp}
-        onManageExcluded={() => { s.showExcludedIpsModal = true; }}
+        onManageExcluded={() => {
+          s.showExcludedIpsModal = true;
+        }}
         onDirectConnect={openInDirectConnect}
       />
     {:else if s.activeTab === 'favorites'}
@@ -391,6 +446,7 @@
         servers={s.servers}
         pingCache={s.pingCache}
         bmApiKey={s.profile?.battlemetrics_api_key ?? null}
+        userLocation={s.profile?.user_location ?? null}
         onConnect={connectByAddress}
         onRemove={removeFavorite}
         onGoToServers={() => selectTab('servers')}
@@ -404,6 +460,7 @@
         pingCache={s.pingCache}
         favorites={favoritesSet}
         bmApiKey={s.profile?.battlemetrics_api_key ?? null}
+        userLocation={s.profile?.user_location ?? null}
         onConnect={connectByAddress}
         onAddFavorite={addFavoriteFromHistory}
         onRemoveFavorite={(h) => removeFavoriteQuick(h.ip, h.port)}
@@ -419,7 +476,10 @@
         loading={s.modsLoading}
         checking={s.modsChecking}
         staleCount={staleModCount}
-        onRefresh={() => loadMods().then(() => { if (s.profile?.steam_api_key) checkModUpdates(true); })}
+        onRefresh={() =>
+          loadMods().then(() => {
+            if (s.profile?.steam_api_key) checkModUpdates(true);
+          })}
         onCheckUpdates={() => checkModUpdates(true)}
         steamApiKey={s.profile?.steam_api_key ?? ''}
         onDelete={deleteMod}
@@ -438,19 +498,22 @@
       <NewsTab
         articles={s.articles}
         loading={s.newsLoading}
-        onRefresh={() => { s.articles = []; loadNews(); }}
+        onRefresh={() => {
+          s.articles = [];
+          loadNews();
+        }}
         onOpenUrl={openUrl}
       />
     {:else if s.activeTab === 'connect'}
-       <DirectConnectTab
-         servers={s.servers}
-         installedMods={s.installedMods}
-         favorites={favoritesSet}
-         favoriteList={s.profile?.favorites ?? []}
-         onConnect={connectDirect}
-         onAddFavorite={addFavoriteDirect}
-         prefill={s.directConnectPrefill}
-       />
+      <DirectConnectTab
+        servers={s.servers}
+        installedMods={s.installedMods}
+        favorites={favoritesSet}
+        favoriteList={s.profile?.favorites ?? []}
+        onConnect={connectDirect}
+        onAddFavorite={addFavoriteDirect}
+        prefill={s.directConnectPrefill}
+      />
     {:else if s.activeTab === 'options'}
       <OptionsTab
         options={s.profile?.options ?? []}
@@ -468,8 +531,10 @@
         onUpdate={updateOfflineMode}
         onLaunch={launchOfflineMission}
         onRemoveOfflineMode={removeOfflineMode}
+        onRemoveMission={removeMission}
         onClearSaves={clearOfflineSaves}
         onOpenMissionDir={(mission) => invoke('open_mission_dir', { mission }).catch(() => {})}
+        onOpenMissionsDir={() => invoke('open_missions_dir').catch(() => {})}
       />
     {:else if s.activeTab === 'about'}
       <AboutTab
@@ -503,17 +568,25 @@
     <ExcludedIpsModal
       excludedIps={s.profile?.excluded_ips ?? []}
       onUnexclude={unexcludeIp}
-      onClose={() => { s.showExcludedIpsModal = false; }}
+      onClose={() => {
+        s.showExcludedIpsModal = false;
+      }}
     />
   {/if}
 
   {#if s.showWizard}
-    <SetupWizard onDone={async () => {
-      s.showWizard = false;
-      await Promise.all([loadProfile(), loadStats()]);
-      if (s.profile?.steam_api_key && s.profile?.steam_id) {
-        invoke<string | null>('fetch_steam_avatar').then((url) => { s.avatarUrl = url; }).catch(() => {});
-      }
-    }} />
+    <SetupWizard
+      onDone={async () => {
+        s.showWizard = false;
+        await Promise.all([loadProfile(), loadStats()]);
+        if (s.profile?.steam_api_key && s.profile?.steam_id) {
+          invoke<string | null>('fetch_steam_avatar')
+            .then((url) => {
+              s.avatarUrl = url;
+            })
+            .catch(() => {});
+        }
+      }}
+    />
   {/if}
 </div>

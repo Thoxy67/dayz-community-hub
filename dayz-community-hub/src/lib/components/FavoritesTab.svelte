@@ -1,6 +1,14 @@
 <script lang="ts">
   import type { FavoriteDto, ServerDto, A2sDetailsDto, BattleMetricsDto } from '$lib/types';
-  import { pingLabel, pingColor, pingDot, playerFill, playerBarColor, formatDuration, sortIcon as _sortIcon } from '$lib/utils';
+  import {
+    pingLabel,
+    pingColor,
+    pingDot,
+    playerFill,
+    playerBarColor,
+    formatDuration,
+    sortIcon as _sortIcon,
+  } from '$lib/utils';
   import BattleMetricsPanel from './BattleMetricsPanel.svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
@@ -14,6 +22,8 @@
     pingCache: Map<string, number>;
     /** BattleMetrics personal access token (null = not configured). */
     bmApiKey: string | null;
+    /** User location [longitude, latitude] for distance calculation. */
+    userLocation?: [number, number] | null;
     onConnect: (ip: string, port: number, name: string) => void;
     onRemove: (fav: FavoriteDto) => void;
     onGoToServers?: () => void;
@@ -22,7 +32,18 @@
     onDirectConnect?: (ip: string, gamePort: number, queryPort?: number) => void;
   }
 
-  let { favorites, servers, pingCache, bmApiKey, onConnect, onRemove, onGoToServers, onPing, onDirectConnect }: Props = $props();
+  let {
+    favorites,
+    servers,
+    pingCache,
+    bmApiKey,
+    userLocation = null,
+    onConnect,
+    onRemove,
+    onGoToServers,
+    onPing,
+    onDirectConnect,
+  }: Props = $props();
 
   // ── Sorting ──────────────────────────────────────────────────────────────
   type SortCol = 'name' | 'players' | 'ping';
@@ -44,14 +65,16 @@
 
   // Pre-built lookup map: both "ip:query_port" and "ip:game_port" → server.
   // Rebuilt only when `servers` changes (O(n) once) so per-row lookups are O(1).
-  let serverByKey = $derived((() => {
-    const m = new Map<string, ServerDto>();
-    for (const s of servers) {
-      m.set(`${s.ip}:${s.query_port}`, s);
-      m.set(`${s.ip}:${s.game_port}`, s);
-    }
-    return m;
-  })());
+  let serverByKey = $derived(
+    (() => {
+      const m = new Map<string, ServerDto>();
+      for (const s of servers) {
+        m.set(`${s.ip}:${s.query_port}`, s);
+        m.set(`${s.ip}:${s.game_port}`, s);
+      }
+      return m;
+    })(),
+  );
 
   function findServer(fav: FavoriteDto): ServerDto | null {
     return serverByKey.get(`${fav.ip}:${fav.port}`) ?? null;
@@ -107,28 +130,31 @@
     return sv ? `${fav.ip}:${sv.query_port}` : `${fav.ip}:${fav.port}`;
   }
 
-  let sorted = $derived((() => {
-    const arr = favorites.slice();
-    const dir = sortAsc ? 1 : -1;
-    arr.sort((a, b) => {
-      switch (sortCol) {
-        case 'name':
-          return dir * a.name.localeCompare(b.name);
-        case 'players': {
-          const pa = findServer(a)?.players ?? -1;
-          const pb = findServer(b)?.players ?? -1;
-          return dir * (pa - pb);
+  let sorted = $derived(
+    (() => {
+      const arr = favorites.slice();
+      const dir = sortAsc ? 1 : -1;
+      arr.sort((a, b) => {
+        switch (sortCol) {
+          case 'name':
+            return dir * a.name.localeCompare(b.name);
+          case 'players': {
+            const pa = findServer(a)?.players ?? -1;
+            const pb = findServer(b)?.players ?? -1;
+            return dir * (pa - pb);
+          }
+          case 'ping': {
+            const pa = pingCache.get(pingKey(a)) ?? Infinity;
+            const pb = pingCache.get(pingKey(b)) ?? Infinity;
+            return dir * (pa - pb);
+          }
+          default:
+            return 0;
         }
-        case 'ping': {
-          const pa = pingCache.get(pingKey(a)) ?? Infinity;
-          const pb = pingCache.get(pingKey(b)) ?? Infinity;
-          return dir * (pa - pb);
-        }
-        default: return 0;
-      }
-    });
-    return arr;
-  })());
+      });
+      return arr;
+    })(),
+  );
 
   // ── A2S detail panel ─────────────────────────────────────────────────────
   let detailFav = $state<FavoriteDto | null>(null);
@@ -190,7 +216,10 @@
       bmError = '';
       invoke<BattleMetricsDto>('fetch_battlemetrics_server', { ip: detailFav.ip, port: queryPort })
         .then((result) => {
-          if (detailFav && `${detailFav.ip}:${(findServer(detailFav) ?? { query_port: detailFav.port }).query_port}` === key) {
+          if (
+            detailFav &&
+            `${detailFav.ip}:${(findServer(detailFav) ?? { query_port: detailFav.port }).query_port}` === key
+          ) {
             bm = result;
             bmError = '';
             bmFetchedKey = key;
@@ -201,12 +230,12 @@
           bmError = String(e);
           bmFetchedKey = key;
         })
-        .finally(() => { bmLoading = false; });
+        .finally(() => {
+          bmLoading = false;
+        });
     }, 300);
     return () => clearTimeout(_bmDebounce);
   });
-
-
 
   let selectedIdx = $state(-1);
 
@@ -223,9 +252,7 @@
       e.preventDefault();
       const len = sorted.length;
       if (len === 0) return;
-      selectedIdx = e.key === 'ArrowDown'
-        ? Math.min(selectedIdx + 1, len - 1)
-        : Math.max(selectedIdx - 1, 0);
+      selectedIdx = e.key === 'ArrowDown' ? Math.min(selectedIdx + 1, len - 1) : Math.max(selectedIdx - 1, 0);
     }
     if (e.key === 'Enter' && selectedIdx >= 0 && selectedIdx < sorted.length) {
       e.preventDefault();
@@ -250,7 +277,13 @@
       e.preventDefault();
       doPing(sorted[selectedIdx]);
     }
-    if ((e.key === 'd' || e.key === 'D') && !e.ctrlKey && selectedIdx >= 0 && selectedIdx < sorted.length && onDirectConnect) {
+    if (
+      (e.key === 'd' || e.key === 'D') &&
+      !e.ctrlKey &&
+      selectedIdx >= 0 &&
+      selectedIdx < sorted.length &&
+      onDirectConnect
+    ) {
       // D — open in Direct Connect tab with prefilled address + auto-query
       e.preventDefault();
       const fav = sorted[selectedIdx];
@@ -266,7 +299,9 @@
     const text = `${ip}:${port}`;
     await writeText(text);
     copiedKey = text;
-    setTimeout(() => { if (copiedKey === text) copiedKey = ''; }, 1500);
+    setTimeout(() => {
+      if (copiedKey === text) copiedKey = '';
+    }, 1500);
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -274,13 +309,11 @@
     if (!time) return 'ph:sun-horizon';
     const h = parseInt(time.split(':')[0], 10);
     if (isNaN(h)) return 'ph:sun-horizon';
-    if (h >= 5  && h < 7)  return 'ph:sun-horizon';
-    if (h >= 7  && h < 19) return 'ph:sun';
+    if (h >= 5 && h < 7) return 'ph:sun-horizon';
+    if (h >= 7 && h < 19) return 'ph:sun';
     if (h >= 19 && h < 21) return 'ph:sun-horizon';
     return 'ph:moon';
   }
-
-
 
   onMount(() => {
     window.addEventListener('keydown', handleKeydown);
@@ -295,10 +328,7 @@
       <div class="flex flex-col items-center justify-center h-full gap-3 text-base-content/40">
         <Icon icon="ph:star" class="size-10 opacity-30" />
         <span class="text-sm">No favorites yet</span>
-        <button
-          class="btn btn-sm btn-outline btn-primary gap-1.5"
-          onclick={onGoToServers}
-        >
+        <button class="btn btn-sm btn-outline btn-primary gap-1.5" onclick={onGoToServers}>
           <Icon icon="mdi:server" class="size-3.5" />
           Browse Servers
         </button>
@@ -307,18 +337,31 @@
       <div class="overflow-auto flex-1">
         <table class="w-full text-xs" style="table-layout: fixed; border-collapse: collapse;">
           <thead class="sticky top-0 z-10">
-            <tr class="bg-base-200/95 backdrop-blur-sm text-base-content/50 uppercase tracking-wider border-b border-base-300 select-none" style="font-size:10px;">
-              <th class="px-3 py-2 text-left cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('name')}>
+            <tr
+              class="bg-base-200/95 backdrop-blur-sm text-base-content/50 uppercase tracking-wider border-b border-base-300 select-none"
+              style="font-size:10px;"
+            >
+              <th
+                class="px-3 py-2 text-left cursor-pointer hover:text-base-content transition-colors"
+                onclick={() => toggleSort('name')}
+              >
                 <span class="flex items-center gap-1">
                   Server
                   <span class="normal-case font-normal text-base-content/35 ml-0.5">{favorites.length}</span>
                   <Icon icon={sortIcon('name')} class="size-2.5" />
                 </span>
               </th>
-              <th class="w-32 px-3 py-2 cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('players')}>
-                <span class="flex items-center gap-1">Players <Icon icon={sortIcon('players')} class="size-2.5" /></span>
+              <th
+                class="w-32 px-3 py-2 cursor-pointer hover:text-base-content transition-colors"
+                onclick={() => toggleSort('players')}
+              >
+                <span class="flex items-center gap-1">Players <Icon icon={sortIcon('players')} class="size-2.5" /></span
+                >
               </th>
-              <th class="w-20 px-3 py-2 cursor-pointer hover:text-base-content transition-colors" onclick={() => toggleSort('ping')}>
+              <th
+                class="w-20 px-3 py-2 cursor-pointer hover:text-base-content transition-colors"
+                onclick={() => toggleSort('ping')}
+              >
                 <span class="flex items-center gap-1">Ping <Icon icon={sortIcon('ping')} class="size-2.5" /></span>
               </th>
               <th class="w-28 px-3 py-2 text-left font-medium">Map</th>
@@ -340,8 +383,14 @@
               {@const pct = server && server.max_players > 0 ? Math.round((livePlayers / server.max_players) * 100) : 0}
               <tr
                 class="group/row border-b border-base-300/40 transition-colors cursor-pointer
-                       {isSelected ? 'bg-primary/10 border-primary/20' : isFocused ? 'bg-base-200/80 outline outline-1 outline-primary/40' : 'hover:bg-base-200/60'}"
-                onclick={() => { selectedIdx = fi; }}
+                       {isSelected
+                  ? 'bg-primary/10 border-primary/20'
+                  : isFocused
+                    ? 'bg-base-200/80 outline outline-1 outline-primary/40'
+                    : 'hover:bg-base-200/60'}"
+                onclick={() => {
+                  selectedIdx = fi;
+                }}
                 ondblclick={() => onConnect(fav.ip, fav.port, fav.name)}
               >
                 <!-- Server name + IP -->
@@ -349,13 +398,20 @@
                   <div class="flex items-center gap-1.5 min-w-0">
                     <span class="truncate font-medium text-base-content/90">{fav.name}</span>
                     {#if !server}
-                      <span class="shrink-0 text-warning" style="font-size:9px;" title="Server not found in the current server list — it may be offline, or try refreshing the server list">OFFLINE</span>
+                      <span
+                        class="shrink-0 text-warning"
+                        style="font-size:9px;"
+                        title="Server not found in the current server list — it may be offline, or try refreshing the server list"
+                        >OFFLINE</span
+                      >
                     {/if}
                   </div>
                   <div class="flex items-center gap-2 mt-0.5">
                     <button
                       class="font-mono flex items-center gap-1 group/ip
-                             {copiedKey === `${fav.ip}:${fav.port}` ? 'text-success' : 'text-base-content/30 hover:text-base-content/60'}"
+                             {copiedKey === `${fav.ip}:${fav.port}`
+                        ? 'text-success'
+                        : 'text-base-content/30 hover:text-base-content/60'}"
                       style="font-size:10px;"
                       onclick={(e) => copyIp(e, fav.ip, fav.port)}
                       title="Copy {fav.ip}:{fav.port} to clipboard"
@@ -363,7 +419,10 @@
                       {fav.ip}:{fav.port}
                       <Icon
                         icon={copiedKey === `${fav.ip}:${fav.port}` ? 'ph:check' : 'ph:copy'}
-                        class="size-2 opacity-0 group-hover/ip:opacity-100 transition-opacity {copiedKey === `${fav.ip}:${fav.port}` ? 'opacity-100' : ''}"
+                        class="size-2 opacity-0 group-hover/ip:opacity-100 transition-opacity {copiedKey ===
+                        `${fav.ip}:${fav.port}`
+                          ? 'opacity-100'
+                          : ''}"
                       />
                     </button>
                     {#if server}
@@ -377,8 +436,14 @@
                   {#if server}
                     <div class="flex items-center gap-2">
                       <button
-                        class="tabular-nums font-mono {playerFill(livePlayers, server.max_players)} w-14 shrink-0 cursor-pointer hover:opacity-70 transition-opacity text-left"
-                        onclick={(e) => { e.stopPropagation(); doRefreshPlayers(fav); }}
+                        class="tabular-nums font-mono {playerFill(
+                          livePlayers,
+                          server.max_players,
+                        )} w-14 shrink-0 cursor-pointer hover:opacity-70 transition-opacity text-left"
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          doRefreshPlayers(fav);
+                        }}
                         title="Click to refresh player count"
                       >
                         {#if loadingPlayers}
@@ -388,7 +453,10 @@
                         {/if}
                       </button>
                       <div class="flex-1 h-1 rounded-full bg-base-300 overflow-hidden">
-                        <div class="h-full rounded-full {playerBarColor(livePlayers, server.max_players)}" style="width:{pct}%"></div>
+                        <div
+                          class="h-full rounded-full {playerBarColor(livePlayers, server.max_players)}"
+                          style="width:{pct}%"
+                        ></div>
                       </div>
                     </div>
                   {:else}
@@ -399,8 +467,15 @@
                 <!-- Ping — click to re-ping -->
                 <td class="px-3 py-2">
                   <button
-                    class="flex items-center gap-1.5 cursor-pointer hover:opacity-70 transition-opacity {pingFlash.has(pingKey(fav)) ? 'ping-flash' : ''}"
-                    onclick={(e) => { e.stopPropagation(); doPing(fav); }}
+                    class="flex items-center gap-1.5 cursor-pointer hover:opacity-70 transition-opacity {pingFlash.has(
+                      pingKey(fav),
+                    )
+                      ? 'ping-flash'
+                      : ''}"
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      doPing(fav);
+                    }}
                     title="Click to ping"
                   >
                     <span class="size-1.5 rounded-full shrink-0 {pingDot(ping)}"></span>
@@ -455,10 +530,10 @@
                     <button
                       class="size-6 rounded flex items-center justify-center transition-colors
                              {isSelected
-                               ? 'bg-primary/15 text-primary hover:bg-primary/25'
-                               : 'text-base-content/35 hover:bg-base-300 hover:text-base-content/80'}"
+                        ? 'bg-primary/15 text-primary hover:bg-primary/25'
+                        : 'text-base-content/35 hover:bg-base-300 hover:text-base-content/80'}"
                       title={isSelected ? 'Close details' : 'Live server details'}
-                      onclick={() => isSelected ? closeDetail() : openDetail(fav)}
+                      onclick={() => (isSelected ? closeDetail() : openDetail(fav))}
                     >
                       <Icon icon="ph:info" class="size-3.5" />
                     </button>
@@ -507,7 +582,9 @@
             <span class="text-xs">Querying…</span>
           </div>
         {:else if a2sError}
-          <div class="m-3 flex items-start gap-2 px-2.5 py-2 rounded-lg bg-error/10 border border-error/25 text-xs text-error">
+          <div
+            class="m-3 flex items-start gap-2 px-2.5 py-2 rounded-lg bg-error/10 border border-error/25 text-xs text-error"
+          >
             <Icon icon="ph:warning-circle" class="size-3.5 shrink-0 mt-0.5" />
             <span class="leading-snug break-all">{a2sError}</span>
           </div>
@@ -542,7 +619,9 @@
                 <Icon icon="mdi:signal" class="size-3.5 shrink-0" />Ping
               </span>
               <button
-                class="font-mono cursor-pointer hover:opacity-70 transition-opacity {pingColor(pingCache.get(pingKey(detailFav)))}"
+                class="font-mono cursor-pointer hover:opacity-70 transition-opacity {pingColor(
+                  pingCache.get(pingKey(detailFav)),
+                )}"
                 onclick={() => detailFav && doPing(detailFav)}
                 title="Click to ping"
               >
@@ -589,12 +668,14 @@
                     <Icon icon="mdi:puzzle-outline" class="size-3 text-secondary shrink-0" />
                     <button
                       class="truncate text-base-content/80 hover:text-primary transition-colors text-left"
-                      onclick={() => openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.steam_workshop_id}`)}
-                      title="Open on Steam Workshop: {mod.name}"
-                    >{mod.name}</button>
+                      onclick={() =>
+                        openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.steam_workshop_id}`)}
+                      title="Open on Steam Workshop: {mod.name}">{mod.name}</button
+                    >
                     <button
                       class="ml-auto shrink-0 font-mono text-xs text-base-content/30 hover:text-primary transition-colors flex items-center gap-0.5"
-                      onclick={() => openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.steam_workshop_id}`)}
+                      onclick={() =>
+                        openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.steam_workshop_id}`)}
                       title="Open on Steam Workshop"
                     >
                       {mod.steam_workshop_id}
@@ -609,8 +690,15 @@
       </div>
 
       <BattleMetricsPanel
-        {bm} {bmLoading} {bmError} {bmApiKey}
-        onRetry={() => { bmFetchedKey = ''; bmRetryTick++; }}
+        {bm}
+        {bmLoading}
+        {bmError}
+        {bmApiKey}
+        {userLocation}
+        onRetry={() => {
+          bmFetchedKey = '';
+          bmRetryTick++;
+        }}
       />
 
       <!-- Refresh A2S button -->
@@ -630,4 +718,3 @@
 </div>
 
 <style></style>
-

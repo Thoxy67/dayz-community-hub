@@ -45,7 +45,9 @@
     await writeText(cmd);
     cmdCopied = true;
     dontTrustShown = true;
-    setTimeout(() => { cmdCopied = false; }, 2000);
+    setTimeout(() => {
+      cmdCopied = false;
+    }, 2000);
   }
 
   function confirmDontTrust() {
@@ -92,9 +94,7 @@
     prevLogLen = len;
   });
 
-  let sgCountdownPct = $derived(
-    Math.round((sgCountdown / STEAM_GUARD_TIMEOUT) * 100)
-  );
+  let sgCountdownPct = $derived(Math.round((sgCountdown / STEAM_GUARD_TIMEOUT) * 100));
 
   // Auto-scroll log to bottom whenever a new line arrives.
   $effect(() => {
@@ -105,9 +105,7 @@
     }
   });
 
-  let progressPct = $derived(
-    modOp.total > 0 ? Math.round((modOp.completed.length / modOp.total) * 100) : 0
-  );
+  let progressPct = $derived(modOp.total > 0 ? Math.round((modOp.completed.length / modOp.total) * 100) : 0);
 
   let statusText = $derived(() => {
     if (modOp.phase === 'shutting_down') return 'Closing Steam before SteamCMD can run…';
@@ -137,47 +135,60 @@
   function classifyLine(line: string): LineKind {
     const l = line.toLowerCase();
     if (
-      l.includes('error') || l.includes('failed') || l.includes('failure') ||
-      l.includes('abort') || l.includes('not found') ||
+      l.includes('error') ||
+      l.includes('failed') ||
+      l.includes('failure') ||
+      l.includes('abort') ||
+      l.includes('not found') ||
       l.includes('cached credentials not found') ||
-      l.includes('invalid password') || l.includes('access denied')
-    ) return 'error';
+      l.includes('invalid password') ||
+      l.includes('access denied')
+    )
+      return 'error';
+    if (l.includes('warning') || l.includes('timed out') || l.includes('retry') || l.includes('steam guard'))
+      return 'warning';
+    if (l.includes('success') || l.includes('already up to date') || l.includes('fully installed')) return 'success';
     if (
-      l.includes('warning') || l.includes('timed out') ||
-      l.includes('retry') || l.includes('steam guard')
-    ) return 'warning';
-    if (
-      l.includes('success') || l.includes('already up to date') ||
-      l.includes('fully installed')
-    ) return 'success';
-    if (
-      l.includes('downloading item') || l.includes('workshop_download_item') ||
-      l.includes('update state') || l.includes('reconfiguring') ||
-      l.includes('validating') || l.includes(' kb,') || l.includes(' mb,') ||
+      l.includes('downloading item') ||
+      l.includes('workshop_download_item') ||
+      l.includes('update state') ||
+      l.includes('reconfiguring') ||
+      l.includes('validating') ||
+      l.includes(' kb,') ||
+      l.includes(' mb,') ||
       /\d+\s*%/.test(l)
-    ) return 'progress';
+    )
+      return 'progress';
     if (
-      l.includes('logging in') || l.includes('logged in ok') ||
-      l.includes('+login') || l.includes('connecting to') ||
-      l.includes('loading steam') || l.includes('steamcmd') ||
+      l.includes('logging in') ||
+      l.includes('logged in ok') ||
+      l.includes('+login') ||
+      l.includes('connecting to') ||
+      l.includes('loading steam') ||
+      l.includes('steamcmd') ||
       l.startsWith('steam>')
-    ) return 'login';
+    )
+      return 'login';
     if (
-      l.startsWith('[') || l.includes('appinfo') ||
-      l.includes('waiting on') || l.includes('idle') ||
-      l.trim() === '' || /^\s*\d+\s*$/.test(l)
-    ) return 'dim';
+      l.startsWith('[') ||
+      l.includes('appinfo') ||
+      l.includes('waiting on') ||
+      l.includes('idle') ||
+      l.trim() === '' ||
+      /^\s*\d+\s*$/.test(l)
+    )
+      return 'dim';
     return 'normal';
   }
 
   const KIND_CLASS: Record<LineKind, string> = {
-    error:    'log-error',
-    warning:  'log-warning',
-    success:  'log-success',
+    error: 'log-error',
+    warning: 'log-warning',
+    success: 'log-success',
     progress: 'log-progress',
-    login:    'log-login',
-    dim:      'log-dim',
-    normal:   'log-normal',
+    login: 'log-login',
+    dim: 'log-dim',
+    normal: 'log-normal',
   };
 </script>
 
@@ -195,35 +206,45 @@
       tabindex="-1"
       onclick={(e) => e.stopPropagation()}
     >
-
       {#if isSteamGuard}
         <!-- Steam Guard Mobile Required (yellow / warning) -->
         <div class="flex items-start gap-4 p-4 rounded-xl bg-warning/8 border border-warning/20">
           <div class="relative shrink-0 size-12 flex items-center justify-center">
             <div class="sg-pulse-ring"></div>
-            <div class="relative z-10 size-10 rounded-full bg-warning/15 border border-warning/25 flex items-center justify-center">
+            <div
+              class="relative z-10 size-10 rounded-full bg-warning/15 border border-warning/25 flex items-center justify-center"
+            >
               <Icon icon="ph:shield-warning-fill" class="size-6 text-warning" />
             </div>
           </div>
           <div class="flex-1 min-w-0">
             <h3 class="font-bold text-base text-base-content">Steam Guard Authorization Required</h3>
             <p class="text-sm text-base-content/70 mt-1 leading-snug">
-              Open the <strong class="text-base-content/90">Steam Mobile app</strong> on your phone
-              and approve the sign-in to continue.
+              Open the <strong class="text-base-content/90">Steam Mobile app</strong> on your phone and approve the sign-in
+              to continue.
             </p>
             <div class="flex items-center gap-1.5 mt-3 flex-wrap">
               <div class="flex items-center gap-1.5">
-                <span class="inline-flex items-center justify-center size-[18px] rounded-full bg-warning/15 border border-warning/25 text-[10px] font-bold text-warning shrink-0">1</span>
+                <span
+                  class="inline-flex items-center justify-center size-[18px] rounded-full bg-warning/15 border border-warning/25 text-[10px] font-bold text-warning shrink-0"
+                  >1</span
+                >
                 <span class="text-[11px] text-base-content/60 whitespace-nowrap">Open Steam app on phone</span>
               </div>
               <Icon icon="ph:arrow-right" class="size-3 text-base-content/30 shrink-0" />
               <div class="flex items-center gap-1.5">
-                <span class="inline-flex items-center justify-center size-[18px] rounded-full bg-warning/15 border border-warning/25 text-[10px] font-bold text-warning shrink-0">2</span>
+                <span
+                  class="inline-flex items-center justify-center size-[18px] rounded-full bg-warning/15 border border-warning/25 text-[10px] font-bold text-warning shrink-0"
+                  >2</span
+                >
                 <span class="text-[11px] text-base-content/60 whitespace-nowrap">Tap the approval notification</span>
               </div>
               <Icon icon="ph:arrow-right" class="size-3 text-base-content/30 shrink-0" />
               <div class="flex items-center gap-1.5">
-                <span class="inline-flex items-center justify-center size-[18px] rounded-full bg-success/15 border border-success/25 text-[10px] font-bold text-success shrink-0">3</span>
+                <span
+                  class="inline-flex items-center justify-center size-[18px] rounded-full bg-success/15 border border-success/25 text-[10px] font-bold text-success shrink-0"
+                  >3</span
+                >
                 <span class="text-[11px] text-success/80 whitespace-nowrap">Download resumes</span>
               </div>
             </div>
@@ -235,7 +256,13 @@
                   <span class="loading loading-dots loading-xs text-warning/60"></span>
                   <span>Waiting for confirmation…</span>
                 </div>
-                <span class="text-xs font-mono tabular-nums {sgCountdown <= 15 ? 'text-error font-semibold' : sgCountdown <= 30 ? 'text-warning' : 'text-base-content/40'}">
+                <span
+                  class="text-xs font-mono tabular-nums {sgCountdown <= 15
+                    ? 'text-error font-semibold'
+                    : sgCountdown <= 30
+                      ? 'text-warning'
+                      : 'text-base-content/40'}"
+                >
                   {Math.floor(sgCountdown / 60)}:{String(sgCountdown % 60).padStart(2, '0')}
                 </span>
               </div>
@@ -258,7 +285,6 @@
             </div>
           </div>
         </div>
-
       {:else}
         <h3 class="font-bold text-lg flex items-center gap-2">
           {#if modOp.phase !== 'finished'}
@@ -276,7 +302,13 @@
           {/if}
         </h3>
 
-        <p class="mt-2 text-sm {modOp.hint ? 'text-error' : modOp.phase === 'finished' && modOp.failed === 0 ? 'text-success' : 'text-base-content/70'}">
+        <p
+          class="mt-2 text-sm {modOp.hint
+            ? 'text-error'
+            : modOp.phase === 'finished' && modOp.failed === 0
+              ? 'text-success'
+              : 'text-base-content/70'}"
+        >
           {statusText()}
         </p>
 
@@ -298,7 +330,9 @@
             {#if dontTrustShown}
               <!-- Manual login instructions after "I don't trust" -->
               <div class="flex items-center gap-2 mb-2">
-                <div class="size-8 rounded-full bg-info/15 border border-info/25 flex items-center justify-center shrink-0">
+                <div
+                  class="size-8 rounded-full bg-info/15 border border-info/25 flex items-center justify-center shrink-0"
+                >
                   <Icon icon="ph:terminal-window-fill" class="size-4 text-info" />
                 </div>
                 <div>
@@ -307,7 +341,10 @@
               </div>
               <div class="text-xs text-base-content/70 space-y-2">
                 <p>The following command has been copied to your clipboard:</p>
-                <code class="block bg-base-300/60 rounded-lg px-3 py-2 font-mono text-[11px] text-base-content/90 select-all">steamcmd +login {steamLogin || 'YOUR_USERNAME'} +quit</code>
+                <code
+                  class="block bg-base-300/60 rounded-lg px-3 py-2 font-mono text-[11px] text-base-content/90 select-all"
+                  >steamcmd +login {steamLogin || 'YOUR_USERNAME'} +quit</code
+                >
                 <ol class="list-decimal list-inside space-y-1 text-base-content/60">
                   <li>Open a terminal and paste the command</li>
                   <li>Enter your password and complete Steam Guard if prompted</li>
@@ -315,8 +352,8 @@
                   <li>Come back here and retry — no password will be needed</li>
                 </ol>
                 <p class="text-[11px] text-base-content/40 leading-snug">
-                  This app never sees your password. SteamCMD stores an encrypted credential token
-                  on your machine that it reuses for future logins.
+                  This app never sees your password. SteamCMD stores an encrypted credential token on your machine that
+                  it reuses for future logins.
                 </p>
               </div>
               <div class="flex justify-end mt-3">
@@ -328,17 +365,24 @@
             {:else}
               <!-- Normal password entry -->
               <div class="flex items-center gap-2 mb-2">
-                <div class="size-8 rounded-full bg-warning/15 border border-warning/25 flex items-center justify-center shrink-0">
+                <div
+                  class="size-8 rounded-full bg-warning/15 border border-warning/25 flex items-center justify-center shrink-0"
+                >
                   <Icon icon="ph:lock-fill" class="size-4 text-warning" />
                 </div>
                 <div>
                   <h4 class="font-semibold text-sm text-base-content">Steam Password Required</h4>
-                  <p class="text-[11px] text-base-content/50 leading-snug">SteamCMD needs your password to log in. It will not be stored.</p>
+                  <p class="text-[11px] text-base-content/50 leading-snug">
+                    SteamCMD needs your password to log in. It will not be stored.
+                  </p>
                 </div>
               </div>
               <form
                 class="flex items-center gap-2"
-                onsubmit={(e) => { e.preventDefault(); submitPassword(); }}
+                onsubmit={(e) => {
+                  e.preventDefault();
+                  submitPassword();
+                }}
               >
                 <label class="input input-sm input-bordered flex items-center gap-2 flex-1 bg-base-200/60">
                   <Icon icon="ph:key" class="size-3.5 text-base-content/40" />
@@ -366,17 +410,13 @@
                   <button
                     type="button"
                     class="btn btn-ghost btn-xs btn-circle"
-                    onclick={() => showPasswordInput = !showPasswordInput}
+                    onclick={() => (showPasswordInput = !showPasswordInput)}
                     tabindex={-1}
                   >
                     <Icon icon={showPasswordInput ? 'ph:eye-slash' : 'ph:eye'} class="size-3.5 text-base-content/40" />
                   </button>
                 </label>
-                <button
-                  type="submit"
-                  class="btn btn-sm btn-warning gap-1"
-                  disabled={!passwordInput || passwordSending}
-                >
+                <button type="submit" class="btn btn-sm btn-warning gap-1" disabled={!passwordInput || passwordSending}>
                   {#if passwordSending}
                     <span class="loading loading-spinner loading-xs"></span>
                   {:else}
@@ -473,21 +513,37 @@
     border-radius: inherit;
     background: repeating-linear-gradient(
       to bottom,
-      transparent        0px,
-      transparent        3px,
-      rgba(255,255,255,0.04) 3px,
-      rgba(255,255,255,0.04) 4px
+      transparent 0px,
+      transparent 3px,
+      rgba(255, 255, 255, 0.04) 3px,
+      rgba(255, 255, 255, 0.04) 4px
     );
   }
 
   /* ── Log line colors ────────────────────────────────────────────────────── */
-  .log-error    { color: #f87171; font-weight: 600; }  /* red-400   */
-  .log-warning  { color: #fbbf24; }                    /* amber-400 */
-  .log-success  { color: #34d399; font-weight: 600; }  /* emerald-400 */
-  .log-progress { color: #7dd3fc; }                    /* sky-300   */
-  .log-login    { color: #94a3b8; }                    /* slate-400 */
-  .log-dim      { color: rgba(255,255,255,0.18); }
-  .log-normal   { color: rgba(255,255,255,0.82); }
+  .log-error {
+    color: #f87171;
+    font-weight: 600;
+  } /* red-400   */
+  .log-warning {
+    color: #fbbf24;
+  } /* amber-400 */
+  .log-success {
+    color: #34d399;
+    font-weight: 600;
+  } /* emerald-400 */
+  .log-progress {
+    color: #7dd3fc;
+  } /* sky-300   */
+  .log-login {
+    color: #94a3b8;
+  } /* slate-400 */
+  .log-dim {
+    color: rgba(255, 255, 255, 0.18);
+  }
+  .log-normal {
+    color: rgba(255, 255, 255, 0.82);
+  }
 
   /* ── Blinking cursor ────────────────────────────────────────────────────── */
   .terminal-cursor {
@@ -501,7 +557,12 @@
   }
 
   @keyframes cur-blink {
-    0%, 100% { opacity: 1; }
-    50%       { opacity: 0; }
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0;
+    }
   }
 </style>

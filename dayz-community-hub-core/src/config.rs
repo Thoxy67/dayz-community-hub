@@ -57,6 +57,9 @@ pub struct Profile {
     /// Optional explicit path to steamcmd binary (overrides auto-detection).
     #[serde(default)]
     pub steamcmd_path: Option<String>,
+    /// User location for distance calculation (longitude, latitude).
+    #[serde(default)]
+    pub user_location: Option<(f64, f64)>,
     pub favorites: Vec<Favorite>,
     pub history: Vec<History>,
     /// IPs excluded from the server browser (persisted across restarts).
@@ -463,6 +466,7 @@ impl Profile {
             steam_root: None,
             steamcmd_enabled: true,
             steamcmd_path: None,
+            user_location: None,
             player: None,
             steam_api_key: None,
             steam_id: None,

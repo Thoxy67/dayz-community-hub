@@ -23,6 +23,7 @@ pub(crate) async fn save_profile_settings(
     steam_api_key: Option<String>,
     steam_id: Option<String>,
     battlemetrics_api_key: Option<String>,
+    user_location: Option<(f64, f64)>,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
     let mut state = state.lock().await;
@@ -41,6 +42,7 @@ pub(crate) async fn save_profile_settings(
         profile.steam_api_key = steam_api_key;
         profile.steam_id = steam_id;
         profile.battlemetrics_api_key = battlemetrics_api_key;
+        profile.user_location = user_location;
     }
     // If avatar credentials changed, invalidate the cache so it gets re-fetched
     if credentials_changed {

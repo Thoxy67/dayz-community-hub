@@ -11,7 +11,9 @@
   async function copyIp(ip: string, port: number) {
     await writeText(`${ip}:${port}`);
     copiedIp = true;
-    setTimeout(() => { copiedIp = false; }, 1500);
+    setTimeout(() => {
+      copiedIp = false;
+    }, 1500);
   }
 
   /** Prefill payload: when set, the form is populated and a query is triggered. */
@@ -35,7 +37,15 @@
     prefill?: Prefill | null;
   }
 
-  let { servers, installedMods, favorites = new Set(), favoriteList = [], onConnect, onAddFavorite, prefill = null }: Props = $props();
+  let {
+    servers,
+    installedMods,
+    favorites = new Set(),
+    favoriteList = [],
+    onConnect,
+    onAddFavorite,
+    prefill = null,
+  }: Props = $props();
 
   let address = $state('');
   let port = $state('2302');
@@ -94,11 +104,11 @@
    * sorted to the top (priority).
    */
   interface ModeEntry {
-    id: string;           // unique key for svelte keying
+    id: string; // unique key for svelte keying
     kind: 'mod' | 'custom';
-    value: string;        // mod ID (number string) or verbatim arg
-    label: string;        // display name (mod name when known, else value)
-    fromServer: boolean;  // detected from queried server → shown first
+    value: string; // mod ID (number string) or verbatim arg
+    label: string; // display name (mod name when known, else value)
+    fromServer: boolean; // detected from queried server → shown first
     enabled: boolean;
   }
 
@@ -109,12 +119,14 @@
   /** Installed mods not yet in the modes list, sorted by name. */
   let availableToAdd = $derived(
     installedMods
-      .filter(m => !modeEntries.some(e => e.value === String(m.id)))
-      .sort((a, b) => a.name.localeCompare(b.name))
+      .filter((m) => !modeEntries.some((e) => e.value === String(m.id)))
+      .sort((a, b) => a.name.localeCompare(b.name)),
   );
 
   let idCounter = 0;
-  function uid() { return `m${++idCounter}`; }
+  function uid() {
+    return `m${++idCounter}`;
+  }
 
   /**
    * Rebuild the modes list after a successful server query.
@@ -129,35 +141,30 @@
    */
   function syncServerModes() {
     // List-sourced mods (highest priority — proper names from DayZSA API)
-    const listMods = (fullServer && fullServer.mods.length > 0)
-      ? fullServer.mods
-      : (a2s && a2s.mods.length > 0 ? a2s.mods : []);
-    const listIds = new Set(listMods.map(m => String(m.steam_workshop_id)));
+    const listMods =
+      fullServer && fullServer.mods.length > 0 ? fullServer.mods : a2s && a2s.mods.length > 0 ? a2s.mods : [];
+    const listIds = new Set(listMods.map((m) => String(m.steam_workshop_id)));
 
     // A2S-only mods (secondary — not in the server list)
-    const a2sOnlyMods = (a2s?.mods ?? []).filter(
-      m => !listIds.has(String(m.steam_workshop_id))
-    );
+    const a2sOnlyMods = (a2s?.mods ?? []).filter((m) => !listIds.has(String(m.steam_workshop_id)));
 
     const allDetectedIds = new Set([
-      ...listMods.map(m => String(m.steam_workshop_id)),
-      ...a2sOnlyMods.map(m => String(m.steam_workshop_id)),
+      ...listMods.map((m) => String(m.steam_workshop_id)),
+      ...a2sOnlyMods.map((m) => String(m.steam_workshop_id)),
     ]);
 
     // Keep only user entries (drop stale auto-detected ones)
-    const userEntries = modeEntries.filter(e => !e.fromServer);
+    const userEntries = modeEntries.filter((e) => !e.fromServer);
 
     // Keep previously auto-detected entries that are still present
-    const keptDetected = modeEntries.filter(
-      e => e.fromServer && allDetectedIds.has(e.value)
-    );
-    const keptIds = new Set(keptDetected.map(e => e.value));
+    const keptDetected = modeEntries.filter((e) => e.fromServer && allDetectedIds.has(e.value));
+    const keptIds = new Set(keptDetected.map((e) => e.value));
 
     // Build new entries for mods not already in keptDetected
     // List mods come first (they have priority), then A2S-only
     const newListEntries: ModeEntry[] = listMods
-      .filter(m => !keptIds.has(String(m.steam_workshop_id)))
-      .map(m => ({
+      .filter((m) => !keptIds.has(String(m.steam_workshop_id)))
+      .map((m) => ({
         id: uid(),
         kind: 'mod' as const,
         value: String(m.steam_workshop_id),
@@ -167,8 +174,8 @@
       }));
 
     const newA2sEntries: ModeEntry[] = a2sOnlyMods
-      .filter(m => !keptIds.has(String(m.steam_workshop_id)))
-      .map(m => ({
+      .filter((m) => !keptIds.has(String(m.steam_workshop_id)))
+      .map((m) => ({
         id: uid(),
         kind: 'mod' as const,
         value: String(m.steam_workshop_id),
@@ -180,19 +187,21 @@
     // Final order: kept detected (preserves user reordering) + new list mods
     // + new A2S-only mods + user entries
     // Separate kept entries back into list-sourced vs a2s-only to maintain order
-    const keptList = keptDetected.filter(e => listIds.has(e.value));
-    const keptA2sOnly = keptDetected.filter(e => !listIds.has(e.value));
+    const keptList = keptDetected.filter((e) => listIds.has(e.value));
+    const keptA2sOnly = keptDetected.filter((e) => !listIds.has(e.value));
 
     modeEntries = [
-      ...keptList, ...newListEntries,       // list-sourced first (priority)
-      ...keptA2sOnly, ...newA2sEntries,     // A2S-only second
-      ...userEntries,                        // user entries last
+      ...keptList,
+      ...newListEntries, // list-sourced first (priority)
+      ...keptA2sOnly,
+      ...newA2sEntries, // A2S-only second
+      ...userEntries, // user entries last
     ];
   }
 
   function addModeEntry() {
     if (newModId === null) return;
-    const mod = installedMods.find(m => m.id === newModId);
+    const mod = installedMods.find((m) => m.id === newModId);
     if (!mod) return;
     modeEntries = [
       ...modeEntries,
@@ -210,17 +219,15 @@
   }
 
   function removeModeEntry(id: string) {
-    modeEntries = modeEntries.filter(e => e.id !== id);
+    modeEntries = modeEntries.filter((e) => e.id !== id);
   }
 
   function toggleModeEntry(id: string) {
-    modeEntries = modeEntries.map(e =>
-      e.id === id ? { ...e, enabled: !e.enabled } : e
-    );
+    modeEntries = modeEntries.map((e) => (e.id === id ? { ...e, enabled: !e.enabled } : e));
   }
 
   function moveModeEntry(id: string, dir: -1 | 1) {
-    const idx = modeEntries.findIndex(e => e.id === id);
+    const idx = modeEntries.findIndex((e) => e.id === id);
     if (idx < 0) return;
     const newIdx = idx + dir;
     if (newIdx < 0 || newIdx >= modeEntries.length) return;
@@ -247,40 +254,41 @@
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   /** Server found in the cached list by IP + port. */
-  let foundServer = $derived((() => {
-    const p = parseInt(port, 10);
-    if (!address || isNaN(p)) return null;
-    return (
-      servers.find(
-        (s) =>
-          s.ip === address.trim() &&
-          (s.query_port === p || s.game_port === p)
-      ) ?? null
-    );
-  })());
+  let foundServer = $derived(
+    (() => {
+      const p = parseInt(port, 10);
+      if (!address || isNaN(p)) return null;
+      return servers.find((s) => s.ip === address.trim() && (s.query_port === p || s.game_port === p)) ?? null;
+    })(),
+  );
 
   /** True if the current ip:port (or any related port) is already a favorite. */
-  let isFavorite = $derived((() => {
-    const ip = address.trim();
-    const p = parseInt(port, 10);
-    if (!ip || isNaN(p)) return false;
-    if (favorites.has(`${ip}:${p}`)) return true;
-    if (!foundServer) return false;
-    return favorites.has(`${ip}:${foundServer.game_port}`) || favorites.has(`${ip}:${foundServer.query_port}`);
-  })());
+  let isFavorite = $derived(
+    (() => {
+      const ip = address.trim();
+      const p = parseInt(port, 10);
+      if (!ip || isNaN(p)) return false;
+      if (favorites.has(`${ip}:${p}`)) return true;
+      if (!foundServer) return false;
+      return favorites.has(`${ip}:${foundServer.game_port}`) || favorites.has(`${ip}:${foundServer.query_port}`);
+    })(),
+  );
 
   /** Matching favorite entry (if any) — used to auto-fill the saved password. */
-  let matchedFavorite = $derived((() => {
-    const ip = address.trim();
-    const p = parseInt(port, 10);
-    if (!ip || isNaN(p)) return null;
-    return favoriteList.find(f =>
-      f.ip === ip && (
-        f.port === p ||
-        (foundServer && (f.port === foundServer.game_port || f.port === foundServer.query_port))
-      )
-    ) ?? null;
-  })());
+  let matchedFavorite = $derived(
+    (() => {
+      const ip = address.trim();
+      const p = parseInt(port, 10);
+      if (!ip || isNaN(p)) return null;
+      return (
+        favoriteList.find(
+          (f) =>
+            f.ip === ip &&
+            (f.port === p || (foundServer && (f.port === foundServer.game_port || f.port === foundServer.query_port))),
+        ) ?? null
+      );
+    })(),
+  );
 
   // Auto-fill password from the matched favorite whenever the address resolves
   // to a known favorite — but only if the user hasn't typed anything yet.
@@ -301,8 +309,6 @@
       }
     }
   }
-
-
 
   // ── Query ──────────────────────────────────────────────────────────────────
 
@@ -366,9 +372,9 @@
 
       // ── Resolve the real game port and update the port field ─────────────
       const resolvedGamePort =
-        (fs?.game_port)           // from server list (most reliable)
-        ?? a2s!.game_port         // from A2S extended server info
-        ?? null;
+        fs?.game_port ?? // from server list (most reliable)
+        a2s!.game_port ?? // from A2S extended server info
+        null;
       if (resolvedGamePort !== null) {
         port = String(resolvedGamePort);
       }
@@ -418,9 +424,7 @@
   }
 
   // Server name to show: prefer a2s (live) > fullServer > foundServer
-  let displayName = $derived(
-    a2s ? a2s.server_name : (foundServer?.name ?? '')
-  );
+  let displayName = $derived(a2s ? a2s.server_name : (foundServer?.name ?? ''));
 
   /**
    * Merged mod list with priority: list mods first (fullServer or a2s.mods from
@@ -428,32 +432,33 @@
    * covered by the list).  List mods are preferred because they carry reliable
    * names and IDs coming from the DayZSA Launcher API.
    */
-  let displayMods = $derived((() => {
-    // Source 1 — server list mods (highest priority, have proper names + IDs)
-    const listMods = (fullServer && fullServer.mods.length > 0)
-      ? fullServer.mods
-      : (a2s && a2s.mods.length > 0 ? a2s.mods : []);
+  let displayMods = $derived(
+    (() => {
+      // Source 1 — server list mods (highest priority, have proper names + IDs)
+      const listMods =
+        fullServer && fullServer.mods.length > 0 ? fullServer.mods : a2s && a2s.mods.length > 0 ? a2s.mods : [];
 
-    // Source 2 — raw A2S mods (only present when server is NOT in list, so
-    // listMods will be empty in that case — no real dedup needed, but guard
-    // anyway in case both sources ever overlap in the future)
-    const listIds = new Set(listMods.map(m => m.steam_workshop_id));
-    const a2sOnly = (a2s?.mods ?? []).filter(m => !listIds.has(m.steam_workshop_id));
+      // Source 2 — raw A2S mods (only present when server is NOT in list, so
+      // listMods will be empty in that case — no real dedup needed, but guard
+      // anyway in case both sources ever overlap in the future)
+      const listIds = new Set(listMods.map((m) => m.steam_workshop_id));
+      const a2sOnly = (a2s?.mods ?? []).filter((m) => !listIds.has(m.steam_workshop_id));
 
-    return [...listMods, ...a2sOnly];
-  })());
+      return [...listMods, ...a2sOnly];
+    })(),
+  );
 
   let showCard = $derived(!!(a2s || foundServer));
 
   // Count enabled mode entries for the badge
-  let enabledModeCount = $derived(modeEntries.filter(e => e.enabled).length);
+  let enabledModeCount = $derived(modeEntries.filter((e) => e.enabled).length);
 
   // ── Export / Share ──────────────────────────────────────────────────────────
 
   /** Build a DzchConfig from the current form state + queried server info. */
   function buildDzchConfig(): DzchConfig {
     const fs = foundServer;
-    const mods = displayMods.map(m => ({ id: m.steam_workshop_id, name: m.name }));
+    const mods = displayMods.map((m) => ({ id: m.steam_workshop_id, name: m.name }));
     // Resolve game port: server list → A2S → typed port
     const gamePort = fs?.game_port ?? a2s?.game_port ?? (parseInt(port, 10) || 2302);
     // Resolve query port: server list → A2S → null
@@ -493,17 +498,18 @@
     if (config.query_port) params.push(`qport=${config.query_port}`);
     if (config.name) params.push(`name=${encodeURIComponent(config.name)}`);
     if (config.password) params.push(`password=${encodeURIComponent(config.password)}`);
-    if (config.mods.length > 0) params.push(`mods=${config.mods.map(m => m.id).join(',')}`);
+    if (config.mods.length > 0) params.push(`mods=${config.mods.map((m) => m.id).join(',')}`);
     if (params.length > 0) url += '?' + params.join('&');
     await writeText(url);
     copiedUrl = true;
-    setTimeout(() => { copiedUrl = false; }, 1500);
+    setTimeout(() => {
+      copiedUrl = false;
+    }, 1500);
   }
 </script>
 
 <div class="h-full overflow-auto">
   <div class="max-w-6xl mx-auto w-full p-6">
-
     <!-- Header -->
     <div class="flex items-center gap-2 mb-5">
       <Icon icon="ph:plugs-connected" class="size-5 text-primary" />
@@ -512,10 +518,8 @@
 
     <!-- ── Two-column grid (desktop) / single column (mobile) ────────── -->
     <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,420px)_1fr] gap-6 items-start">
-
       <!-- ═══════════════════ LEFT COLUMN: form + controls ═══════════════ -->
       <div class="space-y-4 lg:sticky lg:top-6">
-
         <!-- Form card -->
         <div class="rounded-xl border border-base-300 bg-base-100 overflow-hidden">
           <div class="px-4 py-2.5 bg-base-200 border-b border-base-300 flex items-center gap-2">
@@ -611,11 +615,7 @@
                   Query
                 {/if}
               </button>
-              <button
-                class="btn btn-primary btn-sm flex-1 gap-1.5"
-                onclick={connect}
-                disabled={!address}
-              >
+              <button class="btn btn-primary btn-sm flex-1 gap-1.5" onclick={connect} disabled={!address}>
                 <Icon icon="ph:rocket-launch" class="size-4" />
                 Connect
               </button>
@@ -628,7 +628,13 @@
                 {:else}
                   <button
                     class="btn btn-ghost btn-sm btn-square shrink-0"
-                    onclick={() => onAddFavorite!(displayName || address.trim(), address.trim(), parseInt(port, 10), password || undefined)}
+                    onclick={() =>
+                      onAddFavorite!(
+                        displayName || address.trim(),
+                        address.trim(),
+                        parseInt(port, 10),
+                        password || undefined,
+                      )}
                     title="Add to favorites"
                   >
                     <Icon icon="ph:star" class="size-4 text-warning/60 hover:text-warning transition-colors" />
@@ -670,9 +676,7 @@
             type="button"
           >
             <Icon icon="ph:sliders-horizontal" class="size-4 text-base-content/50" />
-            <span class="text-xs font-semibold text-base-content/70 uppercase tracking-wide flex-1">
-              Extra Mods
-            </span>
+            <span class="text-xs font-semibold text-base-content/70 uppercase tracking-wide flex-1"> Extra Mods </span>
             {#if enabledModeCount > 0}
               <span class="badge badge-primary badge-xs">{enabledModeCount}</span>
             {/if}
@@ -684,10 +688,10 @@
 
           {#if showModesPanel}
             <div class="p-4 space-y-3">
-
               <!-- Explanation -->
               <p class="text-xs text-base-content/50 leading-relaxed">
-                Add extra <code class="font-mono bg-base-200 px-1 rounded">-mod</code> entries not auto-detected by the server query.
+                Add extra <code class="font-mono bg-base-200 px-1 rounded">-mod</code> entries not auto-detected by the server
+                query.
               </p>
 
               <!-- Existing entries -->
@@ -699,8 +703,8 @@
                     <div
                       class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs group
                         {entry.fromServer
-                          ? 'bg-primary/5 border border-primary/15'
-                          : 'bg-base-200/60 border border-base-300/50'}
+                        ? 'bg-primary/5 border border-primary/15'
+                        : 'bg-base-200/60 border border-base-300/50'}
                         {!entry.enabled ? 'opacity-50' : ''}"
                     >
                       <!-- Kind badge -->
@@ -733,7 +737,9 @@
                       {/if}
 
                       <!-- Controls -->
-                      <div class="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div
+                        class="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
                         <button
                           class="btn btn-ghost btn-xs btn-square"
                           title="Move up"
@@ -755,7 +761,10 @@
                           title={entry.enabled ? 'Disable' : 'Enable'}
                           onclick={() => toggleModeEntry(entry.id)}
                         >
-                          <Icon icon={entry.enabled ? 'ph:toggle-right' : 'ph:toggle-left'} class="size-3.5 {entry.enabled ? 'text-success' : 'text-base-content/30'}" />
+                          <Icon
+                            icon={entry.enabled ? 'ph:toggle-right' : 'ph:toggle-left'}
+                            class="size-3.5 {entry.enabled ? 'text-success' : 'text-base-content/30'}"
+                          />
                         </button>
                         <button
                           class="btn btn-ghost btn-xs btn-square text-error/60 hover:text-error"
@@ -777,10 +786,7 @@
               <!-- Add new entry -->
               {#if availableToAdd.length > 0}
                 <div class="flex gap-2 pt-1">
-                  <select
-                    class="select select-bordered select-xs flex-1 min-w-0"
-                    bind:value={newModId}
-                  >
+                  <select class="select select-bordered select-xs flex-1 min-w-0" bind:value={newModId}>
                     <option value={null} disabled selected>Pick installed mod…</option>
                     {#each availableToAdd as m}
                       <option value={m.id}>{m.name}</option>
@@ -800,29 +806,30 @@
                   No installed mods found. Install mods from the Mods tab first.
                 </p>
               {:else}
-                <p class="text-xs text-base-content/35 italic">
-                  All installed mods have been added.
-                </p>
+                <p class="text-xs text-base-content/35 italic">All installed mods have been added.</p>
               {/if}
 
               <!-- Preview of generated args -->
               {#if enabledModeCount > 0}
                 {@const preview = buildModeArgs()}
                 <div class="rounded-lg bg-base-200 p-2.5 space-y-0.5">
-                  <p class="text-xs text-base-content/40 mb-1 uppercase tracking-wide font-semibold">Launch args preview</p>
+                  <p class="text-xs text-base-content/40 mb-1 uppercase tracking-wide font-semibold">
+                    Launch args preview
+                  </p>
                   {#each preview as arg}
                     <p class="font-mono text-xs text-base-content/70 break-all">{arg}</p>
                   {/each}
                 </div>
               {/if}
-
             </div>
           {/if}
         </div>
 
         <!-- Error (below the form so it's close to the action that caused it) -->
         {#if a2sError}
-          <div class="flex items-start gap-2.5 px-3.5 py-3 rounded-xl bg-error/10 border border-error/25 text-sm text-error">
+          <div
+            class="flex items-start gap-2.5 px-3.5 py-3 rounded-xl bg-error/10 border border-error/25 text-sm text-error"
+          >
             <Icon icon="ph:warning-circle" class="size-4 shrink-0 mt-0.5" />
             <div>
               <p class="font-medium text-sm">Query failed</p>
@@ -830,8 +837,8 @@
             </div>
           </div>
         {/if}
-
-      </div><!-- end left column -->
+      </div>
+      <!-- end left column -->
 
       <!-- ═══════════════════ RIGHT COLUMN: server info ═════════════════ -->
       <div class="min-w-0">
@@ -859,7 +866,6 @@
           {@const name = displayName}
 
           <div class="rounded-xl border border-base-300 bg-base-100 overflow-hidden">
-
             <!-- Card header: name + source badge -->
             <div class="px-4 py-3 bg-base-200 border-b border-base-300 flex items-start gap-3">
               <Icon icon="ph:server" class="size-4 text-primary shrink-0 mt-0.5" />
@@ -879,12 +885,18 @@
                   {/if}
                   {#if resolvedQueryPort !== null}
                     {#if resolvedPortKind === 'query'}
-                      <span class="badge badge-xs gap-1 bg-sky-500/15 text-sky-400 border-sky-500/20" title="You entered the query (A2S) port">
+                      <span
+                        class="badge badge-xs gap-1 bg-sky-500/15 text-sky-400 border-sky-500/20"
+                        title="You entered the query (A2S) port"
+                      >
                         <Icon icon="ph:plugs" class="size-2.5" />
                         Query port
                       </span>
                     {:else if resolvedPortKind === 'game'}
-                      <span class="badge badge-xs gap-1 bg-amber-500/15 text-amber-400 border-amber-500/20" title="You entered the game port — query port resolved from server list">
+                      <span
+                        class="badge badge-xs gap-1 bg-amber-500/15 text-amber-400 border-amber-500/20"
+                        title="You entered the game port — query port resolved from server list"
+                      >
                         <Icon icon="ph:game-controller" class="size-2.5" />
                         Game port → Q:{resolvedQueryPort}
                       </span>
@@ -923,10 +935,8 @@
             </div>
 
             <div class="p-4 space-y-4">
-
               <!-- Player bar + info grid side by side on wide screens -->
               <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
-
                 <!-- Player bar -->
                 <div>
                   <div class="flex items-center justify-between mb-1.5">
@@ -994,7 +1004,7 @@
                       <Icon icon="ph:monitor" class="size-3.5" />
                       Platform
                     </div>
-                    <span class="{fs.environment === 'w' ? 'text-info' : 'text-success'}">
+                    <span class={fs.environment === 'w' ? 'text-info' : 'text-success'}>
                       {fs.environment === 'w' ? 'Windows' : 'Linux'}
                     </span>
                   {:else if a2s}
@@ -1021,12 +1031,10 @@
                     <span class="text-base-content/70">{version}</span>
                   {/if}
                 </div>
-
               </div>
 
               <!-- Mods + Players: side by side on xl -->
               <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
-
                 <!-- Mods -->
                 <div>
                   {#if fullLoading}
@@ -1046,13 +1054,22 @@
                         {#each mods as mod}
                           {@const installed = installedIds.has(mod.steam_workshop_id)}
                           <div class="flex items-center gap-2 text-xs group">
-                            <span class="flex-shrink-0 w-4 text-center font-bold {installed ? 'text-success' : 'text-error/70'}">
+                            <span
+                              class="flex-shrink-0 w-4 text-center font-bold {installed
+                                ? 'text-success'
+                                : 'text-error/70'}"
+                            >
                               {installed ? '✓' : '−'}
                             </span>
                             <span class="truncate flex-1 text-base-content/80">{mod.name}</span>
                             <button
                               class="font-mono text-base-content/30 hover:text-primary transition-colors flex-shrink-0 opacity-0 group-hover:opacity-100"
-                              onclick={(e) => { e.stopPropagation(); openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.steam_workshop_id}`); }}
+                              onclick={(e) => {
+                                e.stopPropagation();
+                                openUrl(
+                                  `https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.steam_workshop_id}`,
+                                );
+                              }}
                               title="Open on Steam Workshop"
                             >
                               {mod.steam_workshop_id}
@@ -1109,16 +1126,11 @@
                     </div>
                   {/if}
                 </div>
-
               </div>
 
               <!-- Connect action at bottom of card -->
               <div class="flex gap-2 pt-1 border-t border-base-200">
-                <button
-                  class="btn btn-ghost btn-sm gap-1.5"
-                  onclick={() => queryInfo()}
-                  disabled={a2sLoading}
-                >
+                <button class="btn btn-ghost btn-sm gap-1.5" onclick={() => queryInfo()} disabled={a2sLoading}>
                   {#if a2sLoading}
                     <span class="loading loading-spinner loading-xs"></span>
                   {:else}
@@ -1126,10 +1138,7 @@
                   {/if}
                   Refresh
                 </button>
-                <button
-                  class="btn btn-primary btn-sm flex-1 gap-1.5"
-                  onclick={connect}
-                >
+                <button class="btn btn-primary btn-sm flex-1 gap-1.5" onclick={connect}>
                   <Icon icon="ph:rocket-launch" class="size-4" />
                   Connect
                 </button>
@@ -1138,17 +1147,20 @@
           </div>
         {:else}
           <!-- Empty state: no server queried yet -->
-          <div class="rounded-xl border border-dashed border-base-300/60 bg-base-200/30 flex flex-col items-center justify-center py-16 px-8 text-center">
+          <div
+            class="rounded-xl border border-dashed border-base-300/60 bg-base-200/30 flex flex-col items-center justify-center py-16 px-8 text-center"
+          >
             <Icon icon="ph:plugs-connected" class="size-10 text-base-content/15 mb-3" />
             <p class="text-sm text-base-content/40 font-medium">No server queried</p>
             <p class="text-xs text-base-content/30 mt-1 max-w-xs">
-              Enter an IP address and click <span class="font-semibold text-base-content/50">Query</span> to see server details, or press <kbd class="kbd kbd-xs">Enter</kbd> to connect directly.
+              Enter an IP address and click <span class="font-semibold text-base-content/50">Query</span> to see server
+              details, or press <kbd class="kbd kbd-xs">Enter</kbd> to connect directly.
             </p>
           </div>
         {/if}
-      </div><!-- end right column -->
-
-    </div><!-- end grid -->
-
+      </div>
+      <!-- end right column -->
+    </div>
+    <!-- end grid -->
   </div>
 </div>

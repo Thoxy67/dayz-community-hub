@@ -69,9 +69,15 @@
     function rewrite() {
       node.querySelectorAll<HTMLImageElement>('img[src]').forEach((img) => {
         const src = img.getAttribute('src');
-        if (!src || src.startsWith('data:') || src.startsWith('blob:')
-            || src.startsWith('asset:') || src.startsWith('http://asset')
-            || rewritten.has(img)) return;
+        if (
+          !src ||
+          src.startsWith('data:') ||
+          src.startsWith('blob:') ||
+          src.startsWith('asset:') ||
+          src.startsWith('http://asset') ||
+          rewritten.has(img)
+        )
+          return;
         rewritten.add(img);
         img.removeAttribute('src');
         // Fetch the display version (640 px) for inline rendering
@@ -81,20 +87,29 @@
             img.src = uri;
             img.style.cursor = 'zoom-in';
             img.addEventListener('click', () => {
-              if (lightboxSrc) { closeLightbox(); return; }
+              if (lightboxSrc) {
+                closeLightbox();
+                return;
+              }
               // Try the full-size version first; fall back to the display URI
               fetchImage(fullUrl)
                 .then((fullUri) => openLightbox(fullUri))
                 .catch(() => openLightbox(uri));
             });
           })
-          .catch(() => { img.style.display = 'none'; });
+          .catch(() => {
+            img.style.display = 'none';
+          });
       });
     }
     rewrite();
     const mo = new MutationObserver(rewrite);
     mo.observe(node, { childList: true, subtree: true });
-    return { destroy() { mo.disconnect(); } };
+    return {
+      destroy() {
+        mo.disconnect();
+      },
+    };
   }
 
   // Thumbnail URIs — $state array so Svelte tracks per-index mutations
@@ -114,9 +129,7 @@
     }
 
     const gen = thumbGeneration;
-    const imageUrls = articles
-      .map((a) => a.image_url)
-      .filter((u): u is string => !!u);
+    const imageUrls = articles.map((a) => a.image_url).filter((u): u is string => !!u);
 
     if (imageUrls.length === 0) return;
 
@@ -148,7 +161,9 @@
           if (thumbFetching.has(i) || !article.image_url) return;
           thumbFetching.add(i);
           fetchImage(article.image_url)
-            .then((uri) => { if (thumbGeneration === gen) thumbs[i] = uri; })
+            .then((uri) => {
+              if (thumbGeneration === gen) thumbs[i] = uri;
+            })
             .catch(() => {});
         });
       });
@@ -160,8 +175,12 @@
   // Lightbox
   let lightboxSrc = $state<string | null>(null);
 
-  function openLightbox(src: string) { lightboxSrc = src; }
-  function closeLightbox() { lightboxSrc = null; }
+  function openLightbox(src: string) {
+    lightboxSrc = src;
+  }
+  function closeLightbox() {
+    lightboxSrc = null;
+  }
 
   function onLightboxKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') closeLightbox();
@@ -169,11 +188,21 @@
 
   function updateHero() {
     const url = selected?.image_url ?? null;
-    if (!url) { heroDataUri = null; return; }
+    if (!url) {
+      heroDataUri = null;
+      return;
+    }
     const cached = imgCache.get(url);
-    if (cached) { heroDataUri = cached; return; }
+    if (cached) {
+      heroDataUri = cached;
+      return;
+    }
     heroDataUri = null;
-    fetchImage(url).then((uri) => { heroDataUri = uri; }).catch(() => {});
+    fetchImage(url)
+      .then((uri) => {
+        heroDataUri = uri;
+      })
+      .catch(() => {});
   }
 
   $effect(() => {
@@ -184,10 +213,8 @@
 </script>
 
 <div class="flex h-full overflow-hidden">
-
   <!-- ── Sidebar: article list ──────────────────────────────────────────────── -->
   <div class="w-68 flex-shrink-0 flex flex-col border-r border-base-300 bg-base-100 overflow-hidden">
-
     <!-- Sidebar header -->
     <div class="flex items-center gap-2 px-3 py-2 bg-base-200 border-b border-base-300 flex-shrink-0">
       <Icon icon="ph:newspaper" class="size-3.5 text-primary" />
@@ -195,12 +222,7 @@
       {#if articles.length > 0}
         <span class="text-xs text-base-content/30">{articles.length}</span>
       {/if}
-      <button
-        class="btn btn-ghost btn-xs p-1"
-        onclick={onRefresh}
-        disabled={loading}
-        title="Refresh"
-      >
+      <button class="btn btn-ghost btn-xs p-1" onclick={onRefresh} disabled={loading} title="Refresh">
         {#if loading}
           <span class="loading loading-spinner loading-xs"></span>
         {:else}
@@ -212,7 +234,7 @@
     {#if loading && articles.length === 0}
       <!-- Skeleton list while loading -->
       <div class="flex-1 overflow-y-auto p-2 space-y-2">
-        {#each [1,2,3,4] as _}
+        {#each [1, 2, 3, 4] as _}
           <div class="rounded-lg bg-base-200 animate-pulse h-20"></div>
         {/each}
       </div>
@@ -224,8 +246,8 @@
           <button
             class="w-full text-left transition-colors border-b border-base-300/50 relative
                    {isSel
-                     ? 'bg-primary/10 border-l-2 border-l-primary'
-                     : 'hover:bg-base-200/60 border-l-2 border-l-transparent'}"
+              ? 'bg-primary/10 border-l-2 border-l-primary'
+              : 'hover:bg-base-200/60 border-l-2 border-l-transparent'}"
             onclick={() => (selectedIndex = i)}
           >
             <div class="flex gap-2.5 p-2.5">
@@ -249,7 +271,10 @@
                 </p>
                 <div class="flex flex-col gap-0.5 mt-1">
                   {#if article.category}
-                    <span class="text-primary/70 font-semibold uppercase truncate leading-none" style="font-size:9px; letter-spacing:0.05em;">
+                    <span
+                      class="text-primary/70 font-semibold uppercase truncate leading-none"
+                      style="font-size:9px; letter-spacing:0.05em;"
+                    >
                       {article.category}
                     </span>
                   {/if}
@@ -266,7 +291,6 @@
   <!-- ── Reading pane ────────────────────────────────────────────────────────── -->
   <div class="flex-1 overflow-hidden flex flex-col bg-base-100">
     {#if selected}
-
       <!-- Hero image -->
       {#if heroDataUri || selected.image_url}
         <div class="w-full h-48 flex-shrink-0 relative overflow-hidden bg-base-200">
@@ -274,16 +298,16 @@
             <button
               type="button"
               class="w-full h-full p-0 border-0 bg-transparent cursor-zoom-in"
-              onclick={() => { if (heroDataUri) lightboxSrc === heroDataUri ? closeLightbox() : openLightbox(heroDataUri); }}
+              onclick={() => {
+                if (heroDataUri) lightboxSrc === heroDataUri ? closeLightbox() : openLightbox(heroDataUri);
+              }}
             >
-              <img
-                src={heroDataUri}
-                alt=""
-                class="w-full h-full object-cover"
-              />
+              <img src={heroDataUri} alt="" class="w-full h-full object-cover" />
             </button>
             <!-- Gradient overlay so title text reads well -->
-            <div class="absolute inset-0 bg-gradient-to-t from-base-100 via-base-100/30 to-transparent pointer-events-none"></div>
+            <div
+              class="absolute inset-0 bg-gradient-to-t from-base-100 via-base-100/30 to-transparent pointer-events-none"
+            ></div>
           {:else}
             <div class="w-full h-full animate-pulse bg-base-300"></div>
           {/if}
@@ -351,7 +375,6 @@
       <!-- Article body -->
       <div class="flex-1 overflow-y-auto">
         <div class="max-w-2xl mx-auto px-6 py-5">
-
           {#if selected.excerpt}
             <p class="text-sm text-base-content/60 italic leading-relaxed mb-5 pb-5 border-b border-base-300/60">
               {selected.excerpt}
@@ -367,10 +390,8 @@
               {selected.content_text || 'No content available.'}
             </p>
           {/if}
-
         </div>
       </div>
-
     {:else if !loading}
       <div class="flex flex-col items-center justify-center h-full gap-3 text-base-content/30">
         <Icon icon="ph:newspaper" class="size-12 opacity-20" />
@@ -378,7 +399,6 @@
       </div>
     {/if}
   </div>
-
 </div>
 
 <!-- ── Lightbox ──────────────────────────────────────────────────────────────── -->
@@ -394,13 +414,12 @@
     <button
       type="button"
       class="p-0 border-0 bg-transparent cursor-zoom-out max-w-[90vw] max-h-[90vh] flex items-center justify-center"
-      onclick={(e) => { e.stopPropagation(); closeLightbox(); }}
+      onclick={(e) => {
+        e.stopPropagation();
+        closeLightbox();
+      }}
     >
-      <img
-        src={lightboxSrc}
-        alt=""
-        class="max-w-full max-h-[90vh] object-contain rounded shadow-2xl select-none"
-      />
+      <img src={lightboxSrc} alt="" class="max-w-full max-h-[90vh] object-contain rounded shadow-2xl select-none" />
     </button>
     <button
       class="absolute top-3 right-3 btn btn-ghost btn-sm btn-circle text-white/70 hover:text-white hover:bg-white/10"
@@ -413,4 +432,3 @@
 {/if}
 
 <style></style>
-

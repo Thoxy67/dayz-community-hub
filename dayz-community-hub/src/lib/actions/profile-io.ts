@@ -29,7 +29,8 @@ export async function importProfile() {
   const path = typeof selected === 'string' ? selected : selected[0];
   s.confirmDialog = {
     title: 'Import Profile',
-    message: 'This will overwrite your current profile, favorites, history and launch options. The app will restart to apply the changes. Continue?',
+    message:
+      'This will overwrite your current profile, favorites, history and launch options. The app will restart to apply the changes. Continue?',
     onConfirm: async () => {
       try {
         await invoke('import_profile', { path });
@@ -44,7 +45,8 @@ export async function importProfile() {
 export function resetProfile() {
   s.confirmDialog = {
     title: 'Reset to Factory Defaults',
-    message: 'This will delete all settings, favorites, history, cached server lists, and launch options — as if the app was never launched. Mods downloaded to your Steam workshop folder are not affected. The app will restart and the setup wizard will reappear.',
+    message:
+      'This will delete all settings, favorites, history, cached server lists, and launch options — as if the app was never launched. Mods downloaded to your Steam workshop folder are not affected. The app will restart and the setup wizard will reappear.',
     onConfirm: async () => {
       try {
         await invoke('reset_profile');

@@ -57,25 +57,25 @@
   // Per-option metadata: icon + short label
   type Meta = { icon: string; label: string };
   const meta: Record<string, Meta> = {
-    window:       { icon: 'ph:frame-corners',        label: 'Windowed' },
-    noborder:     { icon: 'ph:browsers',             label: 'Borderless' },
-    nosplash:     { icon: 'ph:image-broken',         label: 'No Splash' },
-    skipintro:    { icon: 'ph:skip-forward-circle',  label: 'Skip Intro' },
-    nolauncher:   { icon: 'ph:rocket',               label: 'No Launcher' },
-    high:         { icon: 'ph:arrow-fat-up',         label: 'High Priority' },
-    max_mem:      { icon: 'ph:memory',               label: 'Max RAM' },
-    max_vram:     { icon: 'ph:graphics-card',        label: 'Max VRAM' },
-    cpu_count:    { icon: 'ph:cpu',                  label: 'CPU Cores' },
-    ex_threads:   { icon: 'ph:threads-logo',         label: 'Threads' },
-    no_benchmark: { icon: 'ph:chart-bar',            label: 'No Benchmark' },
-    world:        { icon: 'ph:map-trifold',          label: 'World' },
-    no_pause:     { icon: 'ph:pause-circle',         label: 'No Pause' },
-    file_patching:{ icon: 'ph:file-dashed',          label: 'File Patching' },
-    do_logs:      { icon: 'ph:scroll',               label: 'Logging' },
-    script_debug: { icon: 'ph:bug',                  label: 'Script Debug' },
-    buldozer:     { icon: 'ph:bulldozer',            label: 'Buldozer' },
-    winxp:        { icon: 'ph:windows-logo',         label: 'DirectX 9' },
-    profiles:     { icon: 'ph:folder-open',          label: 'Profiles Dir' },
+    window: { icon: 'ph:frame-corners', label: 'Windowed' },
+    noborder: { icon: 'ph:browsers', label: 'Borderless' },
+    nosplash: { icon: 'ph:image-broken', label: 'No Splash' },
+    skipintro: { icon: 'ph:skip-forward-circle', label: 'Skip Intro' },
+    nolauncher: { icon: 'ph:rocket', label: 'No Launcher' },
+    high: { icon: 'ph:arrow-fat-up', label: 'High Priority' },
+    max_mem: { icon: 'ph:memory', label: 'Max RAM' },
+    max_vram: { icon: 'ph:graphics-card', label: 'Max VRAM' },
+    cpu_count: { icon: 'ph:cpu', label: 'CPU Cores' },
+    ex_threads: { icon: 'ph:threads-logo', label: 'Threads' },
+    no_benchmark: { icon: 'ph:chart-bar', label: 'No Benchmark' },
+    world: { icon: 'ph:map-trifold', label: 'World' },
+    no_pause: { icon: 'ph:pause-circle', label: 'No Pause' },
+    file_patching: { icon: 'ph:file-dashed', label: 'File Patching' },
+    do_logs: { icon: 'ph:scroll', label: 'Logging' },
+    script_debug: { icon: 'ph:bug', label: 'Script Debug' },
+    buldozer: { icon: 'ph:bulldozer', label: 'Buldozer' },
+    winxp: { icon: 'ph:windows-logo', label: 'DirectX 9' },
+    profiles: { icon: 'ph:folder-open', label: 'Profiles Dir' },
   };
 
   function getMeta(key: string): Meta {
@@ -89,36 +89,40 @@
 
   // These are $derived so they only recompute when options or search changes,
   // not on every render tick (previously plain functions called in {#each}).
-  let filteredGroups = $derived((() => {
-    const q = search.trim().toLowerCase();
-    return groups
-      .map((g) => ({
-        ...g,
-        opts: g.keys
-          .map((k) => optMap.get(k))
-          .filter((o): o is LaunchOptionDto => {
-            if (!o) return false;
-            if (!q) return true;
-            return (
-              o.key.toLowerCase().includes(q) ||
-              o.description.toLowerCase().includes(q) ||
-              getMeta(o.key).label.toLowerCase().includes(q)
-            );
-          }),
-      }))
-      .filter((g) => g.opts.length > 0);
-  })());
+  let filteredGroups = $derived(
+    (() => {
+      const q = search.trim().toLowerCase();
+      return groups
+        .map((g) => ({
+          ...g,
+          opts: g.keys
+            .map((k) => optMap.get(k))
+            .filter((o): o is LaunchOptionDto => {
+              if (!o) return false;
+              if (!q) return true;
+              return (
+                o.key.toLowerCase().includes(q) ||
+                o.description.toLowerCase().includes(q) ||
+                getMeta(o.key).label.toLowerCase().includes(q)
+              );
+            }),
+        }))
+        .filter((g) => g.opts.length > 0);
+    })(),
+  );
 
   // Ungrouped options (not listed in any group)
-  let ungroupedOpts = $derived((() => {
-    const listed = new Set(groups.flatMap((g) => g.keys));
-    const q = search.trim().toLowerCase();
-    return options.filter((o) => {
-      if (listed.has(o.key)) return false;
-      if (!q) return true;
-      return o.key.toLowerCase().includes(q) || o.description.toLowerCase().includes(q);
-    });
-  })());
+  let ungroupedOpts = $derived(
+    (() => {
+      const listed = new Set(groups.flatMap((g) => g.keys));
+      const q = search.trim().toLowerCase();
+      return options.filter((o) => {
+        if (listed.has(o.key)) return false;
+        if (!q) return true;
+        return o.key.toLowerCase().includes(q) || o.description.toLowerCase().includes(q);
+      });
+    })(),
+  );
 
   // ── Edit helpers ──────────────────────────────────────────────────────────
   function startEdit(opt: LaunchOptionDto) {
@@ -146,13 +150,24 @@
   // ── Flag badge text ────────────────────────────────────────────────────────
   function flagText(opt: LaunchOptionDto): string {
     const flagMap: Record<string, string> = {
-      window: '-window', noborder: '-noborder', nosplash: '-nosplash',
-      skipintro: '-skipIntro', nolauncher: '-nolauncher',
-      file_patching: '-filePatching', do_logs: '-doLogs',
-      buldozer: '-buldozer', winxp: '-winxp', high: '-high',
-      world: '-world', no_pause: '-noPause', max_mem: '-maxMem',
-      max_vram: '-maxVRAM', cpu_count: '-cpuCount', ex_threads: '-exThreads',
-      no_benchmark: '-noBenchmark', script_debug: '-scriptDebug',
+      window: '-window',
+      noborder: '-noborder',
+      nosplash: '-nosplash',
+      skipintro: '-skipIntro',
+      nolauncher: '-nolauncher',
+      file_patching: '-filePatching',
+      do_logs: '-doLogs',
+      buldozer: '-buldozer',
+      winxp: '-winxp',
+      high: '-high',
+      world: '-world',
+      no_pause: '-noPause',
+      max_mem: '-maxMem',
+      max_vram: '-maxVRAM',
+      cpu_count: '-cpuCount',
+      ex_threads: '-exThreads',
+      no_benchmark: '-noBenchmark',
+      script_debug: '-scriptDebug',
       profiles: '-profiles',
     };
     const flag = flagMap[opt.key] ?? `-${opt.key}`;
@@ -169,12 +184,7 @@
     <!-- Search -->
     <label class="input input-sm input-bordered flex items-center gap-2 flex-1 max-w-xs">
       <Icon icon="ph:magnifying-glass" class="size-3.5 text-base-content/40 flex-shrink-0" />
-      <input
-        type="text"
-        placeholder="Search options…"
-        class="grow text-xs"
-        bind:value={search}
-      />
+      <input type="text" placeholder="Search options…" class="grow text-xs" bind:value={search} />
       {#if search}
         <button class="text-base-content/40 hover:text-base-content" onclick={() => (search = '')}>
           <Icon icon="ph:x" class="size-3" />
@@ -259,18 +269,14 @@
                     <span class="font-mono text-xs text-accent bg-accent/10 px-2 py-0.5 rounded">
                       {opt.value}
                     </span>
-                    <button
-                      class="btn btn-ghost btn-xs btn-square"
-                      onclick={() => startEdit(opt)}
-                      title="Edit value"
-                    >
+                    <button class="btn btn-ghost btn-xs btn-square" onclick={() => startEdit(opt)} title="Edit value">
                       <Icon icon="ph:pencil-simple" class="size-3.5" />
                     </button>
                   {/if}
                 </div>
               {:else if opt.enabled}
                 <!-- No value set, but option supports one — show edit hint for value-capable options -->
-                {#if ['max_mem','max_vram','cpu_count','ex_threads','world','profiles','script_debug'].includes(opt.key)}
+                {#if ['max_mem', 'max_vram', 'cpu_count', 'ex_threads', 'world', 'profiles', 'script_debug'].includes(opt.key)}
                   <button
                     class="btn btn-ghost btn-xs text-base-content/30 hover:text-base-content/70"
                     onclick={() => startEdit(opt)}
@@ -304,7 +310,10 @@
         </div>
         <div class="divide-y divide-base-200">
           {#each ungroupedOpts as opt}
-            <div class="flex items-center gap-3 px-4 py-2.5 hover:bg-base-200 transition-colors" class:opacity-50={!opt.enabled}>
+            <div
+              class="flex items-center gap-3 px-4 py-2.5 hover:bg-base-200 transition-colors"
+              class:opacity-50={!opt.enabled}
+            >
               <Icon icon="ph:sliders" class="size-4 text-base-content/40 flex-shrink-0" />
               <div class="flex-1 min-w-0">
                 <span class="text-sm font-medium font-mono">{opt.key}</span>
