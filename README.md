@@ -86,17 +86,6 @@ TAURI_SIGNING_PRIVATE_KEY="" bun tauri build \
 
 ---
 
-## Tech stack
-
-| | |
-|---|---|
-| [Tauri 2](https://tauri.app) | Desktop shell, native APIs, auto-updater |
-| [SvelteKit 5](https://svelte.dev) | Frontend (runes, SPA mode) |
-| [Rust](https://www.rust-lang.org) | All backend logic |
-| [DaisyUI 5](https://daisyui.com) + [Tailwind 4](https://tailwindcss.com) | Styling |
-
----
-
 ## License
 
 MIT — see [LICENSE](LICENSE)
