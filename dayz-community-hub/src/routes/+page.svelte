@@ -272,7 +272,7 @@
     {staleModCount}
     updateState={s.updateState}
     glitchTick={s.titleGlitchTick}
-    onToggleTheme={() => s.toggleTheme()}
+    onSetTheme={(t) => s.setTheme(t)}
     onSaveSettings={saveProfileSettings}
     onUnexcludeIp={unexcludeIp}
     onOpenExcludedIps={() => {

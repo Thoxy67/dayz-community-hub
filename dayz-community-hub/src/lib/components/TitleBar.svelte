@@ -1,10 +1,12 @@
 <script lang="ts">
   import type { AppStatsDto, ProfileDto } from '$lib/types';
+  import { type ThemeName, THEMES } from '$lib/state.svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { open as openDialog, ask } from '@tauri-apps/plugin-dialog';
   import { openUrl } from '@tauri-apps/plugin-opener';
   import Icon from '@iconify/svelte';
   import GlitchText from '$lib/components/GlitchText.svelte';
+  import CssEditor from '$lib/components/CssEditor.svelte';
 
   type UpdateState = 'idle' | 'checking' | 'up_to_date' | 'available' | 'downloading' | 'done' | 'error';
 
@@ -12,13 +14,13 @@
     stats: AppStatsDto | null;
     avatarUrl: string | null;
     steamPlayers: number | null;
-    theme: 'light' | 'dark';
+    theme: ThemeName;
     profile: ProfileDto | null;
     staleModCount?: number;
     updateState?: UpdateState;
     /** Increment to imperatively trigger the title glitch animation */
     glitchTick?: number;
-    onToggleTheme: () => void;
+    onSetTheme: (theme: ThemeName) => void;
     onUpdateMods?: () => void;
     onGoToUpdate?: () => void;
     onSaveSettings: (
@@ -46,13 +48,128 @@
     staleModCount = 0,
     updateState = 'idle',
     glitchTick = 0,
-    onToggleTheme,
+    onSetTheme,
     onSaveSettings,
     onUnexcludeIp,
     onOpenExcludedIps,
     onUpdateMods,
     onGoToUpdate,
   }: Props = $props();
+
+  // ── Theme dropdown state ─────────────────────────────────────────────────
+  let themeDropdownOpen = $state(false);
+  let customThemeModalOpen = $state(false);
+  let customCss = $state('');
+
+  // Default custom theme CSS template
+  const customCssTemplate = `/* Custom Theme */
+[data-theme="custom"] {
+  /* Base surfaces */
+  --color-base-100: oklch(15% 0.01 0);
+  --color-base-200: oklch(20% 0.01 0);
+  --color-base-300: oklch(28% 0.015 0);
+  --color-base-content: oklch(90% 0.01 0);
+
+  /* Primary color */
+  --color-primary: oklch(65% 0.20 255);
+  --color-primary-content: oklch(10% 0.01 255);
+
+  /* Secondary color */
+  --color-secondary: oklch(60% 0.16 290);
+  --color-secondary-content: oklch(95% 0.01 290);
+
+  /* Accent color */
+  --color-accent: oklch(65% 0.16 180);
+  --color-accent-content: oklch(10% 0.01 180);
+
+  /* Neutral */
+  --color-neutral: oklch(20% 0.01 0);
+  --color-neutral-content: oklch(90% 0.01 0);
+
+  /* Status colors */
+  --color-info: oklch(60% 0.16 230);
+  --color-success: oklch(60% 0.18 145);
+  --color-warning: oklch(70% 0.18 75);
+  --color-error: oklch(60% 0.22 25);
+
+  /* Border radius */
+  --radius-btn: 0.375rem;
+  --radius-box: 0.5rem;
+  --radius-badge: 1rem;
+}`;
+
+  function selectTheme(t: ThemeName) {
+    onSetTheme(t);
+    themeDropdownOpen = false;
+  }
+
+  function openCustomThemeModal() {
+    // Load saved custom CSS or use template
+    const saved = localStorage.getItem('custom-theme-css');
+    customCss = saved || customCssTemplate;
+    // Switch to custom theme when opening editor
+    onSetTheme('custom' as ThemeName);
+    customThemeModalOpen = true;
+    themeDropdownOpen = false;
+  }
+
+  function closeCustomThemeModal() {
+    customThemeModalOpen = false;
+  }
+
+  function applyCustomTheme(css: string) {
+    let styleEl = document.getElementById('custom-theme-style');
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = 'custom-theme-style';
+      document.head.appendChild(styleEl);
+    }
+    styleEl.textContent = css;
+  }
+
+  // Load custom theme CSS on mount
+  $effect(() => {
+    const saved = localStorage.getItem('custom-theme-css');
+    if (saved) {
+      customCss = saved;
+    }
+  });
+
+  // Apply and save custom CSS in real-time as it changes
+  $effect(() => {
+    applyCustomTheme(customCss);
+    // Save to localStorage on every change
+    if (customCss) {
+      localStorage.setItem('custom-theme-css', customCss);
+    }
+  });
+
+  function handleThemeKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') {
+      themeDropdownOpen = false;
+    }
+  }
+
+  function handleCustomModalKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') {
+      closeCustomThemeModal();
+    }
+  }
+
+  $effect(() => {
+    if (themeDropdownOpen) {
+      const handleClickOutside = (e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        if (!target.closest('.theme-dropdown')) {
+          themeDropdownOpen = false;
+        }
+      };
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  });
+
+  const currentTheme = $derived(THEMES.find((t) => t.id === theme) ?? THEMES[0]);
 
   // ── Window controls ────────────────────────────────────────────────────────
   const win = getCurrentWindow();
@@ -257,15 +374,15 @@
     class="absolute left-1/2 -translate-x-1/2 flex items-center gap-5 px-4 text-xs text-base-content/60 pointer-events-none"
   >
     <span class="flex items-center gap-1.5 pointer-events-auto" title="Servers">
-      <Icon icon="mdi:server-network" class="size-3.5 text-red-500 dark:text-red-400" />
+      <Icon icon="mdi:server-network" class="size-3.5 text-accent-stat-server" />
       <span class="tabular-nums font-medium text-base-content/80">{fmt(stats?.server_count)}</span>
     </span>
     <span class="flex items-center gap-1.5 pointer-events-auto" title="Players in-game">
-      <Icon icon="mdi:controller" class="size-3.5 text-green-500 dark:text-green-400" />
+      <Icon icon="mdi:controller" class="size-3.5 text-accent-stat-players" />
       <span class="tabular-nums font-medium text-base-content/80">{fmt(stats?.total_players)}</span>
     </span>
     <span class="flex items-center gap-1.5 pointer-events-auto" title="Players on Steam">
-      <Icon icon="mdi:steam" class="size-3.5 text-sky-500 dark:text-sky-500" />
+      <Icon icon="mdi:steam" class="size-3.5 text-accent-stat-steam" />
       <span class="tabular-nums font-medium text-base-content/80">{fmt(steamPlayers)}</span>
     </span>
   </div>
@@ -289,12 +406,12 @@
     <!-- Launcher update badge — only shown when an update is available -->
     {#if updateState === 'available'}
       <button
-        class="flex items-center gap-1.5 px-2 py-1 rounded text-emerald-400 hover:text-emerald-300 hover:bg-base-300 transition-colors border-r border-base-300 mr-1 font-medium text-xs"
+        class="flex items-center gap-1.5 px-2 py-1 rounded text-accent-update hover:opacity-80 hover:bg-base-300 transition-colors border-r border-base-300 mr-1 font-medium text-xs"
         onclick={onGoToUpdate}
         title="Launcher update available — click to view"
         data-no-drag
       >
-        <Icon icon="line-md:downloading-loop" class="size-4 text-emerald-400" />
+        <Icon icon="line-md:downloading-loop" class="size-4" />
         Update available
       </button>
     {/if}
@@ -302,12 +419,12 @@
     <!-- Mod update badge — only shown when stale mods exist -->
     {#if staleModCount > 0}
       <button
-        class="flex items-center gap-1.5 px-2 py-1 rounded text-yellow-400 hover:text-yellow-300 hover:bg-base-300 transition-colors border-r border-base-300 mr-1 font-medium text-xs"
+        class="flex items-center gap-1.5 px-2 py-1 rounded text-accent-stale hover:opacity-80 hover:bg-base-300 transition-colors border-r border-base-300 mr-1 font-medium text-xs"
         onclick={onUpdateMods}
         title="Update {staleModCount} mod{staleModCount > 1 ? 's' : ''} — click to open Mods tab and start update"
         data-no-drag
       >
-        <Icon icon="line-md:download-outline-loop" class="size-4 text-yellow-400" />
+        <Icon icon="line-md:download-outline-loop" class="size-4" />
         Update {staleModCount} mod{staleModCount > 1 ? 's' : ''}
       </button>
     {/if}
@@ -338,18 +455,102 @@
       <Icon icon="ph:pencil-simple" class="size-3 text-base-content/30" />
     </button>
 
-    <!-- Theme toggle -->
-    <button
-      class="inline-flex items-center justify-center w-9 h-9 text-base-content/50 hover:bg-base-300 hover:text-base-content transition-colors"
-      onclick={onToggleTheme}
-      title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-    >
-      {#if theme === 'dark'}
-        <Icon icon="ph:sun" class="size-4" />
-      {:else}
-        <Icon icon="ph:moon" class="size-4" />
+    <!-- Theme selector -->
+    <div class="relative theme-dropdown" onkeydown={handleThemeKeydown}>
+      <button
+        class="inline-flex items-center justify-center gap-1.5 h-9 px-2 text-base-content/50 hover:bg-base-300 hover:text-base-content transition-colors"
+        onclick={(e) => {
+          e.stopPropagation();
+          themeDropdownOpen = !themeDropdownOpen;
+        }}
+        title="Change theme"
+      >
+        <Icon icon={currentTheme.icon} class="size-4" />
+        <Icon icon="ph:caret-down" class="size-3 opacity-50" />
+      </button>
+
+      {#if themeDropdownOpen}
+        <div
+          class="absolute right-0 top-full mt-1 w-44 bg-base-200 border border-base-300 rounded-lg shadow-xl z-50 py-1 overflow-hidden max-h-[420px] overflow-y-auto"
+        >
+          <!-- Dark themes section -->
+          <div class="px-3 py-1.5 text-xs font-semibold text-base-content/40 uppercase tracking-wider">Dark</div>
+          {#each THEMES.filter((t) => !t.isLight && !t.isMixed) as t}
+            <button
+              class="w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-base-300 transition-colors {t.id ===
+              theme
+                ? 'text-primary bg-base-300/50'
+                : 'text-base-content/70'}"
+              onclick={() => selectTheme(t.id)}
+            >
+              <Icon icon={t.icon} class="size-4 shrink-0" />
+              <span class="flex-1">{t.label}</span>
+              {#if t.id === theme}
+                <Icon icon="ph:check" class="size-4 text-primary" />
+              {/if}
+            </button>
+          {/each}
+
+          <!-- Separator -->
+          <div class="my-1 mx-2 border-t border-base-content/10"></div>
+
+          <!-- Light themes section -->
+          <div class="px-3 py-1.5 text-xs font-semibold text-base-content/40 uppercase tracking-wider">Light</div>
+          {#each THEMES.filter((t) => t.isLight) as t}
+            <button
+              class="w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-base-300 transition-colors {t.id ===
+              theme
+                ? 'text-primary bg-base-300/50'
+                : 'text-base-content/70'}"
+              onclick={() => selectTheme(t.id)}
+            >
+              <Icon icon={t.icon} class="size-4 shrink-0" />
+              <span class="flex-1">{t.label}</span>
+              {#if t.id === theme}
+                <Icon icon="ph:check" class="size-4 text-primary" />
+              {/if}
+            </button>
+          {/each}
+
+          <!-- Separator -->
+          <div class="my-1 mx-2 border-t border-base-content/10"></div>
+
+          <!-- Mixed themes section -->
+          <div class="px-3 py-1.5 text-xs font-semibold text-base-content/40 uppercase tracking-wider">Mixed</div>
+          {#each THEMES.filter((t) => t.isMixed) as t}
+            <button
+              class="w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-base-300 transition-colors {t.id ===
+              theme
+                ? 'text-primary bg-base-300/50'
+                : 'text-base-content/70'}"
+              onclick={() => selectTheme(t.id)}
+            >
+              <Icon icon={t.icon} class="size-4 shrink-0" />
+              <span class="flex-1">{t.label}</span>
+              {#if t.id === theme}
+                <Icon icon="ph:check" class="size-4 text-primary" />
+              {/if}
+            </button>
+          {/each}
+
+          <!-- Separator -->
+          <div class="my-1 mx-2 border-t border-base-content/10"></div>
+
+          <!-- Custom theme button -->
+          <button
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-base-300 transition-colors {theme ===
+            'custom'
+              ? 'text-primary bg-base-300/50'
+              : 'text-base-content/70'}"
+            onclick={openCustomThemeModal}
+          >
+            <Icon icon="ph:palette" class="size-4 shrink-0" />
+            <span class="flex-1">Custom</span>
+            <Icon icon="ph:pencil-simple" class="size-3.5 text-base-content/40" />
+          </button>
+        </div>
       {/if}
-    </button>
+    </div>
 
     <!-- Window controls -->
     <button
@@ -794,6 +995,128 @@
           <button class="btn btn-primary btn-sm gap-1.5" onclick={handleOk}>
             <Icon icon="ph:check" class="size-3.5" />
             Save changes
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- ── Custom theme modal ───────────────────────────────────────────────────── -->
+{#if customThemeModalOpen}
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+    style="top: 36px;"
+    role="presentation"
+    onclick={closeCustomThemeModal}
+  >
+    <div
+      class="bg-base-100 rounded-xl shadow-2xl w-full max-w-2xl mx-4 flex flex-col overflow-hidden max-h-[85vh]"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Custom theme editor"
+      tabindex="-1"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={handleCustomModalKeydown}
+    >
+      <!-- Header -->
+      <div class="flex items-center justify-between px-5 py-4 bg-base-200 border-b border-base-300 flex-shrink-0">
+        <div class="flex items-center gap-3">
+          <Icon icon="ph:palette" class="size-5 text-primary" />
+          <div>
+            <h2 class="text-sm font-semibold text-base-content">Custom Theme Editor</h2>
+            <p class="text-xs text-base-content/50">Define your own theme using CSS variables</p>
+          </div>
+        </div>
+        <button
+          class="size-7 rounded flex items-center justify-center text-base-content/40 hover:bg-base-300 hover:text-base-content transition-colors"
+          onclick={closeCustomThemeModal}
+          title="Close"
+        >
+          <Icon icon="ph:x" class="size-4" />
+        </button>
+      </div>
+
+      <!-- Color reference -->
+      <div class="px-5 py-3 bg-base-200/50 border-b border-base-300/50">
+        <div class="flex items-center gap-2 mb-2">
+          <Icon icon="ph:info" class="size-3.5 text-base-content/50" />
+          <span class="text-xs font-medium text-base-content/60">Current theme colors</span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <div class="flex items-center gap-1.5 px-2 py-1 rounded bg-base-100 border border-base-300">
+            <div class="size-3 rounded-full bg-base-100 border border-base-300"></div>
+            <span class="text-xs text-base-content/60">base-100</span>
+          </div>
+          <div class="flex items-center gap-1.5 px-2 py-1 rounded bg-base-100 border border-base-300">
+            <div class="size-3 rounded-full bg-base-200"></div>
+            <span class="text-xs text-base-content/60">base-200</span>
+          </div>
+          <div class="flex items-center gap-1.5 px-2 py-1 rounded bg-base-100 border border-base-300">
+            <div class="size-3 rounded-full bg-base-300"></div>
+            <span class="text-xs text-base-content/60">base-300</span>
+          </div>
+          <div class="flex items-center gap-1.5 px-2 py-1 rounded bg-base-100 border border-base-300">
+            <div class="size-3 rounded-full bg-primary"></div>
+            <span class="text-xs text-base-content/60">primary</span>
+          </div>
+          <div class="flex items-center gap-1.5 px-2 py-1 rounded bg-base-100 border border-base-300">
+            <div class="size-3 rounded-full bg-secondary"></div>
+            <span class="text-xs text-base-content/60">secondary</span>
+          </div>
+          <div class="flex items-center gap-1.5 px-2 py-1 rounded bg-base-100 border border-base-300">
+            <div class="size-3 rounded-full bg-accent"></div>
+            <span class="text-xs text-base-content/60">accent</span>
+          </div>
+          <div class="flex items-center gap-1.5 px-2 py-1 rounded bg-base-100 border border-base-300">
+            <div class="size-3 rounded-full bg-success"></div>
+            <span class="text-xs text-base-content/60">success</span>
+          </div>
+          <div class="flex items-center gap-1.5 px-2 py-1 rounded bg-base-100 border border-base-300">
+            <div class="size-3 rounded-full bg-warning"></div>
+            <span class="text-xs text-base-content/60">warning</span>
+          </div>
+          <div class="flex items-center gap-1.5 px-2 py-1 rounded bg-base-100 border border-base-300">
+            <div class="size-3 rounded-full bg-error"></div>
+            <span class="text-xs text-base-content/60">error</span>
+          </div>
+          <div class="flex items-center gap-1.5 px-2 py-1 rounded bg-base-100 border border-base-300">
+            <div class="size-3 rounded-full bg-info"></div>
+            <span class="text-xs text-base-content/60">info</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- CSS Editor -->
+      <div class="flex-1 min-h-0 p-4">
+        <div class="h-full">
+          <CssEditor
+            value={customCss}
+            onInput={(v) => (customCss = v)}
+            placeholder="Enter your custom CSS..."
+          />
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="flex items-center justify-between px-5 py-3 border-t border-base-300 bg-base-200 flex-shrink-0">
+        <div class="flex items-center gap-2">
+          <button
+            class="btn btn-ghost btn-sm text-base-content/60"
+            onclick={() => {
+              customCss = customCssTemplate;
+            }}
+            title="Reset to default template"
+          >
+            <Icon icon="ph:arrow-counter-clockwise" class="size-3.5" />
+            Reset
+          </button>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-base-content/40 italic">Auto-saved</span>
+          <button class="btn btn-primary btn-sm gap-1.5" onclick={closeCustomThemeModal}>
+            <Icon icon="ph:check" class="size-3.5" />
+            Done
           </button>
         </div>
       </div>

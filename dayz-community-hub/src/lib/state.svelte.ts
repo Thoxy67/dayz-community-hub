@@ -37,9 +37,61 @@ export const MOD_UPDATES_TTL_MS = 5 * 60 * 1000;
 export const AWAY_SERVERS_MS = 5 * 60 * 1000;
 export const AWAY_MODS_MS = 10 * 60 * 1000;
 
+// ── Theme definitions ────────────────────────────────────────────────────
+export type ThemeName =
+  | 'dark'
+  | 'light'
+  | 'midnight'
+  | 'forest'
+  | 'blood-moon'
+  | 'military'
+  | 'oled'
+  | 'sepia'
+  | 'ocean'
+  | 'sand'
+  | 'rose'
+  | 'mint'
+  | 'lavender'
+  | 'catppuccin-latte'
+  | 'twilight'
+  | 'mocha'
+  | 'catppuccin'
+  | 'catppuccin-frappe'
+  | 'kanagawa'
+  | 'tokyonight'
+  | 'tokyonight-storm'
+  | 'custom';
+
+export const THEMES: { id: ThemeName; label: string; icon: string; isLight?: boolean; isMixed?: boolean }[] = [
+  // Dark themes
+  { id: 'dark', label: 'Dark', icon: 'ph:moon' },
+  { id: 'midnight', label: 'Midnight', icon: 'ph:moon-stars' },
+  { id: 'forest', label: 'Forest', icon: 'ph:tree' },
+  { id: 'blood-moon', label: 'Blood Moon', icon: 'ph:drop' },
+  { id: 'military', label: 'Military', icon: 'ph:shield-chevron' },
+  { id: 'oled', label: 'OLED Black', icon: 'ph:circle-half' },
+  { id: 'sepia', label: 'Sepia', icon: 'ph:film-strip' },
+  { id: 'catppuccin', label: 'Catppuccin Mocha', icon: 'ph:cat' },
+  { id: 'kanagawa', label: 'Kanagawa', icon: 'game-icons:big-wave' },
+  { id: 'tokyonight', label: 'Tokyo Night', icon: 'ph:city' },
+  // Light themes
+  { id: 'light', label: 'Light', icon: 'ph:sun', isLight: true },
+  { id: 'ocean', label: 'Ocean', icon: 'ph:waves', isLight: true },
+  { id: 'sand', label: 'Sand', icon: 'ph:sun-horizon', isLight: true },
+  { id: 'rose', label: 'Rose', icon: 'ph:flower-lotus', isLight: true },
+  { id: 'mint', label: 'Mint', icon: 'ph:leaf', isLight: true },
+  { id: 'lavender', label: 'Lavender', icon: 'ph:butterfly', isLight: true },
+  { id: 'catppuccin-latte', label: 'Catppuccin Latte', icon: 'ph:cat', isLight: true },
+  // Mixed themes
+  { id: 'twilight', label: 'Twilight', icon: 'ph:cloud-sun', isMixed: true },
+  { id: 'mocha', label: 'Mocha', icon: 'ph:coffee', isMixed: true },
+  { id: 'catppuccin-frappe', label: 'Catppuccin Frappé', icon: 'ph:cat', isMixed: true },
+  { id: 'tokyonight-storm', label: 'Tokyo Night Storm', icon: 'ph:cloud-lightning', isMixed: true },
+];
+
 class AppState {
   // ── Theme ───────────────────────────────────────────────────────────────
-  theme = $state<'light' | 'dark'>('dark');
+  theme = $state<ThemeName>('dark');
 
   // ── Global state ────────────────────────────────────────────────────────
   initialized = $state(false);
@@ -133,14 +185,16 @@ class AppState {
     }
   }
 
-  toggleTheme() {
-    this.theme = this.theme === 'dark' ? 'light' : 'dark';
-    localStorage.setItem('theme', this.theme);
+  setTheme(name: ThemeName) {
+    this.theme = name;
+    localStorage.setItem('theme', name);
   }
 
   loadTheme() {
-    const saved = localStorage.getItem('theme') as 'light' | 'dark' | null;
-    if (saved) this.theme = saved;
+    const saved = localStorage.getItem('theme') as ThemeName | null;
+    if (saved && THEMES.some((t) => t.id === saved)) {
+      this.theme = saved;
+    }
   }
 
   timeIcon(time: string | undefined): string {
