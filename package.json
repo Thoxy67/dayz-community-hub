@@ -1,6 +1,6 @@
 {
   "name": "a2sdayz",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "DayZ Community Hub - Server browser & mod manager for DayZ Standalone",
   "private": true,
   "scripts": {
