@@ -13,6 +13,7 @@
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import Icon from '@iconify/svelte';
+  import * as m from '$lib/paraglide/messages.js';
 
   /** Calculate relative time from ISO date string */
   function getServerAge(isoDate: string): string {
@@ -20,15 +21,15 @@
     const now = new Date();
     const diffMs = now.getTime() - created.getTime();
     const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    if (days < 1) return 'today';
-    if (days === 1) return '1 day';
-    if (days < 30) return `${days} days`;
+    if (days < 1) return m.detail_age_today();
+    if (days === 1) return m.detail_age_day();
+    if (days < 30) return m.detail_age_days({ count: days });
     const months = Math.floor(days / 30);
-    if (months === 1) return '1 month';
-    if (months < 12) return `${months} months`;
+    if (months === 1) return m.detail_age_month();
+    if (months < 12) return m.detail_age_months({ count: months });
     const years = Math.floor(days / 365);
-    if (years === 1) return '1 year';
-    return `${years} years`;
+    if (years === 1) return m.detail_age_year();
+    return m.detail_age_years({ count: years });
   }
 
   let copiedIp = $state(false);
@@ -205,58 +206,58 @@
       <div class="text-base-content/50">IP</div>
       <button
         class="font-mono text-base-content hover:text-primary transition-colors flex items-center gap-1 group/ip text-left"
-        title="Copy IP:port"
+        title={m.detail_copy_ip()}
         onclick={copyIp}
       >
         {#if copiedIp}
-          <span class="text-success">Copied!</span>
+          <span class="text-success">{m.servers_copied()}</span>
         {:else}
           {server.ip}:{server.game_port}
           <Icon icon="ph:copy" class="size-3 opacity-0 group-hover/ip:opacity-100 transition-opacity" />
         {/if}
       </button>
 
-      <div class="text-base-content/50">Query port</div>
+      <div class="text-base-content/50">{m.detail_query_port()}</div>
       <div class="font-mono text-base-content">{server.query_port}</div>
 
-      <div class="text-base-content/50">Players</div>
+      <div class="text-base-content/50">{m.detail_players()}</div>
       <div class="font-bold {playerFill(server.players, server.max_players, '40')}">
         {server.players}/{server.max_players}
       </div>
 
-      <div class="text-base-content/50">Map</div>
+      <div class="text-base-content/50">{m.detail_map()}</div>
       <div class="text-teal-400">{server.map}</div>
 
-      <div class="text-base-content/50">Version</div>
+      <div class="text-base-content/50">{m.detail_version()}</div>
       <div class="text-base-content/70">{server.version}</div>
 
-      <div class="text-base-content/50">Time</div>
+      <div class="text-base-content/50">{m.detail_time()}</div>
       <div class="text-base-content/70">{server.time}</div>
 
-      <div class="text-base-content/50">Ping</div>
+      <div class="text-base-content/50">{m.detail_ping()}</div>
       <div class="font-mono {pingColor(pingMs, '40')}">
         {pingMs !== null ? `${pingMs} ms` : '—'}
       </div>
 
-      <div class="text-base-content/50">Platform</div>
+      <div class="text-base-content/50">{m.detail_platform()}</div>
       <div class={server.environment === 'w' ? 'text-info' : 'text-success'}>
-        {server.environment === 'w' ? 'Windows' : 'Linux'}
+        {server.environment === 'w' ? m.servers_os_windows() : m.servers_os_linux()}
       </div>
 
-      <div class="text-base-content/50">1st-person</div>
-      <div>{server.first_person_only ? 'Yes' : 'No'}</div>
+      <div class="text-base-content/50">{m.detail_first_person()}</div>
+      <div>{server.first_person_only ? m.detail_yes() : m.detail_no()}</div>
 
-      <div class="text-base-content/50">Password</div>
+      <div class="text-base-content/50">{m.detail_password()}</div>
       <div class={server.password ? 'text-error' : 'text-base-content/40'}>
-        {server.password ? 'Yes' : 'No'}
+        {server.password ? m.detail_yes() : m.detail_no()}
       </div>
 
-      <div class="text-base-content/50">VAC</div>
-      <div>{server.vac ? 'Yes' : 'No'}</div>
+      <div class="text-base-content/50">{m.detail_vac()}</div>
+      <div>{server.vac ? m.detail_yes() : m.detail_no()}</div>
 
       {#if server.battl_eye !== null}
-        <div class="text-base-content/50">BattlEye</div>
-        <div>{server.battl_eye ? 'Yes' : 'No'}</div>
+        <div class="text-base-content/50">{m.detail_battleye()}</div>
+        <div>{server.battl_eye ? m.detail_yes() : m.detail_no()}</div>
       {/if}
     </div>
 
@@ -264,12 +265,12 @@
     {#if modsLoading}
       <div class="flex items-center gap-2 text-xs text-base-content/50">
         <span class="loading loading-spinner loading-xs"></span>
-        Loading mods ({server.mods_count})…
+        {m.detail_loading_mods({ count: server.mods_count })}
       </div>
     {:else if displayMods.length > 0}
       <div>
         <div bind:this={modsHeading} class="text-xs font-semibold text-base-content/50 mb-1">
-          Mods ({displayMods.length})
+          {m.detail_mods_count({ count: displayMods.length })}
         </div>
         <div class="space-y-0.5 max-h-40 overflow-y-auto">
           {#each displayMods as mod}
@@ -285,7 +286,7 @@
                   e.stopPropagation();
                   openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.steam_workshop_id}`);
                 }}
-                title="Open on Steam Workshop">{mod.steam_workshop_id}</button
+                title={m.detail_open_workshop()}>{mod.steam_workshop_id}</button
               >
             </div>
           {/each}
@@ -295,32 +296,32 @@
       <div class="flex items-center gap-2 text-xs text-base-content/40">
         {#if modsFetchFailed}
           <Icon icon="ph:warning-circle" class="size-3.5 text-warning/60 shrink-0" />
-          <span class="italic">{server.mods_count} mod(s) — fetch failed</span>
+          <span class="italic">{m.detail_mods_failed({ count: server.mods_count })}</span>
           <button
             class="btn btn-ghost btn-xs h-5 min-h-0 px-1.5 ml-auto"
             onclick={() => {
               fetchedKey = '';
             }}
-            title="Retry"
+            title={m.detail_retry()}
           >
             <Icon icon="ph:arrows-clockwise" class="size-3" />
           </button>
         {:else}
-          <span class="italic">{server.mods_count} mod(s) — not reported by server</span>
+          <span class="italic">{m.detail_mods_not_reported({ count: server.mods_count })}</span>
           {#if !a2s}
             <button
               class="btn btn-ghost btn-xs h-5 min-h-0 px-1.5 ml-auto gap-1"
               onclick={onQueryA2s}
-              title="Query live server for mod list"
+              title={m.detail_query_mods()}
             >
               <Icon icon="ph:broadcast" class="size-3" />
-              Query A2S
+              {m.detail_query_a2s()}
             </button>
           {/if}
         {/if}
       </div>
     {:else}
-      <div class="text-xs text-base-content/40 italic">No mods</div>
+      <div class="text-xs text-base-content/40 italic">{m.detail_no_mods()}</div>
     {/if}
 
     <!-- BattleMetrics -->
@@ -328,7 +329,7 @@
       <div class="flex items-center justify-between mb-1">
         <span class="text-xs font-semibold text-base-content/50 flex items-center gap-1.5">
           <Icon icon="ph:chart-line-up" class="size-3.5" />
-          BattleMetrics
+          {m.detail_bm_title()}
         </span>
         {#if bmApiKey}
           <button
@@ -338,12 +339,12 @@
               bmRetryTick++;
             }}
             disabled={bmLoading}
-            title="Refresh BattleMetrics data"
+            title={m.detail_bm_refresh_title()}
           >
             {#if bmLoading}
               <span class="loading loading-spinner loading-xs"></span>
             {:else}
-              Refresh
+              {m.servers_refresh()}
             {/if}
           </button>
         {/if}
@@ -351,43 +352,43 @@
 
       {#if !bmApiKey}
         <p class="text-xs text-base-content/35 italic">
-          Configure a BattleMetrics API token in settings to see server rankings &amp; history.
+          {m.detail_bm_configure()}
         </p>
       {:else if bmLoading}
         <div class="flex items-center gap-2 text-xs text-base-content/50">
           <span class="loading loading-spinner loading-xs"></span>
-          Loading BattleMetrics data…
+          {m.detail_bm_loading()}
         </div>
       {:else if bm}
         <!-- Server type badges -->
         <div class="flex flex-wrap gap-1 mb-2">
           {#if bm.official}
             <span class="badge badge-xs bg-amber-500/15 text-amber-500 border-amber-500/30 gap-1">
-              <Icon icon="ph:seal-check-fill" class="size-2.5" />official
+              <Icon icon="ph:seal-check-fill" class="size-2.5" />{m.detail_bm_official()}
             </span>
           {/if}
           {#if bm.private}
             <span class="badge badge-xs bg-rose-500/15 text-rose-400 border-rose-500/30 gap-1">
-              <Icon icon="ph:lock-fill" class="size-2.5" />private
+              <Icon icon="ph:lock-fill" class="size-2.5" />{m.detail_bm_private()}
             </span>
           {/if}
           {#if bm.third_person}
             <span class="badge badge-xs bg-sky-500/15 text-sky-400 border-sky-500/30 gap-1">
-              <Icon icon="ph:eye" class="size-2.5" />3PP
+              <Icon icon="ph:eye" class="size-2.5" />{m.detail_bm_3pp()}
             </span>
           {:else if bm.third_person === false}
             <span class="badge badge-xs bg-violet-500/15 text-violet-400 border-violet-500/30 gap-1">
-              <Icon icon="ph:crosshair-simple" class="size-2.5" />1PP
+              <Icon icon="ph:crosshair-simple" class="size-2.5" />{m.detail_bm_1pp()}
             </span>
           {/if}
           {#if bm.modded}
             <span class="badge badge-xs bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30 gap-1">
-              <Icon icon="ph:puzzle-piece" class="size-2.5" />modded
+              <Icon icon="ph:puzzle-piece" class="size-2.5" />{m.detail_bm_modded()}
             </span>
           {/if}
           {#if bm.query_status === 'valid'}
             <span class="badge badge-xs bg-emerald-500/15 text-emerald-400 border-emerald-500/30 gap-1">
-              <Icon icon="ph:wifi-high" class="size-2.5" />online
+              <Icon icon="ph:wifi-high" class="size-2.5" />{m.detail_bm_online()}
             </span>
           {:else if bm.query_status}
             <span class="badge badge-xs bg-orange-500/15 text-orange-400 border-orange-500/30 gap-1">
@@ -399,10 +400,10 @@
         <!-- Stats grid -->
         <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs mb-2">
           {#if bm.rank !== null}
-            <div class="text-base-content/50">Rank</div>
+            <div class="text-base-content/50">{m.detail_bm_rank()}</div>
             <div class="font-mono font-bold text-primary">#{bm.rank}</div>
           {/if}
-          <div class="text-base-content/50">Status</div>
+          <div class="text-base-content/50">{m.detail_bm_status()}</div>
           <div class="flex items-center gap-1.5">
             <span
               class="size-2 rounded-full flex-shrink-0 {bm.status === 'online'
@@ -420,7 +421,7 @@
             >
           </div>
           {#if bm.country}
-            <div class="text-base-content/50">Country</div>
+            <div class="text-base-content/50">{m.detail_bm_country()}</div>
             <div class="flex items-center gap-1.5">
               <span>{countryCodeToFlag(bm.country)}</span>
               <span>{countryCodeToName(bm.country)}</span>
@@ -428,11 +429,11 @@
           {/if}
           {#if bm.location && userLocation}
             {@const dist = haversineDistance(userLocation[1], userLocation[0], bm.location[1], bm.location[0])}
-            <div class="text-base-content/50">Distance</div>
+            <div class="text-base-content/50">{m.detail_bm_distance()}</div>
             <div class="font-mono">{dist.toFixed(0)} km</div>
           {/if}
           {#if bm.uptime !== null}
-            <div class="text-base-content/50">Uptime</div>
+            <div class="text-base-content/50">{m.detail_bm_uptime()}</div>
             <div
               class={(bm.uptime ?? 0) >= 90 ? 'text-success' : (bm.uptime ?? 0) >= 70 ? 'text-warning' : 'text-error'}
             >
@@ -440,15 +441,17 @@
             </div>
           {/if}
           {#if bm.created_at}
-            <div class="text-base-content/50">First seen</div>
-            <div class="text-base-content/70" title={bm.created_at}>{getServerAge(bm.created_at)} ago</div>
+            <div class="text-base-content/50">{m.detail_bm_first_seen()}</div>
+            <div class="text-base-content/70" title={bm.created_at}>
+              {m.detail_ago({ time: getServerAge(bm.created_at) })}
+            </div>
           {/if}
           {#if bm.server_steam_id}
-            <div class="text-base-content/50">Steam ID</div>
+            <div class="text-base-content/50">{m.detail_bm_steam_id()}</div>
             <button
               class="text-left font-mono text-base-content/60 hover:text-primary truncate"
               onclick={() => openUrl(`https://steamcommunity.com/profiles/${bm?.server_steam_id}`)}
-              title="Open Steam profile"
+              title={m.detail_bm_open_steam()}
             >
               {bm.server_steam_id.slice(-8)}…
             </button>
@@ -464,13 +467,13 @@
           {@const avgCount = Math.round(counts.reduce((a, b) => a + b, 0) / counts.length)}
           <div class="mb-2">
             <div class="flex items-center justify-between mb-1">
-              <span class="text-xs text-base-content/40">Player count (24 h)</span>
+              <span class="text-xs text-base-content/40">{m.detail_bm_player_history()}</span>
               <div class="flex items-center gap-2 text-xs font-mono">
-                <span class="text-base-content/30" title="Min">{minCount}</span>
+                <span class="text-base-content/30" title={m.detail_bm_min()}>{minCount}</span>
                 <span class="text-base-content/50">–</span>
-                <span class="text-primary font-semibold" title="Current">{currentCount}</span>
+                <span class="text-primary font-semibold" title={m.detail_bm_current()}>{currentCount}</span>
                 <span class="text-base-content/50">–</span>
-                <span class="text-base-content/30" title="Max">{maxCount}</span>
+                <span class="text-base-content/30" title={m.detail_bm_max()}>{maxCount}</span>
               </div>
             </div>
             <svg viewBox="0 0 120 28" class="w-full h-7 text-primary" preserveAspectRatio="none">
@@ -484,9 +487,9 @@
               />
             </svg>
             <div class="flex items-center justify-between text-xs text-base-content/25 mt-0.5">
-              <span>24h ago</span>
-              <span>avg: {avgCount}</span>
-              <span>now</span>
+              <span>{m.detail_bm_24h_ago()}</span>
+              <span>{m.detail_bm_avg({ count: avgCount })}</span>
+              <span>{m.detail_bm_now()}</span>
             </div>
           </div>
         {/if}
@@ -497,7 +500,7 @@
           onclick={() => openUrl(`https://www.battlemetrics.com/servers/dayz/${bm?.id}`)}
         >
           <Icon icon="ph:arrow-square-out" class="size-3.5" />
-          View on BattleMetrics
+          {m.detail_bm_view()}
         </button>
       {:else if bmError}
         <div
@@ -511,7 +514,7 @@
               bmFetchedKey = '';
               bmRetryTick++;
             }}
-            title="Retry"
+            title={m.detail_retry()}
           >
             <Icon icon="ph:arrows-clockwise" class="size-3" />
           </button>
@@ -522,26 +525,26 @@
     <!-- A2S live info -->
     <div>
       <div class="flex items-center justify-between mb-1">
-        <span class="text-xs font-semibold text-base-content/50">Live A2S Info</span>
+        <span class="text-xs font-semibold text-base-content/50">{m.detail_a2s_title()}</span>
         <button class="btn btn-ghost btn-xs" onclick={onQueryA2s} disabled={a2sLoading}>
           {#if a2sLoading}
             <span class="loading loading-spinner loading-xs"></span>
           {:else}
-            Refresh
+            {m.servers_refresh()}
           {/if}
         </button>
       </div>
 
       {#if a2s}
         <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs mb-2">
-          <div class="text-base-content/50">Live players</div>
+          <div class="text-base-content/50">{m.detail_a2s_live_players()}</div>
           <div class="font-bold text-success">{a2s.players}/{a2s.max_players}</div>
-          <div class="text-base-content/50">Game</div>
+          <div class="text-base-content/50">{m.detail_a2s_game()}</div>
           <div>{a2s.game}</div>
         </div>
 
         {#if a2s.players_list.length > 0}
-          <div class="text-xs text-base-content/50 mb-1">Online players</div>
+          <div class="text-xs text-base-content/50 mb-1">{m.detail_a2s_online_players()}</div>
           <div class="space-y-0.5 max-h-32 overflow-y-auto">
             {#each a2s.players_list as player}
               <div class="flex items-center gap-2 text-xs">
@@ -551,9 +554,9 @@
             {/each}
           </div>
         {:else if a2s.players === 0}
-          <p class="text-xs text-base-content/40 italic">No players online</p>
+          <p class="text-xs text-base-content/40 italic">{m.detail_a2s_no_players()}</p>
         {:else}
-          <p class="text-xs text-base-content/40 italic">Player names not reported by server</p>
+          <p class="text-xs text-base-content/40 italic">{m.detail_a2s_names_not_reported()}</p>
         {/if}
       {:else if a2sError}
         <div
@@ -563,7 +566,7 @@
           <span class="leading-snug break-all">{a2sError}</span>
         </div>
       {:else if !a2sLoading}
-        <p class="text-xs text-base-content/40 italic">Click Refresh to query live data</p>
+        <p class="text-xs text-base-content/40 italic">{m.detail_a2s_click_refresh()}</p>
       {/if}
     </div>
   </div>

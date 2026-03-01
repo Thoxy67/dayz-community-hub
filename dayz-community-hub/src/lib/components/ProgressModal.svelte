@@ -3,6 +3,7 @@
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import type { ModOpState } from '$lib/types';
   import Icon from '@iconify/svelte';
+  import * as m from '$lib/paraglide/messages.js';
 
   interface Props {
     modOp: ModOpState;
@@ -108,15 +109,20 @@
   let progressPct = $derived(modOp.total > 0 ? Math.round((modOp.completed.length / modOp.total) * 100) : 0);
 
   let statusText = $derived(() => {
-    if (modOp.phase === 'shutting_down') return 'Closing Steam before SteamCMD can run…';
-    if (modOp.phase === 'steam_guard_mobile') return 'Waiting for Steam Guard…';
-    if (modOp.phase === 'password_required') return 'Waiting for password…';
+    if (modOp.phase === 'shutting_down') return m.progress_status_shutting_down();
+    if (modOp.phase === 'steam_guard_mobile') return m.progress_status_steam_guard();
+    if (modOp.phase === 'password_required') return m.progress_status_password();
     if (modOp.phase === 'finished') {
-      if (modOp.hint) return 'Login failed or credentials expired';
-      if (modOp.failed === 0) return `Done — ${modOp.ok} mod${modOp.ok !== 1 ? 's' : ''} completed`;
-      return `Done — ${modOp.ok} OK, ${modOp.failed} failed`;
+      if (modOp.hint) return m.progress_status_login_failed();
+      if (modOp.failed === 0)
+        return modOp.ok === 1
+          ? m.progress_status_done({ ok: modOp.ok })
+          : m.progress_status_done_plural({ ok: modOp.ok });
+      return m.progress_status_done_failed({ ok: modOp.ok, failed: modOp.failed });
     }
-    return modOp.currentName ? `Downloading: ${modOp.currentName}` : 'Preparing…';
+    return modOp.currentName
+      ? m.progress_status_downloading({ name: modOp.currentName })
+      : m.progress_status_preparing();
   });
 
   let canDismiss = $derived(modOp.phase === 'finished');
@@ -218,10 +224,9 @@
             </div>
           </div>
           <div class="flex-1 min-w-0">
-            <h3 class="font-bold text-base text-base-content">Steam Guard Authorization Required</h3>
+            <h3 class="font-bold text-base text-base-content">{m.progress_steamguard_title()}</h3>
             <p class="text-sm text-base-content/70 mt-1 leading-snug">
-              Open the <strong class="text-base-content/90">Steam Mobile app</strong> on your phone and approve the sign-in
-              to continue.
+              {m.progress_steamguard_desc({ app: m.progress_steamguard_app() })}
             </p>
             <div class="flex items-center gap-1.5 mt-3 flex-wrap">
               <div class="flex items-center gap-1.5">
@@ -229,7 +234,7 @@
                   class="inline-flex items-center justify-center size-[18px] rounded-full bg-warning/15 border border-warning/25 text-[10px] font-bold text-warning shrink-0"
                   >1</span
                 >
-                <span class="text-[11px] text-base-content/60 whitespace-nowrap">Open Steam app on phone</span>
+                <span class="text-[11px] text-base-content/60 whitespace-nowrap">{m.progress_steamguard_step1()}</span>
               </div>
               <Icon icon="ph:arrow-right" class="size-3 text-base-content/30 shrink-0" />
               <div class="flex items-center gap-1.5">
@@ -237,7 +242,7 @@
                   class="inline-flex items-center justify-center size-[18px] rounded-full bg-warning/15 border border-warning/25 text-[10px] font-bold text-warning shrink-0"
                   >2</span
                 >
-                <span class="text-[11px] text-base-content/60 whitespace-nowrap">Tap the approval notification</span>
+                <span class="text-[11px] text-base-content/60 whitespace-nowrap">{m.progress_steamguard_step2()}</span>
               </div>
               <Icon icon="ph:arrow-right" class="size-3 text-base-content/30 shrink-0" />
               <div class="flex items-center gap-1.5">
@@ -245,7 +250,7 @@
                   class="inline-flex items-center justify-center size-[18px] rounded-full bg-success/15 border border-success/25 text-[10px] font-bold text-success shrink-0"
                   >3</span
                 >
-                <span class="text-[11px] text-success/80 whitespace-nowrap">Download resumes</span>
+                <span class="text-[11px] text-success/80 whitespace-nowrap">{m.progress_steamguard_step3()}</span>
               </div>
             </div>
 
@@ -254,7 +259,7 @@
               <div class="flex items-center justify-between mb-1">
                 <div class="flex items-center gap-2 text-xs text-base-content/50">
                   <span class="loading loading-dots loading-xs text-warning/60"></span>
-                  <span>Waiting for confirmation…</span>
+                  <span>{m.progress_steamguard_waiting()}</span>
                 </div>
                 <span
                   class="text-xs font-mono tabular-nums {sgCountdown <= 15
@@ -272,15 +277,15 @@
                 max="100"
               ></progress>
               {#if sgCountdown <= 15 && sgCountdown > 0}
-                <p class="text-[11px] text-error/70 mt-1">Hurry — SteamCMD will time out soon!</p>
+                <p class="text-[11px] text-error/70 mt-1">{m.progress_steamguard_hurry()}</p>
               {:else if sgCountdown === 0}
-                <p class="text-[11px] text-error/70 mt-1">SteamCMD may have timed out. Check the log below.</p>
+                <p class="text-[11px] text-error/70 mt-1">{m.progress_steamguard_timeout()}</p>
               {/if}
             </div>
             <div class="flex justify-end mt-3">
               <button class="btn btn-xs btn-error btn-outline gap-1 opacity-70 hover:opacity-100" onclick={onCancel}>
                 <Icon icon="ph:x" class="size-3" />
-                Cancel
+                {m.progress_cancel()}
               </button>
             </div>
           </div>
@@ -294,7 +299,7 @@
           {:else}
             <Icon icon="ph:check-circle" class="size-5 text-success" />
           {/if}
-          Mod Operation
+          {m.progress_mod_operation()}
           {#if modOp.total > 0}
             <span class="text-base-content/50 text-sm font-normal">
               [{modOp.completed.length}/{modOp.total}]
@@ -336,30 +341,29 @@
                   <Icon icon="ph:terminal-window-fill" class="size-4 text-info" />
                 </div>
                 <div>
-                  <h4 class="font-semibold text-sm text-base-content">Login Manually via Terminal</h4>
+                  <h4 class="font-semibold text-sm text-base-content">{m.progress_manual_title()}</h4>
                 </div>
               </div>
               <div class="text-xs text-base-content/70 space-y-2">
-                <p>The following command has been copied to your clipboard:</p>
+                <p>{m.progress_manual_copied()}</p>
                 <code
                   class="block bg-base-300/60 rounded-lg px-3 py-2 font-mono text-[11px] text-base-content/90 select-all"
                   >steamcmd +login {steamLogin || 'YOUR_USERNAME'} +quit</code
                 >
                 <ol class="list-decimal list-inside space-y-1 text-base-content/60">
-                  <li>Open a terminal and paste the command</li>
-                  <li>Enter your password and complete Steam Guard if prompted</li>
-                  <li>SteamCMD will cache your credentials locally</li>
-                  <li>Come back here and retry — no password will be needed</li>
+                  <li>{m.progress_manual_step1()}</li>
+                  <li>{m.progress_manual_step2()}</li>
+                  <li>{m.progress_manual_step3()}</li>
+                  <li>{m.progress_manual_step4()}</li>
                 </ol>
                 <p class="text-[11px] text-base-content/40 leading-snug">
-                  This app never sees your password. SteamCMD stores an encrypted credential token on your machine that
-                  it reuses for future logins.
+                  {m.progress_manual_note()}
                 </p>
               </div>
               <div class="flex justify-end mt-3">
                 <button class="btn btn-sm btn-primary gap-1" onclick={confirmDontTrust}>
                   <Icon icon="ph:check" class="size-3.5" />
-                  Got it, cancel operation
+                  {m.progress_manual_confirm()}
                 </button>
               </div>
             {:else}
@@ -371,9 +375,9 @@
                   <Icon icon="ph:lock-fill" class="size-4 text-warning" />
                 </div>
                 <div>
-                  <h4 class="font-semibold text-sm text-base-content">Steam Password Required</h4>
+                  <h4 class="font-semibold text-sm text-base-content">{m.progress_password_title()}</h4>
                   <p class="text-[11px] text-base-content/50 leading-snug">
-                    SteamCMD needs your password to log in. It will not be stored.
+                    {m.progress_password_desc()}
                   </p>
                 </div>
               </div>
@@ -391,7 +395,7 @@
                     <input
                       type="text"
                       class="grow text-xs"
-                      placeholder="Enter Steam password"
+                      placeholder={m.progress_password_placeholder()}
                       bind:value={passwordInput}
                       disabled={passwordSending}
                       autofocus
@@ -401,7 +405,7 @@
                     <input
                       type="password"
                       class="grow text-xs"
-                      placeholder="Enter Steam password"
+                      placeholder={m.progress_password_placeholder()}
                       bind:value={passwordInput}
                       disabled={passwordSending}
                       autofocus
@@ -422,7 +426,7 @@
                   {:else}
                     <Icon icon="ph:paper-plane-tilt-fill" class="size-3.5" />
                   {/if}
-                  Send
+                  {m.progress_password_send()}
                 </button>
               </form>
               <!-- "I don't trust" option -->
@@ -432,7 +436,7 @@
                   onclick={handleDontTrust}
                 >
                   <Icon icon="ph:shield-slash" class="size-3" />
-                  {cmdCopied ? 'Copied!' : "I don't trust this"}
+                  {cmdCopied ? m.progress_copied() : m.progress_dont_trust()}
                 </button>
               </div>
             {/if}
@@ -461,7 +465,9 @@
         <div class="mt-3">
           <div class="flex items-center justify-between mb-1 px-0.5">
             <span class="text-xs font-mono text-base-content/30 tracking-widest uppercase">$ steamcmd</span>
-            <span class="text-xs font-mono text-base-content/20 tabular-nums">{modOp.log.length} lines</span>
+            <span class="text-xs font-mono text-base-content/20 tabular-nums"
+              >{m.progress_lines({ count: modOp.log.length })}</span
+            >
           </div>
           <!-- terminal-wrap uses inline style so scoped CSS doesn't get hashed away -->
           <div
@@ -496,7 +502,7 @@
           disabled={!canDismiss}
           onclick={onDismiss}
         >
-          {canDismiss ? 'Dismiss' : 'Working…'}
+          {canDismiss ? m.progress_dismiss() : m.progress_working()}
         </button>
       </div>
     </div>

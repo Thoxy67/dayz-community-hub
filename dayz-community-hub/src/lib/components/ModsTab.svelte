@@ -5,6 +5,7 @@
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import Icon from '@iconify/svelte';
   import { onMount } from 'svelte';
+  import * as m from '$lib/paraglide/messages.js';
 
   let copiedKey = $state('');
   async function copyText(key: string, text: string) {
@@ -96,7 +97,7 @@
 
   function submitInstall() {
     if (parsedIds.length === 0) {
-      installError = 'No valid Workshop IDs found.';
+      installError = m.mods_no_valid_ids();
       return;
     }
     installError = '';
@@ -294,7 +295,9 @@
     <div class="flex items-center gap-3 text-xs text-base-content/50">
       <span class="flex items-center gap-1">
         <Icon icon="mdi:puzzle-outline" class="size-3.5 text-base-content/35" />
-        <span class="font-medium text-base-content/80">{mods.length}</span> mods
+        <span class="font-medium text-base-content/80"
+          >{mods.length === 1 ? m.mods_count_one({ count: mods.length }) : m.mods_count({ count: mods.length })}</span
+        >
       </span>
       <span class="text-base-content/25">·</span>
       <span class="text-secondary/60">{formatSize(totalSize)}</span>
@@ -302,26 +305,24 @@
         <span class="text-base-content/25">·</span>
         <span class="flex items-center gap-1 text-warning font-medium">
           <Icon icon="ph:arrow-circle-up" class="size-3.5" />
-          {staleCount} update{staleCount > 1 ? 's' : ''} available
+          {staleCount === 1
+            ? m.mods_update_available_one({ count: staleCount })
+            : m.mods_updates_available({ count: staleCount })}
         </span>
       {:else if !checking && mods.length > 0}
         <span class="text-base-content/25">·</span>
         <span class="flex items-center gap-1 text-success/70">
           <Icon icon="ph:check-circle" class="size-3.5" />
-          All up to date
+          {m.mods_all_up_to_date()}
         </span>
       {/if}
     </div>
 
     <div class="ml-auto flex items-center gap-1">
       <!-- Manual install -->
-      <button
-        class="btn btn-ghost btn-xs gap-1.5"
-        onclick={openInstallModal}
-        title="Install a mod manually by Workshop ID or URL"
-      >
+      <button class="btn btn-ghost btn-xs gap-1.5" onclick={openInstallModal} title={m.mods_install_title()}>
         <Icon icon="ph:download-simple" class="size-3.5" />
-        Install mod
+        {m.mods_install()}
       </button>
 
       <div class="w-px h-4 bg-base-300 mx-0.5"></div>
@@ -331,10 +332,10 @@
         class="btn btn-ghost btn-xs gap-1.5"
         onclick={onOpenWorkshopDir}
         disabled={mods.length === 0}
-        title="Open Workshop mods directory in file manager"
+        title={m.mods_open_folder_title()}
       >
         <Icon icon="ph:folder-open" class="size-3.5" />
-        Open folder
+        {m.mods_open_folder()}
       </button>
 
       <!-- Check for updates — requires Steam API key -->
@@ -343,14 +344,14 @@
           class="btn btn-ghost btn-xs gap-1.5"
           onclick={onCheckUpdates}
           disabled={checking || loading || mods.length === 0}
-          title="Check Steam Workshop for updates"
+          title={m.mods_check_updates_title()}
         >
           {#if checking}
             <span class="loading loading-spinner loading-xs"></span>
-            Checking…
+            {m.mods_checking()}
           {:else}
             <Icon icon="ph:cloud-arrow-down" class="size-3.5" />
-            Check updates
+            {m.mods_check_updates()}
           {/if}
         </button>
       {/if}
@@ -361,36 +362,36 @@
           class="btn btn-warning btn-xs gap-1.5"
           onclick={onUpdateStale}
           disabled={loading}
-          title="Update only the {staleCount} mod{staleCount > 1 ? 's' : ''} with available updates"
+          title={m.mods_update_count_title({ count: staleCount })}
         >
           <Icon icon="ph:arrow-circle-up" class="size-3.5" />
-          Update {staleCount}
+          {m.mods_update_count({ count: staleCount })}
         </button>
         <button
           class="btn btn-ghost btn-xs gap-1"
           onclick={onUpdateAll}
           disabled={loading}
-          title="Force re-validate all mods via steamcmd"
+          title={m.mods_update_all_title()}
         >
           <Icon icon="ph:arrows-clockwise" class="size-3" />
-          All
+          {m.mods_all()}
         </button>
       {:else}
         <button
           class="btn btn-ghost btn-xs gap-1.5"
           onclick={onUpdateAll}
           disabled={loading || mods.length === 0}
-          title="Force re-validate all mods via steamcmd"
+          title={m.mods_update_all_title()}
         >
           <Icon icon="ph:arrows-clockwise" class="size-3.5" />
-          Update all
+          {m.mods_update_all()}
         </button>
       {/if}
 
       <div class="w-px h-4 bg-base-300 mx-0.5"></div>
 
       <!-- Refresh -->
-      <button class="btn btn-ghost btn-xs" onclick={onRefresh} disabled={loading} title="Refresh mod list">
+      <button class="btn btn-ghost btn-xs" onclick={onRefresh} disabled={loading} title={m.mods_refresh_title()}>
         {#if loading}
           <span class="loading loading-spinner loading-xs"></span>
         {:else}
@@ -403,7 +404,7 @@
         class="btn btn-ghost btn-xs text-error/60 hover:text-error"
         onclick={onCleanup}
         disabled={mods.length === 0}
-        title="Remove all managed mods and symlinks"
+        title={m.mods_cleanup_title()}
       >
         <Icon icon="ph:trash" class="size-3.5" />
       </button>
@@ -414,13 +415,13 @@
   {#if loading && mods.length === 0}
     <div class="flex items-center justify-center h-full gap-2 text-base-content/50">
       <span class="loading loading-spinner loading-md"></span>
-      <span class="text-sm">Loading mods…</span>
+      <span class="text-sm">{m.mods_loading()}</span>
     </div>
   {:else if mods.length === 0}
     <div class="flex flex-col items-center justify-center h-full gap-2 text-base-content/30">
       <Icon icon="mdi:puzzle-outline" class="size-10 opacity-30" />
-      <span class="text-sm">No mods installed</span>
-      <span class="text-xs">Connect to a modded server to install mods</span>
+      <span class="text-sm">{m.mods_no_mods()}</span>
+      <span class="text-xs">{m.mods_no_mods_hint()}</span>
     </div>
   {:else}
     <div class="overflow-auto flex-1" bind:this={tableRef}>
@@ -438,47 +439,53 @@
                 checked={allSelected}
                 indeterminate={someSelected}
                 onchange={toggleSelectAll}
-                title={allSelected ? 'Deselect all' : 'Select all'}
+                title={allSelected ? m.mods_deselect_all() : m.mods_select_all()}
               />
             </th>
             <th
               class="px-3 py-2 text-left font-medium cursor-pointer hover:text-base-content transition-colors"
               onclick={() => toggleSort('name')}
             >
-              <span class="flex items-center gap-1">Name <Icon icon={sortIcon('name')} class="size-2.5" /></span>
+              <span class="flex items-center gap-1"
+                >{m.mods_col_name()} <Icon icon={sortIcon('name')} class="size-2.5" /></span
+              >
             </th>
             <th
               class="w-36 px-3 py-2 font-medium text-left cursor-pointer hover:text-info transition-colors"
               onclick={() => toggleSort('id')}
             >
-              <span class="flex items-center gap-1">Workshop ID <Icon icon={sortIcon('id')} class="size-2.5" /></span>
+              <span class="flex items-center gap-1"
+                >{m.mods_col_workshop_id()} <Icon icon={sortIcon('id')} class="size-2.5" /></span
+              >
             </th>
             <th
               class="w-20 px-3 py-2 font-medium text-right cursor-pointer hover:text-secondary transition-colors"
               onclick={() => toggleSort('size')}
             >
               <span class="flex items-center justify-end gap-1"
-                >Size <Icon icon={sortIcon('size')} class="size-2.5" /></span
+                >{m.mods_col_size()} <Icon icon={sortIcon('size')} class="size-2.5" /></span
               >
             </th>
             <th
               class="w-40 px-3 py-2 font-medium text-left cursor-pointer hover:text-base-content transition-colors"
               onclick={() => toggleSort('local')}
             >
-              <span class="flex items-center gap-1">Local <Icon icon={sortIcon('local')} class="size-2.5" /></span>
+              <span class="flex items-center gap-1"
+                >{m.mods_col_local()} <Icon icon={sortIcon('local')} class="size-2.5" /></span
+              >
             </th>
             {#if canCheckUpdates}
               <th
                 class="w-40 px-3 py-2 font-medium text-left cursor-pointer hover:text-base-content transition-colors"
                 onclick={() => toggleSort('remote')}
               >
-                <span class="flex items-center gap-1">Remote <Icon icon={sortIcon('remote')} class="size-2.5" /></span>
+                <span class="flex items-center gap-1"
+                  >{m.mods_col_remote()} <Icon icon={sortIcon('remote')} class="size-2.5" /></span
+                >
               </th>
             {/if}
-            <th
-              class="w-16 px-3 py-2 font-medium text-center"
-              title="UPDATE = new version on Workshop; OK = up to date; LINKED = symlink active; UNLINKED = no symlink"
-              >Status</th
+            <th class="w-16 px-3 py-2 font-medium text-center" title={m.mods_col_status_title()}
+              >{m.mods_col_status()}</th
             >
             <th class="w-24 px-3 py-2"></th>
           </tr>
@@ -517,26 +524,28 @@
               <td class="px-3 py-2 max-w-0">
                 <div class="flex items-center gap-2 min-w-0">
                   {#if stale}
-                    <span title="Update available">
+                    <span title={m.mods_update_available()}>
                       <Icon icon="ph:arrow-circle-up" class="size-3.5 text-warning shrink-0" />
                     </span>
                   {:else if mod.remote_updated !== null}
-                    <span title="Up to date"
+                    <span title={m.mods_up_to_date()}
                       ><Icon icon="ph:check-circle" class="size-3.5 text-success/60 shrink-0" /></span
                     >
                   {:else if mod.managed}
-                    <span title="Managed"><Icon icon="ph:link-simple" class="size-3.5 text-info/40 shrink-0" /></span>
+                    <span title={m.mods_managed()}
+                      ><Icon icon="ph:link-simple" class="size-3.5 text-info/40 shrink-0" /></span
+                    >
                   {:else}
                     <Icon icon="mdi:puzzle-outline" class="size-3.5 text-base-content/20 shrink-0" />
                   {/if}
                   <button
                     class="truncate font-medium text-base-content/90 hover:text-base-content transition-colors text-left group/name
                            {stale ? 'text-base-content' : ''}"
-                    title="Copy mod name"
+                    title={m.mods_copy_name()}
                     onclick={() => copyText(`name-${mod.id}`, mod.name)}
                   >
                     {#if copiedKey === `name-${mod.id}`}
-                      <span class="text-success text-xs font-normal">Copied!</span>
+                      <span class="text-success text-xs font-normal">{m.mods_copied()}</span>
                     {:else}
                       {mod.name}
                     {/if}
@@ -550,14 +559,14 @@
                   <button
                     class="font-mono text-info/50 hover:text-info transition-colors flex items-center gap-1"
                     onclick={() => openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.id}`)}
-                    title="Open on Steam Workshop"
+                    title={m.mods_open_workshop()}
                   >
                     {mod.id}
                     <Icon icon="mdi:steam" class="size-3 opacity-0 group-hover/ws:opacity-100 transition-opacity" />
                   </button>
                   <button
                     class="opacity-0 group-hover/ws:opacity-100 transition-opacity text-base-content/40 hover:text-info"
-                    title="Copy workshop ID"
+                    title={m.mods_copy_workshop_id()}
                     onclick={() => copyText(`ws-${mod.id}`, String(mod.id))}
                   >
                     {#if copiedKey === `ws-${mod.id}`}
@@ -608,7 +617,7 @@
                     style="font-size:9px;"
                   >
                     <Icon icon="ph:arrow-circle-up" class="size-2.5" />
-                    UPDATE
+                    {m.mods_status_update()}
                   </span>
                 {:else if canCheckUpdates && mod.remote_updated !== null}
                   <span
@@ -616,7 +625,7 @@
                     style="font-size:9px;"
                   >
                     <Icon icon="ph:check-circle" class="size-2.5" />
-                    OK
+                    {m.mods_status_ok()}
                   </span>
                 {:else if mod.managed}
                   <span
@@ -624,7 +633,7 @@
                     style="font-size:9px;"
                   >
                     <Icon icon="ph:link-simple" class="size-2.5" />
-                    LINKED
+                    {m.mods_status_linked()}
                   </span>
                 {:else}
                   <span
@@ -632,7 +641,7 @@
                     style="font-size:9px;"
                   >
                     <Icon icon="ph:link-simple-break" class="size-2.5" />
-                    UNLINKED
+                    {m.mods_status_unlinked()}
                   </span>
                 {/if}
               </td>
@@ -646,7 +655,7 @@
                            {stale
                       ? 'text-warning hover:bg-warning/15'
                       : 'text-base-content/35 hover:bg-base-300 hover:text-base-content/70'}"
-                    title={stale ? 'Update available — click to update' : 'Force re-validate via steamcmd'}
+                    title={stale ? m.mods_update_click() : m.mods_revalidate()}
                     onclick={() => onUpdate(mod)}
                   >
                     <Icon icon="ph:arrows-clockwise" class="size-3.5" />
@@ -659,10 +668,10 @@
                       : 'text-base-content/30 hover:bg-base-300 hover:text-base-content/60'}
                            {togglingIds.has(mod.id) ? 'opacity-60 pointer-events-none' : ''}"
                     title={togglingIds.has(mod.id)
-                      ? 'Updating…'
+                      ? m.mods_updating()
                       : mod.managed
-                        ? 'Linked: symlink active — this mod is loaded when connecting to modded servers. Click to remove the symlink.'
-                        : "Unlinked: no symlink — this mod is installed but won't be loaded. Click to create a symlink so it is included in server connections."}
+                        ? m.mods_linked_hint()
+                        : m.mods_unlinked_hint()}
                     onclick={() => handleToggleManaged(mod)}
                     disabled={togglingIds.has(mod.id)}
                   >
@@ -675,7 +684,7 @@
                   <!-- Delete -->
                   <button
                     class="size-6 rounded flex items-center justify-center text-base-content/35 hover:bg-error/10 hover:text-error transition-colors"
-                    title="Delete mod"
+                    title={m.mods_delete()}
                     onclick={() => onDelete(mod)}
                   >
                     <Icon icon="ph:trash" class="size-3.5" />
@@ -701,7 +710,7 @@
       role="dialog"
       tabindex="-1"
       aria-modal="true"
-      aria-label="Install mod"
+      aria-label={m.mods_install_aria()}
     >
       <!-- Panel -->
       <div
@@ -713,13 +722,13 @@
         <div class="px-5 py-4 bg-base-200 border-b border-base-300 flex items-center gap-3">
           <Icon icon="ph:download-simple" class="size-5 text-primary shrink-0" />
           <div class="flex-1">
-            <p class="font-semibold text-sm">Install Mod</p>
-            <p class="text-xs text-base-content/50 mt-0.5">Download via Steam Workshop ID or URL</p>
+            <p class="font-semibold text-sm">{m.mods_install_modal_title()}</p>
+            <p class="text-xs text-base-content/50 mt-0.5">{m.mods_install_modal_desc()}</p>
           </div>
           <button
             class="btn btn-ghost btn-xs btn-square text-base-content/40 hover:text-base-content"
             onclick={closeInstallModal}
-            title="Close"
+            title={m.mods_close()}
           >
             <Icon icon="ph:x" class="size-4" />
           </button>
@@ -731,9 +740,9 @@
             <label class="label py-0 pb-1.5" for="install-mod-input">
               <span class="label-text text-xs text-base-content/60 flex items-center gap-1.5">
                 <Icon icon="mdi:steam" class="size-3.5" />
-                Workshop IDs or URLs
+                {m.mods_workshop_ids_label()}
               </span>
-              <span class="label-text-alt text-base-content/35 text-xs">one per line, or comma-separated</span>
+              <span class="label-text-alt text-base-content/35 text-xs">{m.mods_workshop_ids_hint()}</span>
             </label>
             <!-- svelte-ignore a11y_autofocus -->
             <textarea
@@ -756,7 +765,9 @@
           {#if parsedIds.length > 0}
             <div class="rounded-lg bg-base-200 px-3 py-2.5 space-y-1.5">
               <p class="text-xs text-base-content/40 uppercase tracking-wide font-semibold">
-                {parsedIds.length} mod{parsedIds.length > 1 ? 's' : ''} queued
+                {parsedIds.length === 1
+                  ? m.mods_queued_one({ count: parsedIds.length })
+                  : m.mods_queued({ count: parsedIds.length })}
               </p>
               <div class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
                 {#each parsedIds as id}
@@ -767,16 +778,16 @@
               </div>
             </div>
           {:else if installInput.trim()}
-            <p class="text-xs text-error/70">No valid IDs detected.</p>
+            <p class="text-xs text-error/70">{m.mods_no_valid_detected()}</p>
           {/if}
         </div>
 
         <!-- Footer -->
         <div class="px-5 py-4 bg-base-200/50 border-t border-base-300 flex gap-2 justify-end">
-          <button class="btn btn-ghost btn-sm" onclick={closeInstallModal}>Cancel</button>
+          <button class="btn btn-ghost btn-sm" onclick={closeInstallModal}>{m.mods_cancel()}</button>
           <button class="btn btn-primary btn-sm gap-1.5" onclick={submitInstall} disabled={parsedIds.length === 0}>
             <Icon icon="ph:download-simple" class="size-4" />
-            Install {parsedIds.length > 1 ? `${parsedIds.length} mods` : 'mod'}
+            {parsedIds.length > 1 ? m.mods_install_mods({ count: parsedIds.length }) : m.mods_install_mod()}
           </button>
         </div>
       </div>
@@ -789,15 +800,20 @@
       <!-- Selection summary -->
       <div class="flex items-center gap-2 text-base-content/70">
         <Icon icon="ph:selection-all" class="size-4 text-primary/70" />
-        <span class="font-medium text-base-content/90">{selectedIds.size}</span>
-        <span>mod{selectedIds.size > 1 ? 's' : ''} selected</span>
+        <span
+          >{selectedIds.size === 1
+            ? m.mods_selected_one({ count: selectedIds.size })
+            : m.mods_selected({ count: selectedIds.size })}</span
+        >
         <span class="text-base-content/30">·</span>
         <span class="text-secondary/60">{formatSize(selectedSize)}</span>
         {#if selectedStaleCount > 0}
           <span class="text-base-content/30">·</span>
           <span class="text-warning flex items-center gap-1">
             <Icon icon="ph:arrow-circle-up" class="size-3.5" />
-            {selectedStaleCount} update{selectedStaleCount > 1 ? 's' : ''} available
+            {selectedStaleCount === 1
+              ? m.mods_update_available_one({ count: selectedStaleCount })
+              : m.mods_updates_available({ count: selectedStaleCount })}
           </span>
         {/if}
       </div>
@@ -807,24 +823,24 @@
         {#if selectedStaleCount > 0}
           <button
             class="btn btn-warning btn-xs gap-1.5"
-            onclick={() => onUpdateSelected(selectedMods.filter((m) => m.update_available).map((m) => m.id))}
+            onclick={() => onUpdateSelected(selectedMods.filter((mod) => mod.update_available).map((mod) => mod.id))}
             disabled={loading}
-            title="Update {selectedStaleCount} selected mod{selectedStaleCount > 1 ? 's' : ''} with available updates"
+            title={m.mods_update_stale_title({ count: selectedStaleCount })}
           >
             <Icon icon="ph:arrow-circle-up" class="size-3.5" />
-            Update {selectedStaleCount} stale
+            {m.mods_update_stale({ count: selectedStaleCount })}
           </button>
         {/if}
 
         <!-- Update all selected -->
         <button
           class="btn btn-ghost btn-xs gap-1.5"
-          onclick={() => onUpdateSelected(selectedMods.map((m) => m.id))}
+          onclick={() => onUpdateSelected(selectedMods.map((mod) => mod.id))}
           disabled={loading}
-          title="Force re-validate {selectedIds.size} selected mod{selectedIds.size > 1 ? 's' : ''} via steamcmd"
+          title={m.mods_revalidate_title({ count: selectedIds.size })}
         >
           <Icon icon="ph:arrows-clockwise" class="size-3.5" />
-          Re-validate {selectedIds.size}
+          {m.mods_revalidate_count({ count: selectedIds.size })}
         </button>
 
         <div class="w-px h-4 bg-base-300"></div>
@@ -835,16 +851,14 @@
             class="btn btn-ghost btn-xs gap-1.5 text-info/70 hover:text-info hover:bg-info/10"
             onclick={() => bulkToggleManaged(true)}
             disabled={loading || bulkLinking}
-            title="Link {selectedUnlinkedCount} mod{selectedUnlinkedCount > 1
-              ? 's'
-              : ''} — create symlinks so they are loaded when connecting to servers"
+            title={m.mods_link_title({ count: selectedUnlinkedCount })}
           >
             {#if bulkLinking}
               <span class="loading loading-spinner loading-xs"></span>
             {:else}
               <Icon icon="ph:link-simple" class="size-3.5" />
             {/if}
-            Link {selectedUnlinkedCount}
+            {m.mods_link({ count: selectedUnlinkedCount })}
           </button>
         {/if}
 
@@ -854,16 +868,14 @@
             class="btn btn-ghost btn-xs gap-1.5 text-base-content/50 hover:text-base-content/80 hover:bg-base-300/50"
             onclick={() => bulkToggleManaged(false)}
             disabled={loading || bulkLinking}
-            title="Unlink {selectedLinkedCount} mod{selectedLinkedCount > 1
-              ? 's'
-              : ''} — remove symlinks so they won't be loaded"
+            title={m.mods_unlink_title({ count: selectedLinkedCount })}
           >
             {#if bulkLinking}
               <span class="loading loading-spinner loading-xs"></span>
             {:else}
               <Icon icon="ph:link-simple-break" class="size-3.5" />
             {/if}
-            Unlink {selectedLinkedCount}
+            {m.mods_unlink({ count: selectedLinkedCount })}
           </button>
         {/if}
 
@@ -872,12 +884,12 @@
         <!-- Delete selected -->
         <button
           class="btn btn-ghost btn-xs gap-1.5 text-error/70 hover:text-error hover:bg-error/10"
-          onclick={() => onDeleteSelected(selectedMods.map((m) => m.id))}
+          onclick={() => onDeleteSelected(selectedMods.map((mod) => mod.id))}
           disabled={loading}
-          title="Delete {selectedIds.size} selected mod{selectedIds.size > 1 ? 's' : ''}"
+          title={m.mods_delete_title({ count: selectedIds.size })}
         >
           <Icon icon="ph:trash" class="size-3.5" />
-          Delete {selectedIds.size}
+          {m.mods_delete_count({ count: selectedIds.size })}
         </button>
 
         <div class="w-px h-4 bg-base-300"></div>
@@ -888,10 +900,10 @@
           onclick={() => {
             selectedIds = new Set();
           }}
-          title="Clear selection"
+          title={m.mods_clear_selection_title()}
         >
           <Icon icon="ph:x" class="size-3.5" />
-          Clear
+          {m.mods_clear_selection()}
         </button>
       </div>
     </div>

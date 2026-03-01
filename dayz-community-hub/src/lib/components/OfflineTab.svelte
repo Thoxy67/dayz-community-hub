@@ -1,6 +1,7 @@
 <script lang="ts">
   import Icon from '@iconify/svelte';
   import { openUrl } from '@tauri-apps/plugin-opener';
+  import * as m from '$lib/paraglide/messages.js';
 
   const REPO_URL = 'https://github.com/Arkensor/DayZCommunityOfflineMode';
 
@@ -55,13 +56,13 @@
   /** Extract a short mission type tag from the filename suffix. */
   function missionTag(mission: string): string {
     const parts = mission.split('.');
-    if (parts.length < 2) return 'MISSION';
+    if (parts.length < 2) return m.mission_tag();
     const tag = parts.slice(1).join('.').toLowerCase();
-    if (tag.includes('offline')) return 'OFFLINE';
-    if (tag.includes('coop')) return 'COOP';
-    if (tag.includes('pvp')) return 'PVP';
-    if (tag.includes('surv')) return 'SURVIVAL';
-    return parts[parts.length - 1]?.toUpperCase().slice(0, 8) ?? 'MISSION';
+    if (tag.includes('offline')) return m.mission_offline();
+    if (tag.includes('coop')) return m.mission_coop();
+    if (tag.includes('pvp')) return m.mission_pvp();
+    if (tag.includes('surv')) return m.mission_survival();
+    return parts[parts.length - 1]?.toUpperCase().slice(0, 8) ?? m.mission_tag();
   }
 
   /** Icon per map name keyword. */
@@ -90,11 +91,11 @@
     <!-- Header -->
     <div class="flex items-center gap-2 px-3 py-2 bg-base-200 border-b border-base-300 flex-shrink-0">
       <Icon icon="ph:game-controller" class="size-3.5 text-primary" />
-      <span class="text-xs font-semibold flex-1">Offline Missions</span>
+      <span class="text-xs font-semibold flex-1">{m.offline_title()}</span>
       {#if missions.length > 0}
         <span class="text-xs text-base-content/30">{missions.length}</span>
       {/if}
-      <button class="btn btn-ghost btn-xs p-1" onclick={onRefresh} disabled={loading} title="Refresh mission list">
+      <button class="btn btn-ghost btn-xs p-1" onclick={onRefresh} disabled={loading} title={m.offline_refresh_title()}>
         <Icon icon="ph:arrows-clockwise" class="size-3.5" />
       </button>
     </div>
@@ -132,9 +133,9 @@
           <Icon icon="ph:game-controller" class="size-6 text-base-content/20" />
         </div>
         <div>
-          <p class="text-sm font-medium text-base-content/60">No missions installed</p>
+          <p class="text-sm font-medium text-base-content/60">{m.offline_no_missions()}</p>
           <p class="text-xs text-base-content/35 mt-1 leading-relaxed">
-            Click <span class="font-semibold text-primary">Install</span> to download<br />DayZ Community Offline Mode
+            {m.offline_no_missions_hint({ installButton: m.offline_install_button() })}
           </p>
         </div>
       </div>
@@ -187,7 +188,7 @@
                     e.stopPropagation();
                     onOpenMissionDir(mission);
                   }}
-                  title="Open mission folder"
+                  title={m.offline_open_folder()}
                 >
                   <Icon icon="ph:folder-open" class="size-3.5" />
                 </button>
@@ -198,7 +199,7 @@
                     e.stopPropagation();
                     onRemoveMission(mission);
                   }}
-                  title="Remove this mission"
+                  title={m.offline_remove_mission()}
                 >
                   <Icon icon="ph:trash" class="size-3.5" />
                 </button>
@@ -214,10 +215,10 @@
       <button class="btn btn-primary btn-sm w-full gap-2" onclick={onUpdate} disabled={loading}>
         {#if loading}
           <span class="loading loading-spinner loading-xs"></span>
-          Installing…
+          {m.offline_installing()}
         {:else}
           <Icon icon="ph:download-simple" class="size-3.5" />
-          Install / Update
+          {m.offline_install_update()}
         {/if}
       </button>
     </div>
@@ -227,28 +228,28 @@
       <button
         class="btn btn-ghost btn-xs flex-1 gap-1 text-base-content/50 hover:text-primary hover:bg-primary/10"
         onclick={onOpenMissionsDir}
-        title="Open the Missions folder in file manager"
+        title={m.offline_explore_title()}
       >
         <Icon icon="ph:folder-open" class="size-3.5" />
-        Explore
+        {m.offline_explore()}
       </button>
       <button
         class="btn btn-ghost btn-xs flex-1 gap-1 text-warning/70 hover:text-warning hover:bg-warning/10"
         onclick={onClearSaves}
         disabled={loading || missions.length === 0}
-        title="Delete storage_-1/ save data inside each mission folder (loot, player state, world state). Missions are kept."
+        title={m.offline_clear_saves_title()}
       >
         <Icon icon="ph:eraser" class="size-3.5" />
-        Clear saves
+        {m.offline_clear_saves()}
       </button>
       <button
         class="btn btn-ghost btn-xs flex-1 gap-1 text-error/60 hover:text-error hover:bg-error/10"
         onclick={onRemoveOfflineMode}
         disabled={loading || missions.length === 0}
-        title="Remove all DayZCommunityOfflineMode mission folders. Use Install / Update to reinstall."
+        title={m.offline_remove_all_title()}
       >
         <Icon icon="ph:trash" class="size-3.5" />
-        Remove all
+        {m.offline_remove_all()}
       </button>
     </div>
   </div>
@@ -283,10 +284,10 @@
         <!-- Launch button -->
         <button class="btn btn-primary btn-sm w-full gap-2" onclick={() => onLaunch(selectedMission!)}>
           <Icon icon="ph:play" class="size-4" />
-          Launch
+          {m.offline_launch()}
         </button>
 
-        <p class="text-xs text-base-content/30 text-center">Double-click to launch directly</p>
+        <p class="text-xs text-base-content/30 text-center">{m.offline_doubleclick_hint()}</p>
 
         <!-- Repo link -->
         <button
@@ -306,8 +307,8 @@
           <Icon icon="ph:cursor-click" class="size-6 text-base-content/20" />
         </div>
         <div>
-          <p class="text-sm font-medium text-base-content/50">Select a mission</p>
-          <p class="text-xs text-base-content/30 mt-0.5">or double-click to launch</p>
+          <p class="text-sm font-medium text-base-content/50">{m.offline_select_mission()}</p>
+          <p class="text-xs text-base-content/30 mt-0.5">{m.offline_select_hint()}</p>
         </div>
 
         <!-- Repo link -->

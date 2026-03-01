@@ -3,6 +3,7 @@
   import Icon from '@iconify/svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { convertFileSrc } from '@tauri-apps/api/core';
+  import * as m from '$lib/paraglide/messages.js';
 
   interface Props {
     articles: ArticleDto[];
@@ -218,11 +219,11 @@
     <!-- Sidebar header -->
     <div class="flex items-center gap-2 px-3 py-2 bg-base-200 border-b border-base-300 flex-shrink-0">
       <Icon icon="ph:newspaper" class="size-3.5 text-primary" />
-      <span class="text-xs font-semibold flex-1">DayZ News</span>
+      <span class="text-xs font-semibold flex-1">{m.news_title()}</span>
       {#if articles.length > 0}
         <span class="text-xs text-base-content/30">{articles.length}</span>
       {/if}
-      <button class="btn btn-ghost btn-xs p-1" onclick={onRefresh} disabled={loading} title="Refresh">
+      <button class="btn btn-ghost btn-xs p-1" onclick={onRefresh} disabled={loading} title={m.news_refresh()}>
         {#if loading}
           <span class="loading loading-spinner loading-xs"></span>
         {:else}
@@ -333,7 +334,7 @@
                 <button
                   class="ml-auto flex items-center gap-1 text-xs text-base-content/50 hover:text-primary transition-colors pointer-events-auto"
                   onclick={() => onOpenUrl(selected.url)}
-                  title="Open in browser"
+                  title={m.news_open_browser()}
                 >
                   <Icon icon="ph:arrow-square-out" class="size-3.5" />
                   dayz.com
@@ -363,7 +364,7 @@
             <button
               class="ml-auto flex items-center gap-1 text-xs text-base-content/50 hover:text-primary transition-colors"
               onclick={() => onOpenUrl(selected.url)}
-              title="Open in browser"
+              title={m.news_open_browser()}
             >
               <Icon icon="ph:arrow-square-out" class="size-3.5" />
               dayz.com
@@ -387,7 +388,7 @@
             </div>
           {:else}
             <p class="text-sm text-base-content/75 leading-relaxed whitespace-pre-wrap">
-              {selected.content_text || 'No content available.'}
+              {selected.content_text || m.news_no_content()}
             </p>
           {/if}
         </div>
@@ -395,7 +396,7 @@
     {:else if !loading}
       <div class="flex flex-col items-center justify-center h-full gap-3 text-base-content/30">
         <Icon icon="ph:newspaper" class="size-12 opacity-20" />
-        <span class="text-sm">Select an article to read</span>
+        <span class="text-sm">{m.news_select_article()}</span>
       </div>
     {/if}
   </div>
@@ -424,7 +425,7 @@
     <button
       class="absolute top-3 right-3 btn btn-ghost btn-sm btn-circle text-white/70 hover:text-white hover:bg-white/10"
       onclick={closeLightbox}
-      title="Close"
+      title={m.news_close()}
     >
       <Icon icon="ph:x" class="size-5" />
     </button>

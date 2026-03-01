@@ -47,10 +47,7 @@
     if (!code) return '';
 
     // Escape HTML
-    let html = code
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
+    let html = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
     // Comments /* */
     html = html.replace(/(\/\*[\s\S]*?\*\/)/g, '<span class="css-comment">$1</span>');
@@ -71,7 +68,10 @@
     html = html.replace(/\b(\d+\.?\d*)(px|rem|em|%|deg|s|ms)?\b/g, '<span class="css-number">$1$2</span>');
 
     // Selectors (lines starting with [ or . or # or element)
-    html = html.replace(/^(\s*)(\[data-theme[^\]]*\]|\.[a-zA-Z][\w-]*|#[a-zA-Z][\w-]*)/gm, '$1<span class="css-selector">$2</span>');
+    html = html.replace(
+      /^(\s*)(\[data-theme[^\]]*\]|\.[a-zA-Z][\w-]*|#[a-zA-Z][\w-]*)/gm,
+      '$1<span class="css-selector">$2</span>',
+    );
 
     // Curly braces
     html = html.replace(/([{}])/g, '<span class="css-brace">$1</span>');
@@ -83,11 +83,7 @@
 </script>
 
 <div class="css-editor">
-  <pre
-    bind:this={preEl}
-    class="css-highlight"
-    aria-hidden="true"
-  ><code>{@html highlighted}</code></pre>
+  <pre bind:this={preEl} class="css-highlight" aria-hidden="true"><code>{@html highlighted}</code></pre>
   <textarea
     bind:this={textareaEl}
     bind:value={text}

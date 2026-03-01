@@ -5,6 +5,7 @@
   import { open as openDialog } from '@tauri-apps/plugin-dialog';
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { onDestroy, onMount } from 'svelte';
+  import * as m from '$lib/paraglide/messages.js';
 
   interface Props {
     onDone: () => void;
@@ -132,15 +133,15 @@
 
   // ── Browse helpers ─────────────────────────────────────────────────────────
   async function browseSteamRoot() {
-    const selected = await openDialog({ directory: true, multiple: false, title: 'Select Steam root folder' });
+    const selected = await openDialog({ directory: true, multiple: false, title: m.wizard_select_steam_root() });
     if (selected) steamRoot = typeof selected === 'string' ? selected : selected[0];
   }
 
   async function browseSteamcmd() {
     const selected = await openDialog({
       multiple: false,
-      title: 'Select steamcmd binary',
-      filters: isWindows ? [{ name: 'SteamCMD', extensions: ['exe'] }] : [],
+      title: m.wizard_select_steamcmd(),
+      filters: isWindows ? [{ name: m.wizard_steamcmd_filter(), extensions: ['exe'] }] : [],
     });
     if (selected) {
       steamcmdPath = typeof selected === 'string' ? selected : selected[0];
@@ -159,8 +160,8 @@
     try {
       const selected = await openDialog({
         multiple: false,
-        title: 'Import DayZ Community Hub profile',
-        filters: [{ name: 'DayZ Community Hub profile', extensions: ['dchub'] }],
+        title: m.wizard_import_dialog_title(),
+        filters: [{ name: m.wizard_import_filter(), extensions: ['dchub'] }],
       });
       if (!selected) {
         importing = false;
@@ -250,19 +251,19 @@
         <div class="text-center space-y-4">
           <img src="/icon.svg" alt="DayZ Community Hub" class="w-16 h-16 mx-auto" />
           <div>
-            <h1 class="text-xl font-bold text-base-content tracking-tight">Welcome to DayZ Community Hub</h1>
-            <p class="text-sm text-base-content/50 mt-1">A server browser and mod manager for DayZ Standalone</p>
+            <h1 class="text-xl font-bold text-base-content tracking-tight">{m.wizard_welcome_title()}</h1>
+            <p class="text-sm text-base-content/50 mt-1">{m.wizard_welcome_subtitle()}</p>
           </div>
           <div class="bg-base-200/60 rounded-xl border border-base-300/60 text-left divide-y divide-base-300/50 mt-4">
-            {#each [{ icon: 'ph:magnifying-glass', text: 'Browse thousands of live servers' }, { icon: 'ph:puzzle-piece', text: 'Manage and update your mods via SteamCMD' }, { icon: 'ph:star', text: 'Keep favorites and connection history' }, { icon: 'ph:rocket-launch', text: 'Launch DayZ directly with one click' }] as item}
+            {#each [{ icon: 'ph:magnifying-glass', textFn: () => m.wizard_welcome_feat1() }, { icon: 'ph:puzzle-piece', textFn: () => m.wizard_welcome_feat2() }, { icon: 'ph:star', textFn: () => m.wizard_welcome_feat3() }, { icon: 'ph:rocket-launch', textFn: () => m.wizard_welcome_feat4() }] as item}
               <div class="flex items-center gap-3 px-4 py-2.5">
                 <Icon icon={item.icon} class="size-4 text-primary shrink-0" />
-                <span class="text-sm text-base-content/70">{item.text}</span>
+                <span class="text-sm text-base-content/70">{item.textFn()}</span>
               </div>
             {/each}
           </div>
           <p class="text-xs text-base-content/40 pt-2">
-            This quick setup takes about 1 minute. You can change everything later in account settings.
+            {m.wizard_welcome_hint()}
           </p>
         </div>
 
@@ -270,9 +271,9 @@
       {:else if currentStep === 'steamcmd'}
         <div class="space-y-5">
           <div>
-            <h2 class="text-base font-semibold text-base-content">SteamCMD</h2>
+            <h2 class="text-base font-semibold text-base-content">{m.wizard_steamcmd_title()}</h2>
             <p class="text-xs text-base-content/50 mt-0.5">
-              Required to download and update DayZ mods from the Steam Workshop.
+              {m.wizard_steamcmd_desc()}
             </p>
           </div>
 
@@ -288,16 +289,16 @@
             >
               {#if detectingCmd}
                 <span class="loading loading-ring loading-sm text-primary"></span>
-                <span class="text-xs text-base-content/50">Detecting SteamCMD…</span>
+                <span class="text-xs text-base-content/50">{m.wizard_steamcmd_detecting()}</span>
               {:else if cmdFound}
                 <Icon icon="ph:check-circle" class="size-5 text-success shrink-0" />
                 <div class="flex-1 min-w-0">
-                  <p class="text-sm font-semibold text-success">SteamCMD detected</p>
+                  <p class="text-sm font-semibold text-success">{m.wizard_steamcmd_detected()}</p>
                   <p class="font-mono text-xs text-base-content/40 truncate mt-0.5">{steamcmdStatus?.path}</p>
                 </div>
               {:else}
                 <Icon icon="ph:warning-circle" class="size-5 text-warning shrink-0" />
-                <span class="text-sm font-semibold text-warning">SteamCMD not found</span>
+                <span class="text-sm font-semibold text-warning">{m.wizard_steamcmd_not_found()}</span>
               {/if}
             </div>
 
@@ -306,7 +307,7 @@
               <!-- ── Linux: package manager commands ── -->
               {#if isLinux}
                 <div class="px-4 py-3 space-y-3 border-t border-base-300/40">
-                  <p class="text-xs text-base-content/60">Install SteamCMD with your package manager:</p>
+                  <p class="text-xs text-base-content/60">{m.wizard_steamcmd_linux_hint()}</p>
                   <div class="rounded-lg border border-base-300/50 overflow-hidden divide-y divide-base-300/40">
                     {#each [{ icon: 'simple-icons:archlinux', label: 'Arch / Manjaro', cmd: 'yay -S steamcmd' }, { icon: 'simple-icons:debian', label: 'Debian / Ubuntu', cmd: 'sudo apt install steamcmd' }, { icon: 'simple-icons:fedora', label: 'Fedora / RHEL', cmd: 'sudo dnf install steamcmd' }] as row}
                       <div
@@ -320,7 +321,7 @@
                   </div>
                   <div class="flex items-center gap-2 text-xs text-base-content/40 pt-1">
                     <span class="loading loading-ring loading-sm text-primary"></span>
-                    <span>Waiting for SteamCMD to be installed…</span>
+                    <span>{m.wizard_steamcmd_linux_waiting()}</span>
                   </div>
                 </div>
 
@@ -328,7 +329,7 @@
               {:else if isWindows}
                 <div class="px-4 py-3 space-y-3 border-t border-base-300/40">
                   <p class="text-xs text-base-content/60">
-                    You can install SteamCMD automatically or point to an existing installation.
+                    {m.wizard_steamcmd_win_hint()}
                   </p>
 
                   {#if downloadError}
@@ -348,27 +349,27 @@
                   >
                     {#if downloadingCmd}
                       <span class="loading loading-spinner loading-xs"></span>
-                      Downloading…
+                      {m.wizard_steamcmd_downloading()}
                     {:else}
                       <Icon icon="ph:download-simple" class="size-4" />
-                      Install SteamCMD automatically
+                      {m.wizard_steamcmd_install_auto()}
                     {/if}
                   </button>
                   <p class="text-xs text-base-content/35 text-center">
-                    Downloads from Valve to
+                    {m.wizard_steamcmd_install_hint()}
                     <span class="font-mono text-base-content/50">%APPDATA%\dayz-community-hub\steamcmd\</span>
                   </p>
 
                   <div class="flex items-center gap-3">
                     <div class="flex-1 h-px bg-base-300/60"></div>
-                    <span class="text-xs text-base-content/30 uppercase tracking-widest">or</span>
+                    <span class="text-xs text-base-content/30 uppercase tracking-widest">{m.wizard_steamcmd_or()}</span>
                     <div class="flex-1 h-px bg-base-300/60"></div>
                   </div>
 
                   <!-- Browse for existing -->
                   <button class="btn btn-ghost btn-sm w-full gap-2" onclick={browseSteamcmd}>
                     <Icon icon="ph:folder-open" class="size-4" />
-                    Browse for steamcmd.exe
+                    {m.wizard_steamcmd_browse()}
                   </button>
                 </div>
               {/if}
@@ -381,8 +382,8 @@
               <label class="label py-0 pb-1.5" for="wiz-steamcmd">
                 <span class="label-text text-xs flex items-center gap-1.5">
                   <Icon icon="ph:terminal-window" class="size-3.5 text-base-content/40" />
-                  SteamCMD path
-                  <span class="text-base-content/30 ml-1">override</span>
+                  {m.wizard_steamcmd_path()}
+                  <span class="text-base-content/30 ml-1">{m.wizard_steamcmd_override()}</span>
                 </span>
               </label>
               <div class="flex gap-2">
@@ -390,10 +391,10 @@
                   id="wiz-steamcmd"
                   type="text"
                   class="input input-bordered input-sm flex-1 font-mono text-xs"
-                  placeholder={steamcmdStatus?.path ?? 'Auto-detected'}
+                  placeholder={steamcmdStatus?.path ?? m.wizard_auto_detect()}
                   bind:value={steamcmdPath}
                 />
-                <button class="btn btn-ghost btn-sm btn-square" onclick={browseSteamcmd} title="Browse">
+                <button class="btn btn-ghost btn-sm btn-square" onclick={browseSteamcmd} title={m.wizard_browse()}>
                   <Icon icon="ph:folder-open" class="size-4" />
                 </button>
               </div>
@@ -405,8 +406,8 @@
             <label class="label py-0 pb-1.5" for="wiz-steam-root">
               <span class="label-text text-xs flex items-center gap-1.5">
                 <Icon icon="mdi:steam" class="size-3.5 text-base-content/40" />
-                Steam root folder
-                <span class="text-base-content/30 ml-1">optional</span>
+                {m.wizard_steam_root()}
+                <span class="text-base-content/30 ml-1">{m.wizard_optional()}</span>
               </span>
             </label>
             <div class="flex gap-2">
@@ -414,21 +415,21 @@
                 id="wiz-steam-root"
                 type="text"
                 class="input input-bordered input-sm flex-1 font-mono text-xs"
-                placeholder="Auto-detect"
+                placeholder={m.wizard_auto_detect()}
                 bind:value={steamRoot}
               />
-              <button class="btn btn-ghost btn-sm btn-square" onclick={browseSteamRoot} title="Browse">
+              <button class="btn btn-ghost btn-sm btn-square" onclick={browseSteamRoot} title={m.wizard_browse()}>
                 <Icon icon="ph:folder-open" class="size-4" />
               </button>
             </div>
             <p class="label py-0 pt-1">
               <span class="label-text-alt text-base-content/40">
                 {#if isLinux}
-                  Usually <span class="font-mono">~/.steam/steam</span>
+                  {m.wizard_linux_path_hint({ path: '~/.steam/steam' })}
                 {:else if isWindows}
-                  Usually <span class="font-mono">C:\Program Files (x86)\Steam</span>
+                  {m.wizard_windows_path_hint({ path: 'C:\\Program Files (x86)\\Steam' })}
                 {:else}
-                  Leave blank to auto-detect
+                  {m.wizard_leave_blank()}
                 {/if}
               </span>
             </p>
@@ -439,21 +440,21 @@
       {:else if currentStep === 'configure'}
         <div class="space-y-5">
           <div>
-            <h2 class="text-base font-semibold text-base-content">Configuration</h2>
-            <p class="text-xs text-base-content/50 mt-0.5">Steam username is required. Everything else is optional.</p>
+            <h2 class="text-base font-semibold text-base-content">{m.wizard_config_title()}</h2>
+            <p class="text-xs text-base-content/50 mt-0.5">{m.wizard_config_desc()}</p>
           </div>
 
           <!-- Steam login -->
           <div class="bg-base-200/50 rounded-xl border border-base-300/60 p-4 space-y-3">
             <p class="text-xs font-semibold text-base-content/60 uppercase tracking-wide flex items-center gap-1.5">
               <Icon icon="mdi:steam" class="size-3.5" />
-              SteamCMD login
+              {m.wizard_steamcmd_login()}
             </p>
             <div class="grid grid-cols-2 gap-3">
               <div class="form-control">
                 <label class="label py-0 pb-1" for="wiz-login">
                   <span class="label-text text-xs text-base-content/50 flex items-center gap-1">
-                    Username
+                    {m.wizard_username()}
                     <span class="text-error text-[10px]">*</span>
                   </span>
                 </label>
@@ -463,15 +464,15 @@
                   class="input input-bordered input-xs font-mono {!steamLoginValid && steamLogin.length > 0
                     ? 'input-error'
                     : ''}"
-                  placeholder="Steam username"
+                  placeholder={m.wizard_steam_username_placeholder()}
                   bind:value={steamLogin}
                 />
               </div>
               <div class="form-control">
                 <label class="label py-0 pb-1" for="wiz-pass">
                   <span class="label-text text-xs text-base-content/50 flex items-center gap-1">
-                    Password
-                    <span class="text-base-content/30 text-[10px]">optional</span>
+                    {m.wizard_password()}
+                    <span class="text-base-content/30 text-[10px]">{m.wizard_optional()}</span>
                   </span>
                 </label>
                 <div class="relative">
@@ -479,7 +480,7 @@
                     id="wiz-pass"
                     type={showPass ? 'text' : 'password'}
                     class="input input-bordered input-xs w-full pr-7"
-                    placeholder="leave blank for cached"
+                    placeholder={m.wizard_password_cached()}
                     bind:value={steamPass}
                   />
                   <button
@@ -495,13 +496,13 @@
             {#if steamPass.length > 0}
               <div class="flex items-start gap-1.5 text-xs text-warning/70">
                 <Icon icon="ph:warning" class="size-3 shrink-0 mt-0.5" />
-                <span>Password stored in plaintext. Leave blank to use Steam's cached credentials instead.</span>
+                <span>{m.wizard_password_warning()}</span>
               </div>
             {/if}
             {#if !steamLoginValid}
               <div class="flex items-start gap-1.5 text-xs text-base-content/40">
                 <Icon icon="ph:info" class="size-3 shrink-0 mt-0.5" />
-                <span>Steam username is required for SteamCMD to download and update mods.</span>
+                <span>{m.wizard_steam_required()}</span>
               </div>
             {/if}
           </div>
@@ -511,21 +512,19 @@
             <label class="label py-0 pb-1.5" for="wiz-name">
               <span class="label-text text-xs flex items-center gap-1.5">
                 <Icon icon="ph:game-controller" class="size-3.5 text-base-content/40" />
-                In-game name
-                <span class="text-base-content/30 ml-1">optional</span>
+                {m.wizard_ingame_name()}
+                <span class="text-base-content/30 ml-1">{m.wizard_optional()}</span>
               </span>
             </label>
             <input
               id="wiz-name"
               type="text"
               class="input input-bordered input-sm"
-              placeholder="e.g. Survivor"
+              placeholder={m.wizard_ingame_placeholder()}
               bind:value={playerName}
             />
             <p class="label py-0 pt-1">
-              <span class="label-text-alt text-base-content/40"
-                >Passed as <span class="font-mono">-name=</span> to DayZ.</span
-              >
+              <span class="label-text-alt text-base-content/40">{m.wizard_ingame_hint({ flag: '-name=' })}</span>
             </p>
           </div>
 
@@ -533,16 +532,18 @@
           <div class="bg-base-200/50 rounded-xl border border-base-300/60 p-4 space-y-3">
             <p class="text-xs font-semibold text-base-content/60 uppercase tracking-wide flex items-center gap-1.5">
               <Icon icon="ph:identification-card" class="size-3.5" />
-              Steam API Key &amp; ID
-              <span class="font-normal normal-case tracking-normal text-base-content/35 ml-1">optional</span>
+              {m.wizard_steam_api()}
+              <span class="font-normal normal-case tracking-normal text-base-content/35 ml-1"
+                >{m.wizard_optional()}</span
+              >
             </p>
             <p class="text-xs text-base-content/40 leading-relaxed">
-              Enables avatar display and higher rate limits for mod update checks. You can add these later.
+              {m.wizard_steam_api_desc()}
             </p>
             <div class="form-control">
               <label class="label py-0 pb-1" for="wiz-apikey">
                 <span class="label-text text-xs text-base-content/50 flex items-center gap-1">
-                  API Key
+                  {m.wizard_api_key()}
                   <button
                     class="text-primary hover:underline ml-1"
                     onclick={() => openUrl('https://steamcommunity.com/dev/apikey')}
@@ -554,14 +555,14 @@
                 id="wiz-apikey"
                 type="text"
                 class="input input-bordered input-xs font-mono"
-                placeholder="32-character hex key"
+                placeholder={m.wizard_api_key_placeholder()}
                 bind:value={steamApiKey}
               />
             </div>
             <div class="form-control">
               <label class="label py-0 pb-1" for="wiz-steamid">
                 <span class="label-text text-xs text-base-content/50 flex items-center gap-1">
-                  Steam ID (64-bit)
+                  {m.wizard_steam_id_label()}
                   <button
                     class="text-primary hover:underline ml-1"
                     onclick={() => openUrl('https://steamdb.info/calculator/')}>steamdb.info/calculator</button
@@ -572,7 +573,7 @@
                 id="wiz-steamid"
                 type="text"
                 class="input input-bordered input-xs font-mono"
-                placeholder="76561198…"
+                placeholder={m.wizard_steam_id_placeholder()}
                 bind:value={steamId}
               />
             </div>
@@ -583,17 +584,19 @@
             <div class="flex items-center justify-between">
               <p class="text-xs font-semibold text-base-content/60 uppercase tracking-wide flex items-center gap-1.5">
                 <Icon icon="ph:chart-line-up" class="size-3.5" />
-                BattleMetrics
-                <span class="font-normal normal-case tracking-normal text-base-content/35 ml-1">optional</span>
+                {m.wizard_bm_title()}
+                <span class="font-normal normal-case tracking-normal text-base-content/35 ml-1"
+                  >{m.wizard_optional()}</span
+                >
               </p>
             </div>
             <p class="text-xs text-base-content/50 leading-relaxed">
-              Adds server rankings, status, uptime %, and a 24 h player count graph to every server detail panel.
+              {m.wizard_bm_desc()}
             </p>
             <div class="form-control">
               <label class="label py-0 pb-1" for="wiz-bmkey">
                 <span class="label-text text-xs text-base-content/50 flex items-center gap-1">
-                  Personal access token
+                  {m.wizard_bm_token()}
                   <button
                     class="text-primary hover:underline ml-1"
                     onclick={() => openUrl('https://www.battlemetrics.com/developers')}
@@ -605,7 +608,7 @@
                 id="wiz-bmkey"
                 type="password"
                 class="input input-bordered input-xs font-mono"
-                placeholder="eyJhbGci…"
+                placeholder={m.wizard_bm_token_placeholder()}
                 bind:value={battlemetricsApiKey}
               />
             </div>
@@ -619,24 +622,19 @@
             <Icon icon="ph:check-circle" class="size-9 text-success" />
           </div>
           <div>
-            <h2 class="text-lg font-bold text-base-content">You're all set!</h2>
+            <h2 class="text-lg font-bold text-base-content">{m.wizard_done_title()}</h2>
             <p class="text-sm text-base-content/50 mt-1">
-              Click <span class="font-semibold text-base-content/70">Launch app</span> to save your profile and start browsing
-              servers.
+              {m.wizard_done_desc({ button: m.wizard_done_button() })}
             </p>
           </div>
           <div class="bg-base-200/60 rounded-xl border border-base-300/60 text-left divide-y divide-base-300/50">
             <div class="flex items-center gap-3 px-4 py-2.5">
               <Icon icon="ph:info" class="size-4 text-base-content/40 shrink-0" />
-              <span class="text-xs text-base-content/50"
-                >You can update any of these settings later by clicking your name in the title bar.</span
-              >
+              <span class="text-xs text-base-content/50">{m.wizard_done_settings_hint()}</span>
             </div>
             <div class="flex items-center gap-3 px-4 py-2.5">
               <Icon icon="ph:book-open" class="size-4 text-base-content/40 shrink-0" />
-              <span class="text-xs text-base-content/50"
-                >Check the <span class="font-semibold text-base-content/60">About</span> tab for tips and documentation.</span
-              >
+              <span class="text-xs text-base-content/50">{m.wizard_done_about_hint({ tab: m.tab_about() })}</span>
             </div>
           </div>
           {#if saveError}
@@ -658,7 +656,7 @@
         {#if currentStep !== 'welcome' && currentStep !== 'done'}
           <button class="btn btn-ghost btn-sm gap-1.5" onclick={back}>
             <Icon icon="ph:arrow-left" class="size-4" />
-            Back
+            {m.wizard_back()}
           </button>
         {/if}
         {#if currentStep === 'configure'}
@@ -672,7 +670,7 @@
             {:else}
               <Icon icon="ph:upload-simple" class="size-4" />
             {/if}
-            Import profile
+            {m.wizard_import_profile()}
           </button>
           {#if importError}
             <span class="text-xs text-error">{importError}</span>
@@ -688,12 +686,12 @@
       <div class="flex items-center gap-2">
         {#if currentStep === 'welcome'}
           <button class="btn btn-primary btn-sm gap-1.5" onclick={next}>
-            Get started
+            {m.wizard_get_started()}
             <Icon icon="ph:arrow-right" class="size-4" />
           </button>
         {:else if currentStep === 'steamcmd'}
           <button class="btn btn-primary btn-sm gap-1.5" onclick={next}>
-            Next
+            {m.wizard_next()}
             <Icon icon="ph:arrow-right" class="size-4" />
           </button>
         {:else if currentStep === 'configure'}
@@ -701,15 +699,15 @@
             class="btn btn-primary btn-sm gap-1.5"
             onclick={next}
             disabled={!steamLoginValid}
-            title={!steamLoginValid ? 'Steam username is required' : ''}
+            title={!steamLoginValid ? m.wizard_steam_required() : ''}
           >
-            Next
+            {m.wizard_next()}
             <Icon icon="ph:arrow-right" class="size-4" />
           </button>
         {:else if currentStep === 'done'}
           <button class="btn btn-ghost btn-sm gap-1.5" onclick={back}>
             <Icon icon="ph:arrow-left" class="size-4" />
-            Back
+            {m.wizard_back()}
           </button>
           <button class="btn btn-success btn-sm gap-1.5" onclick={finish} disabled={saving}>
             {#if saving}
@@ -717,7 +715,7 @@
             {:else}
               <Icon icon="ph:rocket-launch" class="size-4" />
             {/if}
-            Launch app
+            {m.wizard_launch()}
           </button>
         {/if}
       </div>

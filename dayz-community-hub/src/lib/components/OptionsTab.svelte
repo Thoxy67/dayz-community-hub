@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { LaunchOptionDto } from '$lib/types';
   import Icon from '@iconify/svelte';
+  import * as m from '$lib/paraglide/messages.js';
 
   interface Props {
     options: LaunchOptionDto[];
@@ -15,71 +16,111 @@
 
   // ── Group definitions ──────────────────────────────────────────────────────
   type GroupDef = {
-    label: string;
+    labelKey: string;
     icon: string;
     color: string;
     keys: string[];
   };
 
-  const groups: GroupDef[] = [
+  const groupDefs: GroupDef[] = [
     {
-      label: 'Window',
+      labelKey: 'window',
       icon: 'ph:monitor',
       color: 'text-blue-400',
       keys: ['window', 'noborder'],
     },
     {
-      label: 'Startup',
+      labelKey: 'startup',
       icon: 'ph:rocket-launch',
       color: 'text-green-400',
       keys: ['nosplash', 'skipintro', 'nolauncher'],
     },
     {
-      label: 'Performance',
+      labelKey: 'performance',
       icon: 'ph:gauge',
       color: 'text-orange-400',
       keys: ['high', 'max_mem', 'max_vram', 'cpu_count', 'ex_threads', 'no_benchmark'],
     },
     {
-      label: 'World',
+      labelKey: 'world',
       icon: 'ph:globe-hemisphere-west',
       color: 'text-teal-400',
       keys: ['world', 'no_pause'],
     },
     {
-      label: 'Developer',
+      labelKey: 'developer',
       icon: 'ph:code',
       color: 'text-purple-400',
       keys: ['file_patching', 'do_logs', 'script_debug', 'buldozer', 'winxp', 'profiles'],
     },
   ];
 
-  // Per-option metadata: icon + short label
-  type Meta = { icon: string; label: string };
-  const meta: Record<string, Meta> = {
-    window: { icon: 'ph:frame-corners', label: 'Windowed' },
-    noborder: { icon: 'ph:browsers', label: 'Borderless' },
-    nosplash: { icon: 'ph:image-broken', label: 'No Splash' },
-    skipintro: { icon: 'ph:skip-forward-circle', label: 'Skip Intro' },
-    nolauncher: { icon: 'ph:rocket', label: 'No Launcher' },
-    high: { icon: 'ph:arrow-fat-up', label: 'High Priority' },
-    max_mem: { icon: 'ph:memory', label: 'Max RAM' },
-    max_vram: { icon: 'ph:graphics-card', label: 'Max VRAM' },
-    cpu_count: { icon: 'ph:cpu', label: 'CPU Cores' },
-    ex_threads: { icon: 'ph:threads-logo', label: 'Threads' },
-    no_benchmark: { icon: 'ph:chart-bar', label: 'No Benchmark' },
-    world: { icon: 'ph:map-trifold', label: 'World' },
-    no_pause: { icon: 'ph:pause-circle', label: 'No Pause' },
-    file_patching: { icon: 'ph:file-dashed', label: 'File Patching' },
-    do_logs: { icon: 'ph:scroll', label: 'Logging' },
-    script_debug: { icon: 'ph:bug', label: 'Script Debug' },
-    buldozer: { icon: 'ph:bulldozer', label: 'Buldozer' },
-    winxp: { icon: 'ph:windows-logo', label: 'DirectX 9' },
-    profiles: { icon: 'ph:folder-open', label: 'Profiles Dir' },
+  const groupLabels: Record<string, () => string> = {
+    window: () => m.options_group_window(),
+    startup: () => m.options_group_startup(),
+    performance: () => m.options_group_performance(),
+    world: () => m.options_group_world(),
+    developer: () => m.options_group_developer(),
   };
 
-  function getMeta(key: string): Meta {
-    return meta[key] ?? { icon: 'ph:sliders', label: key };
+  function getGroupLabel(key: string): string {
+    return groupLabels[key]?.() ?? key;
+  }
+
+  // Per-option metadata: icon + label function
+  type MetaDef = { icon: string; labelFn: () => string };
+  const metaDefs: Record<string, MetaDef> = {
+    window: { icon: 'ph:frame-corners', labelFn: () => m.options_label_windowed() },
+    noborder: { icon: 'ph:browsers', labelFn: () => m.options_label_borderless() },
+    nosplash: { icon: 'ph:image-broken', labelFn: () => m.options_label_nosplash() },
+    skipintro: { icon: 'ph:skip-forward-circle', labelFn: () => m.options_label_skipintro() },
+    nolauncher: { icon: 'ph:rocket', labelFn: () => m.options_label_nolauncher() },
+    high: { icon: 'ph:arrow-fat-up', labelFn: () => m.options_label_high() },
+    max_mem: { icon: 'ph:memory', labelFn: () => m.options_label_max_mem() },
+    max_vram: { icon: 'ph:graphics-card', labelFn: () => m.options_label_max_vram() },
+    cpu_count: { icon: 'ph:cpu', labelFn: () => m.options_label_cpu_count() },
+    ex_threads: { icon: 'ph:threads-logo', labelFn: () => m.options_label_ex_threads() },
+    no_benchmark: { icon: 'ph:chart-bar', labelFn: () => m.options_label_no_benchmark() },
+    world: { icon: 'ph:map-trifold', labelFn: () => m.options_label_world() },
+    no_pause: { icon: 'ph:pause-circle', labelFn: () => m.options_label_no_pause() },
+    file_patching: { icon: 'ph:file-dashed', labelFn: () => m.options_label_file_patching() },
+    do_logs: { icon: 'ph:scroll', labelFn: () => m.options_label_do_logs() },
+    script_debug: { icon: 'ph:bug', labelFn: () => m.options_label_script_debug() },
+    buldozer: { icon: 'ph:bulldozer', labelFn: () => m.options_label_buldozer() },
+    winxp: { icon: 'ph:windows-logo', labelFn: () => m.options_label_winxp() },
+    profiles: { icon: 'ph:folder-open', labelFn: () => m.options_label_profiles() },
+  };
+
+  function getMeta(key: string): { icon: string; label: string } {
+    const def = metaDefs[key];
+    return def ? { icon: def.icon, label: def.labelFn() } : { icon: 'ph:sliders', label: key };
+  }
+
+  // Translated descriptions for options
+  const descFns: Record<string, () => string> = {
+    window: () => m.options_desc_window(),
+    noborder: () => m.options_desc_noborder(),
+    nosplash: () => m.options_desc_nosplash(),
+    skipintro: () => m.options_desc_skipintro(),
+    nolauncher: () => m.options_desc_nolauncher(),
+    high: () => m.options_desc_high(),
+    max_mem: () => m.options_desc_max_mem(),
+    max_vram: () => m.options_desc_max_vram(),
+    cpu_count: () => m.options_desc_cpu_count(),
+    ex_threads: () => m.options_desc_ex_threads(),
+    no_benchmark: () => m.options_desc_no_benchmark(),
+    world: () => m.options_desc_world(),
+    no_pause: () => m.options_desc_no_pause(),
+    file_patching: () => m.options_desc_file_patching(),
+    do_logs: () => m.options_desc_do_logs(),
+    script_debug: () => m.options_desc_script_debug(),
+    buldozer: () => m.options_desc_buldozer(),
+    winxp: () => m.options_desc_winxp(),
+    profiles: () => m.options_desc_profiles(),
+  };
+
+  function getDescription(key: string, fallback: string): string {
+    return descFns[key]?.() ?? fallback;
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -92,9 +133,10 @@
   let filteredGroups = $derived(
     (() => {
       const q = search.trim().toLowerCase();
-      return groups
+      return groupDefs
         .map((g) => ({
           ...g,
+          label: getGroupLabel(g.labelKey),
           opts: g.keys
             .map((k) => optMap.get(k))
             .filter((o): o is LaunchOptionDto => {
@@ -114,7 +156,7 @@
   // Ungrouped options (not listed in any group)
   let ungroupedOpts = $derived(
     (() => {
-      const listed = new Set(groups.flatMap((g) => g.keys));
+      const listed = new Set(groupDefs.flatMap((g) => g.keys));
       const q = search.trim().toLowerCase();
       return options.filter((o) => {
         if (listed.has(o.key)) return false;
@@ -184,7 +226,7 @@
     <!-- Search -->
     <label class="input input-sm input-bordered flex items-center gap-2 flex-1 max-w-xs">
       <Icon icon="ph:magnifying-glass" class="size-3.5 text-base-content/40 flex-shrink-0" />
-      <input type="text" placeholder="Search options…" class="grow text-xs" bind:value={search} />
+      <input type="text" placeholder={m.options_search_placeholder()} class="grow text-xs" bind:value={search} />
       {#if search}
         <button class="text-base-content/40 hover:text-base-content" onclick={() => (search = '')}>
           <Icon icon="ph:x" class="size-3" />
@@ -197,10 +239,10 @@
     <!-- Active count pill -->
     <span class="badge badge-primary badge-sm gap-1 font-medium">
       <Icon icon="ph:check-circle" class="size-3" />
-      {enabledCount} active
+      {enabledCount === 1 ? m.options_active_one({ count: enabledCount }) : m.options_active({ count: enabledCount })}
     </span>
 
-    <span class="text-xs text-base-content/40">Flags passed to DayZ at launch</span>
+    <span class="text-xs text-base-content/40">{m.options_flags_hint()}</span>
   </div>
 
   <!-- Scrollable body -->
@@ -215,7 +257,7 @@
             {group.label}
           </span>
           <span class="ml-auto text-xs text-base-content/40">
-            {group.opts.filter((o) => o.enabled).length}/{group.opts.length} enabled
+            {m.options_enabled_count({ enabled: group.opts.filter((o) => o.enabled).length, total: group.opts.length })}
           </span>
         </div>
 
@@ -244,7 +286,9 @@
                     </span>
                   {/if}
                 </div>
-                <p class="text-xs text-base-content/50 mt-0.5 leading-tight">{opt.description}</p>
+                <p class="text-xs text-base-content/50 mt-0.5 leading-tight">
+                  {getDescription(opt.key, opt.description)}
+                </p>
               </div>
 
               <!-- Value edit area -->
@@ -259,17 +303,21 @@
                       onkeydown={handleEditKeydown}
                       autofocus
                     />
-                    <button class="btn btn-success btn-xs btn-square" onclick={applyEdit} title="Apply">
+                    <button class="btn btn-success btn-xs btn-square" onclick={applyEdit} title={m.options_apply()}>
                       <Icon icon="ph:check" class="size-3.5" />
                     </button>
-                    <button class="btn btn-ghost btn-xs btn-square" onclick={cancelEdit} title="Cancel">
+                    <button class="btn btn-ghost btn-xs btn-square" onclick={cancelEdit} title={m.options_cancel()}>
                       <Icon icon="ph:x" class="size-3.5" />
                     </button>
                   {:else}
                     <span class="font-mono text-xs text-accent bg-accent/10 px-2 py-0.5 rounded">
                       {opt.value}
                     </span>
-                    <button class="btn btn-ghost btn-xs btn-square" onclick={() => startEdit(opt)} title="Edit value">
+                    <button
+                      class="btn btn-ghost btn-xs btn-square"
+                      onclick={() => startEdit(opt)}
+                      title={m.options_edit_value()}
+                    >
                       <Icon icon="ph:pencil-simple" class="size-3.5" />
                     </button>
                   {/if}
@@ -280,10 +328,10 @@
                   <button
                     class="btn btn-ghost btn-xs text-base-content/30 hover:text-base-content/70"
                     onclick={() => startEdit(opt)}
-                    title="Set value"
+                    title={m.options_set_value()}
                   >
                     <Icon icon="ph:pencil-simple" class="size-3.5" />
-                    <span class="text-xs">set value</span>
+                    <span class="text-xs">{m.options_set_value()}</span>
                   </button>
                 {/if}
               {/if}
@@ -306,7 +354,9 @@
       <div class="rounded-xl border border-base-300 bg-base-100 overflow-hidden">
         <div class="flex items-center gap-2 px-4 py-2 bg-base-200 border-b border-base-300">
           <Icon icon="ph:sliders" class="size-4 text-base-content/50" />
-          <span class="text-xs font-semibold text-base-content/80 uppercase tracking-wide">Other</span>
+          <span class="text-xs font-semibold text-base-content/80 uppercase tracking-wide"
+            >{m.options_group_other()}</span
+          >
         </div>
         <div class="divide-y divide-base-200">
           {#each ungroupedOpts as opt}
@@ -317,7 +367,7 @@
               <Icon icon="ph:sliders" class="size-4 text-base-content/40 flex-shrink-0" />
               <div class="flex-1 min-w-0">
                 <span class="text-sm font-medium font-mono">{opt.key}</span>
-                <p class="text-xs text-base-content/50 mt-0.5">{opt.description}</p>
+                <p class="text-xs text-base-content/50 mt-0.5">{getDescription(opt.key, opt.description)}</p>
               </div>
               {#if editingKey === opt.key}
                 <!-- svelte-ignore a11y_autofocus -->
@@ -336,7 +386,7 @@
                 </button>
               {:else if opt.value}
                 <span class="font-mono text-xs text-accent bg-accent/10 px-2 py-0.5 rounded">{opt.value}</span>
-                <button class="btn btn-ghost btn-xs btn-square" onclick={() => startEdit(opt)} title="Edit">
+                <button class="btn btn-ghost btn-xs btn-square" onclick={() => startEdit(opt)} title={m.options_edit()}>
                   <Icon icon="ph:pencil-simple" class="size-3.5" />
                 </button>
               {/if}
@@ -355,7 +405,7 @@
     {#if filteredGroups.length === 0 && ungroupedOpts.length === 0}
       <div class="flex flex-col items-center justify-center py-16 text-base-content/30 gap-2">
         <Icon icon="ph:magnifying-glass" class="size-8" />
-        <span class="text-sm">No options match "{search}"</span>
+        <span class="text-sm">{m.options_no_match({ search })}</span>
       </div>
     {/if}
   </div>

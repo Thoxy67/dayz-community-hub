@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from '@iconify/svelte';
+  import * as m from '$lib/paraglide/messages.js';
 
   interface Props {
     excludedIps: string[];
@@ -25,7 +26,7 @@
     class="bg-base-100 rounded-xl shadow-2xl w-full max-w-sm mx-4 flex flex-col overflow-hidden max-h-[70vh]"
     role="dialog"
     aria-modal="true"
-    aria-label="Excluded IPs"
+    aria-label={m.excluded_ips_title()}
     tabindex="-1"
     onclick={(e) => e.stopPropagation()}
     onkeydown={handleKeydown}
@@ -36,13 +37,13 @@
         <Icon icon="ph:prohibit" class="size-4 text-error/70" />
       </div>
       <div class="flex-1 min-w-0">
-        <p class="text-sm font-semibold text-base-content">Excluded IPs</p>
-        <p class="text-xs text-base-content/45 mt-0.5">Servers from these IPs are hidden from the browser</p>
+        <p class="text-sm font-semibold text-base-content">{m.excluded_ips_title()}</p>
+        <p class="text-xs text-base-content/45 mt-0.5">{m.excluded_ips_desc()}</p>
       </div>
       <button
         class="size-7 rounded flex items-center justify-center text-base-content/40 hover:bg-base-300 hover:text-base-content transition-colors shrink-0"
         onclick={onClose}
-        title="Close"
+        title={m.settings_close()}
       >
         <Icon icon="ph:x" class="size-3.5" />
       </button>
@@ -53,7 +54,7 @@
       {#if excludedIps.length === 0}
         <div class="flex flex-col items-center justify-center py-12 gap-2 text-base-content/30">
           <Icon icon="ph:check-circle" class="size-8" />
-          <span class="text-sm">No excluded IPs</span>
+          <span class="text-sm">{m.excluded_ips_none()}</span>
         </div>
       {:else}
         <div class="divide-y divide-base-300/40">
@@ -65,7 +66,7 @@
                 type="button"
                 class="text-base-content/25 hover:text-error transition-colors shrink-0 opacity-0 group-hover:opacity-100"
                 onclick={() => onUnexclude(ip)}
-                title="Remove exclusion for {ip}"
+                title={m.excluded_ips_remove({ ip })}
               >
                 <Icon icon="ph:x" class="size-3.5" />
               </button>
@@ -78,9 +79,11 @@
     <!-- Footer -->
     <div class="flex items-center justify-between px-5 py-3 border-t border-base-300 bg-base-200/60 flex-shrink-0">
       <span class="text-xs text-base-content/40">
-        {excludedIps.length} IP{excludedIps.length !== 1 ? 's' : ''} excluded
+        {excludedIps.length === 1
+          ? m.excluded_ips_count_one({ count: excludedIps.length })
+          : m.excluded_ips_count_other({ count: excludedIps.length })}
       </span>
-      <button class="btn btn-ghost btn-sm" onclick={onClose}> Close </button>
+      <button class="btn btn-ghost btn-sm" onclick={onClose}>{m.settings_close()}</button>
     </div>
   </div>
 </div>

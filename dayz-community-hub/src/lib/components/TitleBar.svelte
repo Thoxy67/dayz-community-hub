@@ -7,6 +7,8 @@
   import Icon from '@iconify/svelte';
   import GlitchText from '$lib/components/GlitchText.svelte';
   import CssEditor from '$lib/components/CssEditor.svelte';
+  import LanguageSelector from '$lib/components/LanguageSelector.svelte';
+  import * as m from '$lib/paraglide/messages.js';
 
   type UpdateState = 'idle' | 'checking' | 'up_to_date' | 'available' | 'downloading' | 'done' | 'error';
 
@@ -257,7 +259,7 @@
     const selected = await openDialog({
       directory: true,
       multiple: false,
-      title: 'Select Steam root (steamapps folder)',
+      title: m.settings_select_steam_root(),
     });
     if (selected) steamRoot = selected as string;
   }
@@ -373,15 +375,15 @@
   <div
     class="absolute left-1/2 -translate-x-1/2 flex items-center gap-5 px-4 text-xs text-base-content/60 pointer-events-none"
   >
-    <span class="flex items-center gap-1.5 pointer-events-auto" title="Servers">
+    <span class="flex items-center gap-1.5 pointer-events-auto" title={m.titlebar_servers()}>
       <Icon icon="mdi:server-network" class="size-3.5 text-accent-stat-server" />
       <span class="tabular-nums font-medium text-base-content/80">{fmt(stats?.server_count)}</span>
     </span>
-    <span class="flex items-center gap-1.5 pointer-events-auto" title="Players in-game">
+    <span class="flex items-center gap-1.5 pointer-events-auto" title={m.titlebar_players_ingame()}>
       <Icon icon="mdi:controller" class="size-3.5 text-accent-stat-players" />
       <span class="tabular-nums font-medium text-base-content/80">{fmt(stats?.total_players)}</span>
     </span>
-    <span class="flex items-center gap-1.5 pointer-events-auto" title="Players on Steam">
+    <span class="flex items-center gap-1.5 pointer-events-auto" title={m.titlebar_players_steam()}>
       <Icon icon="mdi:steam" class="size-3.5 text-accent-stat-steam" />
       <span class="tabular-nums font-medium text-base-content/80">{fmt(steamPlayers)}</span>
     </span>
@@ -395,37 +397,38 @@
     {#if stats && !stats.has_steamcmd}
       <button
         class="flex items-center gap-1 text-warning mr-2 hover:text-warning/80 transition-colors"
-        title="SteamCMD not found — click to open settings and configure the path"
+        title={m.titlebar_steamcmd_missing()}
         onclick={openModal}
       >
         <Icon icon="ph:warning" class="size-3.5" />
-        <span>SteamCMD not found</span>
+        <span>{m.titlebar_steamcmd_missing()}</span>
       </button>
     {/if}
 
     <!-- Launcher update badge — only shown when an update is available -->
     {#if updateState === 'available'}
       <button
-        class="flex items-center gap-1.5 px-2 py-1 rounded text-accent-update hover:opacity-80 hover:bg-base-300 transition-colors border-r border-base-300 mr-1 font-medium text-xs"
+        class="flex items-center justify-center px-1.5 py-1 rounded text-accent-update hover:opacity-80 hover:bg-base-300 transition-colors border-r border-base-300 mr-1"
         onclick={onGoToUpdate}
-        title="Launcher update available — click to view"
+        title={m.titlebar_update_available_title()}
         data-no-drag
       >
         <Icon icon="line-md:downloading-loop" class="size-4" />
-        Update available
       </button>
     {/if}
 
     <!-- Mod update badge — only shown when stale mods exist -->
     {#if staleModCount > 0}
       <button
-        class="flex items-center gap-1.5 px-2 py-1 rounded text-accent-stale hover:opacity-80 hover:bg-base-300 transition-colors border-r border-base-300 mr-1 font-medium text-xs"
+        class="flex items-center justify-center gap-1 px-1.5 py-1 rounded text-accent-stale hover:opacity-80 hover:bg-base-300 transition-colors border-r border-base-300 mr-1"
         onclick={onUpdateMods}
-        title="Update {staleModCount} mod{staleModCount > 1 ? 's' : ''} — click to open Mods tab and start update"
+        title={staleModCount === 1
+          ? m.titlebar_update_mods_title_one({ count: staleModCount })
+          : m.titlebar_update_mods_title({ count: staleModCount })}
         data-no-drag
       >
         <Icon icon="line-md:download-outline-loop" class="size-4" />
-        Update {staleModCount} mod{staleModCount > 1 ? 's' : ''}
+        <span class="text-xs font-bold tabular-nums">{staleModCount}</span>
       </button>
     {/if}
 
@@ -433,7 +436,7 @@
     <button
       class="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-base-300 text-base-content/70 hover:text-primary transition-colors border-r border-base-300 mr-1"
       onclick={openModal}
-      title="Edit account settings"
+      title={m.titlebar_edit_account()}
     >
       {#if avatarUrl}
         <img
@@ -450,10 +453,13 @@
           <span class="text-base-content/40">({stats.steam_login})</span>
         {/if}
       {:else}
-        <span class="italic text-base-content/40">Set up account</span>
+        <span class="italic text-base-content/40">{m.titlebar_setup_account()}</span>
       {/if}
       <Icon icon="ph:pencil-simple" class="size-3 text-base-content/30" />
     </button>
+
+    <!-- Language selector -->
+    <LanguageSelector />
 
     <!-- Theme selector -->
     <div class="relative theme-dropdown" onkeydown={handleThemeKeydown}>
@@ -463,7 +469,7 @@
           e.stopPropagation();
           themeDropdownOpen = !themeDropdownOpen;
         }}
-        title="Change theme"
+        title={m.theme_change()}
       >
         <Icon icon={currentTheme.icon} class="size-4" />
         <Icon icon="ph:caret-down" class="size-3 opacity-50" />
@@ -474,7 +480,9 @@
           class="absolute right-0 top-full mt-1 w-44 bg-base-200 border border-base-300 rounded-lg shadow-xl z-50 py-1 overflow-hidden max-h-[420px] overflow-y-auto"
         >
           <!-- Dark themes section -->
-          <div class="px-3 py-1.5 text-xs font-semibold text-base-content/40 uppercase tracking-wider">Dark</div>
+          <div class="px-3 py-1.5 text-xs font-semibold text-base-content/40 uppercase tracking-wider">
+            {m.theme_dark()}
+          </div>
           {#each THEMES.filter((t) => !t.isLight && !t.isMixed) as t}
             <button
               class="w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-base-300 transition-colors {t.id ===
@@ -495,7 +503,9 @@
           <div class="my-1 mx-2 border-t border-base-content/10"></div>
 
           <!-- Light themes section -->
-          <div class="px-3 py-1.5 text-xs font-semibold text-base-content/40 uppercase tracking-wider">Light</div>
+          <div class="px-3 py-1.5 text-xs font-semibold text-base-content/40 uppercase tracking-wider">
+            {m.theme_light()}
+          </div>
           {#each THEMES.filter((t) => t.isLight) as t}
             <button
               class="w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-base-300 transition-colors {t.id ===
@@ -516,7 +526,9 @@
           <div class="my-1 mx-2 border-t border-base-content/10"></div>
 
           <!-- Mixed themes section -->
-          <div class="px-3 py-1.5 text-xs font-semibold text-base-content/40 uppercase tracking-wider">Mixed</div>
+          <div class="px-3 py-1.5 text-xs font-semibold text-base-content/40 uppercase tracking-wider">
+            {m.theme_mixed()}
+          </div>
           {#each THEMES.filter((t) => t.isMixed) as t}
             <button
               class="w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-base-300 transition-colors {t.id ===
@@ -545,7 +557,7 @@
             onclick={openCustomThemeModal}
           >
             <Icon icon="ph:palette" class="size-4 shrink-0" />
-            <span class="flex-1">Custom</span>
+            <span class="flex-1">{m.theme_custom()}</span>
             <Icon icon="ph:pencil-simple" class="size-3.5 text-base-content/40" />
           </button>
         </div>
@@ -556,21 +568,21 @@
     <button
       class="inline-flex items-center justify-center w-10 h-9 text-base-content/45 hover:bg-base-300 hover:text-base-content transition-colors"
       onclick={minimize}
-      title="Minimize"
+      title={m.window_minimize()}
     >
       <Icon icon="mdi:minus" class="size-3.5" />
     </button>
     <button
       class="inline-flex items-center justify-center w-10 h-9 text-base-content/45 hover:bg-base-300 hover:text-base-content transition-colors"
       onclick={toggleMaximize}
-      title="Maximize"
+      title={m.window_maximize()}
     >
       <Icon icon="mdi:checkbox-blank-outline" class="size-3" />
     </button>
     <button
       class="inline-flex items-center justify-center w-10 h-9 text-base-content/45 hover:bg-red-600 hover:text-white transition-colors"
       onclick={close}
-      title="Close"
+      title={m.window_close()}
     >
       <Icon icon="mdi:close" class="size-3.5" />
     </button>
@@ -589,7 +601,7 @@
       class="bg-base-100 rounded-xl shadow-2xl w-full max-w-md mx-4 flex flex-col overflow-hidden max-h-[90vh]"
       role="dialog"
       aria-modal="true"
-      aria-label="Account settings"
+      aria-label={m.settings_account()}
       tabindex="-1"
       onclick={(e) => e.stopPropagation()}
       onkeydown={handleKeydown}
@@ -608,16 +620,16 @@
         </div>
         <div class="flex-1 min-w-0">
           <p class="text-sm font-semibold text-base-content leading-tight truncate">
-            {playerName || 'Unnamed player'}
+            {playerName || m.settings_unnamed_player()}
           </p>
           <p class="text-xs text-base-content/50 truncate">
-            {steamLogin ? `Steam: ${steamLogin}` : 'No Steam account linked'}
+            {steamLogin ? m.settings_steam_linked({ login: steamLogin }) : m.settings_no_steam_linked()}
           </p>
         </div>
         <button
           class="size-7 rounded flex items-center justify-center text-base-content/40 hover:bg-base-300 hover:text-base-content transition-colors flex-shrink-0"
           onclick={closeModal}
-          title="Close"
+          title={m.settings_close()}
         >
           <Icon icon="ph:x" class="size-3.5" />
         </button>
@@ -629,17 +641,21 @@
         <div>
           <div class="flex items-center gap-2 mb-3">
             <Icon icon="ph:game-controller" class="size-3.5 text-primary" />
-            <span class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">Identity</span>
+            <span class="text-xs font-semibold text-base-content/70 uppercase tracking-wider"
+              >{m.settings_identity()}</span
+            >
           </div>
           <div class="bg-base-200/60 rounded-lg border border-base-300/60 overflow-hidden">
             <!-- In-game name -->
             <div class="flex items-center gap-3 px-3 py-2.5 border-b border-base-300/60">
-              <label class="text-xs text-base-content/55 w-24 shrink-0" for="field-player">In-game name</label>
+              <label class="text-xs text-base-content/55 w-24 shrink-0" for="field-player"
+                >{m.settings_ingame_name()}</label
+              >
               <input
                 id="field-player"
                 type="text"
                 class="flex-1 bg-transparent text-xs font-mono text-base-content placeholder:text-base-content/25 outline-none"
-                placeholder="Your DayZ player name"
+                placeholder={m.settings_ingame_name_placeholder()}
                 autocomplete="nickname"
                 bind:value={playerName}
               />
@@ -651,34 +667,39 @@
         <div>
           <div class="flex items-center gap-2 mb-3">
             <Icon icon="mdi:steam" class="size-3.5 text-primary" />
-            <span class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">Steam Login</span>
+            <span class="text-xs font-semibold text-base-content/70 uppercase tracking-wider"
+              >{m.settings_steam_login()}</span
+            >
             <span class="text-xs text-base-content/35 font-normal normal-case tracking-normal"
-              >for SteamCMD mod updates</span
+              >{m.settings_steam_login_desc()}</span
             >
           </div>
           <div class="bg-base-200/60 rounded-lg border border-base-300/60 overflow-hidden">
             <!-- Username -->
             <div class="flex items-center gap-3 px-3 py-2.5 border-b border-base-300/60">
-              <label class="text-xs text-base-content/55 w-24 shrink-0" for="field-login">Username</label>
+              <label class="text-xs text-base-content/55 w-24 shrink-0" for="field-login">{m.settings_username()}</label
+              >
               <input
                 id="field-login"
                 type="text"
                 class="flex-1 bg-transparent text-xs font-mono text-base-content placeholder:text-base-content/25 outline-none"
-                placeholder="anonymous"
+                placeholder={m.titlebar_anonymous()}
                 autocomplete="username"
                 bind:value={steamLogin}
               />
             </div>
             <!-- Password -->
             <div class="flex items-center gap-3 px-3 py-2.5 border-b border-base-300/60">
-              <label class="text-xs text-base-content/55 w-24 shrink-0" for="field-password">Password</label>
+              <label class="text-xs text-base-content/55 w-24 shrink-0" for="field-password"
+                >{m.settings_password()}</label
+              >
               <div class="flex-1 flex items-center gap-1.5">
                 {#if showPassword}
                   <input
                     id="field-password"
                     type="text"
                     class="flex-1 bg-transparent text-xs font-mono text-base-content placeholder:text-base-content/25 outline-none min-w-0"
-                    placeholder="Leave blank for cached credentials"
+                    placeholder={m.settings_password_placeholder()}
                     autocomplete="current-password"
                     bind:value={steamPassword}
                   />
@@ -687,7 +708,7 @@
                     id="field-password"
                     type="password"
                     class="flex-1 bg-transparent text-xs font-mono text-base-content placeholder:text-base-content/25 outline-none min-w-0"
-                    placeholder="Leave blank for cached credentials"
+                    placeholder={m.settings_password_placeholder()}
                     autocomplete="current-password"
                     bind:value={steamPassword}
                   />
@@ -696,7 +717,7 @@
                   type="button"
                   class="text-base-content/30 hover:text-base-content transition-colors shrink-0"
                   onclick={() => (showPassword = !showPassword)}
-                  title={showPassword ? 'Hide' : 'Show'}
+                  title={showPassword ? m.settings_hide() : m.settings_show()}
                 >
                   <Icon icon={showPassword ? 'ph:eye-slash' : 'ph:eye'} class="size-3.5" />
                 </button>
@@ -705,7 +726,7 @@
                     type="button"
                     class="text-base-content/30 hover:text-error transition-colors shrink-0"
                     onclick={clearSteamPassword}
-                    title="Clear password from profile"
+                    title={m.settings_clear_password()}
                   >
                     <Icon icon="ph:x-circle" class="size-3.5" />
                   </button>
@@ -714,7 +735,9 @@
             </div>
             <!-- Steam root -->
             <div class="flex items-center gap-3 px-3 py-2.5 border-b border-base-300/60">
-              <label class="text-xs text-base-content/55 w-24 shrink-0" for="field-root">Steam root</label>
+              <label class="text-xs text-base-content/55 w-24 shrink-0" for="field-root"
+                >{m.settings_steam_root()}</label
+              >
               <input
                 id="field-root"
                 type="text"
@@ -725,14 +748,16 @@
               <button
                 class="text-base-content/35 hover:text-primary transition-colors shrink-0"
                 onclick={browseSteamRoot}
-                title="Browse…"
+                title={m.settings_browse()}
               >
                 <Icon icon="ph:folder-open" class="size-3.5" />
               </button>
             </div>
             <!-- SteamCMD path -->
             <div class="flex items-center gap-3 px-3 py-2.5">
-              <label class="text-xs text-base-content/55 w-24 shrink-0" for="field-steamcmd">SteamCMD path</label>
+              <label class="text-xs text-base-content/55 w-24 shrink-0" for="field-steamcmd"
+                >{m.settings_steamcmd_path()}</label
+              >
               <input
                 id="field-steamcmd"
                 type="text"
@@ -743,10 +768,10 @@
               <button
                 class="text-base-content/35 hover:text-primary transition-colors shrink-0"
                 onclick={async () => {
-                  const selected = await openDialog({ multiple: false, title: 'Select steamcmd binary' });
+                  const selected = await openDialog({ multiple: false, title: m.settings_select_steamcmd() });
                   if (selected) steamcmdPath = selected as string;
                 }}
-                title="Browse…"
+                title={m.settings_browse()}
               >
                 <Icon icon="ph:folder-open" class="size-3.5" />
               </button>
@@ -757,7 +782,7 @@
             <div class="flex items-start gap-2 mt-2 px-3 py-2 rounded-lg bg-warning/10 border border-warning/30">
               <Icon icon="ph:warning" class="size-3.5 text-warning shrink-0 mt-0.5" />
               <p class="text-xs text-warning leading-snug">
-                Password is stored in plaintext in <span class="font-mono">profile.json</span>
+                {m.settings_password_warning()}
               </p>
             </div>
           {/if}
@@ -767,15 +792,18 @@
         <div>
           <div class="flex items-center gap-2 mb-3">
             <Icon icon="ph:identification-card" class="size-3.5 text-primary" />
-            <span class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">Steam API</span>
+            <span class="text-xs font-semibold text-base-content/70 uppercase tracking-wider"
+              >{m.settings_steam_api()}</span
+            >
             <span class="text-xs text-base-content/35 font-normal normal-case tracking-normal"
-              >avatar in titlebar &amp; mod update checks</span
+              >{m.settings_steam_api_desc()}</span
             >
           </div>
           <div class="bg-base-200/60 rounded-lg border border-base-300/60 overflow-hidden">
             <!-- API key -->
             <div class="flex items-center gap-3 px-3 py-2.5 border-b border-base-300/60">
-              <label class="text-xs text-base-content/55 w-24 shrink-0" for="field-apikey">API key</label>
+              <label class="text-xs text-base-content/55 w-24 shrink-0" for="field-apikey">{m.settings_api_key()}</label
+              >
               <div class="flex-1 flex items-center gap-1.5">
                 {#if showApiKey}
                   <input
@@ -800,7 +828,7 @@
                   type="button"
                   class="text-base-content/30 hover:text-base-content transition-colors shrink-0"
                   onclick={() => (showApiKey = !showApiKey)}
-                  title={showApiKey ? 'Hide' : 'Show'}
+                  title={showApiKey ? m.settings_hide() : m.settings_show()}
                 >
                   <Icon icon={showApiKey ? 'ph:eye-slash' : 'ph:eye'} class="size-3.5" />
                 </button>
@@ -808,7 +836,9 @@
             </div>
             <!-- Steam ID -->
             <div class="flex items-center gap-3 px-3 py-2.5">
-              <label class="text-xs text-base-content/55 w-24 shrink-0" for="field-steamid">Steam ID</label>
+              <label class="text-xs text-base-content/55 w-24 shrink-0" for="field-steamid"
+                >{m.settings_steam_id()}</label
+              >
               <input
                 id="field-steamid"
                 type="text"
@@ -824,15 +854,19 @@
         <div>
           <div class="flex items-center gap-2 mb-3">
             <Icon icon="ph:chart-line-up" class="size-3.5 text-primary" />
-            <span class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">BattleMetrics</span>
+            <span class="text-xs font-semibold text-base-content/70 uppercase tracking-wider"
+              >{m.settings_battlemetrics()}</span
+            >
             <span class="text-xs text-base-content/35 font-normal normal-case tracking-normal"
-              >rankings, uptime &amp; distance</span
+              >{m.settings_battlemetrics_desc()}</span
             >
           </div>
           <div class="bg-base-200/60 rounded-lg border border-base-300/60 overflow-hidden">
             <!-- API token row -->
             <div class="flex items-center gap-3 px-3 py-2.5 border-b border-base-300/40">
-              <label class="text-xs text-base-content/55 w-24 shrink-0" for="field-bmkey">API token</label>
+              <label class="text-xs text-base-content/55 w-24 shrink-0" for="field-bmkey"
+                >{m.settings_api_token()}</label
+              >
               <div class="flex-1 flex items-center gap-1.5">
                 {#if showBmKey}
                   <input
@@ -857,7 +891,7 @@
                   type="button"
                   class="text-base-content/30 hover:text-base-content transition-colors shrink-0"
                   onclick={() => (showBmKey = !showBmKey)}
-                  title={showBmKey ? 'Hide' : 'Show'}
+                  title={showBmKey ? m.settings_hide() : m.settings_show()}
                 >
                   <Icon icon={showBmKey ? 'ph:eye-slash' : 'ph:eye'} class="size-3.5" />
                 </button>
@@ -867,8 +901,8 @@
             <div class="px-3 py-3 space-y-2.5">
               <div class="flex items-center gap-2">
                 <Icon icon="ph:map-pin" class="size-3.5 text-primary/70" />
-                <span class="text-xs font-medium text-base-content/60">Your Location</span>
-                <span class="text-xs text-base-content/30">for distance calculation</span>
+                <span class="text-xs font-medium text-base-content/60">{m.settings_your_location()}</span>
+                <span class="text-xs text-base-content/30">{m.settings_location_desc()}</span>
               </div>
 
               {#if userLocation}
@@ -882,7 +916,7 @@
                       {#if detectedCity || detectedCountry}
                         {detectedCity}{detectedCity && detectedCountry ? ', ' : ''}{detectedCountry}
                       {:else}
-                        Location set
+                        {m.settings_location_set()}
                       {/if}
                     </p>
                     <p class="text-xs text-base-content/40 font-mono">
@@ -894,7 +928,7 @@
                       type="button"
                       class="btn btn-ghost btn-xs btn-square text-base-content/40 hover:text-primary"
                       onclick={() => openUrl(`https://www.google.com/maps?q=${userLocation![1]},${userLocation![0]}`)}
-                      title="Open in Google Maps"
+                      title={m.settings_open_maps()}
                     >
                       <Icon icon="ph:map-trifold" class="size-4" />
                     </button>
@@ -902,7 +936,7 @@
                       type="button"
                       class="btn btn-ghost btn-xs btn-square text-base-content/40 hover:text-error"
                       onclick={clearLocation}
-                      title="Clear location"
+                      title={m.settings_clear_location()}
                     >
                       <Icon icon="ph:trash" class="size-4" />
                     </button>
@@ -919,10 +953,10 @@
                   >
                     {#if detectingLocation}
                       <span class="loading loading-spinner loading-xs"></span>
-                      Detecting…
+                      {m.settings_detecting()}
                     {:else}
                       <Icon icon="ph:crosshair" class="size-4" />
-                      Auto-detect via IP
+                      {m.settings_autodetect_ip()}
                     {/if}
                   </button>
                 </div>
@@ -930,17 +964,17 @@
 
               <!-- Manual input (always visible, collapsed style) -->
               <div class="flex items-center gap-2 pt-1">
-                <span class="text-xs text-base-content/35">Manual:</span>
+                <span class="text-xs text-base-content/35">{m.settings_manual()}</span>
                 <input
                   type="text"
                   class="w-20 px-2 py-1 rounded bg-base-300/40 text-xs font-mono text-base-content placeholder:text-base-content/25 outline-none border border-transparent focus:border-primary/50"
-                  placeholder="Lat"
+                  placeholder={m.settings_lat()}
                   bind:value={manualLat}
                 />
                 <input
                   type="text"
                   class="w-20 px-2 py-1 rounded bg-base-300/40 text-xs font-mono text-base-content placeholder:text-base-content/25 outline-none border border-transparent focus:border-primary/50"
-                  placeholder="Lon"
+                  placeholder={m.settings_lon()}
                   bind:value={manualLon}
                 />
                 <button
@@ -962,7 +996,7 @@
             </div>
           </div>
           <p class="text-xs text-base-content/35 mt-1.5 px-1">
-            Get a token at
+            {m.settings_get_token_at()}
             <button
               type="button"
               class="text-primary hover:underline"
@@ -970,31 +1004,31 @@
                 openUrl('https://www.battlemetrics.com/developers');
               }}>battlemetrics.com/developers</button
             >
-            · Location is used to calculate distance to servers.
+            · {m.settings_location_help()}
           </p>
         </div>
       </div>
 
       <!-- ── Footer ─────────────────────────────────────────────────────────── -->
       <div class="flex items-center justify-between px-5 py-3 border-t border-base-300 bg-base-200 flex-shrink-0">
-        <button class="btn btn-ghost btn-sm text-base-content/60" onclick={closeModal}> Cancel </button>
+        <button class="btn btn-ghost btn-sm text-base-content/60" onclick={closeModal}>{m.settings_cancel()}</button>
         <div class="flex items-center gap-2">
           <button
             class="btn btn-ghost btn-sm gap-1.5 text-base-content/50"
             onclick={() => {
               onOpenExcludedIps();
             }}
-            title="Manage excluded IPs"
+            title={m.settings_manage_excluded()}
           >
             <Icon icon="ph:prohibit" class="size-3.5" />
-            Excluded IPs
+            {m.settings_excluded_ips()}
             {#if (profile?.excluded_ips?.length ?? 0) > 0}
               <span class="badge badge-xs badge-error/70 text-error font-mono">{profile!.excluded_ips!.length}</span>
             {/if}
           </button>
           <button class="btn btn-primary btn-sm gap-1.5" onclick={handleOk}>
             <Icon icon="ph:check" class="size-3.5" />
-            Save changes
+            {m.settings_save()}
           </button>
         </div>
       </div>
@@ -1014,7 +1048,7 @@
       class="bg-base-100 rounded-xl shadow-2xl w-full max-w-2xl mx-4 flex flex-col overflow-hidden max-h-[85vh]"
       role="dialog"
       aria-modal="true"
-      aria-label="Custom theme editor"
+      aria-label={m.theme_editor_title()}
       tabindex="-1"
       onclick={(e) => e.stopPropagation()}
       onkeydown={handleCustomModalKeydown}
@@ -1024,14 +1058,14 @@
         <div class="flex items-center gap-3">
           <Icon icon="ph:palette" class="size-5 text-primary" />
           <div>
-            <h2 class="text-sm font-semibold text-base-content">Custom Theme Editor</h2>
-            <p class="text-xs text-base-content/50">Define your own theme using CSS variables</p>
+            <h2 class="text-sm font-semibold text-base-content">{m.theme_editor_title()}</h2>
+            <p class="text-xs text-base-content/50">{m.theme_editor_desc()}</p>
           </div>
         </div>
         <button
           class="size-7 rounded flex items-center justify-center text-base-content/40 hover:bg-base-300 hover:text-base-content transition-colors"
           onclick={closeCustomThemeModal}
-          title="Close"
+          title={m.window_close()}
         >
           <Icon icon="ph:x" class="size-4" />
         </button>
@@ -1090,11 +1124,7 @@
       <!-- CSS Editor -->
       <div class="flex-1 min-h-0 p-4">
         <div class="h-full">
-          <CssEditor
-            value={customCss}
-            onInput={(v) => (customCss = v)}
-            placeholder="Enter your custom CSS..."
-          />
+          <CssEditor value={customCss} onInput={(v) => (customCss = v)} placeholder="Enter your custom CSS..." />
         </div>
       </div>
 
@@ -1106,17 +1136,17 @@
             onclick={() => {
               customCss = customCssTemplate;
             }}
-            title="Reset to default template"
+            title={m.theme_reset()}
           >
             <Icon icon="ph:arrow-counter-clockwise" class="size-3.5" />
-            Reset
+            {m.theme_reset()}
           </button>
         </div>
         <div class="flex items-center gap-2">
-          <span class="text-xs text-base-content/40 italic">Auto-saved</span>
+          <span class="text-xs text-base-content/40 italic">{m.theme_autosaved()}</span>
           <button class="btn btn-primary btn-sm gap-1.5" onclick={closeCustomThemeModal}>
             <Icon icon="ph:check" class="size-3.5" />
-            Done
+            {m.theme_done()}
           </button>
         </div>
       </div>

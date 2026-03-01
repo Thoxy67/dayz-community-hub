@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from '@iconify/svelte';
+  import * as m from '$lib/paraglide/messages.js';
 
   export interface ConnectRequest {
     serverName: string;
@@ -62,7 +63,7 @@
           <Icon icon="ph:play-fill" class="size-4 text-primary" />
         </div>
         <div class="min-w-0">
-          <h3 class="font-bold text-base text-base-content leading-tight">Connect to server</h3>
+          <h3 class="font-bold text-base text-base-content leading-tight">{m.connect_modal_title()}</h3>
           <p class="text-xs text-base-content/50 truncate mt-0.5">{request.serverName}</p>
         </div>
       </div>
@@ -78,12 +79,16 @@
           />
           <div class="min-w-0">
             <p class="text-sm font-medium text-base-content leading-tight">
-              {request.kind === 'missing' ? 'Install missing mods' : 'Update mods first'}
+              {request.kind === 'missing' ? m.connect_modal_install_mods() : m.connect_modal_update_mods()}
             </p>
             <p class="text-xs text-base-content/45 mt-0.5">
               {request.kind === 'missing'
-                ? `${request.modCount} mod${request.modCount !== 1 ? 's' : ''} not installed`
-                : `${request.modCount} mod${request.modCount !== 1 ? 's' : ''} to check`}
+                ? request.modCount === 1
+                  ? m.connect_modal_mods_not_installed({ count: request.modCount })
+                  : m.connect_modal_mods_not_installed_plural({ count: request.modCount })
+                : request.modCount === 1
+                  ? m.connect_modal_mods_to_check({ count: request.modCount })
+                  : m.connect_modal_mods_to_check_plural({ count: request.modCount })}
             </p>
           </div>
         </div>
@@ -93,16 +98,20 @@
       {#if !updateMods && request.kind === 'missing'}
         <p class="text-xs text-warning/80 mt-2 flex items-center gap-1.5 px-1">
           <Icon icon="ph:warning" class="size-3.5 shrink-0" />
-          Missing mods may cause connection issues or a crash.
+          {m.connect_modal_warning()}
         </p>
       {/if}
 
       <!-- Actions -->
       <div class="flex justify-end gap-2 mt-4">
-        <button class="btn btn-ghost btn-sm" onclick={onClose}>Cancel</button>
+        <button class="btn btn-ghost btn-sm" onclick={onClose}>{m.connect_modal_cancel()}</button>
         <button class="btn btn-primary btn-sm gap-1.5" onclick={handleConnect}>
           <Icon icon="ph:play" class="size-3.5" />
-          {updateMods ? (request.kind === 'missing' ? 'Install & connect' : 'Update & connect') : 'Connect'}
+          {updateMods
+            ? request.kind === 'missing'
+              ? m.connect_modal_install_connect()
+              : m.connect_modal_update_connect()
+            : m.connect_modal_connect()}
         </button>
       </div>
     </div>

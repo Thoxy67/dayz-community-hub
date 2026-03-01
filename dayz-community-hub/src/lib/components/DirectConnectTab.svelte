@@ -6,6 +6,7 @@
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import { save as saveDialog } from '@tauri-apps/plugin-dialog';
   import Icon from '@iconify/svelte';
+  import * as m from '$lib/paraglide/messages.js';
 
   let copiedIp = $state(false);
   async function copyIp(ip: string, port: number) {
@@ -513,7 +514,7 @@
     <!-- Header -->
     <div class="flex items-center gap-2 mb-5">
       <Icon icon="ph:plugs-connected" class="size-5 text-primary" />
-      <h2 class="text-base font-semibold">Direct Connect</h2>
+      <h2 class="text-base font-semibold">{m.dc_title()}</h2>
     </div>
 
     <!-- ── Two-column grid (desktop) / single column (mobile) ────────── -->
@@ -524,7 +525,7 @@
         <div class="rounded-xl border border-base-300 bg-base-100 overflow-hidden">
           <div class="px-4 py-2.5 bg-base-200 border-b border-base-300 flex items-center gap-2">
             <Icon icon="ph:network" class="size-4 text-base-content/50" />
-            <span class="text-xs font-semibold text-base-content/70 uppercase tracking-wide">Connection</span>
+            <span class="text-xs font-semibold text-base-content/70 uppercase tracking-wide">{m.dc_connection()}</span>
           </div>
 
           <div class="p-4 space-y-3">
@@ -534,14 +535,14 @@
                 <label class="label py-0 pb-1" for="dc-address">
                   <span class="label-text text-xs text-base-content/60 flex items-center gap-1.5">
                     <Icon icon="ph:globe" class="size-3.5" />
-                    IP / Hostname
+                    {m.dc_ip_hostname()}
                   </span>
                 </label>
                 <input
                   id="dc-address"
                   type="text"
                   class="input input-bordered input-sm font-mono"
-                  placeholder="e.g. 192.168.1.1"
+                  placeholder={m.dc_ip_placeholder()}
                   bind:value={address}
                   onblur={parseAddress}
                   onkeydown={handleKeydown}
@@ -552,11 +553,11 @@
                   <span class="label-text text-xs text-base-content/60 flex items-center gap-1.5">
                     <Icon icon="ph:plugs" class="size-3.5" />
                     {#if foundServer && parseInt(port, 10) === foundServer?.game_port}
-                      Port <span class="text-amber-400 ml-0.5">(game)</span>
+                      {m.dc_port()} <span class="text-amber-400 ml-0.5">{m.dc_port_game()}</span>
                     {:else if foundServer && parseInt(port, 10) === foundServer?.query_port}
-                      Port <span class="text-sky-400 ml-0.5">(query)</span>
+                      {m.dc_port()} <span class="text-sky-400 ml-0.5">{m.dc_port_query()}</span>
                     {:else}
-                      Port
+                      {m.dc_port()}
                     {/if}
                   </span>
                 </label>
@@ -576,8 +577,8 @@
               <label class="label py-0 pb-1" for="dc-password">
                 <span class="label-text text-xs text-base-content/60 flex items-center gap-1.5">
                   <Icon icon="ph:lock-simple" class="size-3.5" />
-                  Password
-                  <span class="text-base-content/30 ml-1">optional</span>
+                  {m.dc_password()}
+                  <span class="text-base-content/30 ml-1">{m.dc_optional()}</span>
                 </span>
               </label>
               <div class="relative">
@@ -585,7 +586,7 @@
                   id="dc-password"
                   type={showPassword ? 'text' : 'password'}
                   class="input input-bordered input-sm w-full pr-9"
-                  placeholder="Leave blank if none"
+                  placeholder={m.dc_password_placeholder()}
                   bind:value={password}
                   onkeydown={handleKeydown}
                 />
@@ -593,7 +594,7 @@
                   class="absolute right-2 top-1/2 -translate-y-1/2 text-base-content/40 hover:text-base-content transition-colors"
                   onclick={() => (showPassword = !showPassword)}
                   type="button"
-                  title={showPassword ? 'Hide' : 'Show'}
+                  title={showPassword ? m.settings_hide() : m.settings_show()}
                 >
                   <Icon icon={showPassword ? 'ph:eye-slash' : 'ph:eye'} class="size-4" />
                 </button>
@@ -609,20 +610,20 @@
               >
                 {#if a2sLoading}
                   <span class="loading loading-spinner loading-xs"></span>
-                  Querying…
+                  {m.dc_querying()}
                 {:else}
                   <Icon icon="ph:magnifying-glass" class="size-4" />
-                  Query
+                  {m.dc_query()}
                 {/if}
               </button>
               <button class="btn btn-primary btn-sm flex-1 gap-1.5" onclick={connect} disabled={!address}>
                 <Icon icon="ph:rocket-launch" class="size-4" />
-                Connect
+                {m.dc_connect()}
               </button>
               <!-- Favorite shortcut -->
               {#if onAddFavorite && address.trim()}
                 {#if isFavorite}
-                  <span class="btn btn-ghost btn-sm btn-square shrink-0 cursor-default" title="Already in favorites">
+                  <span class="btn btn-ghost btn-sm btn-square shrink-0 cursor-default" title={m.dc_already_favorite()}>
                     <Icon icon="ph:star-fill" class="size-4 text-warning" />
                   </span>
                 {:else}
@@ -635,7 +636,7 @@
                         parseInt(port, 10),
                         password || undefined,
                       )}
-                    title="Add to favorites"
+                    title={m.dc_add_favorite()}
                   >
                     <Icon icon="ph:star" class="size-4 text-warning/60 hover:text-warning transition-colors" />
                   </button>
@@ -648,21 +649,13 @@
         <!-- ── Share / Export ─────────────────────────────────────────── -->
         {#if address.trim()}
           <div class="flex gap-2">
-            <button
-              class="btn btn-ghost btn-sm gap-1.5 flex-1"
-              onclick={copyDzchUrl}
-              title="Copy a dzch:// URL to share this server"
-            >
+            <button class="btn btn-ghost btn-sm gap-1.5 flex-1" onclick={copyDzchUrl} title={m.dc_copy_url_title()}>
               <Icon icon={copiedUrl ? 'ph:check' : 'ph:link'} class="size-4 {copiedUrl ? 'text-success' : ''}" />
-              {copiedUrl ? 'Copied!' : 'Copy URL'}
+              {copiedUrl ? m.dc_copied() : m.dc_copy_url()}
             </button>
-            <button
-              class="btn btn-ghost btn-sm gap-1.5 flex-1"
-              onclick={exportDzchFile}
-              title="Save a .dzch file for one-click connect"
-            >
+            <button class="btn btn-ghost btn-sm gap-1.5 flex-1" onclick={exportDzchFile} title={m.dc_export_title()}>
               <Icon icon="ph:export" class="size-4" />
-              Export .dzch
+              {m.dc_export()}
             </button>
           </div>
         {/if}
@@ -676,7 +669,9 @@
             type="button"
           >
             <Icon icon="ph:sliders-horizontal" class="size-4 text-base-content/50" />
-            <span class="text-xs font-semibold text-base-content/70 uppercase tracking-wide flex-1"> Extra Mods </span>
+            <span class="text-xs font-semibold text-base-content/70 uppercase tracking-wide flex-1">
+              {m.dc_extra_mods()}
+            </span>
             {#if enabledModeCount > 0}
               <span class="badge badge-primary badge-xs">{enabledModeCount}</span>
             {/if}
@@ -690,8 +685,7 @@
             <div class="p-4 space-y-3">
               <!-- Explanation -->
               <p class="text-xs text-base-content/50 leading-relaxed">
-                Add extra <code class="font-mono bg-base-200 px-1 rounded">-mod</code> entries not auto-detected by the server
-                query.
+                {m.dc_extra_mods_hint()}
               </p>
 
               <!-- Existing entries -->
@@ -710,9 +704,9 @@
                       <!-- Kind badge -->
                       <span class="shrink-0 font-mono text-base-content/40 w-14 truncate">
                         {#if entry.kind === 'mod'}
-                          <span class="text-amber-400">-mod</span>
+                          <span class="text-amber-400">{m.dc_mod()}</span>
                         {:else}
-                          <span class="text-teal-400">custom</span>
+                          <span class="text-teal-400">{m.dc_custom()}</span>
                         {/if}
                       </span>
 
@@ -732,7 +726,7 @@
                       {#if entry.fromServer}
                         <span class="badge badge-xs gap-0.5 bg-primary/10 text-primary border-primary/20 shrink-0">
                           <Icon icon="ph:magnifying-glass" class="size-2.5" />
-                          detected
+                          {m.dc_detected()}
                         </span>
                       {/if}
 
@@ -742,7 +736,7 @@
                       >
                         <button
                           class="btn btn-ghost btn-xs btn-square"
-                          title="Move up"
+                          title={m.dc_move_up()}
                           disabled={isFirst}
                           onclick={() => moveModeEntry(entry.id, -1)}
                         >
@@ -750,7 +744,7 @@
                         </button>
                         <button
                           class="btn btn-ghost btn-xs btn-square"
-                          title="Move down"
+                          title={m.dc_move_down()}
                           disabled={isLast}
                           onclick={() => moveModeEntry(entry.id, 1)}
                         >
@@ -758,7 +752,7 @@
                         </button>
                         <button
                           class="btn btn-ghost btn-xs btn-square"
-                          title={entry.enabled ? 'Disable' : 'Enable'}
+                          title={entry.enabled ? m.dc_disable() : m.dc_enable()}
                           onclick={() => toggleModeEntry(entry.id)}
                         >
                           <Icon
@@ -768,7 +762,7 @@
                         </button>
                         <button
                           class="btn btn-ghost btn-xs btn-square text-error/60 hover:text-error"
-                          title="Remove"
+                          title={m.dc_remove()}
                           onclick={() => removeModeEntry(entry.id)}
                         >
                           <Icon icon="ph:x" class="size-3" />
@@ -779,7 +773,7 @@
                 </div>
               {:else}
                 <p class="text-xs text-base-content/35 italic">
-                  No modes configured. Query the server to auto-detect mods, or add manually.
+                  {m.dc_no_modes()}
                 </p>
               {/if}
 
@@ -787,14 +781,14 @@
               {#if availableToAdd.length > 0}
                 <div class="flex gap-2 pt-1">
                   <select class="select select-bordered select-xs flex-1 min-w-0" bind:value={newModId}>
-                    <option value={null} disabled selected>Pick installed mod…</option>
-                    {#each availableToAdd as m}
-                      <option value={m.id}>{m.name}</option>
+                    <option value={null} disabled selected>{m.dc_pick_mod()}</option>
+                    {#each availableToAdd as mod}
+                      <option value={mod.id}>{mod.name}</option>
                     {/each}
                   </select>
                   <button
                     class="btn btn-ghost btn-xs btn-square shrink-0"
-                    title="Add mod"
+                    title={m.dc_add_mod()}
                     disabled={newModId === null}
                     onclick={addModeEntry}
                   >
@@ -803,10 +797,10 @@
                 </div>
               {:else if installedMods.length === 0}
                 <p class="text-xs text-base-content/35 italic">
-                  No installed mods found. Install mods from the Mods tab first.
+                  {m.dc_no_installed_mods()}
                 </p>
               {:else}
-                <p class="text-xs text-base-content/35 italic">All installed mods have been added.</p>
+                <p class="text-xs text-base-content/35 italic">{m.dc_all_mods_added()}</p>
               {/if}
 
               <!-- Preview of generated args -->
@@ -814,7 +808,7 @@
                 {@const preview = buildModeArgs()}
                 <div class="rounded-lg bg-base-200 p-2.5 space-y-0.5">
                   <p class="text-xs text-base-content/40 mb-1 uppercase tracking-wide font-semibold">
-                    Launch args preview
+                    {m.dc_launch_preview()}
                   </p>
                   {#each preview as arg}
                     <p class="font-mono text-xs text-base-content/70 break-all">{arg}</p>
@@ -832,7 +826,7 @@
           >
             <Icon icon="ph:warning-circle" class="size-4 shrink-0 mt-0.5" />
             <div>
-              <p class="font-medium text-sm">Query failed</p>
+              <p class="font-medium text-sm">{m.dc_query_failed()}</p>
               <p class="text-xs mt-0.5 opacity-80 break-all">{a2sError}</p>
             </div>
           </div>
@@ -847,7 +841,7 @@
           <div class="rounded-xl border border-base-300 bg-base-100 overflow-hidden">
             <div class="px-4 py-3 bg-base-200 border-b border-base-300 flex items-center gap-3">
               <span class="loading loading-spinner loading-sm text-primary"></span>
-              <span class="text-sm text-base-content/50">Querying server…</span>
+              <span class="text-sm text-base-content/50">{m.dc_querying_server()}</span>
             </div>
             <div class="p-4 space-y-3">
               <div class="h-3 w-3/4 rounded bg-base-300 animate-pulse"></div>
@@ -875,60 +869,60 @@
                   {#if fs}
                     <span class="badge badge-success badge-xs gap-1">
                       <Icon icon="ph:check-circle" class="size-2.5" />
-                      In server list
+                      {m.dc_in_server_list()}
                     </span>
                   {:else if a2s}
                     <span class="badge badge-warning badge-xs gap-1">
                       <Icon icon="ph:question" class="size-2.5" />
-                      Not in list
+                      {m.dc_not_in_list()}
                     </span>
                   {/if}
                   {#if resolvedQueryPort !== null}
                     {#if resolvedPortKind === 'query'}
                       <span
                         class="badge badge-xs gap-1 bg-sky-500/15 text-sky-400 border-sky-500/20"
-                        title="You entered the query (A2S) port"
+                        title={m.dc_badge_query_port()}
                       >
                         <Icon icon="ph:plugs" class="size-2.5" />
-                        Query port
+                        {m.dc_query_port_badge()}
                       </span>
                     {:else if resolvedPortKind === 'game'}
                       <span
                         class="badge badge-xs gap-1 bg-amber-500/15 text-amber-400 border-amber-500/20"
-                        title="You entered the game port — query port resolved from server list"
+                        title={m.dc_badge_game_port()}
                       >
                         <Icon icon="ph:game-controller" class="size-2.5" />
-                        Game port → Q:{resolvedQueryPort}
+                        {m.dc_game_port_badge()} → Q:{resolvedQueryPort}
                       </span>
                     {/if}
                   {/if}
                   {#if fs?.password}
                     <span class="badge badge-error badge-xs gap-1">
                       <Icon icon="ph:lock-simple" class="size-2.5" />
-                      Password
+                      {m.dc_password()}
                     </span>
                   {/if}
                   {#if fs?.battl_eye}
                     <span class="badge badge-xs gap-1 bg-blue-500/15 text-blue-400 border-blue-500/20">
                       <Icon icon="ph:shield-check" class="size-2.5" />
-                      BattlEye
+                      {m.dc_battleye()}
                     </span>
                   {/if}
                   {#if fs?.first_person_only}
                     <span class="badge badge-xs gap-1 bg-violet-500/15 text-violet-400 border-violet-500/20">
                       <Icon icon="ph:eye" class="size-2.5" />
-                      1PP
+                      {m.dc_1pp()}
                     </span>
                   {/if}
                   {#if fs?.vac}
                     <span class="badge badge-xs gap-1 bg-base-content/10 text-base-content/50 border-base-content/20">
-                      VAC
+                      {m.dc_vac()}
                     </span>
                   {/if}
                 </div>
               </div>
               {#if isFavorite}
-                <span class="btn btn-ghost btn-xs btn-square shrink-0 cursor-default" title="Already in favorites">
+                <span class="btn btn-ghost btn-xs btn-square shrink-0 cursor-default" title={m.dc_already_favorite()}>
                   <Icon icon="ph:star-fill" class="size-4 text-warning" />
                 </span>
               {/if}
@@ -942,7 +936,7 @@
                   <div class="flex items-center justify-between mb-1.5">
                     <span class="text-xs text-base-content/50 flex items-center gap-1.5">
                       <Icon icon="ph:users" class="size-3.5" />
-                      Players
+                      {m.dc_players()}
                     </span>
                     <span class="text-sm font-bold {playerFill(players, maxPlayers)} tabular-nums">
                       {players}<span class="text-base-content/30 font-normal">/{maxPlayers}</span>
@@ -960,22 +954,22 @@
                 <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
                   <div class="text-base-content/50 flex items-center gap-1.5">
                     <Icon icon="ph:map-trifold" class="size-3.5" />
-                    Map
+                    {m.dc_map()}
                   </div>
                   <span class="text-teal-400 font-medium">{map || '—'}</span>
 
                   {#if fs}
                     <div class="text-base-content/50 flex items-center gap-1.5">
                       <Icon icon="ph:globe-hemisphere-west" class="size-3.5" />
-                      IP
+                      {m.dc_ip()}
                     </div>
                     <button
                       class="font-mono text-base-content hover:text-primary transition-colors flex items-center gap-1 group/ip text-left"
-                      title="Copy IP:port"
+                      title={m.dc_copy_ip()}
                       onclick={() => copyIp(fs.ip, fs.game_port)}
                     >
                       {#if copiedIp}
-                        <span class="text-success">Copied!</span>
+                        <span class="text-success">{m.dc_copied()}</span>
                       {:else}
                         {fs.ip}:{fs.game_port}
                         <Icon icon="ph:copy" class="size-3 opacity-0 group-hover/ip:opacity-100 transition-opacity" />
@@ -984,41 +978,41 @@
 
                     <div class="text-base-content/50 flex items-center gap-1.5">
                       <Icon icon="ph:game-controller" class="size-3.5" />
-                      Game port
+                      {m.dc_game_port()}
                     </div>
                     <span class="font-mono text-base-content">{fs.game_port}</span>
 
                     <div class="text-base-content/50 flex items-center gap-1.5">
                       <Icon icon="ph:plugs" class="size-3.5" />
-                      Query port
+                      {m.dc_query_port()}
                     </div>
                     <span class="font-mono text-base-content">{fs.query_port}</span>
 
                     <div class="text-base-content/50 flex items-center gap-1.5">
                       <Icon icon="ph:clock" class="size-3.5" />
-                      Server time
+                      {m.dc_server_time()}
                     </div>
                     <span class="text-base-content">{fs.time || '—'}</span>
 
                     <div class="text-base-content/50 flex items-center gap-1.5">
                       <Icon icon="ph:monitor" class="size-3.5" />
-                      Platform
+                      {m.dc_platform()}
                     </div>
                     <span class={fs.environment === 'w' ? 'text-info' : 'text-success'}>
-                      {fs.environment === 'w' ? 'Windows' : 'Linux'}
+                      {fs.environment === 'w' ? m.dc_platform_windows() : m.dc_platform_linux()}
                     </span>
                   {:else if a2s}
                     {#if a2s.game_port}
                       <div class="text-base-content/50 flex items-center gap-1.5">
                         <Icon icon="ph:game-controller" class="size-3.5" />
-                        Game port
+                        {m.dc_game_port()}
                       </div>
                       <span class="font-mono text-base-content">{a2s.game_port}</span>
                     {/if}
 
                     <div class="text-base-content/50 flex items-center gap-1.5">
                       <Icon icon="ph:plugs" class="size-3.5" />
-                      Query port
+                      {m.dc_query_port()}
                     </div>
                     <span class="font-mono text-base-content">{a2s.query_port}</span>
                   {/if}
@@ -1026,7 +1020,7 @@
                   {#if version}
                     <div class="text-base-content/50 flex items-center gap-1.5">
                       <Icon icon="ph:tag" class="size-3.5" />
-                      Version
+                      {m.dc_version()}
                     </div>
                     <span class="text-base-content/70">{version}</span>
                   {/if}
@@ -1040,14 +1034,14 @@
                   {#if fullLoading}
                     <div class="flex items-center gap-2 text-xs text-base-content/50">
                       <span class="loading loading-spinner loading-xs"></span>
-                      Loading mods…
+                      {m.dc_loading_mods()}
                     </div>
                   {:else if mods.length > 0}
                     <div>
                       <div class="flex items-center gap-1.5 mb-2">
                         <Icon icon="ph:puzzle-piece" class="size-3.5 text-base-content/50" />
                         <span class="text-xs font-semibold text-base-content/60 uppercase tracking-wide">
-                          Mods ({mods.length})
+                          {m.dc_mods_count({ count: mods.length })}
                         </span>
                       </div>
                       <div class="space-y-1 max-h-64 overflow-y-auto pr-1">
@@ -1070,7 +1064,7 @@
                                   `https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.steam_workshop_id}`,
                                 );
                               }}
-                              title="Open on Steam Workshop"
+                              title={m.dc_open_workshop()}
                             >
                               {mod.steam_workshop_id}
                             </button>
@@ -1081,12 +1075,12 @@
                   {:else if (fs?.mods_count ?? 0) > 0}
                     <div class="text-xs text-base-content/40 italic flex items-center gap-1.5">
                       <Icon icon="ph:puzzle-piece" class="size-3.5" />
-                      {fs!.mods_count} mod(s) — IDs not available
+                      {m.dc_mods_no_ids({ count: fs!.mods_count })}
                     </div>
                   {:else}
                     <div class="text-xs text-base-content/40 italic flex items-center gap-1.5">
                       <Icon icon="ph:puzzle-piece" class="size-3.5" />
-                      No mods
+                      {m.dc_no_mods()}
                     </div>
                   {/if}
                 </div>
@@ -1098,10 +1092,12 @@
                       <div class="flex items-center gap-1.5 mb-2">
                         <Icon icon="ph:users-three" class="size-3.5 text-base-content/50" />
                         <span class="text-xs font-semibold text-base-content/60 uppercase tracking-wide">
-                          Online Players
+                          {m.dc_online_players()}
                         </span>
                         <span class="ml-auto text-xs text-base-content/40">
-                          {a2s.players_list.length > 0 ? `${a2s.players_list.length} shown` : 'live count only'}
+                          {a2s.players_list.length > 0
+                            ? m.dc_players_shown({ count: a2s.players_list.length })
+                            : m.dc_live_count_only()}
                         </span>
                       </div>
                       {#if a2s.players_list.length > 0}
@@ -1117,10 +1113,12 @@
                           {/each}
                         </div>
                       {:else if a2s.players === 0}
-                        <p class="text-xs text-base-content/40 italic">No players online</p>
+                        <p class="text-xs text-base-content/40 italic">{m.dc_no_players()}</p>
                       {:else}
                         <p class="text-xs text-base-content/40 italic">
-                          {a2s.players} player{a2s.players !== 1 ? 's' : ''} online — names not reported by server
+                          {a2s.players === 1
+                            ? m.dc_players_no_names_one({ count: a2s.players })
+                            : m.dc_players_no_names({ count: a2s.players })}
                         </p>
                       {/if}
                     </div>
@@ -1136,11 +1134,11 @@
                   {:else}
                     <Icon icon="ph:arrows-clockwise" class="size-4" />
                   {/if}
-                  Refresh
+                  {m.dc_refresh()}
                 </button>
                 <button class="btn btn-primary btn-sm flex-1 gap-1.5" onclick={connect}>
                   <Icon icon="ph:rocket-launch" class="size-4" />
-                  Connect
+                  {m.dc_connect()}
                 </button>
               </div>
             </div>
@@ -1151,10 +1149,9 @@
             class="rounded-xl border border-dashed border-base-300/60 bg-base-200/30 flex flex-col items-center justify-center py-16 px-8 text-center"
           >
             <Icon icon="ph:plugs-connected" class="size-10 text-base-content/15 mb-3" />
-            <p class="text-sm text-base-content/40 font-medium">No server queried</p>
+            <p class="text-sm text-base-content/40 font-medium">{m.dc_no_server()}</p>
             <p class="text-xs text-base-content/30 mt-1 max-w-xs">
-              Enter an IP address and click <span class="font-semibold text-base-content/50">Query</span> to see server
-              details, or press <kbd class="kbd kbd-xs">Enter</kbd> to connect directly.
+              {m.dc_no_server_hint()}
             </p>
           </div>
         {/if}

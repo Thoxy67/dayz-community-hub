@@ -7,15 +7,16 @@
     playerFill,
     playerBarColor,
     formatDuration,
-    relativeTime,
     sortIcon as _sortIcon,
   } from '$lib/utils';
+  import { formatRelativeTime } from '$lib/utils/i18n';
   import BattleMetricsPanel from './BattleMetricsPanel.svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import Icon from '@iconify/svelte';
   import { onMount } from 'svelte';
+  import * as m from '$lib/paraglide/messages.js';
 
   interface Props {
     history: HistoryDto[];
@@ -379,10 +380,10 @@
     {#if history.length === 0}
       <div class="flex flex-col items-center justify-center h-full gap-3 text-base-content/40">
         <Icon icon="ph:clock-clockwise" class="size-10 opacity-30" />
-        <span class="text-sm">No connection history yet</span>
+        <span class="text-sm">{m.history_no_history()}</span>
         <button class="btn btn-sm btn-outline btn-primary gap-1.5" onclick={onGoToServers}>
           <Icon icon="mdi:server" class="size-3.5" />
-          Browse Servers
+          {m.fav_browse_servers()}
         </button>
       </div>
     {:else}
@@ -398,7 +399,7 @@
                 onclick={() => toggleSort('name')}
               >
                 <span class="flex items-center gap-1">
-                  Server
+                  {m.servers_col_server()}
                   <span class="normal-case font-normal text-base-content/35 ml-0.5">{history.length}</span>
                   <Icon icon={sortIcon('name')} class="size-2.5" />
                 </span>
@@ -407,23 +408,28 @@
                 class="w-32 px-3 py-2 cursor-pointer hover:text-base-content transition-colors"
                 onclick={() => toggleSort('players')}
               >
-                <span class="flex items-center gap-1">Players <Icon icon={sortIcon('players')} class="size-2.5" /></span
+                <span class="flex items-center gap-1"
+                  >{m.servers_col_players()} <Icon icon={sortIcon('players')} class="size-2.5" /></span
                 >
               </th>
               <th
                 class="w-20 px-3 py-2 cursor-pointer hover:text-base-content transition-colors"
                 onclick={() => toggleSort('ping')}
               >
-                <span class="flex items-center gap-1">Ping <Icon icon={sortIcon('ping')} class="size-2.5" /></span>
+                <span class="flex items-center gap-1"
+                  >{m.servers_col_ping()} <Icon icon={sortIcon('ping')} class="size-2.5" /></span
+                >
               </th>
-              <th class="w-28 px-3 py-2 font-medium text-left">Map</th>
-              <th class="w-16 px-3 py-2 font-medium text-left" title="In-game server time">Time</th>
+              <th class="w-28 px-3 py-2 font-medium text-left">{m.servers_col_map()}</th>
+              <th class="w-16 px-3 py-2 font-medium text-left" title={m.servers_col_time_title()}
+                >{m.servers_col_time()}</th
+              >
               <th
                 class="w-36 px-3 py-2 cursor-pointer hover:text-base-content transition-colors text-left"
                 onclick={() => toggleSort('last')}
               >
                 <span class="flex items-center gap-1"
-                  >Last played <Icon icon={sortIcon('last')} class="size-2.5" /></span
+                  >{m.history_col_last_played()} <Icon icon={sortIcon('last')} class="size-2.5" /></span
                 >
               </th>
               <th class="w-40 px-3 py-2"></th>
@@ -454,11 +460,8 @@
                   <div class="flex items-center gap-1.5 min-w-0">
                     <span class="truncate font-medium text-base-content/90">{entry.name}</span>
                     {#if !server}
-                      <span
-                        class="shrink-0 text-warning"
-                        style="font-size:9px;"
-                        title="Server not found in the current server list — it may be offline, or try refreshing the server list"
-                        >OFFLINE</span
+                      <span class="shrink-0 text-warning" style="font-size:9px;" title={m.fav_server_offline_hint()}
+                        >{m.fav_server_offline()}</span
                       >
                     {/if}
                   </div>
@@ -470,7 +473,7 @@
                         : 'text-base-content/30 hover:text-base-content/60'}"
                       style="font-size:10px;"
                       onclick={(e) => copyIp(e, entry.ip, entry.port)}
-                      title="Copy {entry.ip}:{entry.port} to clipboard"
+                      title={m.servers_copy_ip({ address: `${entry.ip}:${entry.port}` })}
                     >
                       {entry.ip}:{entry.port}
                       <Icon
@@ -496,7 +499,7 @@
                         e.stopPropagation();
                         doRefreshPlayers(entry);
                       }}
-                      title="Click to refresh player count via A2S query"
+                      title={m.servers_click_refresh_players()}
                       disabled={loadingPlayers}
                     >
                       {#if loadingPlayers}
@@ -532,7 +535,7 @@
                       e.stopPropagation();
                       doPing(entry);
                     }}
-                    title="Click to ping"
+                    title={m.servers_click_ping()}
                   >
                     <span class="size-1.5 rounded-full shrink-0 {pingDot(ping)}"></span>
                     <span class="tabular-nums font-mono {pingColor(ping)}">
@@ -557,7 +560,7 @@
                 <!-- Last played -->
                 <td class="px-3 py-2">
                   <span class="text-base-content/40 cursor-default" title={new Date(entry.ts * 1000).toLocaleString()}
-                    >{relativeTime(entry.ts)}</span
+                    >{formatRelativeTime(entry.ts)}</span
                   >
                 </td>
 
@@ -570,7 +573,7 @@
                            {isSelected
                         ? 'bg-primary/15 text-primary hover:bg-primary/25'
                         : 'text-base-content/35 hover:bg-base-300 hover:text-base-content/80'}"
-                      title={isSelected ? 'Close details' : 'Live server details'}
+                      title={isSelected ? m.fav_close_details() : m.fav_live_details()}
                       onclick={(e) => {
                         e.stopPropagation();
                         isSelected ? closeDetail() : openDetail(entry);
@@ -586,14 +589,14 @@
                         : 'text-base-content/35 hover:bg-warning/10 hover:text-warning'}"
                       onclick={() =>
                         isFav(entry) ? onRemoveFavorite({ ...entry, port: favPort(entry) }) : onAddFavorite(entry)}
-                      title={isFav(entry) ? 'Remove from favorites' : 'Add to favorites'}
+                      title={isFav(entry) ? m.servers_remove_favorite() : m.servers_add_favorite()}
                     >
                       <Icon icon={isFav(entry) ? 'ph:star-fill' : 'ph:star'} class="size-3.5" />
                     </button>
                     <!-- Remove -->
                     <button
                       class="size-6 rounded flex items-center justify-center text-base-content/35 hover:bg-error/10 hover:text-error transition-colors"
-                      title="Remove from history"
+                      title={m.history_remove()}
                       onclick={() => onRemove(entry)}
                     >
                       <Icon icon="ph:trash" class="size-3.5" />
@@ -601,10 +604,10 @@
                     <!-- Connect -->
                     <button
                       class="btn btn-primary btn-xs h-6 min-h-0 px-2.5 text-xs font-medium"
-                      title="Launch DayZ and connect to this server"
+                      title={m.servers_connect_title()}
                       onclick={() => onConnect(entry.ip, entry.port, entry.name)}
                     >
-                      Connect
+                      {m.servers_connect()}
                     </button>
                   </div>
                 </td>
@@ -615,12 +618,8 @@
       </div>
 
       <div class="flex justify-end px-3 py-2 bg-base-200 border-t border-base-300 flex-shrink-0">
-        <button
-          class="btn btn-error btn-xs btn-outline"
-          title="Permanently remove all entries from connection history"
-          onclick={onClearAll}
-        >
-          Clear all history
+        <button class="btn btn-error btn-xs btn-outline" title={m.history_clear_all_title()} onclick={onClearAll}>
+          {m.history_clear_all()}
         </button>
       </div>
     {/if}
@@ -634,7 +633,7 @@
       <div class="flex items-center gap-2 px-3 py-2 bg-base-200 border-b border-base-300 flex-shrink-0">
         <Icon icon="mdi:server" class="size-4 text-primary shrink-0" />
         <span class="text-xs font-semibold truncate flex-1">{detailEntry.name}</span>
-        <button class="btn btn-ghost btn-xs p-0.5" onclick={closeDetail} title="Close">
+        <button class="btn btn-ghost btn-xs p-0.5" onclick={closeDetail} title={m.fav_close()}>
           <Icon icon="ph:x" class="size-3.5" />
         </button>
       </div>
@@ -643,7 +642,7 @@
         {#if a2sLoading}
           <div class="flex items-center justify-center py-8 gap-2 text-base-content/50">
             <span class="loading loading-spinner loading-sm"></span>
-            <span class="text-xs">Querying…</span>
+            <span class="text-xs">{m.fav_querying()}</span>
           </div>
         {:else if a2sError}
           <div
@@ -656,7 +655,7 @@
           <div class="flex-shrink-0 p-3 space-y-3">
             <div class="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
               <span class="flex items-center gap-1.5 text-base-content/50">
-                <Icon icon="mdi:controller" class="size-3.5 shrink-0" />Players
+                <Icon icon="mdi:controller" class="size-3.5 shrink-0" />{m.detail_players()}
               </span>
               <span
                 class="font-mono font-medium {a2s.players >= a2s.max_players
@@ -669,24 +668,24 @@
               </span>
 
               <span class="flex items-center gap-1.5 text-base-content/50">
-                <Icon icon="mdi:map-outline" class="size-3.5 shrink-0" />Map
+                <Icon icon="mdi:map-outline" class="size-3.5 shrink-0" />{m.detail_map()}
               </span>
               <span class="text-amber-500/80">{a2s.map}</span>
 
               <span class="flex items-center gap-1.5 text-base-content/50">
-                <Icon icon="mdi:tag-outline" class="size-3.5 shrink-0" />Version
+                <Icon icon="mdi:tag-outline" class="size-3.5 shrink-0" />{m.detail_version()}
               </span>
               <span class="text-base-content/70">{a2s.version}</span>
 
               <span class="flex items-center gap-1.5 text-base-content/50">
-                <Icon icon="mdi:signal" class="size-3.5 shrink-0" />Ping
+                <Icon icon="mdi:signal" class="size-3.5 shrink-0" />{m.detail_ping()}
               </span>
               <button
                 class="font-mono cursor-pointer hover:opacity-70 transition-opacity {pingColor(
                   pingCache.get(pingKey(detailEntry)),
                 )}"
                 onclick={() => detailEntry && doPing(detailEntry)}
-                title="Click to ping"
+                title={m.servers_click_ping()}
               >
                 {pingLabel(pingCache.get(pingKey(detailEntry)))}
               </button>
@@ -696,7 +695,7 @@
               <div>
                 <div class="flex items-center gap-1.5 text-xs text-base-content/40 mb-1.5">
                   <Icon icon="mdi:account-multiple-outline" class="size-3.5" />
-                  <span>Online ({a2s.players_list.length})</span>
+                  <span>{m.fav_online_count({ count: a2s.players_list.length })}</span>
                 </div>
                 <div class="space-y-1 max-h-36 overflow-y-auto">
                   {#each a2s.players_list as pl}
@@ -711,9 +710,9 @@
                 </div>
               </div>
             {:else if a2s.players === 0}
-              <p class="text-xs text-base-content/30 text-center py-1">No players online</p>
+              <p class="text-xs text-base-content/30 text-center py-1">{m.detail_a2s_no_players()}</p>
             {:else}
-              <p class="text-xs text-base-content/30 text-center py-1">Player names not reported by server</p>
+              <p class="text-xs text-base-content/30 text-center py-1">{m.detail_a2s_names_not_reported()}</p>
             {/if}
           </div>
 
@@ -721,7 +720,7 @@
             <div class="flex flex-col flex-1 min-h-0 border-t border-base-300">
               <div class="flex items-center gap-1.5 text-xs text-base-content/40 px-3 py-2 flex-shrink-0">
                 <Icon icon="mdi:puzzle-outline" class="size-3.5" />
-                <span>Mods ({a2s.mods.length})</span>
+                <span>{m.detail_mods_count({ count: a2s.mods.length })}</span>
               </div>
               <div class="flex-1 overflow-y-auto px-3 pb-2 space-y-1">
                 {#each a2s.mods as mod}
@@ -731,13 +730,13 @@
                       class="truncate text-base-content/80 hover:text-primary transition-colors text-left"
                       onclick={() =>
                         openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.steam_workshop_id}`)}
-                      title="Open on Steam Workshop: {mod.name}">{mod.name}</button
+                      title="{m.detail_open_workshop()}: {mod.name}">{mod.name}</button
                     >
                     <button
                       class="ml-auto shrink-0 font-mono text-xs text-base-content/30 hover:text-primary transition-colors flex items-center gap-0.5"
                       onclick={() =>
                         openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.steam_workshop_id}`)}
-                      title="Open on Steam Workshop"
+                      title={m.detail_open_workshop()}
                     >
                       {mod.steam_workshop_id}
                       <Icon icon="mdi:steam" class="size-3" />
@@ -766,12 +765,12 @@
       <div class="px-3 py-2 border-t border-base-300 flex-shrink-0">
         <button
           class="btn btn-ghost btn-xs w-full gap-1.5"
-          title="Re-query live server info via A2S protocol"
+          title={m.fav_refresh_a2s_title()}
           onclick={() => detailEntry && openDetail(detailEntry)}
           disabled={a2sLoading}
         >
           <Icon icon="ph:arrows-clockwise" class="size-3.5" />
-          Refresh A2S
+          {m.fav_refresh_a2s()}
         </button>
       </div>
     </div>

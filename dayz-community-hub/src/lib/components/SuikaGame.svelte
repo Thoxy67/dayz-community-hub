@@ -1,6 +1,7 @@
 <script lang="ts">
   import Matter from 'matter-js';
   import { onMount, onDestroy } from 'svelte';
+  import * as m from '$lib/paraglide/messages.js';
 
   // ── Props ──────────────────────────────────────────────────────────────────
   interface Props {
@@ -453,14 +454,15 @@
 
   <!-- Header -->
   <div class="relative z-10 flex items-center gap-6 mb-3">
-    <p class="glitch-title font-black font-mono text-white tracking-[0.3em] uppercase text-lg">SUIKA Blyat</p>
-    <span class="text-white/20 font-mono text-[10px] tracking-widest">↑↑↓↓←→←→BA</span>
+    <p class="glitch-title font-black font-mono text-white tracking-[0.3em] uppercase text-lg">{m.suika_title()}</p>
+    <span class="text-white/20 font-mono text-[10px] tracking-widest">{m.suika_hint()}</span>
   </div>
 
   <!-- HUD -->
   <div class="relative z-10 flex items-center gap-8 mb-3 font-mono text-[11px] tracking-widest">
-    <span class="text-white/40">SCORE<span class="text-emerald-400 font-bold ml-2">{score}</span></span>
-    <span class="text-white/40">BEST<span class="text-yellow-400/70 font-bold ml-2">{highScore}</span></span>
+    <span class="text-white/40">{m.suika_score()}<span class="text-emerald-400 font-bold ml-2">{score}</span></span>
+    <span class="text-white/40">{m.suika_best()}<span class="text-yellow-400/70 font-bold ml-2">{highScore}</span></span
+    >
   </div>
 
   <!-- Canvas -->
@@ -477,16 +479,24 @@
   <div class="relative z-10 mt-3 text-center">
     {#if gameState === 'playing'}
       <p class="font-mono text-[10px] text-white/25 tracking-widest">
-        <kbd class="game-kbd">← →</kbd> move &nbsp;·&nbsp;
-        <kbd class="game-kbd">SPACE</kbd> drop &nbsp;·&nbsp;
-        <kbd class="game-kbd">R</kbd> restart &nbsp;·&nbsp;
-        <kbd class="game-kbd">ESC</kbd> close
+        <kbd class="game-kbd">← →</kbd>
+        {m.suika_move()} &nbsp;·&nbsp;
+        <kbd class="game-kbd">SPACE</kbd>
+        {m.suika_drop()} &nbsp;·&nbsp;
+        <kbd class="game-kbd">R</kbd>
+        {m.suika_restart()} &nbsp;·&nbsp;
+        <kbd class="game-kbd">ESC</kbd>
+        {m.suika_close()}
       </p>
     {:else}
-      <p class="glitch-title font-mono text-sm text-red-400 font-black tracking-[0.4em] uppercase mb-2">OVERFLOW</p>
+      <p class="glitch-title font-mono text-sm text-red-400 font-black tracking-[0.4em] uppercase mb-2">
+        {m.suika_overflow()}
+      </p>
       <p class="font-mono text-[10px] text-white/25 tracking-widest">
-        <kbd class="game-kbd">SPACE</kbd> or <kbd class="game-kbd">R</kbd> retry &nbsp;·&nbsp;
-        <kbd class="game-kbd">ESC</kbd> close
+        <kbd class="game-kbd">SPACE</kbd> or <kbd class="game-kbd">R</kbd>
+        {m.suika_retry()} &nbsp;·&nbsp;
+        <kbd class="game-kbd">ESC</kbd>
+        {m.suika_close()}
       </p>
     {/if}
   </div>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ConfirmDialog } from '$lib/types';
+  import * as m from '$lib/paraglide/messages.js';
 
   interface Props {
     dialog: ConfirmDialog | null;
@@ -50,7 +51,7 @@
       </div>
       <div class="flex justify-end gap-2">
         {#if dialog.onCancel}
-          <button class="btn btn-outline btn-error btn-sm" onclick={cancel}>Cancel</button>
+          <button class="btn btn-outline btn-error btn-sm" onclick={cancel}>{m.confirm_cancel()}</button>
         {/if}
         <button
           class="btn btn-outline btn-sm"
@@ -61,7 +62,7 @@
           class:btn-info={dialog.declineVariant === 'info'}
           onclick={decline}
         >
-          {dialog.onDecline ? (dialog.declineLabel ?? 'No, connect anyway') : 'Cancel'}
+          {dialog.onDecline ? (dialog.declineLabel ?? m.confirm_decline_default()) : m.confirm_cancel()}
         </button>
         <button
           class="btn btn-outline btn-sm"
@@ -72,7 +73,7 @@
           class:btn-primary={dialog.confirmVariant === 'primary'}
           onclick={confirm}
         >
-          {dialog.confirmLabel ?? (dialog.onDecline ? 'Yes' : 'Confirm')}
+          {dialog.confirmLabel ?? (dialog.onDecline ? m.confirm_yes() : m.confirm_confirm())}
         </button>
       </div>
     </div>

@@ -6,6 +6,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import Icon from '@iconify/svelte';
   import { onMount } from 'svelte';
+  import * as m from '$lib/paraglide/messages.js';
 
   interface Props {
     servers: ServerDto[];
@@ -71,16 +72,16 @@
     filter.filterMods = v === 'both' ? 'mods-only' : v === 'mods-only' ? 'no-mods' : 'both';
   }
 
-  const modsLabel: Record<ModFilter, string> = {
-    both: 'Mods: all',
-    'mods-only': 'Mods only',
-    'no-mods': 'No mods',
-  };
-  const modsTitle: Record<ModFilter, string> = {
-    both: 'Click to show only modded servers',
-    'mods-only': 'Click to hide modded servers',
-    'no-mods': 'Click to show all servers',
-  };
+  function getModsLabel(f: ModFilter): string {
+    if (f === 'both') return m.servers_filter_mods_all();
+    if (f === 'mods-only') return m.servers_filter_mods_only();
+    return m.servers_filter_mods_none();
+  }
+  function getModsTitle(f: ModFilter): string {
+    if (f === 'both') return m.servers_filter_mods_title_all();
+    if (f === 'mods-only') return m.servers_filter_mods_title_only();
+    return m.servers_filter_mods_title_none();
+  }
 
   type FPFilter = 'both' | 'fp-only' | 'no-fp';
   function cycleFP() {
@@ -88,16 +89,16 @@
     filter.filterFirstPerson = v === 'both' ? 'fp-only' : v === 'fp-only' ? 'no-fp' : 'both';
   }
 
-  const fpLabel: Record<FPFilter, string> = {
-    both: '1P: all',
-    'fp-only': '1P only',
-    'no-fp': 'No 1P',
-  };
-  const fpTitle: Record<FPFilter, string> = {
-    both: '1P = First-Person Only servers (no third-person camera). Click to show only 1P servers.',
-    'fp-only': 'Showing first-person only servers. Click to exclude first-person servers.',
-    'no-fp': 'Hiding first-person only servers. Click to show all servers.',
-  };
+  function getFPLabel(f: FPFilter): string {
+    if (f === 'both') return m.servers_filter_fp_all();
+    if (f === 'fp-only') return m.servers_filter_fp_only();
+    return m.servers_filter_fp_none();
+  }
+  function getFPTitle(f: FPFilter): string {
+    if (f === 'both') return m.servers_filter_fp_title_all();
+    if (f === 'fp-only') return m.servers_filter_fp_title_only();
+    return m.servers_filter_fp_title_none();
+  }
 
   type PwdFilter = 'both' | 'no-pwd' | 'pwd-only';
   function cyclePwd() {
@@ -105,16 +106,16 @@
     filter.filterPassword = v === 'both' ? 'no-pwd' : v === 'no-pwd' ? 'pwd-only' : 'both';
   }
 
-  const pwdLabel: Record<PwdFilter, string> = {
-    both: 'Pwd: all',
-    'no-pwd': 'No pwd',
-    'pwd-only': 'Pwd only',
-  };
-  const pwdTitle: Record<PwdFilter, string> = {
-    both: 'Click to hide password servers',
-    'no-pwd': 'Click to show only password servers',
-    'pwd-only': 'Click to show all servers',
-  };
+  function getPwdLabel(f: PwdFilter): string {
+    if (f === 'both') return m.servers_filter_pwd_all();
+    if (f === 'no-pwd') return m.servers_filter_pwd_none();
+    return m.servers_filter_pwd_only();
+  }
+  function getPwdTitle(f: PwdFilter): string {
+    if (f === 'both') return m.servers_filter_pwd_title_all();
+    if (f === 'no-pwd') return m.servers_filter_pwd_title_none();
+    return m.servers_filter_pwd_title_only();
+  }
 
   type BEFilter = 'both' | 'be-only' | 'no-be';
   function cycleBE() {
@@ -122,16 +123,16 @@
     filter.filterBE = v === 'both' ? 'be-only' : v === 'be-only' ? 'no-be' : 'both';
   }
 
-  const beLabel: Record<BEFilter, string> = {
-    both: 'BE: all',
-    'be-only': 'BE only',
-    'no-be': 'No BE',
-  };
-  const beTitle: Record<BEFilter, string> = {
-    both: 'Click to show only BattlEye servers',
-    'be-only': 'Click to hide BattlEye servers',
-    'no-be': 'Click to show all servers',
-  };
+  function getBELabel(f: BEFilter): string {
+    if (f === 'both') return m.servers_filter_be_all();
+    if (f === 'be-only') return m.servers_filter_be_only();
+    return m.servers_filter_be_none();
+  }
+  function getBETitle(f: BEFilter): string {
+    if (f === 'both') return m.servers_filter_be_title_all();
+    if (f === 'be-only') return m.servers_filter_be_title_only();
+    return m.servers_filter_be_title_none();
+  }
 
   let selectedIndex = $state(0);
   let showDetails = $state(false);
@@ -462,7 +463,7 @@
       <Icon icon="ph:magnifying-glass" class="size-3.5 text-base-content/40 shrink-0" />
       <input
         type="text"
-        placeholder="Search name, IP, map…"
+        placeholder={m.servers_search_placeholder()}
         value={filter.searchQuery}
         oninput={(e) => {
           filter.searchQuery = (e.target as HTMLInputElement).value;
@@ -472,7 +473,7 @@
       {#if filter.searchQuery}
         <button
           class="btn btn-ghost btn-xs p-0 min-h-0 h-auto shrink-0"
-          title="Clear search"
+          title={m.servers_clear_search()}
           onclick={() => {
             filter.searchQuery = '';
           }}
@@ -496,9 +497,9 @@
         class:opacity-50={filter.filterFirstPerson === 'both'}
         class:hover:opacity-100={filter.filterFirstPerson === 'both'}
         onclick={cycleFP}
-        title={fpTitle[filter.filterFirstPerson as FPFilter]}
+        title={getFPTitle(filter.filterFirstPerson as FPFilter)}
       >
-        {fpLabel[filter.filterFirstPerson as FPFilter]}
+        {getFPLabel(filter.filterFirstPerson as FPFilter)}
       </button>
       <!-- Password -->
       <button
@@ -511,10 +512,10 @@
         class:opacity-50={filter.filterPassword === 'both'}
         class:hover:opacity-100={filter.filterPassword === 'both'}
         onclick={cyclePwd}
-        title={pwdTitle[filter.filterPassword as PwdFilter]}
+        title={getPwdTitle(filter.filterPassword as PwdFilter)}
       >
         <Icon icon="mdi:lock" class="size-3 shrink-0" />
-        {pwdLabel[filter.filterPassword as PwdFilter]}
+        {getPwdLabel(filter.filterPassword as PwdFilter)}
       </button>
       <!-- BattlEye -->
       <button
@@ -526,10 +527,10 @@
         class:opacity-50={filter.filterBE === 'both'}
         class:hover:opacity-100={filter.filterBE === 'both'}
         onclick={cycleBE}
-        title={beTitle[filter.filterBE as BEFilter]}
+        title={getBETitle(filter.filterBE as BEFilter)}
       >
         <img src="/battleeye.png" alt="BE" class="h-3.5 w-auto rounded-sm shrink-0" />
-        {beLabel[filter.filterBE as BEFilter]}
+        {getBELabel(filter.filterBE as BEFilter)}
       </button>
       <!-- Mods -->
       <button
@@ -541,10 +542,10 @@
         class:opacity-50={filter.filterMods === 'both'}
         class:hover:opacity-100={filter.filterMods === 'both'}
         onclick={cycleMods}
-        title={modsTitle[filter.filterMods as ModFilter]}
+        title={getModsTitle(filter.filterMods as ModFilter)}
       >
         <Icon icon="mdi:puzzle-outline" class="size-3 shrink-0" />
-        {modsLabel[filter.filterMods as ModFilter]}
+        {getModsLabel(filter.filterMods as ModFilter)}
       </button>
     </div>
 
@@ -561,7 +562,7 @@
           filter.filterMap = (e.target as HTMLSelectElement).value;
         }}
       >
-        <option value="">All maps</option>
+        <option value="">{m.servers_all_maps()}</option>
         {#each uniqueMaps as map}
           <option value={map}>{map}</option>
         {/each}
@@ -570,7 +571,7 @@
         <button
           class="absolute right-6 top-1/2 -translate-y-1/2 text-base-content/40 hover:text-base-content transition-colors"
           onclick={() => (filter.filterMap = '')}
-          title="Clear map filter"
+          title={m.servers_clear_map_filter()}
         >
           <Icon icon="ph:x" class="size-2.5" />
         </button>
@@ -595,12 +596,10 @@
           onpointerdown={onExcludedPointerDown}
           onpointerup={onExcludedPointerUp}
           onpointerleave={onExcludedPointerLeave}
-          title={hideExcluded
-            ? `Click to reveal excluded · hold 1.5s to manage`
-            : `Click to hide excluded · hold 1.5s to manage`}
+          title={hideExcluded ? m.servers_excluded_reveal() : m.servers_excluded_hide()}
         >
           <Icon icon={hideExcluded ? 'ph:eye-slash' : 'ph:eye'} class="size-3.5" />
-          {hideExcluded ? `Excluded: ${excludedIps.size}` : 'Show all'}
+          {hideExcluded ? m.servers_excluded_count({ count: excludedIps.size }) : m.servers_show_all()}
         </button>
       {/if}
       <button
@@ -610,18 +609,23 @@
           scrollToMods = false;
           showDetails = !showDetails;
         }}
-        title="Toggle details panel"
+        title={m.servers_toggle_details()}
       >
         <Icon icon="ph:sidebar-simple" class="size-3.5" />
-        Details
+        {m.servers_details()}
       </button>
-      <button class="btn btn-ghost btn-xs gap-1.5" onclick={onRefresh} disabled={loading} title="Refresh server list">
+      <button
+        class="btn btn-ghost btn-xs gap-1.5"
+        onclick={onRefresh}
+        disabled={loading}
+        title={m.servers_refresh_title()}
+      >
         {#if loading}
           <span class="loading loading-spinner loading-xs"></span>
         {:else}
           <Icon icon="ph:arrows-clockwise" class="size-3.5" />
         {/if}
-        Refresh
+        {m.servers_refresh()}
       </button>
     </div>
   </div>
@@ -634,10 +638,10 @@
         {#if loading && servers.length === 0}
           <div class="flex items-center justify-center h-full gap-2 text-base-content/50">
             <span class="loading loading-spinner loading-md"></span>
-            <span>Loading servers…</span>
+            <span>{m.servers_loading()}</span>
           </div>
         {:else if sorted.length === 0}
-          <div class="flex items-center justify-center h-full text-base-content/40">No servers match your search</div>
+          <div class="flex items-center justify-center h-full text-base-content/40">{m.servers_no_match()}</div>
         {:else}
           <table class="w-full text-xs" style="table-layout: fixed; border-collapse: collapse;">
             <thead class="sticky top-0 z-10">
@@ -651,36 +655,46 @@
                   class="w-20 px-3 py-2 cursor-pointer hover:text-base-content transition-colors"
                   onclick={() => toggleSort('ping')}
                 >
-                  <span class="flex items-center gap-1">Ping <Icon icon={sortIcon('ping')} class="size-2.5" /></span>
+                  <span class="flex items-center gap-1"
+                    >{m.servers_col_ping()} <Icon icon={sortIcon('ping')} class="size-2.5" /></span
+                  >
                 </th>
                 <th
                   class="w-32 px-3 py-2 cursor-pointer hover:text-base-content transition-colors"
                   onclick={() => toggleSort('players')}
                 >
                   <span class="flex items-center gap-1"
-                    >Players <Icon icon={sortIcon('players')} class="size-2.5" /></span
+                    >{m.servers_col_players()} <Icon icon={sortIcon('players')} class="size-2.5" /></span
                   >
                 </th>
                 <th
                   class="px-3 py-2 cursor-pointer hover:text-base-content transition-colors text-left"
                   onclick={() => toggleSort('name')}
                 >
-                  <span class="flex items-center gap-1">Server <Icon icon={sortIcon('name')} class="size-2.5" /></span>
+                  <span class="flex items-center gap-1"
+                    >{m.servers_col_server()} <Icon icon={sortIcon('name')} class="size-2.5" /></span
+                  >
                 </th>
                 <th
                   class="w-28 px-3 py-2 cursor-pointer hover:text-base-content transition-colors"
                   onclick={() => toggleSort('map')}
                 >
-                  <span class="flex items-center gap-1">Map <Icon icon={sortIcon('map')} class="size-2.5" /></span>
+                  <span class="flex items-center gap-1"
+                    >{m.servers_col_map()} <Icon icon={sortIcon('map')} class="size-2.5" /></span
+                  >
                 </th>
-                <th class="w-16 px-3 py-2 font-medium text-left" title="In-game server time">Time</th>
+                <th class="w-16 px-3 py-2 font-medium text-left" title={m.servers_col_time_title()}
+                  >{m.servers_col_time()}</th
+                >
                 <th
                   class="w-14 px-3 py-2 cursor-pointer hover:text-base-content transition-colors"
                   onclick={() => toggleSort('mods')}
                 >
-                  <span class="flex items-center gap-1">Mods <Icon icon={sortIcon('mods')} class="size-2.5" /></span>
+                  <span class="flex items-center gap-1"
+                    >{m.servers_col_mods()} <Icon icon={sortIcon('mods')} class="size-2.5" /></span
+                  >
                 </th>
-                <th class="w-10 px-2 py-2 text-center">OS</th>
+                <th class="w-10 px-2 py-2 text-center">{m.servers_col_os()}</th>
               </tr>
             </thead>
             <tbody>
@@ -718,7 +732,7 @@
                           e.stopPropagation();
                           isFav ? onRemoveFavorite(server) : onAddFavorite(server);
                         }}
-                        title={isFav ? 'Remove from favorites' : 'Add to favorites'}
+                        title={isFav ? m.servers_remove_favorite() : m.servers_add_favorite()}
                       >
                         <Icon
                           icon={isFav ? 'ph:star-fill' : 'ph:star'}
@@ -737,8 +751,8 @@
                           isExcluded ? onUnexcludeIp(server.ip) : onExcludeIp(server.ip);
                         }}
                         title={isExcluded
-                          ? `${server.ip} is excluded — click to remove`
-                          : `Exclude ${server.ip} from list`}
+                          ? m.servers_ip_excluded_click({ ip: server.ip })
+                          : m.servers_exclude_ip({ ip: server.ip })}
                       >
                         <Icon
                           icon={isExcluded ? 'ph:prohibit-fill' : 'ph:prohibit'}
@@ -760,7 +774,7 @@
                         e.stopPropagation();
                         doPing(server);
                       }}
-                      title="Click to ping"
+                      title={m.servers_click_ping()}
                     >
                       <span class="size-1.5 rounded-full shrink-0 {pingDot(ping)}"></span>
                       <span class="tabular-nums font-mono {pingColor(ping)}">
@@ -781,7 +795,7 @@
                           e.stopPropagation();
                           doRefreshPlayers(server);
                         }}
-                        title="Click to refresh player count"
+                        title={m.servers_click_refresh_players()}
                       >
                         {#if loadingPlayers}
                           <span class="loading loading-spinner" style="width:10px;height:10px;"></span>
@@ -803,17 +817,19 @@
                     <div class="flex items-center gap-1.5 min-w-0">
                       <span class="truncate font-medium text-base-content/90">{server.name}</span>
                       {#if server.password}
-                        <span title="Password protected"
+                        <span title={m.servers_password_protected()}
                           ><Icon icon="mdi:lock" class="size-3 text-error shrink-0" /></span
                         >
                       {/if}
                       {#if server.first_person_only}
-                        <span class="text-warning shrink-0 font-bold" style="font-size:9px;" title="First person only"
-                          >1P</span
+                        <span
+                          class="text-warning shrink-0 font-bold"
+                          style="font-size:9px;"
+                          title={m.servers_first_person()}>1P</span
                         >
                       {/if}
                       {#if server.battl_eye}
-                        <span title="BattlEye"
+                        <span title={m.servers_battleye()}
                           ><img src="/battleeye.png" alt="BE" class="h-3 w-auto shrink-0 rounded-sm" /></span
                         >
                       {/if}
@@ -826,7 +842,7 @@
                           : 'text-base-content/30 hover:text-base-content/60'}"
                         style="font-size:10px;"
                         onclick={(e) => copyIp(e, server)}
-                        title="Copy {server.ip}:{server.game_port} to clipboard"
+                        title={m.servers_copy_ip({ address: `${server.ip}:${server.game_port}` })}
                       >
                         {server.ip}:{server.game_port}
                         <Icon
@@ -866,7 +882,7 @@
                           showDetails = true;
                           handleQueryA2s();
                         }}
-                        title="Show mod list"
+                        title={m.servers_show_mods()}
                       >
                         <Icon icon="mdi:puzzle-outline" class="size-3 shrink-0" />
                         {server.mods_count}
@@ -879,9 +895,9 @@
                   <!-- OS -->
                   <td class="px-2 text-center">
                     {#if server.environment === 'w'}
-                      <span title="Windows"><Icon icon="devicon:windows11" class="size-3.5" /></span>
+                      <span title={m.servers_os_windows()}><Icon icon="devicon:windows11" class="size-3.5" /></span>
                     {:else}
-                      <span title="Linux"><Icon icon="flat-color-icons:linux" class="size-3.5" /></span>
+                      <span title={m.servers_os_linux()}><Icon icon="flat-color-icons:linux" class="size-3.5" /></span>
                     {/if}
                   </td>
                 </tr>
@@ -900,7 +916,7 @@
       {#if scrollTop > 300}
         <button
           class="absolute bottom-4 left-4 z-20 btn btn-sm btn-circle btn-neutral shadow-lg opacity-80 hover:opacity-100 transition-opacity"
-          title="Jump to top"
+          title={m.servers_jump_top()}
           onclick={() => {
             if (scrollContainer) scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
             scrollTop = 0;
@@ -948,15 +964,17 @@
           <!-- Flags -->
           <div class="flex items-center gap-1.5 shrink-0">
             {#if selected.password}
-              <span title="Password protected"><Icon icon="mdi:lock" class="size-3 text-error" /></span>
+              <span title={m.servers_password_protected()}><Icon icon="mdi:lock" class="size-3 text-error" /></span>
             {/if}
             {#if selected.first_person_only}
-              <span class="text-warning font-bold leading-none" style="font-size:9px;" title="First person only"
+              <span class="text-warning font-bold leading-none" style="font-size:9px;" title={m.servers_first_person()}
                 >1P</span
               >
             {/if}
             {#if selected.battl_eye}
-              <span title="BattlEye"><img src="/battleeye.png" alt="BE" class="h-3 w-auto rounded-sm" /></span>
+              <span title={m.servers_battleye()}
+                ><img src="/battleeye.png" alt="BE" class="h-3 w-auto rounded-sm" /></span
+              >
             {/if}
           </div>
         </div>
@@ -968,7 +986,7 @@
               selPing,
             )}"
             onclick={() => selected && doPing(selected)}
-            title="Click to ping"
+            title={m.servers_click_ping()}
           >
             <span class="size-1.5 rounded-full shrink-0 {pingDot(selPing)}"></span>
             {pingLabel(selPing)}
@@ -995,17 +1013,21 @@
           {#if selected.mods_count > 0}
             <span class="flex items-center gap-1">
               <Icon icon="mdi:puzzle-outline" class="size-3 shrink-0" />
-              <span class="text-violet-400/90">{selected.mods_count} mod{selected.mods_count !== 1 ? 's' : ''}</span>
+              <span class="text-violet-400/90"
+                >{selected.mods_count === 1
+                  ? m.servers_mod_one({ count: selected.mods_count })
+                  : m.servers_mod_other({ count: selected.mods_count })}</span
+              >
             </span>
           {/if}
           <!-- IP (click to copy) -->
           <button
             class="font-mono text-base-content/30 hover:text-base-content/60 transition-colors cursor-pointer"
-            title="Copy IP:port"
+            title={m.servers_copy_ip_port()}
             onclick={(e) => copyIp(e, selected!)}
           >
             {#if copiedKey === `${selected.ip}:${selected.game_port}`}
-              <span class="text-success text-xs">Copied!</span>
+              <span class="text-success text-xs">{m.servers_copied()}</span>
             {:else}
               {selected.ip}:{selected.game_port}
             {/if}
@@ -1025,10 +1047,10 @@
             if (!selected) return;
             favorites.has(favKey(selected)) ? onRemoveFavorite(selected) : onAddFavorite(selected);
           }}
-          title={selected && favorites.has(favKey(selected)) ? 'Remove from favorites' : 'Add to favorites'}
+          title={selected && favorites.has(favKey(selected)) ? m.servers_remove_favorite() : m.servers_add_favorite()}
         >
           <Icon icon={selected && favorites.has(favKey(selected)) ? 'ph:star-fill' : 'ph:star'} class="size-3.5" />
-          {selected && favorites.has(favKey(selected)) ? 'Unfavorite' : 'Favorite'}
+          {selected && favorites.has(favKey(selected)) ? m.servers_unfavorite() : m.servers_favorite()}
         </button>
         <button
           class="btn btn-ghost btn-sm gap-1.5"
@@ -1038,18 +1060,18 @@
             showDetails = true;
             handleQueryA2s();
           }}
-          title="Query live A2S info"
+          title={m.servers_query_a2s()}
         >
           <Icon icon="ph:info" class="size-3.5" />
-          Info
+          {m.servers_info()}
         </button>
         <button
           class="btn btn-primary btn-sm gap-1.5 ml-1"
-          title="Launch DayZ and connect to this server"
+          title={m.servers_connect_title()}
           onclick={() => selected && onConnect(selected)}
         >
           <Icon icon="ph:play" class="size-3.5" />
-          Connect
+          {m.servers_connect()}
         </button>
       </div>
     </div>
