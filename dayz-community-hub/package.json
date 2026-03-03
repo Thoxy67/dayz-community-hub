@@ -1,6 +1,6 @@
 {
   "name": "dayz-community-hub",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Server browser & mod manager for DayZ Standalone",
   "type": "module",
   "scripts": {
