@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { CliArgs, DzchConfig } from '$lib/types';
 import { app as s } from '$lib/state.svelte';
 import { connectDirect, connectByAddress } from './connect';
+import * as m from '$lib/paraglide/messages.js';
 
 export async function handleCliArgs(args: CliArgs) {
   if (!s.initialized) {
@@ -31,7 +32,7 @@ export async function handleCliArgs(args: CliArgs) {
     if (last) {
       connectByAddress(last.ip, last.port, last.name);
     } else {
-      s.setStatus('No history entry to reconnect to', 'warning');
+      s.setStatus(m.cli_no_history(), 'warning');
     }
   }
 }
@@ -49,6 +50,6 @@ export async function handleDzchOpen(raw: string) {
     await new Promise((r) => setTimeout(r, 150));
     connectDirect(config.ip, config.port, config.password ?? undefined);
   } catch (e) {
-    s.setStatus(`Failed to open .dzch config: ${e}`, 'error');
+    s.setStatus(m.cli_dzch_open_failed({ error: String(e) }), 'error');
   }
 }

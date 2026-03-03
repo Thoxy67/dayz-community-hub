@@ -5,6 +5,7 @@ use crate::convert::mod_progress_to_event;
 use crate::dto::ModProgressEvent;
 use crate::helpers::find_server_in;
 use crate::state::SharedState;
+use crate::utils::error::ResultExt;
 
 /// Start a background mod operation. Streams progress via Channel.
 #[tauri::command]
@@ -111,10 +112,7 @@ pub(crate) async fn start_mod_operation(
             },
             other => return Err(format!("Unknown operation: {}", other)),
         };
-        let (rx, pty_input_tx, handle) = state
-            .ctl
-            .start_mod_operation(op)
-            .map_err(|e| e.to_string())?;
+        let (rx, pty_input_tx, handle) = state.ctl.start_mod_operation(op).cmd_err()?;
         state.pty_input_tx = Some(pty_input_tx);
         state.mod_op_abort = Some(handle.abort_handle());
         rx

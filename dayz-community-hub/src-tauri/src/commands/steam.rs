@@ -2,6 +2,7 @@ use dayz_community_hub_core::api;
 use tauri::State;
 
 use crate::state::{SharedState, insecure_client};
+use crate::utils::error::ResultExt;
 
 /// Fetch the Steam avatar for the configured account and cache it as a data: URI.
 #[tauri::command]
@@ -35,10 +36,10 @@ pub(crate) async fn fetch_steam_avatar(
         .get(&url)
         .send()
         .await
-        .map_err(|e| e.to_string())?
+        .cmd_err()?
         .json::<serde_json::Value>()
         .await
-        .map_err(|e| e.to_string())?;
+        .cmd_err()?;
 
     let avatar_img_url = resp["response"]["players"]
         .as_array()
@@ -49,11 +50,7 @@ pub(crate) async fn fetch_steam_avatar(
     let data_uri = match avatar_img_url {
         None => None,
         Some(img_url) => {
-            let img_resp = client
-                .get(&img_url)
-                .send()
-                .await
-                .map_err(|e| e.to_string())?;
+            let img_resp = client.get(&img_url).send().await.cmd_err()?;
             let content_type = img_resp
                 .headers()
                 .get(reqwest::header::CONTENT_TYPE)
@@ -64,7 +61,7 @@ pub(crate) async fn fetch_steam_avatar(
                 .unwrap_or("image/jpeg")
                 .trim()
                 .to_string();
-            let bytes = img_resp.bytes().await.map_err(|e| e.to_string())?;
+            let bytes = img_resp.bytes().await.cmd_err()?;
             use base64::Engine;
             let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
             Some(format!("data:{};base64,{}", content_type, b64))
@@ -82,7 +79,5 @@ pub(crate) async fn fetch_steam_player_count(state: State<'_, SharedState>) -> R
         let state = state.lock().await;
         state.ctl.http_client().clone()
     };
-    api::fetch_steam_player_count(&client)
-        .await
-        .map_err(|e| e.to_string())
+    api::fetch_steam_player_count(&client).await.cmd_err()
 }

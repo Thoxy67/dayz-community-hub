@@ -3,6 +3,7 @@ use tauri::State;
 use crate::convert::profile_to_dto;
 use crate::dto::ProfileDto;
 use crate::state::SharedState;
+use crate::utils::error::ResultExt;
 
 /// Get the current profile.
 #[tauri::command]
@@ -49,7 +50,7 @@ pub(crate) async fn save_profile_settings(
         state.cached_avatar = None;
     }
     state.ctl.rebuild_steamcmd();
-    state.ctl.save_profile().map_err(|e| e.to_string())
+    state.ctl.save_profile().cmd_err()
 }
 
 /// Add a server to favorites.
@@ -63,7 +64,7 @@ pub(crate) async fn add_favorite(
 ) -> Result<(), String> {
     let mut state = state.lock().await;
     state.ctl.add_favorite(name, ip, port, password);
-    state.ctl.save_profile().map_err(|e| e.to_string())
+    state.ctl.save_profile().cmd_err()
 }
 
 /// Remove a favorite.
@@ -75,7 +76,7 @@ pub(crate) async fn remove_favorite(
 ) -> Result<(), String> {
     let mut state = state.lock().await;
     state.ctl.remove_favorite(&ip, port);
-    state.ctl.save_profile().map_err(|e| e.to_string())
+    state.ctl.save_profile().cmd_err()
 }
 
 /// Remove a history entry.
@@ -91,7 +92,7 @@ pub(crate) async fn remove_history_entry(
         .profile_mut()
         .history
         .retain(|h| h.ip != ip || h.port != port);
-    state.ctl.save_profile().map_err(|e| e.to_string())
+    state.ctl.save_profile().cmd_err()
 }
 
 /// Clear all history.
@@ -99,7 +100,7 @@ pub(crate) async fn remove_history_entry(
 pub(crate) async fn clear_history(state: State<'_, SharedState>) -> Result<(), String> {
     let mut state = state.lock().await;
     state.ctl.profile_mut().history.clear();
-    state.ctl.save_profile().map_err(|e| e.to_string())
+    state.ctl.save_profile().cmd_err()
 }
 
 /// Add an IP to the excluded list (persisted to profile).
@@ -110,7 +111,7 @@ pub(crate) async fn add_excluded_ip(
 ) -> Result<(), String> {
     let mut state = state.lock().await;
     state.ctl.profile_mut().add_excluded_ip(ip);
-    state.ctl.save_profile().map_err(|e| e.to_string())
+    state.ctl.save_profile().cmd_err()
 }
 
 /// Remove an IP from the excluded list (persisted to profile).
@@ -121,5 +122,5 @@ pub(crate) async fn remove_excluded_ip(
 ) -> Result<(), String> {
     let mut state = state.lock().await;
     state.ctl.profile_mut().remove_excluded_ip(&ip);
-    state.ctl.save_profile().map_err(|e| e.to_string())
+    state.ctl.save_profile().cmd_err()
 }

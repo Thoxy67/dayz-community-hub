@@ -2,6 +2,9 @@ import { invoke } from '@tauri-apps/api/core';
 import type { ServerDto, FavoriteDto, HistoryDto } from '$lib/types';
 import { app as s } from '$lib/state.svelte';
 import { loadProfile } from './profile';
+import { withProfileFallback } from '$lib/utils/action-helpers';
+import { confirmActionWithProfile } from '$lib/utils/dialog-helpers';
+import * as m from '$lib/paraglide/messages.js';
 
 /** Append a favorite to local profile state without a round-trip. */
 export function profileAddFavorite(name: string, ip: string, port: number, password?: string) {
@@ -23,58 +26,44 @@ export function profileRemoveFavorite(ip: string, port: number) {
 }
 
 export async function addFavorite(server: ServerDto) {
-  try {
-    profileAddFavorite(server.name, server.ip, server.query_port);
-    await invoke('add_favorite', {
-      name: server.name,
-      ip: server.ip,
-      port: server.query_port,
-      password: null,
-    });
-    s.setStatus(`Added ${server.name} to favorites`, 'success');
-  } catch (e) {
-    await loadProfile();
-    s.setStatus(`Failed: ${e}`, 'error');
-  }
+  await withProfileFallback(
+    async () => {
+      profileAddFavorite(server.name, server.ip, server.query_port);
+      await invoke('add_favorite', {
+        name: server.name,
+        ip: server.ip,
+        port: server.query_port,
+        password: null,
+      });
+    },
+    m.favorites_added({ name: server.name }),
+  );
 }
 
 export async function addFavoriteDirect(name: string, ip: string, port: number, password?: string) {
-  try {
+  await withProfileFallback(async () => {
     profileAddFavorite(name, ip, port, password);
     await invoke('add_favorite', { name, ip, port, password: password ?? null });
-    s.setStatus(`Added ${name} to favorites`, 'success');
-  } catch (e) {
-    await loadProfile();
-    s.setStatus(`Failed: ${e}`, 'error');
-  }
+  }, m.favorites_added({ name }));
 }
 
 export function removeFavorite(fav: FavoriteDto) {
-  s.confirmDialog = {
-    title: 'Remove Favorite',
-    message: `Remove '${fav.name}' from favorites?`,
-    onConfirm: async () => {
-      try {
-        profileRemoveFavorite(fav.ip, fav.port);
-        await invoke('remove_favorite', { ip: fav.ip, port: fav.port });
-        s.setStatus('Removed from favorites', 'success');
-      } catch (e) {
-        await loadProfile();
-        s.setStatus(`Failed: ${e}`, 'error');
-      }
+  confirmActionWithProfile(
+    m.favorites_remove_title(),
+    m.favorites_remove_message({ name: fav.name }),
+    async () => {
+      profileRemoveFavorite(fav.ip, fav.port);
+      await invoke('remove_favorite', { ip: fav.ip, port: fav.port });
     },
-  };
+    m.favorites_removed(),
+  );
 }
 
 export async function removeFavoriteQuick(ip: string, port: number) {
-  try {
+  await withProfileFallback(async () => {
     profileRemoveFavorite(ip, port);
     await invoke('remove_favorite', { ip, port });
-    s.setStatus('Removed from favorites', 'success');
-  } catch (e) {
-    await loadProfile();
-    s.setStatus(`Failed: ${e}`, 'error');
-  }
+  }, m.favorites_removed());
 }
 
 // ── IP exclusion ──────────────────────────────────────────────────────────
@@ -84,23 +73,15 @@ export async function excludeIp(ip: string) {
   if (!s.profile.excluded_ips.includes(ip)) {
     s.profile.excluded_ips = [...s.profile.excluded_ips, ip];
   }
-  try {
-    await invoke('add_excluded_ip', { ip });
-    s.setStatus(`${ip} excluded from server list`, 'info');
-  } catch (e) {
-    await loadProfile();
-    s.setStatus(`Failed to exclude IP: ${e}`, 'error');
-  }
+  await withProfileFallback(
+    () => invoke('add_excluded_ip', { ip }),
+    m.favorites_ip_excluded({ ip }),
+    m.favorites_ip_exclude_failed(),
+  );
 }
 
 export async function unexcludeIp(ip: string) {
   if (!s.profile) return;
   s.profile.excluded_ips = s.profile.excluded_ips.filter((e) => e !== ip);
-  try {
-    await invoke('remove_excluded_ip', { ip });
-    s.setStatus(`${ip} removed from exclusions`, 'success');
-  } catch (e) {
-    await loadProfile();
-    s.setStatus(`Failed: ${e}`, 'error');
-  }
+  await withProfileFallback(() => invoke('remove_excluded_ip', { ip }), m.favorites_ip_unexcluded({ ip }));
 }

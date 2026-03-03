@@ -3,13 +3,12 @@ use tauri::State;
 
 use crate::dto::*;
 use crate::state::{SharedState, insecure_client};
+use crate::utils::error::ResultExt;
 
 /// Fetch the latest news articles.
 #[tauri::command]
 pub(crate) async fn fetch_news() -> Result<Vec<ArticleDto>, String> {
-    let articles = news::fetch_news(insecure_client())
-        .await
-        .map_err(|e| e.to_string())?;
+    let articles = news::fetch_news(insecure_client()).await.cmd_err()?;
     Ok(articles
         .iter()
         .map(|a| ArticleDto {

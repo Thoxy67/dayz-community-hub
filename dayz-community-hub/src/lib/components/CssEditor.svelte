@@ -11,7 +11,7 @@
   let preEl: HTMLPreElement | null = $state(null);
 
   // Internal editable copy of the value
-  let text = $state(value);
+  let text = $state('');
 
   // Sync from parent when value prop changes (e.g., reset)
   $effect(() => {
@@ -95,7 +95,6 @@
     onkeydown={handleKeydown}
     spellcheck="false"
     autocomplete="off"
-    autocorrect="off"
     autocapitalize="off"
   ></textarea>
 </div>

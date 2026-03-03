@@ -3,6 +3,7 @@ use tauri::{AppHandle, State};
 
 use crate::helpers::{find_server_flexible_in, find_server_in, spawn_launch};
 use crate::state::SharedState;
+use crate::utils::error::ResultExt;
 
 /// Toggle a launch option.
 #[tauri::command]
@@ -17,7 +18,7 @@ pub(crate) async fn toggle_launch_option(
         opt.enabled = !opt.enabled;
         let new_state = opt.enabled;
         drop(all);
-        state.ctl.save_profile().map_err(|e| e.to_string())?;
+        state.ctl.save_profile().cmd_err()?;
         Ok(new_state)
     } else {
         Err(format!("Unknown option: {}", key))
@@ -40,7 +41,7 @@ pub(crate) async fn set_launch_option_value(
             opt.enabled = true;
         }
         drop(all);
-        state.ctl.save_profile().map_err(|e| e.to_string())
+        state.ctl.save_profile().cmd_err()
     } else {
         Err(format!("Unknown option: {}", key))
     }

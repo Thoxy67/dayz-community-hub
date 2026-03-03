@@ -2,6 +2,7 @@ use tauri::State;
 
 use crate::dto::BattleMetricsDto;
 use crate::state::{SharedState, insecure_client};
+use crate::utils::error::ResultExt;
 
 /// Fetch BattleMetrics server info by IP + query port.
 #[tauri::command]
@@ -37,8 +38,8 @@ pub(crate) async fn fetch_battlemetrics_server(
         .bearer_auth(&token)
         .send()
         .await
-        .map_err(|e| e.to_string())?;
-    let search_json: serde_json::Value = search_resp.json().await.map_err(|e| e.to_string())?;
+        .cmd_err()?;
+    let search_json: serde_json::Value = search_resp.json().await.cmd_err()?;
 
     let data = search_json["data"]
         .as_array()
@@ -102,8 +103,8 @@ pub(crate) async fn fetch_battlemetrics_server(
         .bearer_auth(&token)
         .send()
         .await
-        .map_err(|e| e.to_string())?;
-    let history_json: serde_json::Value = history_resp.json().await.map_err(|e| e.to_string())?;
+        .cmd_err()?;
+    let history_json: serde_json::Value = history_resp.json().await.cmd_err()?;
 
     let player_history: Vec<(i64, i64)> = history_json["data"]
         .as_array()

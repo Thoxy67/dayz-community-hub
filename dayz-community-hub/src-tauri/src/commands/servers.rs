@@ -7,6 +7,7 @@ use crate::convert::{server_to_dto, server_to_slim_dto};
 use crate::dto::*;
 use crate::helpers::{dedup_servers, find_server_in};
 use crate::state::{AppState, PingCache, SharedState};
+use crate::utils::error::ResultExt;
 
 /// Initialize the application: create DayzCtl, load cached servers.
 /// Called once by the frontend on mount. The window is already visible.
@@ -89,9 +90,7 @@ pub(crate) async fn refresh_servers(
     };
 
     let cache_path = config::default_data_dir().join("server_list_cache.json");
-    let list = api::fetch_servers(&client)
-        .await
-        .map_err(|e| e.to_string())?;
+    let list = api::fetch_servers(&client).await.cmd_err()?;
 
     api::save_server_list_cache(&cache_path, &list);
 

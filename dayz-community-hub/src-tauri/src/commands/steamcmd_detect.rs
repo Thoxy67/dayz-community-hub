@@ -132,7 +132,7 @@ pub(crate) async fn download_steamcmd_windows() -> Result<String, String> {
             .timeout(std::time::Duration::from_secs(120))
             .user_agent("Mozilla/5.0")
             .build()
-            .map_err(|e| e.to_string())?;
+            .cmd_err()?;
 
         let bytes = client
             .get("https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip")

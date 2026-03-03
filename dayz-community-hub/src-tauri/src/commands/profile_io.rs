@@ -4,6 +4,7 @@ use tauri::State;
 use crate::convert::profile_to_dto;
 use crate::dto::ProfileDto;
 use crate::state::SharedState;
+use crate::utils::error::ResultExt;
 
 /// Bundle format: a map of filename → raw JSON value for every settings file.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -56,7 +57,7 @@ pub(crate) async fn export_profile(path: String, include_mods: bool) -> Result<(
     }
 
     let bundle = ProfileBundle { version: 2, files };
-    let json_bytes = serde_json::to_vec(&bundle).map_err(|e| e.to_string())?;
+    let json_bytes = serde_json::to_vec(&bundle).cmd_err()?;
 
     let compressed = zstd::encode_all(std::io::Cursor::new(&json_bytes), 9)
         .map_err(|e| format!("zstd compression failed: {e}"))?;
@@ -87,9 +88,7 @@ pub(crate) async fn import_profile(
     let version = raw["version"].as_u64().unwrap_or(1) as u8;
 
     let data_dir = config::default_data_dir();
-    tokio::fs::create_dir_all(&data_dir)
-        .await
-        .map_err(|e| e.to_string())?;
+    tokio::fs::create_dir_all(&data_dir).await.cmd_err()?;
 
     {
         let mut rd = tokio::fs::read_dir(&data_dir)
@@ -109,14 +108,12 @@ pub(crate) async fn import_profile(
 
     match version {
         1 => {
-            let profile_str =
-                serde_json::to_string_pretty(&raw["profile"]).map_err(|e| e.to_string())?;
+            let profile_str = serde_json::to_string_pretty(&raw["profile"]).cmd_err()?;
             tokio::fs::write(data_dir.join("profile.json"), &profile_str)
                 .await
                 .map_err(|e| format!("Cannot write profile.json: {e}"))?;
             if !raw["mods"].is_null() {
-                let mods_str =
-                    serde_json::to_string_pretty(&raw["mods"]).map_err(|e| e.to_string())?;
+                let mods_str = serde_json::to_string_pretty(&raw["mods"]).cmd_err()?;
                 tokio::fs::write(data_dir.join("mods.json"), &mods_str)
                     .await
                     .map_err(|e| format!("Cannot write mods.json: {e}"))?;
@@ -125,7 +122,7 @@ pub(crate) async fn import_profile(
         2 => {
             let files = raw["files"].as_object().ok_or("Bundle files map missing")?;
             for (filename, value) in files {
-                let content = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
+                let content = serde_json::to_string_pretty(value).cmd_err()?;
                 tokio::fs::write(data_dir.join(filename), &content)
                     .await
                     .map_err(|e| format!("Cannot write {filename}: {e}"))?;
@@ -136,10 +133,7 @@ pub(crate) async fn import_profile(
 
     let profile_path = config::default_profile_path();
     let mut state = state.lock().await;
-    state
-        .ctl
-        .reload_profile(&profile_path)
-        .map_err(|e| e.to_string())?;
+    state.ctl.reload_profile(&profile_path).cmd_err()?;
     state.ctl.rebuild_steamcmd();
     state.cached_avatar = None;
     Ok(profile_to_dto(state.ctl.profile()))

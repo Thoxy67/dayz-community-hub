@@ -3,6 +3,7 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::helpers::{offline_mode_from_state, spawn_blocking_mapped};
 use crate::state::SharedState;
+use crate::utils::error::ResultExt;
 
 /// Get available offline missions.
 #[tauri::command]
@@ -67,11 +68,11 @@ pub(crate) async fn open_missions_dir(
     let om = offline_mode_from_state(state.inner()).await?;
     let path = om.missions_path();
     if !path.exists() {
-        std::fs::create_dir_all(&path).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&path).cmd_err()?;
     }
     app.opener()
         .open_path(path.to_string_lossy().as_ref(), None::<&str>)
-        .map_err(|e: tauri_plugin_opener::Error| e.to_string())
+        .cmd_err()
 }
 
 /// Launch an offline mission.
@@ -82,7 +83,7 @@ pub(crate) async fn launch_offline_mission(
 ) -> Result<(), String> {
     let (dayz_path, client, player) = {
         let state = state.lock().await;
-        let path = state.ctl.dayz_path().map_err(|e| e.to_string())?;
+        let path = state.ctl.dayz_path().cmd_err()?;
         let client = state.ctl.http_client().clone();
         let player = state.ctl.profile().player.clone();
         (path, client, player)
@@ -107,7 +108,7 @@ pub(crate) async fn launch_offline_mission(
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
-        .map_err(|e| e.to_string())?;
+        .cmd_err()?;
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
@@ -117,7 +118,7 @@ pub(crate) async fn launch_offline_mission(
             .stderr(std::process::Stdio::null())
             .creation_flags(0x08000000)
             .spawn()
-            .map_err(|e| e.to_string())?;
+            .cmd_err()?;
     }
 
     Ok(())

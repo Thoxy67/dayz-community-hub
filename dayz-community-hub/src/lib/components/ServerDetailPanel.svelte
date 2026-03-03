@@ -34,6 +34,7 @@
 
   let copiedIp = $state(false);
   async function copyIp() {
+    if (!server) return;
     await writeText(`${server.ip}:${server.game_port}`);
     copiedIp = true;
     setTimeout(() => {
@@ -42,7 +43,7 @@
   }
 
   interface Props {
-    server: ServerDto;
+    server: ServerDto | null;
     a2s: A2sDetailsDto | null;
     a2sLoading: boolean;
     a2sError: string;
@@ -101,6 +102,14 @@
   // A 200ms debounce prevents firing an IPC call for every row the user
   // passes through while scrolling/navigating the server list quickly.
   $effect(() => {
+    if (!server) {
+      mods = [];
+      modsFetchFailed = false;
+      fetchedKey = '';
+      clearTimeout(_detailDebounce);
+      return;
+    }
+
     const key = `${server.ip}:${server.query_port}`;
     const count = server.mods_count;
 
@@ -121,18 +130,18 @@
 
     _detailDebounce = setTimeout(() => {
       // Guard: server may have changed during the debounce window.
-      if (`${server.ip}:${server.query_port}` !== key) return;
+      if (!server || `${server.ip}:${server.query_port}` !== key) return;
       modsLoading = true;
       invoke<ServerFullDto>('get_server_details', { ip: server.ip, port: server.query_port })
         .then((full) => {
-          if (`${server.ip}:${server.query_port}` === key) {
+          if (server && `${server.ip}:${server.query_port}` === key) {
             mods = full.mods;
             modsFetchFailed = false;
             fetchedKey = key;
           }
         })
         .catch(() => {
-          if (`${server.ip}:${server.query_port}` === key) {
+          if (server && `${server.ip}:${server.query_port}` === key) {
             mods = [];
             modsFetchFailed = true;
             fetchedKey = key;
@@ -156,6 +165,14 @@
   let _bmDebounce: ReturnType<typeof setTimeout> | undefined;
 
   $effect(() => {
+    if (!server) {
+      bm = null;
+      bmError = '';
+      bmFetchedKey = '';
+      clearTimeout(_bmDebounce);
+      return;
+    }
+
     const key = `${server.ip}:${server.query_port}`;
     // Depend on bmRetryTick for manual retries; bmApiKey for token changes.
     bmRetryTick;
@@ -167,19 +184,19 @@
     // hammer the BattleMetrics API with a request per intermediate server.
     clearTimeout(_bmDebounce);
     _bmDebounce = setTimeout(() => {
-      if (`${server.ip}:${server.query_port}` !== key) return;
+      if (!server || `${server.ip}:${server.query_port}` !== key) return;
       bmLoading = true;
       bmError = '';
       invoke<BattleMetricsDto>('fetch_battlemetrics_server', { ip: server.ip, port: server.query_port })
         .then((result) => {
-          if (`${server.ip}:${server.query_port}` === key) {
+          if (server && `${server.ip}:${server.query_port}` === key) {
             bm = result;
             bmError = '';
             bmFetchedKey = key;
           }
         })
         .catch((e: unknown) => {
-          if (`${server.ip}:${server.query_port}` === key) {
+          if (server && `${server.ip}:${server.query_port}` === key) {
             bm = null;
             bmError = String(e);
             bmFetchedKey = key;
@@ -196,336 +213,74 @@
 <div class="flex flex-col h-full overflow-hidden border-l border-base-300 bg-base-100">
   <!-- Header -->
   <div class="flex items-center justify-between px-3 py-2 bg-base-200 border-b border-base-300 flex-shrink-0">
-    <span class="font-semibold text-sm truncate text-base-content">{server.name}</span>
+    <span class="font-semibold text-sm truncate text-base-content">{server?.name ?? 'Server Details'}</span>
     <button class="btn btn-ghost btn-xs" onclick={onClose}>✕</button>
   </div>
 
-  <div class="flex-1 overflow-y-auto p-3 space-y-3 text-sm">
-    <!-- Core info grid -->
-    <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-      <div class="text-base-content/50">IP</div>
-      <button
-        class="font-mono text-base-content hover:text-primary transition-colors flex items-center gap-1 group/ip text-left"
-        title={m.detail_copy_ip()}
-        onclick={copyIp}
+  {#if !server}
+    <!-- Fallback UI when server is not in master list -->
+    <div class="flex-1 overflow-y-auto p-3 space-y-3 text-sm">
+      <div
+        class="flex items-start gap-2 px-2.5 py-2 rounded-lg bg-warning/10 border border-warning/25 text-xs text-warning"
       >
-        {#if copiedIp}
-          <span class="text-success">{m.servers_copied()}</span>
-        {:else}
-          {server.ip}:{server.game_port}
-          <Icon icon="ph:copy" class="size-3 opacity-0 group-hover/ip:opacity-100 transition-opacity" />
-        {/if}
-      </button>
-
-      <div class="text-base-content/50">{m.detail_query_port()}</div>
-      <div class="font-mono text-base-content">{server.query_port}</div>
-
-      <div class="text-base-content/50">{m.detail_players()}</div>
-      <div class="font-bold {playerFill(server.players, server.max_players, '40')}">
-        {server.players}/{server.max_players}
+        <Icon icon="ph:warning-circle" class="size-3.5 shrink-0 mt-0.5" />
+        <span class="leading-snug">Server not found in master server list</span>
       </div>
 
-      <div class="text-base-content/50">{m.detail_map()}</div>
-      <div class="text-teal-400">{server.map}</div>
-
-      <div class="text-base-content/50">{m.detail_version()}</div>
-      <div class="text-base-content/70">{server.version}</div>
-
-      <div class="text-base-content/50">{m.detail_time()}</div>
-      <div class="text-base-content/70">{server.time}</div>
-
-      <div class="text-base-content/50">{m.detail_ping()}</div>
-      <div class="font-mono {pingColor(pingMs, '40')}">
-        {pingMs !== null ? `${pingMs} ms` : '—'}
-      </div>
-
-      <div class="text-base-content/50">{m.detail_platform()}</div>
-      <div class={server.environment === 'w' ? 'text-info' : 'text-success'}>
-        {server.environment === 'w' ? m.servers_os_windows() : m.servers_os_linux()}
-      </div>
-
-      <div class="text-base-content/50">{m.detail_first_person()}</div>
-      <div>{server.first_person_only ? m.detail_yes() : m.detail_no()}</div>
-
-      <div class="text-base-content/50">{m.detail_password()}</div>
-      <div class={server.password ? 'text-error' : 'text-base-content/40'}>
-        {server.password ? m.detail_yes() : m.detail_no()}
-      </div>
-
-      <div class="text-base-content/50">{m.detail_vac()}</div>
-      <div>{server.vac ? m.detail_yes() : m.detail_no()}</div>
-
-      {#if server.battl_eye !== null}
-        <div class="text-base-content/50">{m.detail_battleye()}</div>
-        <div>{server.battl_eye ? m.detail_yes() : m.detail_no()}</div>
-      {/if}
-    </div>
-
-    <!-- Mods -->
-    {#if modsLoading}
-      <div class="flex items-center gap-2 text-xs text-base-content/50">
-        <span class="loading loading-spinner loading-xs"></span>
-        {m.detail_loading_mods({ count: server.mods_count })}
-      </div>
-    {:else if displayMods.length > 0}
-      <div>
-        <div bind:this={modsHeading} class="text-xs font-semibold text-base-content/50 mb-1">
-          {m.detail_mods_count({ count: displayMods.length })}
-        </div>
-        <div class="space-y-0.5 max-h-40 overflow-y-auto">
-          {#each displayMods as mod}
-            {@const installed = installedIds.has(mod.steam_workshop_id)}
-            <div class="flex items-center gap-1.5 text-xs">
-              <span class="{installed ? 'text-success' : 'text-error'} font-bold w-3 text-center flex-shrink-0">
-                {installed ? '+' : '−'}
-              </span>
-              <span class="truncate text-base-content/80">{mod.name}</span>
-              <button
-                class="text-base-content/40 ml-auto font-mono flex-shrink-0 hover:text-primary transition-colors"
-                onclick={(e) => {
-                  e.stopPropagation();
-                  openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.steam_workshop_id}`);
-                }}
-                title={m.detail_open_workshop()}>{mod.steam_workshop_id}</button
-              >
-            </div>
-          {/each}
-        </div>
-      </div>
-    {:else if server.mods_count > 0}
-      <div class="flex items-center gap-2 text-xs text-base-content/40">
-        {#if modsFetchFailed}
-          <Icon icon="ph:warning-circle" class="size-3.5 text-warning/60 shrink-0" />
-          <span class="italic">{m.detail_mods_failed({ count: server.mods_count })}</span>
-          <button
-            class="btn btn-ghost btn-xs h-5 min-h-0 px-1.5 ml-auto"
-            onclick={() => {
-              fetchedKey = '';
-            }}
-            title={m.detail_retry()}
-          >
-            <Icon icon="ph:arrows-clockwise" class="size-3" />
-          </button>
-        {:else}
-          <span class="italic">{m.detail_mods_not_reported({ count: server.mods_count })}</span>
-          {#if !a2s}
-            <button
-              class="btn btn-ghost btn-xs h-5 min-h-0 px-1.5 ml-auto gap-1"
-              onclick={onQueryA2s}
-              title={m.detail_query_mods()}
-            >
-              <Icon icon="ph:broadcast" class="size-3" />
-              {m.detail_query_a2s()}
-            </button>
-          {/if}
-        {/if}
-      </div>
-    {:else}
-      <div class="text-xs text-base-content/40 italic">{m.detail_no_mods()}</div>
-    {/if}
-
-    <!-- BattleMetrics -->
-    <div>
-      <div class="flex items-center justify-between mb-1">
-        <span class="text-xs font-semibold text-base-content/50 flex items-center gap-1.5">
-          <Icon icon="ph:chart-line-up" class="size-3.5" />
-          {m.detail_bm_title()}
-        </span>
-        {#if bmApiKey}
-          <button
-            class="btn btn-ghost btn-xs"
-            onclick={() => {
-              bmFetchedKey = '';
-              bmRetryTick++;
-            }}
-            disabled={bmLoading}
-            title={m.detail_bm_refresh_title()}
-          >
-            {#if bmLoading}
-              <span class="loading loading-spinner loading-xs"></span>
-            {:else}
-              {m.servers_refresh()}
-            {/if}
-          </button>
-        {/if}
-      </div>
-
-      {#if !bmApiKey}
-        <p class="text-xs text-base-content/35 italic">
-          {m.detail_bm_configure()}
-        </p>
-      {:else if bmLoading}
-        <div class="flex items-center gap-2 text-xs text-base-content/50">
-          <span class="loading loading-spinner loading-xs"></span>
-          {m.detail_bm_loading()}
-        </div>
-      {:else if bm}
-        <!-- Server type badges -->
-        <div class="flex flex-wrap gap-1 mb-2">
-          {#if bm.official}
-            <span class="badge badge-xs bg-amber-500/15 text-amber-500 border-amber-500/30 gap-1">
-              <Icon icon="ph:seal-check-fill" class="size-2.5" />{m.detail_bm_official()}
-            </span>
-          {/if}
-          {#if bm.private}
-            <span class="badge badge-xs bg-rose-500/15 text-rose-400 border-rose-500/30 gap-1">
-              <Icon icon="ph:lock-fill" class="size-2.5" />{m.detail_bm_private()}
-            </span>
-          {/if}
-          {#if bm.third_person}
-            <span class="badge badge-xs bg-sky-500/15 text-sky-400 border-sky-500/30 gap-1">
-              <Icon icon="ph:eye" class="size-2.5" />{m.detail_bm_3pp()}
-            </span>
-          {:else if bm.third_person === false}
-            <span class="badge badge-xs bg-violet-500/15 text-violet-400 border-violet-500/30 gap-1">
-              <Icon icon="ph:crosshair-simple" class="size-2.5" />{m.detail_bm_1pp()}
-            </span>
-          {/if}
-          {#if bm.modded}
-            <span class="badge badge-xs bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30 gap-1">
-              <Icon icon="ph:puzzle-piece" class="size-2.5" />{m.detail_bm_modded()}
-            </span>
-          {/if}
-          {#if bm.query_status === 'valid'}
-            <span class="badge badge-xs bg-emerald-500/15 text-emerald-400 border-emerald-500/30 gap-1">
-              <Icon icon="ph:wifi-high" class="size-2.5" />{m.detail_bm_online()}
-            </span>
-          {:else if bm.query_status}
-            <span class="badge badge-xs bg-orange-500/15 text-orange-400 border-orange-500/30 gap-1">
-              <Icon icon="ph:wifi-slash" class="size-2.5" />{bm.query_status}
-            </span>
-          {/if}
-        </div>
-
-        <!-- Stats grid -->
-        <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs mb-2">
-          {#if bm.rank !== null}
-            <div class="text-base-content/50">{m.detail_bm_rank()}</div>
-            <div class="font-mono font-bold text-primary">#{bm.rank}</div>
-          {/if}
-          <div class="text-base-content/50">{m.detail_bm_status()}</div>
-          <div class="flex items-center gap-1.5">
-            <span
-              class="size-2 rounded-full flex-shrink-0 {bm.status === 'online'
-                ? 'bg-success'
-                : bm.status === 'offline'
-                  ? 'bg-error'
-                  : 'bg-base-content/30'}"
-            ></span>
-            <span
-              class={bm.status === 'online'
-                ? 'text-success'
-                : bm.status === 'offline'
-                  ? 'text-error'
-                  : 'text-base-content/50'}>{bm.status}</span
-            >
+      <!-- Show A2S info if available -->
+      {#if a2s}
+        <div>
+          <span class="text-xs font-semibold text-base-content/50">{m.detail_a2s_title()}</span>
+          <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs mt-2">
+            <div class="text-base-content/50">{m.detail_a2s_live_players()}</div>
+            <div class="font-bold text-success">{a2s.players}/{a2s.max_players}</div>
+            <div class="text-base-content/50">{m.detail_map()}</div>
+            <div class="text-amber-500/80">{a2s.map}</div>
+            <div class="text-base-content/50">{m.detail_version()}</div>
+            <div class="text-base-content/70">{a2s.version}</div>
+            <div class="text-base-content/50">{m.detail_a2s_game()}</div>
+            <div class="text-base-content/70">{a2s.game}</div>
           </div>
-          {#if bm.country}
-            <div class="text-base-content/50">{m.detail_bm_country()}</div>
-            <div class="flex items-center gap-1.5">
-              <span>{countryCodeToFlag(bm.country)}</span>
-              <span>{countryCodeToName(bm.country)}</span>
-            </div>
-          {/if}
-          {#if bm.location && userLocation}
-            {@const dist = haversineDistance(userLocation[1], userLocation[0], bm.location[1], bm.location[0])}
-            <div class="text-base-content/50">{m.detail_bm_distance()}</div>
-            <div class="font-mono">{dist.toFixed(0)} km</div>
-          {/if}
-          {#if bm.uptime !== null}
-            <div class="text-base-content/50">{m.detail_bm_uptime()}</div>
-            <div
-              class={(bm.uptime ?? 0) >= 90 ? 'text-success' : (bm.uptime ?? 0) >= 70 ? 'text-warning' : 'text-error'}
-            >
-              {bm.uptime?.toFixed(1)}%
-            </div>
-          {/if}
-          {#if bm.created_at}
-            <div class="text-base-content/50">{m.detail_bm_first_seen()}</div>
-            <div class="text-base-content/70" title={bm.created_at}>
-              {m.detail_ago({ time: getServerAge(bm.created_at) })}
-            </div>
-          {/if}
-          {#if bm.server_steam_id}
-            <div class="text-base-content/50">{m.detail_bm_steam_id()}</div>
-            <button
-              class="text-left font-mono text-base-content/60 hover:text-primary truncate"
-              onclick={() => openUrl(`https://steamcommunity.com/profiles/${bm?.server_steam_id}`)}
-              title={m.detail_bm_open_steam()}
-            >
-              {bm.server_steam_id.slice(-8)}…
-            </button>
-          {/if}
         </div>
 
-        <!-- Player history sparkline -->
-        {#if bm.player_history.length >= 2}
-          {@const counts = bm.player_history.map(([, c]) => c)}
-          {@const minCount = Math.min(...counts)}
-          {@const maxCount = Math.max(...counts)}
-          {@const currentCount = counts[counts.length - 1]}
-          {@const avgCount = Math.round(counts.reduce((a, b) => a + b, 0) / counts.length)}
-          <div class="mb-2">
-            <div class="flex items-center justify-between mb-1">
-              <span class="text-xs text-base-content/40">{m.detail_bm_player_history()}</span>
-              <div class="flex items-center gap-2 text-xs font-mono">
-                <span class="text-base-content/30" title={m.detail_bm_min()}>{minCount}</span>
-                <span class="text-base-content/50">–</span>
-                <span class="text-primary font-semibold" title={m.detail_bm_current()}>{currentCount}</span>
-                <span class="text-base-content/50">–</span>
-                <span class="text-base-content/30" title={m.detail_bm_max()}>{maxCount}</span>
-              </div>
-            </div>
-            <svg viewBox="0 0 120 28" class="w-full h-7 text-primary" preserveAspectRatio="none">
-              <path
-                d={sparklinePath(bm.player_history)}
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-            <div class="flex items-center justify-between text-xs text-base-content/25 mt-0.5">
-              <span>{m.detail_bm_24h_ago()}</span>
-              <span>{m.detail_bm_avg({ count: avgCount })}</span>
-              <span>{m.detail_bm_now()}</span>
+        {#if a2s.players_list.length > 0}
+          <div>
+            <div class="text-xs text-base-content/50 mb-1">{m.detail_a2s_online_players()}</div>
+            <div class="space-y-0.5 max-h-32 overflow-y-auto">
+              {#each a2s.players_list as player}
+                <div class="flex items-center gap-2 text-xs">
+                  <span class="text-base-content/80 truncate">{player.name}</span>
+                  <span class="text-base-content/40 ml-auto tabular-nums">{formatDuration(player.duration)}</span>
+                </div>
+              {/each}
             </div>
           </div>
         {/if}
 
-        <!-- Link to BattleMetrics -->
-        <button
-          class="btn btn-ghost btn-xs gap-1 text-base-content/50 hover:text-primary"
-          onclick={() => openUrl(`https://www.battlemetrics.com/servers/dayz/${bm?.id}`)}
-        >
-          <Icon icon="ph:arrow-square-out" class="size-3.5" />
-          {m.detail_bm_view()}
-        </button>
-      {:else if bmError}
-        <div
-          class="flex items-start gap-2 px-2.5 py-2 rounded-lg bg-error/10 border border-error/25 text-xs text-error"
-        >
-          <Icon icon="ph:warning-circle" class="size-3.5 shrink-0 mt-0.5" />
-          <span class="leading-snug break-all flex-1">{bmError}</span>
-          <button
-            class="btn btn-ghost btn-xs h-5 min-h-0 px-1.5 shrink-0"
-            onclick={() => {
-              bmFetchedKey = '';
-              bmRetryTick++;
-            }}
-            title={m.detail_retry()}
-          >
-            <Icon icon="ph:arrows-clockwise" class="size-3" />
-          </button>
-        </div>
-      {/if}
-    </div>
-
-    <!-- A2S live info -->
-    <div>
-      <div class="flex items-center justify-between mb-1">
-        <span class="text-xs font-semibold text-base-content/50">{m.detail_a2s_title()}</span>
+        {#if a2s.mods && a2s.mods.length > 0}
+          <div>
+            <div class="text-xs font-semibold text-base-content/50 mb-1">
+              {m.detail_mods_count({ count: a2s.mods.length })}
+            </div>
+            <div class="space-y-0.5 max-h-40 overflow-y-auto">
+              {#each a2s.mods as mod}
+                <div class="flex items-center gap-1.5 text-xs">
+                  <span class="truncate text-base-content/80">{mod.name}</span>
+                  <button
+                    class="text-base-content/40 ml-auto font-mono flex-shrink-0 hover:text-primary transition-colors"
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.steam_workshop_id}`);
+                    }}
+                    title={m.detail_open_workshop()}>{mod.steam_workshop_id}</button
+                  >
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
+      {:else}
+        <p class="text-xs text-base-content/40 italic">{m.detail_a2s_click_refresh()}</p>
         <button class="btn btn-ghost btn-xs" onclick={onQueryA2s} disabled={a2sLoading}>
           {#if a2sLoading}
             <span class="loading loading-spinner loading-xs"></span>
@@ -533,41 +288,379 @@
             {m.servers_refresh()}
           {/if}
         </button>
-      </div>
+      {/if}
+    </div>
+  {:else}
+    <!-- Full server details when server is available -->
+    <div class="flex-1 overflow-y-auto p-3 space-y-3 text-sm">
+      <!-- Core info grid -->
+      <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+        <div class="text-base-content/50">IP</div>
+        <button
+          class="font-mono text-base-content hover:text-primary transition-colors flex items-center gap-1 group/ip text-left"
+          title={m.detail_copy_ip()}
+          onclick={copyIp}
+        >
+          {#if copiedIp}
+            <span class="text-success">{m.servers_copied()}</span>
+          {:else}
+            {server.ip}:{server.game_port}
+            <Icon icon="ph:copy" class="size-3 opacity-0 group-hover/ip:opacity-100 transition-opacity" />
+          {/if}
+        </button>
 
-      {#if a2s}
-        <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs mb-2">
-          <div class="text-base-content/50">{m.detail_a2s_live_players()}</div>
-          <div class="font-bold text-success">{a2s.players}/{a2s.max_players}</div>
-          <div class="text-base-content/50">{m.detail_a2s_game()}</div>
-          <div>{a2s.game}</div>
+        <div class="text-base-content/50">{m.detail_query_port()}</div>
+        <div class="font-mono text-base-content">{server.query_port}</div>
+
+        <div class="text-base-content/50">{m.detail_players()}</div>
+        <div class="font-bold {playerFill(server.players, server.max_players, '40')}">
+          {server.players}/{server.max_players}
         </div>
 
-        {#if a2s.players_list.length > 0}
-          <div class="text-xs text-base-content/50 mb-1">{m.detail_a2s_online_players()}</div>
-          <div class="space-y-0.5 max-h-32 overflow-y-auto">
-            {#each a2s.players_list as player}
-              <div class="flex items-center gap-2 text-xs">
-                <span class="text-base-content/80 truncate">{player.name}</span>
-                <span class="text-base-content/40 ml-auto tabular-nums">{formatDuration(player.duration)}</span>
+        <div class="text-base-content/50">{m.detail_map()}</div>
+        <div class="text-teal-400">{server.map}</div>
+
+        <div class="text-base-content/50">{m.detail_version()}</div>
+        <div class="text-base-content/70">{server.version}</div>
+
+        <div class="text-base-content/50">{m.detail_time()}</div>
+        <div class="text-base-content/70">{server.time}</div>
+
+        <div class="text-base-content/50">{m.detail_ping()}</div>
+        <div class="font-mono {pingColor(pingMs, '40')}">
+          {pingMs !== null ? `${pingMs} ms` : '—'}
+        </div>
+
+        <div class="text-base-content/50">{m.detail_platform()}</div>
+        <div class={server.environment === 'w' ? 'text-info' : 'text-success'}>
+          {server.environment === 'w' ? m.servers_os_windows() : m.servers_os_linux()}
+        </div>
+
+        <div class="text-base-content/50">{m.detail_first_person()}</div>
+        <div>{server.first_person_only ? m.detail_yes() : m.detail_no()}</div>
+
+        <div class="text-base-content/50">{m.detail_password()}</div>
+        <div class={server.password ? 'text-error' : 'text-base-content/40'}>
+          {server.password ? m.detail_yes() : m.detail_no()}
+        </div>
+
+        <div class="text-base-content/50">{m.detail_vac()}</div>
+        <div>{server.vac ? m.detail_yes() : m.detail_no()}</div>
+
+        {#if server.battl_eye !== null}
+          <div class="text-base-content/50">{m.detail_battleye()}</div>
+          <div>{server.battl_eye ? m.detail_yes() : m.detail_no()}</div>
+        {/if}
+      </div>
+
+      <!-- Mods -->
+      {#if modsLoading}
+        <div class="flex items-center gap-2 text-xs text-base-content/50">
+          <span class="loading loading-spinner loading-xs"></span>
+          {m.detail_loading_mods({ count: server.mods_count })}
+        </div>
+      {:else if displayMods.length > 0}
+        <div>
+          <div bind:this={modsHeading} class="text-xs font-semibold text-base-content/50 mb-1">
+            {m.detail_mods_count({ count: displayMods.length })}
+          </div>
+          <div class="space-y-0.5 max-h-40 overflow-y-auto">
+            {#each displayMods as mod}
+              {@const installed = installedIds.has(mod.steam_workshop_id)}
+              <div class="flex items-center gap-1.5 text-xs">
+                <span class="{installed ? 'text-success' : 'text-error'} font-bold w-3 text-center flex-shrink-0">
+                  {installed ? '+' : '−'}
+                </span>
+                <span class="truncate text-base-content/80">{mod.name}</span>
+                <button
+                  class="text-base-content/40 ml-auto font-mono flex-shrink-0 hover:text-primary transition-colors"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.steam_workshop_id}`);
+                  }}
+                  title={m.detail_open_workshop()}>{mod.steam_workshop_id}</button
+                >
               </div>
             {/each}
           </div>
-        {:else if a2s.players === 0}
-          <p class="text-xs text-base-content/40 italic">{m.detail_a2s_no_players()}</p>
-        {:else}
-          <p class="text-xs text-base-content/40 italic">{m.detail_a2s_names_not_reported()}</p>
-        {/if}
-      {:else if a2sError}
-        <div
-          class="flex items-start gap-2 px-2.5 py-2 rounded-lg bg-error/10 border border-error/25 text-xs text-error"
-        >
-          <Icon icon="ph:warning-circle" class="size-3.5 shrink-0 mt-0.5" />
-          <span class="leading-snug break-all">{a2sError}</span>
         </div>
-      {:else if !a2sLoading}
-        <p class="text-xs text-base-content/40 italic">{m.detail_a2s_click_refresh()}</p>
+      {:else if server.mods_count > 0}
+        <div class="flex items-center gap-2 text-xs text-base-content/40">
+          {#if modsFetchFailed}
+            <Icon icon="ph:warning-circle" class="size-3.5 text-warning/60 shrink-0" />
+            <span class="italic">{m.detail_mods_failed({ count: server.mods_count })}</span>
+            <button
+              class="btn btn-ghost btn-xs h-5 min-h-0 px-1.5 ml-auto"
+              onclick={() => {
+                fetchedKey = '';
+              }}
+              title={m.detail_retry()}
+            >
+              <Icon icon="ph:arrows-clockwise" class="size-3" />
+            </button>
+          {:else}
+            <span class="italic">{m.detail_mods_not_reported({ count: server.mods_count })}</span>
+            {#if !a2s}
+              <button
+                class="btn btn-ghost btn-xs h-5 min-h-0 px-1.5 ml-auto gap-1"
+                onclick={onQueryA2s}
+                title={m.detail_query_mods()}
+              >
+                <Icon icon="ph:broadcast" class="size-3" />
+                {m.detail_query_a2s()}
+              </button>
+            {/if}
+          {/if}
+        </div>
+      {:else}
+        <div class="text-xs text-base-content/40 italic">{m.detail_no_mods()}</div>
       {/if}
+
+      <!-- BattleMetrics -->
+      <div>
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-xs font-semibold text-base-content/50 flex items-center gap-1.5">
+            <Icon icon="ph:chart-line-up" class="size-3.5" />
+            {m.detail_bm_title()}
+          </span>
+          {#if bmApiKey}
+            <button
+              class="btn btn-ghost btn-xs"
+              onclick={() => {
+                bmFetchedKey = '';
+                bmRetryTick++;
+              }}
+              disabled={bmLoading}
+              title={m.detail_bm_refresh_title()}
+            >
+              {#if bmLoading}
+                <span class="loading loading-spinner loading-xs"></span>
+              {:else}
+                {m.servers_refresh()}
+              {/if}
+            </button>
+          {/if}
+        </div>
+
+        {#if !bmApiKey}
+          <p class="text-xs text-base-content/35 italic">
+            {m.detail_bm_configure()}
+          </p>
+        {:else if bmLoading}
+          <div class="flex items-center gap-2 text-xs text-base-content/50">
+            <span class="loading loading-spinner loading-xs"></span>
+            {m.detail_bm_loading()}
+          </div>
+        {:else if bm}
+          <!-- Server type badges -->
+          <div class="flex flex-wrap gap-1 mb-2">
+            {#if bm.official}
+              <span class="badge badge-xs bg-amber-500/15 text-amber-500 border-amber-500/30 gap-1">
+                <Icon icon="ph:seal-check-fill" class="size-2.5" />{m.detail_bm_official()}
+              </span>
+            {/if}
+            {#if bm.private}
+              <span class="badge badge-xs bg-rose-500/15 text-rose-400 border-rose-500/30 gap-1">
+                <Icon icon="ph:lock-fill" class="size-2.5" />{m.detail_bm_private()}
+              </span>
+            {/if}
+            {#if bm.third_person}
+              <span class="badge badge-xs bg-sky-500/15 text-sky-400 border-sky-500/30 gap-1">
+                <Icon icon="ph:eye" class="size-2.5" />{m.detail_bm_3pp()}
+              </span>
+            {:else if bm.third_person === false}
+              <span class="badge badge-xs bg-violet-500/15 text-violet-400 border-violet-500/30 gap-1">
+                <Icon icon="ph:crosshair-simple" class="size-2.5" />{m.detail_bm_1pp()}
+              </span>
+            {/if}
+            {#if bm.modded}
+              <span class="badge badge-xs bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30 gap-1">
+                <Icon icon="ph:puzzle-piece" class="size-2.5" />{m.detail_bm_modded()}
+              </span>
+            {/if}
+            {#if bm.query_status === 'valid'}
+              <span class="badge badge-xs bg-emerald-500/15 text-emerald-400 border-emerald-500/30 gap-1">
+                <Icon icon="ph:wifi-high" class="size-2.5" />{m.detail_bm_online()}
+              </span>
+            {:else if bm.query_status}
+              <span class="badge badge-xs bg-orange-500/15 text-orange-400 border-orange-500/30 gap-1">
+                <Icon icon="ph:wifi-slash" class="size-2.5" />{bm.query_status}
+              </span>
+            {/if}
+          </div>
+
+          <!-- Stats grid -->
+          <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs mb-2">
+            {#if bm.rank !== null}
+              <div class="text-base-content/50">{m.detail_bm_rank()}</div>
+              <div class="font-mono font-bold text-primary">#{bm.rank}</div>
+            {/if}
+            <div class="text-base-content/50">{m.detail_bm_status()}</div>
+            <div class="flex items-center gap-1.5">
+              <span
+                class="size-2 rounded-full flex-shrink-0 {bm.status === 'online'
+                  ? 'bg-success'
+                  : bm.status === 'offline'
+                    ? 'bg-error'
+                    : 'bg-base-content/30'}"
+              ></span>
+              <span
+                class={bm.status === 'online'
+                  ? 'text-success'
+                  : bm.status === 'offline'
+                    ? 'text-error'
+                    : 'text-base-content/50'}>{bm.status}</span
+              >
+            </div>
+            {#if bm.country}
+              <div class="text-base-content/50">{m.detail_bm_country()}</div>
+              <div class="flex items-center gap-1.5">
+                <span>{countryCodeToFlag(bm.country)}</span>
+                <span>{countryCodeToName(bm.country)}</span>
+              </div>
+            {/if}
+            {#if bm.location && userLocation}
+              {@const dist = haversineDistance(userLocation[1], userLocation[0], bm.location[1], bm.location[0])}
+              <div class="text-base-content/50">{m.detail_bm_distance()}</div>
+              <div class="font-mono">{dist.toFixed(0)} km</div>
+            {/if}
+            {#if bm.uptime !== null}
+              <div class="text-base-content/50">{m.detail_bm_uptime()}</div>
+              <div
+                class={(bm.uptime ?? 0) >= 90 ? 'text-success' : (bm.uptime ?? 0) >= 70 ? 'text-warning' : 'text-error'}
+              >
+                {bm.uptime?.toFixed(1)}%
+              </div>
+            {/if}
+            {#if bm.created_at}
+              <div class="text-base-content/50">{m.detail_bm_first_seen()}</div>
+              <div class="text-base-content/70" title={bm.created_at}>
+                {m.detail_ago({ time: getServerAge(bm.created_at) })}
+              </div>
+            {/if}
+            {#if bm.server_steam_id}
+              <div class="text-base-content/50">{m.detail_bm_steam_id()}</div>
+              <button
+                class="text-left font-mono text-base-content/60 hover:text-primary truncate"
+                onclick={() => openUrl(`https://steamcommunity.com/profiles/${bm?.server_steam_id}`)}
+                title={m.detail_bm_open_steam()}
+              >
+                {bm.server_steam_id.slice(-8)}…
+              </button>
+            {/if}
+          </div>
+
+          <!-- Player history sparkline -->
+          {#if bm.player_history.length >= 2}
+            {@const counts = bm.player_history.map(([, c]) => c)}
+            {@const minCount = Math.min(...counts)}
+            {@const maxCount = Math.max(...counts)}
+            {@const currentCount = counts[counts.length - 1]}
+            {@const avgCount = Math.round(counts.reduce((a, b) => a + b, 0) / counts.length)}
+            <div class="mb-2">
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-xs text-base-content/40">{m.detail_bm_player_history()}</span>
+                <div class="flex items-center gap-2 text-xs font-mono">
+                  <span class="text-base-content/30" title={m.detail_bm_min()}>{minCount}</span>
+                  <span class="text-base-content/50">–</span>
+                  <span class="text-primary font-semibold" title={m.detail_bm_current()}>{currentCount}</span>
+                  <span class="text-base-content/50">–</span>
+                  <span class="text-base-content/30" title={m.detail_bm_max()}>{maxCount}</span>
+                </div>
+              </div>
+              <svg viewBox="0 0 120 28" class="w-full h-7 text-primary" preserveAspectRatio="none">
+                <path
+                  d={sparklinePath(bm.player_history)}
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <div class="flex items-center justify-between text-xs text-base-content/25 mt-0.5">
+                <span>{m.detail_bm_24h_ago()}</span>
+                <span>{m.detail_bm_avg({ count: avgCount })}</span>
+                <span>{m.detail_bm_now()}</span>
+              </div>
+            </div>
+          {/if}
+
+          <!-- Link to BattleMetrics -->
+          <button
+            class="btn btn-ghost btn-xs gap-1 text-base-content/50 hover:text-primary"
+            onclick={() => openUrl(`https://www.battlemetrics.com/servers/dayz/${bm?.id}`)}
+          >
+            <Icon icon="ph:arrow-square-out" class="size-3.5" />
+            {m.detail_bm_view()}
+          </button>
+        {:else if bmError}
+          <div
+            class="flex items-start gap-2 px-2.5 py-2 rounded-lg bg-error/10 border border-error/25 text-xs text-error"
+          >
+            <Icon icon="ph:warning-circle" class="size-3.5 shrink-0 mt-0.5" />
+            <span class="leading-snug break-all flex-1">{bmError}</span>
+            <button
+              class="btn btn-ghost btn-xs h-5 min-h-0 px-1.5 shrink-0"
+              onclick={() => {
+                bmFetchedKey = '';
+                bmRetryTick++;
+              }}
+              title={m.detail_retry()}
+            >
+              <Icon icon="ph:arrows-clockwise" class="size-3" />
+            </button>
+          </div>
+        {/if}
+      </div>
+
+      <!-- A2S live info -->
+      <div>
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-xs font-semibold text-base-content/50">{m.detail_a2s_title()}</span>
+          <button class="btn btn-ghost btn-xs" onclick={onQueryA2s} disabled={a2sLoading}>
+            {#if a2sLoading}
+              <span class="loading loading-spinner loading-xs"></span>
+            {:else}
+              {m.servers_refresh()}
+            {/if}
+          </button>
+        </div>
+
+        {#if a2s}
+          <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs mb-2">
+            <div class="text-base-content/50">{m.detail_a2s_live_players()}</div>
+            <div class="font-bold text-success">{a2s.players}/{a2s.max_players}</div>
+            <div class="text-base-content/50">{m.detail_a2s_game()}</div>
+            <div>{a2s.game}</div>
+          </div>
+
+          {#if a2s.players_list.length > 0}
+            <div class="text-xs text-base-content/50 mb-1">{m.detail_a2s_online_players()}</div>
+            <div class="space-y-0.5 max-h-32 overflow-y-auto">
+              {#each a2s.players_list as player}
+                <div class="flex items-center gap-2 text-xs">
+                  <span class="text-base-content/80 truncate">{player.name}</span>
+                  <span class="text-base-content/40 ml-auto tabular-nums">{formatDuration(player.duration)}</span>
+                </div>
+              {/each}
+            </div>
+          {:else if a2s.players === 0}
+            <p class="text-xs text-base-content/40 italic">{m.detail_a2s_no_players()}</p>
+          {:else}
+            <p class="text-xs text-base-content/40 italic">{m.detail_a2s_names_not_reported()}</p>
+          {/if}
+        {:else if a2sError}
+          <div
+            class="flex items-start gap-2 px-2.5 py-2 rounded-lg bg-error/10 border border-error/25 text-xs text-error"
+          >
+            <Icon icon="ph:warning-circle" class="size-3.5 shrink-0 mt-0.5" />
+            <span class="leading-snug break-all">{a2sError}</span>
+          </div>
+        {:else if !a2sLoading}
+          <p class="text-xs text-base-content/40 italic">{m.detail_a2s_click_refresh()}</p>
+        {/if}
+      </div>
     </div>
-  </div>
+  {/if}
 </div>

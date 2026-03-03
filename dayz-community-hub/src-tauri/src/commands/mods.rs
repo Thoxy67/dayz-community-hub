@@ -6,6 +6,7 @@ use crate::convert::installed_mod_to_dto;
 use crate::dto::InstalledModDto;
 use crate::helpers::{find_server_in, spawn_blocking_mapped};
 use crate::state::SharedState;
+use crate::utils::error::ResultExt;
 
 /// Get installed mods. Uses spawn_blocking for filesystem scan.
 /// Enriches each mod with `remote_updated` / `update_available` from the in-memory cache.
@@ -54,7 +55,7 @@ pub(crate) async fn check_mod_updates(
         .timeout(std::time::Duration::from_secs(15))
         .user_agent("Mozilla/5.0")
         .build()
-        .map_err(|e| e.to_string())?;
+        .cmd_err()?;
 
     let mut remote_map: std::collections::HashMap<u64, i64> = std::collections::HashMap::new();
 
@@ -79,10 +80,10 @@ pub(crate) async fn check_mod_updates(
             .query(&params)
             .send()
             .await
-            .map_err(|e| e.to_string())?
+            .cmd_err()?
             .json::<serde_json::Value>()
             .await
-            .map_err(|e| e.to_string())?;
+            .cmd_err()?;
 
         if let Some(files) = resp["response"]["publishedfiledetails"].as_array() {
             for file in files {
@@ -124,7 +125,7 @@ pub(crate) async fn delete_mods_bulk(
     let ctl_clone = { state.lock().await.ctl.clone_for_launch() };
     spawn_blocking_mapped(move || -> std::result::Result<(), String> {
         for id in mod_ids {
-            ctl_clone.delete_mod(id, false).map_err(|e| e.to_string())?;
+            ctl_clone.delete_mod(id, false).cmd_err()?;
         }
         Ok(())
     })
@@ -162,11 +163,11 @@ pub(crate) async fn open_workshop_dir(
 ) -> Result<(), String> {
     let path = {
         let state = state.lock().await;
-        state.ctl.workshop_path().map_err(|e| e.to_string())?
+        state.ctl.workshop_path().cmd_err()?
     };
     app.opener()
         .open_path(path.to_string_lossy().as_ref(), None::<&str>)
-        .map_err(|e: tauri_plugin_opener::Error| e.to_string())
+        .cmd_err()
 }
 
 /// Open a specific offline mission's folder in the system file manager.
@@ -178,12 +179,12 @@ pub(crate) async fn open_mission_dir(
 ) -> Result<(), String> {
     let path = {
         let state = state.lock().await;
-        let dayz_path = state.ctl.dayz_path().map_err(|e| e.to_string())?;
+        let dayz_path = state.ctl.dayz_path().cmd_err()?;
         dayz_path.join("Missions").join(&mission)
     };
     app.opener()
         .open_path(path.to_string_lossy().as_ref(), None::<&str>)
-        .map_err(|e: tauri_plugin_opener::Error| e.to_string())
+        .cmd_err()
 }
 
 /// Open a specific mod's directory in the system file manager.
@@ -198,12 +199,12 @@ pub(crate) async fn open_mod_dir(
         state
             .ctl
             .workshop_path()
-            .map_err(|e| e.to_string())?
+            .cmd_err()?
             .join(mod_id.to_string())
     };
     app.opener()
         .open_path(path.to_string_lossy().as_ref(), None::<&str>)
-        .map_err(|e: tauri_plugin_opener::Error| e.to_string())
+        .cmd_err()
 }
 
 /// Get missing mod IDs for a server.

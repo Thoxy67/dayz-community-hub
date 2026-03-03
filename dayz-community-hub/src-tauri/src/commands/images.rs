@@ -1,6 +1,7 @@
 use tauri::{AppHandle, Manager};
 
 use crate::state::insecure_client;
+use crate::utils::error::ResultExt;
 
 /// Resolve the base app-data directory via Tauri's path resolver.
 fn base_data_dir_from_app(app: &AppHandle) -> Result<std::path::PathBuf, String> {
@@ -72,8 +73,8 @@ pub(crate) async fn fetch_image(app: AppHandle, url: String) -> Result<String, S
     }
 
     let client = insecure_client();
-    let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
-    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+    let resp = client.get(&url).send().await.cmd_err()?;
+    let bytes = resp.bytes().await.cmd_err()?;
 
     let tmp = path.with_extension("tmp");
     tokio::fs::write(&tmp, &bytes)

@@ -4,6 +4,7 @@ mod convert;
 mod dto;
 mod helpers;
 mod state;
+mod utils;
 
 #[cfg(windows)]
 mod updater;

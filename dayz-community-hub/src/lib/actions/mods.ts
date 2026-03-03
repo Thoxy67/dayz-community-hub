@@ -2,13 +2,15 @@ import { invoke, Channel } from '@tauri-apps/api/core';
 import type { InstalledModDto, ModProgressEvent } from '$lib/types';
 import { app as s, MOD_UPDATES_TTL_MS } from '$lib/state.svelte';
 import { loadStats } from './servers';
+import { confirmAction } from '$lib/utils/dialog-helpers';
+import * as m from '$lib/paraglide/messages.js';
 
 export async function loadMods() {
   s.modsLoading = true;
   try {
     s.installedMods = await invoke<InstalledModDto[]>('get_installed_mods');
   } catch (e) {
-    s.setStatus(`Failed to load mods: ${e}`, 'error');
+    s.setStatus(m.mods_load_failed({ error: String(e) }), 'error');
   } finally {
     s.modsLoading = false;
   }
@@ -22,31 +24,32 @@ export async function checkModUpdates(force = false) {
     s.installedMods = await invoke<InstalledModDto[]>('check_mod_updates');
     s.modUpdatesLastChecked = Date.now();
   } catch (e) {
-    s.setStatus(`Update check failed: ${e}`, 'error');
+    s.setStatus(m.mods_update_check_failed({ error: String(e) }), 'error');
   } finally {
     s.modsChecking = false;
   }
 }
 
 export function deleteMod(mod_item: InstalledModDto) {
-  s.confirmDialog = {
-    title: 'Delete Mod',
-    message: `Delete '${mod_item.name}' (${mod_item.id})?\nSize: ${mod_item.size_human}`,
-    onConfirm: async () => {
+  confirmAction(
+    m.mods_delete_single_title(),
+    m.mods_delete_single_message({ name: mod_item.name, id: String(mod_item.id), size: mod_item.size_human }),
+    async () => {
       await invoke('delete_mod', { modId: mod_item.id });
       await loadMods();
-      s.setStatus(`Deleted ${mod_item.name}`, 'success');
     },
-  };
+    m.mods_deleted_single({ name: mod_item.name }),
+  );
 }
 
 export async function toggleModManaged(mod_item: InstalledModDto) {
   try {
     const managed = await invoke<boolean>('toggle_mod_managed', { modId: mod_item.id });
     await loadMods();
-    s.setStatus(`${mod_item.name} ${managed ? 'linked (symlink created)' : 'unlinked (symlink removed)'}`, 'success');
+    const message = managed ? m.mods_linked({ name: mod_item.name }) : m.mods_unlinked({ name: mod_item.name });
+    s.setStatus(message, 'success');
   } catch (e) {
-    s.setStatus(`Failed: ${e}`, 'error');
+    s.setStatus(m.mods_toggle_failed({ error: String(e) }), 'error');
   }
 }
 
@@ -63,19 +66,17 @@ export function updateStaleMods() {
 }
 
 export function cleanupMods() {
-  s.confirmDialog = {
-    title: 'Cleanup Mods',
-    message: 'Remove all managed mods and symlinks?',
-    onConfirm: async () => {
-      try {
-        const result = await invoke<string>('cleanup_mods');
-        await loadMods();
-        s.setStatus(result, 'success');
-      } catch (e) {
-        s.setStatus(`Cleanup failed: ${e}`, 'error');
-      }
+  confirmAction(
+    m.mods_cleanup_title(),
+    m.mods_cleanup_message(),
+    async () => {
+      const result = await invoke<string>('cleanup_mods');
+      await loadMods();
+      s.setStatus(result, 'success');
     },
-  };
+    '',
+    m.mods_cleanup_failed(),
+  );
 }
 
 export function deleteSelectedMods(ids: number[]) {
@@ -83,21 +84,26 @@ export function deleteSelectedMods(ids: number[]) {
   const totalSize = s.installedMods.filter((m) => ids.includes(m.id)).reduce((acc, m) => acc + m.size, 0);
   const sizeMb = totalSize / 1024 / 1024;
   const sizeStr = sizeMb >= 1024 ? `${(sizeMb / 1024).toFixed(1)} GB` : `${sizeMb.toFixed(1)} MB`;
-  s.confirmDialog = {
-    title: 'Delete Mods',
-    message: `Delete ${ids.length} mod${ids.length > 1 ? 's' : ''}?\nTotal size: ${sizeStr}`,
-    confirmLabel: `Delete ${ids.length}`,
-    confirmVariant: 'error',
-    onConfirm: async () => {
-      try {
-        await invoke('delete_mods_bulk', { modIds: ids });
-        await loadMods();
-        s.setStatus(`Deleted ${ids.length} mod${ids.length > 1 ? 's' : ''}`, 'success');
-      } catch (e) {
-        s.setStatus(`Delete failed: ${e}`, 'error');
-      }
+  const message =
+    ids.length > 1
+      ? m.mods_delete_selected_message_plural({ count: ids.length, size: sizeStr })
+      : m.mods_delete_selected_message({ count: ids.length, size: sizeStr });
+  const successMsg =
+    ids.length > 1
+      ? m.mods_deleted_selected_plural({ count: ids.length })
+      : m.mods_deleted_selected({ count: ids.length });
+  confirmAction(
+    m.mods_delete_selected_title(),
+    message,
+    async () => {
+      await invoke('delete_mods_bulk', { modIds: ids });
+      await loadMods();
     },
-  };
+    successMsg,
+    m.mods_delete_failed(),
+    m.mods_delete_button({ count: ids.length }),
+    'error',
+  );
 }
 
 export function updateSelectedMods(ids: number[]) {
@@ -120,7 +126,7 @@ export function startModOp(opType: string, args: Record<string, unknown>, onSucc
     phase: 'downloading',
     current: 0,
     total: 0,
-    currentName: 'Preparing…',
+    currentName: m.mods_preparing(),
     completed: [],
     ok: 0,
     failed: 0,
@@ -133,7 +139,7 @@ export function startModOp(opType: string, args: Record<string, unknown>, onSucc
     switch (payload.kind) {
       case 'shutting_down_steam':
         s.modOp.phase = 'shutting_down';
-        s.modOp.currentName = 'Closing Steam…';
+        s.modOp.currentName = m.mods_closing_steam();
         break;
       case 'steam_guard_mobile_required':
         s.modOp.phase = 'steam_guard_mobile';
@@ -168,17 +174,17 @@ export function startModOp(opType: string, args: Record<string, unknown>, onSucc
         s.modOp.failed = payload.failed;
         s.modOp.hint = payload.hint;
         if (!payload.hint && payload.failed === 0) {
-          s.setStatus(`Mods: ${payload.ok} updated successfully`, 'success');
+          s.setStatus(m.mods_updated_successfully({ count: payload.ok }), 'success');
           onSuccess?.();
         } else if (payload.failed > 0) {
-          s.setStatus(`Mods: ${payload.ok} OK, ${payload.failed} failed`, 'warning');
+          s.setStatus(m.mods_update_results({ ok: payload.ok, failed: payload.failed }), 'warning');
         }
         break;
     }
   };
 
   invoke('start_mod_operation', { opType, ...args, onProgress }).catch((e) => {
-    s.setStatus(`Mod operation failed: ${e}`, 'error');
+    s.setStatus(m.mods_operation_failed({ error: String(e) }), 'error');
     s.modOp.active = false;
   });
 }
@@ -194,7 +200,7 @@ export async function sendSteamcmdPassword(password: string) {
   try {
     await invoke('send_steamcmd_input', { input: password });
   } catch (e) {
-    s.setStatus(`Failed to send password: ${e}`, 'error');
+    s.setStatus(m.mods_password_send_failed({ error: String(e) }), 'error');
   }
 }
 

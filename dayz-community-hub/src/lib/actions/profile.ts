@@ -2,12 +2,13 @@ import { invoke } from '@tauri-apps/api/core';
 import type { ProfileDto } from '$lib/types';
 import { app as s } from '$lib/state.svelte';
 import { loadStats } from './servers';
+import * as m from '$lib/paraglide/messages.js';
 
 export async function loadProfile() {
   try {
     s.profile = await invoke<ProfileDto>('get_profile');
   } catch (e) {
-    s.setStatus(`Failed to load profile: ${e}`, 'error');
+    s.setStatus(m.profile_load_failed({ error: String(e) }), 'error');
   }
 }
 
@@ -49,9 +50,9 @@ export async function saveProfileSettings(
       s.avatarUrl = null;
     }
     await Promise.all(tasks);
-    s.setStatus('Settings saved', 'success');
+    s.setStatus(m.profile_settings_saved(), 'success');
   } catch (e) {
-    s.setStatus(`Failed to save settings: ${e}`, 'error');
+    s.setStatus(m.profile_settings_save_failed({ error: String(e) }), 'error');
   }
 }
 
@@ -66,7 +67,7 @@ export async function toggleOption(key: string) {
     if (s.profile) {
       s.profile.options = s.profile.options.map((o) => (o.key === key ? { ...o, enabled: prev ?? o.enabled } : o));
     }
-    s.setStatus(`Failed: ${e}`, 'error');
+    s.setStatus(m.profile_option_toggle_failed({ error: String(e) }), 'error');
   }
 }
 
@@ -83,6 +84,6 @@ export async function setOptionValue(key: string, value: string | null) {
     if (s.profile && prevOpt) {
       s.profile.options = s.profile.options.map((o) => (o.key === key ? { ...prevOpt } : o));
     }
-    s.setStatus(`Failed: ${e}`, 'error');
+    s.setStatus(m.profile_option_set_failed({ error: String(e) }), 'error');
   }
 }

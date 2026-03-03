@@ -3,6 +3,7 @@ use tauri::State;
 
 use crate::dto::*;
 use crate::state::SharedState;
+use crate::utils::error::ResultExt;
 
 /// Query A2S live info for a server.
 #[tauri::command]
@@ -65,16 +66,8 @@ pub(crate) async fn query_a2s(
     let qs_info = query_server.clone();
     let qs_players = query_server;
     let (info_res, players_res) = tokio::join!(
-        async move {
-            a2s_query::query_server_info(&qs_info)
-                .await
-                .map_err(|e| e.to_string())
-        },
-        async move {
-            a2s_query::query_player_info(&qs_players)
-                .await
-                .map_err(|e| e.to_string())
-        }
+        async move { a2s_query::query_server_info(&qs_info).await.cmd_err() },
+        async move { a2s_query::query_player_info(&qs_players).await.cmd_err() }
     );
     let info = info_res?;
     eprintln!(

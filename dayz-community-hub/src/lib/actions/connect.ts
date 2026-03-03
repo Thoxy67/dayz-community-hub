@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { ServerDto, ServerFullDto, ModDto } from '$lib/types';
 import { app as s } from '$lib/state.svelte';
 import { startModOp } from './mods';
+import * as m from '$lib/paraglide/messages.js';
 
 export async function connectToServer(server: ServerDto) {
   let fullServer: ServerFullDto | null = null;
@@ -120,13 +121,13 @@ export async function connectDirect(ip: string, port: number, password?: string,
 }
 
 export async function doLaunchDirect(server: ServerDto) {
-  s.setStatus(`Launching ${server.name}…`, 'info');
+  s.setStatus(m.connect_launching_server({ name: server.name }), 'info');
   try {
     await invoke('setup_mod_symlinks', { ip: server.ip, port: server.query_port }).catch(() => {});
     await invoke('launch_server', { ip: server.ip, port: server.query_port, password: null });
-    s.setStatus('Waiting for Steam to open DayZ…', 'info');
+    s.setStatus(m.connect_waiting_steam(), 'info');
   } catch (e) {
-    s.setStatus(`Launch failed: ${e}`, 'error');
+    s.setStatus(m.connect_launch_failed({ error: String(e) }), 'error');
   }
 }
 
@@ -139,7 +140,7 @@ export async function doUpdateAndLaunch(server: ServerDto) {
 }
 
 export async function doLaunchDirectByAddress(ip: string, port: number, password?: string, extraArgs?: string[]) {
-  s.setStatus(`Launching ${ip}:${port}…`, 'info');
+  s.setStatus(m.connect_launching_address({ address: `${ip}:${port}` }), 'info');
   try {
     await invoke('launch_direct', {
       ip,
@@ -147,9 +148,9 @@ export async function doLaunchDirectByAddress(ip: string, port: number, password
       password: password ?? null,
       extraArgs: extraArgs ?? null,
     });
-    s.setStatus('Waiting for Steam to open DayZ…', 'info');
+    s.setStatus(m.connect_waiting_steam(), 'info');
   } catch (e) {
-    s.setStatus(`Launch failed: ${e}`, 'error');
+    s.setStatus(m.connect_launch_failed({ error: String(e) }), 'error');
   }
 }
 

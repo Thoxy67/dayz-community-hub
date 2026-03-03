@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { HistoryDto, ServerDto, A2sDetailsDto, BattleMetricsDto } from '$lib/types';
+  import type { HistoryDto, ServerDto, A2sDetailsDto } from '$lib/types';
   import {
     pingLabel,
     pingColor,
@@ -10,7 +10,7 @@
     sortIcon as _sortIcon,
   } from '$lib/utils';
   import { formatRelativeTime } from '$lib/utils/i18n';
-  import BattleMetricsPanel from './BattleMetricsPanel.svelte';
+  import ServerDetailPanel from './ServerDetailPanel.svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
@@ -257,58 +257,7 @@
     detailEntry = null;
     a2s = null;
     a2sError = '';
-    bm = null;
-    bmError = '';
-    bmFetchedKey = '';
   }
-
-  // ── BattleMetrics ──────────────────────────────────────────────────────────
-  let bm = $state<BattleMetricsDto | null>(null);
-  let bmLoading = $state(false);
-  let bmError = $state('');
-  let bmFetchedKey = '';
-  let bmRetryTick = $state(0);
-  let _bmDebounce: ReturnType<typeof setTimeout> | undefined;
-
-  $effect(() => {
-    if (!detailEntry) return;
-    const sv = findServer(detailEntry);
-    const queryPort = sv ? sv.query_port : detailEntry.port;
-    const key = `${detailEntry.ip}:${queryPort}`;
-    bmRetryTick;
-    const token = bmApiKey;
-    if (!token || key === bmFetchedKey) return;
-
-    clearTimeout(_bmDebounce);
-    _bmDebounce = setTimeout(() => {
-      if (!detailEntry) return;
-      const currentSv = findServer(detailEntry);
-      const currentPort = currentSv ? currentSv.query_port : detailEntry.port;
-      if (`${detailEntry.ip}:${currentPort}` !== key) return;
-      bmLoading = true;
-      bmError = '';
-      invoke<BattleMetricsDto>('fetch_battlemetrics_server', { ip: detailEntry.ip, port: queryPort })
-        .then((result) => {
-          if (
-            detailEntry &&
-            `${detailEntry.ip}:${(findServer(detailEntry) ?? { query_port: detailEntry.port }).query_port}` === key
-          ) {
-            bm = result;
-            bmError = '';
-            bmFetchedKey = key;
-          }
-        })
-        .catch((e: unknown) => {
-          bm = null;
-          bmError = String(e);
-          bmFetchedKey = key;
-        })
-        .finally(() => {
-          bmLoading = false;
-        });
-    }, 300);
-    return () => clearTimeout(_bmDebounce);
-  });
 
   let selectedIdx = $state(-1);
 
@@ -628,151 +577,23 @@
 
   <!-- A2S detail side panel -->
   {#if detailEntry}
-    <div class="w-72 flex-shrink-0 border-l border-base-300 flex flex-col overflow-hidden">
-      <!-- Panel header -->
-      <div class="flex items-center gap-2 px-3 py-2 bg-base-200 border-b border-base-300 flex-shrink-0">
-        <Icon icon="mdi:server" class="size-4 text-primary shrink-0" />
-        <span class="text-xs font-semibold truncate flex-1">{detailEntry.name}</span>
-        <button class="btn btn-ghost btn-xs p-0.5" onclick={closeDetail} title={m.fav_close()}>
-          <Icon icon="ph:x" class="size-3.5" />
-        </button>
-      </div>
+    {@const server = findServer(detailEntry)}
+    {@const key = server ? `${server.ip}:${server.query_port}` : `${detailEntry.ip}:${detailEntry.port}`}
 
-      <div class="flex-1 flex flex-col min-h-0">
-        {#if a2sLoading}
-          <div class="flex items-center justify-center py-8 gap-2 text-base-content/50">
-            <span class="loading loading-spinner loading-sm"></span>
-            <span class="text-xs">{m.fav_querying()}</span>
-          </div>
-        {:else if a2sError}
-          <div
-            class="m-3 flex items-start gap-2 px-2.5 py-2 rounded-lg bg-error/10 border border-error/25 text-xs text-error"
-          >
-            <Icon icon="ph:warning-circle" class="size-3.5 shrink-0 mt-0.5" />
-            <span class="leading-snug break-all">{a2sError}</span>
-          </div>
-        {:else if a2s}
-          <div class="flex-shrink-0 p-3 space-y-3">
-            <div class="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-              <span class="flex items-center gap-1.5 text-base-content/50">
-                <Icon icon="mdi:controller" class="size-3.5 shrink-0" />{m.detail_players()}
-              </span>
-              <span
-                class="font-mono font-medium {a2s.players >= a2s.max_players
-                  ? 'text-error'
-                  : a2s.players > a2s.max_players / 2
-                    ? 'text-warning'
-                    : 'text-success'}"
-              >
-                {a2s.players}/{a2s.max_players}
-              </span>
-
-              <span class="flex items-center gap-1.5 text-base-content/50">
-                <Icon icon="mdi:map-outline" class="size-3.5 shrink-0" />{m.detail_map()}
-              </span>
-              <span class="text-amber-500/80">{a2s.map}</span>
-
-              <span class="flex items-center gap-1.5 text-base-content/50">
-                <Icon icon="mdi:tag-outline" class="size-3.5 shrink-0" />{m.detail_version()}
-              </span>
-              <span class="text-base-content/70">{a2s.version}</span>
-
-              <span class="flex items-center gap-1.5 text-base-content/50">
-                <Icon icon="mdi:signal" class="size-3.5 shrink-0" />{m.detail_ping()}
-              </span>
-              <button
-                class="font-mono cursor-pointer hover:opacity-70 transition-opacity {pingColor(
-                  pingCache.get(pingKey(detailEntry)),
-                )}"
-                onclick={() => detailEntry && doPing(detailEntry)}
-                title={m.servers_click_ping()}
-              >
-                {pingLabel(pingCache.get(pingKey(detailEntry)))}
-              </button>
-            </div>
-
-            {#if a2s.players_list.length > 0}
-              <div>
-                <div class="flex items-center gap-1.5 text-xs text-base-content/40 mb-1.5">
-                  <Icon icon="mdi:account-multiple-outline" class="size-3.5" />
-                  <span>{m.fav_online_count({ count: a2s.players_list.length })}</span>
-                </div>
-                <div class="space-y-1 max-h-36 overflow-y-auto">
-                  {#each a2s.players_list as pl}
-                    <div class="flex justify-between text-xs">
-                      <div class="flex items-center gap-1.5 text-base-content/80">
-                        <Icon icon="mdi:account-outline" class="size-3 text-base-content/30" />
-                        <span>{pl.name || '—'}</span>
-                      </div>
-                      <span class="text-base-content/30 tabular-nums">{formatDuration(pl.duration)}</span>
-                    </div>
-                  {/each}
-                </div>
-              </div>
-            {:else if a2s.players === 0}
-              <p class="text-xs text-base-content/30 text-center py-1">{m.detail_a2s_no_players()}</p>
-            {:else}
-              <p class="text-xs text-base-content/30 text-center py-1">{m.detail_a2s_names_not_reported()}</p>
-            {/if}
-          </div>
-
-          {#if a2s.mods.length > 0}
-            <div class="flex flex-col flex-1 min-h-0 border-t border-base-300">
-              <div class="flex items-center gap-1.5 text-xs text-base-content/40 px-3 py-2 flex-shrink-0">
-                <Icon icon="mdi:puzzle-outline" class="size-3.5" />
-                <span>{m.detail_mods_count({ count: a2s.mods.length })}</span>
-              </div>
-              <div class="flex-1 overflow-y-auto px-3 pb-2 space-y-1">
-                {#each a2s.mods as mod}
-                  <div class="flex items-center gap-1.5 text-xs">
-                    <Icon icon="mdi:puzzle-outline" class="size-3 text-secondary shrink-0" />
-                    <button
-                      class="truncate text-base-content/80 hover:text-primary transition-colors text-left"
-                      onclick={() =>
-                        openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.steam_workshop_id}`)}
-                      title="{m.detail_open_workshop()}: {mod.name}">{mod.name}</button
-                    >
-                    <button
-                      class="ml-auto shrink-0 font-mono text-xs text-base-content/30 hover:text-primary transition-colors flex items-center gap-0.5"
-                      onclick={() =>
-                        openUrl(`https://steamcommunity.com/sharedfiles/filedetails/?id=${mod.steam_workshop_id}`)}
-                      title={m.detail_open_workshop()}
-                    >
-                      {mod.steam_workshop_id}
-                      <Icon icon="mdi:steam" class="size-3" />
-                    </button>
-                  </div>
-                {/each}
-              </div>
-            </div>
-          {/if}
-        {/if}
-      </div>
-
-      <BattleMetricsPanel
-        {bm}
-        {bmLoading}
-        {bmError}
+    <div class="w-80 flex-shrink-0 flex flex-col overflow-hidden">
+      <ServerDetailPanel
+        {server}
+        {a2s}
+        {a2sLoading}
+        {a2sError}
+        installedMods={[]}
+        pingMs={pingCache.get(key) ?? null}
         {bmApiKey}
         {userLocation}
-        onRetry={() => {
-          bmFetchedKey = '';
-          bmRetryTick++;
-        }}
+        scrollToMods={false}
+        onClose={closeDetail}
+        onQueryA2s={() => detailEntry && openDetail(detailEntry)}
       />
-
-      <!-- Refresh A2S button -->
-      <div class="px-3 py-2 border-t border-base-300 flex-shrink-0">
-        <button
-          class="btn btn-ghost btn-xs w-full gap-1.5"
-          title={m.fav_refresh_a2s_title()}
-          onclick={() => detailEntry && openDetail(detailEntry)}
-          disabled={a2sLoading}
-        >
-          <Icon icon="ph:arrows-clockwise" class="size-3.5" />
-          {m.fav_refresh_a2s()}
-        </button>
-      </div>
     </div>
   {/if}
 </div>
