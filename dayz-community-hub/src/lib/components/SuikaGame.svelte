@@ -461,8 +461,7 @@
   <!-- HUD -->
   <div class="relative z-10 flex items-center gap-8 mb-3 font-mono text-[11px] tracking-widest">
     <span class="text-white/40">{m.suika_score()}<span class="text-score font-bold ml-2">{score}</span></span>
-    <span class="text-white/40">{m.suika_best()}<span class="text-best/70 font-bold ml-2">{highScore}</span></span
-    >
+    <span class="text-white/40">{m.suika_best()}<span class="text-best/70 font-bold ml-2">{highScore}</span></span>
   </div>
 
   <!-- Canvas -->

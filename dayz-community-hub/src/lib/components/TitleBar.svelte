@@ -268,16 +268,79 @@
 
     const sections: Record<string, string[]> = {
       'Base surfaces': ['--color-base-100', '--color-base-200', '--color-base-300', '--color-base-content'],
-      'Brand colors': ['--color-primary', '--color-primary-content', '--color-secondary', '--color-secondary-content', '--color-accent', '--color-accent-content', '--color-neutral', '--color-neutral-content'],
-      'Status colors': ['--color-info', '--color-info-content', '--color-success', '--color-success-content', '--color-warning', '--color-warning-content', '--color-error', '--color-error-content'],
-      'App accent colors': ['--color-accent-map', '--color-accent-mods', '--color-accent-stat-server', '--color-accent-stat-players', '--color-accent-stat-steam', '--color-accent-update', '--color-accent-stale', '--color-accent-highlight'],
-      'Terminal / Log colors': ['--color-terminal-bg', '--color-terminal-border', '--color-log-error', '--color-log-warning', '--color-log-success', '--color-log-info', '--color-log-default'],
-      'Syntax highlighting': ['--color-syntax-comment', '--color-syntax-selector', '--color-syntax-property', '--color-syntax-variable', '--color-syntax-string', '--color-syntax-number', '--color-syntax-function'],
+      'Brand colors': [
+        '--color-primary',
+        '--color-primary-content',
+        '--color-secondary',
+        '--color-secondary-content',
+        '--color-accent',
+        '--color-accent-content',
+        '--color-neutral',
+        '--color-neutral-content',
+      ],
+      'Status colors': [
+        '--color-info',
+        '--color-info-content',
+        '--color-success',
+        '--color-success-content',
+        '--color-warning',
+        '--color-warning-content',
+        '--color-error',
+        '--color-error-content',
+      ],
+      'App accent colors': [
+        '--color-accent-map',
+        '--color-accent-mods',
+        '--color-accent-stat-server',
+        '--color-accent-stat-players',
+        '--color-accent-stat-steam',
+        '--color-accent-update',
+        '--color-accent-stale',
+        '--color-accent-highlight',
+      ],
+      'Terminal / Log colors': [
+        '--color-terminal-bg',
+        '--color-terminal-border',
+        '--color-log-error',
+        '--color-log-warning',
+        '--color-log-success',
+        '--color-log-info',
+        '--color-log-default',
+      ],
+      'Syntax highlighting': [
+        '--color-syntax-comment',
+        '--color-syntax-selector',
+        '--color-syntax-property',
+        '--color-syntax-variable',
+        '--color-syntax-string',
+        '--color-syntax-number',
+        '--color-syntax-function',
+      ],
       'Feature colors': ['--color-feat-browser', '--color-feat-mods', '--color-feat-stats', '--color-feat-launch'],
-      'Badge colors': ['--color-badge-rank', '--color-badge-status', '--color-badge-country', '--color-badge-players', '--color-badge-firstperson', '--color-badge-official', '--color-badge-custom'],
+      'Badge colors': [
+        '--color-badge-rank',
+        '--color-badge-status',
+        '--color-badge-country',
+        '--color-badge-players',
+        '--color-badge-firstperson',
+        '--color-badge-official',
+        '--color-badge-custom',
+      ],
       'UI element colors': ['--color-port-query', '--color-port-game', '--color-link', '--color-score', '--color-best'],
-      'Option group colors': ['--color-opt-display', '--color-opt-network', '--color-opt-launch', '--color-opt-input', '--color-opt-misc'],
-      'Tech brand colors': ['--color-tech-tauri', '--color-tech-svelte', '--color-tech-rust', '--color-tech-daisyui', '--color-tech-tailwind'],
+      'Option group colors': [
+        '--color-opt-display',
+        '--color-opt-network',
+        '--color-opt-launch',
+        '--color-opt-input',
+        '--color-opt-misc',
+      ],
+      'Tech brand colors': [
+        '--color-tech-tauri',
+        '--color-tech-svelte',
+        '--color-tech-rust',
+        '--color-tech-daisyui',
+        '--color-tech-tailwind',
+      ],
       'Window control colors': ['--color-btn-close'],
       'Border radius': ['--radius-btn', '--radius-box', '--radius-badge'],
     };
@@ -324,15 +387,42 @@
   }
 
   // Get all presets organized by category
-  const darkPresets = themePresets.filter(p =>
-    ['dark', 'github_dark', 'neutral', 'midnight', 'forest', 'blood_moon', 'military', 'oled', 'sepia', 'nord', 'dracula', 'catppuccin', 'tokyonight', 'kanagawa', 'rosepine', 'gruvbox_dark'].includes(p.id)
+  const darkPresets = themePresets.filter((p) =>
+    [
+      'dark',
+      'github_dark',
+      'neutral',
+      'midnight',
+      'forest',
+      'blood_moon',
+      'military',
+      'oled',
+      'sepia',
+      'nord',
+      'dracula',
+      'catppuccin',
+      'tokyonight',
+      'kanagawa',
+      'rosepine',
+      'gruvbox_dark',
+    ].includes(p.id),
   );
-  const lightPresets = themePresets.filter(p =>
-    ['github_light', 'light', 'ocean', 'sand', 'rose', 'mint', 'lavender', 'catppuccin_latte', 'tokyonight_light', 'rosepine_dawn', 'gruvbox_light'].includes(p.id)
+  const lightPresets = themePresets.filter((p) =>
+    [
+      'github_light',
+      'light',
+      'ocean',
+      'sand',
+      'rose',
+      'mint',
+      'lavender',
+      'catppuccin_latte',
+      'tokyonight_light',
+      'rosepine_dawn',
+      'gruvbox_light',
+    ].includes(p.id),
   );
-  const mixedPresets = themePresets.filter(p =>
-    ['twilight', 'mocha'].includes(p.id)
-  );
+  const mixedPresets = themePresets.filter((p) => ['twilight', 'mocha'].includes(p.id));
 
   function closeCustomThemeModal() {
     customThemeModalOpen = false;
@@ -434,9 +524,7 @@
     { key: '--color-tech-daisyui', label: () => m.theme_color_tech_daisyui() },
     { key: '--color-tech-tailwind', label: () => m.theme_color_tech_tailwind() },
   ];
-  const windowColors = [
-    { key: '--color-btn-close', label: () => m.theme_color_btn_close() },
-  ];
+  const windowColors = [{ key: '--color-btn-close', label: () => m.theme_color_btn_close() }];
   const borderRadiusVars = [
     { key: '--radius-btn', label: () => m.theme_radius_btn() },
     { key: '--radius-box', label: () => m.theme_radius_box() },
@@ -465,16 +553,14 @@
   // Track system theme for "Default" logic - use prefers-color-scheme which reflects
   // the actual OS preference, not the current window theme (which changes when we apply themes)
   let systemTheme = $state<'dark' | 'light'>(
-    typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: light)').matches
-      ? 'light'
-      : 'dark'
+    typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark',
   );
 
   // Check if current selection matches system default (Default and system theme are linked)
   const isDefaultSelected = $derived(
     !activePresetId ||
-    (systemTheme === 'dark' && activePresetId === 'dark') ||
-    (systemTheme === 'light' && activePresetId === 'light')
+      (systemTheme === 'dark' && activePresetId === 'dark') ||
+      (systemTheme === 'light' && activePresetId === 'light'),
   );
 
   // Check if a preset should show as selected
@@ -500,21 +586,23 @@
 
     // If this is the first run (no saved theme/preset), detect system preference using Tauri
     if (app.isFirstRun()) {
-      getCurrentWindow().theme().then(async (systemTheme) => {
-        if (systemTheme === 'light') {
-          // Apply GitHub Light as default for light mode
-          const css = await loadThemeCss('github_light');
-          if (css) {
-            customCss = css;
-            localStorage.setItem('custom-theme-css', css);
-            localStorage.setItem('active-preset-id', 'github_light');
-            activePresetId = 'github_light';
-            applyCustomTheme(css);
-            onSetTheme('custom' as ThemeName);
+      getCurrentWindow()
+        .theme()
+        .then(async (systemTheme) => {
+          if (systemTheme === 'light') {
+            // Apply GitHub Light as default for light mode
+            const css = await loadThemeCss('github_light');
+            if (css) {
+              customCss = css;
+              localStorage.setItem('custom-theme-css', css);
+              localStorage.setItem('active-preset-id', 'github_light');
+              activePresetId = 'github_light';
+              applyCustomTheme(css);
+              onSetTheme('custom' as ThemeName);
+            }
           }
-        }
-        // For dark mode (default), we don't need to do anything - it's already the default
-      });
+          // For dark mode (default), we don't need to do anything - it's already the default
+        });
     }
   });
 
@@ -571,75 +659,105 @@
   // Preset icons mapping
   const presetIcons: Record<string, string> = {
     // Dark
-    'dark': 'ph:moon',
-    'github_dark': 'mdi:github',
-    'neutral': 'ph:circle-dashed',
-    'midnight': 'ph:moon-stars',
-    'forest': 'ph:tree',
-    'blood_moon': 'ph:drop',
-    'military': 'ph:shield-chevron',
-    'oled': 'ph:circle-half',
-    'sepia': 'ph:film-strip',
-    'nord': 'ph:snowflake',
-    'dracula': 'ph:ghost',
-    'catppuccin': 'ph:cat',
-    'tokyonight': 'ph:city',
-    'kanagawa': 'game-icons:big-wave',
-    'rosepine': 'ph:flower-lotus',
-    'gruvbox_dark': 'ph:tree-evergreen',
+    dark: 'ph:moon',
+    github_dark: 'mdi:github',
+    neutral: 'ph:circle-dashed',
+    midnight: 'ph:moon-stars',
+    forest: 'ph:tree',
+    blood_moon: 'ph:drop',
+    military: 'ph:shield-chevron',
+    oled: 'ph:circle-half',
+    sepia: 'ph:film-strip',
+    nord: 'ph:snowflake',
+    dracula: 'ph:ghost',
+    catppuccin: 'ph:cat',
+    tokyonight: 'ph:city',
+    kanagawa: 'game-icons:big-wave',
+    rosepine: 'ph:flower-lotus',
+    gruvbox_dark: 'ph:tree-evergreen',
     // Light
-    'github_light': 'mdi:github',
-    'light': 'ph:sun',
-    'ocean': 'ph:waves',
-    'sand': 'ph:sun-horizon',
-    'rose': 'ph:flower-lotus',
-    'mint': 'ph:leaf',
-    'lavender': 'ph:butterfly',
-    'catppuccin_latte': 'ph:cat',
-    'tokyonight_light': 'ph:city',
-    'rosepine_dawn': 'ph:sun-horizon',
-    'gruvbox_light': 'ph:tree-evergreen',
+    github_light: 'mdi:github',
+    light: 'ph:sun',
+    ocean: 'ph:waves',
+    sand: 'ph:sun-horizon',
+    rose: 'ph:flower-lotus',
+    mint: 'ph:leaf',
+    lavender: 'ph:butterfly',
+    catppuccin_latte: 'ph:cat',
+    tokyonight_light: 'ph:city',
+    rosepine_dawn: 'ph:sun-horizon',
+    gruvbox_light: 'ph:tree-evergreen',
     // Mixed
-    'twilight': 'ph:cloud-sun',
-    'mocha': 'ph:coffee',
+    twilight: 'ph:cloud-sun',
+    mocha: 'ph:coffee',
   };
 
   // Get preset label from messages
   function getPresetLabel(presetId: string): string {
     switch (presetId) {
       // Dark
-      case 'dark': return m.theme_preset_dark();
-      case 'github_dark': return m.theme_preset_github_dark();
-      case 'neutral': return m.theme_preset_neutral();
-      case 'midnight': return m.theme_preset_midnight();
-      case 'forest': return m.theme_preset_forest();
-      case 'blood_moon': return m.theme_preset_blood_moon();
-      case 'military': return m.theme_preset_military();
-      case 'oled': return m.theme_preset_oled();
-      case 'sepia': return m.theme_preset_sepia();
-      case 'nord': return m.theme_preset_nord();
-      case 'dracula': return m.theme_preset_dracula();
-      case 'catppuccin': return m.theme_preset_catppuccin();
-      case 'tokyonight': return m.theme_preset_tokyonight();
-      case 'kanagawa': return m.theme_preset_kanagawa();
-      case 'rosepine': return m.theme_preset_rosepine();
-      case 'gruvbox_dark': return m.theme_preset_gruvbox_dark();
+      case 'dark':
+        return m.theme_preset_dark();
+      case 'github_dark':
+        return m.theme_preset_github_dark();
+      case 'neutral':
+        return m.theme_preset_neutral();
+      case 'midnight':
+        return m.theme_preset_midnight();
+      case 'forest':
+        return m.theme_preset_forest();
+      case 'blood_moon':
+        return m.theme_preset_blood_moon();
+      case 'military':
+        return m.theme_preset_military();
+      case 'oled':
+        return m.theme_preset_oled();
+      case 'sepia':
+        return m.theme_preset_sepia();
+      case 'nord':
+        return m.theme_preset_nord();
+      case 'dracula':
+        return m.theme_preset_dracula();
+      case 'catppuccin':
+        return m.theme_preset_catppuccin();
+      case 'tokyonight':
+        return m.theme_preset_tokyonight();
+      case 'kanagawa':
+        return m.theme_preset_kanagawa();
+      case 'rosepine':
+        return m.theme_preset_rosepine();
+      case 'gruvbox_dark':
+        return m.theme_preset_gruvbox_dark();
       // Light
-      case 'github_light': return m.theme_preset_github_light();
-      case 'light': return m.theme_preset_light();
-      case 'ocean': return m.theme_preset_ocean();
-      case 'sand': return m.theme_preset_sand();
-      case 'rose': return m.theme_preset_rose();
-      case 'mint': return m.theme_preset_mint();
-      case 'lavender': return m.theme_preset_lavender();
-      case 'catppuccin_latte': return m.theme_preset_catppuccin_latte();
-      case 'tokyonight_light': return m.theme_preset_tokyonight_light();
-      case 'rosepine_dawn': return m.theme_preset_rosepine_dawn();
-      case 'gruvbox_light': return m.theme_preset_gruvbox_light();
+      case 'github_light':
+        return m.theme_preset_github_light();
+      case 'light':
+        return m.theme_preset_light();
+      case 'ocean':
+        return m.theme_preset_ocean();
+      case 'sand':
+        return m.theme_preset_sand();
+      case 'rose':
+        return m.theme_preset_rose();
+      case 'mint':
+        return m.theme_preset_mint();
+      case 'lavender':
+        return m.theme_preset_lavender();
+      case 'catppuccin_latte':
+        return m.theme_preset_catppuccin_latte();
+      case 'tokyonight_light':
+        return m.theme_preset_tokyonight_light();
+      case 'rosepine_dawn':
+        return m.theme_preset_rosepine_dawn();
+      case 'gruvbox_light':
+        return m.theme_preset_gruvbox_light();
       // Mixed
-      case 'twilight': return m.theme_preset_twilight();
-      case 'mocha': return m.theme_preset_mocha();
-      default: return presetId;
+      case 'twilight':
+        return m.theme_preset_twilight();
+      case 'mocha':
+        return m.theme_preset_mocha();
+      default:
+        return presetId;
     }
   }
 
@@ -656,7 +774,7 @@
     const data = {
       version: 1,
       name: 'Custom Theme',
-      css: customCss
+      css: customCss,
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -1088,7 +1206,9 @@
           </div>
           {#each darkPresets as preset}
             <button
-              class="w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-base-300 transition-colors {isPresetSelected(preset.id)
+              class="w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-base-300 transition-colors {isPresetSelected(
+                preset.id,
+              )
                 ? 'text-primary bg-base-300/50'
                 : 'text-base-content/70'}"
               onclick={() => applyPreset(preset.id)}
@@ -1110,7 +1230,9 @@
           </div>
           {#each lightPresets as preset}
             <button
-              class="w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-base-300 transition-colors {isPresetSelected(preset.id)
+              class="w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-base-300 transition-colors {isPresetSelected(
+                preset.id,
+              )
                 ? 'text-primary bg-base-300/50'
                 : 'text-base-content/70'}"
               onclick={() => applyPreset(preset.id)}
@@ -1132,7 +1254,9 @@
           </div>
           {#each mixedPresets as preset}
             <button
-              class="w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-base-300 transition-colors {isPresetSelected(preset.id)
+              class="w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-base-300 transition-colors {isPresetSelected(
+                preset.id,
+              )
                 ? 'text-primary bg-base-300/50'
                 : 'text-base-content/70'}"
               onclick={() => applyPreset(preset.id)}
@@ -1669,7 +1793,10 @@
               {m.theme_load_preset()}
               <Icon icon="ph:caret-down" class="size-3" />
             </button>
-            <ul tabindex="0" class="dropdown-content z-[1] menu p-1 shadow-lg bg-base-200 rounded-lg w-48 mt-1 border border-base-300 max-h-80 overflow-y-auto">
+            <ul
+              tabindex="0"
+              class="dropdown-content z-[1] menu p-1 shadow-lg bg-base-200 rounded-lg w-48 mt-1 border border-base-300 max-h-80 overflow-y-auto"
+            >
               <li class="menu-title text-xs text-base-content/50 px-2 py-1">{m.theme_preset_group_dark()}</li>
               {#each darkPresets as preset}
                 <li><button onclick={() => loadPresetIntoEditor(preset.id)}>{getPresetLabel(preset.id)}</button></li>
@@ -1693,8 +1820,10 @@
       <!-- Tabs -->
       <div class="flex border-b border-base-300 bg-base-200/50 px-4">
         <button
-          class="px-4 py-2.5 text-xs font-medium transition-colors relative {themeEditorTab === 'colors' ? 'text-primary' : 'text-base-content/60 hover:text-base-content'}"
-          onclick={() => themeEditorTab = 'colors'}
+          class="px-4 py-2.5 text-xs font-medium transition-colors relative {themeEditorTab === 'colors'
+            ? 'text-primary'
+            : 'text-base-content/60 hover:text-base-content'}"
+          onclick={() => (themeEditorTab = 'colors')}
         >
           <span class="flex items-center gap-1.5">
             <Icon icon="ph:paint-bucket" class="size-3.5" />
@@ -1705,8 +1834,10 @@
           {/if}
         </button>
         <button
-          class="px-4 py-2.5 text-xs font-medium transition-colors relative {themeEditorTab === 'code' ? 'text-primary' : 'text-base-content/60 hover:text-base-content'}"
-          onclick={() => themeEditorTab = 'code'}
+          class="px-4 py-2.5 text-xs font-medium transition-colors relative {themeEditorTab === 'code'
+            ? 'text-primary'
+            : 'text-base-content/60 hover:text-base-content'}"
+          onclick={() => (themeEditorTab = 'code')}
         >
           <span class="flex items-center gap-1.5">
             <Icon icon="ph:code" class="size-3.5" />
@@ -1717,8 +1848,10 @@
           {/if}
         </button>
         <button
-          class="px-4 py-2.5 text-xs font-medium transition-colors relative {themeEditorTab === 'preview' ? 'text-primary' : 'text-base-content/60 hover:text-base-content'}"
-          onclick={() => themeEditorTab = 'preview'}
+          class="px-4 py-2.5 text-xs font-medium transition-colors relative {themeEditorTab === 'preview'
+            ? 'text-primary'
+            : 'text-base-content/60 hover:text-base-content'}"
+          onclick={() => (themeEditorTab = 'preview')}
         >
           <span class="flex items-center gap-1.5">
             <Icon icon="ph:eye" class="size-3.5" />
@@ -1737,7 +1870,9 @@
           <div class="p-5 space-y-5">
             <!-- Base Colors -->
             <div>
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <h3
+                class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2"
+              >
                 <Icon icon="ph:squares-four" class="size-3.5" />
                 {m.theme_color_base()}
               </h3>
@@ -1746,7 +1881,7 @@
                   <ThemeColorPicker
                     label={def.label()}
                     value={getColorFromCss(customCss, def.key)}
-                    onChange={(v) => customCss = updateColorInCss(customCss, def.key, v)}
+                    onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                   />
                 {/each}
               </div>
@@ -1754,7 +1889,9 @@
 
             <!-- Brand Colors -->
             <div>
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <h3
+                class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2"
+              >
                 <Icon icon="ph:paint-brush" class="size-3.5" />
                 {m.theme_color_primary()}, {m.theme_color_secondary()}, {m.theme_color_accent()}
               </h3>
@@ -1763,7 +1900,7 @@
                   <ThemeColorPicker
                     label={def.label()}
                     value={getColorFromCss(customCss, def.key)}
-                    onChange={(v) => customCss = updateColorInCss(customCss, def.key, v)}
+                    onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                   />
                 {/each}
               </div>
@@ -1771,7 +1908,9 @@
 
             <!-- Status Colors -->
             <div>
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <h3
+                class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2"
+              >
                 <Icon icon="ph:flag" class="size-3.5" />
                 {m.theme_color_status()}
               </h3>
@@ -1780,7 +1919,7 @@
                   <ThemeColorPicker
                     label={def.label()}
                     value={getColorFromCss(customCss, def.key)}
-                    onChange={(v) => customCss = updateColorInCss(customCss, def.key, v)}
+                    onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                   />
                 {/each}
               </div>
@@ -1788,7 +1927,9 @@
 
             <!-- Terminal Colors -->
             <div>
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <h3
+                class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2"
+              >
                 <Icon icon="ph:terminal" class="size-3.5" />
                 {m.theme_color_terminal()}
               </h3>
@@ -1797,7 +1938,7 @@
                   <ThemeColorPicker
                     label={def.label()}
                     value={getColorFromCss(customCss, def.key)}
-                    onChange={(v) => customCss = updateColorInCss(customCss, def.key, v)}
+                    onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                   />
                 {/each}
               </div>
@@ -1805,7 +1946,9 @@
 
             <!-- Syntax Highlighting -->
             <div>
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <h3
+                class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2"
+              >
                 <Icon icon="ph:code" class="size-3.5" />
                 {m.theme_color_syntax()}
               </h3>
@@ -1814,7 +1957,7 @@
                   <ThemeColorPicker
                     label={def.label()}
                     value={getColorFromCss(customCss, def.key)}
-                    onChange={(v) => customCss = updateColorInCss(customCss, def.key, v)}
+                    onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                   />
                 {/each}
               </div>
@@ -1822,7 +1965,9 @@
 
             <!-- Neutral Colors -->
             <div>
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <h3
+                class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2"
+              >
                 <Icon icon="ph:circle-half" class="size-3.5" />
                 {m.theme_color_neutral_group()}
               </h3>
@@ -1831,7 +1976,7 @@
                   <ThemeColorPicker
                     label={def.label()}
                     value={getColorFromCss(customCss, def.key)}
-                    onChange={(v) => customCss = updateColorInCss(customCss, def.key, v)}
+                    onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                   />
                 {/each}
               </div>
@@ -1839,7 +1984,9 @@
 
             <!-- Content Colors -->
             <div>
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <h3
+                class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2"
+              >
                 <Icon icon="ph:text-aa" class="size-3.5" />
                 {m.theme_color_content_group()}
               </h3>
@@ -1848,7 +1995,7 @@
                   <ThemeColorPicker
                     label={def.label()}
                     value={getColorFromCss(customCss, def.key)}
-                    onChange={(v) => customCss = updateColorInCss(customCss, def.key, v)}
+                    onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                   />
                 {/each}
               </div>
@@ -1856,7 +2003,9 @@
 
             <!-- App Accent Colors -->
             <div>
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <h3
+                class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2"
+              >
                 <Icon icon="ph:sparkle" class="size-3.5" />
                 {m.theme_color_app_accent_group()}
               </h3>
@@ -1865,7 +2014,7 @@
                   <ThemeColorPicker
                     label={def.label()}
                     value={getColorFromCss(customCss, def.key)}
-                    onChange={(v) => customCss = updateColorInCss(customCss, def.key, v)}
+                    onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                   />
                 {/each}
               </div>
@@ -1873,7 +2022,9 @@
 
             <!-- Feature Colors -->
             <div>
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <h3
+                class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2"
+              >
                 <Icon icon="ph:star" class="size-3.5" />
                 {m.theme_color_feature_group()}
               </h3>
@@ -1882,7 +2033,7 @@
                   <ThemeColorPicker
                     label={def.label()}
                     value={getColorFromCss(customCss, def.key)}
-                    onChange={(v) => customCss = updateColorInCss(customCss, def.key, v)}
+                    onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                   />
                 {/each}
               </div>
@@ -1890,7 +2041,9 @@
 
             <!-- Badge Colors -->
             <div>
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <h3
+                class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2"
+              >
                 <Icon icon="ph:tag" class="size-3.5" />
                 {m.theme_color_badge_group()}
               </h3>
@@ -1899,7 +2052,7 @@
                   <ThemeColorPicker
                     label={def.label()}
                     value={getColorFromCss(customCss, def.key)}
-                    onChange={(v) => customCss = updateColorInCss(customCss, def.key, v)}
+                    onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                   />
                 {/each}
               </div>
@@ -1907,7 +2060,9 @@
 
             <!-- UI Element Colors -->
             <div>
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <h3
+                class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2"
+              >
                 <Icon icon="ph:squares-four" class="size-3.5" />
                 {m.theme_color_ui_element_group()}
               </h3>
@@ -1916,7 +2071,7 @@
                   <ThemeColorPicker
                     label={def.label()}
                     value={getColorFromCss(customCss, def.key)}
-                    onChange={(v) => customCss = updateColorInCss(customCss, def.key, v)}
+                    onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                   />
                 {/each}
               </div>
@@ -1924,7 +2079,9 @@
 
             <!-- Option Group Colors -->
             <div>
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <h3
+                class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2"
+              >
                 <Icon icon="ph:sliders" class="size-3.5" />
                 {m.theme_color_option_group()}
               </h3>
@@ -1933,7 +2090,7 @@
                   <ThemeColorPicker
                     label={def.label()}
                     value={getColorFromCss(customCss, def.key)}
-                    onChange={(v) => customCss = updateColorInCss(customCss, def.key, v)}
+                    onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                   />
                 {/each}
               </div>
@@ -1941,7 +2098,9 @@
 
             <!-- Tech Brand Colors -->
             <div>
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <h3
+                class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2"
+              >
                 <Icon icon="ph:cpu" class="size-3.5" />
                 {m.theme_color_tech_brand_group()}
               </h3>
@@ -1950,7 +2109,7 @@
                   <ThemeColorPicker
                     label={def.label()}
                     value={getColorFromCss(customCss, def.key)}
-                    onChange={(v) => customCss = updateColorInCss(customCss, def.key, v)}
+                    onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                   />
                 {/each}
               </div>
@@ -1958,7 +2117,9 @@
 
             <!-- Window Controls -->
             <div>
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <h3
+                class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2"
+              >
                 <Icon icon="ph:app-window" class="size-3.5" />
                 {m.theme_color_window_group()}
               </h3>
@@ -1967,7 +2128,7 @@
                   <ThemeColorPicker
                     label={def.label()}
                     value={getColorFromCss(customCss, def.key)}
-                    onChange={(v) => customCss = updateColorInCss(customCss, def.key, v)}
+                    onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                   />
                 {/each}
               </div>
@@ -1975,7 +2136,9 @@
 
             <!-- Border Radius -->
             <div>
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <h3
+                class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2"
+              >
                 <Icon icon="ph:corners" class="size-3.5" />
                 {m.theme_radius_group()}
               </h3>
@@ -1987,26 +2150,27 @@
                       type="text"
                       class="input input-sm input-bordered w-full font-mono text-xs"
                       value={getColorFromCss(customCss, def.key)}
-                      onchange={(e) => customCss = updateColorInCss(customCss, def.key, (e.target as HTMLInputElement).value)}
+                      onchange={(e) =>
+                        (customCss = updateColorInCss(customCss, def.key, (e.target as HTMLInputElement).value))}
                     />
                   </div>
                 {/each}
               </div>
             </div>
           </div>
-
         {:else if themeEditorTab === 'code'}
           <!-- Code Tab - CSS Editor -->
           <div class="p-4 h-[400px]">
             <CssEditor value={customCss} onInput={(v) => (customCss = v)} placeholder="Enter your custom CSS..." />
           </div>
-
         {:else if themeEditorTab === 'preview'}
           <!-- Preview Tab - Component Samples -->
           <div class="p-5 space-y-4">
             <!-- Buttons -->
             <div class="space-y-2">
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">{m.theme_preview_button()}</h3>
+              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">
+                {m.theme_preview_button()}
+              </h3>
               <div class="flex flex-wrap gap-2">
                 <button class="btn btn-primary btn-sm">Primary</button>
                 <button class="btn btn-secondary btn-sm">Secondary</button>
@@ -2018,7 +2182,9 @@
 
             <!-- Badges -->
             <div class="space-y-2">
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">{m.theme_preview_badge()}</h3>
+              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">
+                {m.theme_preview_badge()}
+              </h3>
               <div class="flex flex-wrap gap-2">
                 <span class="badge badge-primary">Primary</span>
                 <span class="badge badge-secondary">Secondary</span>
@@ -2032,7 +2198,9 @@
 
             <!-- Alerts -->
             <div class="space-y-2">
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">{m.theme_preview_alert()}</h3>
+              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">
+                {m.theme_preview_alert()}
+              </h3>
               <div class="space-y-2">
                 <div class="alert alert-info py-2 text-sm">
                   <Icon icon="ph:info" class="size-4" />
@@ -2055,7 +2223,9 @@
 
             <!-- Card -->
             <div class="space-y-2">
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">{m.theme_preview_card()}</h3>
+              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">
+                {m.theme_preview_card()}
+              </h3>
               <div class="card bg-base-200 border border-base-300 w-full max-w-sm">
                 <div class="card-body p-4">
                   <h4 class="card-title text-sm">Card Title</h4>
@@ -2069,7 +2239,9 @@
 
             <!-- Input -->
             <div class="space-y-2">
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">{m.theme_preview_input()}</h3>
+              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">
+                {m.theme_preview_input()}
+              </h3>
               <div class="flex gap-2 max-w-sm">
                 <input type="text" placeholder="Text input..." class="input input-bordered input-sm flex-1" />
                 <button class="btn btn-primary btn-sm">Submit</button>
@@ -2092,17 +2264,11 @@
             <Icon icon="ph:arrow-counter-clockwise" class="size-3.5" />
             {m.theme_reset()}
           </button>
-          <button
-            class="btn btn-ghost btn-sm text-base-content/60 gap-1.5"
-            onclick={importTheme}
-          >
+          <button class="btn btn-ghost btn-sm text-base-content/60 gap-1.5" onclick={importTheme}>
             <Icon icon="ph:upload-simple" class="size-3.5" />
             {m.theme_import()}
           </button>
-          <button
-            class="btn btn-ghost btn-sm text-base-content/60 gap-1.5"
-            onclick={exportTheme}
-          >
+          <button class="btn btn-ghost btn-sm text-base-content/60 gap-1.5" onclick={exportTheme}>
             <Icon icon="ph:download-simple" class="size-3.5" />
             {m.theme_export()}
           </button>

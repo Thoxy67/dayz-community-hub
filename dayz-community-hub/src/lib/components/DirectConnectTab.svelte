@@ -871,18 +871,12 @@
                   {/if}
                   {#if resolvedQueryPort !== null}
                     {#if resolvedPortKind === 'query'}
-                      <span
-                        class="badge badge-xs badge-country gap-1"
-                        title={m.dc_badge_query_port()}
-                      >
+                      <span class="badge badge-xs badge-country gap-1" title={m.dc_badge_query_port()}>
                         <Icon icon="ph:plugs" class="size-2.5" />
                         {m.dc_query_port_badge()}
                       </span>
                     {:else if resolvedPortKind === 'game'}
-                      <span
-                        class="badge badge-xs badge-rank gap-1"
-                        title={m.dc_badge_game_port()}
-                      >
+                      <span class="badge badge-xs badge-rank gap-1" title={m.dc_badge_game_port()}>
                         <Icon icon="ph:game-controller" class="size-2.5" />
                         {m.dc_game_port_badge()} → Q:{resolvedQueryPort}
                       </span>

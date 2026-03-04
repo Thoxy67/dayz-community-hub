@@ -77,9 +77,9 @@ export async function loadThemeCss(id: ThemePresetId): Promise<string> {
  * Preload multiple themes (useful for commonly used themes)
  */
 export async function preloadThemes(ids: ThemePresetId[]): Promise<void> {
-  await Promise.all(ids.map(id => loadThemeCss(id)));
+  await Promise.all(ids.map((id) => loadThemeCss(id)));
 }
 
 // For backwards compatibility - returns theme objects with just IDs
 // CSS is loaded separately via loadThemeCss()
-export const themePresets = themeIds.map(id => ({ id }));
+export const themePresets = themeIds.map((id) => ({ id }));

@@ -23,7 +23,7 @@ export function parseOklch(oklchStr: string): OklchColor | null {
   return {
     l,
     c: parseFloat(match[2]),
-    h: parseFloat(match[3])
+    h: parseFloat(match[3]),
   };
 }
 

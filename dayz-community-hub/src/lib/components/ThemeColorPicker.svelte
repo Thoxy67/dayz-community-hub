@@ -75,7 +75,9 @@
 </script>
 
 <div class="flex items-center gap-2.5 group">
-  <label class="relative size-7 rounded-md overflow-hidden border border-base-300 cursor-pointer shadow-sm hover:shadow transition-shadow flex-shrink-0">
+  <label
+    class="relative size-7 rounded-md overflow-hidden border border-base-300 cursor-pointer shadow-sm hover:shadow transition-shadow flex-shrink-0"
+  >
     <input
       type="color"
       value={hexValue()}
@@ -90,7 +92,7 @@
       type="text"
       bind:value={hexInput}
       oninput={handleHexInput}
-      onfocus={() => isEditing = true}
+      onfocus={() => (isEditing = true)}
       onblur={handleHexBlur}
       onkeydown={handleHexKeydown}
       class="w-full text-[11px] font-mono bg-base-200 border border-base-300 rounded px-1.5 py-0.5 text-base-content/70 focus:outline-none focus:border-primary focus:text-base-content transition-colors"
