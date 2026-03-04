@@ -20,7 +20,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: dayz-community-hub
+        working-directory: dayz-community-hub-ui
 
     steps:
       - name: Checkout
@@ -159,7 +159,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: dayz-community-hub
+        working-directory: dayz-community-hub-ui
 
     steps:
       - name: Checkout
