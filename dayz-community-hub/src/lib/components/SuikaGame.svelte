@@ -460,8 +460,8 @@
 
   <!-- HUD -->
   <div class="relative z-10 flex items-center gap-8 mb-3 font-mono text-[11px] tracking-widest">
-    <span class="text-white/40">{m.suika_score()}<span class="text-emerald-400 font-bold ml-2">{score}</span></span>
-    <span class="text-white/40">{m.suika_best()}<span class="text-yellow-400/70 font-bold ml-2">{highScore}</span></span
+    <span class="text-white/40">{m.suika_score()}<span class="text-score font-bold ml-2">{score}</span></span>
+    <span class="text-white/40">{m.suika_best()}<span class="text-best/70 font-bold ml-2">{highScore}</span></span
     >
   </div>
 
@@ -489,7 +489,7 @@
         {m.suika_close()}
       </p>
     {:else}
-      <p class="glitch-title font-mono text-sm text-red-400 font-black tracking-[0.4em] uppercase mb-2">
+      <p class="glitch-title font-mono text-sm text-error font-black tracking-[0.4em] uppercase mb-2">
         {m.suika_overflow()}
       </p>
       <p class="font-mono text-[10px] text-white/25 tracking-widest">

@@ -26,31 +26,31 @@
     {
       labelKey: 'window',
       icon: 'ph:monitor',
-      color: 'text-blue-400',
+      color: 'text-opt-display',
       keys: ['window', 'noborder'],
     },
     {
       labelKey: 'startup',
       icon: 'ph:rocket-launch',
-      color: 'text-green-400',
+      color: 'text-opt-network',
       keys: ['nosplash', 'skipintro', 'nolauncher'],
     },
     {
       labelKey: 'performance',
       icon: 'ph:gauge',
-      color: 'text-orange-400',
+      color: 'text-opt-launch',
       keys: ['high', 'max_mem', 'max_vram', 'cpu_count', 'ex_threads', 'no_benchmark'],
     },
     {
       labelKey: 'world',
       icon: 'ph:globe-hemisphere-west',
-      color: 'text-teal-400',
+      color: 'text-opt-input',
       keys: ['world', 'no_pause'],
     },
     {
       labelKey: 'developer',
       icon: 'ph:code',
-      color: 'text-purple-400',
+      color: 'text-opt-misc',
       keys: ['file_patching', 'do_logs', 'script_debug', 'buldozer', 'winxp', 'profiles'],
     },
   ];

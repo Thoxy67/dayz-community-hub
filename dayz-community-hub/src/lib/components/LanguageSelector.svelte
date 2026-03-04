@@ -46,6 +46,10 @@
       <Icon icon="emojione:flag-for-germany" class="size-4" />
     {:else if currentLocale === 'fr'}
       <Icon icon="emojione:flag-for-france" class="size-4" />
+    {:else if currentLocale === 'ru'}
+      <Icon icon="emojione:flag-for-russia" class="size-4" />
+    {:else if currentLocale === 'es'}
+      <Icon icon="emojione:flag-for-spain" class="size-4" />
     {:else}
       <Icon icon="emojione:flag-for-united-states" class="size-4" />
     {/if}
@@ -92,6 +96,32 @@
         <Icon icon="emojione:flag-for-france" class="size-5" />
         <span class="flex-1">{m.lang_fr()}</span>
         {#if currentLocale === 'fr'}
+          <Icon icon="ph:check" class="size-4 text-primary" />
+        {/if}
+      </button>
+      <button
+        class="w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-base-300 transition-colors {currentLocale ===
+        'ru'
+          ? 'text-primary bg-base-300/50'
+          : 'text-base-content/70'}"
+        onclick={() => selectLocale('ru')}
+      >
+        <Icon icon="emojione:flag-for-russia" class="size-5" />
+        <span class="flex-1">{m.lang_ru()}</span>
+        {#if currentLocale === 'ru'}
+          <Icon icon="ph:check" class="size-4 text-primary" />
+        {/if}
+      </button>
+      <button
+        class="w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-base-300 transition-colors {currentLocale ===
+        'es'
+          ? 'text-primary bg-base-300/50'
+          : 'text-base-content/70'}"
+        onclick={() => selectLocale('es')}
+      >
+        <Icon icon="emojione:flag-for-spain" class="size-5" />
+        <span class="flex-1">{m.lang_es()}</span>
+        {#if currentLocale === 'es'}
           <Icon icon="ph:check" class="size-4 text-primary" />
         {/if}
       </button>

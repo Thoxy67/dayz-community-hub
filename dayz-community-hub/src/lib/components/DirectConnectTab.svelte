@@ -1,20 +1,16 @@
 <script lang="ts">
   import type { A2sDetailsDto, ServerDto, ServerFullDto, InstalledModDto, FavoriteDto, DzchConfig } from '$lib/types';
   import { playerFill, playerBarColor, formatDuration } from '$lib/utils';
+  import { createSimpleCopyState } from '$lib/utils/clipboard.svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { openUrl } from '@tauri-apps/plugin-opener';
-  import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import { save as saveDialog } from '@tauri-apps/plugin-dialog';
   import Icon from '@iconify/svelte';
   import * as m from '$lib/paraglide/messages.js';
 
-  let copiedIp = $state(false);
+  const { copied: copiedIp, copy: copyIpToClipboard } = createSimpleCopyState();
   async function copyIp(ip: string, port: number) {
-    await writeText(`${ip}:${port}`);
-    copiedIp = true;
-    setTimeout(() => {
-      copiedIp = false;
-    }, 1500);
+    await copyIpToClipboard(`${ip}:${port}`);
   }
 
   /** Prefill payload: when set, the form is populated and a query is triggered. */
@@ -475,7 +471,7 @@
     };
   }
 
-  let copiedUrl = $state(false);
+  const { copied: copiedUrl, copy: copyUrlToClipboard } = createSimpleCopyState();
 
   async function exportDzchFile() {
     const config = buildDzchConfig();
@@ -501,11 +497,7 @@
     if (config.password) params.push(`password=${encodeURIComponent(config.password)}`);
     if (config.mods.length > 0) params.push(`mods=${config.mods.map((m) => m.id).join(',')}`);
     if (params.length > 0) url += '?' + params.join('&');
-    await writeText(url);
-    copiedUrl = true;
-    setTimeout(() => {
-      copiedUrl = false;
-    }, 1500);
+    await copyUrlToClipboard(url);
   }
 </script>
 
@@ -553,9 +545,9 @@
                   <span class="label-text text-xs text-base-content/60 flex items-center gap-1.5">
                     <Icon icon="ph:plugs" class="size-3.5" />
                     {#if foundServer && parseInt(port, 10) === foundServer?.game_port}
-                      {m.dc_port()} <span class="text-amber-400 ml-0.5">{m.dc_port_game()}</span>
+                      {m.dc_port()} <span class="text-port-game ml-0.5">{m.dc_port_game()}</span>
                     {:else if foundServer && parseInt(port, 10) === foundServer?.query_port}
-                      {m.dc_port()} <span class="text-sky-400 ml-0.5">{m.dc_port_query()}</span>
+                      {m.dc_port()} <span class="text-port-query ml-0.5">{m.dc_port_query()}</span>
                     {:else}
                       {m.dc_port()}
                     {/if}
@@ -704,9 +696,9 @@
                       <!-- Kind badge -->
                       <span class="shrink-0 font-mono text-base-content/40 w-14 truncate">
                         {#if entry.kind === 'mod'}
-                          <span class="text-amber-400">{m.dc_mod()}</span>
+                          <span class="text-accent-mods">{m.dc_mod()}</span>
                         {:else}
-                          <span class="text-teal-400">{m.dc_custom()}</span>
+                          <span class="text-badge-custom">{m.dc_custom()}</span>
                         {/if}
                       </span>
 
@@ -880,7 +872,7 @@
                   {#if resolvedQueryPort !== null}
                     {#if resolvedPortKind === 'query'}
                       <span
-                        class="badge badge-xs gap-1 bg-sky-500/15 text-sky-400 border-sky-500/20"
+                        class="badge badge-xs badge-country gap-1"
                         title={m.dc_badge_query_port()}
                       >
                         <Icon icon="ph:plugs" class="size-2.5" />
@@ -888,7 +880,7 @@
                       </span>
                     {:else if resolvedPortKind === 'game'}
                       <span
-                        class="badge badge-xs gap-1 bg-amber-500/15 text-amber-400 border-amber-500/20"
+                        class="badge badge-xs badge-rank gap-1"
                         title={m.dc_badge_game_port()}
                       >
                         <Icon icon="ph:game-controller" class="size-2.5" />
@@ -903,13 +895,13 @@
                     </span>
                   {/if}
                   {#if fs?.battl_eye}
-                    <span class="badge badge-xs gap-1 bg-blue-500/15 text-blue-400 border-blue-500/20">
+                    <span class="badge badge-xs badge-official gap-1">
                       <Icon icon="ph:shield-check" class="size-2.5" />
                       {m.dc_battleye()}
                     </span>
                   {/if}
                   {#if fs?.first_person_only}
-                    <span class="badge badge-xs gap-1 bg-violet-500/15 text-violet-400 border-violet-500/20">
+                    <span class="badge badge-xs badge-players gap-1">
                       <Icon icon="ph:eye" class="size-2.5" />
                       {m.dc_1pp()}
                     </span>
@@ -956,7 +948,7 @@
                     <Icon icon="ph:map-trifold" class="size-3.5" />
                     {m.dc_map()}
                   </div>
-                  <span class="text-teal-400 font-medium">{map || '—'}</span>
+                  <span class="text-accent-map font-medium">{map || '—'}</span>
 
                   {#if fs}
                     <div class="text-base-content/50 flex items-center gap-1.5">

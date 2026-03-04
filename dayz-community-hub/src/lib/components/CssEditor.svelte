@@ -157,36 +157,36 @@
 
   /* Syntax highlighting colors */
   :global(.css-comment) {
-    color: oklch(55% 0.02 120);
+    color: var(--color-syntax-comment);
     font-style: italic;
   }
 
   :global(.css-selector) {
-    color: oklch(70% 0.18 200);
+    color: var(--color-syntax-selector);
     font-weight: 600;
   }
 
   :global(.css-property) {
-    color: oklch(70% 0.16 280);
+    color: var(--color-syntax-property);
   }
 
   :global(.css-variable) {
-    color: oklch(75% 0.18 180);
+    color: var(--color-syntax-variable);
   }
 
   :global(.css-string) {
-    color: oklch(70% 0.16 80);
+    color: var(--color-syntax-string);
   }
 
   :global(.css-number) {
-    color: oklch(70% 0.18 140);
+    color: var(--color-syntax-number);
   }
 
   :global(.css-function) {
-    color: oklch(70% 0.16 320);
+    color: var(--color-syntax-function);
   }
 
   :global(.css-brace) {
-    color: color-mix(in oklch, var(--color-base-content, #e0e0e0) 60%, transparent);
+    color: color-mix(in oklch, var(--color-base-content) 60%, transparent);
   }
 </style>

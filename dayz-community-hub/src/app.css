@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @plugin "daisyui" {
-  themes: light, dark --default, midnight, forest, blood-moon, military, oled, sepia, ocean, sand, rose, mint, lavender, catppuccin-latte, twilight, mocha, catppuccin, catppuccin-frappe, kanagawa, tokyonight, tokyonight-storm, custom;
+  /* Only light, dark (default), and custom (for presets) are needed.
+     All other themes are managed via theme-presets.ts */
+  themes: light, dark --default, custom;
 }
 
 /* ── Fix: DaisyUI 5 modal backdrop bleeds light bg into [data-theme] ───────
@@ -24,6 +26,143 @@
   --color-accent-update: oklch(75% 0.18 160);       /* Update available - emerald */
   --color-accent-stale: oklch(80% 0.16 85);         /* Stale mods - yellow */
   --color-accent-highlight: oklch(75% 0.16 230);    /* Filter highlight - sky */
+
+  /* ── Terminal / Log colors ─────────────────────────────────────────────────── */
+  --color-terminal-bg: oklch(12% 0.01 240);         /* Terminal background */
+  --color-terminal-border: oklch(25% 0.01 240);     /* Terminal border */
+  --color-log-error: oklch(70% 0.20 25);            /* Error messages - red */
+  --color-log-warning: oklch(80% 0.16 85);          /* Warning messages - yellow */
+  --color-log-success: oklch(72% 0.18 160);         /* Success messages - green */
+  --color-log-info: oklch(75% 0.14 220);            /* Info messages - blue */
+  --color-log-default: oklch(65% 0.02 250);         /* Default text - gray */
+
+  /* ── Syntax highlighting colors ────────────────────────────────────────────── */
+  --color-syntax-comment: oklch(55% 0.02 120);      /* Comments - muted green */
+  --color-syntax-selector: oklch(70% 0.18 200);     /* CSS selectors - cyan */
+  --color-syntax-property: oklch(70% 0.16 280);     /* Properties - purple */
+  --color-syntax-variable: oklch(75% 0.18 180);     /* Variables - teal */
+  --color-syntax-string: oklch(70% 0.16 80);        /* Strings - orange */
+  --color-syntax-number: oklch(70% 0.18 140);       /* Numbers - green */
+  --color-syntax-function: oklch(70% 0.16 320);     /* Functions - pink */
+
+  /* ── Feature accent colors ─────────────────────────────────────────────────── */
+  --color-feat-browser: oklch(75% 0.16 220);        /* Server browser - sky */
+  --color-feat-mods: oklch(75% 0.20 310);           /* Mods - fuchsia */
+  --color-feat-stats: oklch(75% 0.18 160);          /* Stats/BM - emerald */
+  --color-feat-launch: oklch(75% 0.18 55);          /* Launch - orange */
+
+  /* ── Badge colors (server info badges) ──────────────────────────────────────── */
+  --color-badge-rank: oklch(80% 0.16 85);           /* Rank badge - amber/yellow */
+  --color-badge-status: oklch(70% 0.18 15);         /* Status badge - rose */
+  --color-badge-country: oklch(75% 0.16 220);       /* Country badge - sky */
+  --color-badge-players: oklch(72% 0.18 290);       /* Players badge - violet */
+  --color-badge-firstperson: oklch(75% 0.20 310);   /* First-person badge - fuchsia */
+  --color-badge-official: oklch(72% 0.18 160);      /* Official badge - emerald */
+  --color-badge-custom: oklch(70% 0.14 180);        /* Custom/distance badge - teal */
+
+  /* ── UI element colors ──────────────────────────────────────────────────────── */
+  --color-port-query: oklch(75% 0.16 220);          /* Query port - sky */
+  --color-port-game: oklch(80% 0.16 85);            /* Game port - amber */
+  --color-link: oklch(70% 0.16 260);                /* Links - indigo */
+  --color-score: oklch(72% 0.18 160);               /* Score/positive - emerald */
+  --color-best: oklch(80% 0.16 85);                 /* Best/highlight - yellow */
+
+  /* ── Option group colors ────────────────────────────────────────────────────── */
+  --color-opt-display: oklch(70% 0.16 240);         /* Display options - blue */
+  --color-opt-network: oklch(72% 0.18 160);         /* Network options - green */
+  --color-opt-launch: oklch(75% 0.18 55);           /* Launch options - orange */
+  --color-opt-input: oklch(70% 0.14 180);           /* Input options - teal */
+  --color-opt-misc: oklch(70% 0.16 290);            /* Misc options - purple */
+
+  /* ── Tech brand colors ─────────────────────────────────────────────────────── */
+  --color-tech-tauri: oklch(75% 0.16 220);          /* Tauri - sky/cyan */
+  --color-tech-svelte: oklch(68% 0.20 30);          /* Svelte - orange-red */
+  --color-tech-rust: oklch(60% 0.16 50);            /* Rust - burnt orange */
+  --color-tech-daisyui: oklch(70% 0.18 290);        /* DaisyUI - violet */
+  --color-tech-tailwind: oklch(75% 0.16 200);       /* Tailwind - cyan */
+
+  /* ── Window control colors ─────────────────────────────────────────────────── */
+  --color-btn-close: oklch(60% 0.25 25);            /* Window close button - red */
+}
+
+/* ── Utility classes for theme colors ─────────────────────────────────────────── */
+.text-accent-map { color: var(--color-accent-map); }
+.text-accent-mods { color: var(--color-accent-mods); }
+.text-accent-stat-server { color: var(--color-accent-stat-server); }
+.text-accent-stat-players { color: var(--color-accent-stat-players); }
+.text-accent-stat-steam { color: var(--color-accent-stat-steam); }
+.text-accent-update { color: var(--color-accent-update); }
+.text-accent-stale { color: var(--color-accent-stale); }
+.text-accent-highlight { color: var(--color-accent-highlight); }
+.text-port-query { color: var(--color-port-query); }
+.text-port-game { color: var(--color-port-game); }
+.text-badge-rank { color: var(--color-badge-rank); }
+.text-badge-status { color: var(--color-badge-status); }
+.text-badge-country { color: var(--color-badge-country); }
+.text-badge-players { color: var(--color-badge-players); }
+.text-badge-firstperson { color: var(--color-badge-firstperson); }
+.text-badge-official { color: var(--color-badge-official); }
+.text-badge-custom { color: var(--color-badge-custom); }
+.text-feat-browser { color: var(--color-feat-browser); }
+.text-feat-mods { color: var(--color-feat-mods); }
+.text-feat-stats { color: var(--color-feat-stats); }
+.text-feat-launch { color: var(--color-feat-launch); }
+.text-link { color: var(--color-link); }
+.text-score { color: var(--color-score); }
+.text-best { color: var(--color-best); }
+.text-opt-display { color: var(--color-opt-display); }
+.text-opt-network { color: var(--color-opt-network); }
+.text-opt-launch { color: var(--color-opt-launch); }
+.text-opt-input { color: var(--color-opt-input); }
+.text-opt-misc { color: var(--color-opt-misc); }
+.text-tech-tauri { color: var(--color-tech-tauri); }
+.text-tech-svelte { color: var(--color-tech-svelte); }
+.text-tech-rust { color: var(--color-tech-rust); }
+.text-tech-daisyui { color: var(--color-tech-daisyui); }
+.text-tech-tailwind { color: var(--color-tech-tailwind); }
+
+/* Background utility classes for feature/filter states */
+.bg-feat-mods { background-color: var(--color-feat-mods); }
+.bg-feat-browser { background-color: var(--color-feat-browser); }
+.bg-feat-stats { background-color: var(--color-feat-stats); }
+.bg-feat-launch { background-color: var(--color-feat-launch); }
+.hover\:bg-btn-close:hover { background-color: var(--color-btn-close); }
+
+/* Badge component classes */
+.badge-rank {
+  background-color: color-mix(in oklch, var(--color-badge-rank) 15%, transparent);
+  color: var(--color-badge-rank);
+  border-color: color-mix(in oklch, var(--color-badge-rank) 30%, transparent);
+}
+.badge-status {
+  background-color: color-mix(in oklch, var(--color-badge-status) 15%, transparent);
+  color: var(--color-badge-status);
+  border-color: color-mix(in oklch, var(--color-badge-status) 30%, transparent);
+}
+.badge-country {
+  background-color: color-mix(in oklch, var(--color-badge-country) 15%, transparent);
+  color: var(--color-badge-country);
+  border-color: color-mix(in oklch, var(--color-badge-country) 30%, transparent);
+}
+.badge-players {
+  background-color: color-mix(in oklch, var(--color-badge-players) 15%, transparent);
+  color: var(--color-badge-players);
+  border-color: color-mix(in oklch, var(--color-badge-players) 30%, transparent);
+}
+.badge-firstperson {
+  background-color: color-mix(in oklch, var(--color-badge-firstperson) 15%, transparent);
+  color: var(--color-badge-firstperson);
+  border-color: color-mix(in oklch, var(--color-badge-firstperson) 30%, transparent);
+}
+.badge-official {
+  background-color: color-mix(in oklch, var(--color-badge-official) 15%, transparent);
+  color: var(--color-badge-official);
+  border-color: color-mix(in oklch, var(--color-badge-official) 30%, transparent);
+}
+.badge-custom {
+  background-color: color-mix(in oklch, var(--color-badge-custom) 15%, transparent);
+  color: var(--color-badge-custom);
+  border-color: color-mix(in oklch, var(--color-badge-custom) 30%, transparent);
 }
 
 /* ── Custom light theme ─────────────────────────────────────────────────────
@@ -68,200 +207,30 @@
   --color-warning-content: oklch(12% 0.02  75);
   --color-error-content:   oklch(99% 0.005 25);
 
+  /* Light theme accent color overrides - more vibrant for light backgrounds */
+  --color-accent-map: #b45309;
+  --color-accent-mods: #7c3aed;
+  --color-accent-stat-server: #dc2626;
+  --color-accent-stat-players: #16a34a;
+  --color-accent-stat-steam: #0284c7;
+  --color-accent-update: #059669;
+  --color-accent-stale: #ca8a04;
+  --color-accent-highlight: #0284c7;
+
   /* Rounded corners */
   --radius-btn:   0.375rem;
   --radius-box:   0.5rem;
   --radius-badge: 1rem;
 }
 
-/* ── Icon: invert in light modes so white SVG paths become dark ─────────── */
-[data-theme="light"] img[src="/icon.svg"],
-[data-theme="ocean"] img[src="/icon.svg"],
-[data-theme="sand"] img[src="/icon.svg"],
-[data-theme="rose"] img[src="/icon.svg"],
-[data-theme="mint"] img[src="/icon.svg"],
-[data-theme="lavender"] img[src="/icon.svg"],
-[data-theme="catppuccin-latte"] img[src="/icon.svg"] {
+/* ── Icon: invert in light mode so white SVG paths become dark ─────────── */
+[data-theme="light"] img[src="/icon.svg"] {
   filter: invert(1) brightness(0.15);
-}
-
-/* ── Midnight theme ─────────────────────────────────────────────────────────
-   Deep blue-black with cyan accents - sleek, modern feel
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="midnight"] {
-  --color-base-100: oklch(12% 0.025 250);
-  --color-base-200: oklch(16% 0.030 250);
-  --color-base-300: oklch(22% 0.035 250);
-  --color-base-content: oklch(92% 0.015 250);
-  --color-primary: oklch(65% 0.20 220);
-  --color-primary-content: oklch(10% 0.02 220);
-  --color-secondary: oklch(55% 0.16 280);
-  --color-secondary-content: oklch(95% 0.01 280);
-  --color-accent: oklch(60% 0.18 190);
-  --color-accent-content: oklch(10% 0.02 190);
-  --color-neutral: oklch(20% 0.02 250);
-  --color-neutral-content: oklch(90% 0.01 250);
-  --color-info: oklch(60% 0.16 230);
-  --color-success: oklch(60% 0.18 145);
-  --color-warning: oklch(70% 0.18 75);
-  --color-error: oklch(60% 0.22 25);
-  --color-info-content: oklch(10% 0.01 230);
-  --color-success-content: oklch(10% 0.01 145);
-  --color-warning-content: oklch(10% 0.02 75);
-  --color-error-content: oklch(98% 0.01 25);
-  --radius-btn: 0.375rem;
-  --radius-box: 0.5rem;
-  --radius-badge: 1rem;
-}
-
-/* ── Forest theme ───────────────────────────────────────────────────────────
-   Dark green tones - nature/survival vibe matching DayZ aesthetic
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="forest"] {
-  --color-base-100: oklch(12% 0.020 145);
-  --color-base-200: oklch(16% 0.025 145);
-  --color-base-300: oklch(22% 0.030 145);
-  --color-base-content: oklch(90% 0.020 145);
-  --color-primary: oklch(60% 0.18 145);
-  --color-primary-content: oklch(10% 0.02 145);
-  --color-secondary: oklch(50% 0.12 85);
-  --color-secondary-content: oklch(95% 0.01 85);
-  --color-accent: oklch(55% 0.14 180);
-  --color-accent-content: oklch(10% 0.02 180);
-  --color-neutral: oklch(18% 0.015 145);
-  --color-neutral-content: oklch(88% 0.01 145);
-  --color-info: oklch(55% 0.14 200);
-  --color-success: oklch(65% 0.20 145);
-  --color-warning: oklch(68% 0.16 80);
-  --color-error: oklch(55% 0.20 25);
-  --color-info-content: oklch(10% 0.01 200);
-  --color-success-content: oklch(10% 0.01 145);
-  --color-warning-content: oklch(10% 0.02 80);
-  --color-error-content: oklch(98% 0.01 25);
-  --radius-btn: 0.375rem;
-  --radius-box: 0.5rem;
-  --radius-badge: 1rem;
-}
-
-/* ── Blood Moon theme ───────────────────────────────────────────────────────
-   Dark with deep red accents - apocalyptic/hostile feel
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="blood-moon"] {
-  --color-base-100: oklch(10% 0.015 15);
-  --color-base-200: oklch(14% 0.020 15);
-  --color-base-300: oklch(20% 0.025 15);
-  --color-base-content: oklch(88% 0.015 15);
-  --color-primary: oklch(55% 0.22 25);
-  --color-primary-content: oklch(98% 0.01 25);
-  --color-secondary: oklch(45% 0.15 350);
-  --color-secondary-content: oklch(95% 0.01 350);
-  --color-accent: oklch(60% 0.18 40);
-  --color-accent-content: oklch(10% 0.02 40);
-  --color-neutral: oklch(15% 0.015 15);
-  --color-neutral-content: oklch(85% 0.01 15);
-  --color-info: oklch(55% 0.14 230);
-  --color-success: oklch(55% 0.16 145);
-  --color-warning: oklch(65% 0.18 55);
-  --color-error: oklch(60% 0.24 25);
-  --color-info-content: oklch(10% 0.01 230);
-  --color-success-content: oklch(10% 0.01 145);
-  --color-warning-content: oklch(10% 0.02 55);
-  --color-error-content: oklch(98% 0.01 25);
-  --radius-btn: 0.375rem;
-  --radius-box: 0.5rem;
-  --radius-badge: 1rem;
-}
-
-/* ── Military theme ─────────────────────────────────────────────────────────
-   Olive/khaki military tones - tactical feel
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="military"] {
-  --color-base-100: oklch(18% 0.015 95);
-  --color-base-200: oklch(22% 0.020 95);
-  --color-base-300: oklch(28% 0.025 95);
-  --color-base-content: oklch(88% 0.010 95);
-  --color-primary: oklch(55% 0.12 85);
-  --color-primary-content: oklch(10% 0.02 85);
-  --color-secondary: oklch(50% 0.10 110);
-  --color-secondary-content: oklch(95% 0.01 110);
-  --color-accent: oklch(58% 0.14 55);
-  --color-accent-content: oklch(10% 0.02 55);
-  --color-neutral: oklch(22% 0.012 95);
-  --color-neutral-content: oklch(85% 0.008 95);
-  --color-info: oklch(52% 0.12 220);
-  --color-success: oklch(55% 0.15 130);
-  --color-warning: oklch(62% 0.14 70);
-  --color-error: oklch(52% 0.18 25);
-  --color-info-content: oklch(10% 0.01 220);
-  --color-success-content: oklch(10% 0.01 130);
-  --color-warning-content: oklch(10% 0.02 70);
-  --color-error-content: oklch(98% 0.01 25);
-  --radius-btn: 0.375rem;
-  --radius-box: 0.5rem;
-  --radius-badge: 1rem;
-}
-
-/* ── OLED Black theme ───────────────────────────────────────────────────────
-   True black for OLED displays - maximum contrast, battery saving
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="oled"] {
-  --color-base-100: oklch(0% 0 0);
-  --color-base-200: oklch(8% 0.005 0);
-  --color-base-300: oklch(15% 0.010 0);
-  --color-base-content: oklch(95% 0 0);
-  --color-primary: oklch(65% 0.20 255);
-  --color-primary-content: oklch(10% 0.02 255);
-  --color-secondary: oklch(60% 0.18 290);
-  --color-secondary-content: oklch(95% 0.01 290);
-  --color-accent: oklch(65% 0.16 180);
-  --color-accent-content: oklch(10% 0.02 180);
-  --color-neutral: oklch(10% 0.005 0);
-  --color-neutral-content: oklch(90% 0 0);
-  --color-info: oklch(62% 0.18 230);
-  --color-success: oklch(62% 0.20 145);
-  --color-warning: oklch(72% 0.18 75);
-  --color-error: oklch(62% 0.24 25);
-  --color-info-content: oklch(10% 0.01 230);
-  --color-success-content: oklch(10% 0.01 145);
-  --color-warning-content: oklch(10% 0.02 75);
-  --color-error-content: oklch(98% 0.01 25);
-  --radius-btn: 0.375rem;
-  --radius-box: 0.5rem;
-  --radius-badge: 1rem;
-}
-
-/* ── Sepia theme ────────────────────────────────────────────────────────────
-   Warm brownish tones - vintage/nostalgic look
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="sepia"] {
-  --color-base-100: oklch(22% 0.025 55);
-  --color-base-200: oklch(26% 0.030 55);
-  --color-base-300: oklch(32% 0.035 55);
-  --color-base-content: oklch(88% 0.025 55);
-  --color-primary: oklch(60% 0.14 65);
-  --color-primary-content: oklch(10% 0.02 65);
-  --color-secondary: oklch(52% 0.12 35);
-  --color-secondary-content: oklch(95% 0.01 35);
-  --color-accent: oklch(58% 0.16 85);
-  --color-accent-content: oklch(10% 0.02 85);
-  --color-neutral: oklch(25% 0.020 55);
-  --color-neutral-content: oklch(85% 0.018 55);
-  --color-info: oklch(52% 0.12 220);
-  --color-success: oklch(55% 0.14 130);
-  --color-warning: oklch(65% 0.16 75);
-  --color-error: oklch(52% 0.18 25);
-  --color-info-content: oklch(10% 0.01 220);
-  --color-success-content: oklch(10% 0.01 130);
-  --color-warning-content: oklch(10% 0.02 75);
-  --color-error-content: oklch(98% 0.01 25);
-  --radius-btn: 0.375rem;
-  --radius-box: 0.5rem;
-  --radius-badge: 1rem;
 }
 
 /* ── Custom theme (default fallback) ────────────────────────────────────────
    User-defined theme. This is the default before customization.
-   The actual custom CSS is injected via JavaScript.
+   The actual custom CSS is injected via JavaScript from theme-presets.ts.
    ─────────────────────────────────────────────────────────────────────────── */
 [data-theme="custom"] {
   --color-base-100: oklch(15% 0.01 0);
@@ -284,525 +253,6 @@
   --color-success-content: oklch(10% 0.01 145);
   --color-warning-content: oklch(10% 0.02 75);
   --color-error-content: oklch(98% 0.01 25);
-  --radius-btn: 0.375rem;
-  --radius-box: 0.5rem;
-  --radius-badge: 1rem;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   MIXED THEMES (balanced dark/light)
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-/* ── Twilight theme (mixed) ─────────────────────────────────────────────────
-   Dusk-inspired purple/blue with medium contrast - between day and night
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="twilight"] {
-  --color-base-100: oklch(35% 0.035 280);
-  --color-base-200: oklch(40% 0.040 280);
-  --color-base-300: oklch(48% 0.045 280);
-  --color-base-content: oklch(92% 0.020 280);
-  --color-primary: oklch(70% 0.18 300);
-  --color-primary-content: oklch(15% 0.02 300);
-  --color-secondary: oklch(65% 0.16 250);
-  --color-secondary-content: oklch(15% 0.01 250);
-  --color-accent: oklch(72% 0.16 340);
-  --color-accent-content: oklch(15% 0.02 340);
-  --color-neutral: oklch(38% 0.030 280);
-  --color-neutral-content: oklch(90% 0.015 280);
-  --color-info: oklch(65% 0.16 230);
-  --color-success: oklch(65% 0.18 145);
-  --color-warning: oklch(75% 0.18 75);
-  --color-error: oklch(65% 0.22 25);
-  --color-info-content: oklch(15% 0.01 230);
-  --color-success-content: oklch(15% 0.01 145);
-  --color-warning-content: oklch(15% 0.02 75);
-  --color-error-content: oklch(98% 0.01 25);
-  --radius-btn: 0.375rem;
-  --radius-box: 0.5rem;
-  --radius-badge: 1rem;
-}
-
-/* ── Mocha theme (mixed) ────────────────────────────────────────────────────
-   Warm coffee tones - cozy, medium brightness like coffee with cream
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="mocha"] {
-  --color-base-100: oklch(38% 0.035 55);
-  --color-base-200: oklch(44% 0.040 55);
-  --color-base-300: oklch(52% 0.045 55);
-  --color-base-content: oklch(92% 0.025 55);
-  --color-primary: oklch(68% 0.14 60);
-  --color-primary-content: oklch(18% 0.02 60);
-  --color-secondary: oklch(62% 0.12 35);
-  --color-secondary-content: oklch(18% 0.01 35);
-  --color-accent: oklch(70% 0.16 85);
-  --color-accent-content: oklch(18% 0.02 85);
-  --color-neutral: oklch(42% 0.030 55);
-  --color-neutral-content: oklch(90% 0.020 55);
-  --color-info: oklch(60% 0.14 220);
-  --color-success: oklch(62% 0.16 145);
-  --color-warning: oklch(72% 0.18 70);
-  --color-error: oklch(60% 0.20 25);
-  --color-info-content: oklch(18% 0.01 220);
-  --color-success-content: oklch(18% 0.01 145);
-  --color-warning-content: oklch(18% 0.02 70);
-  --color-error-content: oklch(98% 0.01 25);
-  --radius-btn: 0.375rem;
-  --radius-box: 0.5rem;
-  --radius-badge: 1rem;
-}
-
-/* ── Catppuccin Frappé theme (mixed) ────────────────────────────────────────
-   Official Catppuccin Frappé palette - medium contrast pastel theme
-   https://catppuccin.com/palette
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="catppuccin-frappe"] {
-  /* Base colors */
-  --color-base-100: #303446;           /* Base */
-  --color-base-200: #292c3c;           /* Mantle */
-  --color-base-300: #414559;           /* Surface 0 */
-  --color-base-content: #c6d0f5;       /* Text */
-
-  /* Primary - Mauve */
-  --color-primary: #ca9ee6;
-  --color-primary-content: #232634;    /* Crust */
-
-  /* Secondary - Lavender */
-  --color-secondary: #babbf1;
-  --color-secondary-content: #232634;
-
-  /* Accent - Pink */
-  --color-accent: #f4b8e4;
-  --color-accent-content: #232634;
-
-  /* Neutral - Surface 1 */
-  --color-neutral: #51576d;
-  --color-neutral-content: #c6d0f5;
-
-  /* Status colors */
-  --color-info: #8caaee;               /* Blue */
-  --color-success: #a6d189;            /* Green */
-  --color-warning: #e5c890;            /* Yellow */
-  --color-error: #e78284;              /* Red */
-
-  --color-info-content: #232634;
-  --color-success-content: #232634;
-  --color-warning-content: #232634;
-  --color-error-content: #232634;
-
-  /* App accent colors - using Catppuccin Frappé palette */
-  --color-accent-map: #e5c890;         /* Yellow */
-  --color-accent-mods: #ca9ee6;        /* Mauve */
-  --color-accent-stat-server: #e78284; /* Red */
-  --color-accent-stat-players: #a6d189;/* Green */
-  --color-accent-stat-steam: #8caaee;  /* Blue */
-  --color-accent-update: #81c8be;      /* Teal */
-  --color-accent-stale: #e5c890;       /* Yellow */
-  --color-accent-highlight: #8caaee;   /* Blue */
-
-  --radius-btn: 0.375rem;
-  --radius-box: 0.5rem;
-  --radius-badge: 1rem;
-}
-
-/* ── Tokyo Night Storm theme (mixed) ────────────────────────────────────────
-   Tokyo Night with slightly lighter backgrounds - storm variant
-   https://github.com/ghifarit53/tokyonight-vim
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="tokyonight-storm"] {
-  /* Base colors - Storm variant (lighter than Night) */
-  --color-base-100: #24283b;           /* bg0 - main background */
-  --color-base-200: #282d42;           /* bg1 - panels */
-  --color-base-300: #2f344d;           /* bg2 - borders */
-  --color-base-content: #a9b1d6;       /* fg - main text */
-
-  /* Primary - blue */
-  --color-primary: #7AA2F7;
-  --color-primary-content: #24283b;
-
-  /* Secondary - purple */
-  --color-secondary: #ad8ee6;
-  --color-secondary-content: #24283b;
-
-  /* Accent - orange */
-  --color-accent: #FF9E64;
-  --color-accent-content: #24283b;
-
-  /* Neutral - bg3 */
-  --color-neutral: #333954;
-  --color-neutral-content: #a9b1d6;
-
-  /* Status colors */
-  --color-info: #7AA2F7;               /* blue */
-  --color-success: #9ECE6A;            /* green */
-  --color-warning: #E0AF68;            /* yellow */
-  --color-error: #F7768E;              /* red */
-
-  --color-info-content: #24283b;
-  --color-success-content: #24283b;
-  --color-warning-content: #24283b;
-  --color-error-content: #24283b;
-
-  /* App accent colors */
-  --color-accent-map: #E0AF68;         /* yellow */
-  --color-accent-mods: #ad8ee6;        /* purple */
-  --color-accent-stat-server: #F7768E; /* red */
-  --color-accent-stat-players: #9ECE6A;/* green */
-  --color-accent-stat-steam: #7AA2F7;  /* blue */
-  --color-accent-update: #b9f27c;      /* bg_green */
-  --color-accent-stale: #E0AF68;       /* yellow */
-  --color-accent-highlight: #7AA2F7;   /* blue */
-
-  --radius-btn: 0.375rem;
-  --radius-box: 0.5rem;
-  --radius-badge: 1rem;
-}
-
-/* ── Catppuccin Mocha theme (dark) ──────────────────────────────────────────
-   Official Catppuccin Mocha palette - soothing pastel dark theme
-   https://catppuccin.com/palette
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="catppuccin"] {
-  /* Base colors */
-  --color-base-100: #1e1e2e;           /* Base */
-  --color-base-200: #181825;           /* Mantle */
-  --color-base-300: #313244;           /* Surface 0 */
-  --color-base-content: #cdd6f4;       /* Text */
-
-  /* Primary - Mauve */
-  --color-primary: #cba6f7;
-  --color-primary-content: #11111b;    /* Crust */
-
-  /* Secondary - Lavender */
-  --color-secondary: #b4befe;
-  --color-secondary-content: #11111b;
-
-  /* Accent - Pink */
-  --color-accent: #f5c2e7;
-  --color-accent-content: #11111b;
-
-  /* Neutral - Surface 1 */
-  --color-neutral: #45475a;
-  --color-neutral-content: #cdd6f4;
-
-  /* Status colors */
-  --color-info: #89b4fa;               /* Blue */
-  --color-success: #a6e3a1;            /* Green */
-  --color-warning: #f9e2af;            /* Yellow */
-  --color-error: #f38ba8;              /* Red */
-
-  --color-info-content: #11111b;
-  --color-success-content: #11111b;
-  --color-warning-content: #11111b;
-  --color-error-content: #11111b;
-
-  /* App accent colors - using Catppuccin Mocha palette */
-  --color-accent-map: #f9e2af;         /* Yellow */
-  --color-accent-mods: #cba6f7;        /* Mauve */
-  --color-accent-stat-server: #f38ba8; /* Red */
-  --color-accent-stat-players: #a6e3a1;/* Green */
-  --color-accent-stat-steam: #89b4fa;  /* Blue */
-  --color-accent-update: #94e2d5;      /* Teal */
-  --color-accent-stale: #f9e2af;       /* Yellow */
-  --color-accent-highlight: #89b4fa;   /* Blue */
-
-  --radius-btn: 0.375rem;
-  --radius-box: 0.5rem;
-  --radius-badge: 1rem;
-}
-
-/* ── Kanagawa Wave theme (dark) ─────────────────────────────────────────────
-   Inspired by the famous Neovim colorscheme based on Katsushika Hokusai's
-   "The Great Wave off Kanagawa" - warm, muted colors with Japanese aesthetic
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="kanagawa"] {
-  /* Base colors - sumiInk palette */
-  --color-base-100: #1F1F28;           /* sumiInk3 - main background */
-  --color-base-200: #181820;           /* sumiInk1 - darker panels */
-  --color-base-300: #2A2A37;           /* sumiInk4 - borders */
-  --color-base-content: #DCD7BA;       /* fujiWhite - main text */
-
-  /* Primary - crystalBlue */
-  --color-primary: #7E9CD8;
-  --color-primary-content: #16161D;    /* sumiInk0 */
-
-  /* Secondary - oniViolet */
-  --color-secondary: #957FB8;
-  --color-secondary-content: #16161D;
-
-  /* Accent - sakuraPink */
-  --color-accent: #D27E99;
-  --color-accent-content: #16161D;
-
-  /* Neutral - sumiInk5 */
-  --color-neutral: #363646;
-  --color-neutral-content: #DCD7BA;
-
-  /* Status colors */
-  --color-info: #7FB4CA;               /* springBlue */
-  --color-success: #98BB6C;            /* springGreen */
-  --color-warning: #E6C384;            /* carpYellow */
-  --color-error: #E46876;              /* waveRed */
-
-  --color-info-content: #16161D;
-  --color-success-content: #16161D;
-  --color-warning-content: #16161D;
-  --color-error-content: #16161D;
-
-  /* App accent colors - using Kanagawa palette */
-  --color-accent-map: #E6C384;         /* carpYellow */
-  --color-accent-mods: #957FB8;        /* oniViolet */
-  --color-accent-stat-server: #E46876; /* waveRed */
-  --color-accent-stat-players: #98BB6C;/* springGreen */
-  --color-accent-stat-steam: #7FB4CA;  /* springBlue */
-  --color-accent-update: #7AA89F;      /* waveAqua2 */
-  --color-accent-stale: #DCA561;       /* autumnYellow */
-  --color-accent-highlight: #7E9CD8;   /* crystalBlue */
-
-  --radius-btn: 0.375rem;
-  --radius-box: 0.5rem;
-  --radius-badge: 1rem;
-}
-
-/* ── Tokyo Night theme (dark) ───────────────────────────────────────────────
-   Popular Neovim/VS Code dark theme with vibrant neon colors
-   https://github.com/ghifarit53/tokyonight-vim
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="tokyonight"] {
-  /* Base colors - Night variant */
-  --color-base-100: #1a1b26;           /* bg0 - main background */
-  --color-base-200: #232433;           /* bg1 - panels */
-  --color-base-300: #2a2b3d;           /* bg2 - borders */
-  --color-base-content: #a9b1d6;       /* fg - main text */
-
-  /* Primary - blue */
-  --color-primary: #7AA2F7;
-  --color-primary-content: #1a1b26;
-
-  /* Secondary - purple */
-  --color-secondary: #ad8ee6;
-  --color-secondary-content: #1a1b26;
-
-  /* Accent - orange */
-  --color-accent: #FF9E64;
-  --color-accent-content: #1a1b26;
-
-  /* Neutral - bg3 */
-  --color-neutral: #32344a;
-  --color-neutral-content: #a9b1d6;
-
-  /* Status colors */
-  --color-info: #7AA2F7;               /* blue */
-  --color-success: #9ECE6A;            /* green */
-  --color-warning: #E0AF68;            /* yellow */
-  --color-error: #F7768E;              /* red */
-
-  --color-info-content: #1a1b26;
-  --color-success-content: #1a1b26;
-  --color-warning-content: #1a1b26;
-  --color-error-content: #1a1b26;
-
-  /* App accent colors */
-  --color-accent-map: #E0AF68;         /* yellow */
-  --color-accent-mods: #ad8ee6;        /* purple */
-  --color-accent-stat-server: #F7768E; /* red */
-  --color-accent-stat-players: #9ECE6A;/* green */
-  --color-accent-stat-steam: #7AA2F7;  /* blue */
-  --color-accent-update: #b9f27c;      /* bg_green */
-  --color-accent-stale: #E0AF68;       /* yellow */
-  --color-accent-highlight: #7AA2F7;   /* blue */
-
-  --radius-btn: 0.375rem;
-  --radius-box: 0.5rem;
-  --radius-badge: 1rem;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   LIGHT THEMES
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-/* ── Ocean theme (light) ────────────────────────────────────────────────────
-   Cool blue tones - calm, professional feel
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="ocean"] {
-  --color-base-100: oklch(96% 0.012 220);
-  --color-base-200: oklch(90% 0.018 220);
-  --color-base-300: oklch(82% 0.025 220);
-  --color-base-content: oklch(18% 0.030 220);
-  --color-primary: oklch(50% 0.18 230);
-  --color-primary-content: oklch(98% 0.01 230);
-  --color-secondary: oklch(55% 0.14 260);
-  --color-secondary-content: oklch(98% 0.01 260);
-  --color-accent: oklch(55% 0.16 190);
-  --color-accent-content: oklch(98% 0.01 190);
-  --color-neutral: oklch(30% 0.025 220);
-  --color-neutral-content: oklch(95% 0.01 220);
-  --color-info: oklch(52% 0.16 230);
-  --color-success: oklch(48% 0.16 145);
-  --color-warning: oklch(62% 0.16 75);
-  --color-error: oklch(50% 0.20 25);
-  --color-info-content: oklch(98% 0.01 230);
-  --color-success-content: oklch(98% 0.01 145);
-  --color-warning-content: oklch(15% 0.02 75);
-  --color-error-content: oklch(98% 0.01 25);
-  --radius-btn: 0.375rem;
-  --radius-box: 0.5rem;
-  --radius-badge: 1rem;
-}
-
-/* ── Sand theme (light) ─────────────────────────────────────────────────────
-   Warm beige/tan tones - desert/earthy feel
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="sand"] {
-  --color-base-100: oklch(95% 0.018 75);
-  --color-base-200: oklch(88% 0.025 70);
-  --color-base-300: oklch(78% 0.035 65);
-  --color-base-content: oklch(20% 0.025 55);
-  --color-primary: oklch(52% 0.14 55);
-  --color-primary-content: oklch(98% 0.01 55);
-  --color-secondary: oklch(48% 0.12 85);
-  --color-secondary-content: oklch(98% 0.01 85);
-  --color-accent: oklch(55% 0.16 35);
-  --color-accent-content: oklch(98% 0.01 35);
-  --color-neutral: oklch(32% 0.020 55);
-  --color-neutral-content: oklch(95% 0.01 55);
-  --color-info: oklch(50% 0.14 220);
-  --color-success: oklch(48% 0.16 145);
-  --color-warning: oklch(58% 0.18 65);
-  --color-error: oklch(50% 0.20 25);
-  --color-info-content: oklch(98% 0.01 220);
-  --color-success-content: oklch(98% 0.01 145);
-  --color-warning-content: oklch(15% 0.02 65);
-  --color-error-content: oklch(98% 0.01 25);
-  --radius-btn: 0.375rem;
-  --radius-box: 0.5rem;
-  --radius-badge: 1rem;
-}
-
-/* ── Rose theme (light) ─────────────────────────────────────────────────────
-   Soft pink tones - warm, gentle feel
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="rose"] {
-  --color-base-100: oklch(96% 0.015 350);
-  --color-base-200: oklch(90% 0.025 350);
-  --color-base-300: oklch(82% 0.035 350);
-  --color-base-content: oklch(18% 0.025 350);
-  --color-primary: oklch(55% 0.18 350);
-  --color-primary-content: oklch(98% 0.01 350);
-  --color-secondary: oklch(50% 0.14 320);
-  --color-secondary-content: oklch(98% 0.01 320);
-  --color-accent: oklch(58% 0.16 25);
-  --color-accent-content: oklch(98% 0.01 25);
-  --color-neutral: oklch(30% 0.020 350);
-  --color-neutral-content: oklch(95% 0.01 350);
-  --color-info: oklch(52% 0.14 230);
-  --color-success: oklch(48% 0.16 145);
-  --color-warning: oklch(62% 0.16 75);
-  --color-error: oklch(52% 0.22 15);
-  --color-info-content: oklch(98% 0.01 230);
-  --color-success-content: oklch(98% 0.01 145);
-  --color-warning-content: oklch(15% 0.02 75);
-  --color-error-content: oklch(98% 0.01 15);
-  --radius-btn: 0.375rem;
-  --radius-box: 0.5rem;
-  --radius-badge: 1rem;
-}
-
-/* ── Mint theme (light) ─────────────────────────────────────────────────────
-   Fresh green/mint tones - natural, refreshing feel
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="mint"] {
-  --color-base-100: oklch(96% 0.015 160);
-  --color-base-200: oklch(90% 0.022 160);
-  --color-base-300: oklch(82% 0.030 160);
-  --color-base-content: oklch(18% 0.025 160);
-  --color-primary: oklch(52% 0.16 160);
-  --color-primary-content: oklch(98% 0.01 160);
-  --color-secondary: oklch(50% 0.12 190);
-  --color-secondary-content: oklch(98% 0.01 190);
-  --color-accent: oklch(55% 0.14 130);
-  --color-accent-content: oklch(98% 0.01 130);
-  --color-neutral: oklch(30% 0.020 160);
-  --color-neutral-content: oklch(95% 0.01 160);
-  --color-info: oklch(52% 0.14 220);
-  --color-success: oklch(50% 0.18 145);
-  --color-warning: oklch(62% 0.16 75);
-  --color-error: oklch(50% 0.20 25);
-  --color-info-content: oklch(98% 0.01 220);
-  --color-success-content: oklch(98% 0.01 145);
-  --color-warning-content: oklch(15% 0.02 75);
-  --color-error-content: oklch(98% 0.01 25);
-  --radius-btn: 0.375rem;
-  --radius-box: 0.5rem;
-  --radius-badge: 1rem;
-}
-
-/* ── Lavender theme (light) ─────────────────────────────────────────────────
-   Soft purple tones - calming, elegant feel
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="lavender"] {
-  --color-base-100: oklch(96% 0.018 290);
-  --color-base-200: oklch(90% 0.025 290);
-  --color-base-300: oklch(82% 0.035 290);
-  --color-base-content: oklch(18% 0.028 290);
-  --color-primary: oklch(52% 0.18 290);
-  --color-primary-content: oklch(98% 0.01 290);
-  --color-secondary: oklch(50% 0.14 320);
-  --color-secondary-content: oklch(98% 0.01 320);
-  --color-accent: oklch(55% 0.16 260);
-  --color-accent-content: oklch(98% 0.01 260);
-  --color-neutral: oklch(30% 0.022 290);
-  --color-neutral-content: oklch(95% 0.01 290);
-  --color-info: oklch(52% 0.14 230);
-  --color-success: oklch(48% 0.16 145);
-  --color-warning: oklch(62% 0.16 75);
-  --color-error: oklch(50% 0.20 25);
-  --color-info-content: oklch(98% 0.01 230);
-  --color-success-content: oklch(98% 0.01 145);
-  --color-warning-content: oklch(15% 0.02 75);
-  --color-error-content: oklch(98% 0.01 25);
-  --radius-btn: 0.375rem;
-  --radius-box: 0.5rem;
-  --radius-badge: 1rem;
-}
-
-/* ── Catppuccin Latte theme (light) ─────────────────────────────────────────
-   Official Catppuccin Latte palette - soothing pastel light theme
-   https://catppuccin.com/palette
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="catppuccin-latte"] {
-  /* Base colors */
-  --color-base-100: #eff1f5;           /* Base */
-  --color-base-200: #e6e9ef;           /* Mantle */
-  --color-base-300: #ccd0da;           /* Surface 0 */
-  --color-base-content: #4c4f69;       /* Text */
-
-  /* Primary - Mauve */
-  --color-primary: #8839ef;
-  --color-primary-content: #eff1f5;
-
-  /* Secondary - Lavender */
-  --color-secondary: #7287fd;
-  --color-secondary-content: #eff1f5;
-
-  /* Accent - Pink */
-  --color-accent: #ea76cb;
-  --color-accent-content: #eff1f5;
-
-  /* Neutral - Surface 1 */
-  --color-neutral: #bcc0cc;
-  --color-neutral-content: #4c4f69;
-
-  /* Status colors */
-  --color-info: #1e66f5;               /* Blue */
-  --color-success: #40a02b;            /* Green */
-  --color-warning: #df8e1d;            /* Yellow */
-  --color-error: #d20f39;              /* Red */
-
-  --color-info-content: #eff1f5;
-  --color-success-content: #eff1f5;
-  --color-warning-content: #eff1f5;
-  --color-error-content: #eff1f5;
-
   --radius-btn: 0.375rem;
   --radius-box: 0.5rem;
   --radius-badge: 1rem;
@@ -923,374 +373,3 @@
 .article-body app-imgur {
   display: none;
 }
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   THEME-AWARE ACCENT COLOR OVERRIDES
-
-   These override hardcoded Tailwind colors to work with all themes.
-   Light themes need darker variants; some themes need color harmony adjustments.
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-/* ── Selector for all light themes (except Catppuccin Latte) ────────────────
-   Using :is() to group all light theme selectors together
-   More vibrant and saturated colors for better visibility on light backgrounds
-   ─────────────────────────────────────────────────────────────────────────── */
-:is(
-  [data-theme="light"],
-  [data-theme="ocean"],
-  [data-theme="sand"],
-  [data-theme="rose"],
-  [data-theme="mint"],
-  [data-theme="lavender"]
-) {
-  /* Vibrant accent colors for light backgrounds - high saturation */
-  --color-accent-map: #b45309;           /* Rich amber */
-  --color-accent-mods: #7c3aed;          /* Vibrant violet */
-  --color-accent-stat-server: #dc2626;   /* Bold red */
-  --color-accent-stat-players: #16a34a;  /* Rich green */
-  --color-accent-stat-steam: #0284c7;    /* Sky blue */
-  --color-accent-update: #059669;        /* Emerald */
-  --color-accent-stale: #ca8a04;         /* Yellow */
-  --color-accent-highlight: #0284c7;     /* Sky blue */
-}
-
-/* ── Catppuccin Latte accent colors ─────────────────────────────────────────
-   Using official Catppuccin Latte palette colors
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="catppuccin-latte"] {
-  --color-accent-map: #df8e1d;           /* Yellow */
-  --color-accent-mods: #8839ef;          /* Mauve */
-  --color-accent-stat-server: #d20f39;   /* Red */
-  --color-accent-stat-players: #40a02b;  /* Green */
-  --color-accent-stat-steam: #1e66f5;    /* Blue */
-  --color-accent-update: #179299;        /* Teal */
-  --color-accent-stale: #df8e1d;         /* Yellow */
-  --color-accent-highlight: #1e66f5;     /* Blue */
-}
-
-/* Base accent color overrides - applies to light themes (excluding catppuccin-latte which has its own)
-   Using web-safe vibrant colors similar to Catppuccin Latte */
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-sky-400 { color: #0284c7 }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-blue-400 { color: #2563eb }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-indigo-400 { color: #4f46e5 }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-emerald-400 { color: #059669 }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-orange-400 { color: #ea580c }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-orange-600 { color: #c2410c }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-yellow-400 { color: #ca8a04 }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-violet-400 { color: #7c3aed }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-cyan-400 { color: #0891b2 }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-red-400 { color: #dc2626 }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-red-500 { color: #b91c1c }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-green-400 { color: #16a34a }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-green-500 { color: #15803d }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-fuchsia-400 { color: #c026d3 }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-teal-400 { color: #0d9488 }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-rose-400 { color: #e11d48 }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-purple-400 { color: #9333ea }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-amber-400 { color: #d97706 }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-amber-500 { color: #b45309 }
-
-/* Map / Mods / OS column colors - light themes - VIBRANT */
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-amber-500\/80 { color: #b45309 }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-violet-400\/90 { color: #7c3aed }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-sky-400\/80 { color: #0284c7 }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-orange-400\/80 { color: #ea580c }
-
-/* Opacity variants - light themes - use solid colors */
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-sky-400\/60 { color: #0284c7 }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-emerald-400\/70 { color: #059669 }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-yellow-400\/70 { color: #ca8a04 }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-sky-500 { color: #0369a1 }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-rose-400\/70 { color: #e11d48 }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"]) .text-teal-400\/70 { color: #0d9488 }
-
-/* Badge background colors - light themes */
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"], [data-theme="catppuccin-latte"]) .bg-amber-500\/15 { background-color: oklch(45% 0.16 72 / 0.20) }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"], [data-theme="catppuccin-latte"]) .bg-sky-500\/15 { background-color: oklch(38% 0.18 230 / 0.15) }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"], [data-theme="catppuccin-latte"]) .bg-violet-500\/15 { background-color: oklch(40% 0.22 290 / 0.15) }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"], [data-theme="catppuccin-latte"]) .bg-emerald-500\/15 { background-color: oklch(40% 0.16 160 / 0.15) }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"], [data-theme="catppuccin-latte"]) .bg-orange-500\/15 { background-color: oklch(45% 0.18 48 / 0.15) }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"], [data-theme="catppuccin-latte"]) .bg-blue-500\/15 { background-color: oklch(38% 0.20 255 / 0.15) }
-
-/* Status color overrides - light themes */
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"], [data-theme="catppuccin-latte"]) .text-success { color: oklch(42% 0.18 145) }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"], [data-theme="catppuccin-latte"]) .text-success\/50 { color: oklch(42% 0.18 145 / 0.80) }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"], [data-theme="catppuccin-latte"]) .text-success\/60 { color: oklch(42% 0.18 145 / 0.85) }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"], [data-theme="catppuccin-latte"]) .text-success\/70 { color: oklch(42% 0.18 145 / 0.90) }
-:is([data-theme="light"], [data-theme="ocean"], [data-theme="sand"], [data-theme="rose"], [data-theme="mint"], [data-theme="lavender"], [data-theme="catppuccin-latte"]) .text-warning\/80 { color: oklch(45% 0.18 75 / 0.95) }
-
-/* ── Catppuccin Latte - use official Latte palette colors ──────────────────
-   Light variant of Catppuccin with vibrant colors
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="catppuccin-latte"] .text-sky-400,
-[data-theme="catppuccin-latte"] .text-sky-500,
-[data-theme="catppuccin-latte"] .text-blue-400 { color: #1e66f5 }  /* Blue */
-[data-theme="catppuccin-latte"] .text-emerald-400,
-[data-theme="catppuccin-latte"] .text-green-400,
-[data-theme="catppuccin-latte"] .text-green-500 { color: #40a02b }  /* Green */
-[data-theme="catppuccin-latte"] .text-yellow-400,
-[data-theme="catppuccin-latte"] .text-amber-400,
-[data-theme="catppuccin-latte"] .text-amber-500 { color: #df8e1d }  /* Yellow */
-[data-theme="catppuccin-latte"] .text-orange-400,
-[data-theme="catppuccin-latte"] .text-orange-600 { color: #fe640b }  /* Peach */
-[data-theme="catppuccin-latte"] .text-red-400,
-[data-theme="catppuccin-latte"] .text-red-500 { color: #d20f39 }  /* Red */
-[data-theme="catppuccin-latte"] .text-violet-400,
-[data-theme="catppuccin-latte"] .text-purple-400 { color: #8839ef }  /* Mauve */
-[data-theme="catppuccin-latte"] .text-fuchsia-400,
-[data-theme="catppuccin-latte"] .text-pink-400 { color: #ea76cb }  /* Pink */
-[data-theme="catppuccin-latte"] .text-cyan-400,
-[data-theme="catppuccin-latte"] .text-teal-400 { color: #179299 }  /* Teal */
-[data-theme="catppuccin-latte"] .text-indigo-400 { color: #7287fd }  /* Lavender */
-[data-theme="catppuccin-latte"] .text-rose-400 { color: #e64553 }  /* Maroon */
-
-/* Catppuccin Latte opacity variants */
-[data-theme="catppuccin-latte"] .text-amber-500\/80 { color: #df8e1d }
-[data-theme="catppuccin-latte"] .text-violet-400\/90 { color: #8839ef }
-[data-theme="catppuccin-latte"] .text-sky-400\/80,
-[data-theme="catppuccin-latte"] .text-sky-400\/60 { color: #1e66f5 }
-[data-theme="catppuccin-latte"] .text-orange-400\/80 { color: #fe640b }
-[data-theme="catppuccin-latte"] .text-emerald-400\/70 { color: #40a02b }
-[data-theme="catppuccin-latte"] .text-yellow-400\/70 { color: #df8e1d }
-[data-theme="catppuccin-latte"] .text-teal-400\/70 { color: #179299 }
-[data-theme="catppuccin-latte"] .text-rose-400\/70 { color: #e64553 }
-
-/* Catppuccin Latte badge backgrounds */
-[data-theme="catppuccin-latte"] .bg-amber-500\/15 { background-color: rgb(223 142 29 / 0.15) }
-[data-theme="catppuccin-latte"] .bg-sky-500\/15 { background-color: rgb(30 102 245 / 0.15) }
-[data-theme="catppuccin-latte"] .bg-violet-500\/15 { background-color: rgb(136 57 239 / 0.15) }
-[data-theme="catppuccin-latte"] .bg-emerald-500\/15 { background-color: rgb(64 160 43 / 0.15) }
-[data-theme="catppuccin-latte"] .bg-orange-500\/15 { background-color: rgb(254 100 11 / 0.15) }
-[data-theme="catppuccin-latte"] .bg-blue-500\/15 { background-color: rgb(30 102 245 / 0.15) }
-
-/* ── Catppuccin Mocha - use official palette colors ────────────────────────
-   Catppuccin has its own accent colors that should be used
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="catppuccin"] .text-sky-400,
-[data-theme="catppuccin"] .text-sky-500,
-[data-theme="catppuccin"] .text-blue-400 { color: #89b4fa }  /* Blue */
-[data-theme="catppuccin"] .text-emerald-400,
-[data-theme="catppuccin"] .text-green-400,
-[data-theme="catppuccin"] .text-green-500 { color: #a6e3a1 }  /* Green */
-[data-theme="catppuccin"] .text-yellow-400,
-[data-theme="catppuccin"] .text-amber-400,
-[data-theme="catppuccin"] .text-amber-500 { color: #f9e2af }  /* Yellow */
-[data-theme="catppuccin"] .text-orange-400,
-[data-theme="catppuccin"] .text-orange-600 { color: #fab387 }  /* Peach */
-[data-theme="catppuccin"] .text-red-400,
-[data-theme="catppuccin"] .text-red-500 { color: #f38ba8 }  /* Red */
-[data-theme="catppuccin"] .text-violet-400,
-[data-theme="catppuccin"] .text-purple-400 { color: #cba6f7 }  /* Mauve */
-[data-theme="catppuccin"] .text-fuchsia-400,
-[data-theme="catppuccin"] .text-pink-400 { color: #f5c2e7 }  /* Pink */
-[data-theme="catppuccin"] .text-cyan-400,
-[data-theme="catppuccin"] .text-teal-400 { color: #94e2d5 }  /* Teal */
-[data-theme="catppuccin"] .text-indigo-400 { color: #b4befe }  /* Lavender */
-[data-theme="catppuccin"] .text-rose-400 { color: #eba0ac }  /* Maroon */
-
-/* Catppuccin opacity variants */
-[data-theme="catppuccin"] .text-amber-500\/80 { color: #f9e2af }
-[data-theme="catppuccin"] .text-violet-400\/90 { color: #cba6f7 }
-[data-theme="catppuccin"] .text-sky-400\/80,
-[data-theme="catppuccin"] .text-sky-400\/60 { color: #89b4fa }
-[data-theme="catppuccin"] .text-orange-400\/80 { color: #fab387 }
-[data-theme="catppuccin"] .text-emerald-400\/70 { color: #a6e3a1 }
-[data-theme="catppuccin"] .text-yellow-400\/70 { color: #f9e2af }
-[data-theme="catppuccin"] .text-teal-400\/70 { color: #94e2d5 }
-[data-theme="catppuccin"] .text-rose-400\/70 { color: #eba0ac }
-
-/* Catppuccin badge backgrounds */
-[data-theme="catppuccin"] .bg-amber-500\/15 { background-color: rgb(249 226 175 / 0.15) }
-[data-theme="catppuccin"] .bg-sky-500\/15 { background-color: rgb(137 180 250 / 0.15) }
-[data-theme="catppuccin"] .bg-violet-500\/15 { background-color: rgb(203 166 247 / 0.15) }
-[data-theme="catppuccin"] .bg-emerald-500\/15 { background-color: rgb(166 227 161 / 0.15) }
-[data-theme="catppuccin"] .bg-orange-500\/15 { background-color: rgb(250 179 135 / 0.15) }
-[data-theme="catppuccin"] .bg-blue-500\/15 { background-color: rgb(137 180 250 / 0.15) }
-
-/* ── Catppuccin Frappé - use official Frappé palette colors ─────────────────
-   Medium contrast variant of Catppuccin
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="catppuccin-frappe"] .text-sky-400,
-[data-theme="catppuccin-frappe"] .text-sky-500,
-[data-theme="catppuccin-frappe"] .text-blue-400 { color: #8caaee }  /* Blue */
-[data-theme="catppuccin-frappe"] .text-emerald-400,
-[data-theme="catppuccin-frappe"] .text-green-400,
-[data-theme="catppuccin-frappe"] .text-green-500 { color: #a6d189 }  /* Green */
-[data-theme="catppuccin-frappe"] .text-yellow-400,
-[data-theme="catppuccin-frappe"] .text-amber-400,
-[data-theme="catppuccin-frappe"] .text-amber-500 { color: #e5c890 }  /* Yellow */
-[data-theme="catppuccin-frappe"] .text-orange-400,
-[data-theme="catppuccin-frappe"] .text-orange-600 { color: #ef9f76 }  /* Peach */
-[data-theme="catppuccin-frappe"] .text-red-400,
-[data-theme="catppuccin-frappe"] .text-red-500 { color: #e78284 }  /* Red */
-[data-theme="catppuccin-frappe"] .text-violet-400,
-[data-theme="catppuccin-frappe"] .text-purple-400 { color: #ca9ee6 }  /* Mauve */
-[data-theme="catppuccin-frappe"] .text-fuchsia-400,
-[data-theme="catppuccin-frappe"] .text-pink-400 { color: #f4b8e4 }  /* Pink */
-[data-theme="catppuccin-frappe"] .text-cyan-400,
-[data-theme="catppuccin-frappe"] .text-teal-400 { color: #81c8be }  /* Teal */
-[data-theme="catppuccin-frappe"] .text-indigo-400 { color: #babbf1 }  /* Lavender */
-[data-theme="catppuccin-frappe"] .text-rose-400 { color: #ea999c }  /* Maroon */
-
-/* Catppuccin Frappé opacity variants */
-[data-theme="catppuccin-frappe"] .text-amber-500\/80 { color: #e5c890 }
-[data-theme="catppuccin-frappe"] .text-violet-400\/90 { color: #ca9ee6 }
-[data-theme="catppuccin-frappe"] .text-sky-400\/80,
-[data-theme="catppuccin-frappe"] .text-sky-400\/60 { color: #8caaee }
-[data-theme="catppuccin-frappe"] .text-orange-400\/80 { color: #ef9f76 }
-[data-theme="catppuccin-frappe"] .text-emerald-400\/70 { color: #a6d189 }
-[data-theme="catppuccin-frappe"] .text-yellow-400\/70 { color: #e5c890 }
-[data-theme="catppuccin-frappe"] .text-teal-400\/70 { color: #81c8be }
-[data-theme="catppuccin-frappe"] .text-rose-400\/70 { color: #ea999c }
-
-/* Catppuccin Frappé badge backgrounds */
-[data-theme="catppuccin-frappe"] .bg-amber-500\/15 { background-color: rgb(229 200 144 / 0.15) }
-[data-theme="catppuccin-frappe"] .bg-sky-500\/15 { background-color: rgb(140 170 238 / 0.15) }
-[data-theme="catppuccin-frappe"] .bg-violet-500\/15 { background-color: rgb(202 158 230 / 0.15) }
-[data-theme="catppuccin-frappe"] .bg-emerald-500\/15 { background-color: rgb(166 209 137 / 0.15) }
-[data-theme="catppuccin-frappe"] .bg-orange-500\/15 { background-color: rgb(239 159 118 / 0.15) }
-[data-theme="catppuccin-frappe"] .bg-blue-500\/15 { background-color: rgb(140 170 238 / 0.15) }
-
-/* ── Kanagawa Wave - use Kanagawa palette colors ────────────────────────────
-   Japanese aesthetic inspired by "The Great Wave off Kanagawa"
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="kanagawa"] .text-sky-400,
-[data-theme="kanagawa"] .text-sky-500,
-[data-theme="kanagawa"] .text-blue-400 { color: #7FB4CA }  /* springBlue */
-[data-theme="kanagawa"] .text-emerald-400,
-[data-theme="kanagawa"] .text-green-400,
-[data-theme="kanagawa"] .text-green-500 { color: #98BB6C }  /* springGreen */
-[data-theme="kanagawa"] .text-yellow-400,
-[data-theme="kanagawa"] .text-amber-400,
-[data-theme="kanagawa"] .text-amber-500 { color: #E6C384 }  /* carpYellow */
-[data-theme="kanagawa"] .text-orange-400,
-[data-theme="kanagawa"] .text-orange-600 { color: #FFA066 }  /* surimiOrange */
-[data-theme="kanagawa"] .text-red-400,
-[data-theme="kanagawa"] .text-red-500 { color: #E46876 }  /* waveRed */
-[data-theme="kanagawa"] .text-violet-400,
-[data-theme="kanagawa"] .text-purple-400 { color: #957FB8 }  /* oniViolet */
-[data-theme="kanagawa"] .text-fuchsia-400,
-[data-theme="kanagawa"] .text-pink-400 { color: #D27E99 }  /* sakuraPink */
-[data-theme="kanagawa"] .text-cyan-400,
-[data-theme="kanagawa"] .text-teal-400 { color: #7AA89F }  /* waveAqua2 */
-[data-theme="kanagawa"] .text-indigo-400 { color: #7E9CD8 }  /* crystalBlue */
-[data-theme="kanagawa"] .text-rose-400 { color: #D27E99 }  /* sakuraPink */
-
-/* Kanagawa opacity variants */
-[data-theme="kanagawa"] .text-amber-500\/80 { color: #E6C384 }
-[data-theme="kanagawa"] .text-violet-400\/90 { color: #957FB8 }
-[data-theme="kanagawa"] .text-sky-400\/80,
-[data-theme="kanagawa"] .text-sky-400\/60 { color: #7FB4CA }
-[data-theme="kanagawa"] .text-orange-400\/80 { color: #FFA066 }
-[data-theme="kanagawa"] .text-emerald-400\/70 { color: #98BB6C }
-[data-theme="kanagawa"] .text-yellow-400\/70 { color: #E6C384 }
-[data-theme="kanagawa"] .text-teal-400\/70 { color: #7AA89F }
-[data-theme="kanagawa"] .text-rose-400\/70 { color: #D27E99 }
-
-/* Kanagawa badge backgrounds */
-[data-theme="kanagawa"] .bg-amber-500\/15 { background-color: rgb(230 195 132 / 0.15) }
-[data-theme="kanagawa"] .bg-sky-500\/15 { background-color: rgb(127 180 202 / 0.15) }
-[data-theme="kanagawa"] .bg-violet-500\/15 { background-color: rgb(149 127 184 / 0.15) }
-[data-theme="kanagawa"] .bg-emerald-500\/15 { background-color: rgb(152 187 108 / 0.15) }
-[data-theme="kanagawa"] .bg-orange-500\/15 { background-color: rgb(255 160 102 / 0.15) }
-[data-theme="kanagawa"] .bg-blue-500\/15 { background-color: rgb(126 156 216 / 0.15) }
-
-/* ── Tokyo Night - use Tokyo Night palette colors ───────────────────────────
-   Vibrant neon colors on dark blue background
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="tokyonight"] .text-sky-400,
-[data-theme="tokyonight"] .text-sky-500,
-[data-theme="tokyonight"] .text-blue-400 { color: #7AA2F7 }  /* blue */
-[data-theme="tokyonight"] .text-emerald-400,
-[data-theme="tokyonight"] .text-green-400,
-[data-theme="tokyonight"] .text-green-500 { color: #9ECE6A }  /* green */
-[data-theme="tokyonight"] .text-yellow-400,
-[data-theme="tokyonight"] .text-amber-400,
-[data-theme="tokyonight"] .text-amber-500 { color: #E0AF68 }  /* yellow */
-[data-theme="tokyonight"] .text-orange-400,
-[data-theme="tokyonight"] .text-orange-600 { color: #FF9E64 }  /* orange */
-[data-theme="tokyonight"] .text-red-400,
-[data-theme="tokyonight"] .text-red-500 { color: #F7768E }  /* red */
-[data-theme="tokyonight"] .text-violet-400,
-[data-theme="tokyonight"] .text-purple-400 { color: #ad8ee6 }  /* purple */
-[data-theme="tokyonight"] .text-fuchsia-400,
-[data-theme="tokyonight"] .text-pink-400 { color: #ff7a93 }  /* bg_red */
-[data-theme="tokyonight"] .text-cyan-400,
-[data-theme="tokyonight"] .text-teal-400 { color: #7da6ff }  /* bg_blue */
-[data-theme="tokyonight"] .text-indigo-400 { color: #7AA2F7 }  /* blue */
-[data-theme="tokyonight"] .text-rose-400 { color: #ff7a93 }  /* bg_red */
-
-/* Tokyo Night opacity variants */
-[data-theme="tokyonight"] .text-amber-500\/80 { color: #E0AF68 }
-[data-theme="tokyonight"] .text-violet-400\/90 { color: #ad8ee6 }
-[data-theme="tokyonight"] .text-sky-400\/80,
-[data-theme="tokyonight"] .text-sky-400\/60 { color: #7AA2F7 }
-[data-theme="tokyonight"] .text-orange-400\/80 { color: #FF9E64 }
-[data-theme="tokyonight"] .text-emerald-400\/70 { color: #9ECE6A }
-[data-theme="tokyonight"] .text-yellow-400\/70 { color: #E0AF68 }
-[data-theme="tokyonight"] .text-teal-400\/70 { color: #7da6ff }
-[data-theme="tokyonight"] .text-rose-400\/70 { color: #ff7a93 }
-
-/* Tokyo Night badge backgrounds */
-[data-theme="tokyonight"] .bg-amber-500\/15 { background-color: rgb(224 175 104 / 0.15) }
-[data-theme="tokyonight"] .bg-sky-500\/15 { background-color: rgb(122 162 247 / 0.15) }
-[data-theme="tokyonight"] .bg-violet-500\/15 { background-color: rgb(173 142 230 / 0.15) }
-[data-theme="tokyonight"] .bg-emerald-500\/15 { background-color: rgb(158 206 106 / 0.15) }
-[data-theme="tokyonight"] .bg-orange-500\/15 { background-color: rgb(255 158 100 / 0.15) }
-[data-theme="tokyonight"] .bg-blue-500\/15 { background-color: rgb(122 162 247 / 0.15) }
-
-/* ── Tokyo Night Storm - same colors, different background ─────────────────
-   Storm variant with slightly lighter base
-   ─────────────────────────────────────────────────────────────────────────── */
-[data-theme="tokyonight-storm"] .text-sky-400,
-[data-theme="tokyonight-storm"] .text-sky-500,
-[data-theme="tokyonight-storm"] .text-blue-400 { color: #7AA2F7 }  /* blue */
-[data-theme="tokyonight-storm"] .text-emerald-400,
-[data-theme="tokyonight-storm"] .text-green-400,
-[data-theme="tokyonight-storm"] .text-green-500 { color: #9ECE6A }  /* green */
-[data-theme="tokyonight-storm"] .text-yellow-400,
-[data-theme="tokyonight-storm"] .text-amber-400,
-[data-theme="tokyonight-storm"] .text-amber-500 { color: #E0AF68 }  /* yellow */
-[data-theme="tokyonight-storm"] .text-orange-400,
-[data-theme="tokyonight-storm"] .text-orange-600 { color: #FF9E64 }  /* orange */
-[data-theme="tokyonight-storm"] .text-red-400,
-[data-theme="tokyonight-storm"] .text-red-500 { color: #F7768E }  /* red */
-[data-theme="tokyonight-storm"] .text-violet-400,
-[data-theme="tokyonight-storm"] .text-purple-400 { color: #ad8ee6 }  /* purple */
-[data-theme="tokyonight-storm"] .text-fuchsia-400,
-[data-theme="tokyonight-storm"] .text-pink-400 { color: #ff7a93 }  /* bg_red */
-[data-theme="tokyonight-storm"] .text-cyan-400,
-[data-theme="tokyonight-storm"] .text-teal-400 { color: #7da6ff }  /* bg_blue */
-[data-theme="tokyonight-storm"] .text-indigo-400 { color: #7AA2F7 }  /* blue */
-[data-theme="tokyonight-storm"] .text-rose-400 { color: #ff7a93 }  /* bg_red */
-
-/* Tokyo Night Storm opacity variants */
-[data-theme="tokyonight-storm"] .text-amber-500\/80 { color: #E0AF68 }
-[data-theme="tokyonight-storm"] .text-violet-400\/90 { color: #ad8ee6 }
-[data-theme="tokyonight-storm"] .text-sky-400\/80,
-[data-theme="tokyonight-storm"] .text-sky-400\/60 { color: #7AA2F7 }
-[data-theme="tokyonight-storm"] .text-orange-400\/80 { color: #FF9E64 }
-[data-theme="tokyonight-storm"] .text-emerald-400\/70 { color: #9ECE6A }
-[data-theme="tokyonight-storm"] .text-yellow-400\/70 { color: #E0AF68 }
-[data-theme="tokyonight-storm"] .text-teal-400\/70 { color: #7da6ff }
-[data-theme="tokyonight-storm"] .text-rose-400\/70 { color: #ff7a93 }
-
-/* Tokyo Night Storm badge backgrounds */
-[data-theme="tokyonight-storm"] .bg-amber-500\/15 { background-color: rgb(224 175 104 / 0.15) }
-[data-theme="tokyonight-storm"] .bg-sky-500\/15 { background-color: rgb(122 162 247 / 0.15) }
-[data-theme="tokyonight-storm"] .bg-violet-500\/15 { background-color: rgb(173 142 230 / 0.15) }
-[data-theme="tokyonight-storm"] .bg-emerald-500\/15 { background-color: rgb(158 206 106 / 0.15) }
-[data-theme="tokyonight-storm"] .bg-orange-500\/15 { background-color: rgb(255 158 100 / 0.15) }
-[data-theme="tokyonight-storm"] .bg-blue-500\/15 { background-color: rgb(122 162 247 / 0.15) }
-
-/* ── Theme-aware utility classes using CSS variables ────────────────────────
-   Use these instead of hardcoded Tailwind colors for new code
-   ─────────────────────────────────────────────────────────────────────────── */
-.text-accent-map { color: var(--color-accent-map) }
-.text-accent-mods { color: var(--color-accent-mods) }
-.text-accent-stat-server { color: var(--color-accent-stat-server) }
-.text-accent-stat-players { color: var(--color-accent-stat-players) }
-.text-accent-stat-steam { color: var(--color-accent-stat-steam) }
-.text-accent-update { color: var(--color-accent-update) }
-.text-accent-stale { color: var(--color-accent-stale) }
-.text-accent-highlight { color: var(--color-accent-highlight) }

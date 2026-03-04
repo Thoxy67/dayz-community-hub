@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::state::SharedState;
+#[allow(unused)]
 use crate::utils::error::ResultExt;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

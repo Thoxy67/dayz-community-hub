@@ -118,6 +118,23 @@ export function sparklinePath(history: [number, number][], w = 120, h = 28): str
     .join(' ');
 }
 
+// ─── Time / Icon utilities ─────────────────────────────────────────────────────
+
+/**
+ * Get the appropriate icon for a server time string.
+ * Returns sun icon for day (7-19), sun-horizon for dawn/dusk, moon for night.
+ * @param time - Server time string in "HH:MM" format
+ */
+export function timeIcon(time: string | undefined): string {
+  if (!time) return 'ph:sun-horizon';
+  const h = parseInt(time.split(':')[0], 10);
+  if (isNaN(h)) return 'ph:sun-horizon';
+  if (h >= 5 && h < 7) return 'ph:sun-horizon'; // dawn
+  if (h >= 7 && h < 19) return 'ph:sun'; // day
+  if (h >= 19 && h < 21) return 'ph:sun-horizon'; // dusk
+  return 'ph:moon'; // night
+}
+
 // ─── Country & Distance utilities ─────────────────────────────────────────────
 
 /** Convert ISO 3166-1 alpha-2 country code to flag emoji (e.g., "US" → "🇺🇸") */

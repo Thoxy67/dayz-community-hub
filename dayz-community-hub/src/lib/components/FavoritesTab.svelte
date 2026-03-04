@@ -8,10 +8,12 @@
     playerBarColor,
     formatDuration,
     sortIcon as _sortIcon,
+    timeIcon,
   } from '$lib/utils';
+  import { createCopyState } from '$lib/utils/clipboard.svelte';
+  import { createServerLookup, findServer as findServerByKey } from '$lib/utils/server-lookup';
   import ServerDetailPanel from './ServerDetailPanel.svelte';
   import { invoke } from '@tauri-apps/api/core';
-  import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import { openUrl } from '@tauri-apps/plugin-opener';
   import Icon from '@iconify/svelte';
   import { onMount } from 'svelte';
@@ -66,19 +68,10 @@
 
   // Pre-built lookup map: both "ip:query_port" and "ip:game_port" → server.
   // Rebuilt only when `servers` changes (O(n) once) so per-row lookups are O(1).
-  let serverByKey = $derived(
-    (() => {
-      const m = new Map<string, ServerDto>();
-      for (const s of servers) {
-        m.set(`${s.ip}:${s.query_port}`, s);
-        m.set(`${s.ip}:${s.game_port}`, s);
-      }
-      return m;
-    })(),
-  );
+  let serverByKey = $derived(createServerLookup(servers));
 
   function findServer(fav: FavoriteDto): ServerDto | null {
-    return serverByKey.get(`${fav.ip}:${fav.port}`) ?? null;
+    return findServerByKey(serverByKey, fav.ip, fav.port);
   }
 
   // Track which servers were just pinged for a brief green flash.
@@ -243,26 +236,10 @@
   }
 
   // ── Copy IP ───────────────────────────────────────────────────────────────
-  let copiedKey = $state('');
+  const { copiedKey, copy: copyToClipboard } = createCopyState();
   async function copyIp(e: MouseEvent, ip: string, port: number) {
     e.stopPropagation();
-    const text = `${ip}:${port}`;
-    await writeText(text);
-    copiedKey = text;
-    setTimeout(() => {
-      if (copiedKey === text) copiedKey = '';
-    }, 1500);
-  }
-
-  // ── Helpers ───────────────────────────────────────────────────────────────
-  function timeIcon(time: string | undefined): string {
-    if (!time) return 'ph:sun-horizon';
-    const h = parseInt(time.split(':')[0], 10);
-    if (isNaN(h)) return 'ph:sun-horizon';
-    if (h >= 5 && h < 7) return 'ph:sun-horizon';
-    if (h >= 7 && h < 19) return 'ph:sun';
-    if (h >= 19 && h < 21) return 'ph:sun-horizon';
-    return 'ph:moon';
+    await copyToClipboard(`${ip}:${port}`);
   }
 
   onMount(() => {
@@ -439,7 +416,7 @@
 
                 <!-- Map -->
                 <td class="px-3 py-2 max-w-0">
-                  <span class="truncate block text-amber-500/80">{server ? server.map : '—'}</span>
+                  <span class="truncate block text-accent-map">{server ? server.map : '—'}</span>
                 </td>
 
                 <!-- Time -->
@@ -453,7 +430,7 @@
                 <!-- Mods -->
                 <td class="px-3 py-2 text-center">
                   {#if server && server.mods_count > 0}
-                    <span class="inline-flex items-center gap-0.5 text-violet-400/90">
+                    <span class="inline-flex items-center gap-0.5 text-accent-mods">
                       <Icon icon="mdi:puzzle-outline" class="size-3 shrink-0" />
                       {server.mods_count}
                     </span>

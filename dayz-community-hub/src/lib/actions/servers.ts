@@ -1,13 +1,14 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { ServerDto } from '$lib/types';
 import { app as s } from '$lib/state.svelte';
+import * as m from '$lib/paraglide/messages.js';
 
 export async function loadServers() {
   s.serversLoading = true;
   try {
     s.servers = await invoke<ServerDto[]>('get_servers');
   } catch (e) {
-    s.setStatus(`Failed to load servers: ${e}`, 'error');
+    s.setStatus(m.servers_load_failed({ error: String(e) }), 'error');
   } finally {
     s.serversLoading = false;
   }
@@ -17,16 +18,16 @@ export async function refreshServers() {
   if (s.serversRefreshing) return;
   s.serversRefreshing = true;
   s.serversLoading = true;
-  s.setStatus('Refreshing server list…', 'info');
+  s.setStatus(m.servers_refreshing(), 'info');
   try {
     s.servers = await invoke<ServerDto[]>('refresh_servers');
-    s.setStatus(`Loaded ${s.servers.length} servers`, 'success');
+    s.setStatus(m.servers_loaded({ count: s.servers.length }), 'success');
     startPinging();
     // Refresh titlebar counters (servers, in-game, Steam players)
     loadStats();
     loadSteamPlayers();
   } catch (e) {
-    s.setStatus(`Refresh failed: ${e}`, 'error');
+    s.setStatus(m.servers_refresh_failed({ error: String(e) }), 'error');
   } finally {
     s.serversLoading = false;
     s.serversRefreshing = false;

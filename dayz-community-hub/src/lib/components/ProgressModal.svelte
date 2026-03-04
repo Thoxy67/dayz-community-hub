@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import { writeText } from '@tauri-apps/plugin-clipboard-manager';
+  import { createSimpleCopyState } from '$lib/utils/clipboard.svelte';
   import type { ModOpState } from '$lib/types';
   import Icon from '@iconify/svelte';
   import * as m from '$lib/paraglide/messages.js';
@@ -30,7 +30,7 @@
 
   // "I don't trust" flow — shows manual login instructions after copying command
   let dontTrustShown = $state(false);
-  let cmdCopied = $state(false);
+  const { copied: cmdCopied, copy: copyCmd, reset: resetCmdCopied } = createSimpleCopyState(2000);
 
   function submitPassword() {
     if (!passwordInput || !onSendPassword) return;
@@ -43,12 +43,8 @@
   async function handleDontTrust() {
     const login = steamLogin || 'YOUR_USERNAME';
     const cmd = `steamcmd +login ${login} +quit`;
-    await writeText(cmd);
-    cmdCopied = true;
+    await copyCmd(cmd);
     dontTrustShown = true;
-    setTimeout(() => {
-      cmdCopied = false;
-    }, 2000);
   }
 
   function confirmDontTrust() {
@@ -61,7 +57,7 @@
       passwordSending = false;
       showPasswordInput = false;
       dontTrustShown = false;
-      cmdCopied = false;
+      resetCmdCopied();
     }
   });
 
@@ -472,7 +468,7 @@
           <!-- terminal-wrap uses inline style so scoped CSS doesn't get hashed away -->
           <div
             class="terminal-wrap rounded-lg overflow-hidden"
-            style="background:#0d0f10; position:relative; border:1px solid rgba(255,255,255,0.07);"
+            style="background:var(--color-terminal-bg); position:relative; border:1px solid var(--color-terminal-border);"
           >
             <!-- scanline overlay -->
             <div class="terminal-scanlines" aria-hidden="true"></div>
@@ -528,27 +524,27 @@
 
   /* ── Log line colors ────────────────────────────────────────────────────── */
   .log-error {
-    color: #f87171;
+    color: var(--color-log-error);
     font-weight: 600;
-  } /* red-400   */
+  }
   .log-warning {
-    color: #fbbf24;
-  } /* amber-400 */
+    color: var(--color-log-warning);
+  }
   .log-success {
-    color: #34d399;
+    color: var(--color-log-success);
     font-weight: 600;
-  } /* emerald-400 */
+  }
   .log-progress {
-    color: #7dd3fc;
-  } /* sky-300   */
+    color: var(--color-log-info);
+  }
   .log-login {
-    color: #94a3b8;
-  } /* slate-400 */
+    color: var(--color-log-default);
+  }
   .log-dim {
-    color: rgba(255, 255, 255, 0.18);
+    color: color-mix(in oklch, var(--color-base-content) 20%, transparent);
   }
   .log-normal {
-    color: rgba(255, 255, 255, 0.82);
+    color: color-mix(in oklch, var(--color-base-content) 85%, transparent);
   }
 
   /* ── Blinking cursor ────────────────────────────────────────────────────── */

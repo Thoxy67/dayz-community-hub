@@ -190,7 +190,7 @@
         </div>
         <!-- Feature highlights inline on the right -->
         <div class="hidden lg:flex items-center gap-4 shrink-0 border-l border-base-300/40 pl-6">
-          {#each [{ icon: 'mdi:server-network', labelFn: () => m.about_feat_browser(), color: 'text-sky-400' }, { icon: 'mdi:puzzle', labelFn: () => m.about_feat_mods(), color: 'text-fuchsia-400' }, { icon: 'ph:chart-line-up', labelFn: () => m.about_feat_bm(), color: 'text-emerald-400' }, { icon: 'ph:rocket-launch', labelFn: () => m.about_feat_launch(), color: 'text-orange-400' }] as feat}
+          {#each [{ icon: 'mdi:server-network', labelFn: () => m.about_feat_browser(), color: 'text-feat-browser' }, { icon: 'mdi:puzzle', labelFn: () => m.about_feat_mods(), color: 'text-feat-mods' }, { icon: 'ph:chart-line-up', labelFn: () => m.about_feat_bm(), color: 'text-feat-stats' }, { icon: 'ph:rocket-launch', labelFn: () => m.about_feat_launch(), color: 'text-feat-launch' }] as feat}
             <div class="feat-icon flex flex-col items-center gap-1 text-center cursor-default">
               <Icon icon={feat.icon} class="size-5 {feat.color}" />
               <span class="text-xs text-base-content/50 font-medium whitespace-nowrap">{feat.labelFn()}</span>
@@ -505,7 +505,7 @@
             <!-- dzch:// URLs -->
             <div class="px-4 py-3">
               <div class="flex items-center gap-2 mb-2">
-                <Icon icon="ph:link" class="size-3.5 text-indigo-400 shrink-0" />
+                <Icon icon="ph:link" class="size-3.5 text-link shrink-0" />
                 <p class="text-xs font-semibold text-base-content/70">{m.about_sharing_urls()}</p>
               </div>
               <p class="text-xs text-base-content/50 leading-relaxed mb-2">
@@ -542,7 +542,7 @@
             <!-- .dzch files -->
             <div class="px-4 py-3">
               <div class="flex items-center gap-2 mb-2">
-                <Icon icon="ph:file-text" class="size-3.5 text-emerald-400 shrink-0" />
+                <Icon icon="ph:file-text" class="size-3.5 text-feat-stats shrink-0" />
                 <p class="text-xs font-semibold text-base-content/70">{m.about_sharing_files()}</p>
               </div>
               <p class="text-xs text-base-content/50 leading-relaxed mb-2">
@@ -657,7 +657,7 @@
             <h2 class="text-xs font-semibold text-base-content/60 uppercase tracking-widest">{m.about_tabs()}</h2>
           </div>
           <div class="rounded-xl border border-base-300/50 overflow-hidden divide-y divide-base-300/30">
-            {#each [{ icon: 'mdi:server-network', labelFn: () => m.about_tab_servers(), color: 'text-sky-400', descFn: () => m.about_tab_servers_desc() }, { icon: 'ph:star', labelFn: () => m.about_tab_favorites(), color: 'text-yellow-400', descFn: () => m.about_tab_favorites_desc() }, { icon: 'ph:clock-clockwise', labelFn: () => m.about_tab_history(), color: 'text-teal-400', descFn: () => m.about_tab_history_desc() }, { icon: 'mdi:puzzle', labelFn: () => m.about_tab_mods(), color: 'text-fuchsia-400', descFn: () => m.about_tab_mods_desc() }, { icon: 'ph:newspaper', labelFn: () => m.about_tab_news(), color: 'text-rose-400', descFn: () => m.about_tab_news_desc() }, { icon: 'ph:plugs-connected', labelFn: () => m.about_tab_connect(), color: 'text-indigo-400', descFn: () => m.about_tab_connect_desc() }, { icon: 'ph:sliders', labelFn: () => m.about_tab_options(), color: 'text-orange-400', descFn: () => m.about_tab_options_desc() }, { icon: 'ph:mountains', labelFn: () => m.about_tab_offline(), color: 'text-emerald-400', descFn: () => m.about_tab_offline_desc() }] as tab, i}
+            {#each [{ icon: 'mdi:server-network', labelFn: () => m.about_tab_servers(), color: 'text-feat-browser', descFn: () => m.about_tab_servers_desc() }, { icon: 'ph:star', labelFn: () => m.about_tab_favorites(), color: 'text-badge-rank', descFn: () => m.about_tab_favorites_desc() }, { icon: 'ph:clock-clockwise', labelFn: () => m.about_tab_history(), color: 'text-badge-custom', descFn: () => m.about_tab_history_desc() }, { icon: 'mdi:puzzle', labelFn: () => m.about_tab_mods(), color: 'text-feat-mods', descFn: () => m.about_tab_mods_desc() }, { icon: 'ph:newspaper', labelFn: () => m.about_tab_news(), color: 'text-badge-status', descFn: () => m.about_tab_news_desc() }, { icon: 'ph:plugs-connected', labelFn: () => m.about_tab_connect(), color: 'text-link', descFn: () => m.about_tab_connect_desc() }, { icon: 'ph:sliders', labelFn: () => m.about_tab_options(), color: 'text-feat-launch', descFn: () => m.about_tab_options_desc() }, { icon: 'ph:mountains', labelFn: () => m.about_tab_offline(), color: 'text-feat-stats', descFn: () => m.about_tab_offline_desc() }] as tab, i}
               <div
                 class="flex items-start gap-2.5 px-3 py-2.5 {i % 2 === 0
                   ? 'bg-base-200/20'
@@ -683,7 +683,7 @@
             <!-- Steam -->
             <div class="rounded-xl border border-base-300/60 bg-base-200/40 overflow-hidden">
               <div class="flex items-center gap-2.5 px-3 py-2.5 border-b border-base-300/40 bg-base-200/60">
-                <Icon icon="ph:identification-card" class="size-3.5 text-sky-400 shrink-0" />
+                <Icon icon="ph:identification-card" class="size-3.5 text-feat-browser shrink-0" />
                 <div class="flex-1 min-w-0">
                   <p class="text-xs font-semibold text-base-content">{m.about_api_steam()}</p>
                   <p class="text-xs text-base-content/40">{m.about_api_steam_hint()}</p>
@@ -691,13 +691,13 @@
               </div>
               <div class="px-3 py-2.5 space-y-1.5">
                 <div class="flex items-start gap-1.5 text-xs text-base-content/50">
-                  <Icon icon="ph:user-circle" class="size-3 text-sky-400/60 shrink-0 mt-0.5" />
+                  <Icon icon="ph:user-circle" class="size-3 text-feat-browser/60 shrink-0 mt-0.5" />
                   <span
                     ><span class="font-semibold text-base-content/65">{m.about_api_steam_avatar()}</span> — {m.about_api_steam_avatar_desc()}</span
                   >
                 </div>
                 <div class="flex items-start gap-1.5 text-xs text-base-content/50">
-                  <Icon icon="mdi:puzzle-outline" class="size-3 text-sky-400/60 shrink-0 mt-0.5" />
+                  <Icon icon="mdi:puzzle-outline" class="size-3 text-feat-browser/60 shrink-0 mt-0.5" />
                   <span
                     ><span class="font-semibold text-base-content/65">{m.about_api_steam_mods()}</span> — {m.about_api_steam_mods_desc()}</span
                   >
@@ -721,7 +721,7 @@
             <!-- BattleMetrics -->
             <div class="rounded-xl border border-base-300/60 bg-base-200/40 overflow-hidden">
               <div class="flex items-center gap-2.5 px-3 py-2.5 border-b border-base-300/40 bg-base-200/60">
-                <Icon icon="ph:chart-line-up" class="size-3.5 text-emerald-400 shrink-0" />
+                <Icon icon="ph:chart-line-up" class="size-3.5 text-feat-stats shrink-0" />
                 <div class="flex-1 min-w-0">
                   <p class="text-xs font-semibold text-base-content">{m.about_api_bm()}</p>
                   <p class="text-xs text-base-content/40">{m.about_api_bm_hint()}</p>
@@ -729,7 +729,7 @@
               </div>
               <div class="px-3 py-2.5 space-y-1.5">
                 <div class="grid grid-cols-2 gap-1.5">
-                  {#each [{ icon: 'ph:trophy', color: 'text-yellow-400/70', labelFn: () => m.about_api_bm_rank() }, { icon: 'ph:globe', color: 'text-sky-400/70', labelFn: () => m.about_api_bm_country() }, { icon: 'ph:map-pin', color: 'text-rose-400/70', labelFn: () => m.about_api_bm_distance() }, { icon: 'ph:clock', color: 'text-teal-400/70', labelFn: () => m.about_api_bm_uptime() }, { icon: 'ph:chart-line-up', color: 'text-emerald-400/70', labelFn: () => m.about_api_bm_graph() }] as feat}
+                  {#each [{ icon: 'ph:trophy', color: 'text-badge-rank/70', labelFn: () => m.about_api_bm_rank() }, { icon: 'ph:globe', color: 'text-badge-country/70', labelFn: () => m.about_api_bm_country() }, { icon: 'ph:map-pin', color: 'text-badge-status/70', labelFn: () => m.about_api_bm_distance() }, { icon: 'ph:clock', color: 'text-badge-custom/70', labelFn: () => m.about_api_bm_uptime() }, { icon: 'ph:chart-line-up', color: 'text-feat-stats/70', labelFn: () => m.about_api_bm_graph() }] as feat}
                     <div
                       class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-base-300/30 border border-base-300/40"
                     >
@@ -758,7 +758,7 @@
             <h2 class="text-xs font-semibold text-base-content/60 uppercase tracking-widest">{m.about_built_with()}</h2>
           </div>
           <div class="flex flex-wrap gap-2">
-            {#each [{ icon: 'simple-icons:tauri', label: 'Tauri 2', url: 'https://tauri.app', color: 'text-sky-400' }, { icon: 'simple-icons:svelte', label: 'Svelte 5', url: 'https://svelte.dev', color: 'text-orange-400' }, { icon: 'simple-icons:rust', label: 'Rust', url: 'https://www.rust-lang.org', color: 'text-orange-600' }, { icon: 'simple-icons:daisyui', label: 'DaisyUI 5', url: 'https://daisyui.com', color: 'text-violet-400' }, { icon: 'simple-icons:tailwindcss', label: 'Tailwind', url: 'https://tailwindcss.com', color: 'text-cyan-400' }] as tech}
+            {#each [{ icon: 'simple-icons:tauri', label: 'Tauri 2', url: 'https://tauri.app', color: 'text-tech-tauri' }, { icon: 'simple-icons:svelte', label: 'Svelte 5', url: 'https://svelte.dev', color: 'text-tech-svelte' }, { icon: 'simple-icons:rust', label: 'Rust', url: 'https://www.rust-lang.org', color: 'text-tech-rust' }, { icon: 'simple-icons:daisyui', label: 'DaisyUI 5', url: 'https://daisyui.com', color: 'text-tech-daisyui' }, { icon: 'simple-icons:tailwindcss', label: 'Tailwind', url: 'https://tailwindcss.com', color: 'text-tech-tailwind' }] as tech}
               <button
                 class="tech-badge inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-base-200/60 border border-base-300/60 text-xs text-base-content/50 hover:bg-base-200 hover:border-base-300 hover:text-base-content/80"
                 onclick={() => openUrl(tech.url)}
@@ -776,7 +776,7 @@
             <h2 class="text-xs font-semibold text-base-content/60 uppercase tracking-widest">{m.about_links()}</h2>
           </div>
           <div class="flex flex-wrap gap-2">
-            {#each [{ icon: 'ph:git-branch', labelFn: () => m.about_link_releases(), url: RELEASES_URL, color: 'text-emerald-400' }, { icon: 'ph:bug', labelFn: () => m.about_link_bug(), url: ISSUES_URL, color: 'text-orange-400' }, { icon: 'ph:book-open', labelFn: () => m.about_link_wiki(), url: WIKI_URL, color: 'text-sky-400' }, { icon: 'ph:scroll', labelFn: () => m.about_link_license(), url: LICENSE_URL, color: 'text-violet-400' }] as link}
+            {#each [{ icon: 'ph:git-branch', labelFn: () => m.about_link_releases(), url: RELEASES_URL, color: 'text-feat-stats' }, { icon: 'ph:bug', labelFn: () => m.about_link_bug(), url: ISSUES_URL, color: 'text-feat-launch' }, { icon: 'ph:book-open', labelFn: () => m.about_link_wiki(), url: WIKI_URL, color: 'text-feat-browser' }, { icon: 'ph:scroll', labelFn: () => m.about_link_license(), url: LICENSE_URL, color: 'text-badge-players' }] as link}
               <button
                 class="tech-badge inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-base-200/60 border border-base-300/60 text-xs text-base-content/50 hover:bg-base-200 hover:border-base-300 hover:text-base-content/80"
                 onclick={() => openUrl(link.url)}

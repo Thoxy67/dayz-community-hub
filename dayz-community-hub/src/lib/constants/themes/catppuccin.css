@@ -1,0 +1,100 @@
+/* Custom Theme - Catppuccin Mocha */
+[data-theme="custom"] {
+  /* ── Base surfaces - Mocha palette ──────────────────────────────────────── */
+  --color-base-100: oklch(17% 0.02 280);   /* Base #1e1e2e */
+  --color-base-200: oklch(22% 0.025 280);  /* Surface 0 #313244 */
+  --color-base-300: oklch(28% 0.03 280);   /* Surface 1 #45475a */
+  --color-base-content: oklch(87% 0.03 270); /* Text #cdd6f4 */
+
+  /* ── Brand colors ───────────────────────────────────────────────────────── */
+  --color-primary: oklch(75% 0.15 300);    /* Mauve #cba6f7 */
+  --color-primary-content: oklch(17% 0.02 280);
+  --color-secondary: oklch(75% 0.12 250);  /* Blue #89b4fa */
+  --color-secondary-content: oklch(17% 0.02 280);
+  --color-accent: oklch(80% 0.13 55);      /* Peach #fab387 */
+  --color-accent-content: oklch(17% 0.02 280);
+  --color-neutral: oklch(42% 0.025 280);   /* Surface 2 #585b70 */
+  --color-neutral-content: oklch(87% 0.03 270);
+
+  /* ── Status colors ──────────────────────────────────────────────────────── */
+  --color-info: oklch(77% 0.10 220);       /* Sapphire #74c7ec */
+  --color-info-content: oklch(17% 0.02 280);
+  --color-success: oklch(85% 0.14 145);    /* Green #a6e3a1 */
+  --color-success-content: oklch(17% 0.02 280);
+  --color-warning: oklch(91% 0.10 90);     /* Yellow #f9e2af */
+  --color-warning-content: oklch(17% 0.02 280);
+  --color-error: oklch(72% 0.15 10);       /* Red #f38ba8 */
+  --color-error-content: oklch(17% 0.02 280);
+
+  /* ── App accent colors ──────────────────────────────────────────────────── */
+  --color-accent-map: oklch(80% 0.13 55);      /* Peach */
+  --color-accent-mods: oklch(75% 0.15 300);    /* Mauve */
+  --color-accent-stat-server: oklch(72% 0.15 10);  /* Red */
+  --color-accent-stat-players: oklch(85% 0.14 145); /* Green */
+  --color-accent-stat-steam: oklch(84% 0.09 200);  /* Sky #89dceb */
+  --color-accent-update: oklch(86% 0.10 180);  /* Teal #94e2d5 */
+  --color-accent-stale: oklch(91% 0.10 90);    /* Yellow */
+  --color-accent-highlight: oklch(84% 0.09 200);
+
+  /* ── Terminal / Log colors ──────────────────────────────────────────────── */
+  --color-terminal-bg: oklch(14% 0.02 280);
+  --color-terminal-border: oklch(22% 0.025 280);
+  --color-log-error: oklch(72% 0.15 10);
+  --color-log-warning: oklch(91% 0.10 90);
+  --color-log-success: oklch(85% 0.14 145);
+  --color-log-info: oklch(84% 0.09 200);
+  --color-log-default: oklch(60% 0.03 280);
+
+  /* ── Syntax highlighting ────────────────────────────────────────────────── */
+  --color-syntax-comment: oklch(55% 0.03 280);
+  --color-syntax-selector: oklch(84% 0.09 200);
+  --color-syntax-property: oklch(75% 0.15 300);
+  --color-syntax-variable: oklch(86% 0.10 180);
+  --color-syntax-string: oklch(85% 0.14 145);
+  --color-syntax-number: oklch(80% 0.13 55);
+  --color-syntax-function: oklch(75% 0.12 250);
+
+  /* ── Feature colors ─────────────────────────────────────────────────────── */
+  --color-feat-browser: oklch(84% 0.09 200);
+  --color-feat-mods: oklch(75% 0.15 300);
+  --color-feat-stats: oklch(85% 0.14 145);
+  --color-feat-launch: oklch(80% 0.13 55);
+
+  /* ── Badge colors ───────────────────────────────────────────────────────── */
+  --color-badge-rank: oklch(91% 0.10 90);
+  --color-badge-status: oklch(72% 0.15 10);
+  --color-badge-country: oklch(84% 0.09 200);
+  --color-badge-players: oklch(75% 0.15 300);
+  --color-badge-firstperson: oklch(84% 0.10 330);  /* Pink #f5c2e7 */
+  --color-badge-official: oklch(85% 0.14 145);
+  --color-badge-custom: oklch(86% 0.10 180);
+
+  /* ── UI element colors ──────────────────────────────────────────────────── */
+  --color-port-query: oklch(84% 0.09 200);
+  --color-port-game: oklch(80% 0.13 55);
+  --color-link: oklch(75% 0.12 250);
+  --color-score: oklch(85% 0.14 145);
+  --color-best: oklch(91% 0.10 90);
+
+  /* ── Option group colors ────────────────────────────────────────────────── */
+  --color-opt-display: oklch(75% 0.12 250);
+  --color-opt-network: oklch(85% 0.14 145);
+  --color-opt-launch: oklch(80% 0.13 55);
+  --color-opt-input: oklch(86% 0.10 180);
+  --color-opt-misc: oklch(75% 0.15 300);
+
+  /* ── Tech brand colors ──────────────────────────────────────────────────── */
+  --color-tech-tauri: oklch(84% 0.09 200);
+  --color-tech-svelte: oklch(80% 0.13 55);
+  --color-tech-rust: oklch(80% 0.13 55);
+  --color-tech-daisyui: oklch(75% 0.15 300);
+  --color-tech-tailwind: oklch(84% 0.09 200);
+
+  /* ── Window control colors ──────────────────────────────────────────────── */
+  --color-btn-close: oklch(72% 0.15 10);
+
+  /* ── Border radius ──────────────────────────────────────────────────────── */
+  --radius-btn: 0.5rem;
+  --radius-box: 0.75rem;
+  --radius-badge: 1rem;
+}

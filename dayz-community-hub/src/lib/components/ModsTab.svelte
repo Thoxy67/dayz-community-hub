@@ -1,19 +1,15 @@
 <script lang="ts">
   import type { InstalledModDto } from '$lib/types';
   import { sortIcon as _sortIcon } from '$lib/utils';
+  import { createCopyState } from '$lib/utils/clipboard.svelte';
   import { openUrl } from '@tauri-apps/plugin-opener';
-  import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import Icon from '@iconify/svelte';
   import { onMount } from 'svelte';
   import * as m from '$lib/paraglide/messages.js';
 
-  let copiedKey = $state('');
+  const { copiedKey, copy } = createCopyState();
   async function copyText(key: string, text: string) {
-    await writeText(text);
-    copiedKey = key;
-    setTimeout(() => {
-      if (copiedKey === key) copiedKey = '';
-    }, 1500);
+    await copy(text, key);
   }
 
   interface Props {

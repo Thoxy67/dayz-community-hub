@@ -353,7 +353,7 @@
             {_players}/{_maxPlayers}
           </button>
           <!-- Map -->
-          <span class="flex items-center gap-1 shrink-0 text-teal-400/80">
+          <span class="flex items-center gap-1 shrink-0 text-accent-map/80">
             <Icon icon="ph:map-trifold" class="size-3 shrink-0" />
             {_lhServer.map}
           </span>

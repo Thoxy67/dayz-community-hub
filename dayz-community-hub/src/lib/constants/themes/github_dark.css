@@ -1,0 +1,100 @@
+/* Custom Theme - GitHub Dark */
+[data-theme="custom"] {
+  /* ── Base surfaces ──────────────────────────────────────────────────────── */
+  --color-base-100: #0d1117;           /* Main background */
+  --color-base-200: #161b22;           /* Sidebar/panels */
+  --color-base-300: #21262d;           /* Elevated surfaces */
+  --color-base-content: #c9d1d9;       /* Main text */
+
+  /* ── Brand colors ───────────────────────────────────────────────────────── */
+  --color-primary: #58a6ff;            /* Links, primary actions */
+  --color-primary-content: #0d1117;
+  --color-secondary: #8b949e;          /* Secondary text */
+  --color-secondary-content: #0d1117;
+  --color-accent: #a371f7;             /* Purple accent */
+  --color-accent-content: #0d1117;
+  --color-neutral: #30363d;            /* Borders */
+  --color-neutral-content: #c9d1d9;
+
+  /* ── Status colors ──────────────────────────────────────────────────────── */
+  --color-info: #58a6ff;               /* Blue */
+  --color-info-content: #0d1117;
+  --color-success: #3fb950;            /* Green */
+  --color-success-content: #0d1117;
+  --color-warning: #d29922;            /* Yellow/Orange */
+  --color-warning-content: #0d1117;
+  --color-error: #f85149;              /* Red */
+  --color-error-content: #0d1117;
+
+  /* ── App accent colors ──────────────────────────────────────────────────── */
+  --color-accent-map: #d29922;         /* Yellow */
+  --color-accent-mods: #a371f7;        /* Purple */
+  --color-accent-stat-server: #f85149; /* Red */
+  --color-accent-stat-players: #3fb950;/* Green */
+  --color-accent-stat-steam: #58a6ff;  /* Blue */
+  --color-accent-update: #3fb950;      /* Green */
+  --color-accent-stale: #d29922;       /* Yellow */
+  --color-accent-highlight: #58a6ff;   /* Blue */
+
+  /* ── Terminal / Log colors ──────────────────────────────────────────────── */
+  --color-terminal-bg: #0d1117;
+  --color-terminal-border: #30363d;
+  --color-log-error: #f85149;
+  --color-log-warning: #d29922;
+  --color-log-success: #3fb950;
+  --color-log-info: #58a6ff;
+  --color-log-default: #8b949e;
+
+  /* ── Syntax highlighting ────────────────────────────────────────────────── */
+  --color-syntax-comment: #8b949e;
+  --color-syntax-selector: #79c0ff;
+  --color-syntax-property: #d2a8ff;
+  --color-syntax-variable: #ffa657;
+  --color-syntax-string: #a5d6ff;
+  --color-syntax-number: #79c0ff;
+  --color-syntax-function: #d2a8ff;
+
+  /* ── Feature colors ─────────────────────────────────────────────────────── */
+  --color-feat-browser: #58a6ff;
+  --color-feat-mods: #a371f7;
+  --color-feat-stats: #3fb950;
+  --color-feat-launch: #d29922;
+
+  /* ── Badge colors ───────────────────────────────────────────────────────── */
+  --color-badge-rank: #d29922;
+  --color-badge-status: #f85149;
+  --color-badge-country: #58a6ff;
+  --color-badge-players: #a371f7;
+  --color-badge-firstperson: #a371f7;
+  --color-badge-official: #3fb950;
+  --color-badge-custom: #8b949e;
+
+  /* ── UI element colors ──────────────────────────────────────────────────── */
+  --color-port-query: #58a6ff;
+  --color-port-game: #d29922;
+  --color-link: #58a6ff;
+  --color-score: #3fb950;
+  --color-best: #d29922;
+
+  /* ── Option group colors ────────────────────────────────────────────────── */
+  --color-opt-display: #58a6ff;
+  --color-opt-network: #3fb950;
+  --color-opt-launch: #d29922;
+  --color-opt-input: #8b949e;
+  --color-opt-misc: #a371f7;
+
+  /* ── Tech brand colors ──────────────────────────────────────────────────── */
+  --color-tech-tauri: #58a6ff;
+  --color-tech-svelte: #ff3e00;
+  --color-tech-rust: #dea584;
+  --color-tech-daisyui: #a371f7;
+  --color-tech-tailwind: #38bdf8;
+
+  /* ── Window control colors ──────────────────────────────────────────────── */
+  --color-btn-close: #f85149;
+
+  /* ── Border radius ──────────────────────────────────────────────────────── */
+  --radius-btn: 0.375rem;
+  --radius-box: 0.375rem;
+  --radius-badge: 1rem;
+}

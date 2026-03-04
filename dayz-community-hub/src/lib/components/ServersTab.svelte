@@ -1,8 +1,16 @@
 <script lang="ts">
   import type { ServerDto, InstalledModDto, A2sDetailsDto, ServersFilterState } from '$lib/types';
-  import { pingLabel, pingColor, pingDot, playerFill, playerBarColor, sortIcon as _sortIcon } from '$lib/utils';
+  import {
+    pingLabel,
+    pingColor,
+    pingDot,
+    playerFill,
+    playerBarColor,
+    sortIcon as _sortIcon,
+    timeIcon,
+  } from '$lib/utils';
+  import { createCopyState } from '$lib/utils/clipboard.svelte';
   import ServerDetailPanel from './ServerDetailPanel.svelte';
-  import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import { invoke } from '@tauri-apps/api/core';
   import Icon from '@iconify/svelte';
   import { onMount } from 'svelte';
@@ -311,30 +319,14 @@
 
   let selected = $derived(sorted[selectedIndex] ?? null);
 
-  /** Return the right icon name for a DayZ in-game time string like "14:32". */
-  function timeIcon(time: string | undefined): string {
-    if (!time) return 'ph:sun-horizon';
-    const h = parseInt(time.split(':')[0], 10);
-    if (isNaN(h)) return 'ph:sun-horizon';
-    if (h >= 5 && h < 7) return 'ph:sun-horizon'; // dawn
-    if (h >= 7 && h < 19) return 'ph:sun'; // day
-    if (h >= 19 && h < 21) return 'ph:sun-horizon'; // dusk
-    return 'ph:moon'; // night
-  }
-
   function favKey(s: ServerDto) {
     return `${s.ip}:${s.query_port}`;
   }
 
-  let copiedKey = $state('');
+  const { copiedKey, copy: copyToClipboard } = createCopyState();
   async function copyIp(e: MouseEvent, server: ServerDto) {
     e.stopPropagation(); // don't select the row
-    const text = `${server.ip}:${server.game_port}`;
-    await writeText(text);
-    copiedKey = text;
-    setTimeout(() => {
-      if (copiedKey === text) copiedKey = '';
-    }, 1500);
+    await copyToClipboard(`${server.ip}:${server.game_port}`);
   }
 
   function selectRow(index: number) {
@@ -535,7 +527,7 @@
       <!-- Mods -->
       <button
         class="flex items-center gap-1.5 px-2.5 h-full text-xs font-medium transition-colors"
-        class:bg-fuchsia-500={filter.filterMods === 'mods-only'}
+        class:bg-feat-mods={filter.filterMods === 'mods-only'}
         class:text-white={filter.filterMods === 'mods-only'}
         class:bg-error={filter.filterMods === 'no-mods'}
         class:text-error-content={filter.filterMods === 'no-mods'}
@@ -555,7 +547,7 @@
         class="select select-sm select-bordered h-7 min-h-0 py-0 pr-7 pl-2.5 text-xs rounded-lg appearance-none"
         class:text-base-content={!filter.filterMap}
         class:opacity-50={!filter.filterMap}
-        class:text-sky-400={!!filter.filterMap}
+        class:text-accent-highlight={!!filter.filterMap}
         class:opacity-100={!!filter.filterMap}
         value={filter.filterMap}
         onchange={(e) => {
@@ -859,7 +851,7 @@
 
                   <!-- Map -->
                   <td class="px-3 max-w-0">
-                    <span class="truncate text-amber-500/80 block">{server.map}</span>
+                    <span class="truncate text-accent-map block">{server.map}</span>
                   </td>
 
                   <!-- Time -->
@@ -874,7 +866,7 @@
                   <td class="px-3 text-center">
                     {#if server.mods_count > 0}
                       <button
-                        class="inline-flex items-center gap-0.5 text-violet-400/90 hover:text-violet-300 transition-colors cursor-pointer"
+                        class="inline-flex items-center gap-0.5 text-accent-mods hover:opacity-80 transition-colors cursor-pointer"
                         onclick={(e) => {
                           e.stopPropagation();
                           selectedIndex = i;
@@ -1007,13 +999,13 @@
           <!-- Map -->
           <span class="flex items-center gap-1">
             <Icon icon="ph:map-trifold" class="size-3 shrink-0" />
-            <span class="text-amber-500/80">{selected.map}</span>
+            <span class="text-accent-map">{selected.map}</span>
           </span>
           <!-- Mods -->
           {#if selected.mods_count > 0}
             <span class="flex items-center gap-1">
               <Icon icon="mdi:puzzle-outline" class="size-3 shrink-0" />
-              <span class="text-violet-400/90"
+              <span class="text-accent-mods"
                 >{selected.mods_count === 1
                   ? m.servers_mod_one({ count: selected.mods_count })
                   : m.servers_mod_other({ count: selected.mods_count })}</span

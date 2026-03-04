@@ -8,12 +8,14 @@
     playerBarColor,
     formatDuration,
     sortIcon as _sortIcon,
+    timeIcon,
   } from '$lib/utils';
   import { formatRelativeTime } from '$lib/utils/i18n';
+  import { createCopyState } from '$lib/utils/clipboard.svelte';
+  import { createServerLookup, findServer as findServerByKey } from '$lib/utils/server-lookup';
   import ServerDetailPanel from './ServerDetailPanel.svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { openUrl } from '@tauri-apps/plugin-opener';
-  import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import Icon from '@iconify/svelte';
   import { onMount } from 'svelte';
   import * as m from '$lib/paraglide/messages.js';
@@ -57,19 +59,10 @@
 
   // Pre-built lookup map rebuilt only when `servers` changes (O(n) once).
   // Covers both query_port and game_port keys so per-row lookups are O(1).
-  let serverByKey = $derived(
-    (() => {
-      const m = new Map<string, ServerDto>();
-      for (const s of servers) {
-        m.set(`${s.ip}:${s.query_port}`, s);
-        m.set(`${s.ip}:${s.game_port}`, s);
-      }
-      return m;
-    })(),
-  );
+  let serverByKey = $derived(createServerLookup(servers));
 
   function findServer(h: HistoryDto): ServerDto | null {
-    return serverByKey.get(`${h.ip}:${h.port}`) ?? null;
+    return findServerByKey(serverByKey, h.ip, h.port);
   }
 
   /**
@@ -209,25 +202,10 @@
     }, 1000);
   }
 
-  function timeIcon(time: string | undefined): string {
-    if (!time) return 'ph:sun-horizon';
-    const h = parseInt(time.split(':')[0], 10);
-    if (isNaN(h)) return 'ph:sun-horizon';
-    if (h >= 5 && h < 7) return 'ph:sun-horizon';
-    if (h >= 7 && h < 19) return 'ph:sun';
-    if (h >= 19 && h < 21) return 'ph:sun-horizon';
-    return 'ph:moon';
-  }
-
-  let copiedKey = $state('');
+  const { copiedKey, copy: copyToClipboard } = createCopyState();
   async function copyIp(e: MouseEvent, ip: string, port: number) {
     e.stopPropagation();
-    const text = `${ip}:${port}`;
-    await writeText(text);
-    copiedKey = text;
-    setTimeout(() => {
-      if (copiedKey === text) copiedKey = '';
-    }, 1500);
+    await copyToClipboard(`${ip}:${port}`);
   }
 
   // ── A2S detail panel ─────────────────────────────────────────────────────
@@ -495,7 +473,7 @@
 
                 <!-- Map -->
                 <td class="px-3 py-2 max-w-0">
-                  <span class="truncate block text-amber-500/80">{server ? server.map : '—'}</span>
+                  <span class="truncate block text-accent-map">{server ? server.map : '—'}</span>
                 </td>
 
                 <!-- Time -->

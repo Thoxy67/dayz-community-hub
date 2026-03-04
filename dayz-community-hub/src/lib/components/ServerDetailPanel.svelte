@@ -9,9 +9,9 @@
     countryCodeToName,
     haversineDistance,
   } from '$lib/utils';
+  import { createSimpleCopyState } from '$lib/utils/clipboard.svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { openUrl } from '@tauri-apps/plugin-opener';
-  import { writeText } from '@tauri-apps/plugin-clipboard-manager';
   import Icon from '@iconify/svelte';
   import * as m from '$lib/paraglide/messages.js';
 
@@ -32,14 +32,10 @@
     return m.detail_age_years({ count: years });
   }
 
-  let copiedIp = $state(false);
+  const { copied: copiedIp, copy: copyToClipboard } = createSimpleCopyState();
   async function copyIp() {
     if (!server) return;
-    await writeText(`${server.ip}:${server.game_port}`);
-    copiedIp = true;
-    setTimeout(() => {
-      copiedIp = false;
-    }, 1500);
+    await copyToClipboard(`${server.ip}:${server.game_port}`);
   }
 
   interface Props {
@@ -235,7 +231,7 @@
             <div class="text-base-content/50">{m.detail_a2s_live_players()}</div>
             <div class="font-bold text-success">{a2s.players}/{a2s.max_players}</div>
             <div class="text-base-content/50">{m.detail_map()}</div>
-            <div class="text-amber-500/80">{a2s.map}</div>
+            <div class="text-accent-map">{a2s.map}</div>
             <div class="text-base-content/50">{m.detail_version()}</div>
             <div class="text-base-content/70">{a2s.version}</div>
             <div class="text-base-content/50">{m.detail_a2s_game()}</div>
@@ -318,7 +314,7 @@
         </div>
 
         <div class="text-base-content/50">{m.detail_map()}</div>
-        <div class="text-teal-400">{server.map}</div>
+        <div class="text-accent-map">{server.map}</div>
 
         <div class="text-base-content/50">{m.detail_version()}</div>
         <div class="text-base-content/70">{server.version}</div>
@@ -455,35 +451,35 @@
           <!-- Server type badges -->
           <div class="flex flex-wrap gap-1 mb-2">
             {#if bm.official}
-              <span class="badge badge-xs bg-amber-500/15 text-amber-500 border-amber-500/30 gap-1">
+              <span class="badge badge-xs badge-rank gap-1">
                 <Icon icon="ph:seal-check-fill" class="size-2.5" />{m.detail_bm_official()}
               </span>
             {/if}
             {#if bm.private}
-              <span class="badge badge-xs bg-rose-500/15 text-rose-400 border-rose-500/30 gap-1">
+              <span class="badge badge-xs badge-status gap-1">
                 <Icon icon="ph:lock-fill" class="size-2.5" />{m.detail_bm_private()}
               </span>
             {/if}
             {#if bm.third_person}
-              <span class="badge badge-xs bg-sky-500/15 text-sky-400 border-sky-500/30 gap-1">
+              <span class="badge badge-xs badge-country gap-1">
                 <Icon icon="ph:eye" class="size-2.5" />{m.detail_bm_3pp()}
               </span>
             {:else if bm.third_person === false}
-              <span class="badge badge-xs bg-violet-500/15 text-violet-400 border-violet-500/30 gap-1">
+              <span class="badge badge-xs badge-players gap-1">
                 <Icon icon="ph:crosshair-simple" class="size-2.5" />{m.detail_bm_1pp()}
               </span>
             {/if}
             {#if bm.modded}
-              <span class="badge badge-xs bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30 gap-1">
+              <span class="badge badge-xs badge-firstperson gap-1">
                 <Icon icon="ph:puzzle-piece" class="size-2.5" />{m.detail_bm_modded()}
               </span>
             {/if}
             {#if bm.query_status === 'valid'}
-              <span class="badge badge-xs bg-emerald-500/15 text-emerald-400 border-emerald-500/30 gap-1">
+              <span class="badge badge-xs badge-official gap-1">
                 <Icon icon="ph:wifi-high" class="size-2.5" />{m.detail_bm_online()}
               </span>
             {:else if bm.query_status}
-              <span class="badge badge-xs bg-orange-500/15 text-orange-400 border-orange-500/30 gap-1">
+              <span class="badge badge-xs badge-custom gap-1">
                 <Icon icon="ph:wifi-slash" class="size-2.5" />{bm.query_status}
               </span>
             {/if}
