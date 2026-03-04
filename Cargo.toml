@@ -1,12 +1,12 @@
 [workspace]
 members = [
     "dayz-community-hub-core",
-    "dayz-community-hub/src-tauri",
+    "dayz-community-hub-ui/src-tauri",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "0.3.5"
+version = "0.3.6"
 edition = "2024"
 authors = ["thoxy"]
 

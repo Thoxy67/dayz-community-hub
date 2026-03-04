@@ -326,6 +326,64 @@ img[src="/icon.svg"] {
   animation: sg-pulse 2s ease-in-out infinite;
 }
 
+/* ── ProgressModal terminal styles ─────────────────────────────────────────── */
+/* Scanline overlay */
+.terminal-scanlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  border-radius: inherit;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 3px,
+    rgba(255, 255, 255, 0.04) 3px,
+    rgba(255, 255, 255, 0.04) 4px
+  );
+}
+
+/* Log line colors */
+.log-error {
+  color: var(--color-log-error);
+  font-weight: 600;
+}
+.log-warning {
+  color: var(--color-log-warning);
+}
+.log-success {
+  color: var(--color-log-success);
+  font-weight: 600;
+}
+.log-progress {
+  color: var(--color-log-info);
+}
+.log-login {
+  color: var(--color-log-default);
+}
+.log-dim {
+  color: color-mix(in oklch, var(--color-base-content) 20%, transparent);
+}
+.log-normal {
+  color: color-mix(in oklch, var(--color-base-content) 85%, transparent);
+}
+
+/* Blinking cursor */
+.terminal-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 0.85em;
+  background: rgba(255, 255, 255, 0.65);
+  vertical-align: text-bottom;
+  margin-top: 2px;
+  animation: cur-blink 1s step-end infinite;
+}
+
+@keyframes cur-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
 /* ── Article body (NewsTab — injected {@html} content) ──────────────────── */
 .article-body p {
   margin-bottom: 0.9rem;
