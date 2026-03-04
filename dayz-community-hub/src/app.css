@@ -5,6 +5,14 @@
   themes: light, dark --default, custom;
 }
 
+/* ── Transparent background for rounded window corners ─────────────────────
+   When window transparency is enabled in Tauri, html/body must be transparent
+   so the rounded corners don't show a square background.
+   ─────────────────────────────────────────────────────────────────────────── */
+html, body {
+  background: transparent !important;
+}
+
 /* ── Fix: DaisyUI 5 modal backdrop bleeds light bg into [data-theme] ───────
    When a .modal-open exists, DaisyUI sets --page-scroll-bg on :root using
    the light theme's --root-bg (white). Because [data-theme] inherits this
@@ -83,6 +91,15 @@
 
   /* ── Window control colors ─────────────────────────────────────────────────── */
   --color-btn-close: oklch(60% 0.25 25);            /* Window close button - red */
+
+  /* ── Logo inversion (for light themes) ────────────────────────────────────── */
+  --logo-invert: 0;                                 /* 0 = normal, 1 = inverted */
+
+  /* ── Window styling ───────────────────────────────────────────────────────── */
+  --window-radius: 0;                               /* Window corner radius */
+  --window-border-size: 0;                          /* Border width (0 to hide) */
+  --window-border-focus: oklch(45% 0.12 250);       /* Border when window focused */
+  --window-border-blur: oklch(25% 0.02 250);        /* Border when window unfocused */
 }
 
 /* ── Utility classes for theme colors ─────────────────────────────────────────── */
@@ -128,6 +145,17 @@
 .bg-feat-launch { background-color: var(--color-feat-launch); }
 .hover\:bg-btn-close:hover { background-color: var(--color-btn-close); }
 
+/* Modal backdrop that respects window border and rounded corners */
+.modal-backdrop-window {
+  /* Inset by border size on sides/bottom (top already handled by style="top: 36px") */
+  left: var(--window-border-size, 0);
+  right: var(--window-border-size, 0);
+  bottom: var(--window-border-size, 0);
+  /* Match window's bottom corners */
+  border-bottom-left-radius: var(--window-radius, 0);
+  border-bottom-right-radius: var(--window-radius, 0);
+}
+
 /* Badge component classes */
 .badge-rank {
   background-color: color-mix(in oklch, var(--color-badge-rank) 15%, transparent);
@@ -172,6 +200,9 @@
    - Primary stays vivid and readable as a tint
    ─────────────────────────────────────────────────────────────────────── */
 [data-theme="light"] {
+  /* Logo inversion for light theme */
+  --logo-invert: 1;
+
   /* Base surfaces — clearly distinct steps */
   --color-base-100: oklch(96% 0.006 240);   /* near-white background     */
   --color-base-200: oklch(87% 0.012 245);   /* panels / sidebars         */
@@ -223,9 +254,9 @@
   --radius-badge: 1rem;
 }
 
-/* ── Icon: invert in light mode so white SVG paths become dark ─────────── */
-[data-theme="light"] img[src="/icon.svg"] {
-  filter: invert(1) brightness(0.15);
+/* ── Icon: invert based on --logo-invert variable (for light themes) ───── */
+img[src="/icon.svg"] {
+  filter: invert(var(--logo-invert)) brightness(calc(1 - 0.85 * var(--logo-invert)));
 }
 
 /* ── Custom theme (default fallback) ────────────────────────────────────────

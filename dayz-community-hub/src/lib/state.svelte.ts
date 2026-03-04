@@ -52,6 +52,12 @@ class AppState {
   // ── Theme ───────────────────────────────────────────────────────────────
   theme = $state<ThemeName>('dark');
 
+  // ── Window settings (independent from theme) ────────────────────────────
+  windowRadius = $state('0');
+  windowBorderSize = $state('0');
+  windowBorderFocus = $state('oklch(45% 0.12 250)');
+  windowBorderBlur = $state('oklch(25% 0.02 250)');
+
   // ── Global state ────────────────────────────────────────────────────────
   initialized = $state(false);
   initError = $state<string | null>(null);
@@ -154,6 +160,33 @@ class AppState {
     if (saved && THEMES.some((t) => t.id === saved)) {
       this.theme = saved;
     }
+  }
+
+  loadWindowSettings() {
+    const saved = localStorage.getItem('window-settings');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.windowRadius !== undefined) this.windowRadius = parsed.windowRadius;
+        if (parsed.windowBorderSize !== undefined) this.windowBorderSize = parsed.windowBorderSize;
+        if (parsed.windowBorderFocus !== undefined) this.windowBorderFocus = parsed.windowBorderFocus;
+        if (parsed.windowBorderBlur !== undefined) this.windowBorderBlur = parsed.windowBorderBlur;
+      } catch {
+        // Invalid JSON, ignore
+      }
+    }
+  }
+
+  saveWindowSettings() {
+    localStorage.setItem(
+      'window-settings',
+      JSON.stringify({
+        windowRadius: this.windowRadius,
+        windowBorderSize: this.windowBorderSize,
+        windowBorderFocus: this.windowBorderFocus,
+        windowBorderBlur: this.windowBorderBlur,
+      })
+    );
   }
 
   // Check if this is the first run (no theme has been set yet)

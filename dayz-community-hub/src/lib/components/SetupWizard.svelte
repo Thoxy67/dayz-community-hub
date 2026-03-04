@@ -207,7 +207,7 @@
 
 <!-- Overlay starts below the titlebar (top: 36px = h-9) so the titlebar
      remains fully interactive (drag, minimize, maximize, close) during setup. -->
-<div class="fixed inset-0 z-50 bg-base-300/80 backdrop-blur-sm flex items-center justify-center p-4" style="top: 36px;">
+<div class="fixed inset-0 modal-backdrop-window z-50 bg-base-300/80 backdrop-blur-sm flex items-center justify-center p-4" style="top: 36px;">
   <div
     class="w-full max-w-lg bg-base-100 rounded-2xl shadow-2xl border border-base-300 overflow-hidden flex flex-col max-h-[calc(100vh-36px-2rem)]"
   >

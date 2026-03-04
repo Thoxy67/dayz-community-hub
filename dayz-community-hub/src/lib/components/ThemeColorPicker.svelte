@@ -3,27 +3,34 @@
 
   interface Props {
     label: string;
-    value: string; // OKLCH string like "oklch(65% 0.20 255)"
+    value: string; // CSS color value (OKLCH, hex, etc.)
     onChange: (value: string) => void;
   }
 
   let { label, value, onChange }: Props = $props();
 
-  // Convert OKLCH to hex for the color input
+  // Convert value to hex for the color picker preview
   const hexValue = $derived(() => {
+    // If already hex, use directly (expand shorthand if needed)
+    if (value.startsWith('#')) {
+      if (value.length === 4) {
+        return '#' + value[1] + value[1] + value[2] + value[2] + value[3] + value[3];
+      }
+      return value;
+    }
     const parsed = parseOklch(value);
     if (!parsed) return '#808080';
     return oklchToHex(parsed);
   });
 
-  // Local state for the hex input field
-  let hexInput = $state('');
+  // Local state for the raw input field
+  let rawInput = $state('');
   let isEditing = $state(false);
 
-  // Sync hex input when not editing
+  // Sync raw input when not editing
   $effect(() => {
     if (!isEditing) {
-      hexInput = hexValue().toUpperCase();
+      rawInput = value;
     }
   });
 
@@ -33,42 +40,18 @@
     onChange(formatOklch(oklch));
   }
 
-  function handleHexInput(e: Event) {
-    let hex = (e.target as HTMLInputElement).value.toUpperCase();
-    // Remove any non-hex characters except #
-    hex = hex.replace(/[^#0-9A-F]/g, '');
-    // Ensure it starts with #
-    if (!hex.startsWith('#')) {
-      hex = '#' + hex;
-    }
-    // Limit to 7 characters (#RRGGBB)
-    hex = hex.slice(0, 7);
-    hexInput = hex;
+  function handleRawInput(e: Event) {
+    rawInput = (e.target as HTMLInputElement).value;
+    // Real-time update: pass raw value directly
+    onChange(rawInput);
   }
 
-  function handleHexBlur() {
+  function handleBlur() {
     isEditing = false;
-    // Validate and apply the hex color
-    let hex = hexInput;
-    if (hex.length === 4) {
-      // Expand shorthand #RGB to #RRGGBB
-      hex = '#' + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3];
-    }
-    if (/^#[0-9A-F]{6}$/i.test(hex)) {
-      const oklch = hexToOklch(hex);
-      onChange(formatOklch(oklch));
-    } else {
-      // Reset to current value if invalid
-      hexInput = hexValue().toUpperCase();
-    }
   }
 
-  function handleHexKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter') {
-      (e.target as HTMLInputElement).blur();
-    } else if (e.key === 'Escape') {
-      isEditing = false;
-      hexInput = hexValue().toUpperCase();
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter' || e.key === 'Escape') {
       (e.target as HTMLInputElement).blur();
     }
   }
@@ -76,7 +59,7 @@
 
 <div class="flex items-center gap-2.5 group">
   <label
-    class="relative size-7 rounded-md overflow-hidden border border-base-300 cursor-pointer shadow-sm hover:shadow transition-shadow flex-shrink-0"
+    class="relative size-7 rounded-full overflow-hidden border border-base-300 cursor-pointer shadow-sm hover:shadow transition-shadow flex-shrink-0"
   >
     <input
       type="color"
@@ -90,13 +73,12 @@
     <span class="text-xs font-medium text-base-content/80 block truncate mb-0.5">{label}</span>
     <input
       type="text"
-      bind:value={hexInput}
-      oninput={handleHexInput}
+      bind:value={rawInput}
+      oninput={handleRawInput}
       onfocus={() => (isEditing = true)}
-      onblur={handleHexBlur}
-      onkeydown={handleHexKeydown}
+      onblur={handleBlur}
+      onkeydown={handleKeydown}
       class="w-full text-[11px] font-mono bg-base-200 border border-base-300 rounded px-1.5 py-0.5 text-base-content/70 focus:outline-none focus:border-primary focus:text-base-content transition-colors"
-      maxlength="7"
       spellcheck="false"
     />
   </div>

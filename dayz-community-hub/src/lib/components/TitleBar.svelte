@@ -65,7 +65,8 @@
   let themeDropdownOpen = $state(false);
   let customThemeModalOpen = $state(false);
   let customCss = $state('');
-  let themeEditorTab = $state<'colors' | 'code' | 'preview'>('colors');
+  let originalCssOnOpen = $state('');
+  let themeEditorTab = $state<'colors' | 'code'>('colors');
 
   // Default custom theme CSS template
   const customCssTemplate = `/* Custom Theme */
@@ -167,6 +168,9 @@
   --radius-btn: 0.375rem;
   --radius-box: 0.5rem;
   --radius-badge: 1rem;
+
+  /* ── Logo ─────────────────────────────────────────────────────────────────── */
+  --logo-invert: 0;
 }`;
 
   // Default values from app.css - used as fallback when computed styles are empty
@@ -256,11 +260,16 @@
     '--radius-btn': '0.375rem',
     '--radius-box': '0.5rem',
     '--radius-badge': '1rem',
+    // Logo inversion
+    '--logo-invert': '0',
   };
 
   // Extract current CSS variables from computed styles and generate CSS
   function extractCurrentThemeCss(): string {
-    const style = getComputedStyle(document.documentElement);
+    // Read from the element with data-theme attribute (not document.documentElement)
+    // to get the explicit theme colors, not the system default
+    const themedEl = document.querySelector('[data-theme]') || document.documentElement;
+    const style = getComputedStyle(themedEl);
 
     let css = `/* Custom Theme */
 [data-theme="custom"] {
@@ -343,6 +352,7 @@
       ],
       'Window control colors': ['--color-btn-close'],
       'Border radius': ['--radius-btn', '--radius-box', '--radius-badge'],
+      'Logo': ['--logo-invert'],
     };
 
     let isFirst = true;
@@ -380,6 +390,8 @@
         localStorage.setItem('custom-theme-css', css);
       }
     }
+    // Save original CSS for reset button
+    originalCssOnOpen = customCss;
     // Always switch to custom theme when opening editor so user sees changes live
     onSetTheme('custom' as ThemeName);
     customThemeModalOpen = true;
@@ -627,8 +639,6 @@
   async function applyPreset(presetId: string) {
     // For 'dark' and 'light', use the built-in DaisyUI themes instead of custom CSS
     if (presetId === 'dark' || presetId === 'light') {
-      // Clear custom theme CSS
-      customCss = '';
       localStorage.removeItem('custom-theme-css');
       localStorage.setItem('active-preset-id', presetId);
       activePresetId = presetId;
@@ -640,6 +650,16 @@
       // Switch to built-in theme
       onSetTheme(presetId as ThemeName);
       themeDropdownOpen = false;
+      // If modal is open, extract current theme colors after theme applies
+      if (customThemeModalOpen) {
+        setTimeout(() => {
+          customCss = extractCurrentThemeCss();
+          applyCustomTheme(customCss);
+          onSetTheme('custom' as ThemeName);
+        }, 0);
+      } else {
+        customCss = '';
+      }
       return;
     }
 
@@ -1315,7 +1335,7 @@
 <!-- ── Account settings modal ─────────────────────────────────────────────── -->
 {#if modalOpen}
   <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+    class="fixed inset-0 modal-backdrop-window z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
     style="top: 36px;"
     role="presentation"
     onclick={closeModal}
@@ -1762,7 +1782,7 @@
 <!-- ── Custom theme modal ───────────────────────────────────────────────────── -->
 {#if customThemeModalOpen}
   <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+    class="fixed inset-0 modal-backdrop-window z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
     style="top: 36px;"
     role="presentation"
     onclick={closeCustomThemeModal}
@@ -1786,27 +1806,6 @@
           </div>
         </div>
         <div class="flex items-center gap-2">
-          <!-- Load preset into editor dropdown -->
-          <div class="dropdown dropdown-end">
-            <button tabindex="0" class="btn btn-ghost btn-sm gap-1.5">
-              <Icon icon="ph:swatches" class="size-3.5" />
-              {m.theme_load_preset()}
-              <Icon icon="ph:caret-down" class="size-3" />
-            </button>
-            <ul
-              tabindex="0"
-              class="dropdown-content z-[1] menu p-1 shadow-lg bg-base-200 rounded-lg w-48 mt-1 border border-base-300 max-h-80 overflow-y-auto"
-            >
-              <li class="menu-title text-xs text-base-content/50 px-2 py-1">{m.theme_preset_group_dark()}</li>
-              {#each darkPresets as preset}
-                <li><button onclick={() => loadPresetIntoEditor(preset.id)}>{getPresetLabel(preset.id)}</button></li>
-              {/each}
-              <li class="menu-title text-xs text-base-content/50 px-2 py-1 mt-1">{m.theme_preset_group_light()}</li>
-              {#each lightPresets as preset}
-                <li><button onclick={() => loadPresetIntoEditor(preset.id)}>{getPresetLabel(preset.id)}</button></li>
-              {/each}
-            </ul>
-          </div>
           <button
             class="size-7 rounded flex items-center justify-center text-base-content/40 hover:bg-base-300 hover:text-base-content transition-colors"
             onclick={closeCustomThemeModal}
@@ -1815,6 +1814,97 @@
             <Icon icon="ph:x" class="size-4" />
           </button>
         </div>
+      </div>
+
+      <!-- Window Settings (separate from theme) -->
+      <div class="px-5 py-3 bg-base-200/30 border-b border-base-300 flex-shrink-0 space-y-2">
+        <!-- Row 1: Checkboxes and selects -->
+        <div class="flex items-center gap-6">
+          <div class="flex items-center gap-2 text-xs text-base-content/60">
+            <Icon icon="ph:app-window" class="size-3.5" />
+            <span class="font-medium uppercase tracking-wider">Window</span>
+          </div>
+          <!-- Rounded Corners -->
+          <div class="flex items-center gap-3">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                class="checkbox checkbox-xs checkbox-primary"
+                checked={app.windowRadius !== '0'}
+                onchange={(e) => {
+                  app.windowRadius = (e.target as HTMLInputElement).checked ? '0.75rem' : '0';
+                  app.saveWindowSettings();
+                }}
+              />
+              <span class="text-xs text-base-content/70">Rounded</span>
+            </label>
+            {#if app.windowRadius !== '0'}
+              <select
+                class="select select-xs select-bordered h-6 min-h-0"
+                value={app.windowRadius}
+                onchange={(e) => {
+                  app.windowRadius = (e.target as HTMLSelectElement).value;
+                  app.saveWindowSettings();
+                }}
+              >
+                <option value="0.375rem">S</option>
+                <option value="0.5rem">M</option>
+                <option value="0.75rem">L</option>
+                <option value="1rem">XL</option>
+              </select>
+            {/if}
+          </div>
+          <!-- Focus Border -->
+          <div class="flex items-center gap-3">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                class="checkbox checkbox-xs checkbox-primary"
+                checked={app.windowBorderSize !== '0'}
+                onchange={(e) => {
+                  app.windowBorderSize = (e.target as HTMLInputElement).checked ? '1px' : '0';
+                  app.saveWindowSettings();
+                }}
+              />
+              <span class="text-xs text-base-content/70">Border</span>
+            </label>
+            {#if app.windowBorderSize !== '0'}
+              <select
+                class="select select-xs select-bordered h-6 min-h-0"
+                value={app.windowBorderSize}
+                onchange={(e) => {
+                  app.windowBorderSize = (e.target as HTMLSelectElement).value;
+                  app.saveWindowSettings();
+                }}
+              >
+                <option value="1px">1px</option>
+                <option value="2px">2px</option>
+                <option value="3px">3px</option>
+              </select>
+            {/if}
+          </div>
+        </div>
+        <!-- Row 2: Border colors (only when border enabled) -->
+        {#if app.windowBorderSize !== '0'}
+          <div class="flex items-center gap-4 pl-[88px]">
+            <ThemeColorPicker
+              label="Focused"
+              value={app.windowBorderFocus}
+              onChange={(v) => {
+                app.windowBorderFocus = v;
+                app.saveWindowSettings();
+              }}
+            />
+            <ThemeColorPicker
+              label="Unfocused"
+              value={app.windowBorderBlur}
+              onChange={(v) => {
+                app.windowBorderBlur = v;
+                app.saveWindowSettings();
+              }}
+            />
+          </div>
+        {/if}
       </div>
 
       <!-- Tabs -->
@@ -1847,20 +1937,6 @@
             <div class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-t"></div>
           {/if}
         </button>
-        <button
-          class="px-4 py-2.5 text-xs font-medium transition-colors relative {themeEditorTab === 'preview'
-            ? 'text-primary'
-            : 'text-base-content/60 hover:text-base-content'}"
-          onclick={() => (themeEditorTab = 'preview')}
-        >
-          <span class="flex items-center gap-1.5">
-            <Icon icon="ph:eye" class="size-3.5" />
-            {m.theme_tab_preview()}
-          </span>
-          {#if themeEditorTab === 'preview'}
-            <div class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-t"></div>
-          {/if}
-        </button>
       </div>
 
       <!-- Tab Content -->
@@ -1876,7 +1952,7 @@
                 <Icon icon="ph:squares-four" class="size-3.5" />
                 {m.theme_color_base()}
               </h3>
-              <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div class="space-y-1">
                 {#each baseColors as def}
                   <ThemeColorPicker
                     label={def.label()}
@@ -1895,7 +1971,7 @@
                 <Icon icon="ph:paint-brush" class="size-3.5" />
                 {m.theme_color_primary()}, {m.theme_color_secondary()}, {m.theme_color_accent()}
               </h3>
-              <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <div class="space-y-1">
                 {#each brandColors as def}
                   <ThemeColorPicker
                     label={def.label()}
@@ -1914,7 +1990,7 @@
                 <Icon icon="ph:flag" class="size-3.5" />
                 {m.theme_color_status()}
               </h3>
-              <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div class="space-y-1">
                 {#each statusColors as def}
                   <ThemeColorPicker
                     label={def.label()}
@@ -1933,7 +2009,7 @@
                 <Icon icon="ph:terminal" class="size-3.5" />
                 {m.theme_color_terminal()}
               </h3>
-              <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div class="space-y-1">
                 {#each terminalColors as def}
                   <ThemeColorPicker
                     label={def.label()}
@@ -1952,7 +2028,7 @@
                 <Icon icon="ph:code" class="size-3.5" />
                 {m.theme_color_syntax()}
               </h3>
-              <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div class="space-y-1">
                 {#each syntaxColors as def}
                   <ThemeColorPicker
                     label={def.label()}
@@ -1971,7 +2047,7 @@
                 <Icon icon="ph:circle-half" class="size-3.5" />
                 {m.theme_color_neutral_group()}
               </h3>
-              <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div class="space-y-1">
                 {#each neutralColors as def}
                   <ThemeColorPicker
                     label={def.label()}
@@ -1990,7 +2066,7 @@
                 <Icon icon="ph:text-aa" class="size-3.5" />
                 {m.theme_color_content_group()}
               </h3>
-              <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div class="space-y-1">
                 {#each contentColors as def}
                   <ThemeColorPicker
                     label={def.label()}
@@ -2009,7 +2085,7 @@
                 <Icon icon="ph:sparkle" class="size-3.5" />
                 {m.theme_color_app_accent_group()}
               </h3>
-              <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div class="space-y-1">
                 {#each appAccentColors as def}
                   <ThemeColorPicker
                     label={def.label()}
@@ -2028,7 +2104,7 @@
                 <Icon icon="ph:star" class="size-3.5" />
                 {m.theme_color_feature_group()}
               </h3>
-              <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div class="space-y-1">
                 {#each featureColors as def}
                   <ThemeColorPicker
                     label={def.label()}
@@ -2047,7 +2123,7 @@
                 <Icon icon="ph:tag" class="size-3.5" />
                 {m.theme_color_badge_group()}
               </h3>
-              <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div class="space-y-1">
                 {#each badgeColors as def}
                   <ThemeColorPicker
                     label={def.label()}
@@ -2066,7 +2142,7 @@
                 <Icon icon="ph:squares-four" class="size-3.5" />
                 {m.theme_color_ui_element_group()}
               </h3>
-              <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div class="space-y-1">
                 {#each uiElementColors as def}
                   <ThemeColorPicker
                     label={def.label()}
@@ -2085,7 +2161,7 @@
                 <Icon icon="ph:sliders" class="size-3.5" />
                 {m.theme_color_option_group()}
               </h3>
-              <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div class="space-y-1">
                 {#each optionGroupColors as def}
                   <ThemeColorPicker
                     label={def.label()}
@@ -2104,7 +2180,7 @@
                 <Icon icon="ph:cpu" class="size-3.5" />
                 {m.theme_color_tech_brand_group()}
               </h3>
-              <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div class="space-y-1">
                 {#each techBrandColors as def}
                   <ThemeColorPicker
                     label={def.label()}
@@ -2123,7 +2199,7 @@
                 <Icon icon="ph:app-window" class="size-3.5" />
                 {m.theme_color_window_group()}
               </h3>
-              <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div class="space-y-1">
                 {#each windowColors as def}
                   <ThemeColorPicker
                     label={def.label()}
@@ -2142,7 +2218,7 @@
                 <Icon icon="ph:corners" class="size-3.5" />
                 {m.theme_radius_group()}
               </h3>
-              <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div class="space-y-1">
                 {#each borderRadiusVars as def}
                   <div class="flex flex-col gap-1.5">
                     <label class="text-xs text-base-content/60">{def.label()}</label>
@@ -2157,96 +2233,35 @@
                 {/each}
               </div>
             </div>
+
+            <!-- Logo Settings -->
+            <div>
+              <h3
+                class="text-xs font-semibold text-base-content/70 uppercase tracking-wider mb-3 flex items-center gap-2"
+              >
+                <Icon icon="ph:image" class="size-3.5" />
+                Logo
+              </h3>
+              <div class="flex items-center gap-3">
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-sm checkbox-primary"
+                    checked={getColorFromCss(customCss, '--logo-invert') === '1'}
+                    onchange={(e) => {
+                      const val = (e.target as HTMLInputElement).checked ? '1' : '0';
+                      customCss = updateColorInCss(customCss, '--logo-invert', val);
+                    }}
+                  />
+                  <span class="text-xs text-base-content/70">Invert logo (for light themes)</span>
+                </label>
+              </div>
+            </div>
           </div>
         {:else if themeEditorTab === 'code'}
           <!-- Code Tab - CSS Editor -->
           <div class="p-4 h-[400px]">
             <CssEditor value={customCss} onInput={(v) => (customCss = v)} placeholder="Enter your custom CSS..." />
-          </div>
-        {:else if themeEditorTab === 'preview'}
-          <!-- Preview Tab - Component Samples -->
-          <div class="p-5 space-y-4">
-            <!-- Buttons -->
-            <div class="space-y-2">
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">
-                {m.theme_preview_button()}
-              </h3>
-              <div class="flex flex-wrap gap-2">
-                <button class="btn btn-primary btn-sm">Primary</button>
-                <button class="btn btn-secondary btn-sm">Secondary</button>
-                <button class="btn btn-accent btn-sm">Accent</button>
-                <button class="btn btn-ghost btn-sm">Ghost</button>
-                <button class="btn btn-sm" disabled>Disabled</button>
-              </div>
-            </div>
-
-            <!-- Badges -->
-            <div class="space-y-2">
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">
-                {m.theme_preview_badge()}
-              </h3>
-              <div class="flex flex-wrap gap-2">
-                <span class="badge badge-primary">Primary</span>
-                <span class="badge badge-secondary">Secondary</span>
-                <span class="badge badge-accent">Accent</span>
-                <span class="badge badge-info">Info</span>
-                <span class="badge badge-success">Success</span>
-                <span class="badge badge-warning">Warning</span>
-                <span class="badge badge-error">Error</span>
-              </div>
-            </div>
-
-            <!-- Alerts -->
-            <div class="space-y-2">
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">
-                {m.theme_preview_alert()}
-              </h3>
-              <div class="space-y-2">
-                <div class="alert alert-info py-2 text-sm">
-                  <Icon icon="ph:info" class="size-4" />
-                  <span>Info alert message</span>
-                </div>
-                <div class="alert alert-success py-2 text-sm">
-                  <Icon icon="ph:check-circle" class="size-4" />
-                  <span>Success alert message</span>
-                </div>
-                <div class="alert alert-warning py-2 text-sm">
-                  <Icon icon="ph:warning" class="size-4" />
-                  <span>Warning alert message</span>
-                </div>
-                <div class="alert alert-error py-2 text-sm">
-                  <Icon icon="ph:x-circle" class="size-4" />
-                  <span>Error alert message</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Card -->
-            <div class="space-y-2">
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">
-                {m.theme_preview_card()}
-              </h3>
-              <div class="card bg-base-200 border border-base-300 w-full max-w-sm">
-                <div class="card-body p-4">
-                  <h4 class="card-title text-sm">Card Title</h4>
-                  <p class="text-xs text-base-content/60">{m.theme_preview_sample_text()}</p>
-                  <div class="card-actions justify-end mt-2">
-                    <button class="btn btn-primary btn-xs">Action</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Input -->
-            <div class="space-y-2">
-              <h3 class="text-xs font-semibold text-base-content/70 uppercase tracking-wider">
-                {m.theme_preview_input()}
-              </h3>
-              <div class="flex gap-2 max-w-sm">
-                <input type="text" placeholder="Text input..." class="input input-bordered input-sm flex-1" />
-                <button class="btn btn-primary btn-sm">Submit</button>
-              </div>
-            </div>
           </div>
         {/if}
       </div>
@@ -2257,7 +2272,7 @@
           <button
             class="btn btn-ghost btn-sm text-base-content/60 gap-1.5"
             onclick={() => {
-              customCss = customCssTemplate;
+              customCss = originalCssOnOpen;
             }}
             title={m.theme_reset()}
           >

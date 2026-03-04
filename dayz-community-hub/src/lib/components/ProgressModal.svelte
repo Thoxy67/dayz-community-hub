@@ -196,7 +196,7 @@
 
 {#if modOp.active}
   <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+    class="fixed inset-0 modal-backdrop-window z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
     style="top: 36px;"
     role="presentation"
   >

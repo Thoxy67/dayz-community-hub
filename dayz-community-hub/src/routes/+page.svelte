@@ -2,6 +2,7 @@
   import '../app.css';
   import { invoke } from '@tauri-apps/api/core';
   import { listen } from '@tauri-apps/api/event';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
   import { openUrl as shellOpen } from '@tauri-apps/plugin-opener';
   import { onMount } from 'svelte';
 
@@ -73,6 +74,10 @@
   import { checkForUpdate, installUpdate } from '$lib/actions/updater';
   import { handleCliArgs } from '$lib/actions/cli';
   import { doInitialize, selectTab } from '$lib/actions/init';
+
+  // ── Window state ────────────────────────────────────────────────────────
+  let isMaximized = $state(false);
+  let isFocused = $state(true);
 
   // ── Derived helpers ───────────────────────────────────────────────────────
   let favoritesSet = $derived(new Set(s.profile?.favorites.map((f) => `${f.ip}:${f.port}`) ?? []));
@@ -193,10 +198,17 @@
     window.addEventListener('keydown', handleGlobalKeydown);
     cleanupFns.push(() => window.removeEventListener('keydown', handleGlobalKeydown));
 
+    // Track window maximize state for conditional rounded corners
+    const win = getCurrentWindow();
+    win.isMaximized().then((m) => (isMaximized = m));
+    win.onResized(() => {
+      win.isMaximized().then((m) => (isMaximized = m));
+    }).then((unlisten) => cleanupFns.push(unlisten));
+
     const onVisibilityChange = () => (document.hidden ? handleWindowHide() : handleWindowShow());
     document.addEventListener('visibilitychange', onVisibilityChange);
-    window.addEventListener('blur', handleWindowHide);
-    window.addEventListener('focus', handleWindowShow);
+    window.addEventListener('blur', () => { handleWindowHide(); isFocused = false; });
+    window.addEventListener('focus', () => { handleWindowShow(); isFocused = true; });
     cleanupFns.push(() => {
       document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('blur', handleWindowHide);
@@ -204,6 +216,7 @@
     });
 
     s.loadTheme();
+    s.loadWindowSettings();
 
     doInitialize();
 
@@ -270,7 +283,14 @@
 </script>
 
 {#key localeState.locale}
-  <div class="flex flex-col h-screen w-screen overflow-hidden bg-base-100 text-base-content" data-theme={s.theme}>
+  <div
+    class="flex flex-col h-screen w-screen overflow-hidden bg-base-100 text-base-content"
+    data-theme={s.theme}
+    style:border-radius={!isMaximized ? s.windowRadius : '0'}
+    style:border={isFocused ? `${s.windowBorderSize} solid ${s.windowBorderFocus}` : `${s.windowBorderSize} solid ${s.windowBorderBlur}`}
+    style:--window-radius={!isMaximized ? s.windowRadius : '0'}
+    style:--window-border-size={s.windowBorderSize}
+  >
     <TitleBar
       stats={s.stats}
       avatarUrl={s.avatarUrl}

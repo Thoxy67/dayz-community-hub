@@ -17,7 +17,7 @@
 
 <!-- z-[60] so it sits above the profile modal (z-50) -->
 <div
-  class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+  class="fixed inset-0 modal-backdrop-window z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
   style="top: 36px;"
   role="presentation"
   onclick={onClose}
