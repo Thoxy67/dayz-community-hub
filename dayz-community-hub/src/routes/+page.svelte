@@ -201,14 +201,22 @@
     // Track window maximize state for conditional rounded corners
     const win = getCurrentWindow();
     win.isMaximized().then((m) => (isMaximized = m));
-    win.onResized(() => {
-      win.isMaximized().then((m) => (isMaximized = m));
-    }).then((unlisten) => cleanupFns.push(unlisten));
+    win
+      .onResized(() => {
+        win.isMaximized().then((m) => (isMaximized = m));
+      })
+      .then((unlisten) => cleanupFns.push(unlisten));
 
     const onVisibilityChange = () => (document.hidden ? handleWindowHide() : handleWindowShow());
     document.addEventListener('visibilitychange', onVisibilityChange);
-    window.addEventListener('blur', () => { handleWindowHide(); isFocused = false; });
-    window.addEventListener('focus', () => { handleWindowShow(); isFocused = true; });
+    window.addEventListener('blur', () => {
+      handleWindowHide();
+      isFocused = false;
+    });
+    window.addEventListener('focus', () => {
+      handleWindowShow();
+      isFocused = true;
+    });
     cleanupFns.push(() => {
       document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('blur', handleWindowHide);
@@ -287,7 +295,9 @@
     class="flex flex-col h-screen w-screen overflow-hidden bg-base-100 text-base-content"
     data-theme={s.theme}
     style:border-radius={!isMaximized ? s.windowRadius : '0'}
-    style:border={isFocused ? `${s.windowBorderSize} solid ${s.windowBorderFocus}` : `${s.windowBorderSize} solid ${s.windowBorderBlur}`}
+    style:border={isFocused
+      ? `${s.windowBorderSize} solid ${s.windowBorderFocus}`
+      : `${s.windowBorderSize} solid ${s.windowBorderBlur}`}
     style:--window-radius={!isMaximized ? s.windowRadius : '0'}
     style:--window-border-size={s.windowBorderSize}
   >

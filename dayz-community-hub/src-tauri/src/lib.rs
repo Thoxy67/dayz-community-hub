@@ -102,6 +102,7 @@ pub fn run(args: CliArgs) {
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             commands::servers::initialize,
+            commands::servers::check_first_launch,
             commands::servers::get_servers,
             commands::servers::get_server_details,
             commands::servers::refresh_servers,

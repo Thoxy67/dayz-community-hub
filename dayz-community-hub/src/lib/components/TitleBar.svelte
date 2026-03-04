@@ -352,7 +352,7 @@
       ],
       'Window control colors': ['--color-btn-close'],
       'Border radius': ['--radius-btn', '--radius-box', '--radius-badge'],
-      'Logo': ['--logo-invert'],
+      Logo: ['--logo-invert'],
     };
 
     let isFirst = true;

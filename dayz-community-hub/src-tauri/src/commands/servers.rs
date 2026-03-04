@@ -9,6 +9,14 @@ use crate::helpers::{dedup_servers, find_server_in};
 use crate::state::{AppState, PingCache, SharedState};
 use crate::utils::error::ResultExt;
 
+/// Quick check if this is a first launch (no profile exists).
+/// Called before initialize to show wizard immediately.
+#[tauri::command]
+pub(crate) fn check_first_launch() -> bool {
+    let profile_path = config::default_profile_path();
+    !profile_path.exists()
+}
+
 /// Initialize the application: create DayzCtl, load cached servers.
 /// Called once by the frontend on mount. The window is already visible.
 #[tauri::command]

@@ -11,9 +11,19 @@ import { handleCliArgs } from './cli';
 
 export async function doInitialize() {
   try {
+    // Quick check for first launch - show wizard immediately without waiting for servers
+    const isFirstLaunch = await invoke<boolean>('check_first_launch');
+    if (isFirstLaunch) {
+      s.showWizard = true;
+      s.initialized = true;
+    }
+
+    // Continue with full initialization (servers load while wizard is shown)
     const result = await invoke<{ server_count: number; from_cache: boolean; is_first_launch: boolean }>('initialize');
-    s.initialized = true;
-    if (result.is_first_launch) s.showWizard = true;
+
+    if (!isFirstLaunch) {
+      s.initialized = true;
+    }
 
     await Promise.all([loadProfile(), loadStats(), loadSteamPlayers(), loadMods()]);
 

@@ -185,7 +185,7 @@ class AppState {
         windowBorderSize: this.windowBorderSize,
         windowBorderFocus: this.windowBorderFocus,
         windowBorderBlur: this.windowBorderBlur,
-      })
+      }),
     );
   }
 
