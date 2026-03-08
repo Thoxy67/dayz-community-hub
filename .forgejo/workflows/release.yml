@@ -137,61 +137,92 @@ jobs:
 
       - name: Upload Windows assets to GitHub
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
-          GH_API="https://api.github.com"
-          GH_UPLOAD="https://uploads.github.com"
-          GH_OWNER="Thoxy67"
-          GH_REPO="dayz-community-hub"
+          python3 << 'PYEOF'
+          import sys, json, subprocess, os, urllib.parse
 
-          gh_upload_asset() {
-            local release_id="$1" file="$2"
-            local name; name="$(basename "$file")"
-            local existing_id
-            existing_id="$(curl -sf \
-              -H "Authorization: token $GITHUB_TOKEN" \
-              "$GH_API/repos/$GH_OWNER/$GH_REPO/releases/$release_id/assets" | \
-              python3 -c "
-          import sys, json
-          assets = json.load(sys.stdin)
-          name = '$name'
-          print(next((str(a['id']) for a in assets if a['name'] == name), ''))
-          ")"
-            if [ -n "$existing_id" ]; then
-              curl -sf -X DELETE \
-                -H "Authorization: token $GITHUB_TOKEN" \
-                "$GH_API/repos/$GH_OWNER/$GH_REPO/releases/assets/$existing_id" >/dev/null
-            fi
-            curl -sf -X POST \
-              -H "Authorization: token $GITHUB_TOKEN" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary "@$file" \
-              "$GH_UPLOAD/repos/$GH_OWNER/$GH_REPO/releases/$release_id/assets?name=$name" | \
-              python3 -c "import sys,json; r=json.load(sys.stdin); print('  Uploaded to GitHub:', r.get('name','?'))"
-          }
+          GH_TOKEN = os.environ["GH_PAT"]
+          TAG = os.environ["TAG"]
+          ZIP_PATH = os.environ["ZIP_PATH"]
+          SIG_FILE = os.environ["SIG_FILE"]
 
-          HTTP_STATUS="$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            "$GH_API/repos/$GH_OWNER/$GH_REPO/releases/tags/$TAG")"
+          GH_API = "https://api.github.com"
+          GH_UPLOAD = "https://uploads.github.com"
+          GH_OWNER = "Thoxy67"
+          GH_REPO = "dayz-community-hub"
 
-          if [ "$HTTP_STATUS" = "200" ]; then
-            GH_RELEASE_ID="$(curl -sf \
-              -H "Authorization: token $GITHUB_TOKEN" \
-              "$GH_API/repos/$GH_OWNER/$GH_REPO/releases/tags/$TAG" | \
-              python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")"
-            echo "Reusing GitHub release $TAG (id $GH_RELEASE_ID)"
-          else
-            GH_RELEASE_ID="$(curl -sf -X POST \
-              -H "Authorization: token $GITHUB_TOKEN" \
-              -H "Content-Type: application/json" \
-              "$GH_API/repos/$GH_OWNER/$GH_REPO/releases" \
-              -d "{\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"body\":\"Release $TAG\",\"draft\":false,\"prerelease\":false}" | \
-              python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")"
-            echo "Created GitHub release $TAG (id $GH_RELEASE_ID)"
-          fi
+          def curl_json(args):
+              r = subprocess.run(["curl", "-sf"] + args, capture_output=True, text=True)
+              if r.returncode != 0:
+                  return None
+              return json.loads(r.stdout) if r.stdout.strip() else None
 
-          gh_upload_asset "$GH_RELEASE_ID" "$ZIP_PATH"
-          gh_upload_asset "$GH_RELEASE_ID" "$SIG_FILE"
+          def curl_status(url, headers):
+              r = subprocess.run(
+                  ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}"] + headers + [url],
+                  capture_output=True, text=True)
+              return r.stdout.strip()
+
+          def gh_upload_asset(release_id, filepath):
+              name = os.path.basename(filepath)
+              headers = ["-H", f"Authorization: token {GH_TOKEN}"]
+              assets = curl_json(headers + [f"{GH_API}/repos/{GH_OWNER}/{GH_REPO}/releases/{release_id}/assets"])
+              if assets:
+                  for a in assets:
+                      if a["name"] == name:
+                          print(f"  Replacing existing asset: {name}")
+                          subprocess.run(["curl", "-sf", "-X", "DELETE"] + headers +
+                              [f"{GH_API}/repos/{GH_OWNER}/{GH_REPO}/releases/assets/{a['id']}"],
+                              capture_output=True)
+                          break
+              encoded = urllib.parse.quote(name)
+              r = subprocess.run(
+                  ["curl", "-sf", "-X", "POST"] + headers +
+                  ["-H", "Content-Type: application/octet-stream",
+                   "--data-binary", f"@{filepath}",
+                   f"{GH_UPLOAD}/repos/{GH_OWNER}/{GH_REPO}/releases/{release_id}/assets?name={encoded}"],
+                  capture_output=True, text=True)
+              if r.stdout.strip():
+                  data = json.loads(r.stdout)
+                  print(f"  Uploaded to GitHub: {data.get('name', '?')}")
+              else:
+                  print(f"  ERROR uploading {name}: {r.stderr}")
+
+          gh_headers = ["-H", f"Authorization: token {GH_TOKEN}"]
+          status = curl_status(f"{GH_API}/repos/{GH_OWNER}/{GH_REPO}/releases/tags/{TAG}", gh_headers)
+
+          if status == "200":
+              gh_rel = curl_json(gh_headers + [f"{GH_API}/repos/{GH_OWNER}/{GH_REPO}/releases/tags/{TAG}"])
+              gh_release_id = gh_rel["id"]
+              print(f"Reusing GitHub release {TAG} (id {gh_release_id})")
+          else:
+              payload = {
+                  "tag_name": TAG,
+                  "name": TAG,
+                  "body": f"Release {TAG}",
+                  "draft": False,
+                  "prerelease": False,
+              }
+              r = subprocess.run(
+                  ["curl", "-s", "-X", "POST"] + gh_headers +
+                  ["-H", "Content-Type: application/json",
+                   f"{GH_API}/repos/{GH_OWNER}/{GH_REPO}/releases",
+                   "-d", json.dumps(payload)],
+                  capture_output=True, text=True)
+              if not r.stdout.strip():
+                  print(f"ERROR creating release: {r.stderr}")
+                  sys.exit(1)
+              gh_rel = json.loads(r.stdout)
+              if "id" not in gh_rel:
+                  print(f"ERROR: {gh_rel.get('message', gh_rel)}")
+                  sys.exit(1)
+              gh_release_id = gh_rel["id"]
+              print(f"Created GitHub release {TAG} (id {gh_release_id})")
+
+          gh_upload_asset(gh_release_id, ZIP_PATH)
+          gh_upload_asset(gh_release_id, SIG_FILE)
+          PYEOF
 
       - name: Save Windows artifacts for latest.json
         run: |
@@ -329,56 +360,76 @@ jobs:
 
       - name: Upload Linux assets to GitHub
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
-          GH_API="https://api.github.com"
-          GH_UPLOAD="https://uploads.github.com"
-          GH_OWNER="Thoxy67"
-          GH_REPO="dayz-community-hub"
+          python3 << 'PYEOF'
+          import sys, json, subprocess, os, urllib.parse, time
 
-          gh_upload_asset() {
-            local release_id="$1" file="$2"
-            local name; name="$(basename "$file")"
-            local existing_id
-            existing_id="$(curl -sf \
-              -H "Authorization: token $GITHUB_TOKEN" \
-              "$GH_API/repos/$GH_OWNER/$GH_REPO/releases/$release_id/assets" | \
-              python3 -c "
-          import sys, json
-          assets = json.load(sys.stdin)
-          name = '$name'
-          print(next((str(a['id']) for a in assets if a['name'] == name), ''))
-          ")"
-            if [ -n "$existing_id" ]; then
-              curl -sf -X DELETE \
-                -H "Authorization: token $GITHUB_TOKEN" \
-                "$GH_API/repos/$GH_OWNER/$GH_REPO/releases/assets/$existing_id" >/dev/null
-            fi
-            curl -sf -X POST \
-              -H "Authorization: token $GITHUB_TOKEN" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary "@$file" \
-              "$GH_UPLOAD/repos/$GH_OWNER/$GH_REPO/releases/$release_id/assets?name=$name" | \
-              python3 -c "import sys,json; r=json.load(sys.stdin); print('  Uploaded to GitHub:', r.get('name','?'))"
-          }
+          GH_TOKEN = os.environ["GH_PAT"]
+          TAG = os.environ["TAG"]
+          BUNDLE_DIR = os.environ["BUNDLE_DIR"]
+          DEB_NAME = os.environ["DEB_NAME"]
+          RPM_NAME = os.environ["RPM_NAME"]
+          APPIMAGE_NAME = os.environ["APPIMAGE_NAME"]
+          APPIMAGE_SIG_NAME = os.environ["APPIMAGE_SIG_NAME"]
+
+          GH_API = "https://api.github.com"
+          GH_UPLOAD = "https://uploads.github.com"
+          GH_OWNER = "Thoxy67"
+          GH_REPO = "dayz-community-hub"
+
+          def curl_json(args):
+              r = subprocess.run(["curl", "-sf"] + args, capture_output=True, text=True)
+              if r.returncode != 0:
+                  return None
+              return json.loads(r.stdout) if r.stdout.strip() else None
+
+          def gh_upload_asset(release_id, filepath):
+              name = os.path.basename(filepath)
+              headers = ["-H", f"Authorization: token {GH_TOKEN}"]
+              assets = curl_json(headers + [f"{GH_API}/repos/{GH_OWNER}/{GH_REPO}/releases/{release_id}/assets"])
+              if assets:
+                  for a in assets:
+                      if a["name"] == name:
+                          print(f"  Replacing existing asset: {name}")
+                          subprocess.run(["curl", "-sf", "-X", "DELETE"] + headers +
+                              [f"{GH_API}/repos/{GH_OWNER}/{GH_REPO}/releases/assets/{a['id']}"],
+                              capture_output=True)
+                          break
+              encoded = urllib.parse.quote(name)
+              r = subprocess.run(
+                  ["curl", "-sf", "-X", "POST"] + headers +
+                  ["-H", "Content-Type: application/octet-stream",
+                   "--data-binary", f"@{filepath}",
+                   f"{GH_UPLOAD}/repos/{GH_OWNER}/{GH_REPO}/releases/{release_id}/assets?name={encoded}"],
+                  capture_output=True, text=True)
+              if r.stdout.strip():
+                  data = json.loads(r.stdout)
+                  print(f"  Uploaded to GitHub: {data.get('name', '?')}")
+              else:
+                  print(f"  ERROR uploading {name}: {r.stderr}")
+
+          gh_headers = ["-H", f"Authorization: token {GH_TOKEN}"]
 
           # Wait for Windows job to have created the GitHub release
-          for i in $(seq 1 12); do
-            GH_RELEASE_ID="$(curl -sf \
-              -H "Authorization: token $GITHUB_TOKEN" \
-              "$GH_API/repos/$GH_OWNER/$GH_REPO/releases/tags/$TAG" | \
-              python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)"
-            [ -n "$GH_RELEASE_ID" ] && break
-            echo "Waiting for GitHub release... ($i/12)"
-            sleep 10
-          done
+          gh_release_id = None
+          for i in range(1, 13):
+              rel = curl_json(gh_headers + [f"{GH_API}/repos/{GH_OWNER}/{GH_REPO}/releases/tags/{TAG}"])
+              if rel and "id" in rel:
+                  gh_release_id = rel["id"]
+                  break
+              print(f"Waiting for GitHub release... ({i}/12)")
+              time.sleep(10)
 
-          [[ -n "$GH_RELEASE_ID" ]] || { echo "ERROR: GitHub release $TAG not found"; exit 1; }
+          if not gh_release_id:
+              print(f"ERROR: GitHub release {TAG} not found after waiting")
+              sys.exit(1)
 
-          gh_upload_asset "$GH_RELEASE_ID" "$BUNDLE_DIR/$DEB_NAME"
-          gh_upload_asset "$GH_RELEASE_ID" "$BUNDLE_DIR/$RPM_NAME"
-          gh_upload_asset "$GH_RELEASE_ID" "$BUNDLE_DIR/$APPIMAGE_NAME"
-          gh_upload_asset "$GH_RELEASE_ID" "$BUNDLE_DIR/$APPIMAGE_SIG_NAME"
+          gh_upload_asset(gh_release_id, f"{BUNDLE_DIR}/{DEB_NAME}")
+          gh_upload_asset(gh_release_id, f"{BUNDLE_DIR}/{RPM_NAME}")
+          gh_upload_asset(gh_release_id, f"{BUNDLE_DIR}/{APPIMAGE_NAME}")
+          gh_upload_asset(gh_release_id, f"{BUNDLE_DIR}/{APPIMAGE_SIG_NAME}")
+          PYEOF
 
   publish-latest-json:
     name: Publish latest.json
@@ -523,66 +574,93 @@ jobs:
 
       - name: Upload latest.json to GitHub
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
-          TAG="${{ forgejo.ref_name }}"
-          GH_API="https://api.github.com"
-          GH_UPLOAD="https://uploads.github.com"
-          GH_OWNER="Thoxy67"
-          GH_REPO="dayz-community-hub"
-          LATEST_JSON="/tmp/latest.json"
+          python3 << 'PYEOF'
+          import sys, json, subprocess, os, urllib.parse
 
-          gh_upload_asset() {
-            local release_id="$1" file="$2"
-            local name; name="$(basename "$file")"
-            local existing_id
-            existing_id="$(curl -sf \
-              -H "Authorization: token $GITHUB_TOKEN" \
-              "$GH_API/repos/$GH_OWNER/$GH_REPO/releases/$release_id/assets" | \
-              python3 -c "
-          import sys, json
-          assets = json.load(sys.stdin)
-          name = '$name'
-          print(next((str(a['id']) for a in assets if a['name'] == name), ''))
-          ")"
-            if [ -n "$existing_id" ]; then
-              curl -sf -X DELETE \
-                -H "Authorization: token $GITHUB_TOKEN" \
-                "$GH_API/repos/$GH_OWNER/$GH_REPO/releases/assets/$existing_id" >/dev/null
-            fi
-            curl -sf -X POST \
-              -H "Authorization: token $GITHUB_TOKEN" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary "@$file" \
-              "$GH_UPLOAD/repos/$GH_OWNER/$GH_REPO/releases/$release_id/assets?name=$name" | \
-              python3 -c "import sys,json; r=json.load(sys.stdin); print('  Uploaded to GitHub:', r.get('name','?'))"
-          }
+          GH_TOKEN = os.environ["GH_PAT"]
+          TAG = "${{ forgejo.ref_name }}"
+          LATEST_JSON = "/tmp/latest.json"
+
+          GH_API = "https://api.github.com"
+          GH_UPLOAD = "https://uploads.github.com"
+          GH_OWNER = "Thoxy67"
+          GH_REPO = "dayz-community-hub"
+
+          def curl_json(args):
+              r = subprocess.run(["curl", "-sf"] + args, capture_output=True, text=True)
+              if r.returncode != 0:
+                  return None
+              return json.loads(r.stdout) if r.stdout.strip() else None
+
+          def curl_status(url, headers):
+              r = subprocess.run(
+                  ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}"] + headers + [url],
+                  capture_output=True, text=True)
+              return r.stdout.strip()
+
+          def gh_upload_asset(release_id, filepath):
+              name = os.path.basename(filepath)
+              headers = ["-H", f"Authorization: token {GH_TOKEN}"]
+              assets = curl_json(headers + [f"{GH_API}/repos/{GH_OWNER}/{GH_REPO}/releases/{release_id}/assets"])
+              if assets:
+                  for a in assets:
+                      if a["name"] == name:
+                          print(f"  Replacing existing asset: {name}")
+                          subprocess.run(["curl", "-sf", "-X", "DELETE"] + headers +
+                              [f"{GH_API}/repos/{GH_OWNER}/{GH_REPO}/releases/assets/{a['id']}"],
+                              capture_output=True)
+                          break
+              encoded = urllib.parse.quote(name)
+              r = subprocess.run(
+                  ["curl", "-sf", "-X", "POST"] + headers +
+                  ["-H", "Content-Type: application/octet-stream",
+                   "--data-binary", f"@{filepath}",
+                   f"{GH_UPLOAD}/repos/{GH_OWNER}/{GH_REPO}/releases/{release_id}/assets?name={encoded}"],
+                  capture_output=True, text=True)
+              if r.stdout.strip():
+                  data = json.loads(r.stdout)
+                  print(f"  Uploaded to GitHub: {data.get('name', '?')}")
+              else:
+                  print(f"  ERROR uploading {name}: {r.stderr}")
+
+          gh_headers = ["-H", f"Authorization: token {GH_TOKEN}"]
 
           # Upload to versioned release on GitHub
-          GH_RELEASE_ID="$(curl -sf \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            "$GH_API/repos/$GH_OWNER/$GH_REPO/releases/tags/$TAG" | \
-            python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")"
-          gh_upload_asset "$GH_RELEASE_ID" "$LATEST_JSON"
+          gh_rel = curl_json(gh_headers + [f"{GH_API}/repos/{GH_OWNER}/{GH_REPO}/releases/tags/{TAG}"])
+          if not gh_rel or "id" not in gh_rel:
+              print(f"ERROR: GitHub release {TAG} not found")
+              sys.exit(1)
+          gh_release_id = gh_rel["id"]
+          gh_upload_asset(gh_release_id, LATEST_JSON)
 
           # Upload to "latest" release on GitHub
-          GH_LATEST_STATUS="$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            "$GH_API/repos/$GH_OWNER/$GH_REPO/releases/tags/latest")"
+          status = curl_status(f"{GH_API}/repos/{GH_OWNER}/{GH_REPO}/releases/tags/latest", gh_headers)
 
-          if [ "$GH_LATEST_STATUS" = "200" ]; then
-            GH_LATEST_ID="$(curl -sf \
-              -H "Authorization: token $GITHUB_TOKEN" \
-              "$GH_API/repos/$GH_OWNER/$GH_REPO/releases/tags/latest" | \
-              python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")"
-          else
-            GH_LATEST_ID="$(curl -sf -X POST \
-              -H "Authorization: token $GITHUB_TOKEN" \
-              -H "Content-Type: application/json" \
-              "$GH_API/repos/$GH_OWNER/$GH_REPO/releases" \
-              -d '{"tag_name":"latest","name":"latest","body":"Always points to the latest release. Used by the auto-updater.","draft":false,"prerelease":false}' | \
-              python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")"
-          fi
-          gh_upload_asset "$GH_LATEST_ID" "$LATEST_JSON"
+          if status == "200":
+              latest_rel = curl_json(gh_headers + [f"{GH_API}/repos/{GH_OWNER}/{GH_REPO}/releases/tags/latest"])
+              gh_latest_id = latest_rel["id"]
+          else:
+              payload = {
+                  "tag_name": "latest",
+                  "name": "latest",
+                  "body": "Always points to the latest release. Used by the auto-updater.",
+                  "draft": False,
+                  "prerelease": False,
+              }
+              r = subprocess.run(
+                  ["curl", "-s", "-X", "POST"] + gh_headers +
+                  ["-H", "Content-Type: application/json",
+                   f"{GH_API}/repos/{GH_OWNER}/{GH_REPO}/releases",
+                   "-d", json.dumps(payload)],
+                  capture_output=True, text=True)
+              latest_rel = json.loads(r.stdout)
+              if "id" not in latest_rel:
+                  print(f"ERROR creating latest release: {latest_rel.get('message', latest_rel)}")
+                  sys.exit(1)
+              gh_latest_id = latest_rel["id"]
 
-          echo "GitHub Release : https://github.com/$GH_OWNER/$GH_REPO/releases/tag/$TAG"
+          gh_upload_asset(gh_latest_id, LATEST_JSON)
+          print(f"GitHub Release: https://github.com/{GH_OWNER}/{GH_REPO}/releases/tag/{TAG}")
+          PYEOF

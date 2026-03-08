@@ -22,74 +22,24 @@ jobs:
       - name: Mirror releases
         env:
           FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
-          FJ_API="https://git.thoxy.xyz/api/v1"
-          FJ_OWNER="thoxy"
-          FJ_REPO="dayz-community-hub"
+          python3 << 'PYEOF'
+          import sys, json, subprocess, os, urllib.parse
 
-          GH_API="https://api.github.com"
-          GH_UPLOAD="https://uploads.github.com"
-          GH_OWNER="Thoxy67"
-          GH_REPO="dayz-community-hub"
+          FJ_TOKEN = os.environ["FORGEJO_TOKEN"]
+          GH_TOKEN = os.environ["GH_PAT"]
 
-          TMPDIR="$(mktemp -d)"
+          FJ_API = "https://git.thoxy.xyz/api/v1"
+          FJ_OWNER = "thoxy"
+          FJ_REPO = "dayz-community-hub"
 
-          gh_upload_asset() {
-            local release_id="$1" file="$2"
-            local name; name="$(basename "$file")"
-            local existing_id
-            existing_id="$(curl -sf \
-              -H "Authorization: token $GITHUB_TOKEN" \
-              "$GH_API/repos/$GH_OWNER/$GH_REPO/releases/$release_id/assets" | \
-              python3 -c "
-          import sys, json
-          assets = json.load(sys.stdin)
-          name = '$name'
-          print(next((str(a['id']) for a in assets if a['name'] == name), ''))
-          " 2>/dev/null)"
-            if [ -n "$existing_id" ]; then
-              echo "    Replacing existing asset: $name"
-              curl -sf -X DELETE \
-                -H "Authorization: token $GITHUB_TOKEN" \
-                "$GH_API/repos/$GH_OWNER/$GH_REPO/releases/assets/$existing_id" >/dev/null
-            fi
-            curl -sf -X POST \
-              -H "Authorization: token $GITHUB_TOKEN" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary "@$file" \
-              "$GH_UPLOAD/repos/$GH_OWNER/$GH_REPO/releases/$release_id/assets?name=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$name'))")" | \
-              python3 -c "import sys,json; r=json.load(sys.stdin); print('    Uploaded:', r.get('name','?'))"
-          }
+          GH_API = "https://api.github.com"
+          GH_UPLOAD = "https://uploads.github.com"
+          GH_OWNER = "Thoxy67"
+          GH_REPO = "dayz-community-hub"
 
-          # Fetch all releases from Forgejo (paginated)
-          PAGE=1
-          ALL_RELEASES="[]"
-          while true; do
-            BATCH="$(curl -sf \
-              -H "Authorization: token $FORGEJO_TOKEN" \
-              "$FJ_API/repos/$FJ_OWNER/$FJ_REPO/releases?page=$PAGE&limit=50")"
-            COUNT="$(echo "$BATCH" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")"
-            [ "$COUNT" -eq 0 ] && break
-            ALL_RELEASES="$(python3 -c "
-          import sys, json
-          a = json.loads('$ALL_RELEASES') if '$ALL_RELEASES' != '[]' else []
-          a.extend(json.loads(sys.stdin.read()))
-          json.dump(a, sys.stdout)
-          " <<< "$BATCH")"
-            PAGE=$((PAGE + 1))
-          done
-
-          TOTAL="$(echo "$ALL_RELEASES" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")"
-          echo "Found $TOTAL releases on Forgejo"
-          echo ""
-
-          # Process each release using Python to drive the loop
-          echo "$ALL_RELEASES" | python3 << 'PYEOF' - "$FORGEJO_TOKEN" "$GITHUB_TOKEN" "$FJ_API" "$FJ_OWNER" "$FJ_REPO" "$GH_API" "$GH_UPLOAD" "$GH_OWNER" "$GH_REPO" "$TMPDIR"
-          import sys, json, subprocess, os, urllib.parse, tempfile
-
-          releases = json.load(sys.stdin)
-          _, FJ_TOKEN, GH_TOKEN, FJ_API, FJ_OWNER, FJ_REPO, GH_API, GH_UPLOAD, GH_OWNER, GH_REPO, TMPDIR = sys.argv
+          TMPDIR = subprocess.run(["mktemp", "-d"], capture_output=True, text=True).stdout.strip()
 
           def curl_json(args):
               r = subprocess.run(["curl", "-sf"] + args, capture_output=True, text=True)
@@ -106,6 +56,7 @@ jobs:
           def gh_upload_asset(release_id, filepath):
               name = os.path.basename(filepath)
               headers = ["-H", f"Authorization: token {GH_TOKEN}"]
+
               # Check for existing asset
               assets = curl_json(headers + [f"{GH_API}/repos/{GH_OWNER}/{GH_REPO}/releases/{release_id}/assets"])
               if assets:
@@ -116,6 +67,7 @@ jobs:
                               [f"{GH_API}/repos/{GH_OWNER}/{GH_REPO}/releases/assets/{a['id']}"],
                               capture_output=True)
                           break
+
               encoded = urllib.parse.quote(name)
               r = subprocess.run(
                   ["curl", "-sf", "-X", "POST"] + headers +
@@ -132,13 +84,32 @@ jobs:
           fj_headers = ["-H", f"Authorization: token {FJ_TOKEN}"]
           gh_headers = ["-H", f"Authorization: token {GH_TOKEN}"]
 
-          for rel in releases:
+          # Fetch all releases from Forgejo (paginated)
+          page = 1
+          all_releases = []
+          while True:
+              batch = curl_json(fj_headers + [f"{FJ_API}/repos/{FJ_OWNER}/{FJ_REPO}/releases?page={page}&limit=50"])
+              if not batch:
+                  break
+              all_releases.extend(batch)
+              page += 1
+
+          print(f"Found {len(all_releases)} releases on Forgejo")
+          print()
+
+          for rel in all_releases:
               tag = rel["tag_name"]
               print(f"=== Processing: {tag} ===")
 
               # Get full release details
               full = curl_json(fj_headers + [f"{FJ_API}/repos/{FJ_OWNER}/{FJ_REPO}/releases/{rel['id']}"])
               body = full.get("body", "") if full else ""
+              name = rel.get("name", tag)
+              is_pre = bool(rel.get("prerelease", False))
+              is_draft = bool(rel.get("draft", False))
+
+              print(f"  Name: {name}")
+              print(f"  Prerelease: {is_pre}, Draft: {is_draft}")
 
               # Check if GitHub release exists
               status = curl_status(f"{GH_API}/repos/{GH_OWNER}/{GH_REPO}/releases/tags/{tag}", gh_headers)
@@ -150,18 +121,25 @@ jobs:
               else:
                   payload = {
                       "tag_name": tag,
-                      "name": rel.get("name", tag),
+                      "name": name,
                       "body": body or f"Release {tag}",
-                      "draft": bool(rel.get("draft", False)),
-                      "prerelease": bool(rel.get("prerelease", False)),
+                      "draft": is_draft,
+                      "prerelease": is_pre,
                   }
+
                   r = subprocess.run(
-                      ["curl", "-sf", "-X", "POST"] + gh_headers +
+                      ["curl", "-s", "-X", "POST"] + gh_headers +
                       ["-H", "Content-Type: application/json",
                        f"{GH_API}/repos/{GH_OWNER}/{GH_REPO}/releases",
                        "-d", json.dumps(payload)],
                       capture_output=True, text=True)
+                  if r.returncode != 0 or not r.stdout.strip():
+                      print(f"  ERROR creating release: {r.stderr}")
+                      continue
                   gh_rel = json.loads(r.stdout)
+                  if "id" not in gh_rel:
+                      print(f"  ERROR: {gh_rel.get('message', gh_rel)}")
+                      continue
                   gh_release_id = gh_rel["id"]
                   print(f"  Created GitHub release (id {gh_release_id})")
 
@@ -171,20 +149,23 @@ jobs:
               print(f"  {len(assets)} assets to mirror")
 
               for asset in assets:
-                  name = asset["name"]
+                  aname = asset["name"]
                   url = asset["browser_download_url"]
-                  print(f"  Downloading: {name}")
-                  filepath = os.path.join(TMPDIR, name)
+                  print(f"  Downloading: {aname}")
+                  filepath = os.path.join(TMPDIR, aname)
                   subprocess.run(
                       ["curl", "-sfL"] + fj_headers + ["-o", filepath, url],
                       capture_output=True)
+
+                  if not os.path.exists(filepath):
+                      print(f"    ERROR: failed to download {aname}")
+                      continue
+
                   gh_upload_asset(gh_release_id, filepath)
                   os.remove(filepath)
 
               print()
 
+          subprocess.run(["rm", "-rf", TMPDIR], capture_output=True)
           print("Done! All releases mirrored to GitHub.")
           PYEOF
-
-          rm -rf "$TMPDIR"
-          echo "Done! All releases mirrored to GitHub."
