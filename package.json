@@ -1,0 +1,19 @@
+{
+  "name": "dayz-community-hub",
+  "version": "0.3.7",
+  "description": "DayZ Community Hub - Server browser & mod manager for DayZ Standalone",
+  "private": true,
+  "workspaces": ["dayz-community-hub-ui"],
+  "scripts": {
+    "dev": "cd dayz-community-hub-ui && bun run dev",
+    "build": "cd dayz-community-hub-ui && bun run build",
+    "preview": "cd dayz-community-hub-ui && bun run preview",
+    "check": "cd dayz-community-hub-ui && bun run check",
+    "check:watch": "cd dayz-community-hub-ui && bun run check:watch",
+    "tauri": "cd dayz-community-hub-ui && bun run tauri",
+    "tauri:dev": "cd dayz-community-hub-ui && bun run tauri dev",
+    "tauri:build": "cd dayz-community-hub-ui && bun run tauri build",
+    "fmt": "cd dayz-community-hub-ui && prettier --write **/**/**/*.{ts,svelte}",
+    "fmt:check": "cd dayz-community-hub-ui && prettier --check **/**/**/*.{ts,svelte}"
+  }
+}

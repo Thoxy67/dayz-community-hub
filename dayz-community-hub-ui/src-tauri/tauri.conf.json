@@ -1,0 +1,77 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "DayZ Community Hub",
+  "version": "0.3.7",
+  "identifier": "com.thoxy.dayz-community-hub",
+  "build": {
+    "beforeDevCommand": "bun run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "bun run build",
+    "frontendDist": "../build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "DayZ-SA Multi Launcher",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "decorations": false,
+        "transparent": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$HOME/.local/share/dayz-community-hub/cache/**",
+          "$APPDATA/dayz-community-hub/cache/**"
+        ]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["dzch"],
+        "mimeType": "application/x-dzch",
+        "description": "DayZ Community Hub server config"
+      }
+    ],
+    "linux": {
+      "deb": {
+        "desktopTemplate": "assets/linux/dayz-community-hub.desktop"
+      }
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["dzch"]
+      }
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVDNTVGRDBERUNCRDVCRDUKUldUVlc3M3NEZjFWN0RKRVRJTDFGMENobGlOdDljK2V2ZTZwTkx4VitvMVoyb0JOakZEUTlhUkYK",
+      "dangerousInsecureTransportProtocol": false,
+      "endpoints": [
+        "https://git.thoxy.xyz/thoxy/dayz-community-hub/releases/download/latest/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

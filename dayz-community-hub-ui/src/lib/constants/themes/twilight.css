@@ -1,0 +1,109 @@
+/* Custom Theme - Twilight */
+[data-theme="custom"] {
+  /* ── Base surfaces ──────────────────────────────────────────────────────── */
+  --color-base-100: oklch(35% 0.035 280);
+  --color-base-200: oklch(40% 0.040 280);
+  --color-base-300: oklch(48% 0.045 280);
+  --color-base-content: oklch(92% 0.020 280);
+
+  /* ── Brand colors ───────────────────────────────────────────────────────── */
+  --color-primary: oklch(70% 0.18 300);
+  --color-primary-content: oklch(15% 0.02 300);
+  --color-secondary: oklch(65% 0.16 250);
+  --color-secondary-content: oklch(15% 0.01 250);
+  --color-accent: oklch(72% 0.16 340);
+  --color-accent-content: oklch(15% 0.02 340);
+  --color-neutral: oklch(38% 0.030 280);
+  --color-neutral-content: oklch(90% 0.015 280);
+
+  /* ── Status colors ──────────────────────────────────────────────────────── */
+  --color-info: oklch(65% 0.16 230);
+  --color-info-content: oklch(15% 0.01 230);
+  --color-success: oklch(65% 0.18 145);
+  --color-success-content: oklch(15% 0.01 145);
+  --color-warning: oklch(75% 0.18 75);
+  --color-warning-content: oklch(15% 0.02 75);
+  --color-error: oklch(65% 0.22 25);
+  --color-error-content: oklch(98% 0.01 25);
+
+  /* ── App accent colors ──────────────────────────────────────────────────── */
+  --color-accent-map: oklch(75% 0.18 75);
+  --color-accent-mods: oklch(65% 0.16 250);
+  --color-accent-stat-server: oklch(65% 0.22 25);
+  --color-accent-stat-players: oklch(65% 0.18 145);
+  --color-accent-stat-steam: oklch(65% 0.16 230);
+  --color-accent-update: oklch(65% 0.18 145);
+  --color-accent-stale: oklch(75% 0.18 75);
+  --color-accent-highlight: oklch(70% 0.18 300);
+
+  /* ── Terminal / Log colors ──────────────────────────────────────────────── */
+  --color-terminal-bg: oklch(32% 0.030 280);
+  --color-terminal-border: oklch(48% 0.045 280);
+  --color-log-error: oklch(65% 0.22 25);
+  --color-log-warning: oklch(75% 0.18 75);
+  --color-log-success: oklch(65% 0.18 145);
+  --color-log-info: oklch(65% 0.16 230);
+  --color-log-default: oklch(70% 0.02 280);
+
+  /* ── Syntax highlighting ────────────────────────────────────────────────── */
+  --color-syntax-comment: oklch(55% 0.02 280);
+  --color-syntax-selector: oklch(65% 0.16 230);
+  --color-syntax-property: oklch(65% 0.16 250);
+  --color-syntax-variable: oklch(72% 0.16 340);
+  --color-syntax-string: oklch(65% 0.18 145);
+  --color-syntax-number: oklch(75% 0.18 75);
+  --color-syntax-function: oklch(70% 0.18 300);
+
+  /* ── Feature colors ─────────────────────────────────────────────────────── */
+  --color-feat-browser: oklch(65% 0.16 230);
+  --color-feat-mods: oklch(65% 0.16 250);
+  --color-feat-stats: oklch(65% 0.18 145);
+  --color-feat-launch: oklch(75% 0.18 75);
+
+  /* ── Badge colors ───────────────────────────────────────────────────────── */
+  --color-badge-rank: oklch(75% 0.18 75);
+  --color-badge-status: oklch(65% 0.22 25);
+  --color-badge-country: oklch(65% 0.16 230);
+  --color-badge-players: oklch(65% 0.16 250);
+  --color-badge-firstperson: oklch(65% 0.16 250);
+  --color-badge-official: oklch(65% 0.18 145);
+  --color-badge-custom: oklch(72% 0.16 340);
+
+  /* ── UI element colors ──────────────────────────────────────────────────── */
+  --color-port-query: oklch(65% 0.16 230);
+  --color-port-game: oklch(75% 0.18 75);
+  --color-link: oklch(65% 0.16 230);
+  --color-score: oklch(65% 0.18 145);
+  --color-best: oklch(75% 0.18 75);
+
+  /* ── Option group colors ────────────────────────────────────────────────── */
+  --color-opt-display: oklch(65% 0.16 230);
+  --color-opt-network: oklch(65% 0.18 145);
+  --color-opt-launch: oklch(75% 0.18 75);
+  --color-opt-input: oklch(72% 0.16 340);
+  --color-opt-misc: oklch(65% 0.16 250);
+
+  /* ── Tech brand colors ──────────────────────────────────────────────────── */
+  --color-tech-tauri: oklch(65% 0.16 230);
+  --color-tech-svelte: oklch(68% 0.20 30);
+  --color-tech-rust: oklch(60% 0.16 50);
+  --color-tech-daisyui: oklch(65% 0.16 250);
+  --color-tech-tailwind: oklch(65% 0.16 230);
+
+  /* ── Window control colors ──────────────────────────────────────────────── */
+  --color-btn-close: oklch(65% 0.22 25);
+
+  /* ── Border radius ──────────────────────────────────────────────────────── */
+  --radius-btn: 0.375rem;
+  --radius-box: 0.5rem;
+  --radius-badge: 1rem;
+
+  /* ── Logo inversion ───────────────────────────────────────────────────────── */
+  --logo-invert: 0;
+
+  /* ── Window ───────────────────────────────────────────────────────────────── */
+  --window-radius: 0;
+  --window-border-size: 0;
+  --window-border-focus: oklch(45% 0.12 250);
+  --window-border-blur: oklch(25% 0.02 250);
+}

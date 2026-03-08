@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: ci-${{ forgejo.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-check:
+    name: Build check (Linux)
+    runs-on: docker
+    container:
+      image: git.thoxy.xyz/thoxy/dayz-community-hub/ci:latest
+      credentials:
+        username: ${{ forgejo.repository_owner }}
+        password: ${{ secrets.FORGEJO_TOKEN }}
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: dayz-community-hub-ui
+
+    steps:
+      - name: Checkout
+        uses: https://code.forgejo.org/actions/checkout@v4
+
+      - name: Cache Cargo registry and build artifacts
+        uses: https://code.forgejo.org/actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: linux-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: linux-cargo-
+
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build (Linux, no-bundle)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ""
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          CARGO_BUILD_JOBS: "4"
+        run: bun tauri build --no-bundle

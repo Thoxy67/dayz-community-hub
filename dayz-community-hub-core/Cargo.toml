@@ -1,0 +1,30 @@
+[package]
+name = "dayz-community-hub-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+# Workspace shared
+tokio.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+regex.workspace = true
+which.workspace = true
+sysinfo.workspace = true
+flate2.workspace = true
+tar.workspace = true
+async-a2s.workspace = true
+chrono.workspace = true
+
+# Not in workspace (core-specific)
+portable-pty = { version = "0.9.0", default-features = false }
+urlencoding = "2"
+
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+nix = { version = "0.31.2", features = ["fs", "process", "signal"] }
+
+[features]
+default = []

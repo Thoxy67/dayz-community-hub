@@ -1,0 +1,109 @@
+/* Custom Theme - GitHub Light */
+[data-theme="custom"] {
+  /* ── Base surfaces ──────────────────────────────────────────────────────── */
+  --color-base-100: #ffffff;           /* Main background */
+  --color-base-200: #f6f8fa;           /* Sidebar/panels */
+  --color-base-300: #d0d7de;           /* Borders */
+  --color-base-content: #1f2328;       /* Main text */
+
+  /* ── Brand colors ───────────────────────────────────────────────────────── */
+  --color-primary: #0969da;            /* Links, primary actions */
+  --color-primary-content: #ffffff;
+  --color-secondary: #656d76;          /* Secondary text */
+  --color-secondary-content: #ffffff;
+  --color-accent: #8250df;             /* Purple accent */
+  --color-accent-content: #ffffff;
+  --color-neutral: #d0d7de;            /* Borders */
+  --color-neutral-content: #1f2328;
+
+  /* ── Status colors ──────────────────────────────────────────────────────── */
+  --color-info: #0969da;               /* Blue */
+  --color-info-content: #ffffff;
+  --color-success: #1a7f37;            /* Green */
+  --color-success-content: #ffffff;
+  --color-warning: #9a6700;            /* Yellow/Orange */
+  --color-warning-content: #ffffff;
+  --color-error: #cf222e;              /* Red */
+  --color-error-content: #ffffff;
+
+  /* ── App accent colors ──────────────────────────────────────────────────── */
+  --color-accent-map: #9a6700;         /* Yellow */
+  --color-accent-mods: #8250df;        /* Purple */
+  --color-accent-stat-server: #cf222e; /* Red */
+  --color-accent-stat-players: #1a7f37;/* Green */
+  --color-accent-stat-steam: #0969da;  /* Blue */
+  --color-accent-update: #1a7f37;      /* Green */
+  --color-accent-stale: #9a6700;       /* Yellow */
+  --color-accent-highlight: #0969da;   /* Blue */
+
+  /* ── Terminal / Log colors ──────────────────────────────────────────────── */
+  --color-terminal-bg: #f6f8fa;
+  --color-terminal-border: #d0d7de;
+  --color-log-error: #cf222e;
+  --color-log-warning: #9a6700;
+  --color-log-success: #1a7f37;
+  --color-log-info: #0969da;
+  --color-log-default: #656d76;
+
+  /* ── Syntax highlighting ────────────────────────────────────────────────── */
+  --color-syntax-comment: #6e7781;
+  --color-syntax-selector: #0550ae;
+  --color-syntax-property: #8250df;
+  --color-syntax-variable: #953800;
+  --color-syntax-string: #0a3069;
+  --color-syntax-number: #0550ae;
+  --color-syntax-function: #8250df;
+
+  /* ── Feature colors ─────────────────────────────────────────────────────── */
+  --color-feat-browser: #0969da;
+  --color-feat-mods: #8250df;
+  --color-feat-stats: #1a7f37;
+  --color-feat-launch: #9a6700;
+
+  /* ── Badge colors ───────────────────────────────────────────────────────── */
+  --color-badge-rank: #9a6700;
+  --color-badge-status: #cf222e;
+  --color-badge-country: #0969da;
+  --color-badge-players: #8250df;
+  --color-badge-firstperson: #8250df;
+  --color-badge-official: #1a7f37;
+  --color-badge-custom: #656d76;
+
+  /* ── UI element colors ──────────────────────────────────────────────────── */
+  --color-port-query: #0969da;
+  --color-port-game: #9a6700;
+  --color-link: #0969da;
+  --color-score: #1a7f37;
+  --color-best: #9a6700;
+
+  /* ── Option group colors ────────────────────────────────────────────────── */
+  --color-opt-display: #0969da;
+  --color-opt-network: #1a7f37;
+  --color-opt-launch: #9a6700;
+  --color-opt-input: #656d76;
+  --color-opt-misc: #8250df;
+
+  /* ── Tech brand colors ──────────────────────────────────────────────────── */
+  --color-tech-tauri: #0969da;
+  --color-tech-svelte: #ff3e00;
+  --color-tech-rust: #b7410e;
+  --color-tech-daisyui: #8250df;
+  --color-tech-tailwind: #0ea5e9;
+
+  /* ── Window control colors ──────────────────────────────────────────────── */
+  --color-btn-close: #cf222e;
+
+  /* ── Border radius ──────────────────────────────────────────────────────── */
+  --radius-btn: 0.375rem;
+  --radius-box: 0.375rem;
+  --radius-badge: 1rem;
+
+  /* ── Logo inversion ───────────────────────────────────────────────────────── */
+  --logo-invert: 1;
+
+  /* ── Window ───────────────────────────────────────────────────────────────── */
+  --window-radius: 0;
+  --window-border-size: 0;
+  --window-border-focus: oklch(45% 0.12 250);
+  --window-border-blur: oklch(25% 0.02 250);
+}
