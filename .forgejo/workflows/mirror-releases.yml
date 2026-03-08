@@ -84,93 +84,107 @@ jobs:
           echo "Found $TOTAL releases on Forgejo"
           echo ""
 
-          # Process each release
-          echo "$ALL_RELEASES" | python3 -c "
-          import sys, json
+          # Process each release using Python to drive the loop
+          echo "$ALL_RELEASES" | python3 << 'PYEOF' - "$FORGEJO_TOKEN" "$GITHUB_TOKEN" "$FJ_API" "$FJ_OWNER" "$FJ_REPO" "$GH_API" "$GH_UPLOAD" "$GH_OWNER" "$GH_REPO" "$TMPDIR"
+          import sys, json, subprocess, os, urllib.parse, tempfile
+
           releases = json.load(sys.stdin)
-          for r in releases:
-              print(f\"{r['id']}|{r['tag_name']}|{r['name']}|{r['prerelease']}|{r['draft']}\")
-          " | while IFS='|' read -r FJ_ID TAG_NAME RELEASE_NAME IS_PRE IS_DRAFT; do
-            echo "=== Processing: $TAG_NAME ==="
+          _, FJ_TOKEN, GH_TOKEN, FJ_API, FJ_OWNER, FJ_REPO, GH_API, GH_UPLOAD, GH_OWNER, GH_REPO, TMPDIR = sys.argv
 
-            # Get release body
-            BODY="$(curl -sf \
-              -H "Authorization: token $FORGEJO_TOKEN" \
-              "$FJ_API/repos/$FJ_OWNER/$FJ_REPO/releases/$FJ_ID" | \
-              python3 -c "import sys,json; print(json.load(sys.stdin).get('body',''))")"
+          def curl_json(args):
+              r = subprocess.run(["curl", "-sf"] + args, capture_output=True, text=True)
+              if r.returncode != 0:
+                  return None
+              return json.loads(r.stdout) if r.stdout.strip() else None
 
-            # Check if GitHub release exists
-            GH_STATUS="$(curl -s -o /dev/null -w "%{http_code}" \
-              -H "Authorization: token $GITHUB_TOKEN" \
-              "$GH_API/repos/$GH_OWNER/$GH_REPO/releases/tags/$TAG_NAME")"
+          def curl_status(url, headers):
+              r = subprocess.run(
+                  ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}"] + headers + [url],
+                  capture_output=True, text=True)
+              return r.stdout.strip()
 
-            if [ "$GH_STATUS" = "200" ]; then
-              GH_RELEASE_ID="$(curl -sf \
-                -H "Authorization: token $GITHUB_TOKEN" \
-                "$GH_API/repos/$GH_OWNER/$GH_REPO/releases/tags/$TAG_NAME" | \
-                python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")"
-              echo "  Reusing GitHub release (id $GH_RELEASE_ID)"
-            else
-              PRE_FLAG="false"
-              DRAFT_FLAG="false"
-              [ "$IS_PRE" = "True" ] && PRE_FLAG="true"
-              [ "$IS_DRAFT" = "True" ] && DRAFT_FLAG="true"
+          def gh_upload_asset(release_id, filepath):
+              name = os.path.basename(filepath)
+              headers = ["-H", f"Authorization: token {GH_TOKEN}"]
+              # Check for existing asset
+              assets = curl_json(headers + [f"{GH_API}/repos/{GH_OWNER}/{GH_REPO}/releases/{release_id}/assets"])
+              if assets:
+                  for a in assets:
+                      if a["name"] == name:
+                          print(f"    Replacing existing asset: {name}")
+                          subprocess.run(["curl", "-sf", "-X", "DELETE"] + headers +
+                              [f"{GH_API}/repos/{GH_OWNER}/{GH_REPO}/releases/assets/{a['id']}"],
+                              capture_output=True)
+                          break
+              encoded = urllib.parse.quote(name)
+              r = subprocess.run(
+                  ["curl", "-sf", "-X", "POST"] + headers +
+                  ["-H", "Content-Type: application/octet-stream",
+                   "--data-binary", f"@{filepath}",
+                   f"{GH_UPLOAD}/repos/{GH_OWNER}/{GH_REPO}/releases/{release_id}/assets?name={encoded}"],
+                  capture_output=True, text=True)
+              if r.stdout.strip():
+                  data = json.loads(r.stdout)
+                  print(f"    Uploaded: {data.get('name', '?')}")
+              else:
+                  print(f"    ERROR uploading {name}: {r.stderr}")
 
-              PAYLOAD="$(python3 -c "
-          import json, sys
-          data = {
-              'tag_name': '$TAG_NAME',
-              'name': sys.stdin.read().strip(),
-              'body': '',
-              'draft': $DRAFT_FLAG,
-              'prerelease': $PRE_FLAG,
-          }
-          json.dump(data, sys.stdout)
-          " <<< "$RELEASE_NAME")"
+          fj_headers = ["-H", f"Authorization: token {FJ_TOKEN}"]
+          gh_headers = ["-H", f"Authorization: token {GH_TOKEN}"]
 
-              # Inject body separately to handle special chars
-              PAYLOAD="$(python3 -c "
-          import json, sys
-          data = json.loads(sys.stdin.read())
-          data['body'] = '''$BODY''' if '''$BODY''' else 'Release $TAG_NAME'
-          json.dump(data, sys.stdout)
-          " <<< "$PAYLOAD")"
+          for rel in releases:
+              tag = rel["tag_name"]
+              print(f"=== Processing: {tag} ===")
 
-              GH_RELEASE_ID="$(curl -sf -X POST \
-                -H "Authorization: token $GITHUB_TOKEN" \
-                -H "Content-Type: application/json" \
-                "$GH_API/repos/$GH_OWNER/$GH_REPO/releases" \
-                -d "$PAYLOAD" | \
-                python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")"
-              echo "  Created GitHub release (id $GH_RELEASE_ID)"
-            fi
+              # Get full release details
+              full = curl_json(fj_headers + [f"{FJ_API}/repos/{FJ_OWNER}/{FJ_REPO}/releases/{rel['id']}"])
+              body = full.get("body", "") if full else ""
 
-            # Download assets from Forgejo and upload to GitHub
-            ASSETS="$(curl -sf \
-              -H "Authorization: token $FORGEJO_TOKEN" \
-              "$FJ_API/repos/$FJ_OWNER/$FJ_REPO/releases/$FJ_ID/assets")"
+              # Check if GitHub release exists
+              status = curl_status(f"{GH_API}/repos/{GH_OWNER}/{GH_REPO}/releases/tags/{tag}", gh_headers)
 
-            ASSET_COUNT="$(echo "$ASSETS" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")"
-            echo "  $ASSET_COUNT assets to mirror"
+              if status == "200":
+                  gh_rel = curl_json(gh_headers + [f"{GH_API}/repos/{GH_OWNER}/{GH_REPO}/releases/tags/{tag}"])
+                  gh_release_id = gh_rel["id"]
+                  print(f"  Reusing GitHub release (id {gh_release_id})")
+              else:
+                  payload = {
+                      "tag_name": tag,
+                      "name": rel.get("name", tag),
+                      "body": body or f"Release {tag}",
+                      "draft": bool(rel.get("draft", False)),
+                      "prerelease": bool(rel.get("prerelease", False)),
+                  }
+                  r = subprocess.run(
+                      ["curl", "-sf", "-X", "POST"] + gh_headers +
+                      ["-H", "Content-Type: application/json",
+                       f"{GH_API}/repos/{GH_OWNER}/{GH_REPO}/releases",
+                       "-d", json.dumps(payload)],
+                      capture_output=True, text=True)
+                  gh_rel = json.loads(r.stdout)
+                  gh_release_id = gh_rel["id"]
+                  print(f"  Created GitHub release (id {gh_release_id})")
 
-            echo "$ASSETS" | python3 -c "
-          import sys, json
-          for a in json.load(sys.stdin):
-              print(f\"{a['name']}|{a['browser_download_url']}\")
-          " | while IFS='|' read -r ASSET_NAME ASSET_URL; do
-              echo "  Downloading: $ASSET_NAME"
-              ASSET_FILE="$TMPDIR/$ASSET_NAME"
-              curl -sfL \
-                -H "Authorization: token $FORGEJO_TOKEN" \
-                -o "$ASSET_FILE" \
-                "$ASSET_URL"
+              # Download and upload assets
+              assets = curl_json(fj_headers + [f"{FJ_API}/repos/{FJ_OWNER}/{FJ_REPO}/releases/{rel['id']}/assets"])
+              assets = assets or []
+              print(f"  {len(assets)} assets to mirror")
 
-              gh_upload_asset "$GH_RELEASE_ID" "$ASSET_FILE"
-              rm -f "$ASSET_FILE"
-            done
+              for asset in assets:
+                  name = asset["name"]
+                  url = asset["browser_download_url"]
+                  print(f"  Downloading: {name}")
+                  filepath = os.path.join(TMPDIR, name)
+                  subprocess.run(
+                      ["curl", "-sfL"] + fj_headers + ["-o", filepath, url],
+                      capture_output=True)
+                  gh_upload_asset(gh_release_id, filepath)
+                  os.remove(filepath)
 
-            echo ""
-          done
+              print()
+
+          print("Done! All releases mirrored to GitHub.")
+          PYEOF
 
           rm -rf "$TMPDIR"
           echo "Done! All releases mirrored to GitHub."
