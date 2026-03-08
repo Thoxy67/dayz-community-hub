@@ -1,0 +1,176 @@
+name: Mirror releases to GitHub
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: mirror-releases
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Mirror all releases to GitHub
+    runs-on: docker
+    container:
+      image: git.thoxy.xyz/thoxy/dayz-community-hub/ci:latest
+      credentials:
+        username: ${{ forgejo.repository_owner }}
+        password: ${{ secrets.FORGEJO_TOKEN }}
+    timeout-minutes: 30
+
+    steps:
+      - name: Mirror releases
+        env:
+          FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          FJ_API="https://git.thoxy.xyz/api/v1"
+          FJ_OWNER="thoxy"
+          FJ_REPO="dayz-community-hub"
+
+          GH_API="https://api.github.com"
+          GH_UPLOAD="https://uploads.github.com"
+          GH_OWNER="Thoxy67"
+          GH_REPO="dayz-community-hub"
+
+          TMPDIR="$(mktemp -d)"
+
+          gh_upload_asset() {
+            local release_id="$1" file="$2"
+            local name; name="$(basename "$file")"
+            local existing_id
+            existing_id="$(curl -sf \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              "$GH_API/repos/$GH_OWNER/$GH_REPO/releases/$release_id/assets" | \
+              python3 -c "
+          import sys, json
+          assets = json.load(sys.stdin)
+          name = '$name'
+          print(next((str(a['id']) for a in assets if a['name'] == name), ''))
+          " 2>/dev/null)"
+            if [ -n "$existing_id" ]; then
+              echo "    Replacing existing asset: $name"
+              curl -sf -X DELETE \
+                -H "Authorization: token $GITHUB_TOKEN" \
+                "$GH_API/repos/$GH_OWNER/$GH_REPO/releases/assets/$existing_id" >/dev/null
+            fi
+            curl -sf -X POST \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@$file" \
+              "$GH_UPLOAD/repos/$GH_OWNER/$GH_REPO/releases/$release_id/assets?name=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$name'))")" | \
+              python3 -c "import sys,json; r=json.load(sys.stdin); print('    Uploaded:', r.get('name','?'))"
+          }
+
+          # Fetch all releases from Forgejo (paginated)
+          PAGE=1
+          ALL_RELEASES="[]"
+          while true; do
+            BATCH="$(curl -sf \
+              -H "Authorization: token $FORGEJO_TOKEN" \
+              "$FJ_API/repos/$FJ_OWNER/$FJ_REPO/releases?page=$PAGE&limit=50")"
+            COUNT="$(echo "$BATCH" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")"
+            [ "$COUNT" -eq 0 ] && break
+            ALL_RELEASES="$(python3 -c "
+          import sys, json
+          a = json.loads('$ALL_RELEASES') if '$ALL_RELEASES' != '[]' else []
+          a.extend(json.loads(sys.stdin.read()))
+          json.dump(a, sys.stdout)
+          " <<< "$BATCH")"
+            PAGE=$((PAGE + 1))
+          done
+
+          TOTAL="$(echo "$ALL_RELEASES" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")"
+          echo "Found $TOTAL releases on Forgejo"
+          echo ""
+
+          # Process each release
+          echo "$ALL_RELEASES" | python3 -c "
+          import sys, json
+          releases = json.load(sys.stdin)
+          for r in releases:
+              print(f\"{r['id']}|{r['tag_name']}|{r['name']}|{r['prerelease']}|{r['draft']}\")
+          " | while IFS='|' read -r FJ_ID TAG_NAME RELEASE_NAME IS_PRE IS_DRAFT; do
+            echo "=== Processing: $TAG_NAME ==="
+
+            # Get release body
+            BODY="$(curl -sf \
+              -H "Authorization: token $FORGEJO_TOKEN" \
+              "$FJ_API/repos/$FJ_OWNER/$FJ_REPO/releases/$FJ_ID" | \
+              python3 -c "import sys,json; print(json.load(sys.stdin).get('body',''))")"
+
+            # Check if GitHub release exists
+            GH_STATUS="$(curl -s -o /dev/null -w "%{http_code}" \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              "$GH_API/repos/$GH_OWNER/$GH_REPO/releases/tags/$TAG_NAME")"
+
+            if [ "$GH_STATUS" = "200" ]; then
+              GH_RELEASE_ID="$(curl -sf \
+                -H "Authorization: token $GITHUB_TOKEN" \
+                "$GH_API/repos/$GH_OWNER/$GH_REPO/releases/tags/$TAG_NAME" | \
+                python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")"
+              echo "  Reusing GitHub release (id $GH_RELEASE_ID)"
+            else
+              PRE_FLAG="false"
+              DRAFT_FLAG="false"
+              [ "$IS_PRE" = "True" ] && PRE_FLAG="true"
+              [ "$IS_DRAFT" = "True" ] && DRAFT_FLAG="true"
+
+              PAYLOAD="$(python3 -c "
+          import json, sys
+          data = {
+              'tag_name': '$TAG_NAME',
+              'name': sys.stdin.read().strip(),
+              'body': '',
+              'draft': $DRAFT_FLAG,
+              'prerelease': $PRE_FLAG,
+          }
+          json.dump(data, sys.stdout)
+          " <<< "$RELEASE_NAME")"
+
+              # Inject body separately to handle special chars
+              PAYLOAD="$(python3 -c "
+          import json, sys
+          data = json.loads(sys.stdin.read())
+          data['body'] = '''$BODY''' if '''$BODY''' else 'Release $TAG_NAME'
+          json.dump(data, sys.stdout)
+          " <<< "$PAYLOAD")"
+
+              GH_RELEASE_ID="$(curl -sf -X POST \
+                -H "Authorization: token $GITHUB_TOKEN" \
+                -H "Content-Type: application/json" \
+                "$GH_API/repos/$GH_OWNER/$GH_REPO/releases" \
+                -d "$PAYLOAD" | \
+                python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")"
+              echo "  Created GitHub release (id $GH_RELEASE_ID)"
+            fi
+
+            # Download assets from Forgejo and upload to GitHub
+            ASSETS="$(curl -sf \
+              -H "Authorization: token $FORGEJO_TOKEN" \
+              "$FJ_API/repos/$FJ_OWNER/$FJ_REPO/releases/$FJ_ID/assets")"
+
+            ASSET_COUNT="$(echo "$ASSETS" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")"
+            echo "  $ASSET_COUNT assets to mirror"
+
+            echo "$ASSETS" | python3 -c "
+          import sys, json
+          for a in json.load(sys.stdin):
+              print(f\"{a['name']}|{a['browser_download_url']}\")
+          " | while IFS='|' read -r ASSET_NAME ASSET_URL; do
+              echo "  Downloading: $ASSET_NAME"
+              ASSET_FILE="$TMPDIR/$ASSET_NAME"
+              curl -sfL \
+                -H "Authorization: token $FORGEJO_TOKEN" \
+                -o "$ASSET_FILE" \
+                "$ASSET_URL"
+
+              gh_upload_asset "$GH_RELEASE_ID" "$ASSET_FILE"
+              rm -f "$ASSET_FILE"
+            done
+
+            echo ""
+          done
+
+          rm -rf "$TMPDIR"
+          echo "Done! All releases mirrored to GitHub."
