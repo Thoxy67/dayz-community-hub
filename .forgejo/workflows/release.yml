@@ -137,7 +137,7 @@ jobs:
 
       - name: Upload Windows assets to GitHub
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           GH_API="https://api.github.com"
           GH_UPLOAD="https://uploads.github.com"
@@ -329,7 +329,7 @@ jobs:
 
       - name: Upload Linux assets to GitHub
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           GH_API="https://api.github.com"
           GH_UPLOAD="https://uploads.github.com"
@@ -523,7 +523,7 @@ jobs:
 
       - name: Upload latest.json to GitHub
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           TAG="${{ forgejo.ref_name }}"
           GH_API="https://api.github.com"

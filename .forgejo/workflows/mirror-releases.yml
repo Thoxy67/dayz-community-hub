@@ -22,7 +22,7 @@ jobs:
       - name: Mirror releases
         env:
           FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           FJ_API="https://git.thoxy.xyz/api/v1"
           FJ_OWNER="thoxy"
