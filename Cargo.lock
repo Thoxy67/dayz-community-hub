@@ -921,7 +921,7 @@ checksum = "be1e0bca6c3637f992fc1cc7cbc52a78c1ef6db076dbf1059c4323d6a2048376"
 
 [[package]]
 name = "dayz-community-hub"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "base64 0.22.1",
  "clap",
@@ -957,7 +957,7 @@ dependencies = [
 
 [[package]]
 name = "dayz-community-hub-core"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "async-a2s",
  "chrono",
@@ -2431,9 +2431,9 @@ checksum = "2c4a545a15244c7d945065b5d392b2d2d7f21526fba56ce51467b06ed445e8f7"
 
 [[package]]
 name = "libc"
-version = "0.2.182"
+version = "0.2.183"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6800badb6cb2082ffd7b6a67e6125bb39f18782f793520caee8cb8846be06112"
+checksum = "b5b646652bf6661599e1da8901b3b9522896f01e736bad5f723fe7a3a27f899d"
 
 [[package]]
 name = "libloading"
