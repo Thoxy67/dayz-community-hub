@@ -1,6 +1,6 @@
 {
   "name": "dayz-community-hub",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "DayZ Community Hub - Server browser & mod manager for DayZ Standalone",
   "private": true,
   "workspaces": ["dayz-community-hub-ui"],
