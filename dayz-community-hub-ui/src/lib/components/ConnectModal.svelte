@@ -45,8 +45,9 @@
     if (!request) return;
 
     if (updateMods && request.mods.length > 0 && onShowModConfirm) {
-      // Show mod confirmation first
-      onShowModConfirm(request.mods, request.kind === 'missing' ? 'install' : 'update', () => request.onConnect(true));
+      // Capture before onClose nullifies request via connectRequest = null
+      const connectFn = request.onConnect;
+      onShowModConfirm(request.mods, request.kind === 'missing' ? 'install' : 'update', () => connectFn(true));
       onClose();
     } else {
       request.onConnect(updateMods);
