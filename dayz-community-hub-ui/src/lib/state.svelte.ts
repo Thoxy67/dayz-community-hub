@@ -18,6 +18,7 @@ import type {
 } from '$lib/types';
 
 import type { ConnectRequest, ConnectModInfo } from '$lib/components/ConnectModal.svelte';
+import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 
 // ── Pending server mod operation (for confirmation modal during connection) ──
 export type PendingServerModOp = {
@@ -89,10 +90,15 @@ class AppState {
   articles = $state<ArticleDto[]>([]);
   stats = $state<AppStatsDto | null>(null);
   steamPlayers = $state<number | null>(null);
-  pingCache = $state<Map<string, number>>(new Map());
-  pingPending = $state<Set<string>>(new Set());
-  pingTimeouts = $state<Map<string, number>>(new Map());
-  a2sFailures = $state<Set<string>>(new Set());
+  // SvelteMap / SvelteSet are natively reactive, so .set / .add / .delete
+  // trigger updates without having to allocate fresh `new Map(…)` /
+  // `new Set(…)` on every mutation.  This was the dominant alloc cost
+  // during full-scan ping waves (3 alloc-and-copy ops per RAF frame ×
+  // hundreds of frames).
+  pingCache = new SvelteMap<string, number>();
+  pingPending = new SvelteSet<string>();
+  pingTimeouts = new SvelteMap<string, number>();
+  a2sFailures = new SvelteSet<string>();
   pingFlushPending = false;
   /** Tracks active background ping session for progress bar */
   pingSession = $state<{ active: boolean; total: number; completed: number } | null>(null);

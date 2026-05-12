@@ -491,12 +491,44 @@ impl Profile {
         Ok(profile)
     }
 
+    /// Async variant of `load` — used by the Tauri `initialize` command so
+    /// the bootstrap profile read doesn't stall the runtime.  Mirrors the
+    /// sync version exactly (default-profile-on-missing semantics included).
+    pub async fn load_async(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        if !tokio::fs::try_exists(path).await.unwrap_or(false) {
+            let mut profile = Self::default_with_version(APP_VERSION);
+            profile.path = path.to_path_buf();
+            if let Some(parent) = path.parent() {
+                tokio::fs::create_dir_all(parent).await?;
+            }
+            profile.save_async().await?;
+            return Ok(profile);
+        }
+        let data = tokio::fs::read_to_string(path).await?;
+        let mut profile: Profile = serde_json::from_str(&data)?;
+        profile.path = path.to_path_buf();
+        Ok(profile)
+    }
+
     pub fn save(&self) -> Result<()> {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         let data = serde_json::to_string_pretty(self)?;
         std::fs::write(&self.path, data)?;
+        Ok(())
+    }
+
+    /// Async variant — every Tauri IPC profile mutation uses this so the
+    /// 10-50 KB JSON write doesn't block the runtime thread.  The sync `save`
+    /// stays for non-async contexts (init bootstrap, tests).
+    pub async fn save_async(&self) -> Result<()> {
+        if let Some(parent) = self.path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        let data = serde_json::to_string_pretty(self)?;
+        tokio::fs::write(&self.path, data).await?;
         Ok(())
     }
 

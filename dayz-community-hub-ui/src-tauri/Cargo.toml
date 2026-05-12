@@ -27,7 +27,7 @@ clap.workspace = true
 dayz-community-hub-core.workspace = true
 
 # Tauri + plugins
-tauri = { version = "2", features = ["protocol-asset", "native-tls"] }
+tauri = { version = "2.11", features = ["protocol-asset", "native-tls"] }
 tauri-plugin-opener = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-http = { version = "2", default-features = false, features = ["native-tls"] }
@@ -36,14 +36,14 @@ tauri-plugin-clipboard-manager = "2.3.2"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-deep-link = "2"
 urlencoding = "2"
-lru = "0.16"
-rustc-hash = "2"
+lru = "0.18"
+rustc-hash.workspace = true
 
 [target."cfg(not(windows))".dependencies]
-zstd = { version = "0.13", features = ["pkg-config"] }
+zstd = { version = "0.13.3", features = ["pkg-config"] }
 
 [target."cfg(windows)".dependencies]
-zstd = "0.13"
+zstd = "0.13.3"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 thiserror.workspace = true

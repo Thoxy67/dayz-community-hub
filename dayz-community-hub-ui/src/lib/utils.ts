@@ -13,10 +13,7 @@ export type PingState = 'pending' | 'timeout' | 'success';
  * @param isPending - Whether the ping is currently in progress
  * @returns The ping state: 'pending', 'timeout', or 'success'
  */
-export function getPingState(
-  ms: number | null | undefined,
-  isPending: boolean
-): PingState {
+export function getPingState(ms: number | null | undefined, isPending: boolean): PingState {
   if (isPending) return 'pending';
   if (ms === undefined || ms === null) return 'pending';
   if (ms >= PING_TIMEOUT_MS) return 'timeout';
@@ -243,13 +240,10 @@ export function haversineDistance(lat1: number, lon1: number, lat2: number, lon2
  * Debounce a function - delay execution until after `ms` milliseconds have passed
  * since the last call.
  */
-export function debounce<T extends (...args: any[]) => any>(
-  func: T,
-  ms: number
-): (...args: Parameters<T>) => void {
+export function debounce<T extends (...args: any[]) => any>(func: T, ms: number): (...args: Parameters<T>) => void {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-  return function(this: any, ...args: Parameters<T>) {
+  return function (this: any, ...args: Parameters<T>) {
     if (timeoutId !== null) {
       clearTimeout(timeoutId);
     }

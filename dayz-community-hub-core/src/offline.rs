@@ -38,11 +38,10 @@ impl OfflineMode {
         for entry in fs::read_dir(&missions_path)? {
             let entry = entry?;
             let path = entry.path();
-            if path.is_dir() {
-                if let Some(name) = path.file_name() {
+            if path.is_dir()
+                && let Some(name) = path.file_name() {
                     missions.push(name.to_string_lossy().to_string());
                 }
-            }
         }
         Ok(missions)
     }

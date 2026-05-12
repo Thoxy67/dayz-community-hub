@@ -32,6 +32,16 @@ export default defineConfig(async () => ({
           if (id.includes('matter-js')) {
             return 'vendor-matter';
           }
+          // Paraglide-generated locale files (ship as their own chunk so app
+          // code re-uses the cached translations bundle across releases).
+          if (id.includes('/paraglide/messages') || id.includes('@inlang/paraglide-js')) {
+            return 'vendor-paraglide';
+          }
+          // Svelte runtime + SvelteKit shared code — large and stable across
+          // app changes, so worth a long-lived cache chunk of its own.
+          if (id.includes('/node_modules/svelte/') || id.includes('/node_modules/@sveltejs/')) {
+            return 'vendor-svelte';
+          }
         },
       },
     },

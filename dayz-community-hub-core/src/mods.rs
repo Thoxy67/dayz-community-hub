@@ -104,7 +104,7 @@ pub fn scan_workshop_dir(workshop_path: &Path) -> Result<Vec<InstalledMod>> {
     }
 
     // Sort by name for consistent display
-    mods.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    mods.sort_by_key(|a| a.name.to_lowercase());
     Ok(mods)
 }
 
@@ -120,13 +120,11 @@ fn du_dir_cached(path: &Path) -> Result<u64> {
         .unwrap_or(0);
 
     // Check the cache first.
-    if let Ok(cache) = size_cache().lock() {
-        if let Some(&(cached_mtime, cached_size)) = cache.get(path) {
-            if cached_mtime == dir_mtime && dir_mtime != 0 {
+    if let Ok(cache) = size_cache().lock()
+        && let Some(&(cached_mtime, cached_size)) = cache.get(path)
+            && cached_mtime == dir_mtime && dir_mtime != 0 {
                 return Ok(cached_size);
             }
-        }
-    }
 
     // Cache miss or mtime changed — do the full walk.
     let size = du_dir(path)?;

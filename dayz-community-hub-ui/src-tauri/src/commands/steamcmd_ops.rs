@@ -3,11 +3,14 @@ use tauri::{State, ipc::Channel};
 
 use crate::convert::mod_progress_to_event;
 use crate::dto::ModProgressEvent;
-use crate::helpers::find_server_in;
 use crate::state::SharedState;
 use crate::utils::error::ResultExt;
 
 /// Start a background mod operation. Streams progress via Channel.
+// Tauri IPC arguments are received as a flat object; each parameter is one
+// JSON key. Bundling into a struct loses that ergonomic mapping for the JS
+// caller without removing any real complexity.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub(crate) async fn start_mod_operation(
     op_type: String,
@@ -84,7 +87,9 @@ pub(crate) async fn start_mod_operation(
             "install_server" | "update_server" => {
                 let ip = ip.ok_or("ip required")?;
                 let port = port.ok_or("port required")?;
-                let server = find_server_in(&state.servers, &ip, port)
+                // O(1) index lookup instead of an 18k-element linear scan.
+                let server = state
+                    .find_by_query_port(&ip, port)
                     .cloned()
                     .ok_or_else(|| "Server not found".to_string())?;
                 if op_type == "install_server" {
@@ -120,17 +125,12 @@ pub(crate) async fn start_mod_operation(
 
     let state_clone = state.inner().clone();
     tokio::spawn(async move {
-        loop {
-            match rx.recv().await {
-                Some(msg) => {
-                    let evt = mod_progress_to_event(&msg);
-                    let is_finished = evt.kind == "finished";
-                    let _ = on_progress.send(evt);
-                    if is_finished {
-                        break;
-                    }
-                }
-                None => break,
+        while let Some(msg) = rx.recv().await {
+            let evt = mod_progress_to_event(&msg);
+            let is_finished = evt.kind == "finished";
+            let _ = on_progress.send(evt);
+            if is_finished {
+                break;
             }
         }
         let mut st = state_clone.write().await;

@@ -29,25 +29,27 @@ pub(crate) async fn initialize(app: AppHandle) -> Result<InitResult, String> {
 
     // Try to load cached server list (sync file read — fast)
     let cache_path = config::default_data_dir().join("server_list_cache.json");
-    let (servers, from_cache) = if let Some(cache) = api::load_server_list_cache(&cache_path) {
-        (dedup_servers(cache.list.result), true)
-    } else {
-        // No cache — fetch from network
-        let client = ctl.http_client().clone();
-        match api::fetch_servers(&client).await {
-            Ok(list) => {
-                api::save_server_list_cache(&cache_path, &list);
-                (dedup_servers(list.result), false)
+    let (servers, fetched_at, from_cache) =
+        if let Some(cache) = api::load_server_list_cache(&cache_path).await {
+            (dedup_servers(cache.list.result), cache.fetched_at, true)
+        } else {
+            // No cache — fetch from network
+            let client = ctl.http_client().clone();
+            match api::fetch_servers(&client).await {
+                Ok(list) => {
+                    api::save_server_list_cache(&cache_path, &list).await;
+                    (dedup_servers(list.result), now_secs(), false)
+                }
+                Err(_) => (Vec::new(), 0, false),
             }
-            Err(_) => (Vec::new(), false),
-        }
-    };
+        };
 
     let server_count = servers.len();
 
     // Create AppState using the new() constructor
     let mut app_state = AppState::new(ctl);
-    app_state.servers = servers;
+    app_state.set_servers(servers);
+    app_state.servers_fetched_at = fetched_at;
 
     let state: SharedState = Arc::new(RwLock::new(app_state));
     let ping_cache: PingCache = Arc::new(RwLock::new(rustc_hash::FxHashMap::default()));
@@ -97,11 +99,34 @@ pub(crate) async fn refresh_servers(
     let cache_path = config::default_data_dir().join("server_list_cache.json");
     let list = api::fetch_servers(&client).await.cmd_err()?;
 
-    api::save_server_list_cache(&cache_path, &list);
+    api::save_server_list_cache(&cache_path, &list).await;
 
     let mut state = state.write().await;
-    state.servers = dedup_servers(list.result);
+    state.set_servers(dedup_servers(list.result));
+    state.servers_fetched_at = now_secs();
     Ok(state.servers.iter().map(server_to_slim_dto).collect())
+}
+
+/// Age (in seconds) of the in-memory server list since it was last fetched
+/// from the API or loaded from on-disk cache. Returns `None` if the list is
+/// empty/never populated. Frontend uses this to decide when to auto-refresh.
+#[tauri::command]
+pub(crate) async fn get_servers_cache_age_secs(
+    state: State<'_, SharedState>,
+) -> Result<Option<u64>, String> {
+    let state = state.read().await;
+    if state.servers_fetched_at == 0 {
+        Ok(None)
+    } else {
+        Ok(Some(now_secs().saturating_sub(state.servers_fetched_at)))
+    }
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 /// Get ping for a server (from cache).

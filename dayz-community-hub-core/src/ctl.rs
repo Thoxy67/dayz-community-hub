@@ -83,7 +83,10 @@ fn build_steamcmd(profile: &Profile) -> Option<Arc<SteamCmd>> {
 
 impl DayzCtl {
     pub async fn new(profile_path: impl AsRef<Path>) -> Result<Self> {
-        let profile = Profile::load(profile_path)?;
+        // Async profile load — avoids stalling the runtime on the startup
+        // file read (matters on cold start when the JSON has many favorites
+        // / history entries).
+        let profile = Profile::load_async(profile_path).await?;
         let steamcmd = build_steamcmd(&profile);
         let client = Client::new();
         Ok(Self {
@@ -136,6 +139,12 @@ impl DayzCtl {
 
     pub fn save_profile(&self) -> Result<()> {
         self.profile.save()
+    }
+
+    /// Async profile save — non-blocking variant for use from Tauri IPC
+    /// commands so the runtime thread isn't stalled on file I/O.
+    pub async fn save_profile_async(&self) -> Result<()> {
+        self.profile.save_async().await
     }
 
     /// Reload the profile from disk, replacing the in-memory state.

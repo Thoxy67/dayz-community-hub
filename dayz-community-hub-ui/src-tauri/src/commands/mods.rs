@@ -62,11 +62,10 @@ pub(crate) async fn check_mod_updates(
 
     for chunk in mod_ids.chunks(100) {
         let mut params: Vec<(String, String)> = Vec::new();
-        if let Some(ref key) = api_key {
-            if !key.is_empty() {
+        if let Some(ref key) = api_key
+            && !key.is_empty() {
                 params.push(("key".to_string(), key.clone()));
             }
-        }
         params.push(("includetags".to_string(), "0".to_string()));
         params.push(("includeadditionalpreviews".to_string(), "0".to_string()));
         params.push(("includechildren".to_string(), "0".to_string()));

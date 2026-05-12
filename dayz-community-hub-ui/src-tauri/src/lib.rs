@@ -106,6 +106,7 @@ pub fn run(args: CliArgs) {
             commands::servers::get_servers,
             commands::servers::get_server_details,
             commands::servers::refresh_servers,
+            commands::servers::get_servers_cache_age_secs,
             commands::servers::get_ping,
             commands::profile::get_profile,
             commands::profile::save_profile_settings,

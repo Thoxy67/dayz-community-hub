@@ -14,12 +14,12 @@ authors = ["thoxy"]
 
 [workspace.dependencies]
 # Async runtime
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "io-util", "process", "fs", "net"] }
+tokio = { version = "1.52", features = ["rt-multi-thread", "macros", "time", "sync", "io-util", "process", "fs", "net"] }
 tokio-stream = { version = "0.1.18", features = ["sync", "time"] }
 futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
 
 # HTTP
-reqwest = { version = "0.13.2", default-features = false, features = ["native-tls", "json", "query"] }
+reqwest = { version = "0.13.3", default-features = false, features = ["native-tls", "json", "query"] }
 
 # Serialisation
 serde = { version = "1", features = ["derive"] }
@@ -29,17 +29,18 @@ serde_json = "1"
 thiserror = "2"
 
 # Utilities
-base64 = "0.22"
-regex = "1"
-which = "8.0.0"
-sysinfo = "0.38.2"
-chrono = { version = "0.4" }
-clap = { version = "4", features = ["derive"] }
+base64 = "0.22.1"
+regex = "1.12"
+which = "8.0.2"
+sysinfo = "0.39.1"
+chrono = { version = "0.4.44" }
+clap = { version = "4.6", features = ["derive"] }
+rustc-hash = "2.1"
 
 # Compression / archive
-zip = { version = "8.1.0", default-features = false, features = ["deflate", "deflate64"] }
+zip = { version = "8.6", default-features = false, features = ["deflate", "deflate64"] }
 flate2 = "1"
-tar = "0.4"
+tar = "0.4.45"
 
 # DayZ A2S queries
 async-a2s = { git = "https://git.thoxy.xyz/thoxy/async-a2s" }

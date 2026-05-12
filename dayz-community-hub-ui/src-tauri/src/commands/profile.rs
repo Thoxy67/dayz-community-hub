@@ -13,6 +13,10 @@ pub(crate) async fn get_profile(state: State<'_, SharedState>) -> Result<Profile
 }
 
 /// Save profile settings.
+// Tauri IPC commands receive args as a flat object — the only way to keep
+// each setting addressable from the JS side is one parameter per field.
+// Wrapping these in a single struct just trades the warning for boilerplate.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub(crate) async fn save_profile_settings(
     player: Option<String>,
@@ -64,7 +68,7 @@ pub(crate) async fn save_profile_settings(
         state.cached_avatar = None;
     }
     state.ctl.rebuild_steamcmd();
-    state.ctl.save_profile().cmd_err()
+    state.ctl.save_profile_async().await.cmd_err()
 }
 
 /// Add a server to favorites.
@@ -78,7 +82,7 @@ pub(crate) async fn add_favorite(
 ) -> Result<(), String> {
     let mut state = state.write().await;
     state.ctl.add_favorite(name, ip, port, password);
-    state.ctl.save_profile().cmd_err()
+    state.ctl.save_profile_async().await.cmd_err()
 }
 
 /// Remove a favorite.
@@ -90,7 +94,7 @@ pub(crate) async fn remove_favorite(
 ) -> Result<(), String> {
     let mut state = state.write().await;
     state.ctl.remove_favorite(&ip, port);
-    state.ctl.save_profile().cmd_err()
+    state.ctl.save_profile_async().await.cmd_err()
 }
 
 /// Remove a history entry.
@@ -106,7 +110,7 @@ pub(crate) async fn remove_history_entry(
         .profile_mut()
         .history
         .retain(|h| h.ip != ip || h.port != port);
-    state.ctl.save_profile().cmd_err()
+    state.ctl.save_profile_async().await.cmd_err()
 }
 
 /// Clear all history.
@@ -114,7 +118,7 @@ pub(crate) async fn remove_history_entry(
 pub(crate) async fn clear_history(state: State<'_, SharedState>) -> Result<(), String> {
     let mut state = state.write().await;
     state.ctl.profile_mut().history.clear();
-    state.ctl.save_profile().cmd_err()
+    state.ctl.save_profile_async().await.cmd_err()
 }
 
 /// Add an IP to the excluded list (persisted to profile).
@@ -125,7 +129,7 @@ pub(crate) async fn add_excluded_ip(
 ) -> Result<(), String> {
     let mut state = state.write().await;
     state.ctl.profile_mut().add_excluded_ip(ip);
-    state.ctl.save_profile().cmd_err()
+    state.ctl.save_profile_async().await.cmd_err()
 }
 
 /// Remove an IP from the excluded list (persisted to profile).
@@ -136,5 +140,5 @@ pub(crate) async fn remove_excluded_ip(
 ) -> Result<(), String> {
     let mut state = state.write().await;
     state.ctl.profile_mut().remove_excluded_ip(&ip);
-    state.ctl.save_profile().cmd_err()
+    state.ctl.save_profile_async().await.cmd_err()
 }

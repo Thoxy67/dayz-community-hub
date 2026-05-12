@@ -14,7 +14,8 @@
   import { formatRelativeTime } from '$lib/utils/i18n';
   import { createCopyState } from '$lib/utils/clipboard.svelte';
   import { createServerLookup, findServer as findServerByKey } from '$lib/utils/server-lookup';
-  import ServerDetailPanel from './ServerDetailPanel.svelte';
+  // Lazy: only mounts when a row is clicked.
+  const lazyServerDetailPanel = () => import('./ServerDetailPanel.svelte');
   import { invoke } from '@tauri-apps/api/core';
   import { app } from '$lib/state.svelte';
   import { serverData, pingService } from '$lib/services';
@@ -73,8 +74,14 @@
   let scrollTop = $state(0);
   let containerHeight = $state(600);
 
+  // rAF-throttle scroll-driven state writes (see ServersTab for rationale).
+  let _scrollRaf: number | null = null;
   function handleScroll() {
-    if (scrollContainer) scrollTop = scrollContainer.scrollTop;
+    if (!scrollContainer || _scrollRaf !== null) return;
+    _scrollRaf = requestAnimationFrame(() => {
+      _scrollRaf = null;
+      if (scrollContainer) scrollTop = scrollContainer.scrollTop;
+    });
   }
 
   $effect(() => {
@@ -219,11 +226,10 @@
       })
       .map((h) => pingKey(h));
     if (needsPing.length > 0) {
-      // Mark as pending
+      // SvelteSet — reactive on add(), no re-allocation required.
       for (const key of needsPing) {
         app.pingPending.add(key);
       }
-      app.pingPending = new Set(app.pingPending);
       invoke('ping_servers', { targets: needsPing }).catch(() => {});
     }
   });
@@ -547,11 +553,9 @@
                         {pingLabel(ping)}
                       </span>
                       {#if isFull && hasA2sFailure}
-                        <Icon
-                          icon="ic:round-warning"
-                          class="size-3.5 text-warning"
-                          title={m.servers_player_count_unverified()}
-                        />
+                        <span class="contents" title={m.servers_player_count_unverified()}>
+                          <Icon icon="ic:round-warning" class="size-3.5 text-warning" />
+                        </span>
                       {/if}
                     {/if}
                   </button>
@@ -649,19 +653,22 @@
     {@const key = server ? `${server.ip}:${server.query_port}` : `${detailEntry.ip}:${detailEntry.port}`}
 
     <div class="w-80 flex-shrink-0 flex flex-col overflow-hidden">
-      <ServerDetailPanel
-        {server}
-        {a2s}
-        {a2sLoading}
-        {a2sError}
-        installedMods={[]}
-        pingMs={pingCache.get(key) ?? null}
-        {bmApiKey}
-        {userLocation}
-        scrollToMods={false}
-        onClose={closeDetail}
-        onQueryA2s={() => detailEntry && openDetail(detailEntry)}
-      />
+      {#await lazyServerDetailPanel() then mod}
+        {@const ServerDetailPanel = mod.default}
+        <ServerDetailPanel
+          {server}
+          {a2s}
+          {a2sLoading}
+          {a2sError}
+          installedMods={[]}
+          pingMs={pingCache.get(key) ?? null}
+          {bmApiKey}
+          {userLocation}
+          scrollToMods={false}
+          onClose={closeDetail}
+          onQueryA2s={() => detailEntry && openDetail(detailEntry)}
+        />
+      {/await}
     </div>
   {/if}
 </div>

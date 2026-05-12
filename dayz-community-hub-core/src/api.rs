@@ -107,11 +107,18 @@ impl ServerListCache {
     }
 }
 
-/// Try to load a cached server list from disk.
-/// Returns `None` if the file doesn't exist or is unreadable.
-pub fn load_server_list_cache(cache_path: &std::path::Path) -> Option<ServerListCache> {
-    let data = std::fs::read(cache_path).ok()?;
-    serde_json::from_slice(&data).ok()
+/// Try to load a cached server list from disk. Async — the cache file is
+/// multi-MB JSON, so we read it off the runtime thread to avoid stalling
+/// the executor during `initialize`.  Returns `None` if the file doesn't
+/// exist, is unreadable, or fails to parse.
+pub async fn load_server_list_cache(cache_path: &std::path::Path) -> Option<ServerListCache> {
+    let data = tokio::fs::read(cache_path).await.ok()?;
+    // serde_json on a multi-MB blob is CPU-bound — push it to the blocking
+    // pool so the async runtime can keep ticking.
+    tokio::task::spawn_blocking(move || serde_json::from_slice(&data).ok())
+        .await
+        .ok()
+        .flatten()
 }
 
 /// Serialization-only view of the cache that borrows the list instead of cloning it.
@@ -122,8 +129,9 @@ struct ServerListCacheRef<'a> {
 }
 
 /// Persist a freshly-fetched server list to disk.
-/// Serializes from a reference to avoid cloning the entire Vec<Server>.
-pub fn save_server_list_cache(cache_path: &std::path::Path, list: &ServerList) {
+/// Serializes from a reference to avoid cloning the entire Vec<Server>,
+/// then writes asynchronously off the runtime thread.
+pub async fn save_server_list_cache(cache_path: &std::path::Path, list: &ServerList) {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -133,7 +141,7 @@ pub fn save_server_list_cache(cache_path: &std::path::Path, list: &ServerList) {
         list,
     };
     if let Ok(data) = serde_json::to_vec(&cache_ref) {
-        let _ = std::fs::write(cache_path, data);
+        let _ = tokio::fs::write(cache_path, data).await;
     }
 }
 

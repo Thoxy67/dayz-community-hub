@@ -19,11 +19,10 @@ pub(crate) async fn fetch_battlemetrics_server(
     // Check cache first (read lock only)
     let token = {
         let s = state.read().await;
-        if let Some((cached, fetched_at)) = s.bm_cache.peek(&bm_cache_key) {
-            if fetched_at.elapsed() < Duration::from_secs(BM_CACHE_TTL_SECS) {
+        if let Some((cached, fetched_at)) = s.bm_cache.peek(&bm_cache_key)
+            && fetched_at.elapsed() < Duration::from_secs(BM_CACHE_TTL_SECS) {
                 return Ok(cached.clone());
             }
-        }
         s.ctl
             .profile()
             .battlemetrics_api_key
@@ -49,7 +48,9 @@ pub(crate) async fn fetch_battlemetrics_server(
         .as_array()
         .ok_or_else(|| "Unexpected BattleMetrics response".to_string())?;
 
-    // Single-pass matching with priority scoring (4x faster than 4 separate .find() calls)
+    // Single-pass matching with priority scoring (4x faster than 4 separate .find() calls).
+    // Early-exits as soon as we see a perfect score (exact game port match).
+    const MAX_SCORE: u8 = 4;
     let mut best_match: Option<(&serde_json::Value, u8)> = None;
 
     for entry in data {
@@ -66,7 +67,7 @@ pub(crate) async fn fetch_battlemetrics_server(
 
         // Assign priority score (higher = better match)
         let score = if bm_port == port {
-            4 // Priority 1: exact game port
+            MAX_SCORE // Priority 1: exact game port
         } else if bm_qport == query_port {
             3 // Priority 2: exact query port
         } else if bm_port == query_port {
@@ -76,8 +77,12 @@ pub(crate) async fn fetch_battlemetrics_server(
         };
 
         // Keep best match (first one wins on tie)
-        if best_match.map_or(true, |(_, s)| score > s) {
+        if best_match.is_none_or(|(_, s)| score > s) {
             best_match = Some((entry, score));
+            // Can't do better than an exact game-port match — stop scanning.
+            if score == MAX_SCORE {
+                break;
+            }
         }
     }
 
@@ -85,7 +90,7 @@ pub(crate) async fn fetch_battlemetrics_server(
 
     // Check if IP match has a matching name (case-insensitive partial match)
     let name_lower = name.to_lowercase();
-    let ip_entry_valid = ip_entry.as_ref().map_or(false, |e| {
+    let ip_entry_valid = ip_entry.as_ref().is_some_and(|e| {
         if name.is_empty() {
             return true; // No name to validate against
         }
@@ -156,7 +161,7 @@ pub(crate) async fn fetch_battlemetrics_server(
         .as_array()
         .or_else(|| attrs["location"].as_array())
         .and_then(|arr| {
-            let lon = arr.get(0)?.as_f64()?;
+            let lon = arr.first()?.as_f64()?;
             let lat = arr.get(1)?.as_f64()?;
             Some((lon, lat))
         });
@@ -194,10 +199,12 @@ pub(crate) async fn fetch_battlemetrics_server(
         .cmd_err()?;
     let history_json: serde_json::Value = history_resp.json().await.cmd_err()?;
 
+    // Iterator-flatten avoids the per-call `vec![]` allocation that the
+    // previous `unwrap_or(&vec![])` form created on every panel open.
     let player_history: Vec<(i64, i64)> = history_json["data"]
         .as_array()
-        .unwrap_or(&vec![])
-        .iter()
+        .into_iter()
+        .flatten()
         .filter_map(|point| {
             let attrs = &point["attributes"];
             let ts_str = attrs["timestamp"].as_str()?;

@@ -191,6 +191,16 @@
         steamId: steamId.trim() || null,
         battlemetricsApiKey: battlemetricsApiKey.trim() || null,
         steamcmdEnabled: true,
+        // userLocation + ping fields are required by the Rust command;
+        // first-launch wizard doesn't expose them, so use sensible defaults.
+        userLocation: null,
+        pingConcurrency: 25,
+        pingTimeoutAuto: 2000,
+        pingTimeoutManual: 10000,
+        pingMaxRetries: 0,
+        pingScanFavorites: true,
+        pingScanHistory: true,
+        pingScanServers: true,
       });
       onDone();
     } catch (e) {

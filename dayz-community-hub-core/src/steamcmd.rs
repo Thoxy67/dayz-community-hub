@@ -8,12 +8,50 @@ use tokio::io::BufReader;
 use tokio::process::Command;
 use tokio::sync::mpsc;
 
+/// Bundle of handles handed back from `spawn_pty_streamed`:
+/// (no-op child wrapper, stdout chunk receiver, PTY writer for stdin).
+type PtyStreamHandles = (
+    Box<dyn portable_pty::Child + Send + Sync>,
+    mpsc::UnboundedReceiver<String>,
+    Box<dyn std::io::Write + Send>,
+);
+
 /// Strip ANSI/VT100 escape sequences from a string.
 /// steamcmd embeds colour codes even when stdout is a pipe, e.g. `\x1b[1m`.
+///
+/// Fast path: most steamcmd output lines contain no ANSI escapes at all,
+/// so we short-circuit with a single byte scan and return the original
+/// borrowed slice without invoking the regex engine.
 fn strip_ansi(s: &str) -> std::borrow::Cow<'_, str> {
+    if !s.as_bytes().contains(&0x1b) {
+        return std::borrow::Cow::Borrowed(s);
+    }
     static ANSI_RE: OnceLock<Regex> = OnceLock::new();
     let re = ANSI_RE.get_or_init(|| Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap());
     re.replace_all(s, "")
+}
+
+/// ASCII-only case-insensitive `contains`.  Avoids the per-line
+/// `to_lowercase()` String allocation that the previous implementation made
+/// for every steamcmd line we matched against multiple patterns.
+fn ascii_contains_ci(haystack: &str, needle: &str) -> bool {
+    let h = haystack.as_bytes();
+    let n = needle.as_bytes();
+    if n.is_empty() {
+        return true;
+    }
+    if h.len() < n.len() {
+        return false;
+    }
+    'outer: for start in 0..=h.len() - n.len() {
+        for (i, &nb) in n.iter().enumerate() {
+            if !h[start + i].eq_ignore_ascii_case(&nb) {
+                continue 'outer;
+            }
+        }
+        return true;
+    }
+    false
 }
 
 /// Returns true if the line (after stripping ANSI codes) indicates steamcmd is
@@ -26,10 +64,11 @@ fn strip_ansi(s: &str) -> std::borrow::Cow<'_, str> {
 ///   3. "Steam Guard code:" (email/SMS — steamcmd reads the code from stdin)
 fn is_steam_guard_prompt(line: &str) -> bool {
     let clean = strip_ansi(line);
-    let lower = clean.to_lowercase();
-    (lower.contains("please confirm") && (lower.contains("mobile") || lower.contains("phone")))
-        || lower.contains("waiting for confirmation")
-        || lower.contains("steam guard code:")
+    let l = clean.as_ref();
+    (ascii_contains_ci(l, "please confirm")
+        && (ascii_contains_ci(l, "mobile") || ascii_contains_ci(l, "phone")))
+        || ascii_contains_ci(l, "waiting for confirmation")
+        || ascii_contains_ci(l, "steam guard code:")
 }
 
 /// Returns true if the partial buffer ends with a `password:` prompt.
@@ -84,11 +123,17 @@ pub fn find_steam_root() -> Option<PathBuf> {
     {
         let home = std::env::var("HOME").ok()?;
         let home_path = PathBuf::from(home);
+        // Cover the major Linux Steam install sources: native, Flatpak, Snap.
         let candidates = [
             home_path.join(".steam/steam/steamapps"),
             home_path.join(".local/share/Steam/steamapps"),
             home_path.join(".steam/root/steamapps"),
+            // Flatpak Steam (com.valvesoftware.Steam)
             home_path.join(".var/app/com.valvesoftware.Steam/data/Steam/steamapps"),
+            home_path.join(".var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps"),
+            // Snap Steam
+            home_path.join("snap/steam/common/.local/share/Steam/steamapps"),
+            home_path.join("snap/steam/current/.local/share/Steam/steamapps"),
         ];
         for candidate in candidates.iter() {
             if candidate.exists() && candidate.is_dir() {
@@ -180,12 +225,30 @@ pub fn find_steamcmd() -> Option<PathBuf> {
     {
         let home = std::env::var("HOME").ok()?;
         let home_path = PathBuf::from(home);
+        // Linux + macOS: covers the most common package sources users hit.
+        // Snap and Flatpak ship steamcmd in non-PATH locations, so users
+        // with those installs were previously falling through to "not found"
+        // even when a working binary was present.
         let candidates = [
             home_path.join(".steam/steamcmd/steamcmd.sh"),
             home_path.join(".local/share/Steam/steamcmd/steamcmd.sh"),
+            // Flatpak (steamcmd packaged separately from the Steam flatpak)
+            home_path.join(".var/app/com.valvesoftware.SteamCMD/data/steamcmd.sh"),
+            home_path.join(".var/app/com.valvesoftware.SteamCMD/.local/share/Steam/steamcmd.sh"),
+            // Standard Linux distribution paths
             PathBuf::from("/usr/games/steamcmd"),
             PathBuf::from("/usr/local/games/steamcmd"),
             PathBuf::from("/usr/bin/steamcmd"),
+            PathBuf::from("/usr/local/bin/steamcmd"),
+            // Snap (snap shadows /usr/bin in PATH on some distros, but the
+            // direct path is more reliable for detection)
+            PathBuf::from("/snap/bin/steamcmd"),
+            PathBuf::from("/var/lib/snapd/snap/bin/steamcmd"),
+            // AUR package — installs into /opt
+            PathBuf::from("/opt/steamcmd/steamcmd.sh"),
+            // macOS Homebrew
+            PathBuf::from("/usr/local/opt/steamcmd/bin/steamcmd"),
+            PathBuf::from("/opt/homebrew/bin/steamcmd"),
         ];
         for candidate in candidates.iter() {
             if candidate.exists() {
@@ -572,17 +635,13 @@ impl SteamCmd {
     /// PTY writer handle — wrapped so it can be shared across threads.
     /// The download task uses this to send password / Steam Guard codes to
     /// the running steamcmd process.
+    ///
+    /// Bundles the three handles spawn_pty_streamed hands back: the (no-op)
+    /// child, the stdout chunk receiver, and the PTY writer.
     fn spawn_pty_streamed(
         &self,
         args: &[std::ffi::OsString],
-    ) -> std::result::Result<
-        (
-            Box<dyn portable_pty::Child + Send + Sync>,
-            mpsc::UnboundedReceiver<String>,
-            Box<dyn std::io::Write + Send>,
-        ),
-        String,
-    > {
+    ) -> std::result::Result<PtyStreamHandles, String> {
         use portable_pty::{CommandBuilder, PtySize, native_pty_system};
         use std::io::Read;
         use std::sync::{Arc, Mutex};
@@ -640,7 +699,12 @@ impl SteamCmd {
         tokio::task::spawn_blocking(move || {
             // Keep _master_holder alive until the watcher drops it.
             let _master_holder = master_holder;
-            let mut buf = [0u8; 256];
+            // 4 KiB read buffer — 16x fewer syscalls and channel sends than
+            // the prior 256-byte buffer, which dominated CPU during big mod
+            // downloads.  steamcmd's PTY output is line-oriented and already
+            // small per line, so this only batches what would otherwise be
+            // multiple syscalls back-to-back.
+            let mut buf = [0u8; 4096];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => break,
@@ -715,7 +779,16 @@ impl SteamCmd {
         // Steam Guard mobile is detected by text: steamcmd flushes the
         // "Please confirm..." / "Waiting for confirmation..." lines once the
         // user approves on the phone.
-        let mut succeeded = std::collections::HashSet::<u64>::with_capacity(mods_info.len());
+        let mut succeeded =
+            rustc_hash::FxHashSet::<u64>::with_capacity_and_hasher(mods_info.len(), Default::default());
+        // O(1) mod_id → (idx, name) lookup so we don't linear-scan mods_info
+        // on every "Downloading"/"Success" line.  For N mods downloading with
+        // ~3 progress matches each, this turns O(N²) into O(N).
+        let mod_lookup: rustc_hash::FxHashMap<u64, (usize, &str)> = mods_info
+            .iter()
+            .enumerate()
+            .map(|(idx, (id, name))| (*id, (idx, name.as_str())))
+            .collect();
         let mut current_idx: usize = 0;
         let mut steam_guard_sent = false;
         let mut password_prompt_sent = false;
@@ -740,96 +813,93 @@ impl SteamCmd {
             buf.push_str(&raw_chunk);
 
             // Process any complete newline-terminated lines that have accumulated.
+            // Hot path: a single mod download produces hundreds of progress lines.
+            // Previously each line allocated 4–6 Strings (raw_line, buf realloc,
+            // strip_ansi.into_owned, line.clone for log, two to_lowercase copies).
+            // We now slice into `buf` in place, drain after we're done reading,
+            // and use ASCII case-insensitive contains so the only allocation
+            // per line is the one the channel send genuinely requires.
             while let Some(nl_pos) = buf.find('\n') {
-                let raw_line = buf[..nl_pos].to_string();
-                buf = buf[nl_pos + 1..].to_string();
-                let line = strip_ansi(&raw_line).into_owned();
-
-                // Forward every non-empty line to the UI log panel.
-                if !line.trim().is_empty() {
-                    let _ = tx.send(ModProgress::LogLine(line.clone()));
-                }
-
-                // "Cached credentials not found" is informational — the real
-                // prompt is the `password:` line that follows. Just log it.
-
-                // Text-based Steam Guard detection on complete lines.
-                // NOTE: no `has_password` guard — Steam Guard can appear after
-                // the interactive password prompt flow too.
-                if login_phase && !steam_guard_sent && is_steam_guard_prompt(&line) {
-                    let _ = tx.send(ModProgress::SteamGuardMobileRequired);
-                    steam_guard_sent = true;
-                    sg_start = Some(std::time::Instant::now());
-                    eprintln!("[SteamGuard] prompt detected (t=0.0s)");
-                }
-
-                // Detect login errors from complete lines.
+                // Scope the borrow on `buf` so we can `.drain` after.
+                let advance_to = nl_pos + 1;
                 {
+                    let stripped = strip_ansi(&buf[..nl_pos]);
+                    let line: &str = stripped.as_ref();
+
+                    // Forward every non-empty line to the UI log panel.
+                    if !line.trim().is_empty() {
+                        let _ = tx.send(ModProgress::LogLine(line.to_owned()));
+                    }
+
+                    // Text-based Steam Guard detection on complete lines.
+                    // NOTE: no `has_password` guard — Steam Guard can appear
+                    // after the interactive password prompt flow too.
+                    if login_phase && !steam_guard_sent && is_steam_guard_prompt(line) {
+                        let _ = tx.send(ModProgress::SteamGuardMobileRequired);
+                        steam_guard_sent = true;
+                        sg_start = Some(std::time::Instant::now());
+                        eprintln!("[SteamGuard] prompt detected (t=0.0s)");
+                    }
+
+                    // Detect login errors from complete lines.
                     let elapsed = sg_start.map(|s| s.elapsed().as_secs_f32()).unwrap_or(0.0);
-                    let lower = line.to_lowercase();
-                    if lower.contains("timed out waiting for confirmation")
-                        || lower.contains("wait for confirmation timed out")
-                        || (lower.contains("error") && lower.contains("timeout"))
+                    if ascii_contains_ci(line, "timed out waiting for confirmation")
+                        || ascii_contains_ci(line, "wait for confirmation timed out")
+                        || (ascii_contains_ci(line, "error") && ascii_contains_ci(line, "timeout"))
                     {
                         steam_guard_timed_out = true;
                         eprintln!("[SteamGuard] TIMED OUT (t={elapsed:.1}s)");
                     }
-                    if lower.contains("invalid password") {
+                    if ascii_contains_ci(line, "invalid password") {
                         invalid_password = true;
                     }
-                    // Log when Steam Guard is resolved (OK after "Waiting for confirmation")
+                    // Log when Steam Guard is resolved.
                     if steam_guard_sent
                         && !steam_guard_timed_out
-                        && lower.contains("waiting for")
-                        && lower.contains("ok")
+                        && ascii_contains_ci(line, "waiting for")
+                        && ascii_contains_ci(line, "ok")
                     {
                         eprintln!("[SteamGuard] confirmed OK (t={elapsed:.1}s)");
                     }
-                    if lower.contains("retrying") {
+                    if ascii_contains_ci(line, "retrying") {
                         eprintln!("[SteamGuard] retrying (t={elapsed:.1}s)");
                     }
-                }
 
-                if line.contains("Success. Downloaded item") || line.contains("already up to date")
-                {
-                    login_phase = false;
-                    if let Some(id) = extract_mod_id_from_line(&line) {
-                        succeeded.insert(id);
-                        if let Some((idx, (_, name))) = mods_info
-                            .iter()
-                            .enumerate()
-                            .find(|(_, (mid, _))| *mid == id)
+                    if line.contains("Success. Downloaded item")
+                        || line.contains("already up to date")
+                    {
+                        login_phase = false;
+                        if let Some(id) = extract_mod_id_from_line(line)
+                            && let Some(&(idx, name)) = mod_lookup.get(&id)
                         {
+                            succeeded.insert(id);
                             let _ = tx.send(ModProgress::Done {
                                 current: idx + 1,
                                 total,
                                 mod_id: id,
-                                name: name.clone(),
+                                name: name.to_owned(),
+                            });
+                            current_idx = idx + 1;
+                        }
+                    }
+                    if line.contains("Downloading item") {
+                        login_phase = false;
+                        if let Some(id) = extract_mod_id_from_line(line)
+                            && let Some(&(idx, name)) = mod_lookup.get(&id)
+                            && idx + 1 > current_idx
+                        {
+                            let _ = tx.send(ModProgress::Starting {
+                                current: idx + 1,
+                                total,
+                                mod_id: id,
+                                name: name.to_owned(),
                             });
                             current_idx = idx + 1;
                         }
                     }
                 }
-                if line.contains("Downloading item") {
-                    login_phase = false;
-                    if let Some(id) = extract_mod_id_from_line(&line) {
-                        if let Some((idx, (_, name))) = mods_info
-                            .iter()
-                            .enumerate()
-                            .find(|(_, (mid, _))| *mid == id)
-                        {
-                            if idx + 1 > current_idx {
-                                let _ = tx.send(ModProgress::Starting {
-                                    current: idx + 1,
-                                    total,
-                                    mod_id: id,
-                                    name: name.clone(),
-                                });
-                                current_idx = idx + 1;
-                            }
-                        }
-                    }
-                }
+                // Borrow on buf released; advance in place (no realloc).
+                buf.drain(..advance_to);
             }
 
             // Check the partial-line remainder (content not yet terminated

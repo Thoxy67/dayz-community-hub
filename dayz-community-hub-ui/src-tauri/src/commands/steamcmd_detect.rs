@@ -22,15 +22,14 @@ fn detect_steamcmd_sync(explicit_path: &Option<String>) -> SteamcmdStatusDto {
     #[cfg(target_os = "macos")]
     let platform = "macos";
 
-    if let Some(p) = explicit_path {
-        if !p.is_empty() && std::path::Path::new(p).exists() {
+    if let Some(p) = explicit_path
+        && !p.is_empty() && std::path::Path::new(p).exists() {
             return SteamcmdStatusDto {
                 found: true,
                 path: Some(p.clone()),
                 platform: platform.into(),
             };
         }
-    }
 
     #[cfg(target_os = "windows")]
     let binary_name = "steamcmd.exe";
@@ -77,25 +76,38 @@ pub(crate) async fn detect_steamcmd(
         let s = state.read().await;
         s.ctl.profile().steamcmd_path.clone()
     };
-    Ok(detect_steamcmd_sync(&explicit_path))
+    // Push the FS walk (which::which + path.exists) onto the blocking pool —
+    // it touches the filesystem and on Windows can spawn `reg query` for the
+    // registry lookup, neither of which belong on the runtime thread.
+    tokio::task::spawn_blocking(move || detect_steamcmd_sync(&explicit_path))
+        .await
+        .map_err(|e| format!("Task join error: {e}"))
 }
 
 /// Start a background task that polls for steamcmd every 3 seconds.
+/// Each tick re-reads `steamcmd_path` from the live profile, so a user
+/// editing the path during the wizard takes effect immediately rather than
+/// being stuck with the value captured at watch start.
 #[tauri::command]
 pub(crate) async fn watch_steamcmd(
     app: AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    let explicit_path = {
-        let s = state.read().await;
-        s.ctl.profile().steamcmd_path.clone()
-    };
+    let state_clone = (*state).clone();
 
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(3));
         loop {
             interval.tick().await;
-            let status = detect_steamcmd_sync(&explicit_path);
+            let explicit_path = state_clone.read().await.ctl.profile().steamcmd_path.clone();
+            let status = match tokio::task::spawn_blocking(move || {
+                detect_steamcmd_sync(&explicit_path)
+            })
+            .await
+            {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
             if status.found {
                 let _ = app.emit("steamcmd-detected", status);
                 return;

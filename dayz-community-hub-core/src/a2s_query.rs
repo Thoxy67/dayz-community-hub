@@ -12,17 +12,46 @@ fn duration_to_ms_floor1(d: Duration) -> u32 {
     if ms == 0 && d.as_micros() > 0 { 1 } else { ms }
 }
 
-/// Create a configured A2S client and format the server's query address.
-async fn make_a2s_client(server: &Server) -> Result<(A2SClient, String)> {
+/// Create a fresh A2S client with the standard 5s timeout.
+/// Use this once per ping scan and share the result across all queries —
+/// `async-a2s` multiplexes the socket internally, so 25 concurrent
+/// `client.info(...)` calls on the same client are safe.
+pub async fn new_client() -> Result<A2SClient> {
     let mut client = A2SClient::new()
         .await
         .map_err(|e| Error::A2sQuery(format!("Failed to create A2S client: {}", e)))?;
-    // set_timeout now returns Result in async-a2s
     client
         .set_timeout(Duration::from_secs(5))
         .map_err(|e| Error::A2sQuery(format!("Failed to set timeout: {}", e)))?;
-    let addr = format!("{}:{}", server.endpoint.ip, server.endpoint.port as u16);
-    Ok((client, addr))
+    Ok(client)
+}
+
+fn server_addr(server: &Server) -> String {
+    format!("{}:{}", server.endpoint.ip, server.endpoint.port as u16)
+}
+
+/// Create a configured A2S client and format the server's query address.
+async fn make_a2s_client(server: &Server) -> Result<(A2SClient, String)> {
+    let client = new_client().await?;
+    Ok((client, server_addr(server)))
+}
+
+/// Like `ping_via_a2s_with_info` but reuses a caller-owned client.
+/// Hot path for bulk scans — saves one UDP socket bind per query.
+pub async fn ping_via_a2s_with_info_using(
+    client: &A2SClient,
+    server: &Server,
+) -> Result<(u32, u8, u8)> {
+    let addr = server_addr(server);
+    let (info, latency) = client
+        .info(&addr, None)
+        .await
+        .map_err(|e| Error::A2sQuery(format!("A2S query failed: {}", e)))?;
+    Ok((
+        duration_to_ms_floor1(latency),
+        info.players,
+        info.max_players,
+    ))
 }
 
 /// Query server information using A2S protocol
@@ -250,14 +279,13 @@ impl ServerDetails {
         ));
         lines.push(format!("Version: {}", self.info.version));
 
-        if let Some(ref players) = self.players {
-            if !players.is_empty() {
+        if let Some(ref players) = self.players
+            && !players.is_empty() {
                 lines.push("Online players:".to_string());
                 for player in players {
                     lines.push(format!("  {} ({} score)", player.name, player.score));
                 }
             }
-        }
 
         if let Some(ref rules) = self.rules {
             lines.push("Rules:".to_string());

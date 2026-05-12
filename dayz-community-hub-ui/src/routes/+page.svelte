@@ -4,26 +4,30 @@
   import { listen } from '@tauri-apps/api/event';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { openUrl as shellOpen } from '@tauri-apps/plugin-opener';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
 
-  import type { CliArgs, A2sDetailsDto, TabId } from '$lib/types';
+  import type { CliArgs, A2sDetailsDto, ServerDto, TabId } from '$lib/types';
 
   import Icon from '@iconify/svelte';
   import TitleBar from '$lib/components/TitleBar.svelte';
   import TabBar from '$lib/components/TabBar.svelte';
   import ServersTab from '$lib/components/ServersTab.svelte';
-  import FavoritesTab from '$lib/components/FavoritesTab.svelte';
-  import HistoryTab from '$lib/components/HistoryTab.svelte';
-  import ModsTab from '$lib/components/ModsTab.svelte';
-  import DirectConnectTab from '$lib/components/DirectConnectTab.svelte';
-  import OptionsTab from '$lib/components/OptionsTab.svelte';
-  import SetupWizard from '$lib/components/SetupWizard.svelte';
+  // Type-only import keeps `ReturnType<typeof ModsTabType>` available for
+  // `modsTabRef` while letting the runtime import stay lazy below.
+  import type ModsTabType from '$lib/components/ModsTab.svelte';
 
-  // Lazy-loaded tabs (reduces initial bundle by ~150kB)
+  // Lazy-loaded tabs.  Only ServersTab is eager because it's the default
+  // landing tab; everything else is dynamic-imported on first activation.
   const lazyTabs = {
+    favorites: () => import('$lib/components/FavoritesTab.svelte'),
+    history: () => import('$lib/components/HistoryTab.svelte'),
+    mods: () => import('$lib/components/ModsTab.svelte'),
+    connect: () => import('$lib/components/DirectConnectTab.svelte'),
+    options: () => import('$lib/components/OptionsTab.svelte'),
     news: () => import('$lib/components/NewsTab.svelte'),
     offline: () => import('$lib/components/OfflineTab.svelte'),
     about: () => import('$lib/components/AboutTab.svelte'),
+    setup: () => import('$lib/components/SetupWizard.svelte'),
   };
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import ProgressModal from '$lib/components/ProgressModal.svelte';
@@ -87,32 +91,60 @@
   let isFocused = $state(true);
 
   // ── Component refs ─────────────────────────────────────────────────────────
-  let modsTabRef = $state<ReturnType<typeof ModsTab> | null>(null);
+  let modsTabRef = $state<ReturnType<typeof ModsTabType> | null>(null);
 
   // ── Verify full servers via A2S ─────────────────────────────────────────
+  // The API marks many servers as "full" optimistically; we re-verify each one
+  // via A2S so the UI can flag stale player counts. With 18k+ servers this can
+  // queue hundreds of jobs, so we cap concurrency at 8 to avoid drowning the
+  // initial ping scan and the UI render in invoke() calls.
   const fullServerVerified = new Set<string>();
+  const verifyQueue: Array<{ ip: string; port: number; server: ServerDto }> = [];
+  let verifyDraining = false;
+  const VERIFY_CONCURRENCY = 8;
 
-  // Effect: When servers load, queue A2S verification for all "full" servers
-  $effect(() => {
-    if (s.servers.length === 0) return;
-
-    // Find all servers that appear full from API data and verify them
-    for (const server of s.servers) {
-      if (server.players > 0 && server.players === server.max_players) {
-        const key = `${server.ip}:${server.query_port}`;
-        if (fullServerVerified.has(key)) continue;
-        fullServerVerified.add(key);
-
-        // Fire async A2S query - failures will be tracked in app.a2sFailures
-        serverData.refreshA2s(server.ip, server.query_port).then((result) => {
+  async function drainVerifyQueue() {
+    if (verifyDraining) return;
+    verifyDraining = true;
+    const workers = Array.from({ length: VERIFY_CONCURRENCY }, async () => {
+      while (verifyQueue.length > 0) {
+        const job = verifyQueue.shift();
+        if (!job) break;
+        try {
+          const result = await serverData.refreshA2s(job.ip, job.port);
           if (result) {
-            // Update the server object with verified player counts
-            server.players = result.players;
-            server.max_players = result.max_players;
+            job.server.players = result.players;
+            job.server.max_players = result.max_players;
           }
-        });
+        } catch {
+          // Failures land in app.a2sFailures via the service.
+        }
       }
-    }
+    });
+    await Promise.all(workers);
+    verifyDraining = false;
+  }
+
+  // Effect: When the servers list changes, queue A2S verification for all
+  // "full" servers.  We depend ONLY on `s.servers.length` — reading `players`
+  // / `max_players` inside `untrack` so the worker mutations below don't
+  // cause this effect to re-run, which would re-scan all 18k entries on
+  // every single verify result (a feedback loop).
+  $effect(() => {
+    const len = s.servers.length;
+    if (len === 0) return;
+
+    untrack(() => {
+      for (const server of s.servers) {
+        if (server.players > 0 && server.players === server.max_players) {
+          const key = `${server.ip}:${server.query_port}`;
+          if (fullServerVerified.has(key)) continue;
+          fullServerVerified.add(key);
+          verifyQueue.push({ ip: server.ip, port: server.query_port, server });
+        }
+      }
+      drainVerifyQueue();
+    });
   });
 
   // ── Derived helpers ───────────────────────────────────────────────────────
@@ -507,66 +539,75 @@
           onDirectConnect={openInDirectConnect}
         />
       {:else if s.activeTab === 'favorites'}
-        <FavoritesTab
-          favorites={s.profile?.favorites ?? []}
-          servers={s.servers}
-          pingCache={s.pingCache}
-          pingPending={s.pingPending}
-          pingTimeouts={s.pingTimeouts}
-          a2sFailures={s.a2sFailures}
-          bmApiKey={s.profile?.battlemetrics_api_key ?? null}
-          userLocation={s.profile?.user_location ?? null}
-          onConnect={connectByAddress}
-          onRemove={removeFavorite}
-          onGoToServers={() => selectTab('servers')}
-          onPing={pingSingle}
-          onDirectConnect={openInDirectConnect}
-        />
+        {#await lazyTabs.favorites() then module}
+          {@const FavoritesTab = module.default}
+          <FavoritesTab
+            favorites={s.profile?.favorites ?? []}
+            servers={s.servers}
+            pingCache={s.pingCache}
+            pingPending={s.pingPending}
+            pingTimeouts={s.pingTimeouts}
+            a2sFailures={s.a2sFailures}
+            bmApiKey={s.profile?.battlemetrics_api_key ?? null}
+            userLocation={s.profile?.user_location ?? null}
+            onConnect={connectByAddress}
+            onRemove={removeFavorite}
+            onGoToServers={() => selectTab('servers')}
+            onPing={pingSingle}
+            onDirectConnect={openInDirectConnect}
+          />
+        {/await}
       {:else if s.activeTab === 'history'}
-        <HistoryTab
-          history={s.profile?.history ?? []}
-          servers={s.servers}
-          pingCache={s.pingCache}
-          pingPending={s.pingPending}
-          pingTimeouts={s.pingTimeouts}
-          a2sFailures={s.a2sFailures}
-          favorites={favoritesSet}
-          bmApiKey={s.profile?.battlemetrics_api_key ?? null}
-          userLocation={s.profile?.user_location ?? null}
-          onConnect={connectByAddress}
-          onAddFavorite={addFavoriteFromHistory}
-          onRemoveFavorite={(h) => removeFavoriteQuick(h.ip, h.port)}
-          onRemove={removeHistoryEntry}
-          onClearAll={clearHistory}
-          onGoToServers={() => selectTab('servers')}
-          onPing={pingSingle}
-          onDirectConnect={openInDirectConnect}
-        />
+        {#await lazyTabs.history() then module}
+          {@const HistoryTab = module.default}
+          <HistoryTab
+            history={s.profile?.history ?? []}
+            servers={s.servers}
+            pingCache={s.pingCache}
+            pingPending={s.pingPending}
+            pingTimeouts={s.pingTimeouts}
+            a2sFailures={s.a2sFailures}
+            favorites={favoritesSet}
+            bmApiKey={s.profile?.battlemetrics_api_key ?? null}
+            userLocation={s.profile?.user_location ?? null}
+            onConnect={connectByAddress}
+            onAddFavorite={addFavoriteFromHistory}
+            onRemoveFavorite={(h) => removeFavoriteQuick(h.ip, h.port)}
+            onRemove={removeHistoryEntry}
+            onClearAll={clearHistory}
+            onGoToServers={() => selectTab('servers')}
+            onPing={pingSingle}
+            onDirectConnect={openInDirectConnect}
+          />
+        {/await}
       {:else if s.activeTab === 'mods'}
-        <ModsTab
-          bind:this={modsTabRef}
-          mods={s.installedMods}
-          loading={s.modsLoading}
-          checking={s.modsChecking}
-          staleCount={staleModCount}
-          onRefresh={() =>
-            loadMods().then(() => {
-              if (s.profile?.steam_api_key) checkModUpdates(true);
-            })}
-          onCheckUpdates={() => checkModUpdates(true)}
-          steamApiKey={s.profile?.steam_api_key ?? ''}
-          onDelete={deleteMod}
-          onToggleManaged={toggleModManaged}
-          onUpdate={updateMod}
-          onUpdateAll={updateAllMods}
-          onUpdateStale={updateStaleMods}
-          onCleanup={cleanupMods}
-          onOpenWorkshopDir={() => invoke('open_workshop_dir').catch(() => {})}
-          onOpenModDir={(mod) => invoke('open_mod_dir', { modId: mod.id }).catch(() => {})}
-          onDeleteSelected={deleteSelectedMods}
-          onUpdateSelected={updateSelectedMods}
-          onInstallMods={installMods}
-        />
+        {#await lazyTabs.mods() then module}
+          {@const ModsTab = module.default}
+          <ModsTab
+            bind:this={modsTabRef}
+            mods={s.installedMods}
+            loading={s.modsLoading}
+            checking={s.modsChecking}
+            staleCount={staleModCount}
+            onRefresh={() =>
+              loadMods().then(() => {
+                if (s.profile?.steam_api_key) checkModUpdates(true);
+              })}
+            onCheckUpdates={() => checkModUpdates(true)}
+            steamApiKey={s.profile?.steam_api_key ?? ''}
+            onDelete={deleteMod}
+            onToggleManaged={toggleModManaged}
+            onUpdate={updateMod}
+            onUpdateAll={updateAllMods}
+            onUpdateStale={updateStaleMods}
+            onCleanup={cleanupMods}
+            onOpenWorkshopDir={() => invoke('open_workshop_dir').catch(() => {})}
+            onOpenModDir={(mod) => invoke('open_mod_dir', { modId: mod.id }).catch(() => {})}
+            onDeleteSelected={deleteSelectedMods}
+            onUpdateSelected={updateSelectedMods}
+            onInstallMods={installMods}
+          />
+        {/await}
       {:else if s.activeTab === 'news'}
         {#await lazyTabs.news() then module}
           {@const NewsTab = module.default}
@@ -581,22 +622,28 @@
           />
         {/await}
       {:else if s.activeTab === 'connect'}
-        <DirectConnectTab
-          servers={s.servers}
-          installedMods={s.installedMods}
-          favorites={favoritesSet}
-          favoriteList={s.profile?.favorites ?? []}
-          onConnect={connectDirect}
-          onAddFavorite={addFavoriteDirect}
-          prefill={s.directConnectPrefill}
-        />
+        {#await lazyTabs.connect() then module}
+          {@const DirectConnectTab = module.default}
+          <DirectConnectTab
+            servers={s.servers}
+            installedMods={s.installedMods}
+            favorites={favoritesSet}
+            favoriteList={s.profile?.favorites ?? []}
+            onConnect={connectDirect}
+            onAddFavorite={addFavoriteDirect}
+            prefill={s.directConnectPrefill}
+          />
+        {/await}
       {:else if s.activeTab === 'options'}
-        <OptionsTab
-          options={s.profile?.options ?? []}
-          bind:search={s.optionsSearch}
-          onToggle={toggleOption}
-          onSetValue={setOptionValue}
-        />
+        {#await lazyTabs.options() then module}
+          {@const OptionsTab = module.default}
+          <OptionsTab
+            options={s.profile?.options ?? []}
+            bind:search={s.optionsSearch}
+            onToggle={toggleOption}
+            onSetValue={setOptionValue}
+          />
+        {/await}
       {:else if s.activeTab === 'offline'}
         {#await lazyTabs.offline() then module}
           {@const OfflineTab = module.default}
@@ -676,19 +723,22 @@
     {/if}
 
     {#if s.showWizard}
-      <SetupWizard
-        onDone={async () => {
-          s.showWizard = false;
-          await Promise.all([loadProfile(), loadStats()]);
-          if (s.profile?.steam_api_key && s.profile?.steam_id) {
-            invoke<string | null>('fetch_steam_avatar')
-              .then((url) => {
-                s.avatarUrl = url;
-              })
-              .catch(() => {});
-          }
-        }}
-      />
+      {#await lazyTabs.setup() then module}
+        {@const SetupWizard = module.default}
+        <SetupWizard
+          onDone={async () => {
+            s.showWizard = false;
+            await Promise.all([loadProfile(), loadStats()]);
+            if (s.profile?.steam_api_key && s.profile?.steam_id) {
+              invoke<string | null>('fetch_steam_avatar')
+                .then((url) => {
+                  s.avatarUrl = url;
+                })
+                .catch(() => {});
+            }
+          }}
+        />
+      {/await}
     {/if}
   </div>
 {/key}

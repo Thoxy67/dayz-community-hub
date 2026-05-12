@@ -74,10 +74,14 @@ pub(crate) fn spawn_launch(
 }
 
 /// Deduplicate a server list by (ip, query_port), keeping the first occurrence.
+/// Uses FxHashSet (faster than the default RandomState — fine here, the input
+/// is local data, not adversarial) and pre-sizes to the input length to avoid
+/// rehashing as the set grows past 18k entries.
 pub(crate) fn dedup_servers(
     mut servers: Vec<dayz_community_hub_core::Server>,
 ) -> Vec<dayz_community_hub_core::Server> {
-    let mut seen = std::collections::HashSet::new();
+    let mut seen: rustc_hash::FxHashSet<(String, i64)> =
+        rustc_hash::FxHashSet::with_capacity_and_hasher(servers.len(), Default::default());
     servers.retain(|s| seen.insert((s.endpoint.ip.clone(), s.endpoint.port)));
     servers
 }

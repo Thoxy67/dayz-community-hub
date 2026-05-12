@@ -1,5 +1,6 @@
 use dayz_community_hub_core::{Endpoint, a2s_query, api};
 use futures_util::{StreamExt, stream};
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::State;
 use tauri::ipc::Channel;
@@ -80,19 +81,34 @@ pub(crate) async fn ping_all_background(
         let mut flush_timer = tokio::time::interval(Duration::from_millis(FLUSH_INTERVAL_MS));
         flush_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-        let mut stream = stream::iter(servers)
-            .map(|(ip, port, key)| async move {
-                let server = api::Server {
-                    endpoint: Endpoint {
-                        ip: ip.clone(),
-                        port,
-                    },
-                    ..Default::default()
-                };
+        // One A2S client per scan, shared across all concurrent queries.
+        // async-a2s multiplexes responses on its single UDP socket, so we
+        // skip ~18k UDP-bind syscalls compared to one client per query.
+        let client = match a2s_query::new_client().await {
+            Ok(c) => Arc::new(c),
+            Err(_) => {
+                state_clone.write().await.ping_abort = None;
+                return;
+            }
+        };
 
-                let result =
-                    match tokio::time::timeout(timeout, a2s_query::ping_via_a2s_with_info(&server))
-                        .await
+        let mut stream = stream::iter(servers)
+            .map(|(ip, port, key)| {
+                let client = client.clone();
+                async move {
+                    let server = api::Server {
+                        endpoint: Endpoint {
+                            ip: ip.clone(),
+                            port,
+                        },
+                        ..Default::default()
+                    };
+
+                    let result = match tokio::time::timeout(
+                        timeout,
+                        a2s_query::ping_via_a2s_with_info_using(&client, &server),
+                    )
+                    .await
                     {
                         Ok(Ok((rtt, p, mp))) => CachedPingResult {
                             ms: rtt,
@@ -108,7 +124,8 @@ pub(crate) async fn ping_all_background(
                         },
                     };
 
-                (ip, port, key, result)
+                    (ip, port, key, result)
+                }
             })
             .buffer_unordered(concurrency)
             .fuse();
@@ -139,9 +156,8 @@ pub(crate) async fn ping_all_background(
 
                             if batch.len() >= BATCH_SIZE {
                                 // drain() keeps Vec capacity, avoiding reallocation
-                                let _ = on_progress.send(batch.drain(..).collect());
+                                let _ = on_progress.send(std::mem::take(&mut batch));
                                 tokio::task::yield_now().await;
-                                tokio::time::sleep(Duration::from_millis(5)).await;
                                 flush_timer.reset();
                             }
                         }
@@ -152,9 +168,8 @@ pub(crate) async fn ping_all_background(
                 _ = flush_timer.tick() => {
                     // Time-based flush for stragglers
                     if !batch.is_empty() {
-                        let _ = on_progress.send(batch.drain(..).collect());
+                        let _ = on_progress.send(std::mem::take(&mut batch));
                         tokio::task::yield_now().await;
-                        tokio::time::sleep(Duration::from_millis(5)).await;
                     }
                 }
             }
@@ -164,7 +179,6 @@ pub(crate) async fn ping_all_background(
         if !batch.is_empty() {
             let _ = on_progress.send(batch);
             tokio::task::yield_now().await;
-            tokio::time::sleep(Duration::from_millis(5)).await;
         }
 
         // Clear abort handle when done
@@ -220,19 +234,29 @@ pub(crate) async fn ping_servers(
         let mut flush_timer = tokio::time::interval(Duration::from_millis(FLUSH_INTERVAL_MS));
         flush_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-        let mut stream = stream::iter(servers)
-            .map(|(ip, port, key)| async move {
-                let server = api::Server {
-                    endpoint: Endpoint {
-                        ip: ip.clone(),
-                        port,
-                    },
-                    ..Default::default()
-                };
+        // Shared A2S client for the entire visible-set scan (one UDP socket).
+        let client = match a2s_query::new_client().await {
+            Ok(c) => Arc::new(c),
+            Err(_) => return,
+        };
 
-                let result =
-                    match tokio::time::timeout(timeout, a2s_query::ping_via_a2s_with_info(&server))
-                        .await
+        let mut stream = stream::iter(servers)
+            .map(|(ip, port, key)| {
+                let client = client.clone();
+                async move {
+                    let server = api::Server {
+                        endpoint: Endpoint {
+                            ip: ip.clone(),
+                            port,
+                        },
+                        ..Default::default()
+                    };
+
+                    let result = match tokio::time::timeout(
+                        timeout,
+                        a2s_query::ping_via_a2s_with_info_using(&client, &server),
+                    )
+                    .await
                     {
                         Ok(Ok((rtt, p, mp))) => CachedPingResult {
                             ms: rtt,
@@ -248,7 +272,8 @@ pub(crate) async fn ping_servers(
                         },
                     };
 
-                (ip, port, key, result)
+                    (ip, port, key, result)
+                }
             })
             .buffer_unordered(concurrency)
             .fuse();
@@ -279,9 +304,8 @@ pub(crate) async fn ping_servers(
 
                             if batch.len() >= BATCH_SIZE {
                                 // drain() keeps Vec capacity, avoiding reallocation
-                                let _ = on_progress.send(batch.drain(..).collect());
+                                let _ = on_progress.send(std::mem::take(&mut batch));
                                 tokio::task::yield_now().await;
-                                tokio::time::sleep(Duration::from_millis(5)).await;
                                 flush_timer.reset();
                             }
                         }
@@ -292,9 +316,8 @@ pub(crate) async fn ping_servers(
                 _ = flush_timer.tick() => {
                     // Time-based flush for stragglers
                     if !batch.is_empty() {
-                        let _ = on_progress.send(batch.drain(..).collect());
+                        let _ = on_progress.send(std::mem::take(&mut batch));
                         tokio::task::yield_now().await;
-                        tokio::time::sleep(Duration::from_millis(5)).await;
                     }
                 }
             }
@@ -304,7 +327,6 @@ pub(crate) async fn ping_servers(
         if !batch.is_empty() {
             let _ = on_progress.send(batch);
             tokio::task::yield_now().await;
-            tokio::time::sleep(Duration::from_millis(5)).await;
         }
     });
 

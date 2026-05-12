@@ -31,7 +31,7 @@ macro_rules! with_profile_save {
         use $crate::utils::error::ResultExt;
         let mut state = $state.write().await;
         $mutation(&mut state.ctl);
-        state.ctl.save_profile().cmd_err()
+        state.ctl.save_profile_async().await.cmd_err()
     }};
 }
 
@@ -42,6 +42,6 @@ macro_rules! profile_mutate_save {
         use $crate::utils::error::ResultExt;
         let mut state = $state.write().await;
         state.ctl.$method($($arg),*);
-        state.ctl.save_profile().cmd_err()
+        state.ctl.save_profile_async().await.cmd_err()
     }};
 }

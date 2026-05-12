@@ -46,6 +46,16 @@ pub(crate) const BM_CACHE_TTL_SECS: u64 = 300;
 pub struct AppState {
     pub ctl: DayzCtl,
     pub servers: Vec<Server>,
+    /// O(1) lookup index: (ip, query_port) → index into `servers`.
+    /// Rebuilt every time `servers` is replaced.  Replaces the previous
+    /// linear scan inside hot commands like `query_a2s` (called 500+ times
+    /// during the cold-start full-server verify wave).
+    pub index_by_query_port: FxHashMap<(String, i64), usize>,
+    /// O(1) lookup index: (ip, game_port) → index into `servers`.
+    pub index_by_game_port: FxHashMap<(String, i64), usize>,
+    /// Unix timestamp (seconds) when `servers` was last populated.
+    /// Set on initial cache load and on every refresh.
+    pub servers_fetched_at: u64,
     /// Cached Steam avatar as a data: URI. Populated by `fetch_steam_avatar`.
     pub cached_avatar: Option<String>,
     /// mod_id → remote time_updated from Steam Workshop API.
@@ -74,6 +84,9 @@ impl AppState {
         Self {
             ctl,
             servers: vec![],
+            index_by_query_port: FxHashMap::default(),
+            index_by_game_port: FxHashMap::default(),
+            servers_fetched_at: 0,
             cached_avatar: None,
             mod_update_cache: FxHashMap::default(),
             a2s_cache: LruCache::new(NonZeroUsize::new(A2S_CACHE_SIZE).unwrap()),
@@ -83,6 +96,51 @@ impl AppState {
             ping_abort: None,
             ping_paused: false,
         }
+    }
+}
+
+impl AppState {
+    /// Replace the server list and rebuild the lookup indexes in one shot.
+    /// Always call this when assigning to `self.servers` — direct assignment
+    /// will leave the indexes stale and quietly break `query_a2s`,
+    /// `find_server`, etc.
+    pub fn set_servers(&mut self, servers: Vec<Server>) {
+        let n = servers.len();
+        let mut by_query =
+            FxHashMap::with_capacity_and_hasher(n, Default::default());
+        let mut by_game =
+            FxHashMap::with_capacity_and_hasher(n, Default::default());
+        for (i, s) in servers.iter().enumerate() {
+            // First occurrence wins (matches dedup_servers behavior).
+            by_query
+                .entry((s.endpoint.ip.clone(), s.endpoint.port))
+                .or_insert(i);
+            by_game
+                .entry((s.endpoint.ip.clone(), s.game_port))
+                .or_insert(i);
+        }
+        self.servers = servers;
+        self.index_by_query_port = by_query;
+        self.index_by_game_port = by_game;
+    }
+
+    /// O(1) exact lookup by query port.
+    pub fn find_by_query_port(&self, ip: &str, query_port: i64) -> Option<&Server> {
+        // String allocation here is needed because the HashMap key is
+        // `(String, i64)`; for hot paths the cost is one alloc per call, which
+        // dominates the previous 18k-element scan by orders of magnitude.
+        self.index_by_query_port
+            .get(&(ip.to_owned(), query_port))
+            .and_then(|&i| self.servers.get(i))
+    }
+
+    /// O(1) flexible lookup: prefers query port match, falls back to game port.
+    pub fn find_flexible(&self, ip: &str, port: i64) -> Option<&Server> {
+        self.find_by_query_port(ip, port).or_else(|| {
+            self.index_by_game_port
+                .get(&(ip.to_owned(), port))
+                .and_then(|&i| self.servers.get(i))
+        })
     }
 }
 

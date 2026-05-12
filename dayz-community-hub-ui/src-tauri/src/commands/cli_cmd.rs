@@ -6,7 +6,7 @@ use crate::utils::error::ResultExt;
 /// Return the CLI args that were passed when this instance started.
 #[tauri::command]
 pub(crate) fn get_cli_args() -> CliArgs {
-    CLI_ARGS.get().cloned().unwrap_or_else(|| CliArgs {
+    CLI_ARGS.get().cloned().unwrap_or(CliArgs {
         connect: None,
         reconnect: false,
         open: None,

@@ -22,23 +22,20 @@ pub(crate) async fn query_a2s(
     // Check cache first (read lock only)
     {
         let state_read = state.read().await;
-        if let Some((cached, fetched_at)) = state_read.a2s_cache.peek(&cache_key) {
-            if fetched_at.elapsed() < Duration::from_secs(A2S_CACHE_TTL_SECS) {
+        if let Some((cached, fetched_at)) = state_read.a2s_cache.peek(&cache_key)
+            && fetched_at.elapsed() < Duration::from_secs(A2S_CACHE_TTL_SECS) {
                 return Ok(cached.clone());
             }
-        }
     }
 
-    // Get mods from server list if available (read lock)
+    // Get mods from server list if available (read lock).
+    // Uses the (ip, query_port) → idx index — O(1) instead of an 18k-element
+    // linear scan, which used to dominate the cold-start verify wave.
     let mods_dto = {
         let state_read = state.read().await;
         state_read
-            .servers
-            .iter()
-            .find(|s| {
-                s.endpoint.ip == ip
-                    && (s.endpoint.port == query_port || s.game_port == game_port.unwrap_or(-1))
-            })
+            .find_by_query_port(&ip, query_port)
+            .or_else(|| game_port.and_then(|gp| state_read.find_flexible(&ip, gp)))
             .map(|s| {
                 s.mods
                     .iter()

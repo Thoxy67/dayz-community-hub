@@ -70,12 +70,8 @@ function flushPendingPingBatch() {
     }
   }
 
-  // Trigger Svelte reactivity once per RAF frame (all mutated collections)
-  s.pingCache = new Map(s.pingCache);
-  s.pingPending = new Set(s.pingPending);
-  s.a2sFailures = new Set(s.a2sFailures);
-  s.pingTimeouts = new Map(s.pingTimeouts);
-
+  // pingCache / pingTimeouts / a2sFailures / pingPending are all reactive
+  // collections (Svelte{Map,Set}) — .set/.add already triggered reactivity.
   pendingPingBatch = [];
 }
 
@@ -275,11 +271,8 @@ export async function fetchPingResults() {
       }
     }
 
-    // Single reactivity trigger for all mutated collections
-    s.pingCache = new Map(s.pingCache);
-    s.pingPending = new Set(s.pingPending);
-    s.a2sFailures = new Set(s.a2sFailures);
-    s.pingTimeouts = new Map(s.pingTimeouts);
+    // No re-alloc needed — pingCache/pingTimeouts/a2sFailures are reactive
+    // collections (SvelteMap/SvelteSet); .set/.add propagated already.
   } catch {
     // Non-fatal
   }
@@ -298,10 +291,7 @@ export async function pingSingle(ip: string, port: number) {
     s.pingCache.delete(key);
     s.a2sFailures.add(key);
   }
-  // Single reactivity trigger for all mutated collections
-  s.pingCache = new Map(s.pingCache);
-  s.pingTimeouts = new Map(s.pingTimeouts);
-  s.a2sFailures = new Set(s.a2sFailures);
+  // Reactive collections — .set/.add/.delete already propagated.
 }
 
 export async function loadStats() {

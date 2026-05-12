@@ -230,8 +230,14 @@
   let scrollTop = $state(0);
   let containerHeight = $state(600);
 
+  // rAF-throttle scroll-driven state writes (see ServersTab for rationale).
+  let _scrollRaf: number | null = null;
   function handleScroll() {
-    if (scrollContainer) scrollTop = scrollContainer.scrollTop;
+    if (!scrollContainer || _scrollRaf !== null) return;
+    _scrollRaf = requestAnimationFrame(() => {
+      _scrollRaf = null;
+      if (scrollContainer) scrollTop = scrollContainer.scrollTop;
+    });
   }
 
   $effect(() => {

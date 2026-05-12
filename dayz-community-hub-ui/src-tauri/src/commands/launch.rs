@@ -18,7 +18,7 @@ pub(crate) async fn toggle_launch_option(
         opt.enabled = !opt.enabled;
         let new_state = opt.enabled;
         drop(all);
-        state.ctl.save_profile().cmd_err()?;
+        state.ctl.save_profile_async().await.cmd_err()?;
         Ok(new_state)
     } else {
         Err(format!("Unknown option: {}", key))
@@ -41,7 +41,7 @@ pub(crate) async fn set_launch_option_value(
             opt.enabled = true;
         }
         drop(all);
-        state.ctl.save_profile().cmd_err()
+        state.ctl.save_profile_async().await.cmd_err()
     } else {
         Err(format!("Unknown option: {}", key))
     }

@@ -102,11 +102,10 @@ class PingService {
   async pingVisible(targets: string[]): Promise<void> {
     if (targets.length === 0) return;
 
-    // Mark as pending
+    // SvelteSet — reactive on add(), no re-allocation required.
     for (const key of targets) {
       app.pingPending.add(key);
     }
-    app.pingPending = new Set(app.pingPending);
 
     await invoke('ping_servers', { targets }).catch(() => {});
   }
@@ -115,11 +114,9 @@ class PingService {
   async pingAllBackground(targets: string[]): Promise<void> {
     if (targets.length === 0) return;
 
-    // Mark as pending
     for (const key of targets) {
       app.pingPending.add(key);
     }
-    app.pingPending = new Set(app.pingPending);
 
     await invoke('ping_all_background', { targets }).catch(() => {});
   }
@@ -171,10 +168,8 @@ class PingService {
 
   /** Reset timeout count for a server */
   resetTimeoutCount(key: string): void {
-    if (app.pingTimeouts.has(key)) {
-      app.pingTimeouts.delete(key);
-      app.pingTimeouts = new Map(app.pingTimeouts);
-    }
+    // SvelteMap — .delete is reactive, no re-allocation needed.
+    app.pingTimeouts.delete(key);
   }
 
   /** Clear all flash animations */

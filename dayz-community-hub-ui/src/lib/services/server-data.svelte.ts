@@ -3,6 +3,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { app } from '$lib/state.svelte';
+import { SvelteMap } from 'svelte/reactivity';
 import type { A2sDetailsDto, BattleMetricsDto, ServerDto } from '$lib/types';
 
 // ── Cache entry types ───────────────────────────────────────────────────────
@@ -27,13 +28,15 @@ class ServerDataService {
   // ── Centralized reactive state ────────────────────────────────────────────
 
   /** A2S data cache: key → { data, loading, error, fetchedAt } */
-  private _a2sCache = $state<Map<string, A2sCacheEntry>>(new Map());
+  // SvelteMap is reactive on .set/.delete — saves the per-mutation
+  // `new Map(...)` clone we previously needed to trigger reactivity.
+  private _a2sCache = new SvelteMap<string, A2sCacheEntry>();
 
   /** BattleMetrics cache: key → { data, loading, error, fetchedAt } */
-  private _bmCache = $state<Map<string, BmCacheEntry>>(new Map());
+  private _bmCache = new SvelteMap<string, BmCacheEntry>();
 
   /** Player counts from A2S (overrides list/ping values) */
-  private _a2sPlayers = $state<Map<string, { players: number; maxPlayers: number }>>(new Map());
+  private _a2sPlayers = new SvelteMap<string, { players: number; maxPlayers: number }>();
 
   /** Keys currently refreshing (debounce) */
   private _refreshingKeys = new Set<string>();
@@ -127,18 +130,14 @@ class ServerDataService {
         fetchedAt: Date.now(),
       });
 
-      // Update player cache
+      // Update player cache (SvelteMap — reactive on .set).
       this._a2sPlayers.set(key, {
         players: data.players,
         maxPlayers: data.max_players,
       });
-      this._a2sPlayers = new Map(this._a2sPlayers);
 
-      // Clear A2S failure flag in global state
-      if (app.a2sFailures.has(key)) {
-        app.a2sFailures.delete(key);
-        app.a2sFailures = new Set(app.a2sFailures);
-      }
+      // Clear A2S failure flag (SvelteSet — reactive on delete).
+      app.a2sFailures.delete(key);
 
       this._evictOldEntries(this._a2sCache, this.MAX_A2S_ENTRIES);
       return data;
@@ -146,9 +145,8 @@ class ServerDataService {
       const error = String(e);
       this._setA2sState(key, { loading: false, error });
 
-      // Set A2S failure flag
+      // Set A2S failure flag (SvelteSet — reactive on add).
       app.a2sFailures.add(key);
-      app.a2sFailures = new Set(app.a2sFailures);
 
       return null;
     }
@@ -295,21 +293,18 @@ class ServerDataService {
 
   /** Clear all caches */
   clearCaches(): void {
-    this._a2sCache = new Map();
-    this._bmCache = new Map();
-    this._a2sPlayers = new Map();
+    this._a2sCache.clear();
+    this._bmCache.clear();
+    this._a2sPlayers.clear();
     this._refreshingKeys.clear();
   }
 
-  /** Clear cache for a specific server */
+  /** Clear cache for a specific server (SvelteMap.delete is reactive). */
   clearServerCache(ip: string, port: number): void {
     const key = this._resolveKey(ip, port);
     this._a2sCache.delete(key);
     this._a2sPlayers.delete(key);
     this._bmCache.delete(`${ip}:${port}`);
-    this._a2sCache = new Map(this._a2sCache);
-    this._bmCache = new Map(this._bmCache);
-    this._a2sPlayers = new Map(this._a2sPlayers);
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
@@ -330,8 +325,8 @@ class ServerDataService {
       error: null,
       fetchedAt: null,
     };
+    // SvelteMap — .set already triggers reactivity.
     this._a2sCache.set(key, { ...existing, ...updates });
-    this._a2sCache = new Map(this._a2sCache);
   }
 
   private _setBmState(key: string, updates: Partial<BmCacheEntry>): void {
@@ -342,7 +337,6 @@ class ServerDataService {
       fetchedAt: null,
     };
     this._bmCache.set(key, { ...existing, ...updates });
-    this._bmCache = new Map(this._bmCache);
   }
 
   private _evictOldEntries<T extends { fetchedAt: number | null }>(cache: Map<string, T>, maxEntries: number): void {

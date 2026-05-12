@@ -23,10 +23,14 @@ export async function saveProfileSettings(
   steamId: string | null,
   battlemetricsApiKey: string | null,
   userLocation: [number, number] | null,
-  pingConcurrency: number = 25,
-  pingTimeoutAuto: number = 2000,
-  pingTimeoutManual: number = 10000,
+  pingConcurrency?: number,
+  pingTimeoutAuto?: number,
+  pingTimeoutManual?: number,
 ) {
+  // The Rust command requires every ping field. Callers that don't touch
+  // ping settings (TitleBar settings modal) should preserve the existing
+  // values from the profile rather than overwriting them with defaults.
+  const p = s.profile;
   try {
     await invoke('save_profile_settings', {
       player,
@@ -39,9 +43,13 @@ export async function saveProfileSettings(
       steamId,
       battlemetricsApiKey,
       userLocation,
-      pingConcurrency,
-      pingTimeoutAuto,
-      pingTimeoutManual,
+      pingConcurrency: pingConcurrency ?? p?.ping_concurrency ?? 25,
+      pingTimeoutAuto: pingTimeoutAuto ?? p?.ping_timeout_auto ?? 2000,
+      pingTimeoutManual: pingTimeoutManual ?? p?.ping_timeout_manual ?? 10000,
+      pingMaxRetries: p?.ping_max_retries ?? 0,
+      pingScanFavorites: p?.ping_scan_favorites ?? true,
+      pingScanHistory: p?.ping_scan_history ?? true,
+      pingScanServers: p?.ping_scan_servers ?? true,
     });
     const tasks: Promise<unknown>[] = [loadProfile(), loadStats()];
     if (steamApiKey && steamId) {

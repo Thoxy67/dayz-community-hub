@@ -11,7 +11,10 @@
     isTimeout,
   } from '$lib/utils';
   import { createCopyState } from '$lib/utils/clipboard.svelte';
-  import ServerDetailPanel from './ServerDetailPanel.svelte';
+  // ServerDetailPanel is shared across Servers/History/Favorites tabs and only
+  // mounts when the user actually clicks a row — lazy-loading it keeps the
+  // initial ServersTab chunk slim.
+  const lazyServerDetailPanel = () => import('./ServerDetailPanel.svelte');
   import { invoke } from '@tauri-apps/api/core';
   import { app, STALE_SERVERS_MS } from '$lib/state.svelte';
   import { pingVisibleServers, togglePingPause } from '$lib/actions/servers';
@@ -405,11 +408,11 @@
         })
         .map((s) => pingService.serverKey(s));
       if (needsPing.length > 0) {
-        // Mark as pending before invoking
+        // Mark as pending before invoking. SvelteSet is reactive on add/delete,
+        // so no re-allocation needed.
         for (const key of needsPing) {
           app.pingPending.add(key);
         }
-        app.pingPending = new Set(app.pingPending);
         // Results stream back via Channel automatically
         pingVisibleServers(needsPing);
       }
@@ -520,8 +523,17 @@
     }
   }
 
+  // Coalesce scroll-driven state updates to one per frame so the virtual-scroll
+  // $derived chain (start/end/visibleServers) can't run more often than the
+  // browser can paint.  Without this, fast-scrolling the 18k-row list piles up
+  // hundreds of derivations per frame.
+  let _scrollRaf: number | null = null;
   function handleScroll() {
-    if (scrollContainer) scrollTop = scrollContainer.scrollTop;
+    if (!scrollContainer || _scrollRaf !== null) return;
+    _scrollRaf = requestAnimationFrame(() => {
+      _scrollRaf = null;
+      if (scrollContainer) scrollTop = scrollContainer.scrollTop;
+    });
   }
 
   $effect(() => {
@@ -940,11 +952,9 @@
                           {pingLabel(ping)}
                         </span>
                         {#if isFull && hasA2sFailure}
-                          <Icon
-                            icon="ic:round-warning"
-                            class="size-3.5 text-warning"
-                            title={m.servers_player_count_unverified()}
-                          />
+                          <span class="contents" title={m.servers_player_count_unverified()}>
+                            <Icon icon="ic:round-warning" class="size-3.5 text-warning" />
+                          </span>
                         {/if}
                       {/if}
                     </button>
@@ -1095,25 +1105,28 @@
     </div>
     <!-- end relative wrapper -->
 
-    <!-- Details panel -->
+    <!-- Details panel (lazy-loaded — see ServerDetailPanel.svelte) -->
     {#if showDetails && selected}
       <div class="w-80 flex-shrink-0 flex flex-col overflow-hidden">
-        <ServerDetailPanel
-          server={selected}
-          {a2s}
-          {a2sLoading}
-          {a2sError}
-          {installedMods}
-          pingMs={pingCache.get(pingService.serverKey(selected)) ?? null}
-          {bmApiKey}
-          {userLocation}
-          {scrollToMods}
-          onClose={() => {
-            showDetails = false;
-            scrollToMods = false;
-          }}
-          onQueryA2s={handleQueryA2s}
-        />
+        {#await lazyServerDetailPanel() then mod}
+          {@const ServerDetailPanel = mod.default}
+          <ServerDetailPanel
+            server={selected}
+            {a2s}
+            {a2sLoading}
+            {a2sError}
+            {installedMods}
+            pingMs={pingCache.get(pingService.serverKey(selected)) ?? null}
+            {bmApiKey}
+            {userLocation}
+            {scrollToMods}
+            onClose={() => {
+              showDetails = false;
+              scrollToMods = false;
+            }}
+            onQueryA2s={handleQueryA2s}
+          />
+        {/await}
       </div>
     {/if}
   </div>
