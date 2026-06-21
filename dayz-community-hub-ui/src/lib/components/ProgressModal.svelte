@@ -104,7 +104,7 @@
 
   let progressPct = $derived(modOp.total > 0 ? Math.round((modOp.completed.length / modOp.total) * 100) : 0);
 
-  let statusText = $derived(() => {
+  let statusText = $derived.by(() => {
     if (modOp.phase === 'shutting_down') return m.progress_status_shutting_down();
     if (modOp.phase === 'steam_guard_mobile') return m.progress_status_steam_guard();
     if (modOp.phase === 'password_required') return m.progress_status_password();
@@ -192,6 +192,10 @@
     dim: 'log-dim',
     normal: 'log-normal',
   };
+
+  // Classify the log once per change instead of re-running ~25 string checks
+  // per line on every 1s re-render.  Recomputes only when modOp.log changes.
+  let classifiedLog = $derived(modOp.log.map((line) => ({ text: line, cls: KIND_CLASS[classifyLine(line)] })));
 </script>
 
 {#if modOp.active}
@@ -310,7 +314,7 @@
               ? 'text-success'
               : 'text-base-content/70'}"
         >
-          {statusText()}
+          {statusText}
         </p>
 
         {#if modOp.phase === 'downloading' || modOp.phase === 'finished'}
@@ -478,10 +482,9 @@
               class="terminal-log max-h-64 overflow-y-auto px-3 py-2.5 font-mono text-xs space-y-px"
               style="position:relative; z-index:2;"
             >
-              {#each modOp.log as line}
-                {@const kind = classifyLine(line)}
-                <div class="leading-snug whitespace-pre-wrap break-all {KIND_CLASS[kind]}">
-                  {line}
+              {#each classifiedLog as entry}
+                <div class="leading-snug whitespace-pre-wrap break-all {entry.cls}">
+                  {entry.text}
                 </div>
               {/each}
               {#if modOp.phase !== 'finished'}

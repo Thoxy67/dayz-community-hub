@@ -4,7 +4,6 @@ use regex::Regex;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::OnceLock;
-use tokio::io::BufReader;
 use tokio::process::Command;
 use tokio::sync::mpsc;
 
@@ -399,123 +398,6 @@ impl SteamCmd {
         }
     }
 
-    /// Download a mod from the Steam Workshop (always validates).
-    /// This is the equivalent of the bash script's `workshopDownload()`.
-    pub async fn download_mod(&self, workshop_id: u64) -> Result<()> {
-        if !self.has_real_login() {
-            return Err(Error::SteamCmd(
-                "Workshop downloads require a non-anonymous Steam login. \
-                 Set your steam_login in the profile."
-                    .to_string(),
-            ));
-        }
-        self.workshop_download_item(workshop_id).await
-    }
-
-    /// Update a mod (same as download -- steamcmd handles delta updates).
-    pub async fn update_mod(&self, workshop_id: u64) -> Result<()> {
-        self.download_mod(workshop_id).await
-    }
-
-    /// Internal: run steamcmd workshop_download_item with validate.
-    /// Matches the bash script's command:
-    /// `steamcmd +@ShutdownOnFailedCommand 1 +login <user> +workshop_download_item 221100 <id> validate +quit`
-    ///
-    /// Shuts down the Steam client first (shared auth session — both cannot run
-    /// simultaneously without bumping the user offline).
-    ///
-    /// Streams stdout to detect "Cached credentials not found" -- if seen,
-    /// kills the process immediately (it would hang waiting for password)
-    /// and returns an error telling the user how to re-login.
-    async fn workshop_download_item(&self, workshop_id: u64) -> Result<()> {
-        // Steam and steamcmd share the same auth session. Shut Steam down
-        // first so steamcmd doesn't bump the user offline mid-session.
-        SteamClient::shutdown_for_steamcmd().await;
-
-        let mut cmd = Command::new(&self.steamcmd_path);
-        cmd.arg("+@ShutdownOnFailedCommand").arg("1");
-        // Direct steamcmd to write workshop content into the real Steam steamapps tree,
-        // not steamcmd's own directory. +force_install_dir must come before +login.
-        if let Some(steam_parent) = self.steam_root.parent() {
-            cmd.arg("+force_install_dir").arg(steam_parent);
-        }
-        self.push_login_args(&mut cmd);
-        cmd.arg("+workshop_download_item")
-            .arg(self.game_id.to_string())
-            .arg(workshop_id.to_string())
-            .arg("validate")
-            .arg("+quit")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        #[cfg(target_os = "windows")]
-        cmd.creation_flags(0x08000000);
-        let mut child = cmd.spawn()?;
-
-        // Read both stdout and stderr as raw chunks (not lines) so we can detect
-        // "Cached credentials not found" even if steamcmd doesn't terminate with '\n'.
-        let (chunk_tx, mut chunk_rx) = mpsc::unbounded_channel::<String>();
-        if let Some(stdout) = child.stdout.take() {
-            let ctx = chunk_tx.clone();
-            tokio::spawn(async move {
-                use tokio::io::AsyncReadExt;
-                let mut reader = BufReader::new(stdout);
-                let mut buf = [0u8; 4096];
-                loop {
-                    match reader.read(&mut buf).await {
-                        Ok(0) => break,
-                        Ok(n) => {
-                            let s = String::from_utf8_lossy(&buf[..n]).into_owned();
-                            let _ = ctx.send(s);
-                        }
-                        Err(_) => break,
-                    }
-                }
-            });
-        }
-        if let Some(stderr) = child.stderr.take() {
-            let ctx = chunk_tx.clone();
-            tokio::spawn(async move {
-                use tokio::io::AsyncReadExt;
-                let mut reader = BufReader::new(stderr);
-                let mut buf = [0u8; 4096];
-                loop {
-                    match reader.read(&mut buf).await {
-                        Ok(0) => break,
-                        Ok(n) => {
-                            let s = String::from_utf8_lossy(&buf[..n]).into_owned();
-                            let _ = ctx.send(s);
-                        }
-                        Err(_) => break,
-                    }
-                }
-            });
-        }
-        drop(chunk_tx);
-
-        let mut all_output = String::new();
-        while let Some(chunk) = chunk_rx.recv().await {
-            all_output.push_str(&chunk);
-            let clean = strip_ansi(&all_output);
-            if clean.contains("Cached credentials not found") {
-                let _ = child.kill().await;
-                return Err(Error::CredentialsExpired(format!(
-                    "steamcmd +login {} +quit",
-                    self.login
-                )));
-            }
-        }
-
-        let status = child.wait().await?;
-        if status.success() {
-            Ok(())
-        } else {
-            Err(Error::SteamCmd(format!(
-                "steamcmd failed for mod {}. Try re-logging:\n  steamcmd +login {} +quit",
-                workshop_id, self.login
-            )))
-        }
-    }
-
     /// Path where workshop mods are stored: `steamapps/workshop/content/221100/`
     pub fn workshop_path(&self) -> PathBuf {
         self.steam_root
@@ -552,16 +434,6 @@ impl SteamCmd {
                 stderr
             )))
         }
-    }
-
-    /// Update multiple mods. Returns a Vec of (mod_id, Result) pairs.
-    pub async fn update_all_mods(&self, mod_ids: &[u64]) -> Vec<(u64, Result<()>)> {
-        let mut results = Vec::new();
-        for &mod_id in mod_ids {
-            let result = self.update_mod(mod_id).await;
-            results.push((mod_id, result));
-        }
-        results
     }
 
     /// Download/update multiple mods with per-mod progress.
@@ -1059,11 +931,13 @@ impl SteamClient {
         let mut system = System::new();
         system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
         system.processes().values().any(|process| {
-            let name = process.name().to_string_lossy().to_lowercase();
+            let name = process.name().to_string_lossy();
             // "steam" — native Linux / macOS / Flatpak entry-point.
             // "steam.exe" — Windows and Wine/Proton on Linux.
             // Exclude "steamwebhelper" — it can outlive a crashed client.
-            name == "steam" || name == "steam.exe"
+            // Case-insensitive compare avoids allocating a lowercased String
+            // for every process in the table on every poll.
+            name.eq_ignore_ascii_case("steam") || name.eq_ignore_ascii_case("steam.exe")
         })
     }
 
@@ -1125,12 +999,12 @@ impl SteamClient {
         system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
         for process in system.processes().values() {
-            let name = process.name().to_string_lossy().to_lowercase();
-            if name == "steam"
-                || name == "steam.exe"
-                || name == "steamwebhelper"
-                || name.starts_with("steam")
-            {
+            let name = process.name().to_string_lossy();
+            // Matches "steam", "steam.exe", "steamwebhelper", … — any process
+            // whose name starts with "steam" (case-insensitive). Avoids
+            // allocating a lowercased String per process.
+            let bytes = name.as_bytes();
+            if bytes.len() >= 5 && bytes[..5].eq_ignore_ascii_case(b"steam") {
                 process.kill();
             }
         }

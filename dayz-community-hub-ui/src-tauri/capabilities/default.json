@@ -12,17 +12,6 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-close",
     "opener:default",
-    {
-      "identifier": "http:default",
-      "allow": [
-        {
-          "url": "https://**"
-        },
-        {
-          "url": "http://**"
-        }
-      ]
-    },
     "dialog:default",
     "clipboard-manager:allow-write-text",
     "deep-link:default"

@@ -15,11 +15,10 @@ authors = ["thoxy"]
 [workspace.dependencies]
 # Async runtime
 tokio = { version = "1.52", features = ["rt-multi-thread", "macros", "time", "sync", "io-util", "process", "fs", "net"] }
-tokio-stream = { version = "0.1.18", features = ["sync", "time"] }
 futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
 
 # HTTP
-reqwest = { version = "0.13.3", default-features = false, features = ["native-tls", "json", "query"] }
+reqwest = { version = "0.13", default-features = false, features = ["native-tls", "json", "query"] }
 
 # Serialisation
 serde = { version = "1", features = ["derive"] }
@@ -31,16 +30,16 @@ thiserror = "2"
 # Utilities
 base64 = "0.22.1"
 regex = "1.12"
-which = "8.0.2"
-sysinfo = "0.39.1"
-chrono = { version = "0.4.44" }
+which = "8"
+sysinfo = "0.39"
+chrono = { version = "0.4" }
 clap = { version = "4.6", features = ["derive"] }
 rustc-hash = "2.1"
 
 # Compression / archive
 zip = { version = "8.6", default-features = false, features = ["deflate", "deflate64"] }
 flate2 = "1"
-tar = "0.4.45"
+tar = "0.4"
 
 # DayZ A2S queries
 async-a2s = { git = "https://git.thoxy.xyz/thoxy/async-a2s" }
@@ -52,6 +51,12 @@ dayz-community-hub-core = { path = "dayz-community-hub-core" }
 
 [profile.dev]
 incremental = true
+
+# Optimize dependencies (not our own crates) even in dev. Tauri/reqwest/zstd
+# are slow when built unoptimized; this makes `tauri dev` run far faster while
+# keeping our own crates at opt-level 0 for a fast edit-compile loop.
+[profile.dev.package."*"]
+opt-level = 2
 
 [profile.release]
 codegen-units = 1

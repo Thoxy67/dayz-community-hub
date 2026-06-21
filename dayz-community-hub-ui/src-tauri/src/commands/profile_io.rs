@@ -59,8 +59,14 @@ pub(crate) async fn export_profile(path: String, include_mods: bool) -> Result<(
     let bundle = ProfileBundle { version: 2, files };
     let json_bytes = serde_json::to_vec(&bundle).cmd_err()?;
 
-    let compressed = zstd::encode_all(std::io::Cursor::new(&json_bytes), 9)
-        .map_err(|e| format!("zstd compression failed: {e}"))?;
+    // zstd is CPU-bound — run off the async runtime. Level 3 is plenty for a
+    // small settings JSON (the size delta vs. level 9 is negligible) and far
+    // faster.
+    let compressed =
+        tokio::task::spawn_blocking(move || zstd::encode_all(std::io::Cursor::new(&json_bytes), 3))
+            .await
+            .map_err(|e| format!("compression task failed: {e}"))?
+            .map_err(|e| format!("zstd compression failed: {e}"))?;
 
     tokio::fs::write(&path, &compressed)
         .await
@@ -79,8 +85,11 @@ pub(crate) async fn import_profile(
         .await
         .map_err(|e| format!("Cannot read import file: {e}"))?;
 
-    let json_bytes = zstd::decode_all(std::io::Cursor::new(&compressed))
-        .map_err(|e| format!("zstd decompression failed: {e}"))?;
+    let json_bytes =
+        tokio::task::spawn_blocking(move || zstd::decode_all(std::io::Cursor::new(&compressed)))
+            .await
+            .map_err(|e| format!("decompression task failed: {e}"))?
+            .map_err(|e| format!("zstd decompression failed: {e}"))?;
 
     let raw: serde_json::Value =
         serde_json::from_slice(&json_bytes).map_err(|e| format!("Bundle parse error: {e}"))?;

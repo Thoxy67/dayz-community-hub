@@ -6,7 +6,6 @@
     pingDot,
     playerFill,
     playerBarColor,
-    formatDuration,
     sortIcon as _sortIcon,
     timeIcon,
     isTimeout,
@@ -14,12 +13,12 @@
   import { formatRelativeTime } from '$lib/utils/i18n';
   import { createCopyState } from '$lib/utils/clipboard.svelte';
   import { createServerLookup, findServer as findServerByKey } from '$lib/utils/server-lookup';
+  import { createVirtualList } from '$lib/utils/virtual-list.svelte';
   // Lazy: only mounts when a row is clicked.
   const lazyServerDetailPanel = () => import('./ServerDetailPanel.svelte');
   import { invoke } from '@tauri-apps/api/core';
   import { app } from '$lib/state.svelte';
   import { serverData, pingService } from '$lib/services';
-  import { openUrl } from '@tauri-apps/plugin-opener';
   import Icon from '@iconify/svelte';
   import { onMount } from 'svelte';
   import * as m from '$lib/paraglide/messages.js';
@@ -67,32 +66,13 @@
     onDirectConnect,
   }: Props = $props();
 
-  // ── Virtual scrolling ────────────────────────────────────────────────────
+  // ── Virtual scrolling (shared helper — see virtual-list.svelte.ts) ────────
   const ROW_HEIGHT = 48;
-  const OVERSCAN = 5; // Reduced for 4K screens with fewer visible rows
-  let scrollContainer: HTMLDivElement | undefined = $state();
-  let scrollTop = $state(0);
-  let containerHeight = $state(600);
-
-  // rAF-throttle scroll-driven state writes (see ServersTab for rationale).
-  let _scrollRaf: number | null = null;
-  function handleScroll() {
-    if (!scrollContainer || _scrollRaf !== null) return;
-    _scrollRaf = requestAnimationFrame(() => {
-      _scrollRaf = null;
-      if (scrollContainer) scrollTop = scrollContainer.scrollTop;
-    });
-  }
-
-  $effect(() => {
-    if (!scrollContainer) return;
-    const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) containerHeight = entry.contentRect.height;
-    });
-    ro.observe(scrollContainer);
-    containerHeight = scrollContainer.clientHeight;
-    return () => ro.disconnect();
-  });
+  // OVERSCAN reduced for 4K screens with fewer visible rows.
+  const vl = createVirtualList({ rowHeight: ROW_HEIGHT, overscan: 5, getCount: () => sorted.length });
+  $effect(vl.observe);
+  const handleScroll = vl.handleScroll;
+  const scrollToIndex = (idx: number) => vl.scrollToIndex(idx);
 
   // Pre-built lookup map rebuilt only when `servers` changes (O(n) once).
   // Covers both query_port and game_port keys so per-row lookups are O(1).
@@ -158,8 +138,11 @@
     return _sortIcon(col, sortCol, sortAsc);
   }
 
-  let sorted = $derived(
+  // Non-ping sorts never read pingCache, so they stay cheap and don't re-run on
+  // every streamed ping result.
+  let sortedNoPing = $derived(
     (() => {
+      if (sortCol === 'ping') return history;
       const arr = history.slice();
       const dir = sortAsc ? 1 : -1;
       arr.sort((a, b) => {
@@ -173,11 +156,6 @@
             const pb = sb ? sb.players : -1;
             return dir * (pa - pb);
           }
-          case 'ping': {
-            const pa = pingCache.get(pingKey(a)) ?? Infinity;
-            const pb = pingCache.get(pingKey(b)) ?? Infinity;
-            return dir * (pa - pb);
-          }
           case 'last':
             return dir * (a.ts - b.ts);
           default:
@@ -188,12 +166,53 @@
     })(),
   );
 
+  // Ping-sorted data kept in a separate $state so reading pingCache in the
+  // (debounced) effect below doesn't push every ping wave through the $derived
+  // chain.  Mirrors ServersTab's pingSortedData pattern.
+  let pingSortedData = $state<HistoryDto[]>([]);
+  let _pingSortTimer: ReturnType<typeof setTimeout> | undefined;
+  let _lastPingSortKey = '';
+
+  function sortByPing(): HistoryDto[] {
+    const arr = history.slice();
+    const dir = sortAsc ? 1 : -1;
+    arr.sort((a, b) => {
+      const pa = pingCache.get(pingKey(a)) ?? Infinity;
+      const pb = pingCache.get(pingKey(b)) ?? Infinity;
+      return dir * (pa - pb);
+    });
+    return arr;
+  }
+
+  // Debounced ping sort during ping waves.
+  $effect(() => {
+    if (sortCol !== 'ping') {
+      clearTimeout(_pingSortTimer);
+      return;
+    }
+    clearTimeout(_pingSortTimer);
+    _pingSortTimer = setTimeout(() => {
+      pingSortedData = sortByPing();
+    }, 300);
+    return () => clearTimeout(_pingSortTimer);
+  });
+
+  // Immediate sort on user action (column/direction change).
+  $effect(() => {
+    const sortKey = `${sortCol}:${sortAsc}`;
+    if (sortKey === _lastPingSortKey) return;
+    _lastPingSortKey = sortKey;
+    if (sortCol === 'ping') pingSortedData = sortByPing();
+  });
+
+  let sorted = $derived(sortCol === 'ping' ? pingSortedData : sortedNoPing);
+
   // ── Virtual scrolling derived state ─────────────────────────────────────
-  let totalHeight = $derived(sorted.length * ROW_HEIGHT);
-  let startIndex = $derived(Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN));
-  let endIndex = $derived(Math.min(sorted.length, Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + OVERSCAN));
+  let totalHeight = $derived(vl.totalHeight);
+  let startIndex = $derived(vl.startIndex);
+  let endIndex = $derived(vl.endIndex);
   let visibleHistory = $derived(sorted.slice(startIndex, endIndex));
-  let offsetY = $derived(startIndex * ROW_HEIGHT);
+  let offsetY = $derived(vl.offsetY);
 
   /** Canonical ping cache key: always ip:query_port, matching what start_pinging stores. */
   function pingKey(entry: HistoryDto): string {
@@ -207,31 +226,38 @@
     await serverData.refreshPlayers(entry.ip, queryPort);
   }
 
-  // Auto-ping history entries on mount/change
-  // Stops re-pinging after 3 consecutive timeouts
+  // Auto-ping only the VISIBLE window (debounced), not the entire list — large
+  // histories otherwise fire a ping for every row up-front and on every change.
+  // Stops re-pinging after N consecutive timeouts.
+  let _autoPingTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
-    const needsPing = history
-      .filter((h) => {
-        const key = pingKey(h);
-        // Skip if pending
-        if (pingPending.has(key)) return false;
-        const cached = pingCache.get(key);
-        // Skip if has valid (non-timeout) result
-        if (cached !== undefined && !isTimeout(cached)) return false;
-        // Skip if timed out too many times (configurable, 0 = disabled)
-        const maxRetries = app.profile?.ping_max_retries ?? 3;
-        const timeoutCount = pingTimeouts.get(key) ?? 0;
-        if (maxRetries > 0 && timeoutCount >= maxRetries) return false;
-        return true;
-      })
-      .map((h) => pingKey(h));
-    if (needsPing.length > 0) {
-      // SvelteSet — reactive on add(), no re-allocation required.
-      for (const key of needsPing) {
-        app.pingPending.add(key);
+    const toCheck = visibleHistory;
+    clearTimeout(_autoPingTimer);
+    _autoPingTimer = setTimeout(() => {
+      const needsPing = toCheck
+        .filter((h) => {
+          const key = pingKey(h);
+          // Skip if pending
+          if (pingPending.has(key)) return false;
+          const cached = pingCache.get(key);
+          // Skip if has valid (non-timeout) result
+          if (cached !== undefined && !isTimeout(cached)) return false;
+          // Skip if timed out too many times (configurable, 0 = disabled)
+          const maxRetries = app.profile?.ping_max_retries ?? 3;
+          const timeoutCount = pingTimeouts.get(key) ?? 0;
+          if (maxRetries > 0 && timeoutCount >= maxRetries) return false;
+          return true;
+        })
+        .map((h) => pingKey(h));
+      if (needsPing.length > 0) {
+        // SvelteSet — reactive on add(), no re-allocation required.
+        for (const key of needsPing) {
+          app.pingPending.add(key);
+        }
+        invoke('ping_servers', { targets: needsPing }).catch(() => {});
       }
-      invoke('ping_servers', { targets: needsPing }).catch(() => {});
-    }
+    }, 200);
+    return () => clearTimeout(_autoPingTimer);
   });
 
   function doPing(entry: HistoryDto) {
@@ -293,18 +319,6 @@
   });
 
   let selectedIdx = $state(-1);
-
-  function scrollToIndex(idx: number) {
-    if (!scrollContainer) return;
-    const rowTop = idx * ROW_HEIGHT;
-    const rowBot = rowTop + ROW_HEIGHT;
-    const theadHeight = 32;
-    if (rowTop < scrollContainer.scrollTop + theadHeight) {
-      scrollContainer.scrollTop = rowTop - theadHeight;
-    } else if (rowBot > scrollContainer.scrollTop + containerHeight) {
-      scrollContainer.scrollTop = rowBot - containerHeight;
-    }
-  }
 
   function handleKeydown(e: KeyboardEvent) {
     const tag = (e.target as HTMLElement)?.tagName;
@@ -382,7 +396,7 @@
         </button>
       </div>
     {:else}
-      <div class="overflow-auto flex-1" bind:this={scrollContainer} onscroll={handleScroll}>
+      <div class="overflow-auto flex-1" bind:this={vl.container} onscroll={handleScroll}>
         <table class="w-full text-xs" style="table-layout: fixed; border-collapse: collapse;">
           <thead class="sticky top-0 z-10">
             <tr

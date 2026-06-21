@@ -5,7 +5,7 @@ use tokio::sync::RwLock;
 
 use crate::convert::{server_to_dto, server_to_slim_dto};
 use crate::dto::*;
-use crate::helpers::{dedup_servers, find_server_in};
+use crate::helpers::dedup_servers;
 use crate::state::{AppState, PingCache, SharedState};
 use crate::utils::error::ResultExt;
 
@@ -81,8 +81,9 @@ pub(crate) async fn get_server_details(
     state: State<'_, SharedState>,
 ) -> Result<ServerDto, String> {
     let state = state.read().await;
-    let server =
-        find_server_in(&state.servers, &ip, port).ok_or_else(|| "Server not found".to_string())?;
+    let server = state
+        .find_by_query_port(&ip, port)
+        .ok_or_else(|| "Server not found".to_string())?;
     Ok(server_to_dto(server))
 }
 

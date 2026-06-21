@@ -1,4 +1,5 @@
 use dayz_community_hub_core::{a2s_query, api};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::State;
 
@@ -16,23 +17,20 @@ pub(crate) async fn query_a2s(
     query_port: i64,
     game_port: Option<i64>,
     state: State<'_, SharedState>,
-) -> Result<A2sDetailsDto, String> {
+) -> Result<Arc<A2sDetailsDto>, String> {
     let cache_key = format!("{}:{}", ip, query_port);
 
-    // Check cache first (read lock only)
-    {
-        let state_read = state.read().await;
-        if let Some((cached, fetched_at)) = state_read.a2s_cache.peek(&cache_key)
-            && fetched_at.elapsed() < Duration::from_secs(A2S_CACHE_TTL_SECS) {
-                return Ok(cached.clone());
-            }
-    }
-
-    // Get mods from server list if available (read lock).
-    // Uses the (ip, query_port) → idx index — O(1) instead of an 18k-element
-    // linear scan, which used to dominate the cold-start verify wave.
+    // Single read-lock acquisition: peek the cache and (on a miss) resolve the
+    // server's mod list in the same critical section. The (ip, query_port) → idx
+    // index makes the lookup O(1) instead of an 18k-element linear scan, which
+    // used to dominate the cold-start verify wave.
     let mods_dto = {
         let state_read = state.read().await;
+        if let Some((cached, fetched_at)) = state_read.a2s_cache.peek(&cache_key)
+            && fetched_at.elapsed() < Duration::from_secs(A2S_CACHE_TTL_SECS)
+        {
+            return Ok(cached.clone());
+        }
         state_read
             .find_by_query_port(&ip, query_port)
             .or_else(|| game_port.and_then(|gp| state_read.find_flexible(&ip, gp)))
@@ -101,7 +99,7 @@ pub(crate) async fn query_a2s(
     // Resolve game port: prefer provided, then A2S extended info
     let resolved_game_port = game_port.or_else(|| info.extended_server_info.port.map(|p| p as i64));
 
-    let result = A2sDetailsDto {
+    let result = Arc::new(A2sDetailsDto {
         server_name: info.name,
         game: info.game,
         players: info.players,
@@ -114,14 +112,15 @@ pub(crate) async fn query_a2s(
         rules: rules_list,
         query_port,
         game_port: resolved_game_port,
-    };
+    });
 
-    // Cache the result (write lock)
+    // Cache the result (write lock). Storing the Arc is a refcount bump, not a
+    // deep clone of the players/rules payload.
     {
         let mut state_write = state.write().await;
         state_write
             .a2s_cache
-            .put(cache_key, (result.clone(), Instant::now()));
+            .put(cache_key, (Arc::clone(&result), Instant::now()));
     }
 
     Ok(result)

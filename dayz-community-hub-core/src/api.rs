@@ -146,14 +146,21 @@ pub async fn save_server_list_cache(cache_path: &std::path::Path, list: &ServerL
 }
 
 /// Fetch the full server list from the DayZSA Launcher API.
+///
+/// The response is multi-MB JSON. We read the raw bytes off the socket and then
+/// deserialize on the blocking pool — `serde_json` on a payload this size is
+/// CPU-bound and would otherwise stall the async runtime during a refresh.
 pub async fn fetch_servers(client: &reqwest::Client) -> Result<ServerList> {
-    let resp = client
+    let bytes = client
         .get("https://dayzsalauncher.com/api/v1/launcher/servers/dayz")
         .send()
         .await?
-        .json::<ServerList>()
+        .bytes()
         .await?;
-    Ok(resp)
+    let list = tokio::task::spawn_blocking(move || serde_json::from_slice::<ServerList>(&bytes))
+        .await
+        .map_err(|e| crate::errors::Error::Other(format!("server list parse task failed: {e}")))??;
+    Ok(list)
 }
 
 impl ServerList {

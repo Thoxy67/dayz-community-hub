@@ -19,6 +19,7 @@
   import { app, STALE_SERVERS_MS } from '$lib/state.svelte';
   import { pingVisibleServers, togglePingPause } from '$lib/actions/servers';
   import { serverData, pingService } from '$lib/services';
+  import { createVirtualList } from '$lib/utils/virtual-list.svelte';
   import Icon from '@iconify/svelte';
   import { onMount } from 'svelte';
   import * as m from '$lib/paraglide/messages.js';
@@ -238,8 +239,7 @@
       filter.sortAsc = col === 'name' || col === 'map';
     }
     selectedIndex = 0;
-    if (scrollContainer) scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
-    scrollTop = 0;
+    vl.scrollToTop();
   }
 
   function sortIcon(col: SortCol) {
@@ -251,12 +251,11 @@
     return filter.sortAsc ? 'ascending' : 'descending';
   }
 
-  // ── Virtual scrolling state ──────────────────────────────────────────────
+  // ── Virtual scrolling state (shared helper — see virtual-list.svelte.ts) ──
   const ROW_HEIGHT = 48;
-  const OVERSCAN = 22;
-  let scrollContainer: HTMLDivElement | undefined = $state();
-  let scrollTop = $state(0);
-  let containerHeight = $state(600);
+  const vl = createVirtualList({ rowHeight: ROW_HEIGHT, overscan: 22, getCount: () => sorted.length });
+  const handleScroll = vl.handleScroll;
+  const scrollToIndex = (idx: number) => vl.scrollToIndex(idx);
 
   function doPing(server: ServerDto) {
     const key = pingService.serverKey(server);
@@ -380,11 +379,11 @@
   // Final sorted list: ping column uses pingSortedData, others use sortedNoPing
   let sorted = $derived(filter.sortCol === 'ping' ? pingSortedData : sortedNoPing);
 
-  let totalHeight = $derived(sorted.length * ROW_HEIGHT);
-  let startIndex = $derived(Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN));
-  let endIndex = $derived(Math.min(sorted.length, Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + OVERSCAN));
+  let totalHeight = $derived(vl.totalHeight);
+  let startIndex = $derived(vl.startIndex);
+  let endIndex = $derived(vl.endIndex);
   let visibleServers = $derived(sorted.slice(startIndex, endIndex));
-  let offsetY = $derived(startIndex * ROW_HEIGHT);
+  let offsetY = $derived(vl.offsetY);
   let pingProgress = $derived(app.pingSession ? app.pingSession.completed / app.pingSession.total : 0);
 
   // Ping visible servers on-demand (debounced)
@@ -511,31 +510,6 @@
     }
   }
 
-  function scrollToIndex(idx: number) {
-    if (!scrollContainer) return;
-    const rowTop = idx * ROW_HEIGHT;
-    const rowBot = rowTop + ROW_HEIGHT;
-    const theadHeight = 32;
-    if (rowTop < scrollContainer.scrollTop + theadHeight) {
-      scrollContainer.scrollTop = rowTop - theadHeight;
-    } else if (rowBot > scrollContainer.scrollTop + containerHeight) {
-      scrollContainer.scrollTop = rowBot - containerHeight;
-    }
-  }
-
-  // Coalesce scroll-driven state updates to one per frame so the virtual-scroll
-  // $derived chain (start/end/visibleServers) can't run more often than the
-  // browser can paint.  Without this, fast-scrolling the 18k-row list piles up
-  // hundreds of derivations per frame.
-  let _scrollRaf: number | null = null;
-  function handleScroll() {
-    if (!scrollContainer || _scrollRaf !== null) return;
-    _scrollRaf = requestAnimationFrame(() => {
-      _scrollRaf = null;
-      if (scrollContainer) scrollTop = scrollContainer.scrollTop;
-    });
-  }
-
   $effect(() => {
     // Re-run whenever the debounced search text or any flag filter changes
     deferredQuery;
@@ -548,19 +522,11 @@
     excludedIps;
     selectedIndex = 0;
     a2s = null;
-    if (scrollContainer) scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
-    scrollTop = 0;
+    vl.scrollToTop();
   });
 
-  $effect(() => {
-    if (!scrollContainer) return;
-    const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) containerHeight = entry.contentRect.height;
-    });
-    ro.observe(scrollContainer);
-    containerHeight = scrollContainer.clientHeight;
-    return () => ro.disconnect();
-  });
+  // Wire the shared virtual-list ResizeObserver + rAF cleanup.
+  $effect(vl.observe);
 
   onMount(() => {
     window.addEventListener('keydown', handleKeydown);
@@ -781,7 +747,7 @@
           </button>
         </div>
       {/if}
-      <div class="flex-1 overflow-auto" bind:this={scrollContainer} onscroll={handleScroll}>
+      <div class="flex-1 overflow-auto" bind:this={vl.container} onscroll={handleScroll}>
         {#if loading && servers.length === 0}
           <div class="flex items-center justify-center h-full gap-2 text-base-content/50">
             <span class="loading loading-spinner loading-md"></span>
@@ -1090,14 +1056,11 @@
       </div>
 
       <!-- Jump-to-top button — appears when scrolled > 300px -->
-      {#if scrollTop > 300}
+      {#if vl.scrollTop > 300}
         <button
           class="absolute bottom-4 left-4 z-20 btn btn-sm btn-circle btn-neutral shadow-lg opacity-80 hover:opacity-100 transition-opacity"
           title={m.servers_jump_top()}
-          onclick={() => {
-            if (scrollContainer) scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
-            scrollTop = 0;
-          }}
+          onclick={() => vl.scrollToTop()}
         >
           <Icon icon="ph:arrow-up" class="size-4" />
         </button>

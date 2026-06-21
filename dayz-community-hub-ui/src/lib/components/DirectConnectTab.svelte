@@ -5,6 +5,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { save as saveDialog } from '@tauri-apps/plugin-dialog';
+  import { createServerLookup, findServer as findServerByKey } from '$lib/utils/server-lookup';
   import Icon from '@iconify/svelte';
   import * as m from '$lib/paraglide/messages.js';
 
@@ -250,12 +251,16 @@
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
+  // Pre-built lookup map rebuilt only when `servers` changes (O(n) once),
+  // so resolving the entered ip:port is O(1) per keystroke instead of O(n).
+  let serverByKey = $derived(createServerLookup(servers));
+
   /** Server found in the cached list by IP + port. */
   let foundServer = $derived(
     (() => {
       const p = parseInt(port, 10);
       if (!address || isNaN(p)) return null;
-      return servers.find((s) => s.ip === address.trim() && (s.query_port === p || s.game_port === p)) ?? null;
+      return findServerByKey(serverByKey, address.trim(), p);
     })(),
   );
 
@@ -316,7 +321,7 @@
     return invoke<A2sDetailsDto>('query_a2s', { ip, port: qport });
   }
 
-  async function queryInfo(overrideQueryPort?: number) {
+  async function queryInfo(overrideQueryPort: number | undefined = undefined) {
     parseAddress();
     const p = parseInt(port, 10);
     if (!address || isNaN(p)) return;

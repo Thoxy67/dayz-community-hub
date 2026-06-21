@@ -247,7 +247,14 @@
     });
     ro.observe(scrollContainer);
     containerHeight = scrollContainer.clientHeight;
-    return () => ro.disconnect();
+    return () => {
+      ro.disconnect();
+      // Cancel any pending scroll rAF so it can't fire after unmount.
+      if (_scrollRaf !== null) {
+        cancelAnimationFrame(_scrollRaf);
+        _scrollRaf = null;
+      }
+    };
   });
 
   // ── Sorting ──────────────────────────────────────────────────────────────
@@ -911,8 +918,7 @@
               placeholder={'1559212036\n2116157322\nhttps://steamcommunity.com/sharedfiles/filedetails/?id=1564026768'}
               bind:value={installInput}
               onkeydown={handleInstallKeydown}
-              autofocus
-            ></textarea>
+              autofocus></textarea>
             {#if installError}
               <p class="label py-0 pt-1">
                 <span class="label-text-alt text-error text-xs">{installError}</span>

@@ -16,33 +16,29 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@iconify/svelte": "^5.2.1",
-    "@tailwindcss/vite": "^4.3.0",
-    "@tauri-apps/api": "^2.11.0",
+    "@iconify/svelte": "^5.2.2",
+    "@tailwindcss/vite": "^4.3.1",
+    "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
-    "@tauri-apps/plugin-deep-link": "~2.4.9",
     "@tauri-apps/plugin-dialog": "^2.7.1",
-    "@tauri-apps/plugin-http": "^2.5.9",
     "@tauri-apps/plugin-opener": "^2.5.4",
-    "@tauri-apps/plugin-process": "^2.3.1",
-    "@tauri-apps/plugin-updater": "^2.10.1",
     "@types/matter-js": "^0.20.2",
-    "daisyui": "^5.5.19",
+    "daisyui": "^5.5.23",
     "matter-js": "^0.20.0",
-    "tailwindcss": "^4.3.0"
+    "tailwindcss": "^4.3.1"
   },
   "devDependencies": {
-    "@inlang/cli": "^3.1.11",
-    "@inlang/paraglide-js": "^2.18.0",
+    "@inlang/cli": "^3.1.14",
+    "@inlang/paraglide-js": "^2.20.0",
     "@sveltejs/adapter-static": "^3.0.10",
-    "@sveltejs/kit": "^2.59.1",
+    "@sveltejs/kit": "^2.66.0",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
-    "@tauri-apps/cli": "^2.11.1",
-    "prettier": "^3.8.3",
-    "prettier-plugin-svelte": "^3.5.1",
-    "svelte": "^5.55.5",
-    "svelte-check": "^4.4.8",
+    "@tauri-apps/cli": "^2.11.3",
+    "prettier": "^3.8.4",
+    "prettier-plugin-svelte": "^4.1.1",
+    "svelte": "^5.56.3",
+    "svelte-check": "^4.6.0",
     "typescript": "^6.0.3",
-    "vite": "^8.0.11"
+    "vite": "^8.0.16"
   }
 }

@@ -277,105 +277,6 @@ impl DayzCtl {
         Ok(mods::get_missing_mods(&server.mod_ids(), &installed))
     }
 
-    /// Install missing mods for a server using SteamCMD.
-    /// This is the main workflow matching the bash script's `getNotInstalledMods()`.
-    ///
-    /// 1. Determine which mods are missing
-    /// 2. Download each via steamcmd
-    /// 3. Mark each as managed (`.dayz-community-hub` marker)
-    /// 4. Create symlinks in the DayZ directory
-    /// 5. Verify all mods are present
-    pub async fn install_missing_mods(&self, server: &Server) -> Result<InstallResult> {
-        let steamcmd = self.steamcmd_ref()?;
-
-        if !steamcmd.has_real_login() {
-            return Err(Error::SteamCmd(
-                "Workshop downloads require a non-anonymous Steam login".to_string(),
-            ));
-        }
-
-        let installed = self.get_installed_mods()?;
-        let server_mod_ids = server.mod_ids();
-        let missing = mods::get_missing_mods(&server_mod_ids, &installed);
-
-        if missing.is_empty() {
-            // Still create symlinks for all server mods
-            let workshop_path = self.workshop_path()?;
-            let dayz_path = self.dayz_path()?;
-            mods::create_mod_symlinks(&workshop_path, &dayz_path, &server_mod_ids)?;
-
-            return Ok(InstallResult {
-                installed: Vec::new(),
-                failed: Vec::new(),
-                total_server_mods: server_mod_ids.len(),
-            });
-        }
-
-        let mut installed_ids = Vec::new();
-        let mut failed = Vec::new();
-
-        for &mod_id in &missing {
-            match steamcmd.download_mod(mod_id).await {
-                Ok(_) => {
-                    // Mark as managed
-                    let workshop_path = self.workshop_path()?;
-                    let _ = mods::mark_mod_as_managed(&workshop_path, mod_id);
-                    installed_ids.push(mod_id);
-                }
-                Err(e) => {
-                    failed.push((mod_id, format!("{}", e)));
-                }
-            }
-        }
-
-        // Create symlinks for ALL server mods (not just newly installed ones)
-        let workshop_path = self.workshop_path()?;
-        let dayz_path = self.dayz_path()?;
-        mods::create_mod_symlinks(&workshop_path, &dayz_path, &server_mod_ids)?;
-
-        // Verify all mods exist
-        let still_missing = mods::verify_mods(&workshop_path, &server_mod_ids);
-        if !still_missing.is_empty() && failed.is_empty() {
-            for id in still_missing {
-                failed.push((id, "Mod directory not found after download".to_string()));
-            }
-        }
-
-        Ok(InstallResult {
-            installed: installed_ids,
-            failed,
-            total_server_mods: server_mod_ids.len(),
-        })
-    }
-
-    /// Download and install a specific mod by ID.
-    pub async fn download_mod(&self, workshop_id: u64) -> Result<()> {
-        let steamcmd = self.steamcmd_ref()?;
-        steamcmd.download_mod(workshop_id).await?;
-        let workshop_path = self.workshop_path()?;
-        mods::mark_mod_as_managed(&workshop_path, workshop_id)?;
-        Ok(())
-    }
-
-    /// Update a single mod.
-    pub async fn update_mod(&self, workshop_id: u64) -> Result<()> {
-        self.steamcmd_ref()?.update_mod(workshop_id).await
-    }
-
-    /// Update all installed mods. Returns results per mod.
-    pub async fn update_all_mods(&self) -> Result<Vec<(u64, Result<()>)>> {
-        let steamcmd = self.steamcmd_ref()?;
-        let installed = self.get_installed_mods()?;
-        let ids: Vec<u64> = installed.iter().map(|m| m.id).collect();
-        Ok(steamcmd.update_all_mods(&ids).await)
-    }
-
-    /// Update all mods required by a specific server.
-    pub async fn update_server_mods(&self, server: &Server) -> Result<Vec<(u64, Result<()>)>> {
-        let steamcmd = self.steamcmd_ref()?;
-        Ok(steamcmd.update_all_mods(&server.mod_ids()).await)
-    }
-
     pub fn delete_mod(&self, mod_id: u64, only_managed: bool) -> Result<()> {
         let workshop_path = self.workshop_path()?;
         mods::delete_mod(&workshop_path, mod_id, only_managed)
@@ -461,7 +362,11 @@ impl DayzCtl {
         extra_args: &[String],
     ) -> Result<()> {
         // Start Steam if needed, and find out whether it was already up.
-        let already_running = SteamClient::start()?;
+        // `start` spawns a process and scans the process table (sysinfo) — both
+        // blocking, so run them off the async runtime thread.
+        let already_running = tokio::task::spawn_blocking(SteamClient::start)
+            .await
+            .map_err(|e| Error::Other(format!("steam start task failed: {e}")))??;
 
         // If Steam was just cold-started, wait for its IPC socket to become
         // ready before sending -applaunch.  Sending too early causes the
@@ -472,7 +377,12 @@ impl DayzCtl {
             // then add a small extra buffer for IPC initialisation.
             for _ in 0..30u8 {
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                if SteamClient::is_running() {
+                // `is_running` rebuilds the full process table — keep it off the
+                // runtime thread on every poll iteration.
+                let running = tokio::task::spawn_blocking(SteamClient::is_running)
+                    .await
+                    .unwrap_or(false);
+                if running {
                     // Steam process is up; give it a couple more seconds to
                     // open its socket and register the game-launch handler.
                     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
@@ -497,7 +407,7 @@ impl DayzCtl {
             server.endpoint.ip.clone(),
             server.game_port as u16,
         );
-        self.save_profile()?;
+        self.save_profile_async().await?;
 
         Ok(())
     }

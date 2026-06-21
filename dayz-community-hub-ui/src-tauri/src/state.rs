@@ -62,8 +62,10 @@ pub struct AppState {
     /// Uses FxHashMap for ~30% faster lookups (not DoS-resistant, fine for local app).
     pub mod_update_cache: FxHashMap<u64, i64>,
     /// A2S response cache: "ip:port" → (dto, fetched_at).
-    /// Avoids redundant A2S queries for the same server.
-    pub a2s_cache: LruCache<String, (A2sDetailsDto, std::time::Instant)>,
+    /// Avoids redundant A2S queries for the same server. The DTO is wrapped in
+    /// an `Arc` so caching and cache-hit returns are refcount bumps rather than
+    /// deep clones of the (players + rules) payload.
+    pub a2s_cache: LruCache<String, (Arc<A2sDetailsDto>, std::time::Instant)>,
     /// BattleMetrics response cache: "ip:port" → (dto, fetched_at).
     /// Avoids two HTTP round-trips on every panel open for the same server.
     pub bm_cache: LruCache<String, (BattleMetricsDto, std::time::Instant)>,

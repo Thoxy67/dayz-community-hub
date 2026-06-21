@@ -15,7 +15,6 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 # Workspace shared
 tokio.workspace = true
-tokio-stream.workspace = true
 futures-util.workspace = true
 reqwest.workspace = true
 serde.workspace = true
@@ -29,8 +28,6 @@ dayz-community-hub-core.workspace = true
 # Tauri + plugins
 tauri = { version = "2.11", features = ["protocol-asset", "native-tls"] }
 tauri-plugin-opener = "2"
-tauri-plugin-shell = "2"
-tauri-plugin-http = { version = "2", default-features = false, features = ["native-tls"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2.3.2"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }

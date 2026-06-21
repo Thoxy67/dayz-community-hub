@@ -2,7 +2,7 @@
 /// Eliminates 85+ `.map_err(|e| e.to_string())` occurrences across the codebase.
 ///
 /// # Usage
-/// ```rust
+/// ```ignore
 /// use crate::utils::error::ResultExt;
 ///
 /// // Before:

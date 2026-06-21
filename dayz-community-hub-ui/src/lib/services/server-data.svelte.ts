@@ -5,6 +5,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { app } from '$lib/state.svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import type { A2sDetailsDto, BattleMetricsDto, ServerDto } from '$lib/types';
+import { createServerLookup, findServer } from '$lib/utils/server-lookup';
 
 // ── Cache entry types ───────────────────────────────────────────────────────
 
@@ -309,8 +310,24 @@ class ServerDataService {
 
   // ── Private helpers ───────────────────────────────────────────────────────
 
+  /**
+   * Lazily-built lookup map keyed by "ip:query_port" and "ip:game_port".
+   * Rebuilt only when `app.servers` identity changes — avoids the O(n)
+   * `.find()` scan that previously ran per visible row on every render.
+   */
+  private _lookup: Map<string, ServerDto> = new Map();
+  private _lookupSource: ServerDto[] | null = null;
+
+  private _serverLookup(): Map<string, ServerDto> {
+    if (app.servers !== this._lookupSource) {
+      this._lookup = createServerLookup(app.servers);
+      this._lookupSource = app.servers;
+    }
+    return this._lookup;
+  }
+
   private _findServer(ip: string, port: number): ServerDto | null {
-    return app.servers.find((s) => s.ip === ip && (s.query_port === port || s.game_port === port)) ?? null;
+    return findServer(this._serverLookup(), ip, port);
   }
 
   private _resolveKey(ip: string, port: number): string {

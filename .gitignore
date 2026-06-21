@@ -7,3 +7,4 @@ dayz-ctl-link
 /node_modules
 /.ruff_cache
 TODO.md
+/async-a2s

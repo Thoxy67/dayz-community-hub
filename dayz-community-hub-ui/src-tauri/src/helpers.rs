@@ -31,24 +31,6 @@ pub(crate) async fn offline_mode_from_state(state: &SharedState) -> Result<Offli
     Ok(OfflineMode::new(dayz_path, client))
 }
 
-/// Find a server in the list by IP and port (exact match on query port).
-pub(crate) fn find_server_in<'a>(servers: &'a [Server], ip: &str, port: i64) -> Option<&'a Server> {
-    servers
-        .iter()
-        .find(|s| s.endpoint.ip == ip && s.endpoint.port == port)
-}
-
-/// Find a server by IP, matching either query port or game port (flexible).
-pub(crate) fn find_server_flexible_in<'a>(
-    servers: &'a [Server],
-    ip: &str,
-    port: i64,
-) -> Option<&'a Server> {
-    servers
-        .iter()
-        .find(|s| s.endpoint.ip == ip && (s.endpoint.port == port || s.game_port == port))
-}
-
 /// Spawn a background game-launch task that emits "launch-done" / "launch-error".
 /// Shared by `launch_server` and `launch_direct`.
 pub(crate) fn spawn_launch(

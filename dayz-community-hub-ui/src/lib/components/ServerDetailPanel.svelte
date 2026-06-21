@@ -83,7 +83,8 @@
   $effect(() => {
     if (scrollToMods && modsHeading) {
       // Small tick so the panel has fully rendered before scrolling.
-      setTimeout(() => modsHeading?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+      const id = setTimeout(() => modsHeading?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+      return () => clearTimeout(id);
     }
   });
 
@@ -210,6 +211,29 @@
     if (!server) return;
     serverData.refreshBattleMetrics(server.ip, server.game_port, server.query_port, server.name);
   }
+
+  // Player-history sparkline stats — computed once per history change instead
+  // of inline on every render.  Uses reduce (not Math.min/max spread) so large
+  // history arrays don't blow the call stack or re-scan multiple times.
+  let playerHistoryStats = $derived.by(() => {
+    const hist = bm?.player_history;
+    if (!hist || hist.length < 2) return null;
+    let min = Infinity;
+    let max = -Infinity;
+    let sum = 0;
+    for (const [, c] of hist) {
+      if (c < min) min = c;
+      if (c > max) max = c;
+      sum += c;
+    }
+    return {
+      min,
+      max,
+      current: hist[hist.length - 1][1],
+      avg: Math.round(sum / hist.length),
+      path: sparklinePath(hist),
+    };
+  });
 </script>
 
 <div class="flex flex-col h-full overflow-hidden border-l border-base-300 bg-base-100">
@@ -608,26 +632,23 @@
           </div>
 
           <!-- Player history sparkline -->
-          {#if bm.player_history.length >= 2}
-            {@const counts = bm.player_history.map(([, c]) => c)}
-            {@const minCount = Math.min(...counts)}
-            {@const maxCount = Math.max(...counts)}
-            {@const currentCount = counts[counts.length - 1]}
-            {@const avgCount = Math.round(counts.reduce((a, b) => a + b, 0) / counts.length)}
+          {#if playerHistoryStats}
             <div class="mb-2">
               <div class="flex items-center justify-between mb-1">
                 <span class="text-xs text-base-content/40">{m.detail_bm_player_history()}</span>
                 <div class="flex items-center gap-2 text-xs font-mono">
-                  <span class="text-base-content/30" title={m.detail_bm_min()}>{minCount}</span>
+                  <span class="text-base-content/30" title={m.detail_bm_min()}>{playerHistoryStats.min}</span>
                   <span class="text-base-content/50">–</span>
-                  <span class="text-primary font-semibold" title={m.detail_bm_current()}>{currentCount}</span>
+                  <span class="text-primary font-semibold" title={m.detail_bm_current()}
+                    >{playerHistoryStats.current}</span
+                  >
                   <span class="text-base-content/50">–</span>
-                  <span class="text-base-content/30" title={m.detail_bm_max()}>{maxCount}</span>
+                  <span class="text-base-content/30" title={m.detail_bm_max()}>{playerHistoryStats.max}</span>
                 </div>
               </div>
               <svg viewBox="0 0 120 28" class="w-full h-7 text-primary" preserveAspectRatio="none">
                 <path
-                  d={sparklinePath(bm.player_history)}
+                  d={playerHistoryStats.path}
                   fill="none"
                   stroke="currentColor"
                   stroke-width="1.5"
@@ -637,7 +658,7 @@
               </svg>
               <div class="flex items-center justify-between text-xs text-base-content/25 mt-0.5">
                 <span>{m.detail_bm_24h_ago()}</span>
-                <span>{m.detail_bm_avg({ count: avgCount })}</span>
+                <span>{m.detail_bm_avg({ count: playerHistoryStats.avg })}</span>
                 <span>{m.detail_bm_now()}</span>
               </div>
             </div>

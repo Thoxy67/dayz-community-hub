@@ -609,7 +609,10 @@ impl Profile {
             },
         );
 
-        // No cap — history is unlimited.
+        // Cap history so the profile JSON (re-read and re-written on every
+        // launch and mutation) stays bounded. Newest entries are kept.
+        const MAX_HISTORY: usize = 200;
+        self.history.truncate(MAX_HISTORY);
     }
 
     /// Add an IP to the excluded list (no-op if already present).

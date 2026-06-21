@@ -1,7 +1,7 @@
 use dayz_community_hub_core::api::Server;
 use tauri::{AppHandle, State};
 
-use crate::helpers::{find_server_flexible_in, find_server_in, spawn_launch};
+use crate::helpers::spawn_launch;
 use crate::state::SharedState;
 use crate::utils::error::ResultExt;
 
@@ -58,7 +58,8 @@ pub(crate) async fn launch_server(
 ) -> Result<(), String> {
     let (server, ctl_clone) = {
         let state = state.read().await;
-        let server = find_server_in(&state.servers, &ip, port)
+        let server = state
+            .find_by_query_port(&ip, port)
             .cloned()
             .ok_or_else(|| "Server not found".to_string())?;
         (server, state.ctl.clone_for_launch())
@@ -82,7 +83,8 @@ pub(crate) async fn launch_direct(
     let extra = extra_args.unwrap_or_default();
     let (server, ctl_clone) = {
         let st = state.read().await;
-        let server = find_server_flexible_in(&st.servers, &ip, game_port as i64)
+        let server = st
+            .find_flexible(&ip, game_port as i64)
             .cloned()
             .unwrap_or_else(|| Server {
                 endpoint: dayz_community_hub_core::Endpoint {

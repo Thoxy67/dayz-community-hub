@@ -22,14 +22,7 @@
     onExportTheme: () => void;
   }
 
-  let {
-    customCss = $bindable(),
-    originalCssOnOpen,
-    platform,
-    onClose,
-    onImportTheme,
-    onExportTheme,
-  }: Props = $props();
+  let { customCss = $bindable(), originalCssOnOpen, platform, onClose, onImportTheme, onExportTheme }: Props = $props();
 
   // Tab state lives only inside the modal — no need to lift it into the parent.
   let themeEditorTab = $state<'colors' | 'code'>('colors');
@@ -141,10 +134,23 @@
   ];
 
   // ── CSS variable accessors ─────────────────────────────────────────────
-  function getColorFromCss(css: string, varName: string): string {
-    const regex = new RegExp(`${varName.replace('--', '\\-\\-')}:\\s*([^;]+);`);
-    const match = css.match(regex);
-    return match ? match[1].trim() : 'oklch(50% 0.1 0)';
+  // Parse the whole CSS once per change into a Map<varName, value> with a
+  // single pass, instead of compiling a fresh RegExp + full-string scan for
+  // each of the ~70 pickers on every keystroke.
+  let colors = $derived(
+    (() => {
+      const m = new Map<string, string>();
+      const re = /(--[\w-]+):\s*([^;]+);/g;
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(customCss)) !== null) {
+        m.set(match[1], match[2].trim());
+      }
+      return m;
+    })(),
+  );
+
+  function getColor(varName: string): string {
+    return colors.get(varName) ?? 'oklch(50% 0.1 0)';
   }
 
   function updateColorInCss(css: string, varName: string, newValue: string): string {
@@ -333,7 +339,7 @@
               {#each baseColors as def}
                 <ThemeColorPicker
                   label={def.label()}
-                  value={getColorFromCss(customCss, def.key)}
+                  value={getColor(def.key)}
                   onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                 />
               {/each}
@@ -352,7 +358,7 @@
               {#each brandColors as def}
                 <ThemeColorPicker
                   label={def.label()}
-                  value={getColorFromCss(customCss, def.key)}
+                  value={getColor(def.key)}
                   onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                 />
               {/each}
@@ -371,7 +377,7 @@
               {#each statusColors as def}
                 <ThemeColorPicker
                   label={def.label()}
-                  value={getColorFromCss(customCss, def.key)}
+                  value={getColor(def.key)}
                   onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                 />
               {/each}
@@ -390,7 +396,7 @@
               {#each terminalColors as def}
                 <ThemeColorPicker
                   label={def.label()}
-                  value={getColorFromCss(customCss, def.key)}
+                  value={getColor(def.key)}
                   onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                 />
               {/each}
@@ -409,7 +415,7 @@
               {#each syntaxColors as def}
                 <ThemeColorPicker
                   label={def.label()}
-                  value={getColorFromCss(customCss, def.key)}
+                  value={getColor(def.key)}
                   onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                 />
               {/each}
@@ -428,7 +434,7 @@
               {#each neutralColors as def}
                 <ThemeColorPicker
                   label={def.label()}
-                  value={getColorFromCss(customCss, def.key)}
+                  value={getColor(def.key)}
                   onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                 />
               {/each}
@@ -447,7 +453,7 @@
               {#each contentColors as def}
                 <ThemeColorPicker
                   label={def.label()}
-                  value={getColorFromCss(customCss, def.key)}
+                  value={getColor(def.key)}
                   onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                 />
               {/each}
@@ -466,7 +472,7 @@
               {#each appAccentColors as def}
                 <ThemeColorPicker
                   label={def.label()}
-                  value={getColorFromCss(customCss, def.key)}
+                  value={getColor(def.key)}
                   onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                 />
               {/each}
@@ -485,7 +491,7 @@
               {#each featureColors as def}
                 <ThemeColorPicker
                   label={def.label()}
-                  value={getColorFromCss(customCss, def.key)}
+                  value={getColor(def.key)}
                   onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                 />
               {/each}
@@ -504,7 +510,7 @@
               {#each badgeColors as def}
                 <ThemeColorPicker
                   label={def.label()}
-                  value={getColorFromCss(customCss, def.key)}
+                  value={getColor(def.key)}
                   onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                 />
               {/each}
@@ -523,7 +529,7 @@
               {#each uiElementColors as def}
                 <ThemeColorPicker
                   label={def.label()}
-                  value={getColorFromCss(customCss, def.key)}
+                  value={getColor(def.key)}
                   onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                 />
               {/each}
@@ -542,7 +548,7 @@
               {#each optionGroupColors as def}
                 <ThemeColorPicker
                   label={def.label()}
-                  value={getColorFromCss(customCss, def.key)}
+                  value={getColor(def.key)}
                   onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                 />
               {/each}
@@ -561,7 +567,7 @@
               {#each techBrandColors as def}
                 <ThemeColorPicker
                   label={def.label()}
-                  value={getColorFromCss(customCss, def.key)}
+                  value={getColor(def.key)}
                   onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                 />
               {/each}
@@ -580,7 +586,7 @@
               {#each windowColors as def}
                 <ThemeColorPicker
                   label={def.label()}
-                  value={getColorFromCss(customCss, def.key)}
+                  value={getColor(def.key)}
                   onChange={(v) => (customCss = updateColorInCss(customCss, def.key, v))}
                 />
               {/each}
@@ -602,7 +608,7 @@
                   <input
                     type="text"
                     class="input input-sm input-bordered w-full font-mono text-xs"
-                    value={getColorFromCss(customCss, def.key)}
+                    value={getColor(def.key)}
                     onchange={(e) =>
                       (customCss = updateColorInCss(customCss, def.key, (e.target as HTMLInputElement).value))}
                   />
@@ -624,7 +630,7 @@
                 <input
                   type="checkbox"
                   class="checkbox checkbox-sm checkbox-primary"
-                  checked={getColorFromCss(customCss, '--logo-invert') === '1'}
+                  checked={getColor('--logo-invert') === '1'}
                   onchange={(e) => {
                     const val = (e.target as HTMLInputElement).checked ? '1' : '0';
                     customCss = updateColorInCss(customCss, '--logo-invert', val);

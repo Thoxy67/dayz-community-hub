@@ -147,6 +147,11 @@ impl OfflineMode {
         }
 
         let missions_path = self.missions_path();
+
+        // Gzip decompression + tar extraction is CPU- and sync-IO-bound. Run it
+        // on the blocking pool so the async runtime isn't stalled while a large
+        // mission tarball is unpacked.
+        tokio::task::spawn_blocking(move || -> Result<()> {
         fs::create_dir_all(&missions_path)?;
 
         let decoder = GzDecoder::new(&bytes[..]);
@@ -210,6 +215,11 @@ impl OfflineMode {
                 })?;
             }
         }
+
+        Ok(())
+        })
+        .await
+        .map_err(|e| crate::errors::Error::Other(format!("extract task failed: {e}")))??;
 
         Ok(())
     }

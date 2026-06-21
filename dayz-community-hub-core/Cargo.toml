@@ -24,8 +24,5 @@ rustc-hash.workspace = true
 portable-pty = { version = "0.9.0", default-features = false }
 urlencoding = "2"
 
-[target.'cfg(not(target_os = "windows"))'.dependencies]
-nix = { version = "0.31.2", features = ["fs", "process", "signal"] }
-
 [features]
 default = []

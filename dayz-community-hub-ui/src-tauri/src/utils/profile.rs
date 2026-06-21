@@ -3,7 +3,7 @@
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```ignore
 /// // Before:
 /// let mut state = state.lock().await;
 /// state.ctl.remove_favorite(&ip, port);
@@ -16,7 +16,7 @@
 /// ```
 ///
 /// For simple single-line mutations:
-/// ```rust
+/// ```ignore
 /// // Before:
 /// let mut state = state.lock().await;
 /// state.ctl.add_favorite(name, ip, port, password);

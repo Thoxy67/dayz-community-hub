@@ -63,9 +63,12 @@
   }
 
   /** Svelte action: rewrite every <img src> inside the node to an asset:// URI,
-   *  and attach a click handler so clicking any image opens the lightbox. */
+   *  and use ONE delegated click handler on the container so clicking any image
+   *  opens the lightbox (avoids leaking a per-<img> listener on every image). */
   function rustImages(node: HTMLElement) {
     const rewritten = new WeakSet<HTMLImageElement>();
+    // Per-image display URI + full-size URL, used by the delegated click handler.
+    const imgData = new WeakMap<HTMLImageElement, { uri: string; fullUrl: string }>();
 
     function rewrite() {
       node.querySelectorAll<HTMLImageElement>('img[src]').forEach((img) => {
@@ -87,28 +90,37 @@
           .then((uri) => {
             img.src = uri;
             img.style.cursor = 'zoom-in';
-            img.addEventListener('click', () => {
-              if (lightboxSrc) {
-                closeLightbox();
-                return;
-              }
-              // Try the full-size version first; fall back to the display URI
-              fetchImage(fullUrl)
-                .then((fullUri) => openLightbox(fullUri))
-                .catch(() => openLightbox(uri));
-            });
+            imgData.set(img, { uri, fullUrl });
           })
           .catch(() => {
             img.style.display = 'none';
           });
       });
     }
+
+    function onClick(e: MouseEvent) {
+      const img = (e.target as HTMLElement)?.closest('img');
+      if (!img || !(img instanceof HTMLImageElement)) return;
+      const data = imgData.get(img);
+      if (!data) return;
+      if (lightboxSrc) {
+        closeLightbox();
+        return;
+      }
+      // Try the full-size version first; fall back to the display URI
+      fetchImage(data.fullUrl)
+        .then((fullUri) => openLightbox(fullUri))
+        .catch(() => openLightbox(data.uri));
+    }
+
     rewrite();
+    node.addEventListener('click', onClick);
     const mo = new MutationObserver(rewrite);
     mo.observe(node, { childList: true, subtree: true });
     return {
       destroy() {
         mo.disconnect();
+        node.removeEventListener('click', onClick);
       },
     };
   }
@@ -172,6 +184,9 @@
 
   // Hero image for reading pane — synchronous lookup first, async fallback.
   let heroDataUri = $state<string | null>(null);
+  // Generation guard: incremented on every updateHero() call so a slow fetch
+  // for a previously-selected article can't clobber the current hero image.
+  let heroGeneration = 0;
 
   // Lightbox
   let lightboxSrc = $state<string | null>(null);
@@ -188,6 +203,7 @@
   }
 
   function updateHero() {
+    const gen = ++heroGeneration;
     const url = selected?.image_url ?? null;
     if (!url) {
       heroDataUri = null;
@@ -201,7 +217,7 @@
     heroDataUri = null;
     fetchImage(url)
       .then((uri) => {
-        heroDataUri = uri;
+        if (heroGeneration === gen) heroDataUri = uri;
       })
       .catch(() => {});
   }
