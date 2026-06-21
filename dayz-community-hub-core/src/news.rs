@@ -182,6 +182,30 @@ pub struct NewsResponse {
     pub rows: Vec<Article>,
 }
 
+/// The dayz.com news API endpoint (without query string).
+pub const NEWS_API_URL: &str = "https://dayz.com/api/article";
+
+/// Parse the news API response body into a list of articles.
+/// Shared by the direct (`reqwest`) fetch and the WebView fallback, which both
+/// receive the same JSON payload from `…/api/article`.
+pub fn parse_news_json(body: &str) -> Result<Vec<Article>> {
+    let resp: NewsResponse = serde_json::from_str(body)?;
+    Ok(resp.rows)
+}
+
+/// Heuristic: does this response body look like a Cloudflare bot-protection
+/// challenge page rather than the JSON API payload? dayz.com now serves the
+/// "Just a moment…" managed challenge to non-browser clients.
+pub fn looks_like_cloudflare_challenge(body: &str) -> bool {
+    // `get` returns None on a non-char-boundary index, so this never panics on
+    // a multi-byte body — unlike slicing with `&body[..n]`.
+    let head = body.get(..2048).unwrap_or(body);
+    head.contains("Just a moment")
+        || head.contains("challenges.cloudflare.com")
+        || head.contains("cf-browser-verification")
+        || head.contains("cf_chl_")
+}
+
 /// Fetch the latest DayZ news articles.
 /// Matches the bash script's `updateDayzNews()` / `getDayzNews()`.
 ///
@@ -189,13 +213,30 @@ pub struct NewsResponse {
 /// must supply an insecure `reqwest::Client` (TLS verification disabled).
 /// Using a shared, long-lived client keeps the connection pool alive between
 /// calls instead of establishing a new TLS handshake each time.
+///
+/// dayz.com now fronts this endpoint with a Cloudflare managed challenge that a
+/// plain HTTP client can't pass. When that happens the body is challenge HTML
+/// instead of JSON; we surface it as [`Error::CloudflareChallenge`] so the
+/// caller can retry inside a real WebView.
 pub async fn fetch_news(client: &reqwest::Client) -> Result<Vec<Article>> {
     let resp = client
-        .get("https://dayz.com/api/article")
+        .get(NEWS_API_URL)
         .query(&[("rowsPerPage", "50")])
         .send()
-        .await?
-        .json::<NewsResponse>()
         .await?;
-    Ok(resp.rows)
+    let status = resp.status();
+    let body = resp.text().await?;
+    match parse_news_json(&body) {
+        Ok(rows) => Ok(rows),
+        Err(e) => {
+            if status == reqwest::StatusCode::FORBIDDEN
+                || status == reqwest::StatusCode::SERVICE_UNAVAILABLE
+                || looks_like_cloudflare_challenge(&body)
+            {
+                Err(crate::errors::Error::CloudflareChallenge)
+            } else {
+                Err(e)
+            }
+        }
+    }
 }

@@ -6,6 +6,7 @@ pub(crate) mod launch;
 pub(crate) mod misc;
 pub(crate) mod mods;
 pub(crate) mod news_stats;
+pub(crate) mod news_webview;
 pub(crate) mod offline;
 pub(crate) mod ping;
 pub(crate) mod profile;

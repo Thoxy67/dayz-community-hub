@@ -22,6 +22,11 @@ pub enum Error {
     Mod(String),
     #[error("Server error: {0}")]
     Server(String),
+    /// The remote endpoint returned a Cloudflare bot-protection challenge
+    /// instead of the expected payload. Callers can fall back to a real
+    /// browser/WebView to solve the challenge.
+    #[error("Blocked by Cloudflare challenge")]
+    CloudflareChallenge,
     #[error("Unknown error: {0}")]
     Other(String),
     #[error("A2S query error: {0}")]

@@ -25,6 +25,10 @@ pub fn run(args: CliArgs) {
 
     tauri::Builder::default()
         .setup(|app| {
+            // Holds the one-shot channel used by the news WebView fallback to
+            // return Cloudflare-cleared JSON back to the fetch command.
+            app.manage(commands::news_webview::NewsWebviewState::new());
+
             // Register Windows-only plugins via setup so we can use cfg guards.
             #[cfg(windows)]
             {
@@ -136,6 +140,7 @@ pub fn run(args: CliArgs) {
             commands::steam::fetch_steam_avatar,
             commands::mods::check_mod_updates,
             commands::news_stats::fetch_news,
+            commands::news_webview::news_webview_result,
             commands::news_stats::get_app_stats,
             commands::steam::fetch_steam_player_count,
             commands::offline::get_offline_missions,

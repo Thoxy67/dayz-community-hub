@@ -1,14 +1,23 @@
-use dayz_community_hub_core::news;
-use tauri::State;
+use dayz_community_hub_core::errors::Error as CoreError;
+use dayz_community_hub_core::news::{self, Article};
+use tauri::{AppHandle, State};
 
+use crate::commands::news_webview::fetch_news_via_webview;
 use crate::dto::*;
 use crate::state::{SharedState, insecure_client};
-use crate::utils::error::ResultExt;
 
 /// Fetch the latest news articles.
+///
+/// Tries a direct HTTP request first. dayz.com now guards the API with a
+/// Cloudflare challenge that a plain client can't pass — when that's detected we
+/// fall back to fetching it inside a WebView (see [`fetch_news_via_webview`]).
 #[tauri::command]
-pub(crate) async fn fetch_news() -> Result<Vec<ArticleDto>, String> {
-    let articles = news::fetch_news(insecure_client()).await.cmd_err()?;
+pub(crate) async fn fetch_news(app: AppHandle) -> Result<Vec<ArticleDto>, String> {
+    let articles: Vec<Article> = match news::fetch_news(insecure_client()).await {
+        Ok(articles) => articles,
+        Err(CoreError::CloudflareChallenge) => fetch_news_via_webview(&app).await?,
+        Err(e) => return Err(e.to_string()),
+    };
     Ok(articles
         .iter()
         .map(|a| ArticleDto {

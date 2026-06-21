@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "news-webview",
+  "description": "Allow the hidden dayz.com news window to return Cloudflare-cleared JSON to the app via IPC.",
+  "windows": ["news-fetch"],
+  "remote": {
+    "urls": ["https://dayz.com", "https://*.dayz.com"]
+  },
+  "permissions": ["core:default"]
+}

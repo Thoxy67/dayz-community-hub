@@ -84,63 +84,108 @@ pub const DAYZ_GAME_ID: u32 = 221100;
 /// Try to find Steam root directory by checking common locations.
 /// Returns the path to the `steamapps` directory.
 pub fn find_steam_root() -> Option<PathBuf> {
-    #[cfg(target_os = "windows")]
-    {
-        // Windows: Steam installs to Program Files (x86) by default,
-        // or a user-chosen drive. Check common locations and registry env vars.
-        let candidates: Vec<PathBuf> = {
-            let mut v = Vec::new();
-            // STEAM_PATH env override (power users)
-            if let Ok(p) = std::env::var("STEAM_PATH") {
-                v.push(PathBuf::from(&p).join("steamapps"));
-            }
-            // Read the install path from the Windows registry.
-            // Steam writes its install directory to:
-            //   HKCU\Software\Valve\Steam  →  SteamPath (REG_SZ)
-            // This handles custom install drives/directories reliably.
-            if let Some(reg_path) = query_steam_registry_path() {
-                v.push(PathBuf::from(&reg_path).join("steamapps"));
-            }
-            // Default install locations (fallback when registry key is absent)
-            for base in &["C:\\Program Files (x86)\\Steam", "C:\\Program Files\\Steam"] {
-                v.push(PathBuf::from(base).join("steamapps"));
-            }
-            // Per-user roaming / local variants
-            if let Ok(local) = std::env::var("LOCALAPPDATA") {
-                v.push(PathBuf::from(&local).join("Steam").join("steamapps"));
-            }
-            v
-        };
-        for candidate in &candidates {
-            if candidate.exists() && candidate.is_dir() {
-                return Some(candidate.clone());
-            }
+    let candidates = default_steamapps_candidates();
+    // Prefer whichever Steam library actually contains DayZ. This handles
+    // secondary drives (e.g. /mnt/ssd2/SteamLibrary) that Steam records in
+    // `libraryfolders.vdf` but that aren't one of the default install paths.
+    for candidate in &candidates {
+        if let Some(dayz_steamapps) = library_with_dayz(candidate) {
+            return Some(dayz_steamapps);
         }
-        None
     }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let home = std::env::var("HOME").ok()?;
-        let home_path = PathBuf::from(home);
-        // Cover the major Linux Steam install sources: native, Flatpak, Snap.
-        let candidates = [
-            home_path.join(".steam/steam/steamapps"),
-            home_path.join(".local/share/Steam/steamapps"),
-            home_path.join(".steam/root/steamapps"),
-            // Flatpak Steam (com.valvesoftware.Steam)
-            home_path.join(".var/app/com.valvesoftware.Steam/data/Steam/steamapps"),
-            home_path.join(".var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps"),
-            // Snap Steam
-            home_path.join("snap/steam/common/.local/share/Steam/steamapps"),
-            home_path.join("snap/steam/current/.local/share/Steam/steamapps"),
-        ];
-        for candidate in candidates.iter() {
-            if candidate.exists() && candidate.is_dir() {
-                return Some(candidate.to_path_buf());
-            }
+    // Otherwise fall back to the first existing default steamapps directory.
+    candidates.into_iter().find(|c| c.is_dir())
+}
+
+/// Default `steamapps` directory candidates for the current platform, in
+/// priority order. These are the *default* install locations; secondary
+/// libraries are discovered from `libraryfolders.vdf` (see [`library_with_dayz`]).
+#[cfg(target_os = "windows")]
+fn default_steamapps_candidates() -> Vec<PathBuf> {
+    let mut v = Vec::new();
+    // STEAM_PATH env override (power users)
+    if let Ok(p) = std::env::var("STEAM_PATH") {
+        v.push(PathBuf::from(&p).join("steamapps"));
+    }
+    // Read the install path from the Windows registry.
+    //   HKCU\Software\Valve\Steam  →  SteamPath (REG_SZ)
+    // This handles custom install drives/directories reliably.
+    if let Some(reg_path) = query_steam_registry_path() {
+        v.push(PathBuf::from(&reg_path).join("steamapps"));
+    }
+    // Default install locations (fallback when registry key is absent)
+    for base in &["C:\\Program Files (x86)\\Steam", "C:\\Program Files\\Steam"] {
+        v.push(PathBuf::from(base).join("steamapps"));
+    }
+    // Per-user roaming / local variants
+    if let Ok(local) = std::env::var("LOCALAPPDATA") {
+        v.push(PathBuf::from(&local).join("Steam").join("steamapps"));
+    }
+    v
+}
+
+#[cfg(not(target_os = "windows"))]
+fn default_steamapps_candidates() -> Vec<PathBuf> {
+    let Ok(home) = std::env::var("HOME") else {
+        return Vec::new();
+    };
+    let home_path = PathBuf::from(home);
+    // Cover the major Linux Steam install sources: native, Flatpak, Snap.
+    vec![
+        home_path.join(".steam/steam/steamapps"),
+        home_path.join(".local/share/Steam/steamapps"),
+        home_path.join(".steam/root/steamapps"),
+        // Flatpak Steam (com.valvesoftware.Steam)
+        home_path.join(".var/app/com.valvesoftware.Steam/data/Steam/steamapps"),
+        home_path.join(".var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps"),
+        // Snap Steam
+        home_path.join("snap/steam/common/.local/share/Steam/steamapps"),
+        home_path.join("snap/steam/current/.local/share/Steam/steamapps"),
+    ]
+}
+
+/// Given a `steamapps` directory, return the `steamapps` directory of whichever
+/// Steam library actually has DayZ installed — checking this library first, then
+/// every library listed in its `libraryfolders.vdf`. Returns `None` if DayZ
+/// isn't found in any of them.
+fn library_with_dayz(steamapps: &std::path::Path) -> Option<PathBuf> {
+    if steamapps_has_dayz(steamapps) {
+        return Some(steamapps.to_path_buf());
+    }
+    for lib in steam_libraries_from_vdf(steamapps) {
+        let sa = lib.join("steamapps");
+        if steamapps_has_dayz(&sa) {
+            return Some(sa);
         }
-        None
     }
+    None
+}
+
+/// True if this `steamapps` dir holds DayZ (the game dir or its app manifest).
+fn steamapps_has_dayz(steamapps: &std::path::Path) -> bool {
+    steamapps.join("common").join("DayZ").is_dir()
+        || steamapps
+            .join(format!("appmanifest_{}.acf", DAYZ_GAME_ID))
+            .is_file()
+}
+
+/// Parse the `"path"` entries out of `<steamapps>/libraryfolders.vdf`.
+/// Crude but sufficient: the file is a flat VDF where each library is recorded
+/// as `"path"   "<dir>"`. Windows paths are double-backslash escaped.
+fn steam_libraries_from_vdf(steamapps: &std::path::Path) -> Vec<PathBuf> {
+    let vdf = steamapps.join("libraryfolders.vdf");
+    let Ok(content) = std::fs::read_to_string(&vdf) else {
+        return Vec::new();
+    };
+    content
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            let rest = line.strip_prefix("\"path\"")?.trim();
+            let path = rest.trim_matches('"').replace("\\\\", "\\");
+            (!path.is_empty()).then(|| PathBuf::from(path))
+        })
+        .collect()
 }
 
 /// Read the Steam install path from the Windows registry.

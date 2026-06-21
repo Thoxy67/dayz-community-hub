@@ -51,6 +51,22 @@ pub struct DayzCtl {
     server_list: Option<ServerList>,
 }
 
+/// Normalize a user-supplied Steam path to a `steamapps` directory.
+///
+/// The launcher treats `steam_root` as the library's `steamapps` folder, but
+/// users frequently point it at the *library* folder instead (e.g.
+/// `/mnt/ssd2/SteamLibrary` rather than `/mnt/ssd2/SteamLibrary/steamapps`),
+/// which silently breaks mod detection and install. Accept both forms.
+fn normalize_steamapps(p: PathBuf) -> PathBuf {
+    if p.file_name().is_some_and(|n| n == "steamapps") {
+        p
+    } else if p.join("steamapps").is_dir() {
+        p.join("steamapps")
+    } else {
+        p
+    }
+}
+
 /// Build a `SteamCmd` instance from profile settings.
 /// Shared by `DayzCtl::new()` and `DayzCtl::rebuild_steamcmd()`.
 fn build_steamcmd(profile: &Profile) -> Option<Arc<SteamCmd>> {
@@ -69,6 +85,7 @@ fn build_steamcmd(profile: &Profile) -> Option<Arc<SteamCmd>> {
         .as_ref()
         .filter(|s| !s.is_empty())
         .map(PathBuf::from)
+        .map(normalize_steamapps)
         .or_else(find_steam_root)
         .unwrap_or_else(default_steamapps_fallback);
     let login = profile
