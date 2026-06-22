@@ -109,6 +109,10 @@ pub struct ProfileDto {
     pub ping_scan_history: bool,
     /// Whether to include all servers in auto ping scan.
     pub ping_scan_servers: bool,
+    /// Whether the optional DayZavr community tab is enabled.
+    pub dayzavr_enabled: bool,
+    /// DayZ install path used for DayZavr mod installation.
+    pub dayzavr_dayz_path: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

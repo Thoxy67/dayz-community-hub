@@ -50,6 +50,8 @@ export async function saveProfileSettings(
       pingScanFavorites: p?.ping_scan_favorites ?? true,
       pingScanHistory: p?.ping_scan_history ?? true,
       pingScanServers: p?.ping_scan_servers ?? true,
+      dayzavrEnabled: p?.dayzavr_enabled ?? false,
+      dayzavrDayzPath: p?.dayzavr_dayz_path ?? null,
     });
     const tasks: Promise<unknown>[] = [loadProfile(), loadStats()];
     if (steamApiKey && steamId) {
@@ -101,6 +103,8 @@ export async function savePingSettings(
       pingScanFavorites,
       pingScanHistory,
       pingScanServers,
+      dayzavrEnabled: p.dayzavr_enabled,
+      dayzavrDayzPath: p.dayzavr_dayz_path,
     });
     // Update local state
     s.profile = {
@@ -114,6 +118,41 @@ export async function savePingSettings(
       ping_scan_servers: pingScanServers,
     };
   } catch (e) {
+    s.setStatus(m.profile_settings_save_failed({ error: String(e) }), 'error');
+  }
+}
+
+/** Save the DayZavr settings (tab toggle + DayZ path), preserving everything else. */
+export async function saveDayzavrSettings(enabled: boolean, dayzPath?: string | null) {
+  const p = s.profile;
+  if (!p) return;
+  const path = dayzPath === undefined ? p.dayzavr_dayz_path : dayzPath;
+  // Optimistic local update so the tab appears/disappears immediately.
+  s.profile = { ...p, dayzavr_enabled: enabled, dayzavr_dayz_path: path };
+  try {
+    await invoke('save_profile_settings', {
+      player: p.player,
+      steamLogin: p.steam_login,
+      steamPassword: p.steam_password,
+      steamRoot: p.steam_root,
+      steamcmdEnabled: p.steamcmd_enabled,
+      steamcmdPath: p.steamcmd_path,
+      steamApiKey: p.steam_api_key,
+      steamId: p.steam_id,
+      battlemetricsApiKey: p.battlemetrics_api_key,
+      userLocation: p.user_location,
+      pingConcurrency: p.ping_concurrency,
+      pingTimeoutAuto: p.ping_timeout_auto,
+      pingTimeoutManual: p.ping_timeout_manual,
+      pingMaxRetries: p.ping_max_retries,
+      pingScanFavorites: p.ping_scan_favorites,
+      pingScanHistory: p.ping_scan_history,
+      pingScanServers: p.ping_scan_servers,
+      dayzavrEnabled: enabled,
+      dayzavrDayzPath: path,
+    });
+  } catch (e) {
+    s.profile = p; // revert
     s.setStatus(m.profile_settings_save_failed({ error: String(e) }), 'error');
   }
 }

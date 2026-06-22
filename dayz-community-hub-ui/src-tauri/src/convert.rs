@@ -166,6 +166,8 @@ pub(crate) fn profile_to_dto(profile: &Profile) -> ProfileDto {
         ping_scan_favorites: profile.ping_scan_favorites,
         ping_scan_history: profile.ping_scan_history,
         ping_scan_servers: profile.ping_scan_servers,
+        dayzavr_enabled: profile.dayzavr_enabled,
+        dayzavr_dayz_path: profile.dayzavr_dayz_path.clone(),
     }
 }
 

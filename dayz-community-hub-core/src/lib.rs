@@ -15,6 +15,7 @@ pub mod a2s_query;
 pub mod api;
 pub mod config;
 pub mod ctl;
+pub mod dayzavr;
 pub mod dzch;
 pub mod errors;
 pub mod launch;

@@ -36,6 +36,8 @@ pub(crate) async fn save_profile_settings(
     ping_scan_favorites: bool,
     ping_scan_history: bool,
     ping_scan_servers: bool,
+    dayzavr_enabled: bool,
+    dayzavr_dayz_path: Option<String>,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
     let mut state = state.write().await;
@@ -62,6 +64,8 @@ pub(crate) async fn save_profile_settings(
         profile.ping_scan_favorites = ping_scan_favorites;
         profile.ping_scan_history = ping_scan_history;
         profile.ping_scan_servers = ping_scan_servers;
+        profile.dayzavr_enabled = dayzavr_enabled;
+        profile.dayzavr_dayz_path = dayzavr_dayz_path;
     }
     // If avatar credentials changed, invalidate the cache so it gets re-fetched
     if credentials_changed {

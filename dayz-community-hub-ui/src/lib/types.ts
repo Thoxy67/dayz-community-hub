@@ -100,6 +100,28 @@ export interface ProfileDto {
   ping_scan_history: boolean;
   /** Whether to include all servers in auto ping scan. */
   ping_scan_servers: boolean;
+  /** Whether the optional DayZavr community tab is enabled. */
+  dayzavr_enabled: boolean;
+  /** DayZ install path used for DayZavr mod installation. */
+  dayzavr_dayz_path: string | null;
+}
+
+/** A DayZavr community server (mirrors core::dayzavr::DayzavrServer). */
+export interface DayzavrServer {
+  id: number;
+  name: string;
+  host: string;
+  all_hosts: string[];
+  game_port: number;
+  query_port: number;
+  password: boolean;
+  players: number;
+  max_players: number;
+  mods: string[];
+  time: string;
+  restart: string;
+  discord: string | null;
+  image: string | null;
 }
 
 /** BattleMetrics server info fetched on demand for the detail panel. */
@@ -236,7 +258,17 @@ export interface PingResult {
 
 // ─── App-level UI state ────────────────────────────────────────────────────────
 
-export type TabId = 'servers' | 'favorites' | 'history' | 'mods' | 'news' | 'connect' | 'options' | 'offline' | 'about';
+export type TabId =
+  | 'servers'
+  | 'favorites'
+  | 'history'
+  | 'mods'
+  | 'news'
+  | 'connect'
+  | 'options'
+  | 'offline'
+  | 'dayzavr'
+  | 'about';
 
 export interface ConfirmDialog {
   title: string;

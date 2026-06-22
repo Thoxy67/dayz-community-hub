@@ -85,6 +85,27 @@ class AppState {
   showExcludedIpsModal = $state(false);
   activeTab = $state<TabId>('servers');
   servers = $state<ServerDto[]>([]);
+  dayzavrServers = $state<import('$lib/types').DayzavrServer[]>([]);
+  dayzavrLoading = $state(false);
+  /** Mod folder names fully installed under !Workshop (for Play-button gating). */
+  dayzavrInstalledMods = $state<string[]>([]);
+  /** Active DayZavr mod install/update progress, or null when idle. */
+  dayzavrInstall = $state<{
+    active: boolean;
+    serverName: string;
+    status: string;
+    downloadedBytes: number;
+    totalBytes: number;
+    uploadedBytes: number;
+    downloadMbps: number;
+    uploadMbps: number;
+    peersLive: number;
+    peersConnecting: number;
+    peersSeen: number;
+    eta: string | null;
+    done: boolean;
+    error: string | null;
+  } | null>(null);
   profile = $state<ProfileDto | null>(null);
   installedMods = $state<InstalledModDto[]>([]);
   articles = $state<ArticleDto[]>([]);

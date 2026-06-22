@@ -86,6 +86,13 @@ pub struct Profile {
     /// Whether to include all servers in auto ping scan (default true).
     #[serde(default = "default_true")]
     pub ping_scan_servers: bool,
+    /// Whether the optional DayZavr community tab is enabled (default false).
+    #[serde(default)]
+    pub dayzavr_enabled: bool,
+    /// Path to the DayZ install used to install DayZavr mods (the folder that
+    /// contains `DayZ_x64.exe` / `!Workshop`). None until the user sets it.
+    #[serde(default)]
+    pub dayzavr_dayz_path: Option<String>,
     #[serde(
         deserialize_with = "deserialize_launch_options",
         default = "LaunchOptions::defaults"
@@ -554,6 +561,8 @@ impl Profile {
             ping_scan_favorites: true,
             ping_scan_history: true,
             ping_scan_servers: true,
+            dayzavr_enabled: false,
+            dayzavr_dayz_path: None,
             options: LaunchOptions::defaults(),
             version: version.to_string(),
             path: PathBuf::new(),

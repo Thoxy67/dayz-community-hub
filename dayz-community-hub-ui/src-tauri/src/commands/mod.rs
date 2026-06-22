@@ -1,6 +1,7 @@
 pub(crate) mod a2s;
 pub(crate) mod battlemetrics;
 pub(crate) mod cli_cmd;
+pub(crate) mod dayzavr;
 pub(crate) mod images;
 pub(crate) mod launch;
 pub(crate) mod misc;

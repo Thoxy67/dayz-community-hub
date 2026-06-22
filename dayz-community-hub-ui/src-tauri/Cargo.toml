@@ -37,6 +37,8 @@ lru = "0.18"
 rustc-hash.workspace = true
 sysinfo.workspace = true
 tauri-plugin-http = "2"
+# BitTorrent client for DayZavr mods-only selective download (no http-api/webui).
+librqbit = { version = "8.1", default-features = false, features = ["default-tls"] }
 
 [target."cfg(not(windows))".dependencies]
 zstd = { version = "0.13.3", features = ["pkg-config"] }

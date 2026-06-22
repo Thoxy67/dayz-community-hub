@@ -11,7 +11,7 @@
   let SuikaGame = $state<Component<{ onClose: () => void }> | null>(null);
   import * as m from '$lib/paraglide/messages.js';
   import { app as s } from '$lib/state.svelte';
-  import { savePingSettings } from '$lib/actions/profile';
+  import { savePingSettings, saveDayzavrSettings } from '$lib/actions/profile';
 
   type UpdateState = 'idle' | 'checking' | 'up_to_date' | 'available' | 'downloading' | 'done' | 'error';
 
@@ -929,6 +929,28 @@
               </div>
             {/each}
           </div>
+        </section>
+
+        <!-- DayZavr community integration -->
+        <section class="stagger-item" class:visible={mounted} style="transition-delay: 230ms">
+          <div class="flex items-center gap-2 mb-3">
+            <Icon icon="ph:skull" class="size-4 text-primary shrink-0" />
+            <h2 class="text-xs font-semibold text-base-content/60 uppercase tracking-widest">{m.about_dayzavr()}</h2>
+          </div>
+          <label
+            class="flex items-start gap-3 px-3 py-2.5 rounded-xl border border-base-300/50 cursor-pointer hover:bg-base-200/40 transition-colors"
+          >
+            <input
+              type="checkbox"
+              class="toggle toggle-sm toggle-primary mt-0.5 shrink-0"
+              checked={s.profile?.dayzavr_enabled ?? false}
+              onchange={(e) => saveDayzavrSettings(e.currentTarget.checked)}
+            />
+            <div class="flex-1 min-w-0">
+              <span class="text-xs font-semibold text-base-content/80">{m.about_dayzavr_toggle()}</span>
+              <span class="text-xs text-base-content/40 leading-snug block mt-0.5">{m.about_dayzavr_desc()}</span>
+            </div>
+          </label>
         </section>
 
         <!-- Optional API Keys -->

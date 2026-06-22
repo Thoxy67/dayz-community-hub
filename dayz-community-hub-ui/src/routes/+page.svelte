@@ -26,6 +26,7 @@
     options: () => import('$lib/components/OptionsTab.svelte'),
     news: () => import('$lib/components/NewsTab.svelte'),
     offline: () => import('$lib/components/OfflineTab.svelte'),
+    dayzavr: () => import('$lib/components/DayZavrTab.svelte'),
     about: () => import('$lib/components/AboutTab.svelte'),
     setup: () => import('$lib/components/SetupWizard.svelte'),
   };
@@ -162,6 +163,9 @@
       { id: 'connect' as TabId, label: m.tab_connect() },
       { id: 'options' as TabId, label: m.tab_options() },
       { id: 'offline' as TabId, label: m.tab_offline() },
+      ...(s.profile?.dayzavr_enabled
+        ? [{ id: 'dayzavr' as TabId, label: m.tab_dayzavr(), count: s.dayzavrServers.length }]
+        : []),
       { id: 'about' as TabId, label: m.tab_about(), icon: 'mdi:information', pushRight: true },
     ]),
   );
@@ -661,6 +665,11 @@
             onOpenMissionDir={(mission) => invoke('open_mission_dir', { mission }).catch(() => {})}
             onOpenMissionsDir={() => invoke('open_missions_dir').catch(() => {})}
           />
+        {/await}
+      {:else if s.activeTab === 'dayzavr'}
+        {#await lazyTabs.dayzavr() then module}
+          {@const DayZavrTab = module.default}
+          <DayZavrTab />
         {/await}
       {:else if s.activeTab === 'about'}
         {#await lazyTabs.about() then module}

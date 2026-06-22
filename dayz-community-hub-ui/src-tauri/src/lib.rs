@@ -28,6 +28,7 @@ pub fn run(args: CliArgs) {
             // Holds the one-shot channel used by the news WebView fallback to
             // return Cloudflare-cleared JSON back to the fetch command.
             app.manage(commands::news_webview::NewsWebviewState::new());
+            app.manage(commands::dayzavr::DayzavrInstallState::new());
 
             // Register Windows-only plugins via setup so we can use cfg guards.
             #[cfg(windows)]
@@ -161,6 +162,13 @@ pub fn run(args: CliArgs) {
             commands::misc::setup_mod_symlinks,
             commands::misc::find_server,
             commands::misc::get_system_specs,
+            commands::dayzavr::fetch_dayzavr_servers,
+            commands::dayzavr::detect_dayz_path,
+            commands::dayzavr::install_dayzavr_mods,
+            commands::dayzavr::cancel_dayzavr_install,
+            commands::dayzavr::clear_dayzavr_mods,
+            commands::dayzavr::launch_dayzavr_server,
+            commands::dayzavr::dayzavr_installed_mods,
             commands::profile_io::export_profile,
             commands::profile_io::import_profile,
             commands::profile_io::reset_profile,
