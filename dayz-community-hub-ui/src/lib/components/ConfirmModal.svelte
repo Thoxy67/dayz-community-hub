@@ -27,7 +27,16 @@
     }
     onClose();
   }
+
+  function handleKeydown(e: KeyboardEvent) {
+    if (dialog && e.key === 'Escape') {
+      e.preventDefault();
+      cancel();
+    }
+  }
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 {#if dialog}
   <!-- top: 36px — keeps the titlebar draggable while the modal is open -->

@@ -591,6 +591,8 @@
                   class="absolute right-2 top-1/2 -translate-y-1/2 text-base-content/40 hover:text-base-content transition-colors"
                   onclick={() => (showPassword = !showPassword)}
                   type="button"
+                  aria-label={showPassword ? m.settings_hide() : m.settings_show()}
+                  aria-pressed={showPassword}
                   title={showPassword ? m.settings_hide() : m.settings_show()}
                 >
                   <Icon icon={showPassword ? 'ph:eye-slash' : 'ph:eye'} class="size-4" />

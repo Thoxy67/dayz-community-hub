@@ -20,9 +20,10 @@ pub(crate) async fn fetch_battlemetrics_server(
     let token = {
         let s = state.read().await;
         if let Some((cached, fetched_at)) = s.bm_cache.peek(&bm_cache_key)
-            && fetched_at.elapsed() < Duration::from_secs(BM_CACHE_TTL_SECS) {
-                return Ok(cached.clone());
-            }
+            && fetched_at.elapsed() < Duration::from_secs(BM_CACHE_TTL_SECS)
+        {
+            return Ok(cached.clone());
+        }
         s.ctl
             .profile()
             .battlemetrics_api_key

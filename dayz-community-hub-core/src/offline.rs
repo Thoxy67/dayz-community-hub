@@ -39,9 +39,10 @@ impl OfflineMode {
             let entry = entry?;
             let path = entry.path();
             if path.is_dir()
-                && let Some(name) = path.file_name() {
-                    missions.push(name.to_string_lossy().to_string());
-                }
+                && let Some(name) = path.file_name()
+            {
+                missions.push(name.to_string_lossy().to_string());
+            }
         }
         Ok(missions)
     }
@@ -152,71 +153,77 @@ impl OfflineMode {
         // on the blocking pool so the async runtime isn't stalled while a large
         // mission tarball is unpacked.
         tokio::task::spawn_blocking(move || -> Result<()> {
-        fs::create_dir_all(&missions_path)?;
+            fs::create_dir_all(&missions_path)?;
 
-        let decoder = GzDecoder::new(&bytes[..]);
-        let mut archive = Archive::new(decoder);
+            let decoder = GzDecoder::new(&bytes[..]);
+            let mut archive = Archive::new(decoder);
 
-        // The GitHub tarball layout is:
-        //   Arkensor-DayZCommunityOfflineMode-HASH/
-        //   Arkensor-DayZCommunityOfflineMode-HASH/Missions/
-        //   Arkensor-DayZCommunityOfflineMode-HASH/Missions/DayZCommunityOfflineMode.ChernarusPlus/...
-        //
-        // We want to extract only the contents of the inner `Missions/` folder
-        // directly into `dayz_path/Missions/`, so we must strip 2 components:
-        //   [HASH-dir] [Missions] → written to missions_path/
-        //
-        // Entries with fewer than 3 components (the hash-dir, "Missions", and
-        // at least one more segment) are skipped (they're the top-level or the
-        // Missions directory itself).
-        for entry in archive.entries()? {
-            let mut entry = entry?;
-            let path = entry.path()?.into_owned();
-            let components: Vec<_> = path.components().collect();
+            // The GitHub tarball layout is:
+            //   Arkensor-DayZCommunityOfflineMode-HASH/
+            //   Arkensor-DayZCommunityOfflineMode-HASH/Missions/
+            //   Arkensor-DayZCommunityOfflineMode-HASH/Missions/DayZCommunityOfflineMode.ChernarusPlus/...
+            //
+            // We want to extract only the contents of the inner `Missions/` folder
+            // directly into `dayz_path/Missions/`, so we must strip 2 components:
+            //   [HASH-dir] [Missions] → written to missions_path/
+            //
+            // Entries with fewer than 3 components (the hash-dir, "Missions", and
+            // at least one more segment) are skipped (they're the top-level or the
+            // Missions directory itself).
+            for entry in archive.entries()? {
+                let mut entry = entry?;
+                let path = entry.path()?.into_owned();
+                let components: Vec<_> = path.components().collect();
 
-            // Skip entries that don't live inside the Missions/ sub-directory.
-            // We need at least: [hash-dir, "Missions", <mission-folder>, ...]
-            if components.len() <= 2 {
-                continue;
-            }
-            // Only keep entries whose second component is "Missions".
-            let second = components[1].as_os_str().to_string_lossy();
-            if second != "Missions" {
-                continue;
-            }
+                // Skip entries that don't live inside the Missions/ sub-directory.
+                // We need at least: [hash-dir, "Missions", <mission-folder>, ...]
+                if components.len() <= 2 {
+                    continue;
+                }
+                // Only keep entries whose second component is "Missions".
+                let second = components[1].as_os_str().to_string_lossy();
+                if second != "Missions" {
+                    continue;
+                }
 
-            // Strip the first two components (hash-dir + "Missions").
-            let new_path: PathBuf = components[2..].iter().collect();
-            let full_path = missions_path.join(&new_path);
+                // Strip the first two components (hash-dir + "Missions").
+                let new_path: PathBuf = components[2..].iter().collect();
+                let full_path = missions_path.join(&new_path);
 
-            if entry.header().entry_type().is_dir() {
-                fs::create_dir_all(&full_path).map_err(|e| {
-                    crate::errors::Error::Other(format!(
-                        "Failed to create directory {:?}: {}",
-                        full_path, e
-                    ))
-                })?;
-            } else {
-                // Ensure parent directory exists before writing the file.
-                if let Some(parent) = full_path.parent() {
-                    fs::create_dir_all(parent).map_err(|e| {
+                if entry.header().entry_type().is_dir() {
+                    fs::create_dir_all(&full_path).map_err(|e| {
                         crate::errors::Error::Other(format!(
-                            "Failed to create parent dir {:?}: {}",
-                            parent, e
+                            "Failed to create directory {:?}: {}",
+                            full_path, e
+                        ))
+                    })?;
+                } else {
+                    // Ensure parent directory exists before writing the file.
+                    if let Some(parent) = full_path.parent() {
+                        fs::create_dir_all(parent).map_err(|e| {
+                            crate::errors::Error::Other(format!(
+                                "Failed to create parent dir {:?}: {}",
+                                parent, e
+                            ))
+                        })?;
+                    }
+                    // Write directly from the archive stream — no intermediate buffer.
+                    let mut out = std::fs::File::create(&full_path).map_err(|e| {
+                        crate::errors::Error::Other(format!(
+                            "Failed to create {:?}: {}",
+                            full_path, e
+                        ))
+                    })?;
+                    std::io::copy(&mut entry, &mut out).map_err(|e| {
+                        crate::errors::Error::Other(format!(
+                            "Failed to write {:?}: {}",
+                            full_path, e
                         ))
                     })?;
                 }
-                // Write directly from the archive stream — no intermediate buffer.
-                let mut out = std::fs::File::create(&full_path).map_err(|e| {
-                    crate::errors::Error::Other(format!("Failed to create {:?}: {}", full_path, e))
-                })?;
-                std::io::copy(&mut entry, &mut out).map_err(|e| {
-                    crate::errors::Error::Other(format!("Failed to write {:?}: {}", full_path, e))
-                })?;
             }
-        }
 
-        Ok(())
+            Ok(())
         })
         .await
         .map_err(|e| crate::errors::Error::Other(format!("extract task failed: {e}")))??;

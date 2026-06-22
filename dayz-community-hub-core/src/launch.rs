@@ -30,9 +30,10 @@ pub fn build_launch_args(
 
     // Password
     if let Some(pass) = password
-        && !pass.is_empty() {
-            args.push(format!("-password={}", pass));
-        }
+        && !pass.is_empty()
+    {
+        args.push(format!("-password={}", pass));
+    }
 
     // Profile launch options (nosplash, skipintro, high, etc.)
     args.extend(launch_options.to_args());
@@ -57,9 +58,10 @@ pub fn build_steam_applaunch_args(
     #[cfg(not(target_os = "windows"))]
     steam_args.push("-malloc=system".to_string());
     if let Some(user) = username
-        && !user.is_empty() {
-            steam_args.push(format!("-name={}", user));
-        }
+        && !user.is_empty()
+    {
+        steam_args.push(format!("-name={}", user));
+    }
     steam_args.extend(args.iter().cloned());
     steam_args
 }

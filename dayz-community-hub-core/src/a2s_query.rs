@@ -30,6 +30,18 @@ fn server_addr(server: &Server) -> String {
     format!("{}:{}", server.endpoint.ip, server.endpoint.port as u16)
 }
 
+/// Real (human) player count for an A2S_INFO response.
+///
+/// Per the Source query spec the `players` field counts bots as well, and many
+/// DayZ servers inflate their apparent population by reporting `bots == players`
+/// (so the browser shows a "full" server with zero real players). The genuine
+/// human count is `players - bots`; legitimate DayZ servers report `bots == 0`,
+/// so this is a no-op for them.
+#[inline]
+pub fn human_player_count(info: &Info) -> u8 {
+    info.players.saturating_sub(info.bots)
+}
+
 /// Create a configured A2S client and format the server's query address.
 async fn make_a2s_client(server: &Server) -> Result<(A2SClient, String)> {
     let client = new_client().await?;
@@ -41,7 +53,7 @@ async fn make_a2s_client(server: &Server) -> Result<(A2SClient, String)> {
 pub async fn ping_via_a2s_with_info_using(
     client: &A2SClient,
     server: &Server,
-) -> Result<(u32, u8, u8)> {
+) -> Result<(u32, u8, u8, u8)> {
     let addr = server_addr(server);
     let (info, latency) = client
         .info(&addr, None)
@@ -49,8 +61,9 @@ pub async fn ping_via_a2s_with_info_using(
         .map_err(|e| Error::A2sQuery(format!("A2S query failed: {}", e)))?;
     Ok((
         duration_to_ms_floor1(latency),
-        info.players,
+        human_player_count(&info),
         info.max_players,
+        info.bots,
     ))
 }
 
@@ -96,8 +109,8 @@ pub async fn ping_via_a2s(server: &Server) -> Result<u32> {
 }
 
 /// Measure RTT via A2S info query and return player count.
-/// Returns (rtt_ms, players, max_players).
-pub async fn ping_via_a2s_with_info(server: &Server) -> Result<(u32, u8, u8)> {
+/// Returns (rtt_ms, players, max_players, bots).
+pub async fn ping_via_a2s_with_info(server: &Server) -> Result<(u32, u8, u8, u8)> {
     let (client, addr) = make_a2s_client(server).await?;
     let (info, latency) = client
         .info(&addr, None)
@@ -105,7 +118,7 @@ pub async fn ping_via_a2s_with_info(server: &Server) -> Result<(u32, u8, u8)> {
         .map_err(|e| Error::A2sQuery(format!("A2S query failed: {}", e)))?;
 
     let ms = duration_to_ms_floor1(latency);
-    Ok((ms, info.players, info.max_players))
+    Ok((ms, human_player_count(&info), info.max_players, info.bots))
 }
 
 /// Sentinel value emitted when all ping attempts fail — treated as TIMEOUT on
@@ -280,12 +293,13 @@ impl ServerDetails {
         lines.push(format!("Version: {}", self.info.version));
 
         if let Some(ref players) = self.players
-            && !players.is_empty() {
-                lines.push("Online players:".to_string());
-                for player in players {
-                    lines.push(format!("  {} ({} score)", player.name, player.score));
-                }
+            && !players.is_empty()
+        {
+            lines.push("Online players:".to_string());
+            for player in players {
+                lines.push(format!("  {} ({} score)", player.name, player.score));
             }
+        }
 
         if let Some(ref rules) = self.rules {
             lines.push("Rules:".to_string());

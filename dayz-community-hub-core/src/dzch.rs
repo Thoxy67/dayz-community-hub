@@ -149,9 +149,10 @@ impl DzchConfig {
             params.push(format!("name={}", urlencoding::encode(&self.name)));
         }
         if let Some(pw) = &self.password
-            && !pw.is_empty() {
-                params.push(format!("password={}", urlencoding::encode(pw)));
-            }
+            && !pw.is_empty()
+        {
+            params.push(format!("password={}", urlencoding::encode(pw)));
+        }
         if !self.mods.is_empty() {
             let ids: Vec<String> = self.mods.iter().map(|m| m.id.to_string()).collect();
             params.push(format!("mods={}", ids.join(",")));

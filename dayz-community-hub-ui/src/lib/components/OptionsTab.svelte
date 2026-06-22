@@ -1,6 +1,8 @@
 <script lang="ts">
-  import type { LaunchOptionDto } from '$lib/types';
+  import type { LaunchOptionDto, SystemSpecsDto } from '$lib/types';
   import Icon from '@iconify/svelte';
+  import { invoke } from '@tauri-apps/api/core';
+  import { onMount } from 'svelte';
   import * as m from '$lib/paraglide/messages.js';
 
   interface Props {
@@ -11,6 +13,60 @@
   }
 
   let { options, search = $bindable(''), onToggle, onSetValue }: Props = $props();
+
+  // ── Hardware-based recommendations ─────────────────────────────────────────
+  let specs = $state<SystemSpecsDto | null>(null);
+  let applying = $state(false);
+  let justApplied = $state(false);
+
+  onMount(async () => {
+    try {
+      specs = await invoke<SystemSpecsDto>('get_system_specs');
+    } catch {
+      /* non-Tauri / detection unavailable — banner stays hidden */
+    }
+  });
+
+  type Recommendation = { key: string; value?: string };
+
+  /** Tuned DayZ launch flags for the detected hardware.
+   * - -cpuCount: physical cores (the engine favours physical over logical/HT)
+   * - -exThreads: thread bitmask (7 = file+geometry+texture) on quad-core+
+   * - -maxMem: ~60% of RAM, rounded, clamped to a sane 2–16 GB window
+   * - -high / -noBenchmark: broadly safe performance wins */
+  function computeRecommendations(s: SystemSpecsDto): Recommendation[] {
+    const cpu = Math.max(1, Math.min(s.physical_cores, s.logical_cores));
+    const exThreads = cpu >= 4 ? '7' : cpu >= 2 ? '3' : '1';
+    const maxMem = Math.min(16384, Math.max(2048, Math.round((s.total_memory_mb * 0.6) / 256) * 256));
+    return [
+      { key: 'cpu_count', value: String(cpu) },
+      { key: 'ex_threads', value: exThreads },
+      { key: 'max_mem', value: String(maxMem) },
+      { key: 'high' },
+      { key: 'no_benchmark' },
+    ];
+  }
+
+  function applyRecommended() {
+    if (!specs) return;
+    applying = true;
+    try {
+      for (const rec of computeRecommendations(specs)) {
+        const opt = optMap.get(rec.key);
+        if (!opt) continue;
+        if (rec.value !== undefined) {
+          // setOptionValue also enables the option.
+          if (opt.value !== rec.value || !opt.enabled) onSetValue(rec.key, rec.value);
+        } else if (!opt.enabled) {
+          onToggle(rec.key);
+        }
+      }
+      justApplied = true;
+      setTimeout(() => (justApplied = false), 2500);
+    } finally {
+      applying = false;
+    }
+  }
   let editingKey = $state<string | null>(null);
   let editValue = $state('');
 
@@ -247,6 +303,41 @@
 
   <!-- Scrollable body -->
   <div class="overflow-y-auto flex-1 p-4 space-y-5">
+    <!-- Hardware-tuned recommendation banner -->
+    {#if specs && !search.trim()}
+      <div class="flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3">
+        <div
+          class="size-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0"
+        >
+          <Icon icon="ph:sparkle" class="size-4 text-primary" />
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-semibold text-base-content leading-tight">{m.options_recommend_title()}</p>
+          <p class="text-xs text-base-content/55 mt-0.5 leading-snug">
+            {m.options_recommend_desc({
+              cores: specs.physical_cores,
+              ram: Math.round(specs.total_memory_mb / 1024),
+            })}
+          </p>
+        </div>
+        <button
+          class="btn btn-primary btn-sm gap-1.5 shrink-0"
+          onclick={applyRecommended}
+          disabled={applying || justApplied}
+        >
+          {#if applying}
+            <span class="loading loading-spinner loading-xs"></span>
+          {:else if justApplied}
+            <Icon icon="ph:check" class="size-4" />
+            {m.options_recommend_applied()}
+          {:else}
+            <Icon icon="ph:magic-wand" class="size-4" />
+            {m.options_recommend_apply()}
+          {/if}
+        </button>
+      </div>
+    {/if}
+
     {#each filteredGroups as group}
       <!-- Group card -->
       <div class="rounded-xl border border-base-300 bg-base-100 overflow-hidden">

@@ -83,6 +83,11 @@
   "tab_about": "О программе",
 
   "options_search_placeholder": "Поиск опций…",
+  "options_recommend_title": "Рекомендовано для вашего ПК",
+  "options_recommend_desc": "Обнаружено: {cores} ядер · {ram} ГБ ОЗУ — применить оптимальные флаги производительности.",
+  "options_recommend_apply": "Применить",
+  "options_recommend_applied": "Применено",
+  "options_recommend_detecting": "Определение оборудования…",
   "options_active": "{count} активно",
   "options_active_one": "{count} активна",
   "options_flags_hint": "Флаги, передаваемые DayZ при запуске",
@@ -298,6 +303,7 @@
   "servers_show_mods": "Показать список модов",
   "servers_os_windows": "Windows",
   "servers_os_linux": "Linux",
+  "servers_bots": "Ботов: {count} (часто фейковые игроки)",
   "servers_jump_top": "Наверх",
 
   "servers_favorite": "В избранное",
@@ -368,6 +374,7 @@
 
   "detail_a2s_title": "A2S информация",
   "detail_a2s_live_players": "Игроки онлайн",
+  "detail_bots": "Боты",
   "detail_a2s_game": "Игра",
   "detail_a2s_online_players": "Игроки онлайн",
   "detail_a2s_no_players": "Нет игроков онлайн",

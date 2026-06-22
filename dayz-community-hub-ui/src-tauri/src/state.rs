@@ -108,10 +108,8 @@ impl AppState {
     /// `find_server`, etc.
     pub fn set_servers(&mut self, servers: Vec<Server>) {
         let n = servers.len();
-        let mut by_query =
-            FxHashMap::with_capacity_and_hasher(n, Default::default());
-        let mut by_game =
-            FxHashMap::with_capacity_and_hasher(n, Default::default());
+        let mut by_query = FxHashMap::with_capacity_and_hasher(n, Default::default());
+        let mut by_game = FxHashMap::with_capacity_and_hasher(n, Default::default());
         for (i, s) in servers.iter().enumerate() {
             // First occurrence wins (matches dedup_servers behavior).
             by_query
@@ -156,6 +154,9 @@ pub struct CachedPingResult {
     pub ms: u32,
     pub players: Option<u8>,
     pub max_players: Option<u8>,
+    /// Bots reported by A2S_INFO. Many DayZ servers pad this to equal `players`
+    /// to appear full; surfaced so the UI can flag it.
+    pub bots: Option<u8>,
     pub failed: bool,
 }
 

@@ -23,13 +23,15 @@ fn detect_steamcmd_sync(explicit_path: &Option<String>) -> SteamcmdStatusDto {
     let platform = "macos";
 
     if let Some(p) = explicit_path
-        && !p.is_empty() && std::path::Path::new(p).exists() {
-            return SteamcmdStatusDto {
-                found: true,
-                path: Some(p.clone()),
-                platform: platform.into(),
-            };
-        }
+        && !p.is_empty()
+        && std::path::Path::new(p).exists()
+    {
+        return SteamcmdStatusDto {
+            found: true,
+            path: Some(p.clone()),
+            platform: platform.into(),
+        };
+    }
 
     #[cfg(target_os = "windows")]
     let binary_name = "steamcmd.exe";
@@ -100,14 +102,13 @@ pub(crate) async fn watch_steamcmd(
         loop {
             interval.tick().await;
             let explicit_path = state_clone.read().await.ctl.profile().steamcmd_path.clone();
-            let status = match tokio::task::spawn_blocking(move || {
-                detect_steamcmd_sync(&explicit_path)
-            })
-            .await
-            {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
+            let status =
+                match tokio::task::spawn_blocking(move || detect_steamcmd_sync(&explicit_path))
+                    .await
+                {
+                    Ok(s) => s,
+                    Err(_) => continue,
+                };
             if status.found {
                 let _ = app.emit("steamcmd-detected", status);
                 return;

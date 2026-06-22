@@ -122,9 +122,11 @@ fn du_dir_cached(path: &Path) -> Result<u64> {
     // Check the cache first.
     if let Ok(cache) = size_cache().lock()
         && let Some(&(cached_mtime, cached_size)) = cache.get(path)
-            && cached_mtime == dir_mtime && dir_mtime != 0 {
-                return Ok(cached_size);
-            }
+        && cached_mtime == dir_mtime
+        && dir_mtime != 0
+    {
+        return Ok(cached_size);
+    }
 
     // Cache miss or mtime changed — do the full walk.
     let size = du_dir(path)?;

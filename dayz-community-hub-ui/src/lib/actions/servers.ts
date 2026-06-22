@@ -51,6 +51,7 @@ function flushPendingPingBatch() {
         if (server) {
           server.players = r.players;
           if (r.max_players !== undefined) server.max_players = r.max_players;
+          server.bots = r.bots ?? 0;
         }
       }
     }
@@ -175,46 +176,34 @@ export async function startBackgroundPing() {
     }
   }
 
-  // Split into priority tiers (only include enabled scopes)
+  // Split into priority tiers (only include enabled scopes), then concatenate
+  // into ONE ordered target list: favorites → history → rest.
+  //
+  // This is issued as a SINGLE `ping_all_background` call. The backend's
+  // `buffer_unordered` starts tasks in list order, so front-of-list servers
+  // (favorites, then history) are queried first — true priority.
+  //
+  // It must be one call: `ping_all_background` spawns a detached task and
+  // returns immediately, and each invocation aborts the previous one. Issuing
+  // three sequential calls would make history abort the favorites scan and
+  // rest abort history — killing the very tiers we want to prioritize.
   const favoriteTargets = scanFavorites ? allTargets.filter((t) => favoritesSet.has(t)) : [];
   const historyTargets = scanHistory ? allTargets.filter((t) => historySet.has(t)) : [];
   const restTargets = scanServers ? allTargets.filter((t) => !favoritesSet.has(t) && !historySet.has(t)) : [];
 
-  // Calculate total targets to ping
-  const totalTargets = favoriteTargets.length + historyTargets.length + restTargets.length;
-  if (totalTargets === 0) return;
+  const orderedTargets = [...favoriteTargets, ...historyTargets, ...restTargets];
+  if (orderedTargets.length === 0) return;
 
   // Start ping session for progress bar
-  s.pingSession = { active: true, total: totalTargets, completed: 0 };
+  s.pingSession = { active: true, total: orderedTargets.length, completed: 0 };
 
   // Get ping settings from profile
-  const concurrency = s.profile?.ping_concurrency ?? 25;
+  const concurrency = s.profile?.ping_concurrency ?? 64;
   const timeoutMs = s.profile?.ping_timeout_auto ?? 2000;
 
-  // 1. Ping favorites first
-  if (favoriteTargets.length > 0) {
-    const onProgress = new Channel<PingResult[]>();
-    onProgress.onmessage = handlePingBatch;
-    await invoke('ping_all_background', { targets: favoriteTargets, concurrency, timeoutMs, onProgress }).catch(
-      () => {},
-    );
-  }
-
-  // 2. Then ping history
-  if (historyTargets.length > 0) {
-    const onProgress = new Channel<PingResult[]>();
-    onProgress.onmessage = handlePingBatch;
-    await invoke('ping_all_background', { targets: historyTargets, concurrency, timeoutMs, onProgress }).catch(
-      () => {},
-    );
-  }
-
-  // 3. Then ping the rest
-  if (restTargets.length > 0) {
-    const onProgress = new Channel<PingResult[]>();
-    onProgress.onmessage = handlePingBatch;
-    await invoke('ping_all_background', { targets: restTargets, concurrency, timeoutMs, onProgress }).catch(() => {});
-  }
+  const onProgress = new Channel<PingResult[]>();
+  onProgress.onmessage = handlePingBatch;
+  await invoke('ping_all_background', { targets: orderedTargets, concurrency, timeoutMs, onProgress }).catch(() => {});
 
   // Session is cleared by flushPendingPingBatch when completed >= total
   // If something goes wrong and batches never arrive, bar will stay visible
@@ -226,7 +215,7 @@ export async function pingVisibleServers(targets: string[]) {
   if (targets.length === 0) return;
 
   // Get ping settings from profile
-  const concurrency = s.profile?.ping_concurrency ?? 25;
+  const concurrency = s.profile?.ping_concurrency ?? 64;
   const timeoutMs = s.profile?.ping_timeout_auto ?? 2000;
 
   const onProgress = new Channel<PingResult[]>();
@@ -266,6 +255,7 @@ export async function fetchPingResults() {
           if (server) {
             server.players = r.players;
             if (r.max_players !== undefined) server.max_players = r.max_players;
+            server.bots = r.bots ?? 0;
           }
         }
       }

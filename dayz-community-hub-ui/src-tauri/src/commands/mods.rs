@@ -66,12 +66,11 @@ pub(crate) async fn check_mod_updates(
     // several hundred mods this turns N serial round-trips into a few parallel
     // waves instead.
     let chunks: Vec<Vec<u64>> = mod_ids.chunks(100).map(|c| c.to_vec()).collect();
-    let chunk_results: Vec<Result<Vec<(u64, i64)>, String>> =
-        futures_util::stream::iter(chunks)
-            .map(|chunk| {
-                let client = client.clone();
-                let api_key = api_key.clone();
-                async move {
+    let chunk_results: Vec<Result<Vec<(u64, i64)>, String>> = futures_util::stream::iter(chunks)
+        .map(|chunk| {
+            let client = client.clone();
+            let api_key = api_key.clone();
+            async move {
                 let mut params: Vec<(String, String)> = Vec::new();
                 if let Some(key) = &api_key {
                     params.push(("key".to_string(), key.clone()));
@@ -108,11 +107,11 @@ pub(crate) async fn check_mod_updates(
                     }
                 }
                 Ok(out)
-                }
-            })
-            .buffer_unordered(6)
-            .collect()
-            .await;
+            }
+        })
+        .buffer_unordered(6)
+        .collect()
+        .await;
 
     let mut remote_map: FxHashMap<u64, i64> = FxHashMap::default();
     for chunk in chunk_results {

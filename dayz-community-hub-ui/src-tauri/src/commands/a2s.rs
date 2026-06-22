@@ -99,11 +99,15 @@ pub(crate) async fn query_a2s(
     // Resolve game port: prefer provided, then A2S extended info
     let resolved_game_port = game_port.or_else(|| info.extended_server_info.port.map(|p| p as i64));
 
+    // Compute before moving fields out of `info` below.
+    let players = a2s_query::human_player_count(&info);
+
     let result = Arc::new(A2sDetailsDto {
         server_name: info.name,
         game: info.game,
-        players: info.players,
+        players,
         max_players: info.max_players,
+        bots: info.bots,
         map: info.map,
         version: info.version,
         players_list,

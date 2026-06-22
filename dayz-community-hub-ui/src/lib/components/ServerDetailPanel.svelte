@@ -3,6 +3,7 @@
   import {
     pingColor,
     playerFill,
+    playerBarColor,
     formatDuration,
     sparklinePath,
     countryCodeToFlag,
@@ -253,7 +254,14 @@
           <Icon icon="ph:copy" class="size-3.5" />
         {/if}
       </button>
-      <button class="btn btn-ghost btn-xs" onclick={onClose}>✕</button>
+      <button
+        class="btn btn-ghost btn-xs"
+        onclick={onClose}
+        aria-label={m.fav_close_details()}
+        title={m.fav_close_details()}
+      >
+        <Icon icon="ph:x" class="size-3.5" />
+      </button>
     </div>
   </div>
 
@@ -353,8 +361,21 @@
         <div class="font-mono text-base-content">{server.query_port}</div>
 
         <div class="text-base-content/50">{m.detail_players()}</div>
-        <div class="font-bold {playerFill(server.players, server.max_players, '40')}">
-          {server.players}/{server.max_players}
+        <div class="flex flex-col gap-0.5">
+          <span class="font-bold {playerFill(server.players, server.max_players, '40')}">
+            {server.players}/{server.max_players}
+          </span>
+          <span class="block h-1 w-full rounded-full bg-base-300 overflow-hidden">
+            <span
+              class="block h-full rounded-full transition-[width] duration-500 ease-out {playerBarColor(
+                server.players,
+                server.max_players,
+              )}"
+              style="width:{server.max_players > 0
+                ? Math.min(100, Math.round((server.players / server.max_players) * 100))
+                : 0}%"
+            ></span>
+          </span>
         </div>
 
         <div class="text-base-content/50">{m.detail_map()}</div>
@@ -706,6 +727,13 @@
           <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs mb-2">
             <div class="text-base-content/50">{m.detail_a2s_live_players()}</div>
             <div class="font-bold text-success">{a2s.players}/{a2s.max_players}</div>
+            <div class="text-base-content/50">{m.detail_bots()}</div>
+            <div
+              class="font-bold flex items-center gap-1 {a2s.bots > 0 ? 'text-warning' : 'text-base-content/70'}"
+              title={a2s.bots > 0 ? m.servers_bots({ count: a2s.bots }) : undefined}
+            >
+              {#if a2s.bots > 0}<Icon icon="mdi:robot" class="size-3.5 shrink-0" />{/if}{a2s.bots}
+            </div>
             <div class="text-base-content/50">{m.detail_a2s_game()}</div>
             <div>{a2s.game}</div>
           </div>

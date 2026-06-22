@@ -19,6 +19,12 @@ tar.workspace = true
 async-a2s.workspace = true
 chrono.workspace = true
 rustc-hash.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+http-body-util.workspace = true
+bytes.workspace = true
+tokio-rustls.workspace = true
+webpki-roots.workspace = true
 
 # Not in workspace (core-specific)
 portable-pty = { version = "0.9.0", default-features = false }

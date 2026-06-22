@@ -62,11 +62,12 @@
   aria-modal="true"
   aria-labelledby="mod-confirm-title"
   tabindex="-1"
-  class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+  class="fixed inset-0 modal-backdrop-window z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+  style="top: 36px;"
   onkeydown={handleKeydown}
   onclick={(e) => e.target === e.currentTarget && onCancel()}
 >
-  <div class="bg-base-100 border border-base-300 rounded-lg shadow-xl w-[500px] max-h-[80vh] flex flex-col">
+  <div class="bg-base-100 border border-base-300 rounded-xl shadow-2xl w-[500px] max-h-[80vh] flex flex-col">
     <!-- Header -->
     <div class="flex items-center justify-between px-4 py-3 border-b border-base-300 flex-shrink-0">
       <h2 id="mod-confirm-title" class="text-sm font-semibold">
@@ -74,7 +75,7 @@
           ? m.mods_confirm_title_update({ count: mods.length })
           : m.mods_confirm_title_install({ count: mods.length })}
       </h2>
-      <button type="button" class="btn btn-ghost btn-xs btn-square" aria-label="Close" onclick={onCancel}>
+      <button type="button" class="btn btn-ghost btn-xs btn-square" aria-label={m.mods_close()} title={m.mods_close()} onclick={onCancel}>
         <Icon icon="ph:x" class="size-4" />
       </button>
     </div>

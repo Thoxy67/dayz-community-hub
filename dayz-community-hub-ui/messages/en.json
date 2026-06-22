@@ -83,6 +83,11 @@
   "tab_about": "About",
 
   "options_search_placeholder": "Search options…",
+  "options_recommend_title": "Recommended for your PC",
+  "options_recommend_desc": "Detected {cores} cores · {ram} GB RAM — apply tuned performance flags.",
+  "options_recommend_apply": "Apply",
+  "options_recommend_applied": "Applied",
+  "options_recommend_detecting": "Detecting hardware…",
   "options_active": "{count} active",
   "options_active_one": "{count} active",
   "options_flags_hint": "Flags passed to DayZ at launch",
@@ -298,6 +303,7 @@
   "servers_show_mods": "Show mod list",
   "servers_os_windows": "Windows",
   "servers_os_linux": "Linux",
+  "servers_bots": "{count} bots reported (often fake players)",
   "servers_jump_top": "Jump to top",
 
   "servers_favorite": "Favorite",
@@ -368,6 +374,7 @@
 
   "detail_a2s_title": "Live A2S Info",
   "detail_a2s_live_players": "Live players",
+  "detail_bots": "Bots",
   "detail_a2s_game": "Game",
   "detail_a2s_online_players": "Online players",
   "detail_a2s_no_players": "No players online",

@@ -142,7 +142,7 @@
   let exportIncludeMods = $state(true);
 
   // Ping settings - bind to profile with auto-save
-  let pingConcurrency = $derived(s.profile?.ping_concurrency ?? 25);
+  let pingConcurrency = $derived(s.profile?.ping_concurrency ?? 64);
   let pingTimeoutAuto = $derived(s.profile?.ping_timeout_auto ?? 2000);
   let pingTimeoutManual = $derived(s.profile?.ping_timeout_manual ?? 10000);
   let pingMaxRetries = $derived(s.profile?.ping_max_retries ?? 3);
@@ -417,7 +417,7 @@
                   type="range"
                   id="ping-concurrency"
                   min="1"
-                  max="100"
+                  max="200"
                   step="1"
                   value={pingConcurrency}
                   oninput={(e) =>
@@ -434,7 +434,7 @@
                 />
                 <div class="flex justify-between text-xs text-base-content/30 px-0.5">
                   <span>5</span>
-                  <span>100</span>
+                  <span>200</span>
                 </div>
               </div>
               <!-- Auto timeout slider -->

@@ -43,7 +43,7 @@ export async function saveProfileSettings(
       steamId,
       battlemetricsApiKey,
       userLocation,
-      pingConcurrency: pingConcurrency ?? p?.ping_concurrency ?? 25,
+      pingConcurrency: pingConcurrency ?? p?.ping_concurrency ?? 64,
       pingTimeoutAuto: pingTimeoutAuto ?? p?.ping_timeout_auto ?? 2000,
       pingTimeoutManual: pingTimeoutManual ?? p?.ping_timeout_manual ?? 10000,
       pingMaxRetries: p?.ping_max_retries ?? 0,

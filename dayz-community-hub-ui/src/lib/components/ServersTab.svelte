@@ -877,7 +877,7 @@
                         class="size-5 flex items-center justify-center rounded transition-colors
                               {isExcluded
                           ? 'opacity-100 hover:bg-error/15'
-                          : 'opacity-0 group-hover/row:opacity-100 hover:bg-error/15'}"
+                          : 'opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 hover:bg-error/15'}"
                         onclick={(e) => {
                           e.stopPropagation();
                           isExcluded ? onUnexcludeIp(server.ip) : onExcludeIp(server.ip);
@@ -926,29 +926,39 @@
                     </button>
                   </td>
 
-                  <!-- Players: fraction + mini bar — click to refresh via A2S -->
+                  <!-- Players: fraction + bar underline — click to refresh via A2S -->
                   <td class="px-3">
-                    <div class="flex items-center gap-2">
-                      <button
-                        class="tabular-nums font-mono {playerFill(
-                          livePlayers,
-                          server.max_players,
-                        )} w-14 shrink-0 cursor-pointer hover:opacity-70 transition-opacity text-left"
-                        onclick={(e) => {
-                          e.stopPropagation();
-                          doRefreshPlayers(server);
-                        }}
-                        title={m.servers_click_refresh_players()}
-                      >
-                        {#if loadingPlayers}
-                          <span class="loading loading-spinner" style="width:10px;height:10px;"></span>
-                        {:else}
-                          {livePlayers}<span class="text-base-content/30">/{server.max_players}</span>
+                    <div class="flex flex-col gap-0.5">
+                      <div class="flex items-center">
+                        <button
+                          class="tabular-nums font-mono {playerFill(
+                            livePlayers,
+                            server.max_players,
+                          )} cursor-pointer hover:opacity-70 transition-opacity text-left"
+                          onclick={(e) => {
+                            e.stopPropagation();
+                            doRefreshPlayers(server);
+                          }}
+                          title={m.servers_click_refresh_players()}
+                        >
+                          {#if loadingPlayers}
+                            <span class="loading loading-spinner" style="width:10px;height:10px;"></span>
+                          {:else}
+                            {livePlayers}<span class="text-base-content/30">/{server.max_players}</span>
+                          {/if}
+                        </button>
+                        {#if server.bots}
+                          <span class="ml-auto inline-flex shrink-0" title={m.servers_bots({ count: server.bots })}
+                            ><Icon icon="mdi:robot" class="size-3 text-base-content/40" /></span
+                          >
                         {/if}
-                      </button>
-                      <div class="flex-1 h-1 rounded-full bg-base-300 overflow-hidden">
+                      </div>
+                      <div class="h-1 w-full rounded-full bg-base-300 overflow-hidden">
                         <div
-                          class="h-full rounded-full transition-all {playerBarColor(livePlayers, server.max_players)}"
+                          class="h-full rounded-full transition-[width] duration-500 ease-out {playerBarColor(
+                            livePlayers,
+                            server.max_players,
+                          )}"
                           style="width:{pct}%"
                         ></div>
                       </div>
@@ -1036,12 +1046,18 @@
                   </td>
 
                   <!-- OS -->
-                  <td class="px-2 text-center">
-                    {#if server.environment === 'w'}
-                      <span title={m.servers_os_windows()}><Icon icon="devicon:windows11" class="size-3.5" /></span>
-                    {:else}
-                      <span title={m.servers_os_linux()}><Icon icon="flat-color-icons:linux" class="size-3.5" /></span>
-                    {/if}
+                  <td class="px-2">
+                    <div class="flex items-center justify-center">
+                      {#if server.environment === 'w'}
+                        <span class="inline-flex" title={m.servers_os_windows()}
+                          ><Icon icon="devicon:windows11" class="size-3.5" /></span
+                        >
+                      {:else}
+                        <span class="inline-flex" title={m.servers_os_linux()}
+                          ><Icon icon="flat-color-icons:linux" class="size-3.5" /></span
+                        >
+                      {/if}
+                    </div>
                   </td>
                 </tr>
               {/each}

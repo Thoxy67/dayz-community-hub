@@ -101,7 +101,7 @@ fn default_steamcmd_enabled() -> bool {
 }
 
 fn default_ping_concurrency() -> u32 {
-    25
+    64
 }
 
 fn default_ping_timeout_auto() -> u32 {

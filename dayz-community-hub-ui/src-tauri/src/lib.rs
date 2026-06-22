@@ -160,6 +160,7 @@ pub fn run(args: CliArgs) {
             commands::misc::is_favorite,
             commands::misc::setup_mod_symlinks,
             commands::misc::find_server,
+            commands::misc::get_system_specs,
             commands::profile_io::export_profile,
             commands::profile_io::import_profile,
             commands::profile_io::reset_profile,

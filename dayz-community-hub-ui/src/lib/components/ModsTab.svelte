@@ -381,6 +381,21 @@
     });
   }
 
+  /** Compact date for the table: drops the year for the current year (full
+   * datetime is kept in the cell's `title`). Keeps the date columns narrow. */
+  function formatDateCompact(ts: number): string {
+    if (!ts) return '—';
+    const d = new Date(ts * 1000);
+    const opts: Intl.DateTimeFormatOptions = {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    };
+    if (d.getFullYear() !== new Date().getFullYear()) opts.year = '2-digit';
+    return d.toLocaleString(undefined, opts);
+  }
+
   // ── Keyboard navigation ───────────────────────────────────────────────────
   let focusedIdx = $state<number>(-1);
   let tableRef = $state<HTMLElement | null>(null);
@@ -543,7 +558,13 @@
       <div class="w-px h-4 bg-base-300 mx-0.5"></div>
 
       <!-- Refresh -->
-      <button class="btn btn-ghost btn-xs" onclick={onRefresh} disabled={loading} title={m.mods_refresh_title()}>
+      <button
+        class="btn btn-ghost btn-xs"
+        onclick={onRefresh}
+        disabled={loading}
+        aria-label={m.mods_refresh_title()}
+        title={m.mods_refresh_title()}
+      >
         {#if loading}
           <span class="loading loading-spinner loading-xs"></span>
         {:else}
@@ -580,8 +601,7 @@
       <table class="w-full text-xs" style="table-layout: fixed; border-collapse: collapse;" bind:this={tableRef}>
         <thead class="sticky top-0 z-10">
           <tr
-            class="bg-base-200/95 backdrop-blur-sm text-base-content/50 uppercase tracking-wider border-b border-base-300 select-none"
-            style="font-size:10px;"
+            class="bg-base-200/95 backdrop-blur-sm text-[10px] text-base-content/50 uppercase tracking-wider border-b border-base-300 select-none"
           >
             <!-- Select-all checkbox -->
             <th class="w-8 px-2 py-2 text-center">
@@ -603,7 +623,7 @@
               >
             </th>
             <th
-              class="w-36 px-3 py-2 font-medium text-left cursor-pointer hover:text-info transition-colors"
+              class="w-28 px-3 py-2 font-medium text-left cursor-pointer hover:text-info transition-colors"
               onclick={() => toggleSort('id')}
             >
               <span class="flex items-center gap-1"
@@ -611,7 +631,7 @@
               >
             </th>
             <th
-              class="w-20 px-3 py-2 font-medium text-right cursor-pointer hover:text-secondary transition-colors"
+              class="w-24 px-3 py-2 font-medium text-right cursor-pointer hover:text-secondary transition-colors"
               onclick={() => toggleSort('size')}
             >
               <span class="flex items-center justify-end gap-1"
@@ -619,7 +639,7 @@
               >
             </th>
             <th
-              class="w-40 px-3 py-2 font-medium text-left cursor-pointer hover:text-base-content transition-colors"
+              class="w-28 px-3 py-2 font-medium text-left cursor-pointer hover:text-base-content transition-colors"
               onclick={() => toggleSort('local')}
             >
               <span class="flex items-center gap-1"
@@ -628,7 +648,7 @@
             </th>
             {#if canCheckUpdates}
               <th
-                class="w-40 px-3 py-2 font-medium text-left cursor-pointer hover:text-base-content transition-colors"
+                class="w-28 px-3 py-2 font-medium text-left cursor-pointer hover:text-base-content transition-colors"
                 onclick={() => toggleSort('remote')}
               >
                 <span class="flex items-center gap-1"
@@ -736,18 +756,20 @@
               </td>
 
               <!-- Size -->
-              <td class="px-3 py-2 text-right tabular-nums text-secondary/60">{mod.size_human}</td>
+              <td class="px-3 py-2 text-right tabular-nums whitespace-nowrap text-secondary/60">{mod.size_human}</td>
 
               <!-- Local updated -->
               <td
-                class="px-3 py-2 {mod.remote_updated && mod.local_updated < mod.remote_updated
+                class="px-3 py-2 tabular-nums whitespace-nowrap {mod.remote_updated &&
+                mod.local_updated < mod.remote_updated
                   ? 'text-base-content/40'
-                  : 'text-base-content/70'}">{formatDate(mod.local_updated)}</td
+                  : 'text-base-content/70'}"
+                title={formatDate(mod.local_updated)}>{formatDateCompact(mod.local_updated)}</td
               >
 
               <!-- Remote updated — only shown when Steam API key is set -->
               {#if canCheckUpdates}
-                <td class="px-3 py-2">
+                <td class="px-3 py-2 tabular-nums whitespace-nowrap">
                   {#if checking}
                     <span class="text-base-content/25">…</span>
                   {:else if mod.remote_updated}
@@ -757,8 +779,9 @@
                         : mod.local_updated < mod.remote_updated
                           ? 'text-base-content/70'
                           : 'text-base-content/40'}
+                      title={formatDate(mod.remote_updated)}
                     >
-                      {formatDate(mod.remote_updated)}
+                      {formatDateCompact(mod.remote_updated)}
                     </span>
                   {:else}
                     <span class="text-base-content/25">—</span>
@@ -770,32 +793,28 @@
               <td class="px-3 py-2 text-center">
                 {#if canCheckUpdates && stale}
                   <span
-                    class="inline-flex items-center gap-0.5 text-warning font-semibold rounded-md px-1.5 py-0.5 bg-warning/15"
-                    style="font-size:9px;"
+                    class="inline-flex items-center gap-0.5 whitespace-nowrap text-[9px] text-warning font-semibold rounded-md px-1.5 py-0.5 bg-warning/15"
                   >
                     <Icon icon="ph:arrow-circle-up" class="size-2.5" />
                     {m.mods_status_update()}
                   </span>
                 {:else if canCheckUpdates && mod.remote_updated !== null}
                   <span
-                    class="inline-flex items-center gap-0.5 text-success/80 font-semibold rounded-md px-1.5 py-0.5 bg-success/10"
-                    style="font-size:9px;"
+                    class="inline-flex items-center gap-0.5 whitespace-nowrap text-[9px] text-success/80 font-semibold rounded-md px-1.5 py-0.5 bg-success/10"
                   >
                     <Icon icon="ph:check-circle" class="size-2.5" />
                     {m.mods_status_ok()}
                   </span>
                 {:else if mod.managed}
                   <span
-                    class="inline-flex items-center gap-0.5 text-info/70 font-semibold rounded-md px-1.5 py-0.5 bg-info/10"
-                    style="font-size:9px;"
+                    class="inline-flex items-center gap-0.5 whitespace-nowrap text-[9px] text-info/70 font-semibold rounded-md px-1.5 py-0.5 bg-info/10"
                   >
                     <Icon icon="ph:link-simple" class="size-2.5" />
                     {m.mods_status_linked()}
                   </span>
                 {:else}
                   <span
-                    class="inline-flex items-center gap-0.5 text-base-content/30 font-medium rounded-md px-1.5 py-0.5 bg-base-300/30"
-                    style="font-size:9px;"
+                    class="inline-flex items-center gap-0.5 whitespace-nowrap text-[9px] text-base-content/30 font-medium rounded-md px-1.5 py-0.5 bg-base-300/30"
                   >
                     <Icon icon="ph:link-simple-break" class="size-2.5" />
                     {m.mods_status_unlinked()}
@@ -894,6 +913,7 @@
           <button
             class="btn btn-ghost btn-xs btn-square text-base-content/40 hover:text-base-content"
             onclick={closeInstallModal}
+            aria-label={m.mods_close()}
             title={m.mods_close()}
           >
             <Icon icon="ph:x" class="size-4" />

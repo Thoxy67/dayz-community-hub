@@ -14,8 +14,11 @@ const BACKGROUND_TIMEOUT_MS: u64 = 2_000;
 const VISIBLE_TIMEOUT_MS: u64 = 5_000;
 /// Timeout for manual single-server ping
 const MANUAL_TIMEOUT_MS: u64 = 10_000;
-/// Max concurrent pings for background bulk operation
-const BACKGROUND_CONCURRENT: usize = 25;
+/// Max concurrent pings for background bulk operation.
+/// A2S queries are network-RTT bound and share one multiplexed UDP socket, so
+/// higher in-flight counts mostly hide latency rather than burn CPU. 64 roughly
+/// halves the timeout-dominated tail on large lists vs. the old 25.
+const BACKGROUND_CONCURRENT: usize = 64;
 /// Max concurrent pings for visible server operation
 const VISIBLE_CONCURRENT: usize = 10;
 /// Batch size for streaming results via Channel
@@ -58,7 +61,7 @@ pub(crate) async fn ping_all_background(
 
     let ping_cache = ping_cache.inner().clone();
     let state_clone = state.inner().clone();
-    let concurrency = concurrency.unwrap_or(BACKGROUND_CONCURRENT).clamp(5, 100);
+    let concurrency = concurrency.unwrap_or(BACKGROUND_CONCURRENT).clamp(5, 200);
     let timeout = Duration::from_millis(
         timeout_ms
             .unwrap_or(BACKGROUND_TIMEOUT_MS)
@@ -110,16 +113,18 @@ pub(crate) async fn ping_all_background(
                     )
                     .await
                     {
-                        Ok(Ok((rtt, p, mp))) => CachedPingResult {
+                        Ok(Ok((rtt, p, mp, b))) => CachedPingResult {
                             ms: rtt,
                             players: Some(p),
                             max_players: Some(mp),
+                            bots: Some(b),
                             failed: false,
                         },
                         _ => CachedPingResult {
                             ms: a2s_query::PING_TIMEOUT_SENTINEL,
                             players: None,
                             max_players: None,
+                            bots: None,
                             failed: true,
                         },
                     };
@@ -151,6 +156,7 @@ pub(crate) async fn ping_all_background(
                                 ms: result.ms,
                                 players: result.players,
                                 max_players: result.max_players,
+                                bots: result.bots,
                                 failed: result.failed,
                             });
 
@@ -258,16 +264,18 @@ pub(crate) async fn ping_servers(
                     )
                     .await
                     {
-                        Ok(Ok((rtt, p, mp))) => CachedPingResult {
+                        Ok(Ok((rtt, p, mp, b))) => CachedPingResult {
                             ms: rtt,
                             players: Some(p),
                             max_players: Some(mp),
+                            bots: Some(b),
                             failed: false,
                         },
                         _ => CachedPingResult {
                             ms: a2s_query::PING_TIMEOUT_SENTINEL,
                             players: None,
                             max_players: None,
+                            bots: None,
                             failed: true,
                         },
                     };
@@ -299,6 +307,7 @@ pub(crate) async fn ping_servers(
                                 ms: result.ms,
                                 players: result.players,
                                 max_players: result.max_players,
+                                bots: result.bots,
                                 failed: result.failed,
                             });
 
@@ -352,6 +361,7 @@ pub(crate) async fn get_pings(
                     ms: r.ms,
                     players: r.players,
                     max_players: r.max_players,
+                    bots: r.bots,
                     failed: r.failed,
                 }
             })
@@ -377,9 +387,9 @@ pub(crate) async fn ping_single(
     };
     let timeout = Duration::from_millis(timeout_ms.unwrap_or(MANUAL_TIMEOUT_MS));
 
-    let (ms, players, max_players, failed) =
+    let (ms, players, max_players, bots, failed) =
         match tokio::time::timeout(timeout, a2s_query::ping_via_a2s_with_info(&server)).await {
-            Ok(Ok((rtt, p, mp))) => (rtt, Some(p), Some(mp), false),
+            Ok(Ok((rtt, p, mp, b))) => (rtt, Some(p), Some(mp), Some(b), false),
             Ok(Err(e)) => return Err(format!("A2S query failed: {e}")),
             Err(_) => return Err("Timeout".into()),
         };
@@ -391,6 +401,7 @@ pub(crate) async fn ping_single(
             ms,
             players,
             max_players,
+            bots,
             failed,
         },
     );

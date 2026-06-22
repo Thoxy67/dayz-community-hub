@@ -152,6 +152,9 @@ pub struct A2sDetailsDto {
     pub game: String,
     pub players: u8,
     pub max_players: u8,
+    /// Bots reported by A2S_INFO. DayZ servers commonly pad this to equal
+    /// `players` to fake a full server.
+    pub bots: u8,
     pub map: String,
     pub version: String,
     pub players_list: Vec<A2sPlayerDto>,
@@ -168,6 +171,17 @@ pub struct A2sDetailsDto {
     /// The server's actual game port from the A2S extended info (edf 0x80).
     /// `null` when the server does not include this optional field.
     pub game_port: Option<i64>,
+}
+
+/// Hardware specs used to recommend optimal DayZ launch options.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SystemSpecsDto {
+    /// Logical CPU count (threads).
+    pub logical_cores: u32,
+    /// Physical CPU core count (falls back to logical when unknown).
+    pub physical_cores: u32,
+    /// Total system RAM in megabytes.
+    pub total_memory_mb: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -250,6 +264,9 @@ pub struct PingResultDto {
     pub players: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_players: Option<u8>,
+    /// Bots reported by A2S_INFO (DayZ servers often pad this to fake a full server).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bots: Option<u8>,
     /// True when the A2S query failed (timeout or error).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub failed: bool,

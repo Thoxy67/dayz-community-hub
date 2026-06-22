@@ -159,7 +159,9 @@ pub async fn fetch_servers(client: &reqwest::Client) -> Result<ServerList> {
         .await?;
     let list = tokio::task::spawn_blocking(move || serde_json::from_slice::<ServerList>(&bytes))
         .await
-        .map_err(|e| crate::errors::Error::Other(format!("server list parse task failed: {e}")))??;
+        .map_err(|e| {
+            crate::errors::Error::Other(format!("server list parse task failed: {e}"))
+        })??;
     Ok(list)
 }
 

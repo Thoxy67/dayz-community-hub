@@ -696,8 +696,10 @@ impl SteamCmd {
         // Steam Guard mobile is detected by text: steamcmd flushes the
         // "Please confirm..." / "Waiting for confirmation..." lines once the
         // user approves on the phone.
-        let mut succeeded =
-            rustc_hash::FxHashSet::<u64>::with_capacity_and_hasher(mods_info.len(), Default::default());
+        let mut succeeded = rustc_hash::FxHashSet::<u64>::with_capacity_and_hasher(
+            mods_info.len(),
+            Default::default(),
+        );
         // O(1) mod_id → (idx, name) lookup so we don't linear-scan mods_info
         // on every "Downloading"/"Success" line.  For N mods downloading with
         // ~3 progress matches each, this turns O(N²) into O(N).

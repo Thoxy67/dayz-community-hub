@@ -206,37 +206,150 @@ pub fn looks_like_cloudflare_challenge(body: &str) -> bool {
         || head.contains("cf_chl_")
 }
 
+const NEWS_HOST: &str = "dayz.com";
+/// Browser User-Agent presented to dayz.com. Must look like a real browser for
+/// Cloudflare to serve the API instead of a challenge.
+const NEWS_USER_AGENT: &str =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0";
+
+/// Issue the news request over a raw, browser-shaped HTTPS/1.1 connection and
+/// return `(status, body)`.
+///
+/// Why not `reqwest`? dayz.com's Cloudflare bot filter rejects this endpoint
+/// unless the request looks like a real browser at THREE layers, none of which
+/// reqwest produces:
+///
+/// 1. **TLS fingerprint** — Cloudflare reads the ClientHello (JA3). reqwest's
+///    `native-tls` (OpenSSL) is flagged; `rustls` + the **aws-lc-rs** provider
+///    (BoringSSL, same as Chrome) is not. We also advertise an `http/1.1` ALPN —
+///    without it the request is challenged even with the right cipher suites.
+/// 2. **Header casing** — Cloudflare flags lowercase HTTP/1.1 header names, which
+///    hyper/reqwest emit by default (`accept`, `user-agent`, …). The `http` crate
+///    forces `HeaderName` lowercase, so we use hyper's low-level client with
+///    `title_case_headers(true)` to write `Accept`, `User-Agent`, ….
+/// 3. **Navigation headers** — `Accept: text/html` + `Sec-Fetch-Mode: navigate`
+///    make the request look like a top-level page load rather than an XHR/API
+///    call (which is what gets challenged).
+async fn fetch_news_raw() -> Result<(u16, String)> {
+    use bytes::Bytes;
+    use http_body_util::{BodyExt, Empty};
+    use hyper_util::rt::TokioIo;
+    use std::sync::Arc;
+    use tokio_rustls::rustls::{ClientConfig, RootCertStore, pki_types::ServerName};
+
+    let err = |ctx: &str, e: String| crate::errors::Error::Other(format!("news fetch {ctx}: {e}"));
+
+    // rustls with the aws-lc-rs (BoringSSL) provider — its ClientHello matches a
+    // Chrome-like fingerprint that Cloudflare accepts. Pin the provider
+    // explicitly so we don't depend on a process-wide default that other crates
+    // (tauri, reqwest) might leave unset or ambiguous.
+    let roots = RootCertStore {
+        roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+    };
+    let mut config = ClientConfig::builder_with_provider(Arc::new(
+        tokio_rustls::rustls::crypto::aws_lc_rs::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .map_err(|e| err("tls config", e.to_string()))?
+    .with_root_certificates(roots)
+    .with_no_client_auth();
+    // ALPN is part of the fingerprint Cloudflare checks — must advertise http/1.1.
+    config.alpn_protocols = vec![b"http/1.1".to_vec()];
+    let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
+
+    let tcp = tokio::net::TcpStream::connect((NEWS_HOST, 443))
+        .await
+        .map_err(|e| err("connect", e.to_string()))?;
+    let dnsname = ServerName::try_from(NEWS_HOST)
+        .map_err(|e| err("server name", e.to_string()))?
+        .to_owned();
+    let stream = connector
+        .connect(dnsname, tcp)
+        .await
+        .map_err(|e| err("tls handshake", e.to_string()))?;
+
+    let (mut sender, conn) = hyper::client::conn::http1::Builder::new()
+        .title_case_headers(true)
+        .handshake(TokioIo::new(stream))
+        .await
+        .map_err(|e| err("http handshake", e.to_string()))?;
+    // Drive the connection; it completes once the (Connection: close) response
+    // is fully read.
+    tokio::spawn(async move {
+        let _ = conn.await;
+    });
+
+    // Header order/casing here mirror a Firefox top-level navigation. The two
+    // that actually defeat the challenge are `Accept: text/html` and
+    // `Sec-Fetch-Mode: navigate`; the rest round out the browser fingerprint.
+    let req = hyper::Request::builder()
+        .uri("/api/article?rowsPerPage=50")
+        .header("Host", NEWS_HOST)
+        .header("User-Agent", NEWS_USER_AGENT)
+        .header(
+            "Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        )
+        .header("Accept-Language", "en-US,en;q=0.9")
+        .header("Upgrade-Insecure-Requests", "1")
+        .header("Sec-Fetch-Dest", "document")
+        .header("Sec-Fetch-Mode", "navigate")
+        .header("Sec-Fetch-Site", "none")
+        .header("Sec-Fetch-User", "?1")
+        .header("Connection", "close")
+        .body(Empty::<Bytes>::new())
+        .map_err(|e| err("build request", e.to_string()))?;
+
+    let resp = sender
+        .send_request(req)
+        .await
+        .map_err(|e| err("send", e.to_string()))?;
+    let status = resp.status().as_u16();
+    let body = resp
+        .into_body()
+        .collect()
+        .await
+        .map_err(|e| err("read body", e.to_string()))?
+        .to_bytes();
+    Ok((status, String::from_utf8_lossy(&body).into_owned()))
+}
+
 /// Fetch the latest DayZ news articles.
-/// Matches the bash script's `updateDayzNews()` / `getDayzNews()`.
 ///
-/// dayz.com uses a self-signed / expired cert on its API path, so the caller
-/// must supply an insecure `reqwest::Client` (TLS verification disabled).
-/// Using a shared, long-lived client keeps the connection pool alive between
-/// calls instead of establishing a new TLS handshake each time.
-///
-/// dayz.com now fronts this endpoint with a Cloudflare managed challenge that a
-/// plain HTTP client can't pass. When that happens the body is challenge HTML
-/// instead of JSON; we surface it as [`Error::CloudflareChallenge`] so the
-/// caller can retry inside a real WebView.
-pub async fn fetch_news(client: &reqwest::Client) -> Result<Vec<Article>> {
-    let resp = client
-        .get(NEWS_API_URL)
-        .query(&[("rowsPerPage", "50")])
-        .send()
-        .await?;
-    let status = resp.status();
-    let body = resp.text().await?;
+/// Performs a single browser-shaped HTTPS request (see [`fetch_news_raw`]) and
+/// parses the JSON payload. If Cloudflare ever changes the rules and serves a
+/// challenge page instead, we surface [`Error::CloudflareChallenge`] so the
+/// caller can fall back to a real WebView.
+pub async fn fetch_news() -> Result<Vec<Article>> {
+    let (status, body) = fetch_news_raw().await?;
     match parse_news_json(&body) {
         Ok(rows) => Ok(rows),
         Err(e) => {
-            if status == reqwest::StatusCode::FORBIDDEN
-                || status == reqwest::StatusCode::SERVICE_UNAVAILABLE
-                || looks_like_cloudflare_challenge(&body)
-            {
+            if status == 403 || status == 503 || looks_like_cloudflare_challenge(&body) {
                 Err(crate::errors::Error::CloudflareChallenge)
             } else {
                 Err(e)
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Live check that the navigation-header trick still bypasses Cloudflare and
+    /// returns parseable JSON. Network-dependent, so ignored by default. Run with:
+    /// cargo test -p dayz-community-hub-core -- news::tests::test_live_fetch --ignored --nocapture
+    #[tokio::test]
+    #[ignore]
+    async fn test_live_fetch() {
+        match fetch_news().await {
+            Ok(rows) => {
+                println!("fetched {} articles", rows.len());
+                assert!(!rows.is_empty(), "expected at least one article");
+            }
+            Err(e) => panic!("fetch_news failed: {e:?}"),
         }
     }
 }

@@ -1270,6 +1270,7 @@
         <button
           class="size-7 rounded flex items-center justify-center text-base-content/40 hover:bg-base-300 hover:text-base-content transition-colors flex-shrink-0"
           onclick={closeModal}
+          aria-label={m.settings_close()}
           title={m.settings_close()}
         >
           <Icon icon="ph:x" class="size-3.5" />
@@ -1504,7 +1505,7 @@
           </div>
           <div class="bg-base-200/60 rounded-lg border border-base-300/60 overflow-hidden">
             <!-- API token row -->
-            <div class="flex items-center gap-3 px-3 py-2.5 border-b border-base-300/40">
+            <div class="flex items-center gap-3 px-3 py-2.5">
               <label class="text-xs text-base-content/55 w-24 shrink-0" for="field-bmkey"
                 >{m.settings_api_token()}</label
               >
@@ -1538,13 +1539,32 @@
                 </button>
               </div>
             </div>
-            <!-- Location section -->
+          </div>
+          <p class="text-xs text-base-content/35 mt-1.5 px-1">
+            {m.settings_get_token_at()}
+            <button
+              type="button"
+              class="text-primary hover:underline"
+              onclick={() => {
+                openUrl('https://www.battlemetrics.com/developers');
+              }}>battlemetrics.com/developers</button
+            >
+          </p>
+        </div>
+
+        <!-- ── Section: Location ──────────────────────────────────────────── -->
+        <div>
+          <div class="flex items-center gap-2 mb-3">
+            <Icon icon="ph:map-pin" class="size-3.5 text-primary" />
+            <span class="text-xs font-semibold text-base-content/70 uppercase tracking-wider"
+              >{m.settings_your_location()}</span
+            >
+            <span class="text-xs text-base-content/35 font-normal normal-case tracking-normal"
+              >{m.settings_location_desc()}</span
+            >
+          </div>
+          <div class="bg-base-200/60 rounded-lg border border-base-300/60 overflow-hidden">
             <div class="px-3 py-3 space-y-2.5">
-              <div class="flex items-center gap-2">
-                <Icon icon="ph:map-pin" class="size-3.5 text-primary/70" />
-                <span class="text-xs font-medium text-base-content/60">{m.settings_your_location()}</span>
-                <span class="text-xs text-base-content/30">{m.settings_location_desc()}</span>
-              </div>
 
               {#if userLocation}
                 <!-- Location set: show nice card -->
@@ -1610,12 +1630,14 @@
                   type="text"
                   class="w-20 px-2 py-1 rounded bg-base-300/40 text-xs font-mono text-base-content placeholder:text-base-content/25 outline-none border border-transparent focus:border-primary/50"
                   placeholder={m.settings_lat()}
+                  aria-label={m.settings_lat()}
                   bind:value={manualLat}
                 />
                 <input
                   type="text"
                   class="w-20 px-2 py-1 rounded bg-base-300/40 text-xs font-mono text-base-content placeholder:text-base-content/25 outline-none border border-transparent focus:border-primary/50"
                   placeholder={m.settings_lon()}
+                  aria-label={m.settings_lon()}
                   bind:value={manualLon}
                 />
                 <button
@@ -1636,17 +1658,7 @@
               {/if}
             </div>
           </div>
-          <p class="text-xs text-base-content/35 mt-1.5 px-1">
-            {m.settings_get_token_at()}
-            <button
-              type="button"
-              class="text-primary hover:underline"
-              onclick={() => {
-                openUrl('https://www.battlemetrics.com/developers');
-              }}>battlemetrics.com/developers</button
-            >
-            · {m.settings_location_help()}
-          </p>
+          <p class="text-xs text-base-content/35 mt-1.5 px-1">{m.settings_location_help()}</p>
         </div>
       </div>
 

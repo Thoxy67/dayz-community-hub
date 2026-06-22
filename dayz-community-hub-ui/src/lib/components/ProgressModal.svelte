@@ -123,6 +123,11 @@
 
   let canDismiss = $derived(modOp.phase === 'finished');
 
+  // Allow Escape to close only once the operation is finished — never mid-run.
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape' && canDismiss) onDismiss();
+  }
+
   // Auto-dismiss after 2.5 s when everything succeeded (no failures, no hint).
   $effect(() => {
     if (modOp.phase === 'finished' && modOp.failed === 0 && !modOp.hint) {
@@ -197,6 +202,8 @@
   // per line on every 1s re-render.  Recomputes only when modOp.log changes.
   let classifiedLog = $derived(modOp.log.map((line) => ({ text: line, cls: KIND_CLASS[classifyLine(line)] })));
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 {#if modOp.active}
   <div

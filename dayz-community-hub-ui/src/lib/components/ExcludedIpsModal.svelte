@@ -64,7 +64,7 @@
               <span class="flex-1 text-xs font-mono text-base-content/70">{ip}</span>
               <button
                 type="button"
-                class="text-base-content/25 hover:text-error transition-colors shrink-0 opacity-0 group-hover:opacity-100"
+                class="text-base-content/25 hover:text-error transition-colors shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                 onclick={() => onUnexclude(ip)}
                 title={m.excluded_ips_remove({ ip })}
               >

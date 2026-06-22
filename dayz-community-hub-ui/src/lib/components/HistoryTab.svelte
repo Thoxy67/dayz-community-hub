@@ -514,7 +514,7 @@
                 <td class="px-3 py-2">
                   {#if server}
                     <button
-                      class="flex items-center gap-2 w-full cursor-pointer hover:opacity-70 transition-opacity text-left"
+                      class="flex w-full flex-col gap-0.5 cursor-pointer hover:opacity-70 transition-opacity text-left"
                       onclick={(e) => {
                         e.stopPropagation();
                         doRefreshPlayers(entry);
@@ -522,21 +522,29 @@
                       title={m.servers_click_refresh_players()}
                       disabled={loadingPlayers}
                     >
-                      {#if loadingPlayers}
-                        <span class="loading loading-spinner loading-xs text-primary shrink-0"></span>
-                      {:else}
+                      <span class="flex items-center">
+                        {#if loadingPlayers}
+                          <span class="loading loading-spinner loading-xs text-primary shrink-0"></span>
+                        {:else}
+                          <span class="tabular-nums font-mono {playerFill(livePlayers, server.max_players)}"
+                            >{livePlayers}<span class="text-base-content/30">/{server.max_players}</span></span
+                          >
+                        {/if}
+                        {#if server.bots}
+                          <span class="ml-auto inline-flex shrink-0" title={m.servers_bots({ count: server.bots })}
+                            ><Icon icon="mdi:robot" class="size-3 text-base-content/40" /></span
+                          >
+                        {/if}
+                      </span>
+                      <span class="block h-1 w-full rounded-full bg-base-300 overflow-hidden">
                         <span
-                          class="tabular-nums font-mono {playerFill(livePlayers, server.max_players)} w-14 shrink-0"
-                        >
-                          {livePlayers}<span class="text-base-content/30">/{server.max_players}</span>
-                        </span>
-                      {/if}
-                      <div class="flex-1 h-1 rounded-full bg-base-300 overflow-hidden">
-                        <div
-                          class="h-full rounded-full {playerBarColor(livePlayers, server.max_players)}"
+                          class="block h-full rounded-full transition-[width] duration-500 ease-out {playerBarColor(
+                            livePlayers,
+                            server.max_players,
+                          )}"
                           style="width:{pct}%"
-                        ></div>
-                      </div>
+                        ></span>
+                      </span>
                     </button>
                   {:else}
                     <span class="text-base-content/25 font-mono">—</span>

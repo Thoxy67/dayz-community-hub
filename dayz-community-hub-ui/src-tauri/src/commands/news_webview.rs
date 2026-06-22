@@ -93,7 +93,10 @@ pub(crate) async fn fetch_news_via_webview(app: &AppHandle) -> Result<Vec<Articl
     let (tx, rx) = tokio::sync::oneshot::channel::<String>();
     {
         let state = app.state::<NewsWebviewState>();
-        let mut guard = state.0.lock().map_err(|_| "news state poisoned".to_string())?;
+        let mut guard = state
+            .0
+            .lock()
+            .map_err(|_| "news state poisoned".to_string())?;
         *guard = Some(tx);
     }
 

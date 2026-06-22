@@ -8,3 +8,22 @@ dayz-ctl-link
 /.ruff_cache
 TODO.md
 /async-a2s
+
+# Build output / generated
+/dist
+**/*.rs.bk
+
+# OS junk
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log

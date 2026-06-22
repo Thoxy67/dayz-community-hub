@@ -83,6 +83,11 @@
   "tab_about": "À propos",
 
   "options_search_placeholder": "Rechercher des options…",
+  "options_recommend_title": "Recommandé pour votre PC",
+  "options_recommend_desc": "Détecté : {cores} cœurs · {ram} Go RAM — appliquer des options de performance optimisées.",
+  "options_recommend_apply": "Appliquer",
+  "options_recommend_applied": "Appliqué",
+  "options_recommend_detecting": "Détection du matériel…",
   "options_active": "{count} actives",
   "options_active_one": "{count} active",
   "options_flags_hint": "Options passées à DayZ au lancement",
@@ -298,6 +303,7 @@
   "servers_show_mods": "Afficher la liste des mods",
   "servers_os_windows": "Windows",
   "servers_os_linux": "Linux",
+  "servers_bots": "{count} bots signalés (souvent de faux joueurs)",
   "servers_jump_top": "Aller en haut",
 
   "servers_favorite": "Favoris",
@@ -368,6 +374,7 @@
 
   "detail_a2s_title": "Infos A2S en direct",
   "detail_a2s_live_players": "Joueurs en direct",
+  "detail_bots": "Bots",
   "detail_a2s_game": "Jeu",
   "detail_a2s_online_players": "Joueurs en ligne",
   "detail_a2s_no_players": "Aucun joueur en ligne",

@@ -22,6 +22,9 @@ export interface ServerDto {
   mods_count: number;
   vac: boolean;
   battl_eye: boolean | null;
+  /** Bots reported by A2S_INFO, populated at runtime from ping results.
+   * DayZ servers often pad this to fake a full server. undefined until pinged. */
+  bots?: number;
 }
 
 /** Full server DTO with mod details (fetched on demand). */
@@ -166,6 +169,8 @@ export interface A2sDetailsDto {
   game: string;
   players: number;
   max_players: number;
+  /** Bots reported by A2S_INFO (DayZ servers often pad this to fake a full server). */
+  bots: number;
   map: string;
   version: string;
   players_list: A2sPlayerDto[];
@@ -179,6 +184,13 @@ export interface A2sDetailsDto {
   query_port: number;
   /** Server game port: from server list (priority) or A2S extended info. null if unavailable. */
   game_port: number | null;
+}
+
+/** Hardware specs used to recommend optimal launch options. */
+export interface SystemSpecsDto {
+  logical_cores: number;
+  physical_cores: number;
+  total_memory_mb: number;
 }
 
 export interface AppStatsDto {
@@ -216,6 +228,8 @@ export interface PingResult {
   ms: number;
   players?: number;
   max_players?: number;
+  /** Bots reported by A2S_INFO (DayZ servers often pad this to fake a full server). */
+  bots?: number;
   /** True when the A2S query failed (timeout or error). */
   failed?: boolean;
 }

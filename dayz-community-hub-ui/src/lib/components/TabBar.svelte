@@ -24,6 +24,7 @@
     <button
       class="tab-btn {tab.pushRight ? 'ml-auto' : ''} {activeTab === tab.id ? 'tab-btn--active' : ''}"
       title={tab.icon ? tab.label : undefined}
+      aria-label={tab.icon ? tab.label : undefined}
       onclick={() => onSelect(tab.id)}
     >
       {#if tab.icon}
@@ -73,6 +74,14 @@
   .tab-btn:hover {
     color: var(--color-base-content);
     transform: scale(1.05);
+  }
+
+  /* Visible keyboard focus ring (base rule sets outline:none). */
+  .tab-btn:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -2px;
+    border-radius: 4px;
+    color: var(--color-base-content);
   }
 
   .tab-btn--active {
