@@ -21,14 +21,17 @@ futures-util = { version = "0.3", default-features = false, features = ["alloc"]
 reqwest = { version = "0.13", default-features = false, features = ["native-tls", "json", "query"] }
 # Low-level HTTP/1 client used only for the dayz.com news endpoint, which is
 # Cloudflare-gated. Passing it requires mimicking a browser at three layers:
-# a Chrome-like TLS fingerprint (rustls + aws-lc-rs/BoringSSL), an advertised
-# `http/1.1` ALPN, and title-cased HTTP/1.1 header names — none of which
-# reqwest/native-tls produce. See `news::fetch_news_raw`.
+# a browser-like TLS fingerprint (rustls with a Firefox-ordered cipher/curve
+# list), an advertised `http/1.1` ALPN, and title-cased HTTP/1.1 header names,
+# none of which reqwest/native-tls produce. See `news::fetch_news_raw`.
+# Uses the `ring` provider, not `aws-lc-rs`: aws-lc-sys compiles a BoringSSL-
+# derived C library that fails to link under `lld` in release/packaging builds.
+# `ring` links everywhere and clears the same Cloudflare check.
 hyper = { version = "1.10", features = ["client", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
 bytes = "1"
-tokio-rustls = { version = "0.26", default-features = false, features = ["aws-lc-rs", "tls12", "logging"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
 webpki-roots = "1"
 
 # Serialisation

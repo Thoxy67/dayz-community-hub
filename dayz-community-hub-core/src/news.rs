@@ -219,10 +219,11 @@ const NEWS_USER_AGENT: &str =
 /// unless the request looks like a real browser at THREE layers, none of which
 /// reqwest produces:
 ///
-/// 1. **TLS fingerprint** — Cloudflare reads the ClientHello (JA3). reqwest's
-///    `native-tls` (OpenSSL) is flagged; `rustls` + the **aws-lc-rs** provider
-///    (BoringSSL, same as Chrome) is not. We also advertise an `http/1.1` ALPN —
-///    without it the request is challenged even with the right cipher suites.
+/// 1. **TLS fingerprint** - Cloudflare reads the ClientHello (JA3). reqwest's
+///    `native-tls` (OpenSSL) is flagged; `rustls` with a Firefox-ordered cipher
+///    and curve list is not. We also advertise an `http/1.1` ALPN, without which
+///    the request is challenged even with the right cipher suites. (We use the
+///    `ring` provider, not `aws-lc-rs`, so the binary links under `lld`.)
 /// 2. **Header casing** — Cloudflare flags lowercase HTTP/1.1 header names, which
 ///    hyper/reqwest emit by default (`accept`, `user-agent`, …). The `http` crate
 ///    forces `HeaderName` lowercase, so we use hyper's low-level client with
@@ -235,25 +236,46 @@ async fn fetch_news_raw() -> Result<(u16, String)> {
     use http_body_util::{BodyExt, Empty};
     use hyper_util::rt::TokioIo;
     use std::sync::Arc;
+    use tokio_rustls::rustls::crypto::{CryptoProvider, ring};
     use tokio_rustls::rustls::{ClientConfig, RootCertStore, pki_types::ServerName};
 
     let err = |ctx: &str, e: String| crate::errors::Error::Other(format!("news fetch {ctx}: {e}"));
 
-    // rustls with the aws-lc-rs (BoringSSL) provider — its ClientHello matches a
-    // Chrome-like fingerprint that Cloudflare accepts. Pin the provider
-    // explicitly so we don't depend on a process-wide default that other crates
+    // rustls with the `ring` provider, but with the cipher suites and key-exchange
+    // groups reordered to mirror a Firefox ClientHello. The ordering is part of
+    // the JA3 fingerprint Cloudflare reads; a browser-like order clears the bot
+    // check where reqwest/native-tls (OpenSSL) does not. We build the provider
+    // explicitly so we never depend on a process-wide default that other crates
     // (tauri, reqwest) might leave unset or ambiguous.
+    let provider = CryptoProvider {
+        cipher_suites: vec![
+            ring::cipher_suite::TLS13_AES_128_GCM_SHA256,
+            ring::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256,
+            ring::cipher_suite::TLS13_AES_256_GCM_SHA384,
+            ring::cipher_suite::TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+            ring::cipher_suite::TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+            ring::cipher_suite::TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+            ring::cipher_suite::TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+            ring::cipher_suite::TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+            ring::cipher_suite::TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+        ],
+        kx_groups: vec![
+            ring::kx_group::X25519,
+            ring::kx_group::SECP256R1,
+            ring::kx_group::SECP384R1,
+        ],
+        ..ring::default_provider()
+    };
+
     let roots = RootCertStore {
         roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
     };
-    let mut config = ClientConfig::builder_with_provider(Arc::new(
-        tokio_rustls::rustls::crypto::aws_lc_rs::default_provider(),
-    ))
-    .with_safe_default_protocol_versions()
-    .map_err(|e| err("tls config", e.to_string()))?
-    .with_root_certificates(roots)
-    .with_no_client_auth();
-    // ALPN is part of the fingerprint Cloudflare checks — must advertise http/1.1.
+    let mut config = ClientConfig::builder_with_provider(Arc::new(provider))
+        .with_safe_default_protocol_versions()
+        .map_err(|e| err("tls config", e.to_string()))?
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    // ALPN is part of the fingerprint Cloudflare checks: must advertise http/1.1.
     config.alpn_protocols = vec![b"http/1.1".to_vec()];
     let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
 
