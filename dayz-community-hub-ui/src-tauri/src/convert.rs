@@ -233,6 +233,17 @@ pub(crate) fn mod_progress_to_event(msg: &ModProgress) -> ModProgressEvent {
             hint: None,
             log_line: Some(line.clone()),
         },
+        ModProgress::LogProgress(line) => ModProgressEvent {
+            kind: "log_progress".into(),
+            current: 0,
+            total: 0,
+            mod_id: 0,
+            name: String::new(),
+            ok: 0,
+            failed: 0,
+            hint: None,
+            log_line: Some(line.clone()),
+        },
         ModProgress::Starting {
             current,
             total,

@@ -135,6 +135,9 @@ export function startModOp(opType: string, args: Record<string, unknown>, onSucc
   };
 
   const onProgress = new Channel<ModProgressEvent>();
+  // True when the last appended log entry was a transient '\r' progress line,
+  // so the next progress update overwrites it in place instead of appending.
+  let lastWasProgress = false;
   onProgress.onmessage = (payload) => {
     switch (payload.kind) {
       case 'shutting_down_steam':
@@ -166,6 +169,17 @@ export function startModOp(opType: string, args: Record<string, unknown>, onSucc
       case 'log_line':
         if (payload.log_line) {
           s.modOp.log = [...s.modOp.log, payload.log_line];
+          lastWasProgress = false;
+        }
+        break;
+      case 'log_progress':
+        if (payload.log_line) {
+          // Overwrite the previous transient progress line in place; otherwise
+          // append a fresh one. Keeps download progress to a single live line.
+          s.modOp.log = lastWasProgress
+            ? [...s.modOp.log.slice(0, -1), payload.log_line]
+            : [...s.modOp.log, payload.log_line];
+          lastWasProgress = true;
         }
         break;
       case 'finished':

@@ -208,6 +208,7 @@ export interface ModProgressEvent {
     | 'steam_guard_mobile_required'
     | 'password_required'
     | 'log_line'
+    | 'log_progress'
     | 'starting'
     | 'done'
     | 'failed'

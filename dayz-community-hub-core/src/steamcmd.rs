@@ -15,18 +15,32 @@ type PtyStreamHandles = (
     Box<dyn std::io::Write + Send>,
 );
 
-/// Strip ANSI/VT100 escape sequences from a string.
-/// steamcmd embeds colour codes even when stdout is a pipe, e.g. `\x1b[1m`.
+/// Strip ANSI/VT100 escape sequences (and stray BEL / carriage returns) from a
+/// string. steamcmd embeds colour codes even when stdout is a pipe, and under a
+/// Windows ConPTY the output additionally carries private-mode CSI sequences
+/// (`ESC[?25h`, `ESC[?1004h`, …) and OSC title sequences (`ESC]0;…BEL`). The
+/// old `\x1b\[[0-9;]*[a-zA-Z]` pattern matched none of those, leaving garbage
+/// like `[?9001h` in the displayed log.
 ///
-/// Fast path: most steamcmd output lines contain no ANSI escapes at all,
-/// so we short-circuit with a single byte scan and return the original
-/// borrowed slice without invoking the regex engine.
+/// Fast path: most steamcmd lines contain none of these bytes, so we
+/// short-circuit with a single byte scan and return the borrowed slice.
 fn strip_ansi(s: &str) -> std::borrow::Cow<'_, str> {
-    if !s.as_bytes().contains(&0x1b) {
+    if !s
+        .as_bytes()
+        .iter()
+        .any(|&b| b == 0x1b || b == 0x07 || b == b'\r')
+    {
         return std::borrow::Cow::Borrowed(s);
     }
     static ANSI_RE: OnceLock<Regex> = OnceLock::new();
-    let re = ANSI_RE.get_or_init(|| Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap());
+    let re = ANSI_RE.get_or_init(|| {
+        // OSC: ESC ] … (BEL | ST)  |  CSI: ESC [ params intermediates final
+        // (params 0x30-0x3f covers digits ';' '?'), |  2-byte escapes, | lone BEL/CR
+        Regex::new(
+            r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]|\x1b[()][@-~]|\x1b[=>]|[\x07\r]",
+        )
+        .unwrap()
+    });
     re.replace_all(s, "")
 }
 
@@ -338,6 +352,11 @@ pub enum ModProgress {
     },
     /// A raw steamcmd output line (for the log panel in the UI)
     LogLine(String),
+    /// A transient progress line that overwrites itself via carriage returns
+    /// (e.g. steamcmd's "Update state … progress: 45.5"). The UI replaces the
+    /// previous transient line instead of appending, so download progress
+    /// updates in place rather than flooding the log.
+    LogProgress(String),
     /// All mods processed
     Finished {
         ok: usize,
@@ -716,6 +735,13 @@ impl SteamCmd {
         let mut sg_start: Option<std::time::Instant> = None;
         let mut login_phase = true; // true until first download activity is seen
         let mut buf = String::new();
+        // ConPTY (portable-pty opens it with PSUEDOCONSOLE_INHERIT_CURSOR) sends
+        // a DSR cursor-position query before producing any output and BLOCKS the
+        // child until it gets a reply. We answer it exactly once. See below.
+        let mut dsr_replied = false;
+        // Last transient (carriage-return) progress line we forwarded, so we can
+        // skip re-sending identical "progress: x%" lines.
+        let mut last_progress = String::new();
 
         loop {
             let maybe_chunk = chunk_rx.recv().await;
@@ -723,6 +749,21 @@ impl SteamCmd {
                 Some(c) => c,
                 None => break, // channel closed — steamcmd exited
             };
+
+            // ── Unblock ConPTY's startup cursor-position query ──────────────
+            // The Windows ConPTY emits `ESC[6n` (Device Status Report: report
+            // cursor position) at startup and will not run the child until a
+            // terminal replies with `ESC[<row>;<col>R` on stdin. Nothing replied
+            // before, so steamcmd hung with an empty log panel. Reply once with a
+            // synthetic position to release it. (Harmless no-op on a Linux PTY,
+            // which doesn't send this query.)
+            if !dsr_replied && raw_chunk.contains("\x1b[6n") {
+                use std::io::Write;
+                let _ = pty_writer.write_all(b"\x1b[1;1R");
+                let _ = pty_writer.flush();
+                dsr_replied = true;
+            }
+
             // Prevent unbounded buffer growth (1 MB limit)
             const MAX_BUF_SIZE: usize = 1024 * 1024;
             if buf.len() + raw_chunk.len() > MAX_BUF_SIZE {
@@ -819,6 +860,30 @@ impl SteamCmd {
                 }
                 // Borrow on buf released; advance in place (no realloc).
                 buf.drain(..advance_to);
+            }
+
+            // ── Real-time download progress (carriage-return overwrites) ────
+            // steamcmd reports download progress by rewriting one line with '\r'
+            // (e.g. "Update state (0x61) downloading, progress: 45.50 …") and
+            // only emits a final '\n' when the item completes. The newline loop
+            // above never sees those, so without this the log looks frozen for
+            // the whole download. The visible "current line" is whatever follows
+            // the last '\r' in the partial buffer; forward it as a transient line
+            // that the UI overwrites in place. Skip when a real prompt is pending
+            // (no '\r' present) so we don't clobber "password:" detection.
+            if let Some(cr) = buf.rfind('\r') {
+                {
+                    let tail = strip_ansi(buf[cr + 1..].trim_end());
+                    let tail = tail.as_ref().trim();
+                    if !tail.is_empty() && tail != last_progress {
+                        last_progress = tail.to_owned();
+                        let _ = tx.send(ModProgress::LogProgress(last_progress.clone()));
+                    }
+                }
+                // Drop everything up to and including the last '\r' so the buffer
+                // doesn't accumulate every progress rewrite (only the live tail is
+                // kept — which is also what the prompt checks below inspect).
+                buf.drain(..=cr);
             }
 
             // Check the partial-line remainder (content not yet terminated
