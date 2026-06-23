@@ -972,6 +972,45 @@ impl SteamClient {
         }
     }
 
+    /// Resolve the full path to the Steam client executable to spawn.
+    ///
+    /// On Windows `steam.exe` lives at `<SteamPath>\steam.exe` (from the
+    /// registry) and is *not* on `PATH`, so spawning the bare name fails with
+    /// "program not found". We therefore resolve the real install location.
+    /// On Linux/macOS `steam` is a launcher script that is reliably on `PATH`,
+    /// so the bare name is correct.
+    pub fn steam_exe_path() -> PathBuf {
+        #[cfg(target_os = "windows")]
+        {
+            // PATH first (rare, but honour it if a user added Steam there).
+            if let Ok(p) = which::which("steam.exe") {
+                return p;
+            }
+            // Registry is the reliable source for non-default install drives.
+            if let Some(steam_path) = query_steam_registry_path() {
+                let candidate = PathBuf::from(&steam_path).join("steam.exe");
+                if candidate.exists() {
+                    return candidate;
+                }
+            }
+            for base in &[
+                "C:\\Program Files (x86)\\Steam\\steam.exe",
+                "C:\\Program Files\\Steam\\steam.exe",
+            ] {
+                let candidate = PathBuf::from(base);
+                if candidate.exists() {
+                    return candidate;
+                }
+            }
+            // Last resort: bare name so the resulting error is still meaningful.
+            PathBuf::from("steam.exe")
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            PathBuf::from("steam")
+        }
+    }
+
     /// Check if the Steam client is currently running.
     pub fn is_running() -> bool {
         use sysinfo::System;
@@ -1002,7 +1041,7 @@ impl SteamClient {
             use std::os::windows::process::CommandExt;
             // On Windows spawn steam.exe directly; no nohup equivalent needed
             // because detached processes persist after the parent exits.
-            std::process::Command::new(Self::steam_exe())
+            std::process::Command::new(Self::steam_exe_path())
                 .arg("-nofriendsui")
                 .arg("-silent")
                 .stdout(Stdio::null())
@@ -1014,7 +1053,7 @@ impl SteamClient {
         {
             // On Linux/macOS use nohup so Steam keeps running if the spawner exits.
             std::process::Command::new("nohup")
-                .arg(Self::steam_exe())
+                .arg(Self::steam_exe_path())
                 .arg("-nofriendsui")
                 .arg("-silent")
                 .stdout(Stdio::null())
@@ -1027,7 +1066,7 @@ impl SteamClient {
 
     /// Graceful shutdown via `steam -shutdown`.
     pub async fn shutdown() -> Result<()> {
-        let mut cmd = Command::new(Self::steam_exe());
+        let mut cmd = Command::new(Self::steam_exe_path());
         cmd.arg("-shutdown")
             .stdout(Stdio::null())
             .stderr(Stdio::null());
@@ -1071,7 +1110,7 @@ impl SteamClient {
         }
 
         // Ask Steam to shut down gracefully
-        let mut cmd = Command::new(Self::steam_exe());
+        let mut cmd = Command::new(Self::steam_exe_path());
         cmd.arg("-shutdown")
             .stdout(Stdio::null())
             .stderr(Stdio::null());

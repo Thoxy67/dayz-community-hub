@@ -62,6 +62,15 @@ pub(crate) async fn launch_server(
             .find_by_query_port(&ip, port)
             .cloned()
             .ok_or_else(|| "Server not found".to_string())?;
+
+        // Create the `@<id>` symlinks/junctions DayZ needs to discover the
+        // server's mods at launch time. Without this the `-mod=@<id>` args
+        // point at folders that don't exist (notably on Windows, where mods
+        // are linked via NTFS junctions), so the game starts with no mods.
+        if !server.mods.is_empty() {
+            let _ = state.ctl.setup_mod_symlinks(&server);
+        }
+
         (server, state.ctl.clone_for_launch())
     };
 

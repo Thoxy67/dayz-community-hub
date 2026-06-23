@@ -411,7 +411,7 @@ impl DayzCtl {
         // Build launch arguments
         let args = self.build_steam_launch_args_with_extra(server, password, extra_args);
 
-        let mut cmd = Command::new("steam");
+        let mut cmd = Command::new(SteamClient::steam_exe_path());
         cmd.args(&args).stdout(Stdio::null()).stderr(Stdio::null());
         #[cfg(target_os = "windows")]
         cmd.creation_flags(0x08000000);

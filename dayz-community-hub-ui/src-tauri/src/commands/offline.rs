@@ -101,7 +101,7 @@ pub(crate) async fn launch_offline_mission(
         return Err(format!("Could not start Steam: {}", e));
     }
 
-    let steam_bin = dayz_community_hub_core::steamcmd::SteamClient::steam_exe();
+    let steam_bin = dayz_community_hub_core::steamcmd::SteamClient::steam_exe_path();
     #[cfg(not(target_os = "windows"))]
     std::process::Command::new(steam_bin)
         .args(&steam_args)
