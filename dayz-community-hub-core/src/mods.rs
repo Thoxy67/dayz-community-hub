@@ -201,13 +201,25 @@ pub fn create_mod_symlink(workshop_path: &Path, dayz_path: &Path, mod_id: u64) -
         // Symlinks require admin on Windows; NTFS junctions do not.
         // mklink is a cmd.exe built-in, not a standalone executable, so it
         // must be invoked via `cmd /c "mklink /J ..."`.
-        // Paths are double-quoted to handle spaces in directory names.
+        //
+        // We must build the command line with `raw_arg` rather than `arg`/`args`:
+        // Rust's normal argument escaping follows the MSVCRT convention and turns
+        // internal quotes into `\"`, but cmd.exe does NOT understand `\"` as an
+        // escaped quote. With the default Steam path (`C:\Program Files (x86)\Steam`,
+        // which always contains spaces) that mangling splits the paths and makes
+        // `mklink` fail, so no mods ever get linked.
+        //
+        // cmd.exe's `/c` dequoting strips only the outermost quote pair when the
+        // remainder both starts and ends with a quote and contains more quotes, so
+        // we wrap the whole `mklink ...` invocation in an extra quote pair. After
+        // cmd strips the outer pair, `mklink` sees each path correctly quoted.
         use std::os::windows::process::CommandExt;
         let target_str = target.to_string_lossy();
         let source_str = source.to_string_lossy();
-        let mklink_cmd = format!("mklink /J \"{target_str}\" \"{source_str}\"");
+        let inner = format!("\"mklink /J \"{target_str}\" \"{source_str}\"\"");
         let out = std::process::Command::new("cmd")
-            .args(["/c", &mklink_cmd])
+            .raw_arg("/c")
+            .raw_arg(&inner)
             .creation_flags(0x08000000)
             .output()
             .map_err(|e| Error::Mod(format!("Failed to run mklink: {}", e)))?;
