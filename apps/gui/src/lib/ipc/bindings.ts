@@ -761,6 +761,8 @@ export type ServerQuery = {
 	password: Tri,
 	battleye: Tri,
 	modded: Tri,
+	/**  Bohemia's own servers (only listed with a Steam API key). */
+	official: Tri,
 	hideEmpty: boolean,
 	hideFull: boolean,
 	/**  0 = any. Otherwise timeouts and slower servers go; unpinged ones stay. */
@@ -799,6 +801,10 @@ export type ServerRow = {
 	excluded: boolean,
 	/**  Full according to the list, but the last query failed. */
 	unverified_full: boolean,
+	/**  Bohemia's own server. */
+	official: boolean,
+	/**  A community server named like an official one ("1234 | EUROPE - DE"). */
+	mimics_official: boolean,
 };
 
 /**  Totals over the filtered servers. */
@@ -808,6 +814,7 @@ export type ServerStats = {
 	full: number,
 	empty: number,
 	modded: number,
+	official: number,
 	pinged: number,
 	best_ping: number | null,
 };

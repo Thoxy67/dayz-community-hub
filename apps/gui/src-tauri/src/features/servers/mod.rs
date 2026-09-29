@@ -45,16 +45,25 @@ pub(crate) async fn initialize(app: AppHandle) -> Result<InitResult, String> {
     );
     let ctl = ctl.map_err(|e| format!("Could not load the profile: {e}"))?;
 
+    // The cache holds the official servers merged last time; a cold start
+    // fetches both lists at once.
     let (list, from_cache, list_error) = match cache {
         Some(cache) if !cache.list.result.is_empty() => (dedup(cache.list), true, None),
-        _ => match dz_api::fetch_servers(ctl.http_client()).await {
-            Ok(list) => {
-                let list = dedup(list);
-                save_cache_in_background(Arc::clone(&list));
-                (list, false, None)
+        _ => {
+            let key = ctl.profile().steam_api_key.clone();
+            let (community, official) = tokio::join!(
+                dz_api::fetch_servers(ctl.http_client()),
+                fetch_official(ctl.http_client(), key.as_deref())
+            );
+            match community {
+                Ok(list) => {
+                    let list = dedup(with_official(list, official));
+                    save_cache_in_background(Arc::clone(&list));
+                    (list, false, None)
+                }
+                Err(e) => (Arc::default(), false, Some(e.to_string())),
             }
-            Err(e) => (Arc::default(), false, Some(e.to_string())),
-        },
+        }
     };
 
     let server_count = list.result.len();
@@ -97,8 +106,18 @@ pub(crate) async fn get_server_details(
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn refresh_servers(state: State<'_, SharedState>) -> Result<u32, String> {
-    let client = state.read().await.ctl.http_client().clone();
-    let list = dedup(dz_api::fetch_servers(&client).await.cmd_err()?);
+    let (client, key) = {
+        let s = state.read().await;
+        (
+            s.ctl.http_client().clone(),
+            s.ctl.profile().steam_api_key.clone(),
+        )
+    };
+    let (community, official) = tokio::join!(
+        dz_api::fetch_servers(&client),
+        fetch_official(&client, key.as_deref())
+    );
+    let list = dedup(with_official(community.cmd_err()?, official));
     save_cache_in_background(Arc::clone(&list));
     state.write().await.set_servers(Arc::clone(&list));
     let count = list.result.len() as u32;
@@ -118,6 +137,26 @@ pub(crate) async fn get_app_stats(state: State<'_, SharedState>) -> Result<AppSt
         steam_login: state.ctl.steamcmd_login().map(str::to_string),
         has_steamcmd: state.ctl.has_steamcmd(),
     })
+}
+
+/// The official servers, when a Steam API key lets us ask Steam's master
+/// server for them. Failing to get them never fails the list: the community
+/// servers still load, and the next refresh tries again.
+async fn fetch_official(client: &reqwest::Client, key: Option<&str>) -> Vec<dz_api::Server> {
+    let Some(key) = key.map(str::trim).filter(|k| !k.is_empty()) else {
+        return Vec::new();
+    };
+    dz_api::fetch_official_servers(client, key)
+        .await
+        .unwrap_or_else(|e| {
+            eprintln!("official servers: {e}");
+            Vec::new()
+        })
+}
+
+fn with_official(mut list: ServerList, official: Vec<dz_api::Server>) -> ServerList {
+    dz_api::merge_official(&mut list.result, official);
+    list
 }
 
 fn dedup(mut list: ServerList) -> Arc<ServerList> {

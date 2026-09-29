@@ -57,6 +57,8 @@ pub struct ServerQuery {
     pub password: Tri,
     pub battleye: Tri,
     pub modded: Tri,
+    /// Bohemia's own servers (only listed with a Steam API key).
+    pub official: Tri,
     pub hide_empty: bool,
     pub hide_full: bool,
     /// 0 = any. Otherwise timeouts and slower servers go; unpinged ones stay.
@@ -96,6 +98,10 @@ pub struct ServerRow {
     pub excluded: bool,
     /// Full according to the list, but the last query failed.
     pub unverified_full: bool,
+    /// Bohemia's own server.
+    pub official: bool,
+    /// A community server named like an official one ("1234 | EUROPE - DE").
+    pub mimics_official: bool,
 }
 
 /// Totals over the filtered servers.
@@ -106,6 +112,7 @@ pub struct ServerStats {
     pub full: u32,
     pub empty: u32,
     pub modded: u32,
+    pub official: u32,
     pub pinged: u32,
     pub best_ping: Option<u32>,
 }
@@ -234,6 +241,7 @@ fn compute(
             || !q.password.keeps(s.password)
             || !q.battleye.keeps(s.battl_eye.unwrap_or(false))
             || !q.modded.keeps(!s.mods.is_empty())
+            || !q.official.keeps(s.official)
         {
             continue;
         }
@@ -276,6 +284,7 @@ fn compute(
         stats.full += u32::from(full);
         stats.empty += u32::from(players == 0);
         stats.modded += u32::from(!s.mods.is_empty());
+        stats.official += u32::from(s.official);
         if let Some(Some(ms)) = ping {
             stats.pinged += 1;
             stats.best_ping = Some(stats.best_ping.map_or(ms, |b| b.min(ms)));
@@ -366,6 +375,8 @@ pub(crate) fn row(s: &Server, live: &LiveMap, profile: &ProfileView) -> ServerRo
         favorite: profile.is_favorite(s),
         excluded: profile.excluded.contains(&s.endpoint.ip),
         unverified_full: list_full && v.live.is_some_and(|l| l.failed),
+        official: s.official,
+        mimics_official: !s.official && dz_api::name_looks_official(&s.name),
     }
 }
 
@@ -443,6 +454,7 @@ mod tests {
             password: Tri::All,
             battleye: Tri::All,
             modded: Tri::All,
+            official: Tri::All,
             hide_empty: false,
             hide_full: false,
             max_ping: 0,
@@ -540,6 +552,7 @@ mod more_tests {
             password: Tri::All,
             battleye: Tri::All,
             modded: Tri::All,
+            official: Tri::All,
             hide_empty: false,
             hide_full: false,
             max_ping: 0,
@@ -610,6 +623,31 @@ mod more_tests {
         q.sort = SortCol::Players;
         q.asc = false;
         assert_eq!(compute(&list(), &live, &profile, &q).0, [2, 1, 0]);
+    }
+
+    #[test]
+    fn official_filter_and_lookalikes() {
+        let live = LiveMap::default();
+        let profile = ProfileView {
+            excluded: FxHashSet::default(),
+            favorites: FxHashSet::default(),
+        };
+        let mut l = list();
+        l.result[0].official = true;
+        l.result[0].name = "4193 | EUROPE - DE".into();
+        l.result[1].name = "4193 | EUROPE - DE | 100x loot".into();
+        let mut q = query();
+        q.official = Tri::Only;
+        let (order, stats) = compute(&l, &live, &profile, &q);
+        assert_eq!(order, [0]);
+        assert_eq!(stats.official, 1);
+        q.official = Tri::None;
+        assert_eq!(compute(&l, &live, &profile, &q).0, [1, 2]);
+        let official = row(&l.result[0], &live, &profile);
+        assert!(official.official && !official.mimics_official);
+        let copy = row(&l.result[1], &live, &profile);
+        assert!(!copy.official && copy.mimics_official);
+        assert!(!row(&l.result[2], &live, &profile).mimics_official);
     }
 
     #[test]
