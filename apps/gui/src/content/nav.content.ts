@@ -4,6 +4,92 @@ import { insert, t, type Dictionary } from "intlayer";
 const content = {
   key: "nav",
   content: {
+    sbServers: insert(
+      t({
+        en: "{{count}} servers",
+        fr: "{{count}} serveurs",
+        de: "{{count}} Server",
+        es: "{{count}} servidores",
+        ru: "Серверов: {{count}}",
+      }),
+    ),
+    sbRefreshList: t({
+      en: "Fetch the server list again",
+      fr: "Recharger la liste des serveurs",
+      de: "Serverliste neu laden",
+      es: "Volver a cargar la lista de servidores",
+      ru: "Обновить список серверов",
+    }),
+    sbRefreshing: t({
+      en: "Refreshing the list…",
+      fr: "Actualisation de la liste…",
+      de: "Liste wird aktualisiert…",
+      es: "Actualizando la lista…",
+      ru: "Обновление списка…",
+    }),
+    sbListDown: t({
+      en: "Server list unavailable",
+      fr: "Liste des serveurs indisponible",
+      de: "Serverliste nicht verfügbar",
+      es: "Lista de servidores no disponible",
+      ru: "Список серверов недоступен",
+    }),
+    sbRescan: t({
+      en: "Ping every server again",
+      fr: "Pinger à nouveau tous les serveurs",
+      de: "Alle Server erneut anpingen",
+      es: "Volver a hacer ping a todos los servidores",
+      ru: "Снова опросить все серверы",
+    }),
+    sbPing: t({ en: "Ping", fr: "Ping", de: "Ping", es: "Ping", ru: "Пинг" }),
+    sbSteamcmdReady: t({
+      en: "SteamCMD ready",
+      fr: "SteamCMD prêt",
+      de: "SteamCMD bereit",
+      es: "SteamCMD listo",
+      ru: "SteamCMD готов",
+    }),
+    sbSteamcmdMissing: t({
+      en: "SteamCMD not found",
+      fr: "SteamCMD introuvable",
+      de: "SteamCMD nicht gefunden",
+      es: "SteamCMD no encontrado",
+      ru: "SteamCMD не найден",
+    }),
+    sbModsStale: insert(
+      t({
+        en: "{{count}} mods to update",
+        fr: "{{count}} mods à mettre à jour",
+        de: "{{count}} Mods zu aktualisieren",
+        es: "{{count}} mods por actualizar",
+        ru: "Модов к обновлению: {{count}}",
+      }),
+    ),
+    sbModsOk: insert(
+      t({
+        en: "{{count}} mods up to date",
+        fr: "{{count}} mods à jour",
+        de: "{{count}} Mods aktuell",
+        es: "{{count}} mods al día",
+        ru: "Модов актуально: {{count}}",
+      }),
+    ),
+    sbModsChecking: t({
+      en: "Checking mods…",
+      fr: "Vérification des mods…",
+      de: "Mods werden geprüft…",
+      es: "Comprobando mods…",
+      ru: "Проверка модов…",
+    }),
+    sbUpdate: insert(
+      t({
+        en: "v{{version}} available",
+        fr: "v{{version}} disponible",
+        de: "v{{version}} verfügbar",
+        es: "v{{version}} disponible",
+        ru: "Доступна v{{version}}",
+      }),
+    ),
     navigation: t({ en: "Navigation", fr: "Navigation", de: "Navigation", es: "Navegación", ru: "Навигация" }),
     groupPlay: t({ en: "Play", fr: "Jouer", de: "Spielen", es: "Jugar", ru: "Игра" }),
     groupGear: t({ en: "Gear", fr: "Équipement", de: "Ausrüstung", es: "Equipo", ru: "Снаряжение" }),
