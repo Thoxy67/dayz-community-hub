@@ -32,6 +32,21 @@ pub(crate) fn strip_ansi(s: &str) -> std::borrow::Cow<'_, str> {
     re.replace_all(s, "")
 }
 
+/// A line as the log shows it: escape sequences gone, and without the notice
+/// SteamCMD's Linux build prints when `openat2(RESOLVE_BENEATH)` is not
+/// available to it ("PosixFileOpen: RESOLVE_BENEATH unsupported, falling back
+/// to plain open()"). The download is unaffected, but the notice has no line
+/// break of its own, so it lands in the middle of "Downloading item …" and
+/// reads like an error.
+pub(crate) fn clean_line(s: &str) -> std::borrow::Cow<'_, str> {
+    const NOTICE: &str = "PosixFileOpen: RESOLVE_BENEATH unsupported, falling back to plain open()";
+    let stripped = strip_ansi(s);
+    if !stripped.contains(NOTICE) {
+        return stripped;
+    }
+    std::borrow::Cow::Owned(stripped.replace(NOTICE, ""))
+}
+
 /// ASCII-only case-insensitive `contains`.  Avoids the per-line
 /// `to_lowercase()` String allocation that the previous implementation made
 /// for every steamcmd line we matched against multiple patterns.
@@ -111,6 +126,17 @@ mod tests {
         let raw = "\x1b]0;steamcmd\x07\x1b[?25hLogging in\x1b[0m\r";
         assert_eq!(strip_ansi(raw), "Logging in");
         assert!(matches!(strip_ansi("plain"), std::borrow::Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn drops_the_resolve_beneath_notice() {
+        assert_eq!(
+            clean_line(
+                "Downloading item 2404753599 ...PosixFileOpen: RESOLVE_BENEATH unsupported, falling back to plain open()\r"
+            ),
+            "Downloading item 2404753599 ..."
+        );
+        assert!(matches!(clean_line("plain"), std::borrow::Cow::Borrowed(_)));
     }
 
     #[test]

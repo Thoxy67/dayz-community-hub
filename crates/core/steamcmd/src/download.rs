@@ -3,8 +3,8 @@
 use dz_common::{Error, Result};
 
 use crate::output::{
-    ascii_contains_ci, extract_mod_id_from_line, is_login_ok, is_password_prompt,
-    is_steam_guard_prompt, strip_ansi,
+    ascii_contains_ci, clean_line, extract_mod_id_from_line, is_login_ok, is_password_prompt,
+    is_steam_guard_prompt,
 };
 use crate::{ModProgress, ProgressTx, PtyInputRx, SteamCmd};
 
@@ -197,7 +197,7 @@ impl SteamCmd {
                 // Scope the borrow on `buf` so we can `.drain` after.
                 let advance_to = nl_pos + 1;
                 {
-                    let stripped = strip_ansi(&buf[..nl_pos]);
+                    let stripped = clean_line(&buf[..nl_pos]);
                     let line: &str = stripped.as_ref();
 
                     // Forward every non-empty line to the UI log panel.
@@ -299,7 +299,7 @@ impl SteamCmd {
             // (no '\r' present) so we don't clobber "password:" detection.
             if let Some(cr) = buf.rfind('\r') {
                 {
-                    let tail = strip_ansi(buf[cr + 1..].trim_end());
+                    let tail = clean_line(buf[cr + 1..].trim_end());
                     let tail = tail.as_ref().trim();
                     if !tail.is_empty() && tail != last_progress {
                         last_progress = tail.to_owned();
