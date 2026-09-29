@@ -1,13 +1,14 @@
 /**
  * Live details about one server, fetched on demand and cached: A2S (who is
- * on, the rules, the mods it reports) and BattleMetrics (rank, uptime, a
- * day of player counts). Requests for the same server share one flight, and
- * the caches are bounded like the backend's own.
+ * on, the rules, the mods it reports), DayZ Metrics (rank, schedules, fake
+ * verdict, a day of player counts; no key) and BattleMetrics (only with a
+ * paid token). Requests for the same server share one flight, and the caches
+ * are bounded like the backend's own.
  */
 import { SvelteMap } from "svelte/reactivity";
-import { queryA2s, fetchBattleMetrics } from "$lib/ipc/servers";
+import { queryA2s, fetchBattleMetrics, fetchServerMetrics } from "$lib/ipc/servers";
 import { errorText } from "$lib/ipc/core";
-import type { A2sDetailsDto, BattleMetricsDto } from "$lib/ipc/types";
+import type { A2sDetailsDto, BattleMetricsDto, ServerMetrics } from "$lib/ipc/types";
 import { servers } from "./servers.svelte";
 
 type Entry<T> = { data: T | null; loading: boolean; error: string | null; fetchedAt: number | null };
@@ -16,6 +17,8 @@ const A2S_TTL_MS = 30_000;
 const BM_TTL_MS = 300_000;
 const MAX_A2S = 200;
 const MAX_BM = 50;
+const METRICS_TTL_MS = 300_000;
+const MAX_METRICS = 100;
 
 const blank = <T>(): Entry<T> => ({ data: null, loading: false, error: null, fetchedAt: null });
 
@@ -32,6 +35,44 @@ class ServerData {
   #bm = new SvelteMap<string, Entry<BattleMetricsDto>>();
   #a2sFlight = new Map<string, Promise<A2sDetailsDto | null>>();
   #bmFlight = new Map<string, Promise<BattleMetricsDto | null>>();
+  #metrics = new SvelteMap<string, Entry<ServerMetrics>>();
+  #metricsFlight = new Map<string, Promise<ServerMetrics | null>>();
+
+  /**
+   * A cached long-view lookup: the cached value while fresh (unless `force`),
+   * one shared flight per key, the error kept beside the last good value.
+   */
+  #cached<T>(
+    cache: SvelteMap<string, Entry<T>>,
+    flights: Map<string, Promise<T | null>>,
+    key: string,
+    ttl: number,
+    max: number,
+    force: boolean,
+    fetch: () => Promise<T>,
+  ): Promise<T | null> {
+    const cached = cache.get(key);
+    if (!force && cached?.data && cached.fetchedAt && Date.now() - cached.fetchedAt < ttl) {
+      return Promise.resolve(cached.data);
+    }
+    const inflight = flights.get(key);
+    if (inflight) return inflight;
+    const p = (async () => {
+      const prev = cache.get(key) ?? blank<T>();
+      cache.set(key, { ...prev, loading: true, error: null });
+      try {
+        const data = await fetch();
+        cache.set(key, { data, loading: false, error: null, fetchedAt: Date.now() });
+        evict(cache, max);
+        return data;
+      } catch (e) {
+        cache.set(key, { ...prev, loading: false, error: errorText(e) });
+        return null;
+      }
+    })().finally(() => flights.delete(key));
+    flights.set(key, p);
+    return p;
+  }
 
   /** The key a server's A2S data is kept under: its query port when known. */
   key(ip: string, port: number): string {
@@ -89,28 +130,26 @@ class ServerData {
 
   /** BattleMetrics, from the cache while it is fresh unless `force`. */
   fetchBm(ip: string, port: number, queryPort: number, name: string, force = false) {
-    const key = `${ip}:${port}:${queryPort}`;
-    const cached = this.#bm.get(key);
-    if (!force && cached?.data && cached.fetchedAt && Date.now() - cached.fetchedAt < BM_TTL_MS) {
-      return Promise.resolve(cached.data);
-    }
-    const inflight = this.#bmFlight.get(key);
-    if (inflight) return inflight;
-    const p = (async () => {
-      const prev = this.#bm.get(key) ?? blank<BattleMetricsDto>();
-      this.#bm.set(key, { ...prev, loading: true, error: null });
-      try {
-        const data = await fetchBattleMetrics(ip, port, queryPort, name);
-        this.#bm.set(key, { data, loading: false, error: null, fetchedAt: Date.now() });
-        evict(this.#bm, MAX_BM);
-        return data;
-      } catch (e) {
-        this.#bm.set(key, { ...prev, loading: false, error: errorText(e) });
-        return null;
-      }
-    })().finally(() => this.#bmFlight.delete(key));
-    this.#bmFlight.set(key, p);
-    return p;
+    return this.#cached(this.#bm, this.#bmFlight, `${ip}:${port}:${queryPort}`, BM_TTL_MS, MAX_BM, force, () =>
+      fetchBattleMetrics(ip, port, queryPort, name),
+    );
+  }
+
+  metrics(ip: string, gamePort: number, queryPort: number): Entry<ServerMetrics> {
+    return this.#metrics.get(`${ip}:${gamePort}:${queryPort}`) ?? blank();
+  }
+
+  /** DayZ Metrics, from the cache while it is fresh unless `force`. */
+  fetchMetrics(ip: string, gamePort: number, queryPort: number, force = false) {
+    return this.#cached(
+      this.#metrics,
+      this.#metricsFlight,
+      `${ip}:${gamePort}:${queryPort}`,
+      METRICS_TTL_MS,
+      MAX_METRICS,
+      force,
+      () => fetchServerMetrics(ip, gamePort, queryPort),
+    );
   }
 }
 

@@ -38,4 +38,5 @@ export type ServerDto = ServerRow;
 /** A server with its mod list, fetched on demand. */
 export type ServerFullDto = ServerFull;
 export type BattleMetricsDto = BattleMetricsServer;
+export type { ServerMetrics, RestartSchedule, WipeSchedule, MetricsLink } from "./bindings";
 export type PingResult = PingResultDto;

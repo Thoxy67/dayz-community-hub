@@ -332,6 +332,79 @@ export function installMock() {
         for (const [when, fn] of steps) setTimeout(fn, when);
         return null;
       }
+      case "fetch_server_metrics": {
+        const idx = servers.findIndex((x) => x.ip === a.ip);
+        const s = servers[Math.max(0, idx)]!;
+        const now = Math.floor(Date.now() / 1000);
+        const fake = idx % 7 === 3;
+        const hist = Array.from({ length: 288 }, (_, i) => {
+          const t = now - (287 - i) * 300;
+          const h = new Date(t * 1000).getUTCHours();
+          const wave = 0.55 + 0.4 * Math.sin(((h - 6) / 24) * Math.PI * 2);
+          return [t, Math.max(0, Math.round(s.max_players * wave * (fake ? 1 : 0.8)))] as [number, number];
+        });
+        return {
+          id: 160155 + Math.max(0, idx),
+          url: `https://dayzmetrics.com/server/${160155 + Math.max(0, idx)}`,
+          name: s.name,
+          map: s.map,
+          version: s.version,
+          status: "online",
+          country: ["DE", "FR", "US", "RU", "GB"][Math.max(0, idx) % 5],
+          players: s.players,
+          max_players: s.max_players,
+          queue: 0,
+          rank_pos: 8 + Math.max(0, idx),
+          rank_score: 4.0021,
+          rank_alive: 0.888,
+          rank_demand: 0.17,
+          avg_players_7d: s.max_players * 0.45,
+          peak_7d: s.max_players,
+          uptime_7d: 99.3,
+          wow_pct: fake ? -12 : 8,
+          first_seen: "2026-05-24T07:17:31+00:00",
+          last_seen: new Date().toISOString(),
+          ping_lo: 6,
+          ping_hi: 83,
+          ping_jitter: 7,
+          ping_stability: 0.9,
+          time_accel: 8,
+          night_time_accel: 2,
+          restart: {
+            period_hours: 3,
+            last_restart: new Date(Date.now() - 2 * 3600e3).toISOString(),
+            next_restart: new Date(Date.now() + 57 * 60e3).toISOString(),
+            confidence: "high",
+            slots_utc: ["00:00", "03:00", "06:00", "09:00", "12:00", "15:00", "18:00", "21:00"],
+          },
+          wipe: {
+            last: "2026-09-19",
+            last_source: "announced",
+            days_since: 10,
+            next: "2026-10-17",
+            next_source: "predicted",
+            days_until: 18,
+            period_days: 28,
+          },
+          is_fake: fake,
+          fake_reasons: fake ? ["Player count never drops below 90 %", "Same names reappear on every restart"] : [],
+          behavior_verdict: fake ? "fake" : "real",
+          behavior_score: fake ? 0.1 : 0.76,
+          flagged: false,
+          mimics_official: false,
+          discord: "https://discord.gg/example",
+          website: null,
+          links: [],
+          notices: [],
+          playstyle: null,
+          vanilla_band: "Lightly Modded",
+          vanilla_score: 37.9,
+          mod_count: s.mods_count,
+          mod_total_bytes: 5228339261,
+          player_history: hist,
+          ping_history: hist.map(([t]) => [t, 8]),
+        };
+      }
       case "fetch_battlemetrics_server": {
         const x = servers.find((v) => v.ip === a.ip);
         const max = x?.max_players ?? 60;

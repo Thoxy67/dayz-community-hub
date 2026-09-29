@@ -1,7 +1,8 @@
 /**
  * What the panel knows about one server, gathered once from the stores so the
  * tabs read the same values: the listed row (if the public list has it), the
- * live A2S answer, the mods it runs against what is installed, BattleMetrics.
+ * live A2S answer, the mods it runs against what is installed, DayZ Metrics'
+ * long view (and BattleMetrics' when a paid token is set).
  * Nothing here computes over more than this one server.
  */
 import { servers, type ServerRow } from "$lib/stores/servers.svelte";
@@ -45,6 +46,19 @@ export function detailModel(src: () => { ip: string; port: number; name: string 
     installed: modRows.filter((m) => m.state !== "missing").length,
   });
   const modsCount = $derived(modsEntry?.mods?.length ?? listed?.mods_count ?? a2s?.mods_from_a2s?.length ?? 0);
+  const metricsEntry = $derived(serverData.metrics(ip, gamePort, queryPort));
+  const metrics = $derived(metricsEntry.data);
+  // "fake" when the site says so outright or its behaviour check does; "suspect"
+  // for the softer signs (a suspicious curve, player reports, a name that
+  // passes for official).
+  const population = $derived.by((): "fake" | "suspect" | "ok" | null => {
+    if (!metrics) return null;
+    const v = metrics.behavior_verdict?.toLowerCase() ?? "";
+    if (metrics.is_fake || v === "fake") return "fake";
+    if (v.startsWith("susp") || metrics.flagged || metrics.mimics_official) return "suspect";
+    return "ok";
+  });
+  const country = $derived(metrics?.country ?? null);
   const bmEnabled = $derived(!!profile.data?.battlemetrics_api_key);
   const bm = $derived(bmEnabled ? serverData.bm(ip, gamePort, queryPort) : null);
   const players = $derived(
@@ -93,6 +107,18 @@ export function detailModel(src: () => { ip: string; port: number; name: string 
     },
     get modsCount() {
       return modsCount;
+    },
+    get metricsEntry() {
+      return metricsEntry;
+    },
+    get metrics() {
+      return metrics;
+    },
+    get population() {
+      return population;
+    },
+    get country() {
+      return country ?? bm?.data?.country ?? null;
     },
     get bmEnabled() {
       return bmEnabled;

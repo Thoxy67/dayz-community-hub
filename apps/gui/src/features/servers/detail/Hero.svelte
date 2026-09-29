@@ -10,6 +10,7 @@
   import { mapName } from "$lib/components/app/map-name";
   import { serverData } from "$lib/stores/server-data.svelte";
   import type { DetailModel } from "./model.svelte";
+  import PopulationWarning from "./PopulationWarning.svelte";
 
   /**
    * The top of the panel: the map is what a player recognises first, so it
@@ -25,7 +26,7 @@
   const c = dict("detail");
 
   const country = $derived.by(() => {
-    const code = m.bm?.data?.country;
+    const code = m.country;
     if (!code) return null;
     try {
       return { code, name: new Intl.DisplayNames([getLocale()], { type: "region" }).of(code.toUpperCase()) ?? code };
@@ -116,6 +117,8 @@
         {/if}
       </div>
     </div>
+
+    <PopulationWarning {m} compact />
 
     {#if !m.listed}
       <p class="m-0 flex items-start gap-1.5 text-2xs leading-snug text-warn">

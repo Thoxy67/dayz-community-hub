@@ -1,223 +1,273 @@
 <script lang="ts">
-  import { dict } from "$lib/i18n";
+  import { dict, getLocale } from "$lib/i18n";
   import ChartLine from "~icons/lucide/chart-line";
   import RefreshCw from "~icons/lucide/refresh-cw";
   import ExternalLink from "~icons/lucide/external-link";
-  import BadgeCheck from "~icons/lucide/badge-check";
-  import Lock from "~icons/lucide/lock";
-  import Eye from "~icons/lucide/eye";
-  import Crosshair from "~icons/lucide/crosshair";
-  import Puzzle from "~icons/lucide/puzzle";
+  import CalendarClock from "~icons/lucide/calendar-clock";
+  import Link from "~icons/lucide/link";
+  import Megaphone from "~icons/lucide/megaphone";
+  import Info from "~icons/lucide/info";
+  import TrendingUp from "~icons/lucide/trending-up";
+  import TrendingDown from "~icons/lucide/trending-down";
   import { Spinner } from "$lib/components/ui/spinner";
   import { Tag } from "$lib/components/ui/tag";
   import { Flag } from "$lib/components/ui/flag";
+  import { Empty, Facts, PlayerChart, Section, type Fact } from "$lib/components/app";
   import { serverData } from "$lib/stores/server-data.svelte";
-  import { profile } from "$lib/stores/profile.svelte";
   import { openUrl } from "$lib/ipc/native";
-  import { getLocale } from "$lib/i18n";
-  import { distanceKm, date } from "$lib/format";
-  import { Button } from "$lib/components/ui/button";
-  import { Empty, PlayerChart } from "$lib/components/app";
-  import { app } from "$lib/stores/app.svelte";
+  import { bytes, date, dateTime, num } from "$lib/format";
+  import type { DetailModel } from "./model.svelte";
+  import PopulationWarning from "./PopulationWarning.svelte";
+  import BattleMetricsSection from "./BattleMetricsSection.svelte";
+  import { untilText } from "./until";
 
   /**
-   * BattleMetrics' long view of the server: rank, uptime, where it is, and a
-   * day of player counts drawn large. Only shown when a token is configured.
+   * The server's long view, from DayZ Metrics (no key needed): how it ranks,
+   * how reliably it is up, how full it gets, when it restarts and wipes,
+   * whether its player count can be trusted, and a day of players drawn
+   * large. BattleMetrics follows only for a paid token.
    */
-  let { ip, port, queryPort, name }: { ip: string; port: number; queryPort: number; name: string } =
-    $props();
+  let { m }: { m: DetailModel } = $props();
   const c = dict("detail");
 
-  const hasKey = $derived(!!profile.data?.battlemetrics_api_key);
-  const entry = $derived(serverData.bm(ip, port, queryPort));
-  const bm = $derived(entry.data);
+  const entry = $derived(m.metricsEntry);
+  const x = $derived(entry.data);
+  const refresh = () => serverData.fetchMetrics(m.ip, m.gamePort, m.queryPort, true);
 
-  $effect(() => {
-    if (!hasKey) return;
-    const t = setTimeout(() => void serverData.fetchBm(ip, port, queryPort, name), 120);
-    return () => clearTimeout(t);
-  });
-
-  function age(iso: string): string {
-    const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
-    const w = $c;
-    if (days < 1) return w.ageToday.value;
-    if (days === 1) return w.ageDay.value;
-    if (days < 30) return w.ageDays({ count: days }).value;
-    const months = Math.floor(days / 30);
-    if (months === 1) return w.ageMonth.value;
-    if (months < 12) return w.ageMonths({ count: months }).value;
-    const years = Math.floor(days / 365);
-    return years === 1 ? w.ageYear.value : w.ageYears({ count: years }).value;
-  }
-
+  const uptimeTone = (u: number) => (u >= 90 ? "text-ok" : u >= 70 ? "text-warn" : "text-err");
   const country = $derived.by(() => {
-    if (!bm?.country) return null;
+    if (!x?.country) return null;
     try {
-      return (
-        new Intl.DisplayNames([getLocale()], { type: "region" }).of(bm.country.toUpperCase()) ??
-        bm.country
-      );
+      return new Intl.DisplayNames([getLocale()], { type: "region" }).of(x.country.toUpperCase()) ?? x.country;
     } catch {
-      return bm.country;
+      return x.country;
     }
   });
-  const km = $derived(
-    bm?.location && bm.location[0] != null && bm.location[1] != null && profile.data?.user_location
-      ? Math.round(
-          distanceKm(profile.data.user_location as [number, number], [
-            bm.location[0],
-            bm.location[1],
-          ]),
-        )
-      : null,
+  // Specta writes f64 as `number | null` (a NaN serialises to null).
+  const history = $derived(
+    (x?.player_history ?? []).filter((p): p is [number, number] => p[1] != null),
   );
-  const uptoneTone = (u: number) => (u >= 90 ? "text-ok" : u >= 70 ? "text-warn" : "text-err");
+  const nextRestart = $derived(x?.restart?.next_restart ? untilText(x.restart.next_restart) : null);
+  const source = (s: string | null | undefined) =>
+    s === "announced" ? $c.dmAnnounced.value : s === "predicted" ? $c.dmPredicted.value : (s ?? "");
+
+  const facts = $derived.by((): Fact[] => {
+    if (!x) return [];
+    const f: Fact[] = [];
+    if (x.time_accel != null) {
+      f.push({
+        label: $c.dmTimeSpeed.value,
+        value: $c.dmTimeSpeedValue({ day: x.time_accel, night: x.night_time_accel ?? x.time_accel }).value,
+      });
+    }
+    if (x.vanilla_band) {
+      f.push({
+        label: $c.dmStyle.value,
+        value: x.vanilla_band,
+        title: x.vanilla_score != null ? `${Math.round(x.vanilla_score)} / 100` : undefined,
+        tone: "text-mods",
+      });
+    }
+    if (x.playstyle) f.push({ label: $c.dmStyle.value, value: x.playstyle });
+    if (x.mod_total_bytes) f.push({ label: $c.dmModsSize.value, value: bytes(x.mod_total_bytes) });
+    if (x.first_seen) f.push({ label: $c.dmTrackedSince.value, value: date(x.first_seen), title: dateTime(Date.parse(x.first_seen) / 1000) });
+    if (x.ping_lo != null && x.ping_hi != null) {
+      f.push({
+        label: $c.dmPingRange.value,
+        value: `${Math.round(x.ping_lo)}–${Math.round(x.ping_hi)} ms${x.ping_jitter != null ? ` ±${Math.round(x.ping_jitter)}` : ""}`,
+        tone: "text-fg-muted",
+      });
+    }
+    return f;
+  });
+
+  const links = $derived.by(() => {
+    if (!x) return [] as { label: string; url: string }[];
+    const l: { label: string; url: string }[] = [];
+    if (x.discord) l.push({ label: $c.dmDiscord.value, url: x.discord });
+    if (x.website) l.push({ label: $c.dmWebsite.value, url: x.website });
+    for (const k of x.links) if (!l.some((e) => e.url === k.url)) l.push(k);
+    return l;
+  });
 </script>
 
-<div class="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-pad py-2.5">
-  <div class="flex items-center gap-2">
-    <span class="label-stencil text-fg-faint">{$c.bmTitle.value}</span>
-    {#if hasKey}
-      <button
-        class="ml-auto grid size-control-sm place-items-center rounded-sm text-fg-faint hover:bg-raised hover:text-fg disabled:opacity-40"
-        title={$c.bmRefreshTitle.value}
-        aria-label={$c.bmRefreshTitle.value}
-        disabled={entry.loading}
-        onclick={() => serverData.fetchBm(ip, port, queryPort, name, true)}
-      >
-        {#if entry.loading}<Spinner class="size-3.5" />{:else}<RefreshCw class="size-3.5" />{/if}
-      </button>
-    {/if}
-  </div>
-
-  {#if !hasKey}
-    <Empty icon={ChartLine} title={$c.statsNeedKey.value} compact>
-      {#snippet action()}
-        <Button onclick={() => app.go("settings", "apis")}>{$c.openSettings.value}</Button>
-      {/snippet}
-    </Empty>
-  {:else if entry.loading && !bm}
-    <div class="flex flex-col gap-2">
-      <div class="h-14 animate-pulse rounded-sm bg-raised/60"></div>
-      <div class="h-32 animate-pulse rounded-sm bg-raised/60"></div>
-    </div>
-  {:else if bm}
-    <div class="flex flex-wrap gap-1">
-      <Tag tone={bm.status === "online" ? "ok" : bm.status === "offline" ? "err" : "neutral"}>
+<div class="flex min-h-0 flex-1 flex-col">
+  <div class="flex items-center gap-2 px-pad pt-2.5">
+    <span class="label-stencil text-fg-faint">{$c.dmTitle.value}</span>
+    {#if x?.status}
+      <Tag tone={x.status === "online" ? "ok" : x.status === "offline" ? "err" : "neutral"}>
         <span class="inline-flex items-center gap-1">
-          <span class="size-1.5 rounded-full bg-current"></span>{bm.status === "online"
+          <span class="size-1.5 rounded-full bg-current"></span>{x.status === "online"
             ? $c.bmOnline.value
-            : bm.status === "offline"
+            : x.status === "offline"
               ? $c.bmOffline.value
-              : bm.status}
+              : x.status}
         </span>
       </Tag>
-      {#if bm.official}<Tag tone="accent"
-          ><span class="inline-flex items-center gap-1"
-            ><BadgeCheck class="size-3" />{$c.bmOfficial.value}</span
-          ></Tag
-        >{/if}
-      {#if bm.private}<Tag tone="err"
-          ><span class="inline-flex items-center gap-1"
-            ><Lock class="size-3" />{$c.bmPrivate.value}</span
-          ></Tag
-        >{/if}
-      {#if bm.third_person === true}<Tag
-          ><span class="inline-flex items-center gap-1"><Eye class="size-3" />{$c.bm3pp.value}</span
-          ></Tag
-        >{/if}
-      {#if bm.third_person === false}<Tag tone="warn"
-          ><span class="inline-flex items-center gap-1"
-            ><Crosshair class="size-3" />{$c.bm1pp.value}</span
-          ></Tag
-        >{/if}
-      {#if bm.modded}<Tag
-          ><span class="inline-flex items-center gap-1 text-mods"
-            ><Puzzle class="size-3" />{$c.bmModded.value}</span
-          ></Tag
-        >{/if}
+    {/if}
+    <button
+      class="ml-auto grid size-control-sm place-items-center rounded-sm text-fg-faint hover:bg-raised hover:text-fg disabled:opacity-40"
+      title={$c.dmRefresh.value}
+      aria-label={$c.dmRefresh.value}
+      disabled={entry.loading}
+      onclick={refresh}
+    >
+      {#if entry.loading}<Spinner class="size-3.5" />{:else}<RefreshCw class="size-3.5" />{/if}
+    </button>
+  </div>
+
+  {#if entry.loading && !x}
+    <div class="flex flex-col gap-2 px-pad py-2.5">
+      <div class="h-14 animate-pulse rounded-sm bg-raised/60"></div>
+      <div class="h-36 animate-pulse rounded-sm bg-raised/60"></div>
+      <div class="h-20 animate-pulse rounded-sm bg-raised/60"></div>
+    </div>
+  {:else if x}
+    <div class="flex flex-col gap-2.5 px-pad py-2.5">
+      <PopulationWarning {m} />
+
+      <!-- The figures a player weighs a server by, big where they matter. -->
+      <div
+        class="grid grid-cols-2 gap-px overflow-hidden rounded-sm border border-border bg-border @min-[26rem]:grid-cols-4"
+      >
+        <div class="bg-panel px-2 py-1.5">
+          <div class="label-stencil text-fg-faint">{$c.bmRank.value}</div>
+          <div class="title-display num text-xl text-accent">{x.rank_pos != null ? `#${num(x.rank_pos)}` : "—"}</div>
+        </div>
+        <div class="bg-panel px-2 py-1.5">
+          <div class="label-stencil text-fg-faint">{$c.dmUptime7d.value}</div>
+          <div class="title-display num text-xl {x.uptime_7d != null ? uptimeTone(x.uptime_7d) : 'text-fg-faint'}">
+            {x.uptime_7d != null ? `${x.uptime_7d.toFixed(1)}%` : "—"}
+          </div>
+        </div>
+        <div class="bg-panel px-2 py-1.5">
+          <div class="label-stencil text-fg-faint">{$c.dmPeak7d.value}</div>
+          <div class="title-display num text-xl text-fg">
+            {x.peak_7d != null ? num(x.peak_7d) : "—"}<span class="text-sm text-fg-faint"
+              >/{x.max_players != null ? num(x.max_players) : "?"}</span
+            >
+          </div>
+        </div>
+        <div class="bg-panel px-2 py-1.5">
+          <div class="label-stencil text-fg-faint">{$c.dmAvg7d.value}</div>
+          <div class="flex items-baseline gap-1.5">
+            <span class="title-display num text-xl text-fg">
+              {x.avg_players_7d != null ? num(Math.round(x.avg_players_7d)) : "—"}
+            </span>
+            {#if x.wow_pct != null}
+              {@const up = x.wow_pct >= 0}
+              <span
+                class="inline-flex items-center gap-0.5 font-mono text-2xs {up ? 'text-ok' : 'text-err'}"
+                title={$c.dmTrend.value}
+              >
+                {#if up}<TrendingUp class="size-3" />{:else}<TrendingDown class="size-3" />{/if}{up ? "+" : ""}{Math.round(
+                  x.wow_pct,
+                )}%
+              </span>
+            {/if}
+          </div>
+        </div>
+      </div>
+
+      {#if history.length > 1}
+        <!-- Drawn taller than the kit's default: here the chart is the tab's point. -->
+        <div class="[&_svg]:h-36"><PlayerChart points={history} max={x.max_players ?? undefined} /></div>
+      {/if}
     </div>
 
-    <!-- The figures a player weighs a server by, big where they matter. -->
-    <div class="grid grid-cols-3 gap-px overflow-hidden rounded-sm border border-border bg-border">
-      <div class="bg-panel px-2 py-1.5">
-        <div class="label-stencil text-fg-faint">{$c.bmRank.value}</div>
-        <div class="title-display num text-xl text-accent">
-          {bm.rank !== null ? `#${bm.rank}` : "—"}
-        </div>
-      </div>
-      <div class="bg-panel px-2 py-1.5">
-        <div class="label-stencil text-fg-faint">{$c.bmUptime.value}</div>
-        <div
-          class="title-display num text-xl {bm.uptime !== null
-            ? uptoneTone(bm.uptime)
-            : 'text-fg-faint'}"
-        >
-          {bm.uptime !== null ? `${bm.uptime.toFixed(1)}%` : "—"}
-        </div>
-      </div>
-      <div class="bg-panel px-2 py-1.5">
-        <div class="label-stencil text-fg-faint">{$c.bmPlayers.value}</div>
-        <div class="title-display num text-xl text-fg">
-          {bm.players ?? "—"}<span class="text-sm text-fg-faint">/{bm.max_players ?? "?"}</span>
-        </div>
-      </div>
-    </div>
-
-    {#if bm.player_history.length > 1}
-      <!-- Drawn taller than the kit's default: here the chart is the tab's point. -->
-      <div class="[&_svg]:h-36"><PlayerChart points={bm.player_history} max={bm.max_players} /></div>
+    {#if x.restart || x.wipe}
+      <Section icon={CalendarClock} title={$c.dmSchedule.value}>
+        <dl class="m-0 grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1.5 text-2xs">
+          {#if x.restart?.next_restart}
+            <dt class="text-fg-faint">{$c.dmNextRestart.value}</dt>
+            <dd class="m-0 text-fg" title={dateTime(Date.parse(x.restart.next_restart) / 1000)}>
+              {nextRestart ? $c.dmIn({ time: nextRestart }).value : dateTime(Date.parse(x.restart.next_restart) / 1000)}
+              {#if x.restart.period_hours}
+                <span class="text-fg-faint">· {$c.dmEvery({ hours: x.restart.period_hours }).value}</span>
+              {/if}
+              {#if x.restart.slots_utc.length}
+                <span class="mt-0.5 block font-mono text-3xs text-fg-faint">{x.restart.slots_utc.join(" · ")} UTC</span>
+              {/if}
+            </dd>
+          {/if}
+          {#if x.wipe?.next}
+            <dt class="text-fg-faint">{$c.dmNextWipe.value}</dt>
+            <dd class="m-0 text-fg">
+              {x.wipe.next}
+              {#if x.wipe.days_until != null}
+                <span class="text-fg-muted">· {$c.dmInDays({ days: Math.round(x.wipe.days_until) }).value}</span>
+              {/if}
+              <Tag tone={x.wipe.next_source === "announced" ? "ok" : "neutral"}>{source(x.wipe.next_source)}</Tag>
+            </dd>
+          {/if}
+          {#if x.wipe?.last}
+            <dt class="text-fg-faint">{$c.dmLastWipe.value}</dt>
+            <dd class="m-0 text-fg-muted">
+              {x.wipe.last}
+              {#if x.wipe.days_since != null}· {$c.dmDaysAgo({ days: Math.round(x.wipe.days_since) }).value}{/if}
+            </dd>
+          {/if}
+        </dl>
+      </Section>
     {/if}
 
-    <dl class="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-2xs">
-      <dt class="text-fg-faint">{$c.bmName.value}</dt>
-      <dd class="m-0 truncate text-fg-muted" title={bm.name}>{bm.name}</dd>
-      {#if bm.country}
-        <dt class="text-fg-faint">{$c.bmCountry.value}</dt>
-        <dd class="m-0 flex items-center gap-1.5 text-fg-muted">
-          <Flag code={bm.country} class="size-3.5" />{country}
-          {#if km !== null}<span class="ml-auto font-mono text-fg-faint"
-              >{$c.distanceKm({ km }).value}</span
-            >{/if}
-        </dd>
-      {/if}
-      {#if bm.created_at}
-        <dt class="text-fg-faint">{$c.bmFirstSeen.value}</dt>
-        <dd class="m-0 text-fg-muted" title={date(bm.created_at)}>
-          {$c.ago({ time: age(bm.created_at) }).value}
-        </dd>
-      {/if}
-      {#if bm.server_steam_id}
-        <dt class="text-fg-faint">{$c.bmSteamId.value}</dt>
-        <dd class="m-0">
-          <button
-            class="font-mono text-fg-muted hover:text-accent"
-            title={$c.bmOpenSteam.value}
-            onclick={() => openUrl(`https://steamcommunity.com/profiles/${bm.server_steam_id}`)}
-            >{bm.server_steam_id}</button
-          >
-        </dd>
-      {/if}
-    </dl>
+    {#if facts.length || country}
+      <Section icon={Info} title={$c.details.value}>
+        {#if country && x.country}
+          <p class="m-0 flex items-center gap-1.5 text-2xs text-fg-muted">
+            <Flag code={x.country} class="size-3.5" />{country}
+          </p>
+        {/if}
+        <Facts items={facts} />
+      </Section>
+    {/if}
 
-    <button
-      class="inline-flex items-center gap-1.5 self-start text-2xs text-fg-faint hover:text-accent"
-      onclick={() => openUrl(`https://www.battlemetrics.com/servers/dayz/${bm.id}`)}
-    >
-      <ExternalLink class="size-3" />{$c.openBm.value}
-    </button>
-  {:else if entry.error}
-    <div
-      class="flex items-start gap-2 rounded-sm border border-err/30 bg-err/10 px-2 py-1.5 text-2xs text-err"
-    >
-      <span class="min-w-0 flex-1 break-words">{entry.error}</span>
-      <button
-        class="shrink-0 underline"
-        onclick={() => serverData.fetchBm(ip, port, queryPort, name, true)}>{$c.retry.value}</button
-      >
+    {#if x.notices.length}
+      <Section icon={Megaphone} title={$c.dmNotices.value}>
+        <ul class="m-0 flex list-disc flex-col gap-1 pl-4 text-2xs text-fg-muted">
+          {#each x.notices as n, i (i)}<li data-selectable>{n}</li>{/each}
+        </ul>
+      </Section>
+    {/if}
+
+    {#if links.length}
+      <Section icon={Link} title={$c.dmLinks.value}>
+        <div class="flex flex-wrap gap-1.5">
+          {#each links as l (l.url)}
+            <button
+              class="inline-flex max-w-full items-center gap-1 rounded-sm border border-border px-2 py-1 text-2xs text-fg-muted hover:border-border-strong hover:text-fg"
+              title={l.url}
+              onclick={() => openUrl(l.url)}
+            >
+              <ExternalLink class="size-3 shrink-0" /><span class="truncate">{l.label}</span>
+            </button>
+          {/each}
+        </div>
+      </Section>
+    {/if}
+
+    <div class="flex items-center gap-3 px-pad py-2.5 text-2xs text-fg-faint">
+      <button class="inline-flex items-center gap-1.5 hover:text-accent" onclick={() => openUrl(x.url)}>
+        <ExternalLink class="size-3" />{$c.openDm.value}
+      </button>
+      <span class="ml-auto">{$c.dmSource.value}</span>
     </div>
-  {:else}
-    <Empty icon={ChartLine} title={$c.bmNotFound.value} compact />
+  {:else if entry.error}
+    <div class="px-pad py-2.5">
+      {#if entry.error.startsWith("Not listed")}
+        <Empty icon={ChartLine} title={$c.dmNotListed.value} compact />
+      {:else}
+        <div class="flex items-start gap-2 rounded-sm border border-err/30 bg-err/10 px-2 py-1.5 text-2xs text-err">
+          <span class="min-w-0 flex-1 break-words">{entry.error}</span>
+          <button class="shrink-0 underline" onclick={refresh}>{$c.retry.value}</button>
+        </div>
+      {/if}
+    </div>
+  {/if}
+
+  {#if m.bmEnabled}
+    <div class="border-t border-border px-pad py-2.5">
+      <BattleMetricsSection ip={m.ip} port={m.gamePort} queryPort={m.queryPort} name={m.title} />
+    </div>
   {/if}
 </div>

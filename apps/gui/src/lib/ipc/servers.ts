@@ -38,6 +38,10 @@ export const queryA2s = (ip: string, queryPort: number, gamePort: number | null)
 export const fetchBattleMetrics = (ip: string, port: number, queryPort: number, name: string) =>
   run(commands.fetchBattlemetricsServer(ip, port, queryPort, name));
 
+/** DayZ Metrics' long view of a server (rank, schedules, fake verdict, 24 h); no key needed. */
+export const fetchServerMetrics = (ip: string, gamePort: number, queryPort: number) =>
+  run(commands.fetchServerMetrics(ip, gamePort, queryPort));
+
 // ── pings of explicit, small lists ──────────────────────────────────────
 export const pingServers = (
   targets: string[],

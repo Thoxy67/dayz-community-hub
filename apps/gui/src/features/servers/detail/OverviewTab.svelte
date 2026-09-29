@@ -19,6 +19,8 @@
   import { distanceKm, duration, num, relative, dateTime } from "$lib/format";
   import type { DetailModel } from "./model.svelte";
   import type { DetailTab } from "./tab.svelte";
+  import PopulationWarning from "./PopulationWarning.svelte";
+  import { untilText } from "./until";
 
   /** The panel's first page: how to join, what the server is, what it will cost, who is on, and you. */
   let { m, go }: { m: DetailModel; go: (tab: DetailTab) => void } = $props();
@@ -65,13 +67,27 @@
       if (m.count.bots > 0) f.push({ label: $c.bots.value, value: num(m.count.bots), tone: "text-warn" });
     }
     if (km !== null) f.push({ label: $c.bmDistance.value, value: $c.distanceKm({ km: num(km) }).value });
+    // Rank and uptime: DayZ Metrics first (no key), BattleMetrics if that is all there is.
+    const x = m.metrics;
     const bm = m.bm?.data;
-    if (bm?.rank != null) f.push({ label: $c.rank.value, value: `#${num(bm.rank)}`, tone: "text-accent" });
-    if (bm?.uptime != null) {
+    const rank = x?.rank_pos ?? bm?.rank ?? null;
+    if (rank != null) f.push({ label: $c.rank.value, value: `#${num(rank)}`, tone: "text-accent" });
+    const up = x?.uptime_7d ?? bm?.uptime ?? null;
+    if (up != null) {
       f.push({
         label: $c.uptime.value,
-        value: `${bm.uptime.toFixed(1)}%`,
-        tone: bm.uptime >= 90 ? "text-ok" : bm.uptime >= 70 ? "text-warn" : "text-err",
+        value: `${up.toFixed(1)}%`,
+        tone: up >= 90 ? "text-ok" : up >= 70 ? "text-warn" : "text-err",
+      });
+    }
+    const restart = x?.restart?.next_restart ? untilText(x.restart.next_restart) : null;
+    if (restart) f.push({ label: $c.dmNextRestart.value, value: $c.dmIn({ time: restart }).value });
+    const wipe = x?.wipe;
+    if (wipe?.next) {
+      f.push({
+        label: $c.dmNextWipe.value,
+        value: wipe.days_until != null ? $c.dmInDays({ days: Math.round(wipe.days_until) }).value : wipe.next,
+        title: `${wipe.next} · ${wipe.next_source === "announced" ? $c.dmAnnounced.value : $c.dmPredicted.value}`,
       });
     }
     return f;
@@ -83,6 +99,10 @@
   const lastPlayed = $derived(m.history[0]?.ts ?? null);
   const fav = $derived(profile.isFavorite(m.ip, m.queryPort) || profile.isFavorite(m.ip, m.gamePort));
 </script>
+
+{#if m.population === "fake" || m.population === "suspect"}
+  <div class="px-pad pt-2.5"><PopulationWarning {m} /></div>
+{/if}
 
 <Section icon={Plug} title={$c.connection.value}>
   <dl class="m-0 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 text-2xs">

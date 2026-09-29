@@ -19,11 +19,13 @@
   import StatsTab from "./StatsTab.svelte";
   import ModsWarnIcon from "./ModsWarnIcon.svelte";
   import ModsErrIcon from "./ModsErrIcon.svelte";
+  import StatsFakeIcon from "./StatsFakeIcon.svelte";
+  import StatsSuspectIcon from "./StatsSuspectIcon.svelte";
 
   /**
    * Everything known about one server. The map-coloured hero says which
    * server and whether it is worth joining now; the tabs hold the detail
-   * (overview, players, mods against what is installed, rules, BattleMetrics'
+   * (overview, players, mods against what is installed, rules, DayZ Metrics'
    * long view); the foot keeps join and the other actions in reach. Shared by
    * the server list, favourites, history and Direct Connect; works for a
    * server the public list does not have, from what it answers directly.
@@ -60,20 +62,23 @@
     const t = setTimeout(() => void loadServerMods(i, q), 180);
     return () => clearTimeout(t);
   });
+  // DayZ Metrics needs no key: asked for every server shown, a little after
+  // the live query so a quick scroll through a list costs the site nothing.
+  $effect(() => {
+    const [i, g, q] = [m.ip, m.gamePort, m.queryPort];
+    const t = setTimeout(() => void serverData.fetchMetrics(i, g, q), 250);
+    return () => clearTimeout(t);
+  });
   $effect(() => {
     if (!m.bmEnabled) return;
     const [i, g, q, n] = [m.ip, m.gamePort, m.queryPort, m.title];
-    const t = setTimeout(() => void serverData.fetchBm(i, g, q, n), 200);
+    const t = setTimeout(() => void serverData.fetchBm(i, g, q, n), 300);
     return () => clearTimeout(t);
   });
 
   // `focusMods` (the mods count in a row was clicked) opens the Mods tab.
   $effect(() => {
     if (focusMods) detailTab.current = "mods";
-  });
-  // Stats only exist with a BattleMetrics token.
-  $effect(() => {
-    if (!m.bmEnabled && detailTab.current === "stats") detailTab.current = "overview";
   });
 
   const modsIcon = $derived(
@@ -94,7 +99,12 @@
       count: m.modsCount,
     },
     { id: "rules" as DetailTab, label: $c.tabRules.value, icon: icon(ScrollText), count: m.a2s?.rules?.length ?? 0 },
-    ...(m.bmEnabled ? [{ id: "stats" as DetailTab, label: $c.tabStats.value, icon: icon(ChartLine) }] : []),
+    {
+      id: "stats" as DetailTab,
+      label: $c.tabStats.value,
+      // The fake-population warning shows on the tab too, so it is seen from any tab.
+      icon: m.population === "fake" ? StatsFakeIcon : m.population === "suspect" ? StatsSuspectIcon : icon(ChartLine),
+    },
   ]);
   const go = (t: DetailTab) => (detailTab.current = t);
 </script>
@@ -131,7 +141,7 @@
     {:else if detailTab.current === "rules"}
       <RulesTab {m} />
     {:else if detailTab.current === "stats"}
-      <StatsTab ip={m.ip} port={m.gamePort} queryPort={m.queryPort} name={m.title} />
+      <StatsTab {m} />
     {/if}
   </div>
 
