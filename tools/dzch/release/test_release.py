@@ -121,7 +121,7 @@ class Changelog(unittest.TestCase):
         )
         self.assertEqual(r.hand_notes(log, "0.4.2"), "- by hand")
         self.assertEqual(r.hand_notes(self.LOG, "0.4.1"), "- old")
-        self.assertIsNone(r.hand_notes(self.LOG, "0.9.9"))
+        self.assertEqual(r.hand_notes(self.LOG, "0.9.9"), "- wip")
 
     def test_notes_go_under_unreleased_once(self):
         out = r.with_release_notes(self.LOG, "0.4.2", "2026-09-29", "- new")
@@ -163,10 +163,48 @@ class Manifest(unittest.TestCase):
 
     def test_asset_names_keep_the_historical_scheme(self):
         names = r.asset_names("0.4.2")
-        self.assertEqual(names["deb"], "dayz-community-hub-v0.4.2-x86_64.deb")
+        self.assertEqual(names["appimage"], "dayz-community-hub-v0.4.2-x86_64.AppImage")
         self.assertEqual(
             names["windows_sig"], "dayz-community-hub-v0.4.2-x86_64-windows.zip.sig"
         )
+
+    def test_publish_ships_the_appimage_and_the_windows_zip_only(self):
+        self.assertEqual(
+            sorted(r.asset_names("0.4.2")),
+            ["appimage", "appimage_sig", "windows", "windows_sig"],
+        )
+
+    def test_the_plan_names_both_forges_and_the_manifest(self):
+        text = r.plan("0.4.2", "v0.4.2", "- a change", pre=False, skip_github=False)
+        self.assertIn(
+            "git.thoxy.xyz/thoxy/dayz-community-hub/releases/tag/v0.4.2", text
+        )
+        self.assertIn("github.com/Thoxy67/dayz-community-hub/releases/tag/v0.4.2", text)
+        self.assertIn('"linux-x86_64"', text)
+        self.assertIn('"windows-x86_64"', text)
+        self.assertIn("- a change", text)
+
+    def test_a_preview_plan_has_no_manifest_and_skip_github_drops_the_mirror(self):
+        text = r.plan("0.4.2-pre", "v0.4.2-pre", "n", pre=True, skip_github=True)
+        self.assertNotIn("latest.json", text)
+        self.assertNotIn("github.com", text)
+
+
+class Unreleased(unittest.TestCase):
+    LOG = "# Changelog\n\nIntro.\n\n## Unreleased\n\n- the refonte\n\n## 0.4.0 - 2026-01-01\n\n- old\n"
+
+    def test_notes_written_under_unreleased_are_used(self):
+        self.assertEqual(r.hand_notes(self.LOG, "0.4.1"), "- the refonte")
+
+    def test_an_empty_unreleased_falls_back_to_the_log(self):
+        log = "# Changelog\n\n## Unreleased\n\n## 0.4.0 - x\n\n- old\n"
+        self.assertIsNone(r.hand_notes(log, "0.4.1"))
+
+    def test_the_unreleased_section_becomes_the_release(self):
+        out = r.with_release_notes(self.LOG, "0.4.1", "2026-09-29", "- the refonte")
+        self.assertIn("## Unreleased\n\n## 0.4.1 - 2026-09-29\n\n- the refonte", out)
+        self.assertEqual(out.count("- the refonte"), 1)
+        self.assertIsNone(r.hand_notes(out, "0.4.2"))
 
 
 class Staging(unittest.TestCase):
@@ -187,7 +225,7 @@ class Staging(unittest.TestCase):
             for name in names.values():
                 open(os.path.join(d, name), "w").close()
             self.assertTrue(r.staged_complete(d, "0.4.2"))
-            os.remove(os.path.join(d, names["rpm"]))
+            os.remove(os.path.join(d, names["appimage_sig"]))
             self.assertFalse(r.staged_complete(d, "0.4.2"))
 
 

@@ -5,9 +5,16 @@
 #   make fmt            format every file
 #   make bindings       regenerate apps/gui/src/lib/ipc/bindings.ts from the Rust commands
 #   make windows        the Windows executable (MSVC, via cargo-xwin), zipped into var/dist
-#   make build | appimage | publish | prerelease   see docs/build.md
+#   make publish        build the AppImage and the Windows zip, sign, tag, publish on
+#                       git.thoxy.xyz and GitHub, update latest.json (the updater's manifest)
+#   make prerelease     the same as a pre-release, touching nothing in the repository
+#   make aur            generate the AUR package (dayz-community-hub-git) and push it
+#   make aur-build      build that package locally, to test it before `make aur`
+#   make keys           a new updater signing key (the old one is kept aside)
+#   make build | appimage                           see docs/build.md
 #
-# Knobs: VERSION=… ZIG=0
+# Knobs: VERSION=… ZIG=0 DRY=1 (publish, prerelease, aur, keys: say what would happen)
+#        SKIP_GITHUB=1 (publish, prerelease: git.thoxy.xyz only)  FORCE=1 (aur)
 
 DZCH := uv run --project tools dzch
 CHECK_TARGET := $(CURDIR)/target/check
@@ -17,7 +24,7 @@ ZIG ?= 1
 LINUX_BUILD := ZIG=$(ZIG) NO_STRIP=true bun run tauri build \
                --runner $(CURDIR)/scripts/cargo-zigbuild.sh --target x86_64-unknown-linux-gnu
 
-.PHONY: help dev check fmt bindings windows build appimage publish prerelease
+.PHONY: help dev check fmt bindings windows build appimage publish prerelease aur aur-build keys
 help: ; @sed -n '2,/^$$/p' Makefile | sed 's/^# \{0,1\}//'
 
 dev:        ; cd apps/gui && bun run tauri dev
@@ -43,5 +50,9 @@ windows:
 	  zip -9 $(CURDIR)/var/dist/dayz-community-hub-x86_64-windows.zip dayz-community-hub.exe
 build:      ; cd apps/gui && $(LINUX_BUILD)
 appimage:   ; cd apps/gui && $(LINUX_BUILD) --bundles appimage
-publish:    ; $(DZCH) release $(if $(VERSION),--version $(VERSION),)
-prerelease: ; $(DZCH) release --pre $(if $(VERSION),--version $(VERSION),)
+RELEASE_FLAGS = $(if $(VERSION),--version $(VERSION),) $(if $(DRY),--dry-run,) $(if $(SKIP_GITHUB),--skip-github,)
+publish:    ; $(DZCH) release $(RELEASE_FLAGS)
+prerelease: ; $(DZCH) release --pre $(RELEASE_FLAGS)
+aur:        ; $(DZCH) aur $(if $(DRY),--dry-run,) $(if $(FORCE),--force,)
+aur-build:  ; $(DZCH) aur --build
+keys:       ; $(DZCH) keys $(if $(DRY),--dry-run,)

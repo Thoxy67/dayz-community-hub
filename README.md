@@ -59,23 +59,25 @@ A fast, feature-rich DayZ launcher that replaces the official one — browse ser
 Go to [Releases](https://git.thoxy.xyz/thoxy/dayz-community-hub/releases) and grab the latest version.
 
 ### Windows
-Extract the `.zip` and run `dayz-community-hub.exe`
+Extract the `.zip` and run `dayz-community-hub.exe`. It updates itself: when a
+new version is out, the launcher offers it and replaces itself in place.
 
-### Linux
+### Linux (AppImage)
+```bash
+chmod +x dayz-community-hub-*.AppImage && ./dayz-community-hub-*.AppImage
+```
+The AppImage updates itself the same way.
 
-| Format | Distros | Install |
-|--------|---------|---------|
-| `.AppImage` | Any | `chmod +x *.AppImage && ./dayz-community-hub.AppImage` |
-| `.deb` | Debian, Ubuntu, Mint, Pop!_OS | `sudo dpkg -i dayz-community-hub.deb` |
-| `.rpm` | Fedora, openSUSE, RHEL, CentOS | `sudo rpm -i dayz-community-hub.rpm` |
-
-#### Arch Linux (AUR)
+### Arch Linux (AUR)
+The `dayz-community-hub-git` package builds the latest `master` from source:
 
 ```bash
 git clone https://git.thoxy.xyz/AUR/dayz-community-hub-git.git
 cd dayz-community-hub-git
 makepkg -si
 ```
+
+Rebuild to update (pacman owns this install, so the in-app updater stays out of it).
 
 ---
 

@@ -18,15 +18,22 @@ running it again after a failure carries on from where it stopped:
   2. version  the current one if it has never been tagged, else the patch + 1;
               written to Cargo.toml, tauri.conf.json and package.json, and the
               notes since the last tag written into CHANGELOG.md
-  3. build    Linux (AppImage, .deb, .rpm; the AppImage signed by tauri) and
-              Windows (the .exe through cargo-xwin, zipped and signed: the zip
-              is what the Windows updater downloads), staged in var/dist/vX.Y.Z
-              (skipped when the signed files of this version are already there)
+  3. build    the Linux AppImage (signed by tauri: what the Linux updater
+              downloads) and Windows (the .exe through cargo-xwin, zipped and
+              signed: what the Windows updater downloads), staged in
+              var/dist/vX.Y.Z (skipped when the signed files of this version
+              are already there). Arch users get the AUR package (make aur).
   4. tag      commit `release: vX.Y.Z`, tag it, push master and the tag
   5. publish  release vX.Y.Z on thoxy/dayz-community-hub with every file,
               `latest.json` on it and on the rolling `latest` release, which is
               the endpoint installed copies poll; then the same release on the
-              GitHub mirror when a GitHub token is there
+              GitHub mirror (Thoxy67/dayz-community-hub). Both forges are
+              required; `--skip-github` publishes to the Forgejo one only.
+
+The notes are the `## x.y.z` section of CHANGELOG.md when one was written by
+hand, else the jj log since the last tag (scripts/changelog.sh); they become
+the release body on both forges and the `notes` of latest.json, which the
+update banner shows.
 
 A preview (`--pre`, `make prerelease`) builds and publishes the same files as
 a Forgejo (and GitHub) pre-release `vX.Y.Z-pre` but touches nothing in the
@@ -39,7 +46,7 @@ Secrets, each from the environment, else apps/gui/.env, else ~/.config:
   signing key   TAURI_SIGNING_KEY_FILE    ~/.config/dayz-community-hub/updater.key
   key password  TAURI_SIGNING_KEY_PASS    (empty when unset)
   Forgejo       FORGEJO_TOKEN             ~/.config/dayz-community-hub/forge-token
-  GitHub        GH_PAT or GITHUB_TOKEN    ~/.config/dayz-community-hub/github-token (optional)
+  GitHub        GH_PAT or GITHUB_TOKEN    ~/.config/dayz-community-hub/github-token
 """
 
 from __future__ import annotations
@@ -244,14 +251,24 @@ def _section(changelog: str, version: str) -> re.Match | None:
     )
 
 
-def hand_notes(changelog: str, version: str) -> str | None:
-    """The notes written by hand for `version` in CHANGELOG.md, if any."""
-    m = _section(changelog, version)
-    if not m:
-        return None
+def _body(changelog: str, m: re.Match) -> str:
     end = changelog.find("\n## ", m.end())
-    body = changelog[m.end() : end if end != -1 else len(changelog)].strip()
-    return body or None
+    return changelog[m.end() : end if end != -1 else len(changelog)].strip()
+
+
+def _unreleased(changelog: str) -> re.Match | None:
+    return re.search(r"^## Unreleased[ \t]*$", changelog, re.MULTILINE)
+
+
+def hand_notes(changelog: str, version: str) -> str | None:
+    """The notes written by hand for `version` in CHANGELOG.md: its own
+    `## x.y.z` section, else the `## Unreleased` one; None when neither has
+    anything, and the jj log is used instead."""
+    m = _section(changelog, version)
+    if m:
+        return _body(changelog, m) or None
+    u = _unreleased(changelog)
+    return (_body(changelog, u) or None) if u else None
 
 
 def with_release_notes(changelog: str, version: str, date: str, notes: str) -> str:
@@ -265,6 +282,15 @@ def with_release_notes(changelog: str, version: str, date: str, notes: str) -> s
                 changelog[: m.start()] + f"## {version} - {date}" + changelog[m.end() :]
             )
         return changelog
+    u = _unreleased(changelog)
+    if u and _body(changelog, u):
+        # The notes were written under Unreleased: that section becomes the
+        # release's, and a fresh empty Unreleased goes above it.
+        return (
+            changelog[: u.start()]
+            + f"## Unreleased\n\n## {version} - {date}"
+            + changelog[u.end() :]
+        )
     section = f"## {version} - {date}\n\n{notes.strip()}\n\n"
     unreleased = changelog.find("## Unreleased")
     if unreleased == -1:
@@ -287,8 +313,6 @@ def asset_names(version: str) -> dict[str, str]:
         "windows_sig": f"{stem}-windows.zip.sig",
         "appimage": f"{stem}.AppImage",
         "appimage_sig": f"{stem}.AppImage.sig",
-        "deb": f"{stem}.deb",
-        "rpm": f"{stem}.rpm",
     }
 
 
@@ -338,6 +362,50 @@ def staged_complete(stage: str, version: str) -> bool:
         os.path.join(stage, names["appimage"]),
         os.path.join(stage, names["appimage_sig"]),
     )
+
+
+def plan(version: str, tag: str, notes: str, pre: bool, skip_github: bool) -> str:
+    """What a run would do, for `--dry-run`: every file, every upload and the
+    manifest, and nothing else touched."""
+    names = asset_names(version)
+    forges = [f"{FORGE}/{OWNER}/{NAME}"] + (
+        [] if skip_github else [f"https://github.com/{GITHUB_OWNER}/{NAME}"]
+    )
+    lines = [
+        f"version      {version}{' (preview: nothing in the repository changes)' if pre else ''}",
+        f"stage        {os.path.join(DIST, 'v' + version)}",
+        "build        Linux AppImage (zig runner, signed by tauri)",
+        "             Windows exe (cargo-xwin), zipped and signed",
+        "files        " + "\n             ".join(names.values()),
+    ]
+    if not pre:
+        lines += [
+            f"repository   version -> {version} in Cargo.toml, tauri.conf.json, package.json;",
+            f"             CHANGELOG.md section; commit `release: {tag}`; tag {tag}; push {BRANCH} + tag",
+        ]
+    for forge in forges:
+        lines.append(
+            f"publish      {forge}/releases/tag/{tag}"
+            + (" (pre-release)" if pre else "")
+        )
+    if not pre:
+        lines.append(
+            f"updater      latest.json on {tag} and on the rolling `latest` release:"
+        )
+        lines.append(
+            json.dumps(
+                manifest(
+                    version,
+                    notes,
+                    "<zip signature>",
+                    "<AppImage signature>",
+                    dt.datetime.now(dt.UTC),
+                ),
+                indent=2,
+            )
+        )
+    lines += ["notes", notes]
+    return "\n".join(lines)
 
 
 # ── the repository ──────────────────────────────────────────────────────────
@@ -643,9 +711,9 @@ def tauri(*args: str, env: dict) -> None:
 
 
 def build_linux(version: str, secrets: Secrets, config: dict, stage: str) -> None:
-    """AppImage (signed by tauri: createUpdaterArtifacts), .deb and .rpm,
-    linked through zig against a glibc floor (scripts/cargo-zigbuild.sh falls
-    back to plain cargo when zig is missing, and honours ZIG=0)."""
+    """The AppImage (signed by tauri: createUpdaterArtifacts), linked through
+    zig against a glibc floor (scripts/cargo-zigbuild.sh falls back to plain
+    cargo when zig is missing, and honours ZIG=0)."""
     print(f"== building Linux {version}")
     env = dict(secrets.signing_env(), NO_STRIP="true")
     tauri(
@@ -655,7 +723,7 @@ def build_linux(version: str, secrets: Secrets, config: dict, stage: str) -> Non
         "--target",
         LINUX_TARGET,
         "--bundles",
-        "appimage,deb,rpm",
+        "appimage",
         "--config",
         json.dumps(config),
         env=env,
@@ -672,15 +740,11 @@ def build_linux(version: str, secrets: Secrets, config: dict, stage: str) -> Non
             )
         return found[-1]
 
-    # Tauri names bundles after the product name and version; the tilde form
-    # is how the .rpm writes a pre-release.
-    rpm_version = version.replace("-", "~")
+    # Tauri names bundles after the product name and version.
     appimage = one("appimage", f"*_{version}_*.AppImage")
     for src, dst in (
         (appimage, names["appimage"]),
         (appimage + ".sig", names["appimage_sig"]),
-        (one("deb", f"*_{version}_*.deb"), names["deb"]),
-        (one("rpm", f"*-{rpm_version}-*.rpm"), names["rpm"]),
     ):
         if not os.path.isfile(src):
             sys.exit(f"the Linux build left no {src} (is the signing key right?)")
@@ -771,11 +835,9 @@ def publish_files(
     return rel
 
 
-def mirrors(secrets: Secrets) -> list[Forge]:
-    if not secrets.github:
-        print(
-            "note: no GitHub token (GH_PAT, or ~/.config/dayz-community-hub/github-token): the mirror is skipped"
-        )
+def mirrors(secrets: Secrets, skip_github: bool) -> list[Forge]:
+    if skip_github:
+        print("note: --skip-github: the GitHub mirror is not published")
         return []
     return [Forge.github(secrets.github)]
 
@@ -790,11 +852,11 @@ def publish_preview(cli, secrets: Secrets, forgejo: Forge) -> None:
     notes = "\n\n".join(x for x in (source_line(), log) if x)
     print(f"== preview {tag} (current {current}, last release {since or 'none'})")
     if cli.dry_run:
-        print(notes)
+        print(plan(version, tag, notes, pre=True, skip_github=cli.skip_github))
         return
     stage = build(version, secrets, pre=True)
     title = f"DayZ Community Hub {version} (preview)"
-    for forge in [forgejo, *mirrors(secrets)]:
+    for forge in [forgejo, *mirrors(secrets, cli.skip_github)]:
         print(f"== publishing the preview to {forge.label}")
         publish_files(forge, tag, title, notes, stage, version, pre=True)
         forge.drop_previews(tag)
@@ -814,17 +876,32 @@ def main() -> None:
     ap.add_argument(
         "--dry-run", action="store_true", help="say what would happen, change nothing"
     )
+    ap.add_argument(
+        "--skip-github",
+        action="store_true",
+        help="publish to git.thoxy.xyz only, not to the GitHub mirror",
+    )
     cli = ap.parse_args()
 
     secrets = Secrets()
+    missing = []
     if not os.path.isfile(secrets.key):
-        sys.exit(
-            f'no signing key at {secrets.key}; see docs/build.md, section "Publish"'
+        missing.append(
+            f'no signing key at {secrets.key}; `make keys` makes one (docs/build.md, "Publish")'
         )
     if not secrets.forgejo:
-        sys.exit(
+        missing.append(
             f"no Forgejo token: set FORGEJO_TOKEN or write one to {CONFIG_DIR}/forge-token"
         )
+    if not secrets.github and not cli.skip_github:
+        missing.append(
+            "no GitHub token: set GH_PAT or write one to "
+            f"{CONFIG_DIR}/github-token (or pass --skip-github to publish to git.thoxy.xyz only)"
+        )
+    if missing and not cli.dry_run:
+        sys.exit("\n".join(missing))
+    for line in missing:
+        print(f"warning: {line}")
     forgejo = Forge.forgejo(secrets.forgejo)
     if cli.pre:
         publish_preview(cli, secrets, forgejo)
@@ -836,10 +913,13 @@ def main() -> None:
     changed = changed_files()
     stray = changed - RELEASE_FILES
     if stray:
-        sys.exit(
+        message = (
             "the working copy has changes a release must not carry; commit or move them first:\n  "
             + "\n  ".join(sorted(stray))
         )
+        if not cli.dry_run:
+            sys.exit(message)
+        print(f"warning: {message}")
 
     # 2. version
     cargo = open(CARGO, encoding="utf-8").read()
@@ -850,7 +930,8 @@ def main() -> None:
         all_tags,
         cli.version,
         in_progress=bool(changed),
-        published=f"v{current}" not in all_tags or forgejo.published(current),
+        published=f"v{current}" not in all_tags
+        or (forgejo.published(current) if secrets.forgejo else True),
     )
     tag = f"v{version}"
     since = last_tag(all_tags - {tag})
@@ -860,7 +941,7 @@ def main() -> None:
     )
     print(f"== releasing {tag} (current {current}, last release {since or 'none'})")
     if cli.dry_run:
-        print(notes)
+        print(plan(version, tag, notes, pre=False, skip_github=cli.skip_github))
         return
     if tag not in all_tags:
         if version != current:
@@ -887,7 +968,7 @@ def main() -> None:
     # 5. publish
     latest = write_manifest(stage, version, notes)
     title = f"DayZ Community Hub {version}"
-    for forge in [forgejo, *mirrors(secrets)]:
+    for forge in [forgejo, *mirrors(secrets, cli.skip_github)]:
         print(f"== publishing to {forge.label}")
         rel = publish_files(forge, tag, title, notes, stage, version, pre=False)
         forge.upload(rel, latest, "latest.json", replace=True)

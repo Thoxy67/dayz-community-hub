@@ -70,11 +70,51 @@ event, and commit the result with the Rust change.
 ## Publish
 
 ```sh
+make publish DRY=1                    # the whole plan: version, files, uploads, manifest, notes
 make publish                          # the next version
 make publish VERSION=0.5.0            # a particular one
+make publish SKIP_GITHUB=1            # git.thoxy.xyz only
 make prerelease                       # a preview: 0.4.2-pre after 0.4.1
 make prerelease VERSION=0.5.0-beta.1  # a named one; publishing it again replaces it
 ```
+
+It builds the **AppImage** and the **Windows zip** (no .deb/.rpm: Arch users
+have the AUR package), signs both, and publishes the release on
+git.thoxy.xyz/thoxy/dayz-community-hub **and** its GitHub mirror
+(Thoxy67/dayz-community-hub; both tokens are required unless `SKIP_GITHUB=1`).
+`latest.json` (the manifest both updaters read: `platforms.linux-x86_64` is the
+AppImage, `platforms.windows-x86_64` the zip) goes on the release and on the
+rolling `latest` release, the endpoint in tauri.conf.json.
+
+**Notes** come from CHANGELOG.md: a `## x.y.z` section, else the `## Unreleased`
+one (renamed to the version on release), else the jj log since the last tag
+(`scripts/changelog.sh`). They are the release body on both forges and the
+update banner's text.
+
+### AUR: `make aur`
+
+```sh
+make aur DRY=1     # generate PKGBUILD + .SRCINFO in var/aur/, show the diff, push nothing
+make aur-build     # build the package locally (var/aur/build), install with pacman -U
+make aur           # commit "<pkgver>: <latest commit>" and push to git.thoxy.xyz/AUR/dayz-community-hub-git
+make aur FORCE=1   # push even when nothing changed
+```
+
+The PKGBUILD lives in `packaging/aur/PKGBUILD.in`; `make aur` fills in the
+version (`<app version>.r<commits on master>.g<hash>`, what its pkgver()
+computes), writes `.SRCINFO` with `makepkg --printsrcinfo`, and pushes from a
+clone in var/aur/ (over SSH; `DZCH_AUR_REMOTE` overrides the remote). Publish
+the source first (`make publish` pushes `master`): the package builds what is
+on `master`.
+
+### Keys: `make keys`
+
+`make keys` makes a new updater signing key with `tauri signer generate`, where
+publish reads it (`TAURI_SIGNING_KEY_FILE`, else
+`~/.config/dayz-community-hub/updater.key`), moving any existing key aside as
+`updater.key.bak-<timestamp>`, and writes the public half into tauri.conf.json.
+Commit tauri.conf.json before the next publish. **Every copy installed before
+the new key refuses updates signed with it**: those need one manual update.
 
 `tools/dzch/release/release.py` (`dzch release`) bumps the version, builds
 both platforms, signs them for the updater, commits and tags the version,

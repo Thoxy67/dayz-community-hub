@@ -26,8 +26,10 @@ docs/build.md             build, check, publish, known failures
 `make` lists them. `make dev` runs the app; `make check` is what every change
 must pass (cargo test + clippy, svelte-check, pytest, ruff); `make bindings`
 regenerates `apps/gui/src/lib/ipc/bindings.ts` after a command or DTO changes;
-`make fmt` formats everything. Never run `make publish` / `make prerelease`
-or push: releases are the owner's call.
+`make fmt` formats everything. `make publish` (AppImage + Windows zip on
+git.thoxy.xyz and GitHub, plus latest.json), `make aur` and `make keys` are
+the owner's to run (`DRY=1` shows the plan); never run them or push without
+being asked.
 
 ## Version control
 
