@@ -101,12 +101,16 @@ export const commands = {
 	 */
 	checkModUpdates: () => __TAURI_INVOKE<InstalledModDto[]>("check_mod_updates"),
 	/**
-	 *  Delete a mod by ID: the launcher's copy and its link. Returns true when
-	 *  a copy in a Steam library remains (the launcher never deletes there:
-	 *  unsubscribing in Steam does).
+	 *  Delete a mod by ID: the launcher's copy and its link, and the Steam
+	 *  account's subscription to it (Steam then removes its own copy). Returns
+	 *  true when a copy in a Steam library remains: Steam was not running, or
+	 *  would not unsubscribe (the launcher never deletes in a Steam library).
 	 */
 	deleteMod: (modId: number) => __TAURI_INVOKE<boolean>("delete_mod", { modId }),
-	/**  Delete several mods by ID. Returns the ids whose Steam copy remains. */
+	/**
+	 *  Delete several mods by ID, then unsubscribe from them in one Steam
+	 *  session. Returns the ids whose Steam copy remains.
+	 */
 	deleteModsBulk: (modIds: number[]) => __TAURI_INVOKE<number[]>("delete_mods_bulk", { modIds }),
 	/**  Toggle managed status of a mod. */
 	toggleModManaged: (modId: number) => __TAURI_INVOKE<boolean>("toggle_mod_managed", { modId }),

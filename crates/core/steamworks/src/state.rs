@@ -95,6 +95,7 @@ pub fn result_text(code: i32) -> String {
 /// Callback ids (steam_api_internal.h bases plus each struct's offset).
 pub(crate) const CALL_COMPLETED: i32 = 703; // SteamAPICallCompleted_t
 pub(crate) const SUBSCRIBE_RESULT: i32 = 1313; // RemoteStorageSubscribePublishedFileResult_t
+pub(crate) const UNSUBSCRIBE_RESULT: i32 = 1315; // RemoteStorageUnsubscribePublishedFileResult_t
 pub(crate) const DOWNLOAD_RESULT: i32 = 3406; // DownloadItemResult_t
 
 /// Where a `uint64` that follows a 4-byte field starts: Valve packs
@@ -128,7 +129,8 @@ pub(crate) fn call_completed(b: &[u8]) -> Option<CallCompleted> {
     })
 }
 
-/// `RemoteStorageSubscribePublishedFileResult_t`: (result, item).
+/// `RemoteStorageSubscribePublishedFileResult_t`: (result, item). The
+/// unsubscribe result (`…UnsubscribePublishedFileResult_t`) has the same layout.
 pub(crate) fn subscribe_result(b: &[u8]) -> Option<(i32, u64)> {
     Some((i32_at(b, 0)?, u64_at(b, U64_AFTER_U32)?))
 }

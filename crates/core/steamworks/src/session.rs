@@ -25,6 +25,8 @@ const TICK: Duration = Duration::from_millis(100);
 const SUBSCRIBE_TIMEOUT: Duration = Duration::from_secs(60);
 /// How long nothing may move (no byte, no state change) before giving up.
 const STALL_TIMEOUT: Duration = Duration::from_secs(180);
+/// How long Steam may take to answer the unsubscriptions.
+const UNSUBSCRIBE_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long a fresh session may take to report the user logged on.
 const LOGON_WAIT: Duration = Duration::from_secs(10);
 
@@ -59,6 +61,8 @@ pub enum Event {
 
 /// Each item's outcome: its folder, or why not.
 pub type ItemResult = (u64, Result<PathBuf, String>);
+/// Each item's unsubscription: whether it was subscribed, or why it failed.
+pub type Unsubscribed = (u64, Result<bool, String>);
 
 /// One session at a time in the process.
 static ONE_SESSION: Mutex<()> = Mutex::new(());
@@ -113,6 +117,70 @@ pub fn check() -> Result<(), String> {
         return Err(NO_UGC.into());
     }
     Ok(())
+}
+
+/// Unsubscribe the account from those of `ids` it is subscribed to. Steam
+/// then removes their files from its library by itself, once DayZ (this
+/// session) is no longer running. Each id's outcome: `Ok(true)` when it was
+/// unsubscribed, `Ok(false)` when it was not subscribed, or why not.
+///
+/// `Err` when no session could be opened, as for [`download`].
+pub fn unsubscribe(ids: &[u64]) -> Result<Vec<Unsubscribed>, String> {
+    let (_one, api) = begin()?;
+    // SAFETY (all calls into `api` below): as in `download`.
+    let session = Session::open(api)?;
+    session.wait_logged_on()?;
+    let ugc = unsafe { (api.ugc)() };
+    if ugc.is_null() {
+        return Err(NO_UGC.into());
+    }
+    let mut out: Vec<Unsubscribed> = Vec::with_capacity(ids.len());
+    // Calls sent, by index into `out`.
+    let mut waiting: HashMap<ApiCall, usize> = HashMap::new();
+    for &id in ids {
+        let st = ItemState(unsafe { (api.item_state)(ugc, id) });
+        if !st.subscribed() {
+            out.push((id, Ok(false)));
+            continue;
+        }
+        let call = unsafe { (api.unsubscribe)(ugc, id) };
+        if call == 0 {
+            out.push((id, Err("Steam would not unsubscribe from it".into())));
+        } else {
+            waiting.insert(call, out.len());
+            out.push((id, Err("Steam did not answer the unsubscription".into())));
+        }
+    }
+    let deadline = Instant::now() + UNSUBSCRIBE_TIMEOUT;
+    while !waiting.is_empty() && Instant::now() < deadline {
+        let mut answered = Vec::new();
+        session.pump(|callback, bytes| {
+            if callback == state::CALL_COMPLETED
+                && let Some(c) = state::call_completed(bytes)
+                && c.callback == state::UNSUBSCRIBE_RESULT
+            {
+                let result = session
+                    .call_result(c.call, c.callback, c.size)
+                    .and_then(|b| state::subscribe_result(&b));
+                answered.push((c.call, result));
+            }
+        });
+        for (call, result) in answered {
+            let Some(i) = waiting.remove(&call) else {
+                continue;
+            };
+            out[i].1 = match result {
+                Some((state::RESULT_OK, _)) => Ok(true),
+                Some((code, _)) => Err(format!(
+                    "Unsubscribing failed: {}",
+                    state::result_text(code)
+                )),
+                None => Err("Steam did not say whether the unsubscription worked".into()),
+            };
+        }
+        std::thread::sleep(TICK);
+    }
+    Ok(out)
 }
 
 const NO_UGC: &str = "This Steam client does not offer the Workshop interface the launcher needs. Update Steam and try again.";

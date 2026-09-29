@@ -854,11 +854,11 @@ const content = {
     }),
     deleteSingleMessage: insert(
       t({
-        en: "Delete '{{name}}' ({{id}})?\nSize: {{size}}",
-        fr: "Supprimer '{{name}}' ({{id}}) ?\nTaille : {{size}}",
-        de: "'{{name}}' ({{id}}) löschen?\nGröße: {{size}}",
-        es: "¿Eliminar '{{name}}' ({{id}})?\nTamaño: {{size}}",
-        ru: "Удалить '{{name}}' ({{id}})?\nРазмер: {{size}}",
+        en: "Delete '{{name}}' ({{id}})?\nSize: {{size}}\nYour Steam account is unsubscribed from it.",
+        fr: "Supprimer '{{name}}' ({{id}}) ?\nTaille : {{size}}\nVotre compte Steam s'en désabonne.",
+        de: "'{{name}}' ({{id}}) löschen?\nGröße: {{size}}\nIhr Steam-Konto beendet das Abonnement.",
+        es: "¿Eliminar '{{name}}' ({{id}})?\nTamaño: {{size}}\nTu cuenta de Steam cancela la suscripción.",
+        ru: "Удалить '{{name}}' ({{id}})?\nРазмер: {{size}}\nВаш аккаунт Steam отпишется от него.",
       }),
     ),
     deletedSingle: insert(
@@ -920,20 +920,20 @@ const content = {
     }),
     deleteSelectedMessage: insert(
       t({
-        en: "Delete {{count}} mod?\nTotal size: {{size}}",
-        fr: "Supprimer {{count}} mod ?\nTaille totale : {{size}}",
-        de: "{{count}} Mod löschen?\nGesamtgröße: {{size}}",
-        es: "¿Eliminar {{count}} mod?\nTamaño total: {{size}}",
-        ru: "Удалить {{count}} мод?\nОбщий размер: {{size}}",
+        en: "Delete {{count}} mod?\nTotal size: {{size}}\nYour Steam account is unsubscribed from them.",
+        fr: "Supprimer {{count}} mod ?\nTaille totale : {{size}}\nVotre compte Steam s'en désabonne.",
+        de: "{{count}} Mod löschen?\nGesamtgröße: {{size}}\nIhr Steam-Konto beendet die Abonnements.",
+        es: "¿Eliminar {{count}} mod?\nTamaño total: {{size}}\nTu cuenta de Steam cancela las suscripciones.",
+        ru: "Удалить {{count}} мод?\nОбщий размер: {{size}}\nВаш аккаунт Steam отпишется от них.",
       }),
     ),
     deleteSelectedMessagePlural: insert(
       t({
-        en: "Delete {{count}} mods?\nTotal size: {{size}}",
-        fr: "Supprimer {{count}} mods ?\nTaille totale : {{size}}",
-        de: "{{count}} Mods löschen?\nGesamtgröße: {{size}}",
-        es: "¿Eliminar {{count}} mods?\nTamaño total: {{size}}",
-        ru: "Удалить {{count}} модов?\nОбщий размер: {{size}}",
+        en: "Delete {{count}} mods?\nTotal size: {{size}}\nYour Steam account is unsubscribed from them.",
+        fr: "Supprimer {{count}} mods ?\nTaille totale : {{size}}\nVotre compte Steam s'en désabonne.",
+        de: "{{count}} Mods löschen?\nGesamtgröße: {{size}}\nIhr Steam-Konto beendet die Abonnements.",
+        es: "¿Eliminar {{count}} mods?\nTamaño total: {{size}}\nTu cuenta de Steam cancela las suscripciones.",
+        ru: "Удалить {{count}} модов?\nОбщий размер: {{size}}\nВаш аккаунт Steam отпишется от них.",
       }),
     ),
     deletedSelected: insert(
@@ -1006,20 +1006,20 @@ const content = {
     ),
     keptInSteam: insert(
       t({
-        en: "{{name}} is unlinked. Its files are in a Steam library, which the launcher never deletes from: unsubscribe in Steam to remove them.",
-        fr: "{{name}} n'est plus lié. Ses fichiers sont dans une bibliothèque Steam, où le lanceur ne supprime jamais rien : désabonnez-vous dans Steam pour les retirer.",
-        de: "{{name}} ist nicht mehr verknüpft. Die Dateien liegen in einer Steam-Bibliothek, in der der Launcher nie löscht: Abonnement in Steam beenden, um sie zu entfernen.",
-        es: "{{name}} ya no está vinculado. Sus archivos están en una biblioteca de Steam, donde el lanzador nunca borra nada: cancela la suscripción en Steam para quitarlos.",
-        ru: "{{name}} отвязан. Его файлы лежат в библиотеке Steam, где лаунчер ничего не удаляет: отпишитесь в Steam, чтобы удалить их.",
+        en: "{{name}} is unlinked, but its files stay in your Steam library: Steam could not unsubscribe from it (is Steam running and online?). Unsubscribe in Steam to remove them.",
+        fr: "{{name}} n'est plus lié, mais ses fichiers restent dans votre bibliothèque Steam : Steam n'a pas pu s'en désabonner (Steam est-il lancé et en ligne ?). Désabonnez-vous dans Steam pour les retirer.",
+        de: "{{name}} ist nicht mehr verknüpft, aber die Dateien bleiben in Ihrer Steam-Bibliothek: Steam konnte das Abonnement nicht beenden (läuft Steam und ist online?). Beenden Sie das Abonnement in Steam, um sie zu entfernen.",
+        es: "{{name}} ya no está vinculado, pero sus archivos siguen en tu biblioteca de Steam: Steam no pudo cancelar la suscripción (¿Steam está abierto y en línea?). Cancélala en Steam para quitarlos.",
+        ru: "{{name}} отвязан, но его файлы остаются в вашей библиотеке Steam: Steam не смог отписаться (Steam запущен и в сети?). Отпишитесь в Steam, чтобы удалить их.",
       }),
     ),
     keptInSteamMany: insert(
       t({
-        en: "{{count}} of them are in a Steam library: unsubscribe in Steam to remove their files.",
-        fr: "{{count}} d'entre eux sont dans une bibliothèque Steam : désabonnez-vous dans Steam pour retirer leurs fichiers.",
-        de: "{{count}} davon liegen in einer Steam-Bibliothek: Abonnement in Steam beenden, um die Dateien zu entfernen.",
-        es: "{{count}} están en una biblioteca de Steam: cancela la suscripción en Steam para quitar sus archivos.",
-        ru: "{{count}} из них в библиотеке Steam: отпишитесь в Steam, чтобы удалить файлы.",
+        en: "{{count}} of them stay in your Steam library: Steam could not unsubscribe from them (is Steam running and online?). Unsubscribe in Steam to remove their files.",
+        fr: "{{count}} d'entre eux restent dans votre bibliothèque Steam : Steam n'a pas pu s'en désabonner (Steam est-il lancé et en ligne ?). Désabonnez-vous dans Steam pour retirer leurs fichiers.",
+        de: "{{count}} davon bleiben in Ihrer Steam-Bibliothek: Steam konnte die Abonnements nicht beenden (läuft Steam und ist online?). Beenden Sie sie in Steam, um die Dateien zu entfernen.",
+        es: "{{count}} siguen en tu biblioteca de Steam: Steam no pudo cancelar las suscripciones (¿Steam está abierto y en línea?). Cancélalas en Steam para quitar sus archivos.",
+        ru: "{{count}} из них остаются в вашей библиотеке Steam: Steam не смог отписаться (Steam запущен и в сети?). Отпишитесь в Steam, чтобы удалить файлы.",
       }),
     ),
     sourceLauncher: t({

@@ -185,22 +185,20 @@ pub(crate) async fn check_mod_updates(
     Ok(dtos)
 }
 
-/// Delete a mod by ID: the launcher's copy and its link. Returns true when
-/// a copy in a Steam library remains (the launcher never deletes there:
-/// unsubscribing in Steam does).
+/// Delete a mod by ID: the launcher's copy and its link, and the Steam
+/// account's subscription to it (Steam then removes its own copy). Returns
+/// true when a copy in a Steam library remains: Steam was not running, or
+/// would not unsubscribe (the launcher never deletes in a Steam library).
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn delete_mod(mod_id: u64, state: State<'_, SharedState>) -> Result<bool, String> {
-    let ctl_clone = { state.read().await.ctl.clone_for_task() };
-    spawn_blocking_mapped(move || {
-        ctl_clone
-            .delete_mod(mod_id)
-            .map(|o| o == DeleteOutcome::KeptInSteam)
-    })
-    .await
+    delete_mods_bulk(vec![mod_id], state)
+        .await
+        .map(|kept| !kept.is_empty())
 }
 
-/// Delete several mods by ID. Returns the ids whose Steam copy remains.
+/// Delete several mods by ID, then unsubscribe from them in one Steam
+/// session. Returns the ids whose Steam copy remains.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn delete_mods_bulk(
@@ -209,13 +207,30 @@ pub(crate) async fn delete_mods_bulk(
 ) -> Result<Vec<u64>, String> {
     let ctl_clone = { state.read().await.ctl.clone_for_task() };
     spawn_blocking_mapped(move || -> std::result::Result<Vec<u64>, String> {
-        let mut kept = Vec::new();
+        let mut deleted = Vec::new();
+        let mut in_steam = Vec::new();
+        let mut failed = None;
         for id in mod_ids {
-            if ctl_clone.delete_mod(id).cmd_err()? == DeleteOutcome::KeptInSteam {
-                kept.push(id);
+            match ctl_clone.delete_mod(id).cmd_err() {
+                Ok(outcome) => {
+                    deleted.push(id);
+                    if outcome == DeleteOutcome::KeptInSteam {
+                        in_steam.push(id);
+                    }
+                }
+                Err(e) => {
+                    failed = Some(e);
+                    break;
+                }
             }
         }
-        Ok(kept)
+        // Even after a failure: what was deleted must not come back.
+        let unsubscribed = dz_game::steam_download::unsubscribe(&deleted);
+        if let Some(e) = failed {
+            return Err(e);
+        }
+        in_steam.retain(|id| !unsubscribed.contains(id));
+        Ok(in_steam)
     })
     .await
 }

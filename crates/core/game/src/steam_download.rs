@@ -27,6 +27,34 @@ impl Drop for CancelOnDrop {
     }
 }
 
+/// Unsubscribe the Steam account from the mods of `ids` it is subscribed
+/// to, so a deleted mod stays deleted: Steam removes its files from its
+/// library and stops updating it. Blocking. Does nothing when Steam is not
+/// running; a failure is logged, not raised, since the mods themselves are
+/// already deleted. Returns the ids Steam unsubscribed from.
+pub fn unsubscribe(ids: &[u64]) -> Vec<u64> {
+    if ids.is_empty() || !dz_steamworks::steam_running() {
+        return Vec::new();
+    }
+    match dz_steamworks::unsubscribe(ids) {
+        Ok(results) => results
+            .into_iter()
+            .filter_map(|(id, r)| match r {
+                Ok(true) => Some(id),
+                Ok(false) => None,
+                Err(e) => {
+                    eprintln!("[steamworks] mod {id} stays subscribed: {e}");
+                    None
+                }
+            })
+            .collect(),
+        Err(e) => {
+            eprintln!("[steamworks] no unsubscription: {e}");
+            Vec::new()
+        }
+    }
+}
+
 /// Have Steam download `mods` ((id, name) pairs). Sends progress on `tx`,
 /// ending with `Finished`; returns each mod's folder or error.
 pub(crate) async fn download(
