@@ -324,7 +324,7 @@ pub fn create_mod_symlink(source: &Path, dayz_path: &Path, mod_id: u64) -> Resul
             "Mod directory does not exist: {source:?}"
         )));
     }
-    if fs::read_link(&target).is_ok_and(|to| to == source) {
+    if fs::read_link(&target).is_ok_and(|to| same_path(&to, source)) {
         return Ok(());
     }
 
@@ -343,43 +343,69 @@ pub fn create_mod_symlink(source: &Path, dayz_path: &Path, mod_id: u64) -> Resul
     #[cfg(unix)]
     symlink(source, &target)?;
 
+    // Symlinks require admin (or Developer Mode) on Windows; NTFS junctions
+    // do not. Made through the API: a `cmd /c mklink /J` per mod cost a
+    // process start (and a Defender scan of it) each, seconds for a modded
+    // server. The command stays as the fallback.
     #[cfg(windows)]
-    {
-        // Symlinks require admin on Windows; NTFS junctions do not.
-        // mklink is a cmd.exe built-in, not a standalone executable, so it
-        // must be invoked via `cmd /c "mklink /J ..."`.
-        //
-        // We must build the command line with `raw_arg` rather than `arg`/`args`:
-        // Rust's normal argument escaping follows the MSVCRT convention and turns
-        // internal quotes into `\"`, but cmd.exe does NOT understand `\"` as an
-        // escaped quote. With the default Steam path (`C:\Program Files (x86)\Steam`,
-        // which always contains spaces) that mangling splits the paths and makes
-        // `mklink` fail, so no mods ever get linked.
-        //
-        // cmd.exe's `/c` dequoting strips only the outermost quote pair when the
-        // remainder both starts and ends with a quote and contains more quotes, so
-        // we wrap the whole `mklink ...` invocation in an extra quote pair. After
-        // cmd strips the outer pair, `mklink` sees each path correctly quoted.
-        use std::os::windows::process::CommandExt;
-        let target_str = target.to_string_lossy();
-        let source_str = source.to_string_lossy();
-        let inner = format!("\"mklink /J \"{target_str}\" \"{source_str}\"\"");
-        let out = std::process::Command::new("cmd")
-            .raw_arg("/c")
-            .raw_arg(&inner)
-            .creation_flags(dz_common::CREATE_NO_WINDOW)
-            .output()
-            .map_err(|e| Error::Mod(format!("Failed to run mklink: {}", e)))?;
-        if !out.status.success() {
-            return Err(Error::Mod(format!(
-                "mklink /J failed for mod {}: {}",
-                mod_id,
-                String::from_utf8_lossy(&out.stdout).trim()
-            )));
-        }
+    if let Err(e) = dz_common::win::create_junction(source, &target) {
+        eprintln!("junction for mod {mod_id} through the API failed ({e}); trying mklink");
+        mklink_junction(source, &target, mod_id)?;
     }
 
     Ok(())
+}
+
+/// `cmd /c mklink /J`: the fallback for [`dz_common::win::create_junction`].
+#[cfg(windows)]
+fn mklink_junction(source: &Path, target: &Path, mod_id: u64) -> Result<()> {
+    // mklink is a cmd.exe built-in, not a standalone executable, so it
+    // must be invoked via `cmd /c "mklink /J ..."`.
+    //
+    // We must build the command line with `raw_arg` rather than `arg`/`args`:
+    // Rust's normal argument escaping follows the MSVCRT convention and turns
+    // internal quotes into `\"`, but cmd.exe does NOT understand `\"` as an
+    // escaped quote. With the default Steam path (`C:\Program Files (x86)\Steam`,
+    // which always contains spaces) that mangling splits the paths and makes
+    // `mklink` fail, so no mods ever get linked.
+    //
+    // cmd.exe's `/c` dequoting strips only the outermost quote pair when the
+    // remainder both starts and ends with a quote and contains more quotes, so
+    // we wrap the whole `mklink ...` invocation in an extra quote pair. After
+    // cmd strips the outer pair, `mklink` sees each path correctly quoted.
+    use std::os::windows::process::CommandExt;
+    let target_str = target.to_string_lossy();
+    let source_str = source.to_string_lossy();
+    let inner = format!("\"mklink /J \"{target_str}\" \"{source_str}\"\"");
+    let out = std::process::Command::new("cmd")
+        .raw_arg("/c")
+        .raw_arg(&inner)
+        .creation_flags(dz_common::CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| Error::Mod(format!("Failed to run mklink: {}", e)))?;
+    if !out.status.success() {
+        return Err(Error::Mod(format!(
+            "mklink /J failed for mod {}: {}",
+            mod_id,
+            String::from_utf8_lossy(&out.stdout).trim()
+        )));
+    }
+    Ok(())
+}
+
+/// Whether a link's target is `source`. Windows paths are compared without
+/// regard to case (NTFS is case-insensitive), so a link that already points
+/// at the right folder is left alone rather than deleted and made again on
+/// every launch.
+fn same_path(a: &Path, b: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        a.as_os_str().eq_ignore_ascii_case(b.as_os_str())
+    }
+    #[cfg(not(windows))]
+    {
+        a == b
+    }
 }
 
 /// Link each of `mod_ids` to its chosen copy. Returns the ids linked.
