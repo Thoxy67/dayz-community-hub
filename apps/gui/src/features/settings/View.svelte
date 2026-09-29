@@ -18,6 +18,7 @@
   import AppearanceSection from "./AppearanceSection.svelte";
   import LanguageSection from "./LanguageSection.svelte";
   import WindowSection from "./WindowSection.svelte";
+  import ControllerSection from "./ControllerSection.svelte";
   import DataSection from "./DataSection.svelte";
 
   /**
@@ -26,6 +27,7 @@
    * else (ping, theme, language, window) takes effect as it is changed.
    */
   const s = dict("settings");
+  const p = dict("pad");
 
   const SECTIONS = [
     { id: "account", label: () => $s.sectionAccount.value },
@@ -37,6 +39,7 @@
     { id: "appearance", label: () => $s.sectionAppearance.value },
     { id: "language", label: () => $s.sectionLanguage.value },
     { id: "window", label: () => $s.sectionWindow.value },
+    { id: "controller", label: () => $p.section.value },
     { id: "data", label: () => $s.sectionData.value },
   ];
   // The account form covers these; they get a dot while it has unsaved edits.
@@ -87,6 +90,7 @@
         <AppearanceSection />
         <LanguageSection />
         <WindowSection />
+        <ControllerSection />
         <DataSection />
       </div>
     </div>
