@@ -57,6 +57,7 @@ permissions = [
   "allow-set-mod-downloader",
   "allow-steamworks-status",
   "allow-steamworks-check",
+  "allow-steam-subscriptions",
   "allow-get-offline-missions",
   "allow-update-offline-mode",
   "allow-remove-offline-mode",

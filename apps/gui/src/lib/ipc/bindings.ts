@@ -177,6 +177,14 @@ export const commands = {
 	 *  sentence a download would fail with.
 	 */
 	steamworksCheck: () => __TAURI_INVOKE<null>("steamworks_check"),
+	/**
+	 *  The DayZ Workshop items the Steam account is subscribed to, with what
+	 *  Steam is doing with each (installed, downloading, waiting). Asks the
+	 *  running Steam client in a short session (Steam shows DayZ running for a
+	 *  moment), at most every few seconds; while another session is open (a
+	 *  download through Steam), the last answer.
+	 */
+	steamSubscriptions: () => __TAURI_INVOKE<SteamSubscriptionsDto>("steam_subscriptions"),
 	/**  Get available offline missions. */
 	getOfflineMissions: () => __TAURI_INVOKE<string[]>("get_offline_missions"),
 	/**  Download/update DayZCommunityOfflineMode. */
@@ -893,6 +901,27 @@ export type ServersChanged = {
 export type SortCol = "none" | "ping" | "players" | "name" | "map" | "mods" | 
 /**  In-game time, "HH:MM" as minutes. */
 "time";
+
+/**  One Workshop item the Steam account is subscribed to, as Steam has it. */
+export type SteamSubscriptionDto = {
+	id: number,
+	subscribed: boolean,
+	installed: boolean,
+	needs_update: boolean,
+	downloading: boolean,
+	pending: boolean,
+	bytes_done: number,
+	bytes_total: number,
+};
+
+/**  The account's subscriptions, or why they are not known. */
+export type SteamSubscriptionsDto = {
+	/**  Steam answered. */
+	available: boolean,
+	/**  Why it did not, when it did not. */
+	reason: string | null,
+	items: SteamSubscriptionDto[],
+};
 
 /**  steamcmd appeared while `watch_steamcmd` was polling. */
 export type SteamcmdDetected = SteamcmdStatusDto;

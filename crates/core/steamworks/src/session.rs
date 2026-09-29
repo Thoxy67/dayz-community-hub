@@ -183,6 +183,50 @@ pub fn unsubscribe(ids: &[u64]) -> Result<Vec<Unsubscribed>, String> {
     Ok(out)
 }
 
+/// A Workshop item the account is subscribed to, as Steam has it now.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Subscribed {
+    pub id: u64,
+    pub state: ItemState,
+    /// Bytes downloaded and to download while Steam fetches it; (0, 0) else.
+    pub bytes: (u64, u64),
+}
+
+/// Every DayZ Workshop item the account is subscribed to (locally disabled
+/// ones too), with what Steam is doing with each. A short session: Steam
+/// shows DayZ running for a moment.
+///
+/// `Err` when no session could be opened, as for [`download`].
+pub fn subscriptions() -> Result<Vec<Subscribed>, String> {
+    let (_one, api) = begin()?;
+    // SAFETY (all calls into `api` below): as in `download`.
+    let session = Session::open(api)?;
+    session.wait_logged_on()?;
+    let ugc = unsafe { (api.ugc)() };
+    if ugc.is_null() {
+        return Err(NO_UGC.into());
+    }
+    let n = unsafe { (api.num_subscribed)(ugc, true) };
+    let mut ids = vec![0u64; n as usize];
+    // SAFETY: `ids` holds `n` entries, the most Steam writes.
+    let got = unsafe { (api.subscribed_items)(ugc, ids.as_mut_ptr(), n, true) };
+    ids.truncate(got.min(n) as usize);
+    Ok(ids
+        .into_iter()
+        .map(|id| {
+            let state = ItemState(unsafe { (api.item_state)(ugc, id) });
+            let mut bytes = (0u64, 0u64);
+            if state.downloading() || state.pending() {
+                let (mut done, mut total) = (0u64, 0u64);
+                if unsafe { (api.download_info)(ugc, id, &mut done, &mut total) } {
+                    bytes = (done, total);
+                }
+            }
+            Subscribed { id, state, bytes }
+        })
+        .collect())
+}
+
 const NO_UGC: &str = "This Steam client does not offer the Workshop interface the launcher needs. Update Steam and try again.";
 
 /// Load the library, take the one session, and make sure Steam runs.

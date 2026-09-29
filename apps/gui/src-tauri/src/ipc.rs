@@ -67,6 +67,7 @@ pub(crate) fn builder() -> tauri_specta::Builder<tauri::Wry> {
             steamworks::set_mod_downloader,
             steamworks::steamworks_status,
             steamworks::steamworks_check,
+            steamworks::steam_subscriptions,
             offline::get_offline_missions,
             offline::update_offline_mode,
             offline::remove_offline_mode,
