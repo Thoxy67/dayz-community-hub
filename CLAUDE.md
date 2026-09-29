@@ -15,8 +15,8 @@ apps/gui/                 the interface (bun project) and its Tauri shell
   src/lib/components/app/ components that know this app, shared by every view
   src/lib/ipc/            typed wrappers over the generated bindings.ts
   src/lib/stores/         app-wide state (servers, profile, mods, connect…)
-crates/core/*             dz-* libraries: api, a2s, profile, steamcmd, game, news, common
-crates/app/*              app-level libraries (battlemetrics)
+crates/core/*             dz-* libraries: api, a2s, profile, steamcmd, steamworks, game, news, common
+crates/app/*              app-level libraries (battlemetrics, dayzmetrics)
 tools/                    uv project: `dzch release`
 docs/build.md             build, check, publish, known failures
 ```
