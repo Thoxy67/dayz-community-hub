@@ -1,7 +1,7 @@
 [workspace]
 members = [
-    "dayz-community-hub-core",
-    "dayz-community-hub-ui/src-tauri",
+    "crates/core/dayz",
+    "apps/gui/src-tauri",
 ]
 resolver = "2"
 
@@ -60,7 +60,7 @@ tar = "0.4"
 async-a2s = { git = "https://git.thoxy.xyz/thoxy/async-a2s" }
 
 # Internal crates
-dayz-community-hub-core = { path = "dayz-community-hub-core" }
+dayz-community-hub-core = { path = "crates/core/dayz" }
 
 # ── Profile overrides ─────────────────────────────────────────────────────────
 
