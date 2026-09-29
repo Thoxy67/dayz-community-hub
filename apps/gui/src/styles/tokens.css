@@ -132,7 +132,8 @@
   /* ── depth ────────────────────────────────────────────────────────── */
   --shadow-pop:
     0 8px 24px -6px rgb(0 0 0 / 0.5), 0 0 0 1px color-mix(in oklch, var(--t-fg) 9%, transparent);
-  --shadow-glow: 0 0 0 1px color-mix(in oklch, var(--t-accent) 45%, transparent),
+  --shadow-glow:
+    0 0 0 1px color-mix(in oklch, var(--t-accent) 45%, transparent),
     0 0 14px -2px color-mix(in oklch, var(--t-accent) 40%, transparent);
 
   --animate-fade-in: fade-in 120ms ease-out;

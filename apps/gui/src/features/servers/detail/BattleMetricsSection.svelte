@@ -91,7 +91,8 @@
   </div>
 
   {#if !hasKey}
-    <!-- Never mounted without a token; kept so the section is safe on its own. -->  {:else if entry.loading && !bm}
+    <!-- Never mounted without a token; kept so the section is safe on its own. -->
+  {:else if entry.loading && !bm}
     <div class="flex flex-col gap-2">
       <div class="h-14 animate-pulse rounded-sm bg-raised/60"></div>
       <div class="h-32 animate-pulse rounded-sm bg-raised/60"></div>
@@ -161,7 +162,9 @@
 
     {#if bm.player_history.length > 1}
       <!-- Drawn taller than the kit's default: here the chart is the tab's point. -->
-      <div class="[&_svg]:h-36"><PlayerChart points={bm.player_history} max={bm.max_players} /></div>
+      <div class="[&_svg]:h-36">
+        <PlayerChart points={bm.player_history} max={bm.max_players} />
+      </div>
     {/if}
 
     <dl class="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-2xs">

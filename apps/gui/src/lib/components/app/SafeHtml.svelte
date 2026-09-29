@@ -5,13 +5,17 @@
    */
   export function sanitize(html: string): string {
     const doc = new DOMParser().parseFromString(html, "text/html");
-    doc.querySelectorAll("script, style, iframe, object, embed, form, link, meta, base").forEach((n) => n.remove());
+    doc
+      .querySelectorAll("script, style, iframe, object, embed, form, link, meta, base")
+      .forEach((n) => n.remove());
     for (const el of doc.body.querySelectorAll("*")) {
       for (const attr of [...el.attributes]) {
         const name = attr.name.toLowerCase();
         const value = attr.value.trim().toLowerCase();
-        if (name.startsWith("on") || name === "style" || name === "srcset") el.removeAttribute(attr.name);
-        else if ((name === "href" || name === "src") && value.startsWith("javascript:")) el.removeAttribute(attr.name);
+        if (name.startsWith("on") || name === "style" || name === "srcset")
+          el.removeAttribute(attr.name);
+        else if ((name === "href" || name === "src") && value.startsWith("javascript:"))
+          el.removeAttribute(attr.name);
       }
     }
     return doc.body.innerHTML;
@@ -76,7 +80,8 @@
         return;
       }
       const img = t.closest("img");
-      if (img instanceof HTMLImageElement && img.src) onimage?.(img.src, img.dataset.original ?? img.src);
+      if (img instanceof HTMLImageElement && img.src)
+        onimage?.(img.src, img.dataset.original ?? img.src);
     }
     rewrite();
     const mo = new MutationObserver(rewrite);
@@ -92,5 +97,7 @@
 </script>
 
 {#key safe}
-  <div class={cn("safe-html", onimage && "zoomable", klass)} use:wire data-selectable>{@html safe}</div>
+  <div class={cn("safe-html", onimage && "zoomable", klass)} use:wire data-selectable>
+    {@html safe}
+  </div>
 {/key}

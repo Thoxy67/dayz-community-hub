@@ -6,6 +6,7 @@ export const updateOfflineMode = () => run(commands.updateOfflineMode());
 export const removeOfflineMode = () => run(commands.removeOfflineMode());
 export const removeMission = (mission: string) => run(commands.removeMission(mission));
 export const clearOfflineSaves = () => run(commands.clearOfflineSaves());
-export const launchOfflineMission = (mission: string) => run(commands.launchOfflineMission(mission));
+export const launchOfflineMission = (mission: string) =>
+  run(commands.launchOfflineMission(mission));
 export const openMissionDir = (mission: string) => run(commands.openMissionDir(mission));
 export const openMissionsDir = () => run(commands.openMissionsDir());

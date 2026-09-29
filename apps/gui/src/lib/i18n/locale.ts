@@ -9,7 +9,10 @@ export const isLocale = (v: string | null | undefined): v is Locale =>
  * The saved choice when there is one, else the OS language when it is one
  * we ship ("fr-CA" counts as French), else English.
  */
-export function pickLocale(saved: string | null | undefined, osLanguage: string | null | undefined): Locale {
+export function pickLocale(
+  saved: string | null | undefined,
+  osLanguage: string | null | undefined,
+): Locale {
   if (isLocale(saved)) return saved;
   const os = (osLanguage || "en").slice(0, 2).toLowerCase();
   return isLocale(os) ? os : "en";

@@ -31,7 +31,7 @@ var/                 what builds leave behind (git-ignored): var/dist/
   `uv run --project tools ...`. Nothing here touches the system Python.
 - For releases only: `zig` and `cargo install cargo-zigbuild` (Linux glibc
   floor), `cargo install cargo-xwin` and `rustup target add
-  x86_64-pc-windows-msvc` (Windows), `zip`.
+x86_64-pc-windows-msvc` (Windows), `zip`.
 
 ## Every day
 
@@ -252,5 +252,5 @@ published.
 - **`bun run build` while `make dev` is running** can break the open window:
   intlayer's Vite plugin regenerates its dictionaries, and a full build racing
   that corrupts the running session. Check a frontend change with `bunx
-  svelte-check --threshold error` instead, and restart `make dev` if the
+svelte-check --threshold error` instead, and restart `make dev` if the
   window breaks.

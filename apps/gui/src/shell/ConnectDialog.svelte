@@ -41,8 +41,14 @@
     !req
       ? ""
       : req.kind === "missing"
-        ? (count === 1 ? $c.connectModalModsNotInstalled({ count }) : $c.connectModalModsNotInstalledPlural({ count })).value
-        : (count === 1 ? $c.connectModalModsToCheck({ count }) : $c.connectModalModsToCheckPlural({ count })).value,
+        ? (count === 1
+            ? $c.connectModalModsNotInstalled({ count })
+            : $c.connectModalModsNotInstalledPlural({ count })
+          ).value
+        : (count === 1
+            ? $c.connectModalModsToCheck({ count })
+            : $c.connectModalModsToCheckPlural({ count })
+          ).value,
   );
 </script>
 
@@ -57,7 +63,9 @@
     <div class="mb-2 flex items-center gap-2">
       <Tag tone={req.kind === "missing" ? "warn" : "neutral"}>{title}</Tag>
     </div>
-    <ul class="m-0 max-h-72 list-none divide-y divide-border/60 overflow-y-auto rounded-sm border border-border bg-bg p-0">
+    <ul
+      class="m-0 max-h-72 list-none divide-y divide-border/60 overflow-y-auto rounded-sm border border-border bg-bg p-0"
+    >
       {#each req.mods as mod (mod.id)}
         {@const days = newerDays(mod.local_updated, mod.remote_updated)}
         <li class="flex items-center gap-2 px-2 py-1.5">
@@ -65,8 +73,12 @@
             <div class="truncate text-xs font-medium text-fg">{mod.name}</div>
             <div class="flex flex-wrap gap-x-3 font-mono text-3xs text-fg-faint">
               <span>#{mod.id}</span>
-              {#if mod.local_updated}<span>{$m.confirmLocalDate.value} {date(mod.local_updated * 1000)}</span>{/if}
-              {#if mod.remote_updated}<span>{$m.confirmRemoteDate.value} {date(mod.remote_updated * 1000)}</span>{/if}
+              {#if mod.local_updated}<span
+                  >{$m.confirmLocalDate.value} {date(mod.local_updated * 1000)}</span
+                >{/if}
+              {#if mod.remote_updated}<span
+                  >{$m.confirmRemoteDate.value} {date(mod.remote_updated * 1000)}</span
+                >{/if}
               {#if mod.size_human}<span>{mod.size_human}</span>{/if}
             </div>
           </div>
@@ -83,8 +95,14 @@
     <div class="mt-3 rounded-sm border border-border bg-bg">
       <Switch
         bind:checked={fetch}
-        label={req.kind === "missing" ? $c.connectModalInstallMods.value : $c.connectModalUpdateMods.value}
-        hint={fetch ? $m.confirmWarning.value : req.kind === "missing" ? $c.connectModalWarning.value : ""}
+        label={req.kind === "missing"
+          ? $c.connectModalInstallMods.value
+          : $c.connectModalUpdateMods.value}
+        hint={fetch
+          ? $m.confirmWarning.value
+          : req.kind === "missing"
+            ? $c.connectModalWarning.value
+            : ""}
       />
     </div>
     {#if !fetch && req.kind === "missing"}
@@ -94,7 +112,9 @@
     {/if}
   {/if}
   {#snippet footer()}
-    <Button variant="ghost" onclick={() => (connect.request = null)}>{$c.connectModalCancel.value}</Button>
+    <Button variant="ghost" onclick={() => (connect.request = null)}
+      >{$c.connectModalCancel.value}</Button
+    >
     <Button variant="play" size="lg" onclick={go}>
       <Play class="size-icon-sm" />
       {fetch

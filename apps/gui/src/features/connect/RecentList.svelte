@@ -15,7 +15,15 @@
    */
   const c = dict("connect");
 
-  type Pick = { key: string; name: string; ip: string; port: number; ts?: number; password?: string | null; fav: boolean };
+  type Pick = {
+    key: string;
+    name: string;
+    ip: string;
+    port: number;
+    ts?: number;
+    password?: string | null;
+    fav: boolean;
+  };
 
   const picks = $derived.by((): Pick[] => {
     const seen = new Set<string>();
@@ -46,7 +54,8 @@
       <li>
         <button
           class="flex w-full items-center gap-2 border-b border-border/40 px-3 py-1.5 text-left last:border-0 hover:bg-raised/60"
-          onclick={() => direct.load(p.ip, s?.game_port ?? p.port, s?.query_port, p.password ?? undefined)}
+          onclick={() =>
+            direct.load(p.ip, s?.game_port ?? p.port, s?.query_port, p.password ?? undefined)}
         >
           {#if p.fav}
             <Star class="size-3 shrink-0 text-warn" aria-label={$c.fromFavorites.value} />

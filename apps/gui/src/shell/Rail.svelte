@@ -23,7 +23,9 @@
       case "servers":
         return servers.total ? { value: compact(servers.total) } : null;
       case "favorites":
-        return profile.data?.favorites.length ? { value: String(profile.data.favorites.length) } : null;
+        return profile.data?.favorites.length
+          ? { value: String(profile.data.favorites.length) }
+          : null;
       case "history":
         return profile.data?.history.length ? { value: String(profile.data.history.length) } : null;
       case "mods":
@@ -58,10 +60,16 @@
       onclick={() => app.go(p.id)}
     >
       {#if on}<span class="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-accent"></span>{/if}
-      <p.icon class={cn("size-icon shrink-0", on ? "text-accent" : "text-fg-faint group-hover:text-fg-muted")} />
+      <p.icon
+        class={cn(
+          "size-icon shrink-0",
+          on ? "text-accent" : "text-fg-faint group-hover:text-fg-muted",
+        )}
+      />
       {#if !collapsed}
         <span class="min-w-0 flex-1 truncate text-left">{String($n[p.label])}</span>
-        {#if c}<span class={cn("num font-mono text-2xs", c.tone ?? "text-fg-faint")}>{c.value}</span>{/if}
+        {#if c}<span class={cn("num font-mono text-2xs", c.tone ?? "text-fg-faint")}>{c.value}</span
+          >{/if}
       {:else if c?.tone}
         <span class="absolute top-1.5 right-2 size-1.5 rounded-full bg-warn"></span>
       {/if}
@@ -102,7 +110,9 @@
         onclick={() => (prefs.railCollapsed = !collapsed)}
         aria-label={collapsed ? $n.expand.value : $n.collapse.value}
       >
-        {#if collapsed}<PanelLeftOpen class="size-icon" />{:else}<PanelLeftClose class="size-icon" />{$n.collapse.value}{/if}
+        {#if collapsed}<PanelLeftOpen class="size-icon" />{:else}<PanelLeftClose
+            class="size-icon"
+          />{$n.collapse.value}{/if}
       </button>
     </div>
   </div>

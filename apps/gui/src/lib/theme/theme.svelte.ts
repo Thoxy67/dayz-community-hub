@@ -4,7 +4,15 @@
  * not). Written to :root as `--t-*` variables; `styles/tokens.css` derives
  * everything else from those.
  */
-import { DEFAULT_DARK, DEFAULT_LIGHT, PRESETS, TOKEN_NAMES, presetById, type Scheme, type ThemeTokens } from "./presets";
+import {
+  DEFAULT_DARK,
+  DEFAULT_LIGHT,
+  PRESETS,
+  TOKEN_NAMES,
+  presetById,
+  type Scheme,
+  type ThemeTokens,
+} from "./presets";
 
 const KEY = "dzch.theme";
 
@@ -24,10 +32,17 @@ type Stored = {
   frame: WindowFrame;
 };
 
-const DEFAULT_FRAME: WindowFrame = { radius: 0, border: 0, borderFocus: "oklch(78.8% 0.141 85)", borderBlur: "oklch(30% 0.01 130)" };
+const DEFAULT_FRAME: WindowFrame = {
+  radius: 0,
+  border: 0,
+  borderFocus: "oklch(78.8% 0.141 85)",
+  borderBlur: "oklch(30% 0.01 130)",
+};
 
 function osScheme(): Scheme {
-  return typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  return typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: light)").matches
+    ? "light"
+    : "dark";
 }
 
 function load(): Stored {
@@ -35,12 +50,23 @@ function load(): Stored {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const s = JSON.parse(raw) as Partial<Stored>;
-      return { preset: s.preset ?? null, custom: s.custom ?? null, frame: { ...DEFAULT_FRAME, ...s.frame } };
+      return {
+        preset: s.preset ?? null,
+        custom: s.custom ?? null,
+        frame: { ...DEFAULT_FRAME, ...s.frame },
+      };
     }
     // The previous interface kept the preset id here; "dark"/"light" were its
     // DaisyUI defaults, which are now chernarus and topo.
     const legacy = localStorage.getItem("active-preset-id");
-    const preset = legacy === "dark" ? DEFAULT_DARK : legacy === "light" ? DEFAULT_LIGHT : legacy && presetById(legacy) ? legacy : null;
+    const preset =
+      legacy === "dark"
+        ? DEFAULT_DARK
+        : legacy === "light"
+          ? DEFAULT_LIGHT
+          : legacy && presetById(legacy)
+            ? legacy
+            : null;
     const win = localStorage.getItem("window-settings");
     const w = win ? (JSON.parse(win) as Record<string, string>) : {};
     return {
@@ -77,7 +103,8 @@ class Theme {
   current = $derived.by((): { id: string; scheme: Scheme; tokens: ThemeTokens } => {
     const p = this.#s.preset;
     if (p === "custom" && this.#s.custom) return { id: "custom", ...this.#s.custom };
-    const preset = (p && presetById(p)) || presetById(osScheme() === "light" ? DEFAULT_LIGHT : DEFAULT_DARK)!;
+    const preset =
+      (p && presetById(p)) || presetById(osScheme() === "light" ? DEFAULT_LIGHT : DEFAULT_DARK)!;
     return preset;
   });
 
@@ -132,7 +159,11 @@ class Theme {
   /** A theme as a file others can import. */
   exportJson(): string {
     const c = this.current;
-    return JSON.stringify({ version: 2, app: "dayz-community-hub", scheme: c.scheme, tokens: c.tokens }, null, 2);
+    return JSON.stringify(
+      { version: 2, app: "dayz-community-hub", scheme: c.scheme, tokens: c.tokens },
+      null,
+      2,
+    );
   }
 
   importJson(text: string): boolean {
@@ -140,7 +171,9 @@ class Theme {
       const d = JSON.parse(text) as { scheme?: Scheme; tokens?: Partial<ThemeTokens> };
       if (!d.tokens) return false;
       const base = this.current.tokens;
-      const tokens = Object.fromEntries(TOKEN_NAMES.map((n) => [n, d.tokens?.[n] ?? base[n]])) as ThemeTokens;
+      const tokens = Object.fromEntries(
+        TOKEN_NAMES.map((n) => [n, d.tokens?.[n] ?? base[n]]),
+      ) as ThemeTokens;
       this.setCustom({ scheme: d.scheme === "light" ? "light" : "dark", tokens });
       return true;
     } catch {

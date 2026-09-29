@@ -28,7 +28,10 @@
 </script>
 
 <label class="flex items-center gap-2 bg-bg px-2 py-1.5">
-  <span class="relative size-7 shrink-0 overflow-hidden rounded-sm border border-border-strong" style="background: {value}">
+  <span
+    class="relative size-7 shrink-0 overflow-hidden rounded-sm border border-border-strong"
+    style="background: {value}"
+  >
     <input
       type="color"
       value={hex}

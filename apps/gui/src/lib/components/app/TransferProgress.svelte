@@ -40,13 +40,17 @@
 <section class="rounded-md border border-border bg-panel p-3">
   <div class="flex items-baseline justify-between gap-2">
     <span class="label-stencil text-fg-faint">{label}</span>
-    <span class="num font-mono text-xs text-fg">{percent != null ? `${percent.toFixed(1)}%` : "—"}</span>
+    <span class="num font-mono text-xs text-fg"
+      >{percent != null ? `${percent.toFixed(1)}%` : "—"}</span
+    >
   </div>
   {#if name}<p class="m-0 mt-1 truncate text-sm font-semibold text-fg" title={name}>{name}</p>{/if}
   <Meter class="mt-2" value={percent ?? 0} max={100} size="md" tone="in" {label} />
   <dl class="m-0 mt-2 grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-2xs">
     <dt class="text-fg-faint">{labels.size}</dt>
-    <dd class="m-0 text-right text-fg">{done != null && total ? `${bytes(done)} / ${bytes(total)}` : "—"}</dd>
+    <dd class="m-0 text-right text-fg">
+      {done != null && total ? `${bytes(done)} / ${bytes(total)}` : "—"}
+    </dd>
     <dt class="text-fg-faint">{labels.speed}</dt>
     <dd class="m-0 text-right text-fg">{speed ? `${bytes(speed)}/s` : "—"}</dd>
     <dt class="text-fg-faint">{labels.eta}</dt>

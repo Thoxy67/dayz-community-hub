@@ -53,7 +53,15 @@ export function describe(id: string): Mission {
     .replace(/\bplus\b/i, "+")
     .replace(/\b\w/g, (c) => c.toUpperCase());
   const m = modePart.toLowerCase();
-  const kind = m.includes("coop") ? "coop" : m.includes("pvp") ? "pvp" : m.includes("surv") ? "survival" : m.includes("offline") ? "offline" : "mission";
+  const kind = m.includes("coop")
+    ? "coop"
+    : m.includes("pvp")
+      ? "pvp"
+      : m.includes("surv")
+        ? "survival"
+        : m.includes("offline")
+          ? "offline"
+          : "mission";
   return { id, mapKey: key, map: known?.name ?? pretty, terrain: known?.terrain ?? null, kind };
 }
 
@@ -98,7 +106,11 @@ class Offline {
       if (!keepStatus) {
         const count = this.missions.length;
         if (count === 0) this.#say(w.statusNoMissions, "warn");
-        else this.#say(count === 1 ? w.statusAvailableOne({ count }) : w.statusAvailable({ count }), "ok");
+        else
+          this.#say(
+            count === 1 ? w.statusAvailableOne({ count }) : w.statusAvailable({ count }),
+            "ok",
+          );
       }
     } catch (e) {
       this.missions = [];
@@ -174,7 +186,11 @@ class Offline {
       const n = await ipc.removeOfflineMode();
       await this.load(true);
       this.#say(
-        n > 0 ? (n === 1 ? w.statusRemovedFoldersOne({ count: n }) : w.statusRemovedFolders({ count: n })) : w.statusNothingToRemove,
+        n > 0
+          ? n === 1
+            ? w.statusRemovedFoldersOne({ count: n })
+            : w.statusRemovedFolders({ count: n })
+          : w.statusNothingToRemove,
         "ok",
       );
     } catch (e) {
@@ -195,7 +211,11 @@ class Offline {
     try {
       const n = await ipc.clearOfflineSaves();
       this.#say(
-        n > 0 ? (n === 1 ? w.statusClearedSavesOne({ count: n }) : w.statusClearedSaves({ count: n })) : w.statusNoSaves,
+        n > 0
+          ? n === 1
+            ? w.statusClearedSavesOne({ count: n })
+            : w.statusClearedSaves({ count: n })
+          : w.statusNoSaves,
         "ok",
       );
     } catch (e) {

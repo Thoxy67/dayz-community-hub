@@ -92,7 +92,10 @@ class DirectForm {
     const list = this.details?.mods.length ? this.details.mods : (this.a2s?.mods ?? []);
     const ids = new Set(list.map((m) => m.steam_workshop_id));
     const more = [...(this.a2s?.mods ?? []), ...(this.a2s?.mods_a2s ?? [])];
-    return [...list, ...more.filter((m) => !ids.has(m.steam_workshop_id) && ids.add(m.steam_workshop_id))];
+    return [
+      ...list,
+      ...more.filter((m) => !ids.has(m.steam_workshop_id) && ids.add(m.steam_workshop_id)),
+    ];
   });
 
   modStatus(id: number): ModStatus {
@@ -104,7 +107,9 @@ class DirectForm {
   launchArgs = $derived(
     this.args
       .filter((a) => a.enabled)
-      .map((a) => (a.kind === "mod" ? `-mod=@${a.value}` : a.value.startsWith("-") ? a.value : `-${a.value}`)),
+      .map((a) =>
+        a.kind === "mod" ? `-mod=@${a.value}` : a.value.startsWith("-") ? a.value : `-${a.value}`,
+      ),
   );
 
   constructor() {
@@ -191,7 +196,8 @@ class DirectForm {
       if (id !== this.#queryId) return;
       this.a2s = a2s;
       this.resolvedQueryPort = a2s.query_port;
-      this.portKind = typed === a2s.query_port ? "query" : listed || a2s.game_port === typed ? "game" : "unknown";
+      this.portKind =
+        typed === a2s.query_port ? "query" : listed || a2s.game_port === typed ? "game" : "unknown";
       const game = listed?.game_port ?? a2s.game_port;
       if (game != null) this.port = String(game);
       if (a2s.query_port !== (game ?? typed)) this.queryPort = String(a2s.query_port);
@@ -241,13 +247,26 @@ class DirectForm {
   addMod(id: number) {
     const m = mods.byId.get(id);
     if (!m || this.args.some((a) => a.kind === "mod" && a.value === String(id))) return;
-    this.args = [...this.args, { id: nextId(), kind: "mod", value: String(id), label: m.name, fromServer: false, enabled: true }];
+    this.args = [
+      ...this.args,
+      {
+        id: nextId(),
+        kind: "mod",
+        value: String(id),
+        label: m.name,
+        fromServer: false,
+        enabled: true,
+      },
+    ];
   }
 
   addCustom(raw: string) {
     const value = raw.trim();
     if (!value) return;
-    this.args = [...this.args, { id: nextId(), kind: "custom", value, label: value, fromServer: false, enabled: true }];
+    this.args = [
+      ...this.args,
+      { id: nextId(), kind: "custom", value, label: value, fromServer: false, enabled: true },
+    ];
   }
 
   removeArg(id: string) {
@@ -281,7 +300,12 @@ class DirectForm {
 
   async favoriteIt() {
     if (!this.valid) return;
-    await profile.addFavorite(this.name || `${this.ip}:${this.gamePort}`, this.ip, this.gamePort, this.password || null);
+    await profile.addFavorite(
+      this.name || `${this.ip}:${this.gamePort}`,
+      this.ip,
+      this.gamePort,
+      this.password || null,
+    );
   }
 
   #config(): DzchConfig & { mods: NonNullable<DzchConfig["mods"]>; name: string } {
@@ -316,8 +340,12 @@ class DirectForm {
   async exportFile() {
     const w = words("connect");
     const c = this.#config();
-    const file = c.name ? `${c.name.replace(/[^\w\- ]/g, "_").slice(0, 60)}.dzch` : `${c.ip}_${c.port}.dzch`;
-    const path = await saveFile(String(w.exportTitle), file, [{ name: String(w.dzchFilter), extensions: ["dzch"] }]);
+    const file = c.name
+      ? `${c.name.replace(/[^\w\- ]/g, "_").slice(0, 60)}.dzch`
+      : `${c.ip}_${c.port}.dzch`;
+    const path = await saveFile(String(w.exportTitle), file, [
+      { name: String(w.dzchFilter), extensions: ["dzch"] },
+    ]);
     if (!path) return;
     try {
       await writeDzchFile(path, c);
@@ -329,7 +357,9 @@ class DirectForm {
 
   async openFile() {
     const w = words("connect");
-    const path = await pickFile(String(w.openDzchTitle), { filters: [{ name: String(w.dzchFilter), extensions: ["dzch"] }] });
+    const path = await pickFile(String(w.openDzchTitle), {
+      filters: [{ name: String(w.dzchFilter), extensions: ["dzch"] }],
+    });
     if (path) await connect.openDzch(path);
   }
 }

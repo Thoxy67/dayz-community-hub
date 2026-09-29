@@ -38,7 +38,12 @@
   } = $props();
 
   const tone = $derived(fillTone(players, max));
-  const ink = { muted: "text-fg-faint", ok: "text-ok", warn: "text-warn", err: "text-err" } as const;
+  const ink = {
+    muted: "text-fg-faint",
+    ok: "text-ok",
+    warn: "text-warn",
+    err: "text-err",
+  } as const;
   const fill = { muted: "bg-fg-faint/40", ok: "bg-ok", warn: "bg-warn", err: "bg-err" } as const;
   const pct = $derived(max > 0 ? Math.min(100, (players / max) * 100) : 0);
   const botPct = $derived(max > 0 ? Math.min(pct, (bots / max) * 100) : 0);
@@ -57,7 +62,10 @@
   </span>
   <span class="relative h-1 overflow-hidden rounded-full bg-raised">
     <span
-      class={cn("absolute inset-y-0 left-0 rounded-full transition-[width] duration-500", fill[tone])}
+      class={cn(
+        "absolute inset-y-0 left-0 rounded-full transition-[width] duration-500",
+        fill[tone],
+      )}
       style="width: {pct}%"
     ></span>
     {#if botPct > 0}

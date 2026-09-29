@@ -59,7 +59,13 @@
     }
   });
 
-  const entries = $derived(SECTIONS.map((sec) => ({ id: sec.id, label: sec.label(), dot: form.dirty && FORM.has(sec.id) })));
+  const entries = $derived(
+    SECTIONS.map((sec) => ({
+      id: sec.id,
+      label: sec.label(),
+      dot: form.dirty && FORM.has(sec.id),
+    })),
+  );
 </script>
 
 <div class="flex h-full min-h-0">
@@ -93,9 +99,13 @@
       >
         <TriangleAlert class="size-icon shrink-0 text-warn" />
         <span class="flex-1 text-xs text-fg">{$s.unsaved.value}</span>
-        <Button variant="ghost" onclick={() => form.discard()} disabled={form.saving}><Undo class="size-icon-sm" />{$s.discard.value}</Button>
+        <Button variant="ghost" onclick={() => form.discard()} disabled={form.saving}
+          ><Undo class="size-icon-sm" />{$s.discard.value}</Button
+        >
         <Button variant="accent" onclick={() => form.save()} disabled={form.saving}>
-          {#if form.saving}<Spinner class="size-3 text-accent-fg" />{:else}<Save class="size-icon-sm" />{/if}
+          {#if form.saving}<Spinner class="size-3 text-accent-fg" />{:else}<Save
+              class="size-icon-sm"
+            />{/if}
           {$s.save.value}
         </Button>
       </div>

@@ -15,8 +15,11 @@
   import { cn } from "$lib/cx";
 
   /** A country's flag, in a circle, from its ISO 3166-1 alpha-2 code. */
-  let { code, title = "", class: klass = "" }: { code: string; title?: string; class?: string } =
-    $props();
+  let {
+    code,
+    title = "",
+    class: klass = "",
+  }: { code: string; title?: string; class?: string } = $props();
 
   let body = $state<string | null>(null);
   $effect(() => {
@@ -26,13 +29,21 @@
 </script>
 
 {#if body}
-  <svg viewBox="0 0 512 512" class={cn("size-icon shrink-0", klass)} role="img" aria-label={title || code}>
+  <svg
+    viewBox="0 0 512 512"
+    class={cn("size-icon shrink-0", klass)}
+    role="img"
+    aria-label={title || code}
+  >
     {#if title}<title>{title}</title>{/if}
     {@html body}
   </svg>
 {:else}
   <span
-    class={cn("inline-grid size-icon shrink-0 place-items-center rounded-full bg-raised font-mono text-3xs text-fg-faint", klass)}
+    class={cn(
+      "inline-grid size-icon shrink-0 place-items-center rounded-full bg-raised font-mono text-3xs text-fg-faint",
+      klass,
+    )}
     title={title || code}>{code.toUpperCase()}</span
   >
 {/if}

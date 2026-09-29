@@ -8,13 +8,19 @@
 
   const s = dict("settings");
   const ips = $derived(profile.data?.excluded_ips ?? []);
-
 </script>
 
-<Section id="excluded" title={$s.sectionExcluded.value} description={$s.excludedHint.value} icon={Ban}>
+<Section
+  id="excluded"
+  title={$s.sectionExcluded.value}
+  description={$s.excludedHint.value}
+  icon={Ban}
+>
   {#snippet aside()}
     <Tag tone={ips.length ? "warn" : "neutral"}>
-      {ips.length === 1 ? $s.excludedIpsCountOne({ count: 1 }).value : $s.excludedIpsCountOther({ count: ips.length }).value}
+      {ips.length === 1
+        ? $s.excludedIpsCountOne({ count: 1 }).value
+        : $s.excludedIpsCountOther({ count: ips.length }).value}
     </Tag>
   {/snippet}
   {#if ips.length === 0}

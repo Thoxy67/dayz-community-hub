@@ -5,7 +5,11 @@
   import { servers } from "$lib/stores/servers.svelte";
 
   /** Who is on a server right now, from the freshest source; click to ask it directly. */
-  let { ip, queryPort, compact = false }: { ip: string; queryPort: number; compact?: boolean } = $props();
+  let {
+    ip,
+    queryPort,
+    compact = false,
+  }: { ip: string; queryPort: number; compact?: boolean } = $props();
   const c = dict("servers");
   const listed = $derived(servers.find(ip, queryPort));
   const n = $derived(listed ? servers.count(listed) : serverData.players(ip, queryPort));

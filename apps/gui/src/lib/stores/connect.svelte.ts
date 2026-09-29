@@ -39,14 +39,20 @@ export type Target = { ip: string; port: number; password?: string; extraArgs?: 
 class Connect {
   request = $state<ConnectRequest | null>(null);
   /** What Direct Connect should open with: filled by "open in Direct Connect". */
-  prefill = $state<{ ip: string; port: number; queryPort?: number; password?: string } | null>(null);
+  prefill = $state<{ ip: string; port: number; queryPort?: number; password?: string } | null>(
+    null,
+  );
 
   #split(serverMods: ModDto[]) {
     const missing: ConnectMod[] = [];
     const present: ConnectMod[] = [];
     for (const m of serverMods) {
       const have = mods.byId.get(m.steam_workshop_id);
-      if (!have) missing.push({ id: m.steam_workshop_id, name: m.name || `Workshop ${m.steam_workshop_id}` });
+      if (!have)
+        missing.push({
+          id: m.steam_workshop_id,
+          name: m.name || `Workshop ${m.steam_workshop_id}`,
+        });
       else
         present.push({
           id: have.id,
@@ -79,7 +85,11 @@ class Connect {
         mods: missing,
         go: (fetch) =>
           fetch
-            ? mods.start("install_server", { ip: s.ip, port: s.query_port }, () => void this.#launchListed(s))
+            ? mods.start(
+                "install_server",
+                { ip: s.ip, port: s.query_port },
+                () => void this.#launchListed(s),
+              )
             : void this.#launchListed(s),
       };
     } else if (serverMods.length > 0) {
@@ -89,7 +99,11 @@ class Connect {
         mods: present,
         go: (fetch) =>
           fetch
-            ? mods.start("update_server", { ip: s.ip, port: s.query_port }, () => void this.#launchListed(s))
+            ? mods.start(
+                "update_server",
+                { ip: s.ip, port: s.query_port },
+                () => void this.#launchListed(s),
+              )
             : void this.#launchListed(s),
       };
     } else {
@@ -126,7 +140,10 @@ class Connect {
             : void this.#launchAddress(t),
       };
     } else {
-      const all = serverMods.map((m) => ({ id: m.steam_workshop_id, name: m.name || String(m.steam_workshop_id) }));
+      const all = serverMods.map((m) => ({
+        id: m.steam_workshop_id,
+        name: m.name || String(m.steam_workshop_id),
+      }));
       this.request = {
         serverName: name,
         kind: "update",

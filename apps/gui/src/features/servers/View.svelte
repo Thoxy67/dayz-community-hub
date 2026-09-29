@@ -126,7 +126,10 @@
 
   function move(delta: number) {
     if (feed.total === 0) return;
-    const i = Math.max(0, Math.min(feed.total - 1, (selectedIndex < 0 ? -1 : selectedIndex) + delta));
+    const i = Math.max(
+      0,
+      Math.min(feed.total - 1, (selectedIndex < 0 ? -1 : selectedIndex) + delta),
+    );
     scrollIntoView(i);
     const r = feed.rows.get(i);
     selectedIndex = i;
@@ -135,7 +138,8 @@
 
   function onkeydown(e: KeyboardEvent) {
     if (app.view !== "servers" || e.ctrlKey || e.altKey || e.metaKey) return;
-    if ((e.target as HTMLElement)?.closest("input, textarea, [contenteditable], [role=dialog]")) return;
+    if ((e.target as HTMLElement)?.closest("input, textarea, [contenteditable], [role=dialog]"))
+      return;
     switch (e.key) {
       case "ArrowDown":
         return (e.preventDefault(), move(1));
@@ -245,7 +249,8 @@
         <span class="font-mono text-2xs" data-selectable>{servers.listError}</span>
         {#snippet action()}
           <Button variant="accent" disabled={servers.refreshing} onclick={() => servers.refresh()}>
-            <RefreshCw class={cn("size-icon-sm", servers.refreshing && "animate-spin")} />{$c.refresh.value}
+            <RefreshCw class={cn("size-icon-sm", servers.refreshing && "animate-spin")} />{$c
+              .refresh.value}
           </Button>
         {/snippet}
       </Empty>
@@ -253,7 +258,8 @@
       <Empty icon={SearchX} title={$c.noMatch.value} class="flex-1">
         {#snippet action()}
           {#if filters.active}
-            <Button variant="accent" onclick={() => filters.clear()}>{$c.clearFilters.value}</Button>
+            <Button variant="accent" onclick={() => filters.clear()}>{$c.clearFilters.value}</Button
+            >
           {/if}
         {/snippet}
       </Empty>
@@ -262,44 +268,52 @@
            content: if it could grow with the list, "the rows in view" would be
            all nine thousand of them. -->
       <div class="relative min-h-0 flex-1">
-      <div
-        bind:this={scroller}
-        {onscroll}
-        role="grid"
-        aria-label={$c.serverList.value}
-        aria-rowcount={feed.total}
-        class="absolute inset-0 overflow-y-auto overscroll-contain"
-      >
-        <div class="relative" style:height="{feed.total * ROW_PX}px">
-          <div class="absolute inset-x-0 top-0" style:transform="translateY({first * ROW_PX}px)">
-            {#each indices as i (i)}
-              {@const r = feed.rows.get(i)}
-              <div style:height="{ROW_PX}px">
-                {#if r}
-                  <ServerRow
-                    server={r}
-                    index={i}
-                    selected={selected !== null && keyOf(selected) === keyOf(r)}
-                    onselect={() => select(r, i)}
-                    onjoin={() => connect.server(r)}
-                    onmods={() => select(r, i, true)}
-                  />
-                {:else}
-                  <!-- Not arrived yet: the row's shape, so the list does not jump. -->
-                  <div class={cn(LIST_GRID, "h-full border-b border-border/50 px-2")} aria-hidden="true">
-                    <span></span>
-                    <span class="h-2 w-12 animate-pulse rounded-full bg-raised"></span>
-                    <span class="h-2 w-16 animate-pulse rounded-full bg-raised"></span>
-                    <span class="h-2.5 w-3/5 animate-pulse rounded-full bg-raised"></span>
-                    <span class={cn("h-2 w-20 animate-pulse rounded-full bg-raised", LIST_NARROW_HIDDEN)}></span>
-                    <span></span><span></span>
-                  </div>
-                {/if}
-              </div>
-            {/each}
+        <div
+          bind:this={scroller}
+          {onscroll}
+          role="grid"
+          aria-label={$c.serverList.value}
+          aria-rowcount={feed.total}
+          class="absolute inset-0 overflow-y-auto overscroll-contain"
+        >
+          <div class="relative" style:height="{feed.total * ROW_PX}px">
+            <div class="absolute inset-x-0 top-0" style:transform="translateY({first * ROW_PX}px)">
+              {#each indices as i (i)}
+                {@const r = feed.rows.get(i)}
+                <div style:height="{ROW_PX}px">
+                  {#if r}
+                    <ServerRow
+                      server={r}
+                      index={i}
+                      selected={selected !== null && keyOf(selected) === keyOf(r)}
+                      onselect={() => select(r, i)}
+                      onjoin={() => connect.server(r)}
+                      onmods={() => select(r, i, true)}
+                    />
+                  {:else}
+                    <!-- Not arrived yet: the row's shape, so the list does not jump. -->
+                    <div
+                      class={cn(LIST_GRID, "h-full border-b border-border/50 px-2")}
+                      aria-hidden="true"
+                    >
+                      <span></span>
+                      <span class="h-2 w-12 animate-pulse rounded-full bg-raised"></span>
+                      <span class="h-2 w-16 animate-pulse rounded-full bg-raised"></span>
+                      <span class="h-2.5 w-3/5 animate-pulse rounded-full bg-raised"></span>
+                      <span
+                        class={cn(
+                          "h-2 w-20 animate-pulse rounded-full bg-raised",
+                          LIST_NARROW_HIDDEN,
+                        )}
+                      ></span>
+                      <span></span><span></span>
+                    </div>
+                  {/if}
+                </div>
+              {/each}
+            </div>
           </div>
         </div>
-      </div>
       </div>
     {/if}
   </div>
@@ -327,7 +341,11 @@
     {#snippet stats()}
       <Figure label={$c.statShown.value} value={num(feed.total)} />
       <Figure label={$c.statPlayers.value} value={compact(fig?.players)} tone="text-ok" />
-      <Figure label={$c.statFull.value} value={num(fig?.full)} tone={fig?.full ? "text-err" : "text-fg-muted"} />
+      <Figure
+        label={$c.statFull.value}
+        value={num(fig?.full)}
+        tone={fig?.full ? "text-err" : "text-fg-muted"}
+      />
       <Figure secondary label={$c.statEmpty.value} value={num(fig?.empty)} tone="text-fg-muted" />
       <Figure
         label={$c.statModded.value}
@@ -335,7 +353,12 @@
         tone="text-mods"
       />
       <Figure secondary label={$c.statPinged.value} value={num(fig?.pinged)} tone="text-fg-muted" />
-      <Figure secondary label={$c.statBestPing.value} value={fig?.best_ping != null ? `${fig.best_ping} ms` : "—"} tone="text-ok" />
+      <Figure
+        secondary
+        label={$c.statBestPing.value}
+        value={fig?.best_ping != null ? `${fig.best_ping} ms` : "—"}
+        tone="text-ok"
+      />
     {/snippet}
     {#snippet actions()}
       <span class="mr-2 hidden font-mono text-3xs text-fg-faint 2xl:inline">{$c.keys.value}</span>
@@ -346,23 +369,39 @@
         active={showDetail}
         onclick={() => (showDetail = !showDetail)}
       />
-      <Button onclick={() => servers.refresh()} disabled={servers.refreshing} title={$c.refreshTitle.value}>
-        <RefreshCw class={cn("size-icon-sm", servers.refreshing && "animate-spin")} />{$c.refresh.value}
+      <Button
+        onclick={() => servers.refresh()}
+        disabled={servers.refreshing}
+        title={$c.refreshTitle.value}
+      >
+        <RefreshCw class={cn("size-icon-sm", servers.refreshing && "animate-spin")} />{$c.refresh
+          .value}
       </Button>
     {/snippet}
     <Toolbar shown={feed.total} />
   </PageHeader>
 
   {#if staleMinutes > 0 && !servers.loading}
-    <div class="flex items-center gap-2 border-b border-warn/25 bg-warn/10 px-pad py-1 text-2xs text-warn">
+    <div
+      class="flex items-center gap-2 border-b border-warn/25 bg-warn/10 px-pad py-1 text-2xs text-warn"
+    >
       <Clock class="size-3.5" />{$c.staleData({ minutes: staleMinutes }).value}
-      <button class="ml-auto rounded-xs px-1.5 font-medium hover:bg-warn/15" onclick={() => servers.refresh()}>
+      <button
+        class="ml-auto rounded-xs px-1.5 font-medium hover:bg-warn/15"
+        onclick={() => servers.refresh()}
+      >
         {$c.refresh.value}
       </button>
     </div>
   {/if}
 
   <div class="flex min-h-0 flex-1 flex-col">
-    <MasterDetail id="servers-detail" show={showDetail} selected={selected !== null} main={listPane} detail={detailPane} />
+    <MasterDetail
+      id="servers-detail"
+      show={showDetail}
+      selected={selected !== null}
+      main={listPane}
+      detail={detailPane}
+    />
   </div>
 </div>

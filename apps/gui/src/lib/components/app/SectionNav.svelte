@@ -6,7 +6,11 @@
    * anchored sections (`SettingsSection` ids). It follows the reader down the
    * page and scrolls to a section on click; `go(id)` does the same from code.
    */
-  type Entry = { id: string; label: string; /** A small warning dot: unsaved edits there. */ dot?: boolean };
+  type Entry = {
+    id: string;
+    label: string;
+    /** A small warning dot: unsaved edits there. */ dot?: boolean;
+  };
 
   let {
     title,
@@ -22,7 +26,9 @@
   let active = $state("");
 
   export function go(id: string) {
-    root?.querySelector(`#${CSS.escape(id)}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    root
+      ?.querySelector(`#${CSS.escape(id)}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   $effect(() => {
@@ -44,7 +50,10 @@
   });
 </script>
 
-<nav class="flex w-52 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border bg-bg/40 px-2 py-4" aria-label={title}>
+<nav
+  class="flex w-52 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border bg-bg/40 px-2 py-4"
+  aria-label={title}
+>
   <p class="m-0 px-2 pb-2 label-stencil text-fg-faint">{title}</p>
   {#each sections as s (s.id)}
     <button
@@ -56,7 +65,8 @@
       aria-current={active === s.id ? "location" : undefined}
       onclick={() => go(s.id)}
     >
-      {#if active === s.id}<span class="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-accent"></span>{/if}
+      {#if active === s.id}<span class="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-accent"
+        ></span>{/if}
       <span class="flex-1 truncate">{s.label}</span>
       {#if s.dot}<span class="size-1.5 rounded-full bg-warn"></span>{/if}
     </button>

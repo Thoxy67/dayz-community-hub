@@ -39,12 +39,16 @@ describe("oklch", () => {
     expect(parseOklch("oklch(0.65 0.2 255)")).toEqual({ l: 0.65, c: 0.2, h: 255 });
   });
   test("rejects what is not oklch", () => expect(parseOklch("#ff0000")).toBeNull());
-  test("formats back", () => expect(formatOklch({ l: 0.654, c: 0.2, h: 255.4 })).toBe("oklch(65% 0.20 255)"));
+  test("formats back", () =>
+    expect(formatOklch({ l: 0.654, c: 0.2, h: 255.4 })).toBe("oklch(65% 0.20 255)"));
   test("hex round trip stays within one step per channel", () => {
     for (const hex of ["#111310", "#e3b23c", "#e6e3d3", "#2f6386", "#ffffff", "#000000"]) {
       const back = oklchToHex(hexToOklch(hex));
       for (let i = 1; i < 7; i += 2) {
-        expect(Math.abs(parseInt(back.slice(i, i + 2), 16) - parseInt(hex.slice(i, i + 2), 16)), hex).toBeLessThanOrEqual(1);
+        expect(
+          Math.abs(parseInt(back.slice(i, i + 2), 16) - parseInt(hex.slice(i, i + 2), 16)),
+          hex,
+        ).toBeLessThanOrEqual(1);
       }
     }
   });

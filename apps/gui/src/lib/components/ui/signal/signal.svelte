@@ -14,7 +14,13 @@
   }
 
   export function signalTone(level: SignalLevel): string {
-    return level >= 4 ? "text-ok" : level >= 2 ? "text-warn" : level === 1 ? "text-err" : "text-fg-faint";
+    return level >= 4
+      ? "text-ok"
+      : level >= 2
+        ? "text-warn"
+        : level === 1
+          ? "text-err"
+          : "text-fg-faint";
   }
 </script>
 
@@ -59,7 +65,11 @@
         class={cn(
           "rounded-[1px]",
           bar[size],
-          pending ? "animate-pulse bg-current opacity-40" : b <= level ? "bg-current" : "bg-current opacity-20",
+          pending
+            ? "animate-pulse bg-current opacity-40"
+            : b <= level
+              ? "bg-current"
+              : "bg-current opacity-20",
         )}
         style="height: {b * 25}%; {pending ? `animation-delay: ${b * 120}ms` : ''}"
       ></span>
@@ -70,9 +80,8 @@
   </span>
   {#if label}
     <span class="num font-mono text-2xs">
-      {#if pending}…{:else if ms == null}—{:else if timedOut}<span class="text-err">×</span>{:else}{ms}<span
-          class="text-fg-faint">ms</span
-        >{/if}
+      {#if pending}…{:else if ms == null}—{:else if timedOut}<span class="text-err">×</span
+        >{:else}{ms}<span class="text-fg-faint">ms</span>{/if}
     </span>
   {/if}
 </span>

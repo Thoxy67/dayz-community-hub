@@ -7,11 +7,17 @@ export type LineKind = "err" | "warn" | "ok" | "progress" | "login" | "dim" | "n
 
 export function classifyLine(line: string): LineKind {
   const l = line.toLowerCase();
-  if (/\berror\b|failed|failure|abort|not found|invalid password|access denied|no connection|timeout expired/.test(l))
+  if (
+    /\berror\b|failed|failure|abort|not found|invalid password|access denied|no connection|timeout expired/.test(
+      l,
+    )
+  )
     return "err";
   if (/warning|timed out|retry|retrying|steam guard|two-factor|rate limit/.test(l)) return "warn";
-  if (/success|already up to date|fully installed|logged in ok|downloaded item|\bok\b\.?$/.test(l)) return "ok";
-  if (/downloading|update state|reconfiguring|validating|progress:|\d+\s*%/.test(l)) return "progress";
+  if (/success|already up to date|fully installed|logged in ok|downloaded item|\bok\b\.?$/.test(l))
+    return "ok";
+  if (/downloading|update state|reconfiguring|validating|progress:|\d+\s*%/.test(l))
+    return "progress";
   if (/logging in|\+login|connecting|loading steam|steamcmd|^steam>/.test(l)) return "login";
   if (l.trim() === "" || /^\[|appinfo|waiting on|idle|^\s*\d+\s*$/.test(l)) return "dim";
   return "normal";
@@ -39,7 +45,8 @@ export class Rate {
     const last = this.#samples.at(-1);
     if (last && bytes < last.bytes) this.#samples = [];
     this.#samples.push({ t, bytes });
-    while (this.#samples.length > 2 && t - this.#samples[0]!.t > this.windowMs) this.#samples.shift();
+    while (this.#samples.length > 2 && t - this.#samples[0]!.t > this.windowMs)
+      this.#samples.shift();
   }
 
   /** Bytes per second, or null before there are two samples a moment apart. */

@@ -23,7 +23,11 @@ export type ModOpArgs = {
   modNames?: string[];
 };
 
-export const startModOperation = (opType: ModOpType, a: ModOpArgs, onProgress: Channel<ModProgressEvent>) =>
+export const startModOperation = (
+  opType: ModOpType,
+  a: ModOpArgs,
+  onProgress: Channel<ModProgressEvent>,
+) =>
   run(
     commands.startModOperation(
       opType,

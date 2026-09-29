@@ -14,7 +14,13 @@
     password,
     size = "sm",
     compact = false,
-  }: { ip: string; port: number; password?: string | null; size?: "sm" | "lg"; compact?: boolean } = $props();
+  }: {
+    ip: string;
+    port: number;
+    password?: string | null;
+    size?: "sm" | "lg";
+    compact?: boolean;
+  } = $props();
   const c = dict("servers");
 </script>
 

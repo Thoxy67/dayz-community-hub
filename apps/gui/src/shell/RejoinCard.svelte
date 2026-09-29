@@ -55,10 +55,15 @@
         </button>
       </Tooltip>
     </div>
-    <div class="relative mx-2 overflow-hidden rounded-md border border-border bg-panel [@media(max-height:760px)]:hidden">
+    <div
+      class="relative mx-2 overflow-hidden rounded-md border border-border bg-panel [@media(max-height:760px)]:hidden"
+    >
       <div class="flex items-center gap-1.5 border-b border-border/70 px-2 py-1">
         <span class="label-stencil whitespace-nowrap text-fg-faint">{$n.lastPlayed.value}</span>
-        <span class="ml-auto truncate font-mono text-3xs whitespace-nowrap text-fg-faint" title={dateTime(last.ts)}>{relative(last.ts)}</span>
+        <span
+          class="ml-auto truncate font-mono text-3xs whitespace-nowrap text-fg-faint"
+          title={dateTime(last.ts)}>{relative(last.ts)}</span
+        >
         <button
           class="grid size-4 place-items-center rounded-xs text-fg-faint hover:bg-raised hover:text-fg"
           aria-label={$common.close.value}

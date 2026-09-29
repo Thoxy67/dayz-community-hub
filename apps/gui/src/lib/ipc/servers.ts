@@ -28,7 +28,8 @@ export const serverMaps = (): Promise<MapCount[]> => run(commands.serverMaps());
 export const serversLookup = (keys: string[]) => run(commands.serversLookup(keys));
 /** The backend pings every server in its own order; only progress comes back. */
 export const startScan = (onProgress: Channel<ScanProgress>) => run(commands.startScan(onProgress));
-export const getServerDetails = (ip: string, queryPort: number) => run(commands.getServerDetails(ip, queryPort));
+export const getServerDetails = (ip: string, queryPort: number) =>
+  run(commands.getServerDetails(ip, queryPort));
 export const getAppStats = () => run(commands.getAppStats());
 export const fetchSteamPlayerCount = () => run(commands.fetchSteamPlayerCount());
 

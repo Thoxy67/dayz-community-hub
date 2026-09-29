@@ -44,9 +44,15 @@
   </span>
 {/if}
 {#if password}<Lock class="size-3 shrink-0 text-err" aria-label={$c.passwordProtected.value} />{/if}
-{#if savedPassword}<KeyRound class="size-3 shrink-0 text-ok" aria-label={$c.savedPassword.value} />{/if}
+{#if savedPassword}<KeyRound
+    class="size-3 shrink-0 text-ok"
+    aria-label={$c.savedPassword.value}
+  />{/if}
 {#if firstPerson}
-  <span class="shrink-0 rounded-xs bg-warn/15 px-1 font-mono text-3xs font-semibold text-warn" title={$c.firstPerson.value}>1PP</span>
+  <span
+    class="shrink-0 rounded-xs bg-warn/15 px-1 font-mono text-3xs font-semibold text-warn"
+    title={$c.firstPerson.value}>1PP</span
+  >
 {/if}
 {#if battleye}
   <!-- A drawn shield rather than BattlEye's logo, which at 12 px was a yellow

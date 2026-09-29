@@ -41,7 +41,12 @@
   {:else}
     <ul class="m-0 mt-1.5 max-h-64 list-none overflow-y-auto border-y border-border/60 p-0">
       {#each direct.args as a, i (a.id)}
-        <li class={cn("group flex h-row items-center gap-2 border-b border-border/40 px-3 last:border-0", !a.enabled && "opacity-50")}>
+        <li
+          class={cn(
+            "group flex h-row items-center gap-2 border-b border-border/40 px-3 last:border-0",
+            !a.enabled && "opacity-50",
+          )}
+        >
           <Checkbox
             checked={a.enabled}
             onchange={() => direct.toggleArg(a.id)}
@@ -56,7 +61,9 @@
           <Tag tone={a.fromServer ? "accent" : "neutral"}>
             {a.fromServer ? $c.detected.value : a.kind === "mod" ? $c.mod.value : $c.custom.value}
           </Tag>
-          <span class="flex opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          <span
+            class="flex opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+          >
             <button
               class="grid size-5 place-items-center rounded-xs text-fg-faint hover:bg-raised hover:text-fg disabled:opacity-30"
               aria-label={$c.moveUp.value}
@@ -90,7 +97,13 @@
       <p class="m-0 text-3xs text-fg-faint">{$c.allModsAdded.value}</p>
     {:else}
       <div class="flex gap-1.5">
-        <Select bind:value={pick} options={available} placeholder={$c.pickMod.value} aria-label={$c.pickMod.value} class="min-w-0 flex-1" />
+        <Select
+          bind:value={pick}
+          options={available}
+          placeholder={$c.pickMod.value}
+          aria-label={$c.pickMod.value}
+          class="min-w-0 flex-1"
+        />
         <Button
           disabled={!pick}
           onclick={() => {
@@ -108,8 +121,15 @@
         custom = "";
       }}
     >
-      <Input bind:value={custom} placeholder={$c.customArgPlaceholder.value} aria-label={$c.customArg.value} class="min-w-0 flex-1 font-mono" />
-      <Button type="submit" disabled={!custom.trim()}><Plus class="size-icon-sm" />{$c.addArg.value}</Button>
+      <Input
+        bind:value={custom}
+        placeholder={$c.customArgPlaceholder.value}
+        aria-label={$c.customArg.value}
+        class="min-w-0 flex-1 font-mono"
+      />
+      <Button type="submit" disabled={!custom.trim()}
+        ><Plus class="size-icon-sm" />{$c.addArg.value}</Button
+      >
     </form>
   </div>
 
@@ -121,7 +141,9 @@
       class="block max-h-24 overflow-y-auto rounded-sm border border-border bg-plot px-2 py-1.5 font-mono text-3xs leading-relaxed break-all text-fg-muted"
       data-selectable
     >
-      -connect={direct.ip || "…"} -port={direct.gamePort || "…"}{direct.password ? " -password=••••" : ""}{#each direct.launchArgs as arg (arg)}{" "}<span class="text-mods">{arg}</span>{/each}
+      -connect={direct.ip || "…"} -port={direct.gamePort || "…"}{direct.password
+        ? " -password=••••"
+        : ""}{#each direct.launchArgs as arg (arg)}{" "}<span class="text-mods">{arg}</span>{/each}
     </code>
   </div>
 </div>

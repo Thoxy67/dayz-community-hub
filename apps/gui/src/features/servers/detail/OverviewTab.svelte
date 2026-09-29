@@ -26,7 +26,8 @@
   let { m, go }: { m: DetailModel; go: (tab: DetailTab) => void } = $props();
   const c = dict("detail");
 
-  const yesNo = (v: boolean | null | undefined) => (v == null ? "—" : v ? $c.yes.value : $c.no.value);
+  const yesNo = (v: boolean | null | undefined) =>
+    v == null ? "—" : v ? $c.yes.value : $c.no.value;
 
   /** The server as a dzch:// link, which opens this app straight on it. */
   const shareLink = $derived.by(() => {
@@ -41,7 +42,8 @@
   const km = $derived.by(() => {
     const loc = m.bm?.data?.location;
     const me = profile.data?.user_location;
-    if (!loc || loc[0] == null || loc[1] == null || !me || me[0] == null || me[1] == null) return null;
+    if (!loc || loc[0] == null || loc[1] == null || !me || me[0] == null || me[1] == null)
+      return null;
     return Math.round(distanceKm([me[0], me[1]], [loc[0], loc[1]]));
   });
 
@@ -51,9 +53,20 @@
     if (s) {
       f.push(
         { label: $c.version.value, value: s.version || "—", tone: "text-fg-muted" },
-        { label: $c.platform.value, value: s.environment === "w" ? $c.windows.value : $c.linux.value },
-        { label: $c.battleye.value, value: yesNo(s.battl_eye), tone: s.battl_eye ? "text-ok" : "text-fg-muted" },
-        { label: $c.firstPerson.value, value: yesNo(s.first_person_only), tone: s.first_person_only ? "text-warn" : "text-fg-muted" },
+        {
+          label: $c.platform.value,
+          value: s.environment === "w" ? $c.windows.value : $c.linux.value,
+        },
+        {
+          label: $c.battleye.value,
+          value: yesNo(s.battl_eye),
+          tone: s.battl_eye ? "text-ok" : "text-fg-muted",
+        },
+        {
+          label: $c.firstPerson.value,
+          value: yesNo(s.first_person_only),
+          tone: s.first_person_only ? "text-warn" : "text-fg-muted",
+        },
         { label: $c.vac.value, value: yesNo(s.vac), tone: s.vac ? "text-ok" : "text-fg-muted" },
       );
     } else if (m.a2s?.version) {
@@ -65,20 +78,35 @@
     if (d) {
       if (!s) {
         f.push(
-          { label: $c.battleye.value, value: yesNo(d.battleye), tone: d.battleye ? "text-ok" : "text-fg-muted" },
-          { label: $c.firstPerson.value, value: yesNo(d.first_person_only), tone: d.first_person_only ? "text-warn" : "text-fg-muted" },
+          {
+            label: $c.battleye.value,
+            value: yesNo(d.battleye),
+            tone: d.battleye ? "text-ok" : "text-fg-muted",
+          },
+          {
+            label: $c.firstPerson.value,
+            value: yesNo(d.first_person_only),
+            tone: d.first_person_only ? "text-warn" : "text-fg-muted",
+          },
         );
       }
       f.push({
         label: $c.hive.value,
-        value: d.official ? $c.hiveOfficial.value : d.private_hive ? $c.hivePrivate.value : $c.hivePublic.value,
+        value: d.official
+          ? $c.hiveOfficial.value
+          : d.private_hive
+            ? $c.hivePrivate.value
+            : $c.hivePublic.value,
         tone: d.official ? "text-accent" : "text-fg-muted",
         title: $c.hiveHint.value,
       });
       if (d.login_queue != null) {
         f.push({
           label: $c.loginQueue.value,
-          value: d.login_queue > 0 ? $c.queueWaiting({ count: d.login_queue }).value : $c.queueEmpty.value,
+          value:
+            d.login_queue > 0
+              ? $c.queueWaiting({ count: d.login_queue }).value
+              : $c.queueEmpty.value,
           tone: d.login_queue > 0 ? "text-warn" : "text-fg-muted",
         });
       }
@@ -86,19 +114,25 @@
         const x = (v: number) => num(Math.round(v * 10) / 10);
         f.push({
           label: $c.dmTimeSpeed.value,
-          value: $c.dmTimeSpeedValue({ day: x(d.time_accel), night: x(d.night_time_accel ?? d.time_accel) }).value,
+          value: $c.dmTimeSpeedValue({
+            day: x(d.time_accel),
+            night: x(d.night_time_accel ?? d.time_accel),
+          }).value,
         });
       }
-      if (d.whitelisted) f.push({ label: $c.whitelist.value, value: $c.yes.value, tone: "text-warn" });
+      if (d.whitelisted)
+        f.push({ label: $c.whitelist.value, value: $c.yes.value, tone: "text-warn" });
     }
     if (m.count) {
       f.push(
         { label: $c.maxPlayers.value, value: num(m.count.max) },
         { label: $c.realPlayers.value, value: num(Math.max(0, m.count.players - m.count.bots)) },
       );
-      if (m.count.bots > 0) f.push({ label: $c.bots.value, value: num(m.count.bots), tone: "text-warn" });
+      if (m.count.bots > 0)
+        f.push({ label: $c.bots.value, value: num(m.count.bots), tone: "text-warn" });
     }
-    if (km !== null) f.push({ label: $c.bmDistance.value, value: $c.distanceKm({ km: num(km) }).value });
+    if (km !== null)
+      f.push({ label: $c.bmDistance.value, value: $c.distanceKm({ km: num(km) }).value });
     // Rank and uptime: DayZ Metrics first (no key), BattleMetrics if that is all there is.
     const x = m.metrics;
     const bm = m.bm?.data;
@@ -118,7 +152,10 @@
     if (wipe?.next) {
       f.push({
         label: $c.dmNextWipe.value,
-        value: wipe.days_until != null ? $c.dmInDays({ days: Math.round(wipe.days_until) }).value : wipe.next,
+        value:
+          wipe.days_until != null
+            ? $c.dmInDays({ days: Math.round(wipe.days_until) }).value
+            : wipe.next,
         title: `${wipe.next} · ${wipe.next_source === "announced" ? $c.dmAnnounced.value : $c.dmPredicted.value}`,
       });
     }
@@ -129,7 +166,9 @@
   const stale = $derived(m.modTotals.stale.length);
   const top = $derived(m.players.slice(0, 5));
   const lastPlayed = $derived(m.history[0]?.ts ?? null);
-  const fav = $derived(profile.isFavorite(m.ip, m.queryPort) || profile.isFavorite(m.ip, m.gamePort));
+  const fav = $derived(
+    profile.isFavorite(m.ip, m.queryPort) || profile.isFavorite(m.ip, m.gamePort),
+  );
 </script>
 
 {#if m.population === "fake" || m.population === "suspect"}
@@ -139,7 +178,9 @@
 <Section icon={Plug} title={$c.connection.value}>
   <dl class="m-0 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 text-2xs">
     <dt class="text-fg-faint">{$c.address.value}</dt>
-    <dd class="m-0 min-w-0"><Copy text={m.address} title={$c.copyIp.value} class="text-xs text-fg" /></dd>
+    <dd class="m-0 min-w-0">
+      <Copy text={m.address} title={$c.copyIp.value} class="text-xs text-fg" />
+    </dd>
     <dt class="text-fg-faint">{$c.gamePort.value} · {$c.queryPort.value}</dt>
     <dd class="m-0 font-mono text-fg-muted">{m.gamePort} · {m.queryPort}</dd>
     {#if m.listed?.password}
@@ -159,7 +200,9 @@
 <Section icon={Info} title={$c.details.value}>
   <Facts items={facts} />
   {#if m.live.error && !m.a2s}
-    <div class="flex items-center gap-2 rounded-sm border border-err/30 bg-err/10 px-2 py-1.5 text-2xs text-err">
+    <div
+      class="flex items-center gap-2 rounded-sm border border-err/30 bg-err/10 px-2 py-1.5 text-2xs text-err"
+    >
       <span class="min-w-0 flex-1">{$c.liveFailed.value}</span>
     </div>
   {/if}
@@ -168,23 +211,38 @@
 <Section icon={Puzzle} title={$c.modsState.value}>
   {#if m.listed && m.listed.mods_count > 0}
     {#if m.modsEntry?.loading && !m.modsEntry.mods}
-      <div class="flex items-center gap-2 text-2xs text-fg-faint"><Spinner class="size-3.5" />{$c.loadingMods({ count: m.listed.mods_count }).value}</div>
+      <div class="flex items-center gap-2 text-2xs text-fg-faint">
+        <Spinner class="size-3.5" />{$c.loadingMods({ count: m.listed.mods_count }).value}
+      </div>
     {:else if m.modRows.length > 0}
       <div class="flex flex-wrap items-center gap-1.5 text-2xs">
-        <span class="rounded-xs bg-ok/12 px-1.5 py-0.5 font-mono text-ok">{m.modTotals.installed} ✓</span>
-        {#if missing}<span class="rounded-xs bg-err/12 px-1.5 py-0.5 font-mono text-err">{missing} {$c.modMissing.value}</span>{/if}
-        {#if stale}<span class="rounded-xs bg-warn/12 px-1.5 py-0.5 font-mono text-warn">{stale} {$c.modStale.value}</span>{/if}
-        <button class="ml-auto text-fg-faint underline-offset-2 hover:text-fg hover:underline" onclick={() => go("mods")}>
+        <span class="rounded-xs bg-ok/12 px-1.5 py-0.5 font-mono text-ok"
+          >{m.modTotals.installed} ✓</span
+        >
+        {#if missing}<span class="rounded-xs bg-err/12 px-1.5 py-0.5 font-mono text-err"
+            >{missing} {$c.modMissing.value}</span
+          >{/if}
+        {#if stale}<span class="rounded-xs bg-warn/12 px-1.5 py-0.5 font-mono text-warn"
+            >{stale} {$c.modStale.value}</span
+          >{/if}
+        <button
+          class="ml-auto text-fg-faint underline-offset-2 hover:text-fg hover:underline"
+          onclick={() => go("mods")}
+        >
           {$c.seeAll({ count: m.modRows.length }).value}
         </button>
       </div>
       {#if missing > 0 || stale > 0}
         <Button variant="accent" onclick={() => m.listed && connect.server(m.listed)}>
           <Download class="size-icon-sm" />
-          {missing > 0 ? $c.downloadAndJoin({ count: missing }).value : $c.updateAndJoin({ count: stale }).value}
+          {missing > 0
+            ? $c.downloadAndJoin({ count: missing }).value
+            : $c.updateAndJoin({ count: stale }).value}
         </Button>
       {:else}
-        <p class="m-0 flex items-center gap-1.5 text-2xs text-ok"><CircleCheck class="size-3.5" />{$c.allInstalled.value}</p>
+        <p class="m-0 flex items-center gap-1.5 text-2xs text-ok">
+          <CircleCheck class="size-3.5" />{$c.allInstalled.value}
+        </p>
       {/if}
     {:else if m.modsEntry?.error}
       <p class="m-0 text-2xs text-warn">{$c.modsFailed({ count: m.listed.mods_count }).value}</p>
@@ -213,7 +271,10 @@
       {/each}
     </ol>
     {#if m.players.length > top.length}
-      <button class="self-start text-2xs text-fg-faint underline-offset-2 hover:text-fg hover:underline" onclick={() => go("players")}>
+      <button
+        class="self-start text-2xs text-fg-faint underline-offset-2 hover:text-fg hover:underline"
+        onclick={() => go("players")}
+      >
         {$c.seeAll({ count: m.players.length }).value}
       </button>
     {/if}
@@ -231,10 +292,14 @@
     <li class="flex items-center gap-2">
       <History class="size-3.5 shrink-0 text-fg-faint" />
       {#if lastPlayed !== null}
-        <span class="text-fg" title={dateTime(lastPlayed)}>{$c.lastPlayedHere({ when: relative(lastPlayed) }).value}</span>
+        <span class="text-fg" title={dateTime(lastPlayed)}
+          >{$c.lastPlayedHere({ when: relative(lastPlayed) }).value}</span
+        >
         <span class="text-fg-faint">·</span>
         <span class="text-fg-muted">
-          {m.history.length === 1 ? $c.sessionsOne.value : $c.sessions({ count: m.history.length }).value}
+          {m.history.length === 1
+            ? $c.sessionsOne.value
+            : $c.sessions({ count: m.history.length }).value}
         </span>
       {:else}
         <span class="text-fg-faint">{$c.neverPlayed.value}</span>
@@ -242,7 +307,9 @@
     </li>
     <li class="flex items-center gap-2">
       <Star class="size-3.5 shrink-0 {fav ? 'fill-warn text-warn' : 'text-fg-faint'}" />
-      <span class={fav ? "text-fg" : "text-fg-faint"}>{fav ? $c.inFavorites.value : $c.notInFavorites.value}</span>
+      <span class={fav ? "text-fg" : "text-fg-faint"}
+        >{fav ? $c.inFavorites.value : $c.notInFavorites.value}</span
+      >
     </li>
   </ul>
 </Section>

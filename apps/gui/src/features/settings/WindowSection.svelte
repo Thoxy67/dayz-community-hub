@@ -11,7 +11,12 @@
   const frame = $derived(theme.frame);
 </script>
 
-<Section id="window" title={$s.sectionWindow.value} description={$s.windowHint.value} icon={AppWindow}>
+<Section
+  id="window"
+  title={$s.sectionWindow.value}
+  description={$s.windowHint.value}
+  icon={AppWindow}
+>
   <Field label={$s.windowRadius.value}>
     <Slider
       value={frame.radius}
@@ -38,8 +43,16 @@
   </Field>
   {#if frame.border > 0}
     <div class="grid grid-cols-2 gap-px bg-border/60">
-      <ColorToken value={frame.borderFocus} label={$s.windowBorderFocus.value} onchange={(v) => theme.setFrame({ borderFocus: v })} />
-      <ColorToken value={frame.borderBlur} label={$s.windowBorderBlur.value} onchange={(v) => theme.setFrame({ borderBlur: v })} />
+      <ColorToken
+        value={frame.borderFocus}
+        label={$s.windowBorderFocus.value}
+        onchange={(v) => theme.setFrame({ borderFocus: v })}
+      />
+      <ColorToken
+        value={frame.borderBlur}
+        label={$s.windowBorderBlur.value}
+        onchange={(v) => theme.setFrame({ borderBlur: v })}
+      />
     </div>
   {/if}
 </Section>

@@ -30,7 +30,11 @@
   id="update"
   class={cn(
     "rounded-md border bg-bg/60 transition-shadow",
-    highlight ? "border-accent shadow-glow" : updater.state === "available" ? "border-ok/50" : "border-border",
+    highlight
+      ? "border-accent shadow-glow"
+      : updater.state === "available"
+        ? "border-ok/50"
+        : "border-border",
   )}
 >
   <div class="flex items-center gap-2 border-b border-border/60 px-pad py-2">
@@ -43,14 +47,19 @@
       onclick={() => updater.check()}
       disabled={updater.state === "checking" || updater.state === "downloading"}
     >
-      <RefreshCw class={cn("size-3", updater.state === "checking" && "animate-spin")} />{$a.checkUpdates.value}
+      <RefreshCw class={cn("size-3", updater.state === "checking" && "animate-spin")} />{$a
+        .checkUpdates.value}
     </Button>
   </div>
   <div class="px-pad py-3">
     {#if updater.state === "checking" || updater.state === "idle"}
-      <p class="m-0 flex items-center gap-2 text-xs text-fg-muted"><Spinner />{$a.updatesChecking.value}</p>
+      <p class="m-0 flex items-center gap-2 text-xs text-fg-muted">
+        <Spinner />{$a.updatesChecking.value}
+      </p>
     {:else if updater.state === "up_to_date"}
-      <p class="m-0 flex items-center gap-2 text-sm text-ok"><CircleCheck class="size-icon" />{$a.updatesUpToDate.value}</p>
+      <p class="m-0 flex items-center gap-2 text-sm text-ok">
+        <CircleCheck class="size-icon" />{$a.updatesUpToDate.value}
+      </p>
       <p class="m-0 mt-0.5 text-2xs text-fg-faint">{$a.updatesLatest({ version }).value}</p>
     {:else if updater.state === "available" && updater.info}
       <div class="flex items-start gap-3">
@@ -62,7 +71,8 @@
           </p>
           <p class="m-0 font-mono text-2xs text-fg-faint">
             {$a.updatesCurrent.value} v{updater.info.currentVersion}
-            {#if updater.info.date}· {$a.updatesReleased({ date: date(updater.info.date) }).value}{/if}
+            {#if updater.info.date}· {$a.updatesReleased({ date: date(updater.info.date) })
+                .value}{/if}
           </p>
           {#if updater.info.body}
             <pre
@@ -80,8 +90,15 @@
         <p class="m-0 mt-2 text-xs text-fg-muted">{whyNot}</p>
       {/if}
     {:else if updater.state === "downloading"}
-      <p class="m-0 mb-2 text-xs text-fg">{$a.updatesDownloading({ version: updater.info?.version ?? "" }).value}</p>
-      <Meter value={updater.percent} max={100} size="md" label={$a.updatesDownloading({ version: updater.info?.version ?? "" }).value} />
+      <p class="m-0 mb-2 text-xs text-fg">
+        {$a.updatesDownloading({ version: updater.info?.version ?? "" }).value}
+      </p>
+      <Meter
+        value={updater.percent}
+        max={100}
+        size="md"
+        label={$a.updatesDownloading({ version: updater.info?.version ?? "" }).value}
+      />
       <p class="m-0 mt-1 flex justify-between font-mono text-2xs text-fg-faint">
         <span>{bytes(updater.received)}{updater.total ? ` / ${bytes(updater.total)}` : ""}</span>
         <span>{updater.percent}%</span>
@@ -89,7 +106,9 @@
     {:else if updater.state === "done"}
       <div class="flex items-center gap-3">
         <div class="min-w-0 flex-1">
-          <p class="m-0 flex items-center gap-2 text-sm text-ok"><PackageCheck class="size-icon" />{$a.updatesDone.value}</p>
+          <p class="m-0 flex items-center gap-2 text-sm text-ok">
+            <PackageCheck class="size-icon" />{$a.updatesDone.value}
+          </p>
           <p class="m-0 mt-0.5 text-2xs text-fg-faint">{$a.updatesDoneHint.value}</p>
         </div>
         <Button variant="play" size="lg" onclick={() => updater.restart()}>
@@ -98,9 +117,14 @@
       </div>
     {:else}
       <p class="m-0 flex items-start gap-2 text-xs text-err">
-        <TriangleAlert class="mt-0.5 size-icon-sm shrink-0" /><span class="font-mono text-2xs" data-selectable>{updater.error}</span>
+        <TriangleAlert class="mt-0.5 size-icon-sm shrink-0" /><span
+          class="font-mono text-2xs"
+          data-selectable>{updater.error}</span
+        >
       </p>
-      <Button class="mt-2" onclick={() => updater.check()}><RefreshCw class="size-3" />{$a.updatesRetry.value}</Button>
+      <Button class="mt-2" onclick={() => updater.check()}
+        ><RefreshCw class="size-3" />{$a.updatesRetry.value}</Button
+      >
     {/if}
   </div>
 </div>

@@ -57,7 +57,14 @@
   <div class="p-2">
     <pre
       class="m-0 max-h-72 overflow-y-auto rounded-sm bg-plot px-2 py-1.5 font-mono text-2xs leading-relaxed whitespace-pre-wrap text-fg-muted"
-      data-selectable>{#if program}<span class="text-fg-faint">{program}</span>{/if}{#each flags as f, i (i)}{program || i > 0 ? " " : ""}<span class="whitespace-nowrap"><span class="text-accent">{f.split("=")[0]}</span>{#if f.includes("=")}<span class="text-fg-faint">=</span><span class="text-ok">{f.slice(f.indexOf("=") + 1)}</span>{/if}</span>{/each}{#if flags.length === 0}{program ? "\n" : ""}<span class="text-fg-faint italic">{empty}</span>{/if}</pre>
+      data-selectable>{#if program}<span class="text-fg-faint">{program}</span
+        >{/if}{#each flags as f, i (i)}{program || i > 0 ? " " : ""}<span class="whitespace-nowrap"
+          ><span class="text-accent">{f.split("=")[0]}</span>{#if f.includes("=")}<span
+              class="text-fg-faint">=</span
+            ><span class="text-ok">{f.slice(f.indexOf("=") + 1)}</span>{/if}</span
+        >{/each}{#if flags.length === 0}{program ? "\n" : ""}<span class="text-fg-faint italic"
+          >{empty}</span
+        >{/if}</pre>
     {#if hint}<p class="m-0 mt-1.5 text-3xs leading-snug text-fg-faint">{hint}</p>{/if}
   </div>
 </SectionCard>

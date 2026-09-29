@@ -27,7 +27,9 @@
   <div class="min-w-0 flex-1 [&_button]:w-full">
     <JoinButton ip={m.ip} port={m.listed ? m.queryPort : m.gamePort} size="lg" />
   </div>
-  <span class="grid size-control-lg place-items-center rounded-sm border border-border [&>button]:size-full">
+  <span
+    class="grid size-control-lg place-items-center rounded-sm border border-border [&>button]:size-full"
+  >
     <FavoriteButton name={m.title} ip={m.ip} port={m.queryPort} size="md" />
   </span>
   <IconButton
@@ -36,7 +38,9 @@
     variant="default"
     onclick={() => connect.openInDirect(m.ip, m.gamePort, m.queryPort)}
   />
-  <span class="grid size-control place-items-center rounded-sm border border-border [&>button]:size-full">
+  <span
+    class="grid size-control place-items-center rounded-sm border border-border [&>button]:size-full"
+  >
     <ExcludeButton ip={m.ip} always />
   </span>
   <IconButton

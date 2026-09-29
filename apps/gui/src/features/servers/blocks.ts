@@ -25,6 +25,12 @@ export function blocksFor(first: number, last: number, total: number, size = BLO
 }
 
 /** Whether row `index` lies outside the blocks worth keeping around the view. */
-export function isFar(index: number, first: number, last: number, size = BLOCK, keep = KEEP_BLOCKS): boolean {
+export function isFar(
+  index: number,
+  first: number,
+  last: number,
+  size = BLOCK,
+  keep = KEEP_BLOCKS,
+): boolean {
   return index < first - keep * size || index >= last + keep * size;
 }

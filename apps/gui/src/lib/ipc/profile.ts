@@ -5,12 +5,14 @@ import type { ProfileSettingsInput } from "./types";
 export type ProfileSettings = ProfileSettingsInput;
 
 export const getProfile = () => run(commands.getProfile());
-export const saveProfileSettings = (settings: ProfileSettings) => run(commands.saveProfileSettings(settings));
+export const saveProfileSettings = (settings: ProfileSettings) =>
+  run(commands.saveProfileSettings(settings));
 
 export const addFavorite = (name: string, ip: string, port: number, password: string | null) =>
   run(commands.addFavorite(name, ip, port, password));
 export const removeFavorite = (ip: string, port: number) => run(commands.removeFavorite(ip, port));
-export const removeHistoryEntry = (ip: string, port: number) => run(commands.removeHistoryEntry(ip, port));
+export const removeHistoryEntry = (ip: string, port: number) =>
+  run(commands.removeHistoryEntry(ip, port));
 export const clearHistory = () => run(commands.clearHistory());
 export const addExcludedIp = (ip: string) => run(commands.addExcludedIp(ip));
 export const removeExcludedIp = (ip: string) => run(commands.removeExcludedIp(ip));

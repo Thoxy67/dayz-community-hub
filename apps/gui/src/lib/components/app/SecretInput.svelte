@@ -11,7 +11,12 @@
     id,
     placeholder = "",
     autocomplete = "off",
-  }: { value: string; id?: string; placeholder?: string; autocomplete?: "off" | "current-password" } = $props();
+  }: {
+    value: string;
+    id?: string;
+    placeholder?: string;
+    autocomplete?: "off" | "current-password";
+  } = $props();
 
   const s = dict("settings");
   let shown = $state(false);

@@ -145,7 +145,9 @@
               <dt class="text-fg-faint">{$o.mode.value}</dt>
               <dd class="m-0 text-fg-muted">{kindLabel(m)}</dd>
               <dt class="text-fg-faint">{$o.folder.value}</dt>
-              <dd class="m-0 truncate font-mono text-fg-muted" title={m.id} data-selectable>{m.id}</dd>
+              <dd class="m-0 truncate font-mono text-fg-muted" title={m.id} data-selectable>
+                {m.id}
+              </dd>
             </dl>
             <div class="mt-auto flex items-center gap-1 border-t border-border/70 px-2 py-1.5">
               <Button variant="play" class="flex-1" onclick={() => offline.launch(m.id)}>
@@ -193,7 +195,9 @@
           <ExternalLink class="mt-0.5 size-icon-sm shrink-0 text-accent" />
           <span class="min-w-0">
             <span class="block text-2xs font-medium text-accent">{$o.project.value}</span>
-            <span class="block truncate font-mono text-3xs text-fg-faint">github.com/Arkensor/DayZCommunityOfflineMode</span>
+            <span class="block truncate font-mono text-3xs text-fg-faint"
+              >github.com/Arkensor/DayZCommunityOfflineMode</span
+            >
           </span>
         </button>
       </div>
@@ -201,7 +205,11 @@
     <Panel title={$o.maintenance.value} scroll={false} class="flex-1">
       <div class="space-y-2 p-3">
         <div>
-          <Button class="w-full justify-start" disabled={busy || !installed} onclick={() => offline.clearSaves()}>
+          <Button
+            class="w-full justify-start"
+            disabled={busy || !installed}
+            onclick={() => offline.clearSaves()}
+          >
             <Eraser class="size-icon-sm" />{$o.clearSaves.value}
           </Button>
           <p class="m-0 mt-1 text-3xs leading-snug text-fg-faint">{$o.clearSavesTitle.value}</p>

@@ -38,7 +38,10 @@
   const country = $derived.by(() => {
     if (!x?.country) return null;
     try {
-      return new Intl.DisplayNames([getLocale()], { type: "region" }).of(x.country.toUpperCase()) ?? x.country;
+      return (
+        new Intl.DisplayNames([getLocale()], { type: "region" }).of(x.country.toUpperCase()) ??
+        x.country
+      );
     } catch {
       return x.country;
     }
@@ -57,7 +60,8 @@
     if (x.time_accel != null) {
       f.push({
         label: $c.dmTimeSpeed.value,
-        value: $c.dmTimeSpeedValue({ day: x.time_accel, night: x.night_time_accel ?? x.time_accel }).value,
+        value: $c.dmTimeSpeedValue({ day: x.time_accel, night: x.night_time_accel ?? x.time_accel })
+          .value,
       });
     }
     if (x.vanilla_band) {
@@ -70,7 +74,12 @@
     }
     if (x.playstyle) f.push({ label: $c.dmStyle.value, value: x.playstyle });
     if (x.mod_total_bytes) f.push({ label: $c.dmModsSize.value, value: bytes(x.mod_total_bytes) });
-    if (x.first_seen) f.push({ label: $c.dmTrackedSince.value, value: date(x.first_seen), title: dateTime(Date.parse(x.first_seen) / 1000) });
+    if (x.first_seen)
+      f.push({
+        label: $c.dmTrackedSince.value,
+        value: date(x.first_seen),
+        title: dateTime(Date.parse(x.first_seen) / 1000),
+      });
     if (x.ping_lo != null && x.ping_hi != null) {
       f.push({
         label: $c.dmPingRange.value,
@@ -132,11 +141,17 @@
       >
         <div class="bg-panel px-2 py-1.5">
           <div class="label-stencil text-fg-faint">{$c.bmRank.value}</div>
-          <div class="title-display num text-xl text-accent">{x.rank_pos != null ? `#${num(x.rank_pos)}` : "—"}</div>
+          <div class="title-display num text-xl text-accent">
+            {x.rank_pos != null ? `#${num(x.rank_pos)}` : "—"}
+          </div>
         </div>
         <div class="bg-panel px-2 py-1.5">
           <div class="label-stencil text-fg-faint">{$c.dmUptime7d.value}</div>
-          <div class="title-display num text-xl {x.uptime_7d != null ? uptimeTone(x.uptime_7d) : 'text-fg-faint'}">
+          <div
+            class="title-display num text-xl {x.uptime_7d != null
+              ? uptimeTone(x.uptime_7d)
+              : 'text-fg-faint'}"
+          >
             {x.uptime_7d != null ? `${x.uptime_7d.toFixed(1)}%` : "—"}
           </div>
         </div>
@@ -157,12 +172,14 @@
             {#if x.wow_pct != null}
               {@const up = x.wow_pct >= 0}
               <span
-                class="inline-flex items-center gap-0.5 font-mono text-2xs {up ? 'text-ok' : 'text-err'}"
+                class="inline-flex items-center gap-0.5 font-mono text-2xs {up
+                  ? 'text-ok'
+                  : 'text-err'}"
                 title={$c.dmTrend.value}
               >
-                {#if up}<TrendingUp class="size-3" />{:else}<TrendingDown class="size-3" />{/if}{up ? "+" : ""}{Math.round(
-                  x.wow_pct,
-                )}%
+                {#if up}<TrendingUp class="size-3" />{:else}<TrendingDown class="size-3" />{/if}{up
+                  ? "+"
+                  : ""}{Math.round(x.wow_pct)}%
               </span>
             {/if}
           </div>
@@ -171,22 +188,32 @@
 
       {#if history.length > 1}
         <!-- Drawn taller than the kit's default: here the chart is the tab's point. -->
-        <div class="[&_svg]:h-36"><PlayerChart points={history} max={x.max_players ?? undefined} /></div>
+        <div class="[&_svg]:h-36">
+          <PlayerChart points={history} max={x.max_players ?? undefined} />
+        </div>
       {/if}
     </div>
 
     {#if x.restart || x.wipe}
       <Section icon={CalendarClock} title={$c.dmSchedule.value}>
-        <dl class="m-0 grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1.5 text-2xs">
+        <dl
+          class="m-0 grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1.5 text-2xs"
+        >
           {#if x.restart?.next_restart}
             <dt class="text-fg-faint">{$c.dmNextRestart.value}</dt>
             <dd class="m-0 text-fg" title={dateTime(Date.parse(x.restart.next_restart) / 1000)}>
-              {nextRestart ? $c.dmIn({ time: nextRestart }).value : dateTime(Date.parse(x.restart.next_restart) / 1000)}
+              {nextRestart
+                ? $c.dmIn({ time: nextRestart }).value
+                : dateTime(Date.parse(x.restart.next_restart) / 1000)}
               {#if x.restart.period_hours}
-                <span class="text-fg-faint">· {$c.dmEvery({ hours: x.restart.period_hours }).value}</span>
+                <span class="text-fg-faint"
+                  >· {$c.dmEvery({ hours: x.restart.period_hours }).value}</span
+                >
               {/if}
               {#if x.restart.slots_utc.length}
-                <span class="mt-0.5 block font-mono text-3xs text-fg-faint">{x.restart.slots_utc.join(" · ")} UTC</span>
+                <span class="mt-0.5 block font-mono text-3xs text-fg-faint"
+                  >{x.restart.slots_utc.join(" · ")} UTC</span
+                >
               {/if}
             </dd>
           {/if}
@@ -195,16 +222,22 @@
             <dd class="m-0 text-fg">
               {x.wipe.next}
               {#if x.wipe.days_until != null}
-                <span class="text-fg-muted">· {$c.dmInDays({ days: Math.round(x.wipe.days_until) }).value}</span>
+                <span class="text-fg-muted"
+                  >· {$c.dmInDays({ days: Math.round(x.wipe.days_until) }).value}</span
+                >
               {/if}
-              <Tag tone={x.wipe.next_source === "announced" ? "ok" : "neutral"}>{source(x.wipe.next_source)}</Tag>
+              <Tag tone={x.wipe.next_source === "announced" ? "ok" : "neutral"}
+                >{source(x.wipe.next_source)}</Tag
+              >
             </dd>
           {/if}
           {#if x.wipe?.last}
             <dt class="text-fg-faint">{$c.dmLastWipe.value}</dt>
             <dd class="m-0 text-fg-muted">
               {x.wipe.last}
-              {#if x.wipe.days_since != null}· {$c.dmDaysAgo({ days: Math.round(x.wipe.days_since) }).value}{/if}
+              {#if x.wipe.days_since != null}· {$c.dmDaysAgo({
+                  days: Math.round(x.wipe.days_since),
+                }).value}{/if}
             </dd>
           {/if}
         </dl>
@@ -247,7 +280,10 @@
     {/if}
 
     <div class="flex items-center gap-3 px-pad py-2.5 text-2xs text-fg-faint">
-      <button class="inline-flex items-center gap-1.5 hover:text-accent" onclick={() => openUrl(x.url)}>
+      <button
+        class="inline-flex items-center gap-1.5 hover:text-accent"
+        onclick={() => openUrl(x.url)}
+      >
         <ExternalLink class="size-3" />{$c.openDm.value}
       </button>
       <span class="ml-auto">{$c.dmSource.value}</span>
@@ -257,7 +293,9 @@
       {#if entry.error.startsWith("Not listed")}
         <Empty icon={ChartLine} title={$c.dmNotListed.value} compact />
       {:else}
-        <div class="flex items-start gap-2 rounded-sm border border-err/30 bg-err/10 px-2 py-1.5 text-2xs text-err">
+        <div
+          class="flex items-start gap-2 rounded-sm border border-err/30 bg-err/10 px-2 py-1.5 text-2xs text-err"
+        >
           <span class="min-w-0 flex-1 break-words">{entry.error}</span>
           <button class="shrink-0 underline" onclick={refresh}>{$c.retry.value}</button>
         </div>

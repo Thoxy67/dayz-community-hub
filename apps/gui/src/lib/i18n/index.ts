@@ -94,4 +94,3 @@ export function dict<K extends DictionaryKeys>(key: K): ReturnType<typeof useInt
 export function words<K extends DictionaryKeys>(key: K) {
   return getIntlayer(key, current);
 }
-

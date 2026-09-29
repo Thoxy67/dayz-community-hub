@@ -31,7 +31,8 @@ class Review {
   }
 
   updateStale() {
-    if (mods.stale.length) this.pending = { kind: "update_stale", mods: mods.stale.map((m) => this.#of(m)) };
+    if (mods.stale.length)
+      this.pending = { kind: "update_stale", mods: mods.stale.map((m) => this.#of(m)) };
   }
   updateAll() {
     if (mods.installed.length)
@@ -87,4 +88,5 @@ export function parseWorkshopIds(text: string): number[] {
   return [...seen];
 }
 
-export const workshopUrl = (id: number) => `https://steamcommunity.com/sharedfiles/filedetails/?id=${id}`;
+export const workshopUrl = (id: number) =>
+  `https://steamcommunity.com/sharedfiles/filedetails/?id=${id}`;

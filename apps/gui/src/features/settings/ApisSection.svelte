@@ -31,7 +31,11 @@
     <span class="ml-auto truncate text-2xs text-fg-faint">{$a.apiSteamHint.value}</span>
   </div>
   <Field label={$s.apiKey.value} hint={$s.steamApiHint.value} for="set-apikey">
-    <Secret id="set-apikey" bind:value={form.f.steamApiKey} placeholder="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" />
+    <Secret
+      id="set-apikey"
+      bind:value={form.f.steamApiKey}
+      placeholder="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+    />
     {@render link("https://steamcommunity.com/dev/apikey", $s.getKey.value)}
   </Field>
   <Field label={$s.steamId.value} hint={$s.steamIdHint.value} for="set-steamid">

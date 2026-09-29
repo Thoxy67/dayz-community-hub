@@ -16,7 +16,9 @@ export function num(n: number | null | undefined): string {
 
 /** 18.4k */
 export function compact(n: number | null | undefined): string {
-  return n == null ? "—" : numberFormat({ notation: "compact", maximumFractionDigits: 1 }).format(n);
+  return n == null
+    ? "—"
+    : numberFormat({ notation: "compact", maximumFractionDigits: 1 }).format(n);
 }
 
 export { bytes, duration, distanceKm } from "./units";
@@ -44,5 +46,9 @@ export function dateTime(ts: number): string {
 
 /** A calendar date. */
 export function date(d: Date | string | number): string {
-  return new Date(d).toLocaleDateString(getLocale(), { year: "numeric", month: "short", day: "numeric" });
+  return new Date(d).toLocaleDateString(getLocale(), {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }

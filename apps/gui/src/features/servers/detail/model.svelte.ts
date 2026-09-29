@@ -39,7 +39,11 @@ export function detailModel(src: () => { ip: string; port: number; name: string 
     ((listed ? modsEntry?.mods : a2s?.mods_a2s) ?? []).map((m) => {
       const have = mods.byId.get(m.steam_workshop_id);
       const state: ModState = !have ? "missing" : have.update_available ? "stale" : "ok";
-      return { id: m.steam_workshop_id, name: m.name || have?.name || `Workshop ${m.steam_workshop_id}`, state };
+      return {
+        id: m.steam_workshop_id,
+        name: m.name || have?.name || `Workshop ${m.steam_workshop_id}`,
+        state,
+      };
     }),
   );
   const modTotals = $derived({
@@ -47,7 +51,9 @@ export function detailModel(src: () => { ip: string; port: number; name: string 
     stale: modRows.filter((m) => m.state === "stale"),
     installed: modRows.filter((m) => m.state !== "missing").length,
   });
-  const modsCount = $derived(modsEntry?.mods?.length ?? listed?.mods_count ?? a2s?.mods_a2s?.length ?? 0);
+  const modsCount = $derived(
+    modsEntry?.mods?.length ?? listed?.mods_count ?? a2s?.mods_a2s?.length ?? 0,
+  );
   const metricsEntry = $derived(serverData.metrics(ip, gamePort, queryPort));
   const metrics = $derived(metricsEntry.data);
   // "fake" when the site says so outright or its behaviour check does; "suspect"
@@ -67,7 +73,9 @@ export function detailModel(src: () => { ip: string; port: number; name: string 
     [...(a2s?.players_list ?? [])].sort((a, b) => (b.duration ?? 0) - (a.duration ?? 0)),
   );
   const history = $derived(
-    (profile.data?.history ?? []).filter((h) => h.ip === ip && (h.port === queryPort || h.port === gamePort)),
+    (profile.data?.history ?? []).filter(
+      (h) => h.ip === ip && (h.port === queryPort || h.port === gamePort),
+    ),
   );
 
   return {

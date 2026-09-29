@@ -289,9 +289,11 @@ class Servers {
     const ch = new Channel<PingResult[]>();
     ch.onmessage = this.#apply;
     const p = profile.data;
-    void ipc.pingServers(todo, p?.ping_concurrency ?? 64, p?.ping_timeout_auto ?? 2000, ch).catch(() => {
-      for (const k of todo) this.pending.delete(k);
-    });
+    void ipc
+      .pingServers(todo, p?.ping_concurrency ?? 64, p?.ping_timeout_auto ?? 2000, ch)
+      .catch(() => {
+        for (const k of todo) this.pending.delete(k);
+      });
   }
 
   /** One server, asked by the player, with the longer manual timeout. */
@@ -300,7 +302,10 @@ class Servers {
     this.timeouts.delete(key);
     this.pending.add(key);
     try {
-      this.ping.set(key, await ipc.pingSingle(ip, port, profile.data?.ping_timeout_manual ?? 10_000));
+      this.ping.set(
+        key,
+        await ipc.pingSingle(ip, port, profile.data?.ping_timeout_manual ?? 10_000),
+      );
       this.a2sFailures.delete(key);
     } catch {
       this.ping.set(key, 9999);

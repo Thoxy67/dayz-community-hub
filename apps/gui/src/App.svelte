@@ -92,7 +92,11 @@
         void profile.load();
       }),
     );
-    keep(events.launchError.listen((e) => say.err(words("shell").statusLaunchError({ error: e.payload }))));
+    keep(
+      events.launchError.listen((e) =>
+        say.err(words("shell").statusLaunchError({ error: e.payload })),
+      ),
+    );
     keep(events.cliArgs.listen((e) => void connect.cli(e.payload)));
     void getCliArgs()
       .then((a: CliArgs) => {
@@ -155,8 +159,12 @@
               {#if app.initError}
                 <TriangleAlert class="size-8 text-err" />
                 <h1 class="m-0 title-display text-xl text-fg">{$s.initFailed.value}</h1>
-                <p class="m-0 max-w-md font-mono text-2xs text-fg-muted" data-selectable>{app.initError}</p>
-                <Button variant="accent" onclick={() => location.reload()}>{$s.initRetry.value}</Button>
+                <p class="m-0 max-w-md font-mono text-2xs text-fg-muted" data-selectable>
+                  {app.initError}
+                </p>
+                <Button variant="accent" onclick={() => location.reload()}
+                  >{$s.initRetry.value}</Button
+                >
               {:else}
                 <Spinner class="size-7 text-accent" />
                 <p class="m-0 label-stencil text-fg-muted">{$s.initLoading.value}</p>

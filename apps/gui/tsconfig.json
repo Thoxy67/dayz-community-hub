@@ -23,7 +23,13 @@
       "$content/*": ["./src/content/*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.svelte", "*.config.ts", "*.config.js", ".intlayer/types/**/*.ts"],
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.svelte",
+    "*.config.ts",
+    "*.config.js",
+    ".intlayer/types/**/*.ts"
+  ],
   // Run through `bun test`, not through the app: `bun:test` is bun's own module.
   "exclude": ["src/**/*.test.ts"]
 }

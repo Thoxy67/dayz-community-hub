@@ -10,9 +10,16 @@
   const s = dict("settings");
 </script>
 
-<Section id="account" title={$s.sectionAccount.value} description={$s.identity.value} icon={UserRound}>
+<Section
+  id="account"
+  title={$s.sectionAccount.value}
+  description={$s.identity.value}
+  icon={UserRound}
+>
   <div class="flex items-center gap-3 border-b border-border/60 px-pad py-3">
-    <div class="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full bg-raised ring-1 ring-border-strong">
+    <div
+      class="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full bg-raised ring-1 ring-border-strong"
+    >
       {#if profile.avatarUrl}
         <img src={profile.avatarUrl} alt="" class="size-full object-cover" />
       {:else}
@@ -20,9 +27,13 @@
       {/if}
     </div>
     <div class="min-w-0">
-      <p class="m-0 truncate title-display text-lg text-fg">{form.f.player || $s.unnamedPlayer.value}</p>
+      <p class="m-0 truncate title-display text-lg text-fg">
+        {form.f.player || $s.unnamedPlayer.value}
+      </p>
       <p class="m-0 truncate font-mono text-2xs text-fg-faint">
-        {form.f.steamLogin ? $s.steamLinked({ login: form.f.steamLogin }).value : $s.noSteamLinked.value}
+        {form.f.steamLogin
+          ? $s.steamLinked({ login: form.f.steamLogin }).value
+          : $s.noSteamLinked.value}
       </p>
     </div>
   </div>

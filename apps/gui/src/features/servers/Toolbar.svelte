@@ -29,10 +29,15 @@
   let { shown }: { shown: number } = $props();
   const c = dict("servers");
 
-  const maps = $derived(servers.maps.map((m) => ({ value: m.map, label: `${m.map} · ${m.count}` })));
+  const maps = $derived(
+    servers.maps.map((m) => ({ value: m.map, label: `${m.map} · ${m.count}` })),
+  );
   const PINGS = ["0", "50", "100", "150", "250"] as const;
   const more = $derived(
-    (filters.maxPing > 0 ? 1 : 0) + (filters.hideEmpty ? 1 : 0) + (filters.hideFull ? 1 : 0) + (filters.showExcluded ? 1 : 0),
+    (filters.maxPing > 0 ? 1 : 0) +
+      (filters.hideEmpty ? 1 : 0) +
+      (filters.hideFull ? 1 : 0) +
+      (filters.showExcluded ? 1 : 0),
   );
   let open = $state(false);
 </script>
@@ -48,15 +53,35 @@
 
   <div class="flex shrink-0 items-center gap-1">
     <TriChip bind:value={filters.firstPerson} label="1PP" title={$c.filterFpTitleAll.value} />
-    <TriChip bind:value={filters.password} label={$c.passwordProtected.value} icon={Lock} compact title={$c.filterPwdTitleAll.value} />
-    <TriChip bind:value={filters.battleye} label="BattlEye" icon={ShieldCheck} compact title={$c.filterBeTitleAll.value} />
-    <TriChip bind:value={filters.modded} label={$c.colMods.value} icon={Puzzle} compact title={$c.filterModsTitleAll.value} />
+    <TriChip
+      bind:value={filters.password}
+      label={$c.passwordProtected.value}
+      icon={Lock}
+      compact
+      title={$c.filterPwdTitleAll.value}
+    />
+    <TriChip
+      bind:value={filters.battleye}
+      label="BattlEye"
+      icon={ShieldCheck}
+      compact
+      title={$c.filterBeTitleAll.value}
+    />
+    <TriChip
+      bind:value={filters.modded}
+      label={$c.colMods.value}
+      icon={Puzzle}
+      compact
+      title={$c.filterModsTitleAll.value}
+    />
     <TriChip
       bind:value={filters.official}
       label={$c.official.value}
       icon={BadgeCheck}
       compact
-      title={profile.data?.steam_api_key ? $c.filterOfficialTitleAll.value : $c.filterOfficialNoKey.value}
+      title={profile.data?.steam_api_key
+        ? $c.filterOfficialTitleAll.value
+        : $c.filterOfficialNoKey.value}
     />
   </div>
 
@@ -83,7 +108,10 @@
         <SlidersHorizontal class="size-icon-sm" />
         <span class="max-2xl:hidden">{$c.moreFilters.value}</span>
         {#if more}
-          <span class="num grid size-4 place-items-center rounded-full bg-accent font-mono text-3xs text-accent-fg">{more}</span>
+          <span
+            class="num grid size-4 place-items-center rounded-full bg-accent font-mono text-3xs text-accent-fg"
+            >{more}</span
+          >
         {/if}
       </span>
     {/snippet}
@@ -106,8 +134,12 @@
           class="flex items-center gap-2 border-t border-border px-2.5 py-2 text-left text-xs text-fg-muted hover:bg-raised hover:text-fg"
           onclick={() => (filters.showExcluded = !filters.showExcluded)}
         >
-          {#if filters.showExcluded}<Eye class="size-icon-sm" />{:else}<EyeOff class="size-icon-sm" />{/if}
-          <span class="flex-1">{filters.showExcluded ? $c.excludedHide.value : $c.excludedReveal.value}</span>
+          {#if filters.showExcluded}<Eye class="size-icon-sm" />{:else}<EyeOff
+              class="size-icon-sm"
+            />{/if}
+          <span class="flex-1"
+            >{filters.showExcluded ? $c.excludedHide.value : $c.excludedReveal.value}</span
+          >
           <span class="num font-mono text-2xs text-fg-faint">{profile.excludedIps.size}</span>
         </button>
       {/if}
@@ -115,7 +147,13 @@
   </Popover>
 
   {#if filters.active}
-    <Button variant="ghost" size="icon" title={$c.clearFilters.value} aria-label={$c.clearFilters.value} onclick={() => filters.clear()}>
+    <Button
+      variant="ghost"
+      size="icon"
+      title={$c.clearFilters.value}
+      aria-label={$c.clearFilters.value}
+      onclick={() => filters.clear()}
+    >
       <FilterX class="size-icon-sm" />
     </Button>
   {/if}

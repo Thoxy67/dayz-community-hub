@@ -41,7 +41,9 @@
   title={copied ? String($c.copied.value) : title || String($c.copy.value)}
   onclick={copy}
 >
-  <span class="truncate">{#if children}{@render children()}{:else}{text}{/if}</span>
+  <span class="truncate"
+    >{#if children}{@render children()}{:else}{text}{/if}</span
+  >
   {#if copied}
     <Check class="size-3 shrink-0" />
   {:else}

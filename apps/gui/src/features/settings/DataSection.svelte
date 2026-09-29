@@ -24,14 +24,18 @@
         {$a.profileIncludeMods.value}
       </label>
     </div>
-    <Button variant="accent" onclick={() => profile.exportTo(includeMods)}><Download class="size-icon-sm" />{$a.profileExport.value}</Button>
+    <Button variant="accent" onclick={() => profile.exportTo(includeMods)}
+      ><Download class="size-icon-sm" />{$a.profileExport.value}</Button
+    >
   </div>
   <div class="flex items-center gap-3 border-b border-border/60 px-pad py-2.5">
     <div class="min-w-0 flex-1">
       <p class="m-0 text-xs font-medium text-fg">{$a.profileImport.value}</p>
       <p class="m-0 text-2xs text-fg-faint">{$a.profileImportDesc({ file: ".dchub" }).value}</p>
     </div>
-    <Button onclick={() => profile.importFrom()}><Upload class="size-icon-sm" />{$a.profileImport.value}</Button>
+    <Button onclick={() => profile.importFrom()}
+      ><Upload class="size-icon-sm" />{$a.profileImport.value}</Button
+    >
   </div>
   <div class="flex items-center gap-3 bg-err/5 px-pad py-2.5">
     <div class="min-w-0 flex-1">
@@ -39,6 +43,8 @@
       <p class="m-0 mt-1 text-xs font-medium text-fg">{$a.profileReset.value}</p>
       <p class="m-0 text-2xs text-fg-faint">{$a.profileResetDesc.value}</p>
     </div>
-    <Button variant="danger" onclick={() => profile.reset()}><RotateCcw class="size-icon-sm" />{$a.profileReset.value}</Button>
+    <Button variant="danger" onclick={() => profile.reset()}
+      ><RotateCcw class="size-icon-sm" />{$a.profileReset.value}</Button
+    >
   </div>
 </Section>

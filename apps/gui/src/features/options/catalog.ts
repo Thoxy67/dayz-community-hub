@@ -34,7 +34,9 @@ import MonitorCog from "~icons/lucide/monitor-cog";
 
 type Content = (typeof options)["content"];
 /** Keys of plain words (not the ones with `{{…}}` inserts). */
-export type Word = { [K in keyof Content]: Content[K] extends { nodeType: "insertion" } ? never : K }[keyof Content];
+export type Word = {
+  [K in keyof Content]: Content[K] extends { nodeType: "insertion" } ? never : K;
+}[keyof Content];
 
 /** A word from the options dictionary chosen at run time. */
 export function wordOf(dict: unknown, key: Word): string {
@@ -55,38 +57,170 @@ export type OptionMeta = {
 };
 
 export const META: Record<string, OptionMeta> = {
-  window: { flag: "-window", label: "labelWindowed", desc: "descWindow", icon: AppWindow, value: "none" },
-  noborder: { flag: "-noborder", label: "labelBorderless", desc: "descNoborder", icon: Frame, value: "none" },
-  nosplash: { flag: "-nosplash", label: "labelNosplash", desc: "descNosplash", icon: ImageOff, value: "none" },
-  skipintro: { flag: "-skipIntro", label: "labelSkipintro", desc: "descSkipintro", icon: SkipForward, value: "none" },
-  nolauncher: { flag: "-nolauncher", label: "labelNolauncher", desc: "descNolauncher", icon: PlaneTakeoff, value: "none" },
-  high: { flag: "-high", label: "labelHigh", desc: "descHigh", icon: ArrowUpNarrowWide, value: "none" },
-  max_mem: { flag: "-maxMem", label: "labelMaxMem", desc: "descMaxMem", icon: MemoryStick, value: "mb" },
-  max_vram: { flag: "-maxVRAM", label: "labelMaxVram", desc: "descMaxVram", icon: MonitorCog, value: "mb" },
-  cpu_count: { flag: "-cpuCount", label: "labelCpuCount", desc: "descCpuCount", icon: Cpu, value: "count" },
-  ex_threads: { flag: "-exThreads", label: "labelExThreads", desc: "descExThreads", icon: Layers, value: "threads" },
-  no_benchmark: { flag: "-noBenchmark", label: "labelNoBenchmark", desc: "descNoBenchmark", icon: ChartNoAxes, value: "none" },
+  window: {
+    flag: "-window",
+    label: "labelWindowed",
+    desc: "descWindow",
+    icon: AppWindow,
+    value: "none",
+  },
+  noborder: {
+    flag: "-noborder",
+    label: "labelBorderless",
+    desc: "descNoborder",
+    icon: Frame,
+    value: "none",
+  },
+  nosplash: {
+    flag: "-nosplash",
+    label: "labelNosplash",
+    desc: "descNosplash",
+    icon: ImageOff,
+    value: "none",
+  },
+  skipintro: {
+    flag: "-skipIntro",
+    label: "labelSkipintro",
+    desc: "descSkipintro",
+    icon: SkipForward,
+    value: "none",
+  },
+  nolauncher: {
+    flag: "-nolauncher",
+    label: "labelNolauncher",
+    desc: "descNolauncher",
+    icon: PlaneTakeoff,
+    value: "none",
+  },
+  high: {
+    flag: "-high",
+    label: "labelHigh",
+    desc: "descHigh",
+    icon: ArrowUpNarrowWide,
+    value: "none",
+  },
+  max_mem: {
+    flag: "-maxMem",
+    label: "labelMaxMem",
+    desc: "descMaxMem",
+    icon: MemoryStick,
+    value: "mb",
+  },
+  max_vram: {
+    flag: "-maxVRAM",
+    label: "labelMaxVram",
+    desc: "descMaxVram",
+    icon: MonitorCog,
+    value: "mb",
+  },
+  cpu_count: {
+    flag: "-cpuCount",
+    label: "labelCpuCount",
+    desc: "descCpuCount",
+    icon: Cpu,
+    value: "count",
+  },
+  ex_threads: {
+    flag: "-exThreads",
+    label: "labelExThreads",
+    desc: "descExThreads",
+    icon: Layers,
+    value: "threads",
+  },
+  no_benchmark: {
+    flag: "-noBenchmark",
+    label: "labelNoBenchmark",
+    desc: "descNoBenchmark",
+    icon: ChartNoAxes,
+    value: "none",
+  },
   world: { flag: "-world", label: "labelWorld", desc: "descWorld", icon: MapIcon, value: "text" },
-  no_pause: { flag: "-noPause", label: "labelNoPause", desc: "descNoPause", icon: CirclePause, value: "none" },
-  file_patching: { flag: "-filePatching", label: "labelFilePatching", desc: "descFilePatching", icon: FileCode, value: "none" },
-  do_logs: { flag: "-doLogs", label: "labelDoLogs", desc: "descDoLogs", icon: ScrollText, value: "none" },
-  script_debug: { flag: "-scriptDebug", label: "labelScriptDebug", desc: "descScriptDebug", icon: Bug, value: "text" },
-  buldozer: { flag: "-buldozer", label: "labelBuldozer", desc: "descBuldozer", icon: Construction, value: "none" },
+  no_pause: {
+    flag: "-noPause",
+    label: "labelNoPause",
+    desc: "descNoPause",
+    icon: CirclePause,
+    value: "none",
+  },
+  file_patching: {
+    flag: "-filePatching",
+    label: "labelFilePatching",
+    desc: "descFilePatching",
+    icon: FileCode,
+    value: "none",
+  },
+  do_logs: {
+    flag: "-doLogs",
+    label: "labelDoLogs",
+    desc: "descDoLogs",
+    icon: ScrollText,
+    value: "none",
+  },
+  script_debug: {
+    flag: "-scriptDebug",
+    label: "labelScriptDebug",
+    desc: "descScriptDebug",
+    icon: Bug,
+    value: "text",
+  },
+  buldozer: {
+    flag: "-buldozer",
+    label: "labelBuldozer",
+    desc: "descBuldozer",
+    icon: Construction,
+    value: "none",
+  },
   winxp: { flag: "-winxp", label: "labelWinxp", desc: "descWinxp", icon: Tv, value: "none" },
-  profiles: { flag: "-profiles", label: "labelProfiles", desc: "descProfiles", icon: FolderOpen, value: "folder" },
+  profiles: {
+    flag: "-profiles",
+    label: "labelProfiles",
+    desc: "descProfiles",
+    icon: FolderOpen,
+    value: "folder",
+  },
 };
 
 export type Group = { id: string; label: Word; icon: Icon; tone: string; keys: string[] };
 
 export const GROUPS: Group[] = [
-  { id: "performance", label: "groupPerformance", icon: Gauge, tone: "text-accent", keys: ["high", "max_mem", "max_vram", "cpu_count", "ex_threads", "no_benchmark"] },
-  { id: "window", label: "groupWindow", icon: Monitor, tone: "text-info", keys: ["window", "noborder"] },
-  { id: "startup", label: "groupStartup", icon: Rocket, tone: "text-ok", keys: ["nosplash", "skipintro", "nolauncher"] },
+  {
+    id: "performance",
+    label: "groupPerformance",
+    icon: Gauge,
+    tone: "text-accent",
+    keys: ["high", "max_mem", "max_vram", "cpu_count", "ex_threads", "no_benchmark"],
+  },
+  {
+    id: "window",
+    label: "groupWindow",
+    icon: Monitor,
+    tone: "text-info",
+    keys: ["window", "noborder"],
+  },
+  {
+    id: "startup",
+    label: "groupStartup",
+    icon: Rocket,
+    tone: "text-ok",
+    keys: ["nosplash", "skipintro", "nolauncher"],
+  },
   { id: "world", label: "groupWorld", icon: Globe, tone: "text-map", keys: ["world", "no_pause"] },
-  { id: "developer", label: "groupDeveloper", icon: Code, tone: "text-mods", keys: ["file_patching", "do_logs", "script_debug", "buldozer", "winxp", "profiles"] },
+  {
+    id: "developer",
+    label: "groupDeveloper",
+    icon: Code,
+    tone: "text-mods",
+    keys: ["file_patching", "do_logs", "script_debug", "buldozer", "winxp", "profiles"],
+  },
 ];
 
-export const OTHER: Group = { id: "other", label: "groupOther", icon: SlidersHorizontal, tone: "text-fg-muted", keys: [] };
+export const OTHER: Group = {
+  id: "other",
+  label: "groupOther",
+  icon: SlidersHorizontal,
+  tone: "text-fg-muted",
+  keys: [],
+};
 
 /** The flag as DayZ receives it: `-maxMem=8192`, or `-window`. */
 export function flagText(key: string, value: string | null): string {

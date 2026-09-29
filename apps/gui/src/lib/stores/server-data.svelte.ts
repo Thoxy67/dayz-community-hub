@@ -11,7 +11,12 @@ import { errorText } from "$lib/ipc/core";
 import type { A2sDetailsDto, BattleMetricsDto, ServerMetrics } from "$lib/ipc/types";
 import { servers } from "./servers.svelte";
 
-type Entry<T> = { data: T | null; loading: boolean; error: string | null; fetchedAt: number | null };
+type Entry<T> = {
+  data: T | null;
+  loading: boolean;
+  error: string | null;
+  fetchedAt: number | null;
+};
 
 const A2S_TTL_MS = 30_000;
 const BM_TTL_MS = 300_000;
@@ -130,8 +135,14 @@ class ServerData {
 
   /** BattleMetrics, from the cache while it is fresh unless `force`. */
   fetchBm(ip: string, port: number, queryPort: number, name: string, force = false) {
-    return this.#cached(this.#bm, this.#bmFlight, `${ip}:${port}:${queryPort}`, BM_TTL_MS, MAX_BM, force, () =>
-      fetchBattleMetrics(ip, port, queryPort, name),
+    return this.#cached(
+      this.#bm,
+      this.#bmFlight,
+      `${ip}:${port}:${queryPort}`,
+      BM_TTL_MS,
+      MAX_BM,
+      force,
+      () => fetchBattleMetrics(ip, port, queryPort, name),
     );
   }
 

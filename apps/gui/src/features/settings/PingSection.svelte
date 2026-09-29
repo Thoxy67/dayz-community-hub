@@ -39,17 +39,57 @@
   ] as const;
 </script>
 
-{#snippet slider(key: "pingConcurrency" | "pingTimeoutAuto" | "pingTimeoutManual" | "pingMaxRetries", min: number, max: number, step: number, shown: string, label: string, hint: string)}
+{#snippet slider(
+  key: "pingConcurrency" | "pingTimeoutAuto" | "pingTimeoutManual" | "pingMaxRetries",
+  min: number,
+  max: number,
+  step: number,
+  shown: string,
+  label: string,
+  hint: string,
+)}
   <Field {label} {hint}>
-    <Slider bind:value={v[key]} {min} {max} {step} oncommit={save} aria-label={label} class="flex-1" />
+    <Slider
+      bind:value={v[key]}
+      {min}
+      {max}
+      {step}
+      oncommit={save}
+      aria-label={label}
+      class="flex-1"
+    />
     <span class="num w-16 shrink-0 text-right font-mono text-xs text-fg">{shown}</span>
   </Field>
 {/snippet}
 
 <Section id="ping" title={$s.sectionPing.value} description={$s.pingIntro.value} icon={Radar}>
-  {@render slider("pingConcurrency", 5, 100, 1, String(v.pingConcurrency), $a.pingConcurrency.value, $s.pingConcurrencyHint.value)}
-  {@render slider("pingTimeoutAuto", 1000, 5000, 250, secs(v.pingTimeoutAuto), $a.pingTimeoutAuto.value, $s.pingTimeoutAutoHint.value)}
-  {@render slider("pingTimeoutManual", 1000, 30000, 500, secs(v.pingTimeoutManual), $a.pingTimeoutManual.value, $s.pingTimeoutManualHint.value)}
+  {@render slider(
+    "pingConcurrency",
+    5,
+    100,
+    1,
+    String(v.pingConcurrency),
+    $a.pingConcurrency.value,
+    $s.pingConcurrencyHint.value,
+  )}
+  {@render slider(
+    "pingTimeoutAuto",
+    1000,
+    5000,
+    250,
+    secs(v.pingTimeoutAuto),
+    $a.pingTimeoutAuto.value,
+    $s.pingTimeoutAutoHint.value,
+  )}
+  {@render slider(
+    "pingTimeoutManual",
+    1000,
+    30000,
+    500,
+    secs(v.pingTimeoutManual),
+    $a.pingTimeoutManual.value,
+    $s.pingTimeoutManualHint.value,
+  )}
   {@render slider(
     "pingMaxRetries",
     0,

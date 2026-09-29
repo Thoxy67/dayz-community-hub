@@ -63,11 +63,18 @@
   }
 </script>
 
-<Section id="location" title={$s.sectionLocation.value} description={$s.locationHelp.value} icon={MapPin}>
+<Section
+  id="location"
+  title={$s.sectionLocation.value}
+  description={$s.locationHelp.value}
+  icon={MapPin}
+>
   <div class="flex items-center gap-3 border-b border-border/60 px-pad py-3">
     {#if form.f.userLocation}
       <div class="grid size-10 shrink-0 place-items-center rounded-full bg-ok/10 text-ok">
-        {#if place?.code}<Flag code={place.code} class="size-6" />{:else}<MapPin class="size-5" />{/if}
+        {#if place?.code}<Flag code={place.code} class="size-6" />{:else}<MapPin
+            class="size-5"
+          />{/if}
       </div>
       <div class="min-w-0 flex-1">
         <p class="m-0 truncate text-sm font-medium text-fg">
@@ -80,11 +87,16 @@
       </div>
       <Button
         variant="ghost"
-        onclick={() => openUrl(`https://www.google.com/maps?q=${form.f.userLocation![1]},${form.f.userLocation![0]}`)}
+        onclick={() =>
+          openUrl(
+            `https://www.google.com/maps?q=${form.f.userLocation![1]},${form.f.userLocation![0]}`,
+          )}
       >
         <MapIcon class="size-icon-sm" />{$s.openMaps.value}
       </Button>
-      <Button variant="danger" onclick={clear}><Trash class="size-icon-sm" />{$s.clearLocation.value}</Button>
+      <Button variant="danger" onclick={clear}
+        ><Trash class="size-icon-sm" />{$s.clearLocation.value}</Button
+      >
     {:else}
       <MapPin class="size-5 shrink-0 text-fg-faint" />
       <p class="m-0 flex-1 text-xs text-fg-muted">{$s.locationNone.value}</p>
@@ -98,9 +110,26 @@
     </Button>
     <span class="mx-1 h-4 w-px bg-border"></span>
     <span class="text-2xs text-fg-faint">{$s.manual.value}</span>
-    <Input bind:value={lat} placeholder={$s.lat.value} aria-label={$s.lat.value} class="w-24 font-mono" />
-    <Input bind:value={lon} placeholder={$s.lon.value} aria-label={$s.lon.value} class="w-24 font-mono" />
-    <Button onclick={apply} disabled={!lat || !lon}><Check class="size-icon-sm" />{$s.apply.value}</Button>
+    <Input
+      bind:value={lat}
+      placeholder={$s.lat.value}
+      aria-label={$s.lat.value}
+      class="w-24 font-mono"
+    />
+    <Input
+      bind:value={lon}
+      placeholder={$s.lon.value}
+      aria-label={$s.lon.value}
+      class="w-24 font-mono"
+    />
+    <Button onclick={apply} disabled={!lat || !lon}
+      ><Check class="size-icon-sm" />{$s.apply.value}</Button
+    >
   </div>
-  {#if error}<p class="m-0 border-t border-border/60 px-pad py-1.5 text-2xs text-err" data-selectable>{error}</p>{/if}
+  {#if error}<p
+      class="m-0 border-t border-border/60 px-pad py-1.5 text-2xs text-err"
+      data-selectable
+    >
+      {error}
+    </p>{/if}
 </Section>

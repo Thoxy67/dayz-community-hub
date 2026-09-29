@@ -16,7 +16,9 @@
 >
   <p class="m-0 text-xs leading-relaxed whitespace-pre-line text-fg-muted">{p?.message}</p>
   {#snippet footer()}
-    <Button variant="ghost" onclick={() => dialogs.answer(false)}>{p?.cancelLabel ?? $s.confirmCancel.value}</Button>
+    <Button variant="ghost" onclick={() => dialogs.answer(false)}
+      >{p?.cancelLabel ?? $s.confirmCancel.value}</Button
+    >
     <Button variant={p?.danger ? "danger" : "accent"} onclick={() => dialogs.answer(true)}>
       {p?.confirmLabel ?? $s.confirmConfirm.value}
     </Button>

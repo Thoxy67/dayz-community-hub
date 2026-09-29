@@ -30,14 +30,18 @@
 </script>
 
 <section class={cn("overflow-hidden rounded-md border border-border bg-bg/40", klass)}>
-  <header class="flex min-h-control items-center gap-2 border-b border-border bg-raised/30 px-3 py-1">
+  <header
+    class="flex min-h-control items-center gap-2 border-b border-border bg-raised/30 px-3 py-1"
+  >
     {#if icon}
       {@const Icon = icon}
       <Icon class={cn("size-icon-sm shrink-0", tone)} />
     {/if}
     <h2 class="m-0 label-stencil whitespace-nowrap text-fg-muted">{title}</h2>
     {#if description}<span class="min-w-0 truncate text-2xs text-fg-faint">{description}</span>{/if}
-    {#if actions}<div class="ml-auto flex shrink-0 items-center gap-1">{@render actions()}</div>{/if}
+    {#if actions}<div class="ml-auto flex shrink-0 items-center gap-1">
+        {@render actions()}
+      </div>{/if}
   </header>
   <div class={cn(padded && "p-3")}>{@render children()}</div>
 </section>

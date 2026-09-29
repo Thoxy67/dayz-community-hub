@@ -324,14 +324,24 @@
 {#snippet head()}
   <TableHead grid={GRID}>
     <span></span>
-    <SortHead label={$sv.colPing.value} active={sortCol === "ping"} asc={sortAsc} onclick={() => sortBy("ping")} />
+    <SortHead
+      label={$sv.colPing.value}
+      active={sortCol === "ping"}
+      asc={sortAsc}
+      onclick={() => sortBy("ping")}
+    />
     <SortHead
       label={$sv.colPlayers.value}
       active={sortCol === "players"}
       asc={sortAsc}
       onclick={() => sortBy("players")}
     />
-    <SortHead label={$sv.colServer.value} active={sortCol === "name"} asc={sortAsc} onclick={() => sortBy("name")} />
+    <SortHead
+      label={$sv.colServer.value}
+      active={sortCol === "name"}
+      asc={sortAsc}
+      onclick={() => sortBy("name")}
+    />
     <SortHead
       class={LIST_NARROW_HIDDEN}
       label={`${$sv.colMap.value} · ${$sv.colTime.value}`}

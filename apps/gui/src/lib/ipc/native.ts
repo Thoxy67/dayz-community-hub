@@ -8,8 +8,10 @@ export type { FileFilter, GeoLocation };
 export const openUrl = (url: string) => run(commands.openUrl(url));
 
 /** A file (or folder, with `directory`) chosen by the player, or null if they cancelled. */
-export const pickFile = (title: string, opts: { directory?: boolean; filters?: FileFilter[] } = {}) =>
-  run(commands.pickFile(title, opts.directory ?? false, opts.filters ?? []));
+export const pickFile = (
+  title: string,
+  opts: { directory?: boolean; filters?: FileFilter[] } = {},
+) => run(commands.pickFile(title, opts.directory ?? false, opts.filters ?? []));
 
 /** Where to write a file, or null if they cancelled. */
 export const saveFile = (title: string, defaultName: string, filters: FileFilter[] = []) =>

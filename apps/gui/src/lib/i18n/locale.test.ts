@@ -6,8 +6,10 @@ describe("pickLocale", () => {
   test("an unknown saved choice is ignored", () => expect(pickLocale("xx", "de-DE")).toBe("de"));
   test("regional OS languages count", () => expect(pickLocale(null, "fr-CA")).toBe("fr"));
   test("upper-case OS language", () => expect(pickLocale(null, "ES")).toBe("es"));
-  test("an unshipped OS language falls back to English", () => expect(pickLocale(null, "ja-JP")).toBe("en"));
-  test("nothing known falls back to English", () => expect(pickLocale(undefined, undefined)).toBe("en"));
+  test("an unshipped OS language falls back to English", () =>
+    expect(pickLocale(null, "ja-JP")).toBe("en"));
+  test("nothing known falls back to English", () =>
+    expect(pickLocale(undefined, undefined)).toBe("en"));
 });
 
 describe("isLocale", () => {

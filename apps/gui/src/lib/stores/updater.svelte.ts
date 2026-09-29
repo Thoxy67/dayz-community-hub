@@ -15,7 +15,8 @@ import {
 import { restartApp } from "$lib/ipc/profile";
 import { Channel, errorText } from "$lib/ipc/core";
 
-export type UpdateState = "idle" | "checking" | "up_to_date" | "available" | "downloading" | "done" | "error";
+export type UpdateState =
+  "idle" | "checking" | "up_to_date" | "available" | "downloading" | "done" | "error";
 
 class Updater {
   state = $state<UpdateState>("idle");

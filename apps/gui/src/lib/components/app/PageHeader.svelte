@@ -26,7 +26,12 @@
   } = $props();
 </script>
 
-<header class={cn("@container flex shrink-0 flex-col gap-2 border-b border-border bg-bg/40 px-pad pt-2.5 pb-2", klass)}>
+<header
+  class={cn(
+    "@container flex shrink-0 flex-col gap-2 border-b border-border bg-bg/40 px-pad pt-2.5 pb-2",
+    klass,
+  )}
+>
   <div
     class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-end gap-x-6 gap-y-2 @max-[760px]:grid-cols-[minmax(0,1fr)_auto]"
   >
@@ -41,7 +46,9 @@
       <span class="@max-[760px]:hidden"></span>
     {/if}
     {#if actions}
-      <div class="flex shrink-0 items-center gap-1 justify-self-end @max-[760px]:col-start-2 @max-[760px]:row-start-1">
+      <div
+        class="flex shrink-0 items-center gap-1 justify-self-end @max-[760px]:col-start-2 @max-[760px]:row-start-1"
+      >
         {@render actions()}
       </div>
     {/if}

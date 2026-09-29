@@ -153,15 +153,13 @@ const profile = {
   favorites: servers
     .slice(3, 9)
     .map((s) => ({ name: s.name, ip: s.ip, port: s.query_port, password: null })),
-  history: servers
-    .slice(10, 22)
-    .map((s, i) => ({
-      name: s.name,
-      ip: s.ip,
-      port: s.query_port,
-      ts: now - i * 7200 - 600,
-      relative_time: "",
-    })),
+  history: servers.slice(10, 22).map((s, i) => ({
+    name: s.name,
+    ip: s.ip,
+    port: s.query_port,
+    ts: now - i * 7200 - 600,
+    relative_time: "",
+  })),
   options: [
     ["window", "Run in windowed mode"],
     ["noborder", "Borderless window"],

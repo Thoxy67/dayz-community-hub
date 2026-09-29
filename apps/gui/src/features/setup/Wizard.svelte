@@ -122,8 +122,12 @@
             >
               {#if done}<Check class="size-3.5" />{:else}{i + 1}{/if}
             </span>
-            <span class={cn("text-sm", on ? "font-semibold text-fg" : "text-fg-muted")}>{LABEL[s]()}</span>
-            {#if s === "services"}<span class="ml-auto text-3xs text-fg-faint italic">{$w.optionalStep.value}</span>{/if}
+            <span class={cn("text-sm", on ? "font-semibold text-fg" : "text-fg-muted")}
+              >{LABEL[s]()}</span
+            >
+            {#if s === "services"}<span class="ml-auto text-3xs text-fg-faint italic"
+                >{$w.optionalStep.value}</span
+              >{/if}
           </button>
         </li>
       {/each}
@@ -139,12 +143,17 @@
   <!-- The step in hand. -->
   <section class="flex min-w-0 flex-1 flex-col">
     <div class="h-0.5 shrink-0 bg-raised">
-      <div class="h-full bg-accent transition-[width] duration-300" style="width: {progress}%"></div>
+      <div
+        class="h-full bg-accent transition-[width] duration-300"
+        style="width: {progress}%"
+      ></div>
     </div>
 
     <div class="min-h-0 flex-1 overflow-y-auto">
       <div class="mx-auto max-w-2xl px-8 pt-10 pb-8">
-        <p class="m-0 label-stencil text-accent">{$w.stepOf({ n: wizard.index + 1, total: STEPS.length }).value}</p>
+        <p class="m-0 label-stencil text-accent">
+          {$w.stepOf({ n: wizard.index + 1, total: STEPS.length }).value}
+        </p>
         <h1 class="m-0 mt-2 title-display text-3xl text-fg">{TITLE[wizard.step]()}</h1>
         <p class="m-0 mt-2 max-w-xl text-sm leading-relaxed text-fg-muted">{DESC[wizard.step]()}</p>
 
@@ -154,7 +163,9 @@
               <ul class="m-0 grid list-none grid-cols-2 gap-2 p-0">
                 {#each [[ServerIcon, $w.welcomeFeat1.value, "text-info"], [Puzzle, $w.welcomeFeat2.value, "text-mods"], [Star, $w.welcomeFeat3.value, "text-warn"], [Play, $w.welcomeFeat4.value, "text-accent"]] as [Icon, text, tone], i (i)}
                   {@const I = Icon as typeof ServerIcon}
-                  <li class="flex items-start gap-3 rounded-md border border-border bg-panel px-3 py-3">
+                  <li
+                    class="flex items-start gap-3 rounded-md border border-border bg-panel px-3 py-3"
+                  >
                     <span class="grid size-8 shrink-0 place-items-center rounded-sm bg-raised">
                       <I class={cn("size-icon", tone as string)} />
                     </span>
@@ -186,10 +197,27 @@
                   value: wizard.steamcmdPath || wizard.status?.path || $w.missing.value,
                   warn: !wizard.found,
                 },
-                { label: $w.username.value, ok: !!wizard.steamLogin.trim(), value: wizard.steamLogin || $w.missing.value, warn: !wizard.steamLogin.trim() },
-                { label: $w.ingameName.value, ok: !!wizard.player.trim(), value: wizard.player || $w.notSet.value },
-                { label: $w.apiKey.value, ok: !!wizard.steamApiKey.trim(), value: wizard.steamApiKey ? $w.configured.value : $w.notSet.value },
-                { label: $w.bmTitle.value, ok: !!wizard.battlemetricsKey.trim(), value: wizard.battlemetricsKey ? $w.configured.value : $w.notSet.value },
+                {
+                  label: $w.username.value,
+                  ok: !!wizard.steamLogin.trim(),
+                  value: wizard.steamLogin || $w.missing.value,
+                  warn: !wizard.steamLogin.trim(),
+                },
+                {
+                  label: $w.ingameName.value,
+                  ok: !!wizard.player.trim(),
+                  value: wizard.player || $w.notSet.value,
+                },
+                {
+                  label: $w.apiKey.value,
+                  ok: !!wizard.steamApiKey.trim(),
+                  value: wizard.steamApiKey ? $w.configured.value : $w.notSet.value,
+                },
+                {
+                  label: $w.bmTitle.value,
+                  ok: !!wizard.battlemetricsKey.trim(),
+                  value: wizard.battlemetricsKey ? $w.configured.value : $w.notSet.value,
+                },
                 { label: $w.language.value, ok: true, value: LOCALE_LABELS[getLocale()] },
                 { label: $w.theme.value, ok: true, value: themeName(theme.selected) },
               ]}
@@ -197,11 +225,18 @@
                 <dl class="m-0 divide-y divide-border/50">
                   {#each rows as r (r.label)}
                     <div class="flex items-center gap-3 px-3 py-2">
-                      {#if r.warn}<TriangleAlert class="size-icon-sm shrink-0 text-warn" />{:else if r.ok}<CircleCheck
+                      {#if r.warn}<TriangleAlert
+                          class="size-icon-sm shrink-0 text-warn"
+                        />{:else if r.ok}<CircleCheck
                           class="size-icon-sm shrink-0 text-ok"
                         />{:else}<CircleDashed class="size-icon-sm shrink-0 text-fg-faint" />{/if}
                       <dt class="w-40 shrink-0 text-xs text-fg-muted">{r.label}</dt>
-                      <dd class={cn("m-0 min-w-0 truncate font-mono text-2xs", r.ok ? "text-fg" : r.warn ? "text-warn" : "text-fg-faint")}>
+                      <dd
+                        class={cn(
+                          "m-0 min-w-0 truncate font-mono text-2xs",
+                          r.ok ? "text-fg" : r.warn ? "text-warn" : "text-fg-faint",
+                        )}
+                      >
                         {r.value}
                       </dd>
                     </div>
@@ -209,7 +244,9 @@
                 </dl>
               </SectionCard>
               <p class="m-0 mt-4 text-2xs text-fg-faint">{$w.doneSettingsHint.value}</p>
-              <p class="m-0 mt-1 text-2xs text-fg-faint">{$w.doneAboutHint({ tab: $nav.about.value }).value}</p>
+              <p class="m-0 mt-1 text-2xs text-fg-faint">
+                {$w.doneAboutHint({ tab: $nav.about.value }).value}
+              </p>
             {/if}
           {/key}
         </div>
@@ -218,18 +255,28 @@
 
     <footer class="flex shrink-0 items-center gap-2 border-t border-border bg-panel px-8 py-3">
       {#if wizard.index > 0}
-        <Button variant="ghost" onclick={() => wizard.back()}><ArrowLeft class="size-icon-sm" />{$w.back.value}</Button>
+        <Button variant="ghost" onclick={() => wizard.back()}
+          ><ArrowLeft class="size-icon-sm" />{$w.back.value}</Button
+        >
       {/if}
-      <span class="ml-auto font-mono text-3xs text-fg-faint">{wizard.index + 1} / {STEPS.length}</span>
+      <span class="ml-auto font-mono text-3xs text-fg-faint"
+        >{wizard.index + 1} / {STEPS.length}</span
+      >
       {#if wizard.step === "done"}
         <Button variant="play" size="lg" disabled={wizard.saving} onclick={() => wizard.finish()}>
-          {#if wizard.saving}<Spinner class="size-icon-sm text-accent-fg" />{$w.saving.value}{:else}<Play
-              class="size-icon-sm"
-            />{$w.launch.value}{/if}
+          {#if wizard.saving}<Spinner class="size-icon-sm text-accent-fg" />{$w.saving
+              .value}{:else}<Play class="size-icon-sm" />{$w.launch.value}{/if}
         </Button>
       {:else}
-        <Button variant="accent" size="lg" disabled={!wizard.canAdvance} onclick={() => wizard.next()}>
-          {wizard.step === "welcome" ? $w.getStarted.value : $w.next.value}<ArrowRight class="size-icon-sm" />
+        <Button
+          variant="accent"
+          size="lg"
+          disabled={!wizard.canAdvance}
+          onclick={() => wizard.next()}
+        >
+          {wizard.step === "welcome" ? $w.getStarted.value : $w.next.value}<ArrowRight
+            class="size-icon-sm"
+          />
         </Button>
       {/if}
     </footer>

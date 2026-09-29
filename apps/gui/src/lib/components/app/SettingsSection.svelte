@@ -31,10 +31,15 @@
   <header class="mb-2 flex items-start gap-2">
     {#if icon}
       {@const Icon = icon}
-      <Icon class={cn("mt-[3px] size-icon-lg shrink-0", tone === "danger" ? "text-err" : "text-accent")} />
+      <Icon
+        class={cn("mt-[3px] size-icon-lg shrink-0", tone === "danger" ? "text-err" : "text-accent")}
+      />
     {/if}
     <div class="min-w-0 flex-1">
-      <h2 id="{id}-title" class={cn("m-0 title-display text-xl", tone === "danger" ? "text-err" : "text-fg")}>
+      <h2
+        id="{id}-title"
+        class={cn("m-0 title-display text-xl", tone === "danger" ? "text-err" : "text-fg")}
+      >
         {title}
       </h2>
       {#if description}<p class="m-0 mt-0.5 text-xs text-fg-muted">{description}</p>{/if}

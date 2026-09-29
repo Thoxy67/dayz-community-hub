@@ -24,22 +24,22 @@ The standard answer ([Valve][valve]), with a few DayZ habits:
 battleye,no3rd,external,privHive,shard123ABC,lqs0,etm8.000000,entm2.000000,mod,20:43
 ```
 
-| Tag                   | Meaning                                              | Read as                  |
-| --------------------- | ---------------------------------------------------- | ------------------------ |
-| `battleye`            | BattlEye is on                                       | `battleye`               |
-| `no3rd`               | Third-person view is off                             | `first_person_only`      |
-| `external`            | A community server (official ones lack it)           | `external`               |
-| `privHive`            | The server keeps its own characters                  | `private_hive`           |
-| `mod`                 | The server runs mods                                 | `modded`                 |
-| `whitelisting`        | Whitelisted players only                             | `whitelisted`            |
-| `allowedFilePatching` | Clients may load unpacked files                      | `file_patching`          |
-| `isDLC`               | The map is a DLC                                     | `dlc`                    |
-| `shardXXX`            | Hive shard (`000`, `001` on official servers)        | `shard`                  |
-| `lqsN`                | Players waiting in the login queue                   | `login_queue`            |
-| `etmX`                | Day time acceleration                                | `time_accel`             |
-| `entmX`               | Night time acceleration                              | `night_time_accel`       |
-| `HH:MM`               | In-game clock                                        | `game_time`              |
-| `portN`               | Game port, when stated here                          | `game_port`              |
+| Tag                   | Meaning                                       | Read as             |
+| --------------------- | --------------------------------------------- | ------------------- |
+| `battleye`            | BattlEye is on                                | `battleye`          |
+| `no3rd`               | Third-person view is off                      | `first_person_only` |
+| `external`            | A community server (official ones lack it)    | `external`          |
+| `privHive`            | The server keeps its own characters           | `private_hive`      |
+| `mod`                 | The server runs mods                          | `modded`            |
+| `whitelisting`        | Whitelisted players only                      | `whitelisted`       |
+| `allowedFilePatching` | Clients may load unpacked files               | `file_patching`     |
+| `isDLC`               | The map is a DLC                              | `dlc`               |
+| `shardXXX`            | Hive shard (`000`, `001` on official servers) | `shard`             |
+| `lqsN`                | Players waiting in the login queue            | `login_queue`       |
+| `etmX`                | Day time acceleration                         | `time_accel`        |
+| `entmX`               | Night time acceleration                       | `night_time_accel`  |
+| `HH:MM`               | In-game clock                                 | `game_time`         |
+| `portN`               | Game port, when stated here                   | `game_port`         |
 
 Sources: [woozymasta/a2s `keywords/dayz.go`][wm-keywords] and its
 [package documentation][wm-keywords-doc]; [velvetcache][velvet] for the
@@ -60,17 +60,17 @@ data. The fragments put back in order start with `FF FF FF FF 45`.
 Then a count (u16) and name/value pairs, NUL-terminated. DayZ sends nine
 plain rules:
 
-| Rule              | Example         | Meaning                              |
-| ----------------- | --------------- | ------------------------------------ |
-| `allowedBuild`    | `0`             | Oldest client build allowed          |
-| `clientPort`      | `0`             |                                      |
-| `dedicated`       | `1`             | A dedicated server                   |
-| `island`          | `chernarusplus` | The map                              |
-| `language`        | `65545`         | Language id                          |
-| `platform`        | `win` / `lin`   | The server's OS                      |
-| `requiredBuild`   | `0`             |                                      |
-| `requiredVersion` | `129`           | Game version, `1.29`                 |
-| `timeLeft`        | `15`            |                                      |
+| Rule              | Example         | Meaning                     |
+| ----------------- | --------------- | --------------------------- |
+| `allowedBuild`    | `0`             | Oldest client build allowed |
+| `clientPort`      | `0`             |                             |
+| `dedicated`       | `1`             | A dedicated server          |
+| `island`          | `chernarusplus` | The map                     |
+| `language`        | `65545`         | Language id                 |
+| `platform`        | `win` / `lin`   | The server's OS             |
+| `requiredBuild`   | `0`             |                             |
+| `requiredVersion` | `129`           | Game version, `1.29`        |
+| `timeLeft`        | `15`            |                             |
 
 Sources: [woozymasta/a2s][wm] (`a3sb/rules_dayz.go`, [raw][wm-rules]) and the captured
 answers in `crates/core/a2s/tests/fixtures`.

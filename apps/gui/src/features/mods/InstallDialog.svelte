@@ -23,7 +23,13 @@
   }
 </script>
 
-<Dialog bind:open title={$m.installModalTitle.value} description={$m.installModalDesc.value} size="md" closeLabel={$m.close.value}>
+<Dialog
+  bind:open
+  title={$m.installModalTitle.value}
+  description={$m.installModalDesc.value}
+  size="md"
+  closeLabel={$m.close.value}
+>
   <label class="block">
     <span class="flex items-baseline justify-between text-2xs">
       <span class="font-medium text-fg">{$m.workshopIdsLabel.value}</span>
@@ -40,7 +46,9 @@
     {#if text.trim() && ids.length === 0}
       <span class="text-2xs text-err">{$m.noValidDetected.value}</span>
     {:else if ids.length > 0}
-      <span class="mr-1 text-2xs text-fg-muted">{$m.installParsed({ count: ids.length }).value}</span>
+      <span class="mr-1 text-2xs text-fg-muted"
+        >{$m.installParsed({ count: ids.length }).value}</span
+      >
       {#each ids.slice(0, 12) as id (id)}
         <Tag tone={mods.byId.has(id) ? "neutral" : "accent"} title={mods.byId.get(id)?.name ?? ""}>
           <span class="font-mono">{id}</span>

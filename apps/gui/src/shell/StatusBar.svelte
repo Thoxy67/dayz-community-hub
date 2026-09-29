@@ -28,7 +28,10 @@
    */
   const n = dict("nav");
   let version = $state("");
-  if (inTauri) getVersion().then((v) => (version = v)).catch(() => {});
+  if (inTauri)
+    getVersion()
+      .then((v) => (version = v))
+      .catch(() => {});
 
   // The list's age is re-read every 30 s; nothing else changes it.
   let now = $state(Date.now());
@@ -52,7 +55,10 @@
 
 {#snippet bar(value: number, tone: string)}
   <span class="relative h-1 w-20 overflow-hidden rounded-full bg-raised" aria-hidden="true">
-    <span class={cn("absolute inset-y-0 left-0 rounded-full transition-[width]", tone)} style="width: {value}%"></span>
+    <span
+      class={cn("absolute inset-y-0 left-0 rounded-full transition-[width]", tone)}
+      style="width: {value}%"
+    ></span>
   </span>
 {/snippet}
 
@@ -74,7 +80,9 @@
         <span>{$n.sbListDown.value}</span>
       {:else}
         <ServerIcon class="size-3" />
-        <span class="num font-mono text-fg-muted">{$n.sbServers({ count: num(servers.total) }).value}</span>
+        <span class="num font-mono text-fg-muted"
+          >{$n.sbServers({ count: num(servers.total) }).value}</span
+        >
         {#if age}<span class={cn(!stale && "text-fg-faint")}>· {age}</span>{/if}
       {/if}
     </button>
@@ -85,7 +93,9 @@
     <span class={cn(seg, "gap-2")}>
       <Radar class={cn("size-3", servers.scanPaused ? "text-warn" : "animate-pulse text-accent")} />
       <span class="num font-mono text-fg-muted">
-        {servers.scanPaused ? $n.scanPaused.value : $n.scanning({ done: num(scan.done), total: num(scan.total) }).value}
+        {servers.scanPaused
+          ? $n.scanPaused.value
+          : $n.scanning({ done: num(scan.done), total: num(scan.total) }).value}
       </span>
       {@render bar(pct, servers.scanPaused ? "bg-warn" : "bg-accent")}
       <span class="num w-8 font-mono">{pct}%</span>
@@ -112,7 +122,9 @@
     <Tooltip text={$n.showProgress.value} side="top" class="flex min-w-0">
       <button class={cn(btn, "min-w-0 text-info")} onclick={() => (mods.op.minimised = false)}>
         <HardDriveDownload class="size-3 shrink-0 animate-pulse" />
-        <span class="num shrink-0 font-mono">{$n.modOpRunning({ current: op.current, total: op.total }).value}</span>
+        <span class="num shrink-0 font-mono"
+          >{$n.modOpRunning({ current: op.current, total: op.total }).value}</span
+        >
         {@render bar(opPct, "bg-info")}
         <span class="max-w-48 min-w-0 truncate text-fg-muted">{op.currentName}</span>
       </button>

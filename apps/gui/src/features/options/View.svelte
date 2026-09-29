@@ -64,18 +64,29 @@
     if (activeOnly && !x.enabled) return false;
     if (!q) return true;
     const m = META[x.key];
-    const hay = [x.key, x.description, m?.flag ?? "", m ? wordOf($o, m.label) : "", m ? wordOf($o, m.desc) : ""];
+    const hay = [
+      x.key,
+      x.description,
+      m?.flag ?? "",
+      m ? wordOf($o, m.label) : "",
+      m ? wordOf($o, m.desc) : "",
+    ];
     return hay.some((h) => h.toLowerCase().includes(q));
   }
 
   const groups = $derived.by(() => {
     const q = search.trim().toLowerCase();
     const listed = new Set(GROUPS.flatMap((g) => g.keys));
-    const other: Group = { ...OTHER, keys: options.filter((x) => !listed.has(x.key)).map((x) => x.key) };
+    const other: Group = {
+      ...OTHER,
+      keys: options.filter((x) => !listed.has(x.key)).map((x) => x.key),
+    };
     return [...GROUPS, other]
       .map((g) => ({
         g,
-        opts: g.keys.map((k) => byKey.get(k)).filter((x): x is LaunchOptionDto => !!x && matches(x, q)),
+        opts: g.keys
+          .map((k) => byKey.get(k))
+          .filter((x): x is LaunchOptionDto => !!x && matches(x, q)),
         all: g.keys.map((k) => byKey.get(k)).filter((x): x is LaunchOptionDto => !!x),
       }))
       .filter((e) => e.opts.length > 0);
@@ -95,8 +106,15 @@
     <Figure label={$o.statAvailable.value} value={String(options.length)} tone="text-fg-muted" />
   {/snippet}
   {#snippet actions()}
-    <Chip active={activeOnly} onclick={() => (activeOnly = !activeOnly)}>{$o.showActiveOnly.value}</Chip>
-    <Input type="search" class="w-60" placeholder={$o.searchPlaceholder.value} bind:value={search} />
+    <Chip active={activeOnly} onclick={() => (activeOnly = !activeOnly)}
+      >{$o.showActiveOnly.value}</Chip
+    >
+    <Input
+      type="search"
+      class="w-60"
+      placeholder={$o.searchPlaceholder.value}
+      bind:value={search}
+    />
   {/snippet}
 </PageHeader>
 
@@ -111,7 +129,10 @@
           <SectionCard title={wordOf($o, g.label)} icon={g.icon} tone={g.tone} class="self-start">
             {#snippet actions()}
               <span class="font-mono text-3xs text-fg-faint">
-                {$o.enabledCount({ enabled: all.filter((x) => x.enabled).length, total: all.length }).value}
+                {$o.enabledCount({
+                  enabled: all.filter((x) => x.enabled).length,
+                  total: all.length,
+                }).value}
               </span>
             {/snippet}
             <div class="divide-y divide-border/50">
@@ -126,7 +147,9 @@
   </div>
 
   <!-- What the machine suggests, and what DayZ will be told. -->
-  <aside class="flex w-80 shrink-0 flex-col gap-3 overflow-y-auto border-l border-border bg-bg/40 p-3">
+  <aside
+    class="flex w-80 shrink-0 flex-col gap-3 overflow-y-auto border-l border-border bg-bg/40 p-3"
+  >
     <SectionCard title={$o.hardware.value} icon={Cpu}>
       {#if specsLoading}
         <div class="flex items-center gap-2 px-3 py-3 text-2xs text-fg-faint">
@@ -143,7 +166,10 @@
         </dl>
         <div class="space-y-2 px-3 py-2.5">
           <p class="m-0 text-2xs leading-snug text-fg-muted">
-            {$o.recommendDesc({ cores: specs.physical_cores, ram: Math.round(specs.total_memory_mb / 1024) }).value}
+            {$o.recommendDesc({
+              cores: specs.physical_cores,
+              ram: Math.round(specs.total_memory_mb / 1024),
+            }).value}
           </p>
           <ul class="m-0 flex list-none flex-wrap gap-1 p-0">
             {#each recs as r (r.key)}

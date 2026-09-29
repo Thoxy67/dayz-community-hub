@@ -33,5 +33,8 @@
   }}
 >
   <Signal ms={servers.ping.get(key)} pending={servers.pending.has(key)} {size} {label} />
-  {#if warn}<TriangleAlert class="size-3 text-warn" aria-label={$c.playerCountUnverified.value} />{/if}
+  {#if warn}<TriangleAlert
+      class="size-3 text-warn"
+      aria-label={$c.playerCountUnverified.value}
+    />{/if}
 </button>

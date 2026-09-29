@@ -48,7 +48,9 @@
   <!-- Identity, then where we are. -->
   <div class="flex min-w-0 items-center gap-2.5 pl-3">
     <img src="/icon.svg" alt="" class="size-5 shrink-0" draggable="false" />
-    <span class="title-display text-[15px] leading-none tracking-[0.06em] whitespace-nowrap text-fg">
+    <span
+      class="title-display text-[15px] leading-none tracking-[0.06em] whitespace-nowrap text-fg"
+    >
       DayZ <span class="text-accent">Community Hub</span>
     </span>
     <span class="h-3.5 w-px bg-border-strong"></span>
@@ -59,7 +61,12 @@
   <div
     class="pointer-events-none absolute inset-y-0 left-1/2 flex -translate-x-1/2 items-center gap-4 max-[1180px]:hidden"
   >
-    {#snippet stat(Icon: import("svelte").Component<{ class?: string }>, value: string, label: string, tone: string)}
+    {#snippet stat(
+      Icon: import("svelte").Component<{ class?: string }>,
+      value: string,
+      label: string,
+      tone: string,
+    )}
       <Tooltip text={label} side="bottom">
         <span class="pointer-events-auto flex items-center gap-1.5">
           <Icon class="size-icon-sm {tone}" />
@@ -67,9 +74,24 @@
         </span>
       </Tooltip>
     {/snippet}
-    {@render stat(ServerIcon, num(servers.stats?.server_count ?? (servers.total || null)), $s.titlebarServers.value, "text-info")}
-    {@render stat(Users, num(servers.stats?.total_players), $s.titlebarPlayersIngame.value, "text-ok")}
-    {@render stat(SteamIcon, num(servers.steamPlayers), $s.titlebarPlayersSteam.value, "text-fg-muted")}
+    {@render stat(
+      ServerIcon,
+      num(servers.stats?.server_count ?? (servers.total || null)),
+      $s.titlebarServers.value,
+      "text-info",
+    )}
+    {@render stat(
+      Users,
+      num(servers.stats?.total_players),
+      $s.titlebarPlayersIngame.value,
+      "text-ok",
+    )}
+    {@render stat(
+      SteamIcon,
+      num(servers.steamPlayers),
+      $s.titlebarPlayersSteam.value,
+      "text-fg-muted",
+    )}
   </div>
 
   <div class="ml-auto flex items-stretch">
@@ -124,14 +146,20 @@
         onclick={() => app.go("settings", "account")}
       >
         {#if profile.avatarUrl}
-          <img src={profile.avatarUrl} alt="" class="size-5 shrink-0 rounded-full ring-1 ring-border-strong" />
+          <img
+            src={profile.avatarUrl}
+            alt=""
+            class="size-5 shrink-0 rounded-full ring-1 ring-border-strong"
+          />
         {:else}
           <UserRound class="size-icon shrink-0" />
         {/if}
         {#if servers.stats?.player_name}
           <span class="truncate font-medium text-fg">{servers.stats.player_name}</span>
           {#if servers.stats.steam_login}
-            <span class="truncate font-mono text-2xs text-fg-faint max-xl:hidden">{servers.stats.steam_login}</span>
+            <span class="truncate font-mono text-2xs text-fg-faint max-xl:hidden"
+              >{servers.stats.steam_login}</span
+            >
           {/if}
         {:else}
           <span class="italic">{$s.titlebarSetupAccount.value}</span>

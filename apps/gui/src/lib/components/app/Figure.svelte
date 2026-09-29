@@ -18,7 +18,10 @@
   } = $props();
 </script>
 
-<span class={cn("flex flex-col gap-0.5", secondary && "max-[1240px]:hidden")} title={title || undefined}>
+<span
+  class={cn("flex flex-col gap-0.5", secondary && "max-[1240px]:hidden")}
+  title={title || undefined}
+>
   <span class="label-stencil whitespace-nowrap text-fg-faint">{label}</span>
   <span class={cn("num font-mono text-sm font-semibold whitespace-nowrap", tone)}>{value}</span>
 </span>

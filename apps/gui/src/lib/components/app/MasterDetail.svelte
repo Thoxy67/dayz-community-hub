@@ -41,7 +41,16 @@
 
 <div class="relative flex min-h-0 min-w-0 flex-1" bind:clientWidth={width}>
   {#if show && selected && !narrow}
-    <Split {id} pane="end" {initial} {min} {max} keep={Math.min(520, breakpoint - initial)} {main} aside={detail} />
+    <Split
+      {id}
+      pane="end"
+      {initial}
+      {min}
+      {max}
+      keep={Math.min(520, breakpoint - initial)}
+      {main}
+      aside={detail}
+    />
   {:else}
     <div class="flex min-h-0 min-w-0 flex-1 flex-col">{@render main()}</div>
     {#if show && selected}

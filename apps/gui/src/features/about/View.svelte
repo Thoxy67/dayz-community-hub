@@ -40,8 +40,13 @@
 
   let version = $state("");
   let specs = $state<SystemSpecsDto | null>(null);
-  if (inTauri) getVersion().then((v) => (version = v)).catch(() => {});
-  getSystemSpecs().then((s) => (specs = s)).catch(() => {});
+  if (inTauri)
+    getVersion()
+      .then((v) => (version = v))
+      .catch(() => {});
+  getSystemSpecs()
+    .then((s) => (specs = s))
+    .catch(() => {});
 
   // Opened from the title bar's update badge: bring the update card to the eye.
   let highlight = $state(false);
@@ -49,7 +54,9 @@
     if (app.view === "about" && app.focus === "update") {
       highlight = true;
       app.focus = null;
-      requestAnimationFrame(() => document.getElementById("update")?.scrollIntoView({ behavior: "smooth", block: "center" }));
+      requestAnimationFrame(() =>
+        document.getElementById("update")?.scrollIntoView({ behavior: "smooth", block: "center" }),
+      );
       setTimeout(() => (highlight = false), 2500);
     }
   });
@@ -130,7 +137,10 @@
   <ol class="m-0 flex list-none flex-col gap-2 p-0">
     {#each list as text, i (i)}
       <li class="flex gap-2.5 text-xs leading-relaxed text-fg-muted">
-        <span class="grid size-5 shrink-0 place-items-center rounded-full border border-accent/50 font-mono text-3xs text-accent">{i + 1}</span>
+        <span
+          class="grid size-5 shrink-0 place-items-center rounded-full border border-accent/50 font-mono text-3xs text-accent"
+          >{i + 1}</span
+        >
         <span class="pt-0.5">{text}</span>
       </li>
     {/each}
@@ -145,17 +155,27 @@
       <div class="relative flex items-center gap-5 px-6 py-5">
         <img src="/icon.svg" alt="" class="size-16 shrink-0" />
         <div class="min-w-0 flex-1">
-          <h1 class="m-0 title-display text-3xl leading-none text-fg">DayZ <span class="text-accent">Community Hub</span></h1>
+          <h1 class="m-0 title-display text-3xl leading-none text-fg">
+            DayZ <span class="text-accent">Community Hub</span>
+          </h1>
           <p class="m-0 mt-1.5 text-sm text-fg-muted">{$a.heroTagline.value}</p>
-          <p class="m-0 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-2xs text-fg-faint">
-            <span>v{version || "—"}</span><span>·</span><span>{$a.licenseMit.value}</span><span>·</span>
-            <span class="inline-flex items-center gap-1 whitespace-nowrap">{$a.madeWith.value} <Heart class="size-3 text-err" /> {$a.by.value} {AUTHOR}</span>
+          <p
+            class="m-0 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-2xs text-fg-faint"
+          >
+            <span>v{version || "—"}</span><span>·</span><span>{$a.licenseMit.value}</span><span
+              >·</span
+            >
+            <span class="inline-flex items-center gap-1 whitespace-nowrap"
+              >{$a.madeWith.value} <Heart class="size-3 text-err" /> {$a.by.value} {AUTHOR}</span
+            >
           </p>
         </div>
         <div class="grid shrink-0 grid-cols-2 gap-1.5 max-xl:hidden">
           {#each FEATURES as f, fi (fi)}
             {@const I = f.icon}
-            <span class="flex items-center gap-1.5 rounded-sm border border-border bg-panel/70 px-2 py-1 text-2xs text-fg-muted">
+            <span
+              class="flex items-center gap-1.5 rounded-sm border border-border bg-panel/70 px-2 py-1 text-2xs text-fg-muted"
+            >
               <I class="size-3.5 {f.tone}" />{f.title()}
             </span>
           {/each}
@@ -187,13 +207,18 @@
         {@render card($a.quickstart.value, ListChecks, quick)}
 
         {#snippet modflow()}
-          <p class="m-0 mb-2 text-xs text-fg-muted"><span class="font-medium text-fg">{$a.steamcmdWhat.value}</span> {$a.steamcmdDesc({ notFound: $a.steamcmdNotFound.value }).value}</p>
+          <p class="m-0 mb-2 text-xs text-fg-muted">
+            <span class="font-medium text-fg">{$a.steamcmdWhat.value}</span>
+            {$a.steamcmdDesc({ notFound: $a.steamcmdNotFound.value }).value}
+          </p>
           {@render steps([$a.modStep1.value, $a.modStep2.value, $a.modStep3.value])}
         {/snippet}
         {@render card($a.modWorkflow.value, Puzzle, modflow)}
 
         {#snippet sharing()}
-          <p class="m-0 mb-2.5 text-xs text-fg-muted">{$a.sharingDesc({ url: "dzch://", file: ".dzch" }).value}</p>
+          <p class="m-0 mb-2.5 text-xs text-fg-muted">
+            {$a.sharingDesc({ url: "dzch://", file: ".dzch" }).value}
+          </p>
           <div class="grid gap-1.5 rounded-sm border border-border bg-bg p-2">
             {#each [{ label: $a.sharingBasic.value, url: "dzch://1.2.3.4:2302" }, { label: $a.sharingWithMods.value, url: "dzch://1.2.3.4:2302?mods=1559212036,1564026768" }, { label: $a.sharingFull.value, url: "dzch://1.2.3.4:2302?qport=27016&name=My%20Server&password=secret&mods=1559212036" }] as ex (ex.url)}
               <div class="flex items-center gap-2">
@@ -203,21 +228,36 @@
             {/each}
           </div>
           <dl class="m-0 mt-2 grid grid-cols-[5.5rem_1fr] gap-x-3 gap-y-1 text-2xs">
-            <dt class="font-mono text-accent">qport</dt><dd class="m-0 text-fg-muted">{$a.sharingParamQport.value}</dd>
-            <dt class="font-mono text-accent">name</dt><dd class="m-0 text-fg-muted">{$a.sharingParamName.value}</dd>
-            <dt class="font-mono text-accent">password</dt><dd class="m-0 text-fg-muted">{$a.sharingParamPassword.value}</dd>
-            <dt class="font-mono text-accent">mods</dt><dd class="m-0 text-fg-muted">{$a.sharingParamMods.value}</dd>
+            <dt class="font-mono text-accent">qport</dt>
+            <dd class="m-0 text-fg-muted">{$a.sharingParamQport.value}</dd>
+            <dt class="font-mono text-accent">name</dt>
+            <dd class="m-0 text-fg-muted">{$a.sharingParamName.value}</dd>
+            <dt class="font-mono text-accent">password</dt>
+            <dd class="m-0 text-fg-muted">{$a.sharingParamPassword.value}</dd>
+            <dt class="font-mono text-accent">mods</dt>
+            <dd class="m-0 text-fg-muted">{$a.sharingParamMods.value}</dd>
           </dl>
           <p class="m-0 mt-3 mb-1.5 text-2xs font-medium text-fg">{$a.sharingFiles.value}</p>
-          <p class="m-0 mb-2 text-2xs text-fg-muted">{$a.sharingFilesDesc({ button: $a.sharingFilesButton.value }).value}</p>
+          <p class="m-0 mb-2 text-2xs text-fg-muted">
+            {$a.sharingFilesDesc({ button: $a.sharingFilesButton.value }).value}
+          </p>
           <p class="m-0 mb-1.5 text-2xs font-medium text-fg">{$a.sharingFromDc.value}</p>
-          {@render steps([$a.sharingDcStep1.value, $a.sharingDcStep2.value, $a.sharingDcStep3.value])}
+          {@render steps([
+            $a.sharingDcStep1.value,
+            $a.sharingDcStep2.value,
+            $a.sharingDcStep3.value,
+          ])}
         {/snippet}
         {@render card($a.sharing.value, Share, sharing)}
 
         {#snippet tips()}
           <p class="m-0 mb-1.5 text-xs font-medium text-fg">{$a.tipAuthTitle.value}</p>
-          {@render steps([$a.tipAuthStep1.value, $a.tipAuthStep2.value, $a.tipAuthStep3.value, $a.tipAuthStep4.value])}
+          {@render steps([
+            $a.tipAuthStep1.value,
+            $a.tipAuthStep2.value,
+            $a.tipAuthStep3.value,
+            $a.tipAuthStep4.value,
+          ])}
           <p class="m-0 mt-3 mb-1 text-xs font-medium text-fg">{$a.tipPerfTitle.value}</p>
           <p class="m-0 text-xs text-fg-muted">{$a.tipPerfDesc.value}</p>
         {/snippet}
@@ -229,13 +269,19 @@
           <div class="flex flex-col gap-3">
             {#each SHORTCUTS as g, gi (gi)}
               <div>
-                <p class="m-0 mb-1 font-mono text-3xs tracking-[0.08em] text-fg-faint uppercase">{g.group()}</p>
+                <p class="m-0 mb-1 font-mono text-3xs tracking-[0.08em] text-fg-faint uppercase">
+                  {g.group()}
+                </p>
                 <ul class="m-0 flex list-none flex-col p-0">
                   {#each g.rows as r, ri (ri)}
-                    <li class="flex items-center gap-2 border-b border-border/40 py-1 last:border-b-0">
+                    <li
+                      class="flex items-center gap-2 border-b border-border/40 py-1 last:border-b-0"
+                    >
                       <span class="flex-1 text-2xs text-fg-muted">{r.label()}</span>
                       <span class="flex shrink-0 items-center gap-0.5">
-                        {#each r.keys as k, i (i)}{#if i > 0}<span class="text-3xs text-fg-faint">{r.keys[0] === "Ctrl" ? "+" : "/"}</span>{/if}<Kbd>{k}</Kbd>{/each}
+                        {#each r.keys as k, i (i)}{#if i > 0}<span class="text-3xs text-fg-faint"
+                              >{r.keys[0] === "Ctrl" ? "+" : "/"}</span
+                            >{/if}<Kbd>{k}</Kbd>{/each}
                       </span>
                     </li>
                   {/each}
@@ -249,10 +295,19 @@
         {#snippet machine()}
           {#if specs}
             <dl class="m-0 grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1.5 text-xs">
-              <dt class="flex items-center gap-1.5 text-fg-faint"><Cpu class="size-3.5" />{$a.systemCpu.value}</dt>
-              <dd class="m-0 text-right font-mono text-fg">{$a.systemCores({ physical: specs.physical_cores, logical: specs.logical_cores }).value}</dd>
-              <dt class="flex items-center gap-1.5 text-fg-faint"><MemoryStick class="size-3.5" />{$a.systemMemory.value}</dt>
-              <dd class="m-0 text-right font-mono text-fg">{num(Math.round(specs.total_memory_mb / 1024))} GB</dd>
+              <dt class="flex items-center gap-1.5 text-fg-faint">
+                <Cpu class="size-3.5" />{$a.systemCpu.value}
+              </dt>
+              <dd class="m-0 text-right font-mono text-fg">
+                {$a.systemCores({ physical: specs.physical_cores, logical: specs.logical_cores })
+                  .value}
+              </dd>
+              <dt class="flex items-center gap-1.5 text-fg-faint">
+                <MemoryStick class="size-3.5" />{$a.systemMemory.value}
+              </dt>
+              <dd class="m-0 text-right font-mono text-fg">
+                {num(Math.round(specs.total_memory_mb / 1024))} GB
+              </dd>
             </dl>
             <p class="m-0 mt-2 text-2xs text-fg-faint">{$a.systemHint.value}</p>
           {:else}
@@ -271,7 +326,9 @@
               >
             {/each}
           </div>
-          <p class="m-0 mt-2 text-2xs text-fg-faint">{$a.openSource.value} · {$a.licenseMit.value} · {$a.forgejo.value}</p>
+          <p class="m-0 mt-2 text-2xs text-fg-faint">
+            {$a.openSource.value} · {$a.licenseMit.value} · {$a.forgejo.value}
+          </p>
         {/snippet}
         {@render card($a.builtWith.value, Layers, stack)}
       </div>

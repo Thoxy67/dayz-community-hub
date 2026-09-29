@@ -32,7 +32,9 @@
       fake ? "border-err/40 bg-err/10 text-err" : "border-warn/40 bg-warn/10 text-warn",
     )}
   >
-    {#if fake}<ShieldAlert class="mt-px size-3.5 shrink-0" />{:else}<TriangleAlert class="mt-px size-3.5 shrink-0" />{/if}
+    {#if fake}<ShieldAlert class="mt-px size-3.5 shrink-0" />{:else}<TriangleAlert
+        class="mt-px size-3.5 shrink-0"
+      />{/if}
     <div class="min-w-0 flex-1">
       <p class="m-0 font-semibold">{fake ? $c.dmFake.value : $c.dmSuspect.value}</p>
       {#if !compact}

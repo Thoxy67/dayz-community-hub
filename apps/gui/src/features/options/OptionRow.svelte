@@ -72,14 +72,19 @@
     <div class="truncate text-xs font-medium text-fg">{label}</div>
     <!-- The description wraps onto a second line rather than being cut: at the
          window's minimum width a value field left it three words. -->
-    <p class="m-0 mt-0.5 flex min-w-0 items-start gap-1.5 text-2xs leading-snug text-fg-faint" title={desc}>
+    <p
+      class="m-0 mt-0.5 flex min-w-0 items-start gap-1.5 text-2xs leading-snug text-fg-faint"
+      title={desc}
+    >
       <code
         class={cn(
           "shrink-0 rounded-xs px-1 font-mono text-3xs leading-4",
           opt.enabled ? "bg-accent/12 text-accent" : "bg-raised text-fg-faint",
         )}>{flagText(opt.key, null)}</code
       >
-      <span class="line-clamp-2 min-w-0">{desc}{#if threadsMeaning}<span class="text-fg-muted"> · {threadsMeaning}</span>{/if}</span>
+      <span class="line-clamp-2 min-w-0"
+        >{desc}{#if threadsMeaning}<span class="text-fg-muted"> · {threadsMeaning}</span>{/if}</span
+      >
     </p>
   </div>
 

@@ -5,7 +5,11 @@
   import Monitor from "~icons/lucide/monitor";
   import Pencil from "~icons/lucide/pencil";
   import Check from "~icons/lucide/check";
-  import { DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator } from "$lib/components/ui/dropdown-menu";
+  import {
+    DropdownMenuContent,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+  } from "$lib/components/ui/dropdown-menu";
   import { Tooltip } from "$lib/components/ui/tooltip";
   import { theme, PRESETS } from "$lib/theme/theme.svelte";
   import type { Preset } from "$lib/theme/presets";
@@ -19,7 +23,8 @@
   const light = PRESETS.filter((p) => p.scheme === "light");
 
   function label(id: string): string {
-    const key = `preset${id.replace(/(^|_)(\w)/g, (_, __, c: string) => c.toUpperCase())}` as keyof typeof $t;
+    const key =
+      `preset${id.replace(/(^|_)(\w)/g, (_, __, c: string) => c.toUpperCase())}` as keyof typeof $t;
     const node = $t[key] as { value?: string } | undefined;
     return node?.value ?? id.replace(/_/g, " ");
   }

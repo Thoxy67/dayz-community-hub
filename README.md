@@ -2,7 +2,7 @@
 
 [![CI](https://git.thoxy.xyz/thoxy/dayz-community-hub/actions/workflows/ci.yml/badge.svg)](https://git.thoxy.xyz/thoxy/dayz-community-hub/actions?workflow=ci.yml)
 [![Version](https://img.shields.io/badge/version-0.4.1-blue?style=flat-square)](https://git.thoxy.xyz/thoxy/dayz-community-hub/releases)
-![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20(AppImage%2C%20deb%2C%20rpm)-lightgrey?style=flat-square)
+![Platform](<https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20(AppImage%2C%20deb%2C%20rpm)-lightgrey?style=flat-square>)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 
 [![Rust](https://img.shields.io/badge/Rust-2024-orange?style=flat-square&logo=rust&logoColor=white)](https://rust-lang.org/)
@@ -29,24 +29,28 @@ A fast, feature-rich DayZ launcher that replaces the official one — browse ser
 ## Features
 
 ### Browse
+
 - **18,000+ servers** — full public server list with live ping
 - **Filter & search** — by map, mods, 1PP, password, BattleEye
 - **Favorites & history** — star servers and track your sessions
 - **BattleMetrics** — rank, uptime, and 24h player graphs (API key required)
 
 ### Mods
+
 - **Auto-install** — missing mods download via SteamCMD before you connect
 - **Update checker** — detect stale mods with one click
 - **Bulk operations** — update, link, or delete multiple mods at once
 - **Symlink management** — clean mod organization without duplicating files
 
 ### Launch
+
 - **One-click connect** — starts Steam if needed, sets up mods, and joins
 - **Direct connect** — join any server by IP:port
 - **Launch options** — full control over DayZ startup flags
 - **Offline mode** — play [DayZ Community Offline Mode](https://github.com/Arkensor/DayZCommunityOfflineMode) missions locally
 
 ### Extras
+
 - **News feed** — latest DayZ articles in-app
 - **Auto-updater** — Windows: updates apply in-place
 - **Cross-platform** — runs on Windows and Linux
@@ -59,16 +63,20 @@ A fast, feature-rich DayZ launcher that replaces the official one — browse ser
 Go to [Releases](https://git.thoxy.xyz/thoxy/dayz-community-hub/releases) and grab the latest version.
 
 ### Windows
+
 Extract the `.zip` and run `dayz-community-hub.exe`. It updates itself: when a
 new version is out, the launcher offers it and replaces itself in place.
 
 ### Linux (AppImage)
+
 ```bash
 chmod +x dayz-community-hub-*.AppImage && ./dayz-community-hub-*.AppImage
 ```
+
 The AppImage updates itself the same way.
 
 ### Arch Linux (AUR)
+
 The `dayz-community-hub-git` package builds the latest `master` from source:
 
 ```bash

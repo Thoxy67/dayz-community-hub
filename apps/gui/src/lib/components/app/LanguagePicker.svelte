@@ -8,7 +8,8 @@
   import { cn } from "$lib/cx";
 
   /** The five languages as flags with their own names; choosing one switches at once. */
-  let { class: klass = "", "aria-label": ariaLabel }: { class?: string; "aria-label": string } = $props();
+  let { class: klass = "", "aria-label": ariaLabel }: { class?: string; "aria-label": string } =
+    $props();
 
   const FLAGS = { en: FlagGb, fr: FlagFr, de: FlagDe, es: FlagEs, ru: FlagRu } as const;
   let current = $state<Locale>(getLocale());
@@ -23,7 +24,9 @@
       aria-checked={on}
       class={cn(
         "flex flex-col items-center gap-1.5 rounded-md border px-2 py-2.5 text-2xs transition-colors",
-        on ? "border-accent bg-accent/10 text-fg shadow-[var(--glow-accent-soft)]" : "border-border text-fg-muted hover:border-border-strong hover:text-fg",
+        on
+          ? "border-accent bg-accent/10 text-fg shadow-[var(--glow-accent-soft)]"
+          : "border-border text-fg-muted hover:border-border-strong hover:text-fg",
       )}
       onclick={() => {
         current = l;

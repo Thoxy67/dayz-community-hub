@@ -26,6 +26,7 @@ export function distanceKm(a: readonly [number, number], b: readonly [number, nu
   const rad = (d: number) => (d * Math.PI) / 180;
   const dLat = rad(b[1] - a[1]);
   const dLon = rad(b[0] - a[0]);
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a[1])) * Math.cos(rad(b[1])) * Math.sin(dLon / 2) ** 2;
+  const h =
+    Math.sin(dLat / 2) ** 2 + Math.cos(rad(a[1])) * Math.cos(rad(b[1])) * Math.sin(dLon / 2) ** 2;
   return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }

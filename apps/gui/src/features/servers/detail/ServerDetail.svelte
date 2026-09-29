@@ -91,19 +91,34 @@
   const icon = <T,>(i: T) => (wide ? i : undefined);
   const tabs = $derived([
     { id: "overview" as DetailTab, label: $c.tabOverview.value, icon: icon(LayoutDashboard) },
-    { id: "players" as DetailTab, label: $c.tabPlayers.value, icon: icon(Users), count: m.count?.players ?? m.players.length },
+    {
+      id: "players" as DetailTab,
+      label: $c.tabPlayers.value,
+      icon: icon(Users),
+      count: m.count?.players ?? m.players.length,
+    },
     {
       id: "mods" as DetailTab,
       label: $c.tabMods.value,
       icon: modsIcon === Puzzle ? icon(Puzzle) : modsIcon,
       count: m.modsCount,
     },
-    { id: "rules" as DetailTab, label: $c.tabRules.value, icon: icon(ScrollText), count: m.a2s?.rules?.length ?? 0 },
+    {
+      id: "rules" as DetailTab,
+      label: $c.tabRules.value,
+      icon: icon(ScrollText),
+      count: m.a2s?.rules?.length ?? 0,
+    },
     {
       id: "stats" as DetailTab,
       label: $c.tabStats.value,
       // The fake-population warning shows on the tab too, so it is seen from any tab.
-      icon: m.population === "fake" ? StatsFakeIcon : m.population === "suspect" ? StatsSuspectIcon : icon(ChartLine),
+      icon:
+        m.population === "fake"
+          ? StatsFakeIcon
+          : m.population === "suspect"
+            ? StatsSuspectIcon
+            : icon(ChartLine),
     },
   ]);
   const go = (t: DetailTab) => (detailTab.current = t);

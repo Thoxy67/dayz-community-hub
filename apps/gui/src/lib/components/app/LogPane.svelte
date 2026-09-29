@@ -81,9 +81,17 @@
         <span class="size-1.5 animate-pulse rounded-full bg-ok"></span>{$c.live.value}
       </span>
     {/if}
-    <Input type="search" size="xs" class="ml-auto w-48" placeholder={$c.filterLines.value} bind:value={filter} />
+    <Input
+      type="search"
+      size="xs"
+      class="ml-auto w-48"
+      placeholder={$c.filterLines.value}
+      bind:value={filter}
+    />
     <Button variant="ghost" size="xs" onclick={copyAll}>
-      {#if copied}<Check class="size-3 text-ok" />{$c.copied.value}{:else}<CopyIcon class="size-3" />{$c.copy.value}{/if}
+      {#if copied}<Check class="size-3 text-ok" />{$c.copied.value}{:else}<CopyIcon
+          class="size-3"
+        />{$c.copy.value}{/if}
     </Button>
   </div>
   <div

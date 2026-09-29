@@ -55,13 +55,17 @@
       <CircleCheck class="size-icon-lg shrink-0 text-ok" />
       <div class="min-w-0">
         <p class="m-0 text-xs font-semibold text-ok">{$w.steamcmdDetected.value}</p>
-        <p class="m-0 truncate font-mono text-2xs text-fg-muted" data-selectable>{wizard.status?.path}</p>
+        <p class="m-0 truncate font-mono text-2xs text-fg-muted" data-selectable>
+          {wizard.status?.path}
+        </p>
       </div>
     {:else}
       <TriangleAlert class="size-icon-lg shrink-0 text-warn" />
       <div class="min-w-0 flex-1">
         <p class="m-0 text-xs font-semibold text-warn">{$w.steamcmdNotFound.value}</p>
-        <p class="m-0 text-2xs text-fg-faint">{$w.platform({ name: win ? "Windows" : "Linux" }).value}</p>
+        <p class="m-0 text-2xs text-fg-faint">
+          {$w.platform({ name: win ? "Windows" : "Linux" }).value}
+        </p>
       </div>
       <Button size="xs" variant="ghost" onclick={() => wizard.detect()}>
         <RefreshCw class="size-icon-sm" />{$w.rescan.value}
@@ -76,8 +80,9 @@
           {#each DISTROS as d (d.cmd)}
             <li class="flex items-center gap-3 px-3 py-1.5">
               <span class="w-28 shrink-0 text-2xs text-fg-muted">{d.label}</span>
-              <code class="min-w-0 flex-1 truncate rounded-sm bg-bg px-2 py-1 font-mono text-2xs text-fg" data-selectable
-                >{d.cmd}</code
+              <code
+                class="min-w-0 flex-1 truncate rounded-sm bg-bg px-2 py-1 font-mono text-2xs text-fg"
+                data-selectable>{d.cmd}</code
               >
               <button
                 class={cn(
@@ -88,24 +93,35 @@
                 title={$w.copyCommand.value}
                 onclick={() => copy(d.cmd)}
               >
-                {#if copied === d.cmd}<Check class="size-icon-sm" />{:else}<Copy class="size-icon-sm" />{/if}
+                {#if copied === d.cmd}<Check class="size-icon-sm" />{:else}<Copy
+                    class="size-icon-sm"
+                  />{/if}
               </button>
             </li>
           {/each}
         </ul>
-        <p class="m-0 flex items-center gap-2 border-t border-border/60 px-3 py-2 text-2xs text-fg-muted">
+        <p
+          class="m-0 flex items-center gap-2 border-t border-border/60 px-3 py-2 text-2xs text-fg-muted"
+        >
           <Radar class="size-icon-sm animate-pulse text-accent" />{$w.steamcmdLinuxWaiting.value}
         </p>
       </SectionCard>
     {:else}
       <SectionCard title="SteamCMD" icon={Download} padded>
         <p class="m-0 mb-2.5 text-2xs text-fg-muted">{$w.steamcmdWinHint.value}</p>
-        <Button variant="accent" class="w-full" disabled={wizard.downloading} onclick={() => wizard.download()}>
-          {#if wizard.downloading}<Spinner class="size-icon-sm text-accent-fg" />{$w.steamcmdDownloading.value}{:else}<Download
-              class="size-icon-sm"
-            />{$w.steamcmdInstallAuto.value}{/if}
+        <Button
+          variant="accent"
+          class="w-full"
+          disabled={wizard.downloading}
+          onclick={() => wizard.download()}
+        >
+          {#if wizard.downloading}<Spinner class="size-icon-sm text-accent-fg" />{$w
+              .steamcmdDownloading.value}{:else}<Download class="size-icon-sm" />{$w
+              .steamcmdInstallAuto.value}{/if}
         </Button>
-        <p class="m-0 mt-1.5 text-3xs text-fg-faint">{$w.steamcmdInstallHint.value} %LOCALAPPDATA%\dayz-community-hub\steamcmd</p>
+        <p class="m-0 mt-1.5 text-3xs text-fg-faint">
+          {$w.steamcmdInstallHint.value} %LOCALAPPDATA%\dayz-community-hub\steamcmd
+        </p>
         {#if wizard.downloadError}
           <p class="m-0 mt-2 font-mono text-2xs text-err" data-selectable>{wizard.downloadError}</p>
         {/if}
@@ -114,7 +130,11 @@
   {/if}
 
   <!-- Paths, for anyone whose install is not where it is looked for. -->
-  <SectionCard title={$w.steamcmdPath.value} description={$w.steamcmdOverride.value} icon={FolderCog}>
+  <SectionCard
+    title={$w.steamcmdPath.value}
+    description={$w.steamcmdOverride.value}
+    icon={FolderCog}
+  >
     <Field label={$w.steamcmdPath.value} hint={$w.leaveBlank.value} stacked>
       <PathInput
         bind:value={wizard.steamcmdPath}

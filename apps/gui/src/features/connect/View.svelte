@@ -44,9 +44,13 @@
   let touched = $state(false);
 
   const isFav = $derived(direct.valid && !!direct.favorite);
-  const pingKey = $derived(direct.queryPortResolved ? `${direct.listed?.ip ?? direct.ip}:${direct.queryPortResolved}` : "");
+  const pingKey = $derived(
+    direct.queryPortResolved ? `${direct.listed?.ip ?? direct.ip}:${direct.queryPortResolved}` : "",
+  );
   const ping = $derived(pingKey ? servers.ping.get(pingKey) : undefined);
-  const modsMissing = $derived(direct.serverMods.filter((m) => direct.modStatus(m.steam_workshop_id) === "missing").length);
+  const modsMissing = $derived(
+    direct.serverMods.filter((m) => direct.modStatus(m.steam_workshop_id) === "missing").length,
+  );
 
   /** The server to describe: its list entry, or the address the query answered on. */
   const detailTarget = $derived(
@@ -74,11 +78,21 @@
         value={`${direct.a2s?.players ?? direct.listed?.players ?? 0}/${direct.a2s?.max_players ?? direct.listed?.max_players ?? 0}`}
         tone="text-ok"
       />
-      <Figure label={$c.ping.value} value={ping == null ? "—" : ping >= 5000 ? "×" : `${ping} ms`} tone={signalTone(signalLevel(ping))} />
-      <Figure label={$c.map.value} value={direct.a2s?.map || direct.listed?.map || "—"} tone="text-map" />
+      <Figure
+        label={$c.ping.value}
+        value={ping == null ? "—" : ping >= 5000 ? "×" : `${ping} ms`}
+        tone={signalTone(signalLevel(ping))}
+      />
+      <Figure
+        label={$c.map.value}
+        value={direct.a2s?.map || direct.listed?.map || "—"}
+        tone="text-map"
+      />
       <Figure
         label={$c.modsCount({ count: direct.serverMods.length }).value}
-        value={modsMissing ? `${modsMissing} ${$c.modMissing.value.toLowerCase()}` : String(direct.serverMods.length)}
+        value={modsMissing
+          ? `${modsMissing} ${$c.modMissing.value.toLowerCase()}`
+          : String(direct.serverMods.length)}
         tone={modsMissing ? "text-warn" : "text-mods"}
       />
     {/if}
@@ -87,10 +101,18 @@
     <Button onclick={() => direct.openFile()} title={$c.openDzchTitle.value}>
       <FileUp class="size-icon-sm" />{$c.openDzch.value}
     </Button>
-    <Button disabled={!direct.valid} onclick={() => direct.copyLink()} title={$c.copyUrlTitle.value}>
+    <Button
+      disabled={!direct.valid}
+      onclick={() => direct.copyLink()}
+      title={$c.copyUrlTitle.value}
+    >
       <Link class="size-icon-sm" />{$c.copyUrl.value}
     </Button>
-    <Button disabled={!direct.valid} onclick={() => direct.exportFile()} title={$c.exportTitle.value}>
+    <Button
+      disabled={!direct.valid}
+      onclick={() => direct.exportFile()}
+      title={$c.exportTitle.value}
+    >
       <FileDown class="size-icon-sm" />{$c.export.value}
     </Button>
   {/snippet}
@@ -121,19 +143,37 @@
             onblur={() => direct.splitAddress()}
             {onkeydown}
           />
-          <span class={cn("text-3xs", touched && direct.addressError ? "text-err" : "text-fg-faint")}>
+          <span
+            class={cn("text-3xs", touched && direct.addressError ? "text-err" : "text-fg-faint")}
+          >
             {touched && direct.addressError ? $c.addressMissing.value : $c.addressHint.value}
           </span>
         </label>
 
         <div class="grid grid-cols-2 gap-2">
           <label class="flex flex-col gap-1">
-            <span class="text-2xs font-medium text-fg">{$c.port.value} <span class="text-fg-faint">{$c.portGame.value}</span></span>
-            <Input bind:value={direct.port} type="number" min="1" max="65535" class={cn(direct.portError && "[&_input]:border-err/60")} {onkeydown} />
+            <span class="text-2xs font-medium text-fg"
+              >{$c.port.value} <span class="text-fg-faint">{$c.portGame.value}</span></span
+            >
+            <Input
+              bind:value={direct.port}
+              type="number"
+              min="1"
+              max="65535"
+              class={cn(direct.portError && "[&_input]:border-err/60")}
+              {onkeydown}
+            />
           </label>
           <label class="flex flex-col gap-1">
             <span class="text-2xs font-medium text-fg">{$c.queryPortOptional.value}</span>
-            <Input bind:value={direct.queryPort} type="number" min="1" max="65535" placeholder="27016" {onkeydown} />
+            <Input
+              bind:value={direct.queryPort}
+              type="number"
+              min="1"
+              max="65535"
+              placeholder="27016"
+              {onkeydown}
+            />
           </label>
         </div>
         {#if direct.portError}
@@ -143,7 +183,9 @@
         {/if}
 
         <label class="flex flex-col gap-1">
-          <span class="text-2xs font-medium text-fg">{$c.password.value} <span class="text-fg-faint">({$c.optional.value})</span></span>
+          <span class="text-2xs font-medium text-fg"
+            >{$c.password.value} <span class="text-fg-faint">({$c.optional.value})</span></span
+          >
           <span class="flex gap-1">
             <Input
               bind:value={direct.password}
@@ -161,13 +203,17 @@
             />
           </span>
           {#if direct.passwordFromFavorite && direct.password}
-            <span class="flex items-center gap-1 text-3xs text-warn"><KeyRound class="size-3" />{$c.savedPassword.value}</span>
+            <span class="flex items-center gap-1 text-3xs text-warn"
+              ><KeyRound class="size-3" />{$c.savedPassword.value}</span
+            >
           {/if}
         </label>
 
         <div class="flex gap-1.5">
           <Button type="submit" disabled={direct.querying || !direct.valid} class="flex-1">
-            {#if direct.querying}<Spinner class="size-icon-sm" />{$c.querying.value}{:else}<Search class="size-icon-sm" />{$c.query.value}{/if}
+            {#if direct.querying}<Spinner class="size-icon-sm" />{$c.querying.value}{:else}<Search
+                class="size-icon-sm"
+              />{$c.query.value}{/if}
           </Button>
           <IconButton
             icon={Star}
@@ -176,7 +222,12 @@
             disabled={!direct.valid}
             onclick={() => direct.favoriteIt()}
           />
-          <IconButton icon={Eraser} label={$common.clear.value} disabled={!direct.address} onclick={() => direct.clear()} />
+          <IconButton
+            icon={Eraser}
+            label={$common.clear.value}
+            disabled={!direct.address}
+            onclick={() => direct.clear()}
+          />
         </div>
         <Button
           variant="play"
@@ -189,13 +240,17 @@
         >
           <Play class="size-icon" />{$c.connect.value}
         </Button>
-        <span class="flex items-center justify-center gap-1.5 text-3xs text-fg-faint"><Kbd>Enter</Kbd>{$c.enterToConnect.value}</span>
+        <span class="flex items-center justify-center gap-1.5 text-3xs text-fg-faint"
+          ><Kbd>Enter</Kbd>{$c.enterToConnect.value}</span
+        >
       </form>
     </Panel>
 
     <Panel title={$c.extraMods.value} scroll={false}>
       {#snippet toolbar()}
-        <span class="font-mono text-3xs text-fg-faint">{$c.argsCount({ count: direct.launchArgs.length }).value}</span>
+        <span class="font-mono text-3xs text-fg-faint"
+          >{$c.argsCount({ count: direct.launchArgs.length }).value}</span
+        >
       {/snippet}
       <LaunchArgs />
     </Panel>
@@ -214,7 +269,9 @@
     {/if}
     {#if detailTarget}
       {#key `${detailTarget.ip}:${detailTarget.port}`}
-        <div class="min-h-0 flex-1"><ServerDetail ip={detailTarget.ip} port={detailTarget.port} name={direct.name} /></div>
+        <div class="min-h-0 flex-1">
+          <ServerDetail ip={detailTarget.ip} port={detailTarget.port} name={direct.name} />
+        </div>
       {/key}
     {:else if direct.querying}
       <div class="flex flex-1 items-center justify-center gap-2 text-xs text-fg-muted">

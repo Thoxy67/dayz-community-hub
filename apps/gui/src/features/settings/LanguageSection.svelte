@@ -16,7 +16,12 @@
   let current = $state<Locale>(getLocale());
 </script>
 
-<Section id="language" title={$s.sectionLanguage.value} description={$s.languageHint.value} icon={Languages}>
+<Section
+  id="language"
+  title={$s.sectionLanguage.value}
+  description={$s.languageHint.value}
+  icon={Languages}
+>
   <div class="grid grid-cols-5 gap-2 p-2.5">
     {#each LOCALES as l (l)}
       {@const F = FLAGS[l]}
@@ -25,7 +30,9 @@
         type="button"
         class={cn(
           "flex items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-colors",
-          on ? "border-accent bg-accent/8" : "border-border hover:border-border-strong hover:bg-raised/40",
+          on
+            ? "border-accent bg-accent/8"
+            : "border-border hover:border-border-strong hover:bg-raised/40",
         )}
         aria-pressed={on}
         onclick={() => {
