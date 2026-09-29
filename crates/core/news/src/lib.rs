@@ -323,7 +323,11 @@ async fn fetch_news_raw() -> Result<(u16, String)> {
 /// challenge page instead, we surface [`Error::CloudflareChallenge`] so the
 /// caller can fall back to a real WebView.
 pub async fn fetch_news() -> Result<Vec<Article>> {
-    let (status, body) = fetch_news_raw().await?;
+    // The whole exchange (connect, TLS, request, body) is bounded: a site that
+    // stops answering must not leave the news tab loading forever.
+    let (status, body) = tokio::time::timeout(std::time::Duration::from_secs(20), fetch_news_raw())
+        .await
+        .map_err(|_| dz_common::Error::Other("dayz.com did not answer in time".into()))??;
     match parse_news_json(&body) {
         Ok(rows) => Ok(rows),
         Err(e) => {
@@ -342,9 +346,9 @@ mod tests {
 
     /// Live check that the navigation-header trick still bypasses Cloudflare and
     /// returns parseable JSON. Network-dependent, so ignored by default. Run with:
-    /// cargo test -p dayz-community-hub-core -- news::tests::test_live_fetch --ignored --nocapture
+    /// cargo test -p dz-news -- tests::test_live_fetch --ignored --nocapture
     #[tokio::test]
-    #[ignore]
+    #[ignore = "reaches dayz.com"]
     async fn test_live_fetch() {
         match fetch_news().await {
             Ok(rows) => {

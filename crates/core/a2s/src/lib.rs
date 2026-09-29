@@ -124,7 +124,7 @@ mod tests {
     /// Live A2S query against a public server.
     /// Run with: cargo test -p dz-a2s -- --ignored --nocapture
     #[tokio::test]
-    #[ignore]
+    #[ignore = "queries a public server"]
     async fn live_server() {
         let addr = "195.60.166.46:27016";
         match query_info(addr).await {

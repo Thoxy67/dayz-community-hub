@@ -505,3 +505,128 @@ mod tests {
         assert!(contains_ci("Él Server", "él"));
     }
 }
+
+#[cfg(test)]
+mod more_tests {
+    use super::*;
+    use dz_api::Endpoint;
+
+    fn server(ip: &str, qport: i64, players: i64, mods: usize) -> Server {
+        Server {
+            endpoint: Endpoint {
+                ip: ip.into(),
+                port: qport,
+            },
+            game_port: qport - 1,
+            name: format!("{ip}:{qport}"),
+            map: "enoch".into(),
+            players,
+            max_players: 60,
+            mods: (0..mods)
+                .map(|i| dz_api::Mod {
+                    name: String::new(),
+                    steam_workshop_id: i as i64,
+                })
+                .collect(),
+            ..Default::default()
+        }
+    }
+
+    fn query() -> ServerQuery {
+        ServerQuery {
+            search: String::new(),
+            map: None,
+            first_person: Tri::All,
+            password: Tri::All,
+            battleye: Tri::All,
+            modded: Tri::All,
+            hide_empty: false,
+            hide_full: false,
+            max_ping: 0,
+            show_excluded: false,
+            sort: SortCol::None,
+            asc: true,
+            offset: 0,
+            limit: 100,
+        }
+    }
+
+    fn list() -> ServerList {
+        ServerList {
+            status: 0,
+            result: vec![
+                server("1.1.1.1", 2, 10, 0),
+                server("2.2.2.2", 2, 20, 3),
+                server("3.3.3.3", 2, 30, 0),
+            ],
+        }
+    }
+
+    #[test]
+    fn max_ping_drops_slow_and_failed_but_keeps_unpinged() {
+        let mut live = LiveMap::default();
+        live.put_for_test("1.1.1.1", 2, 40);
+        live.put_for_test("2.2.2.2", 2, 400);
+        let mut q = query();
+        q.max_ping = 100;
+        let profile = ProfileView {
+            excluded: FxHashSet::default(),
+            favorites: FxHashSet::default(),
+        };
+        let (order, stats) = compute(&list(), &live, &profile, &q);
+        assert_eq!(order, [0, 2], "the 400 ms one goes, the unpinged one stays");
+        assert_eq!(stats.pinged, 1);
+    }
+
+    #[test]
+    fn excluded_ips_are_hidden_unless_asked_and_favorites_are_marked() {
+        let live = LiveMap::default();
+        let profile = ProfileView {
+            excluded: ["2.2.2.2".to_string()].into_iter().collect(),
+            favorites: ["3.3.3.3:2".to_string()].into_iter().collect(),
+        };
+        let mut q = query();
+        let (order, _) = compute(&list(), &live, &profile, &q);
+        assert_eq!(order, [0, 2]);
+        q.show_excluded = true;
+        let (order, _) = compute(&list(), &live, &profile, &q);
+        assert_eq!(order.len(), 3);
+        let l = list();
+        assert!(row(&l.result[2], &live, &profile).favorite);
+        assert!(row(&l.result[1], &live, &profile).excluded);
+    }
+
+    #[test]
+    fn modded_and_players_sort() {
+        let live = LiveMap::default();
+        let profile = ProfileView {
+            excluded: FxHashSet::default(),
+            favorites: FxHashSet::default(),
+        };
+        let mut q = query();
+        q.modded = Tri::Only;
+        assert_eq!(compute(&list(), &live, &profile, &q).0, [1]);
+        q.modded = Tri::All;
+        q.sort = SortCol::Players;
+        q.asc = false;
+        assert_eq!(compute(&list(), &live, &profile, &q).0, [2, 1, 0]);
+    }
+
+    #[test]
+    fn a_page_is_the_window_asked_for() {
+        let profile = ProfileView {
+            excluded: FxHashSet::default(),
+            favorites: FxHashSet::default(),
+        };
+        let list = Arc::new(list());
+        let mut q = query();
+        q.offset = 1;
+        q.limit = 5;
+        let page = run(Arc::clone(&list), &profile, &q, 1_000_000);
+        assert_eq!(page.total, 3);
+        assert_eq!(page.rows.len(), 2);
+        assert_eq!(page.rows[0].ip, "2.2.2.2");
+        q.offset = 99;
+        assert!(run(list, &profile, &q, 1_000_000).rows.is_empty());
+    }
+}
