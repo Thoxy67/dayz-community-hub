@@ -349,7 +349,10 @@ impl Snapshot {
         }
         let tmp = self.path.with_extension("json.tmp");
         tokio::fs::write(&tmp, &self.data).await?;
-        tokio::fs::rename(&tmp, &self.path).await?;
+        let path = self.path.clone();
+        tokio::task::spawn_blocking(move || replace(&tmp, &path))
+            .await
+            .map_err(std::io::Error::other)??;
         Ok(())
     }
 
@@ -360,8 +363,23 @@ impl Snapshot {
         }
         let tmp = self.path.with_extension("json.tmp");
         std::fs::write(&tmp, &self.data)?;
-        std::fs::rename(&tmp, &self.path)?;
+        replace(&tmp, &self.path)?;
         Ok(())
+    }
+}
+
+/// Rename `tmp` over `path`. On Windows a scanner or the search indexer that
+/// has `profile.json` open for a moment makes the rename fail with a sharing
+/// violation: it is tried again for a second or so instead of losing the
+/// save.
+fn replace(tmp: &Path, path: &Path) -> std::io::Result<()> {
+    #[cfg(windows)]
+    {
+        dz_common::win::retry_locked(|| std::fs::rename(tmp, path))
+    }
+    #[cfg(not(windows))]
+    {
+        std::fs::rename(tmp, path)
     }
 }
 
