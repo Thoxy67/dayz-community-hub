@@ -1,0 +1,198 @@
+/**
+ * A pretend backend, for looking at the interface in a plain browser
+ * (`bun run dev`, then open the page): screenshots, design work. Installed by
+ * `main.ts` in development only, and only when the page is not inside Tauri.
+ * The data is invented but shaped like the real thing.
+ */
+import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
+
+const MAPS = ["chernarusplus", "enoch", "sakhal", "deerisle", "namalsk", "banov", "pripyat", "esseker", "takistanplus"];
+const TAGS = ["PVP", "PVE", "1PP", "3PP", "Loot x2", "Trader", "Raid Weekends", "Vanilla+", "Hardcore", "KOTH", "Airdrops"];
+const REGIONS = ["EU", "US", "RU", "UK", "DE", "FR", "AU", "PL", "NA-East"];
+
+let seed = 42;
+const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+const pick = <T>(a: readonly T[]) => a[Math.floor(rnd() * a.length)]!;
+
+const servers = Array.from({ length: 2400 }, (_, i) => {
+  const max = pick([40, 50, 60, 60, 60, 80, 100, 127]);
+  const players = rnd() < 0.3 ? 0 : rnd() < 0.1 ? max : Math.floor(rnd() * max);
+  const ip = `${45 + (i % 180)}.${(i * 7) % 255}.${(i * 13) % 255}.${(i * 31) % 250}`;
+  const map = pick(MAPS);
+  const fp = rnd() < 0.35;
+  return {
+    game_port: 2302 + (i % 5) * 100,
+    ip,
+    query_port: 27016 + (i % 5) * 100,
+    name: `[${pick(REGIONS)}] ${pick(["Frontline", "Wasteland", "Survivor", "Nomad", "Blackout", "Last Light", "Iron Wolves", "Dead Frequency"])} ${map === "chernarusplus" ? "Chernarus" : map} | ${pick(TAGS)} | ${pick(TAGS)}${fp ? " | 1PP" : ""}`,
+    map,
+    players,
+    max_players: max,
+    environment: rnd() < 0.8 ? "w" : "l",
+    password: rnd() < 0.06,
+    version: "1.28.162391",
+    first_person_only: fp,
+    time: `${String(Math.floor(rnd() * 24)).padStart(2, "0")}:${String(Math.floor(rnd() * 60)).padStart(2, "0")}`,
+    mods_count: rnd() < 0.35 ? 0 : Math.floor(rnd() * 40),
+    vac: true,
+    battl_eye: rnd() < 0.9,
+  };
+});
+
+const mods = Array.from({ length: 24 }, (_, i) => {
+  const size = Math.floor(rnd() * 2_000_000_000) + 2_000_000;
+  const local = 1_750_000_000 + Math.floor(rnd() * 5_000_000);
+  const stale = i % 6 === 0;
+  return {
+    name: ["CF", "Community-Online-Tools", "Dabs Framework", "VPPAdminTools", "Expansion-Core", "BuilderItems", "MuchCarKey", "Code Lock", "BaseBuildingPlus", "DayZ-Expansion-Map", "SchanaModParty", "Trader", "MMG Storage", "RedFalcon Heliz", "Airdrop-Upgraded", "Breachingcharge", "Server_Information_Panel", "GoreZ", "Survivor Animations", "WindstridesClothing", "Mass'sManyItemOverhaul", "CannabisPlus", "SNAFU Weapons", "DeerIsle"][i]!,
+    id: 1_559_212_036 + i * 97_331,
+    local_updated: local,
+    size,
+    size_human: size > 1e9 ? `${(size / 1e9).toFixed(1)} GB` : `${(size / 1e6).toFixed(0)} MB`,
+    managed: i % 5 !== 0,
+    remote_updated: stale ? local + 86400 * 4 : local,
+    update_available: stale,
+  };
+});
+
+const now = Math.floor(Date.now() / 1000);
+const profile = {
+  steam_login: "survivor_42",
+  steam_password: null,
+  steam_root: "/home/player/.local/share/Steam",
+  steamcmd_enabled: true,
+  steamcmd_path: null,
+  player: "Survivor",
+  steam_api_key: "XXXXXXXX",
+  steam_id: "76561198000000000",
+  battlemetrics_api_key: null,
+  user_location: [2.35, 48.85],
+  favorites: servers.slice(3, 9).map((s) => ({ name: s.name, ip: s.ip, port: s.query_port, password: null })),
+  history: servers.slice(10, 22).map((s, i) => ({ name: s.name, ip: s.ip, port: s.query_port, ts: now - i * 7200 - 600, relative_time: "" })),
+  options: [
+    ["-window", "Run in windowed mode"], ["-noborder", "Borderless window"], ["-nosplash", "Skip splash screen"],
+    ["-skipIntro", "Skip intro videos"], ["-nolauncher", "Skip the Bohemia launcher"], ["-filePatching", "Load unpacked files"],
+    ["-doLogs", "Write RPT logs"], ["-high", "High process priority"], ["-world", "World loaded at start"],
+    ["-noPause", "Keep running when unfocused"], ["-maxMem", "Maximum memory (MB)"], ["-maxVRAM", "Maximum video memory (MB)"],
+    ["-cpuCount", "CPU cores to use"], ["-exThreads", "Extra threads mask"], ["-noBenchmark", "Skip the benchmark"],
+    ["-scriptDebug", "Script debugging"], ["-profiles", "Profile folder"],
+  ].map(([key, description], i) => ({ key, description, enabled: i % 3 === 0, value: key === "-maxMem" ? "8192" : key === "-world" ? "empty" : null })),
+  excluded_ips: [servers[40]!.ip],
+  ping_concurrency: 64,
+  ping_timeout_auto: 2000,
+  ping_timeout_manual: 10000,
+  ping_max_retries: 0,
+  ping_scan_favorites: true,
+  ping_scan_history: true,
+  ping_scan_servers: true,
+};
+
+const articles = Array.from({ length: 8 }, (_, i) => ({
+  title: ["Update 1.28 is live", "Status Report – September", "Frostline: what's next", "Community spotlight", "Server hosting changes", "Stable Update 1.27", "Winter event", "Console patch notes"][i]!,
+  slug: `article-${i}`,
+  excerpt: "Survivors, a new update brings changes to vehicles, base building and the economy across every map.",
+  content_text: "Lorem ipsum dolor sit amet.",
+  content_html: "<p>Survivors, a new update brings changes to vehicles, base building and the economy.</p><h2>Vehicles</h2><p>Handling was reworked on every terrain type.</p>",
+  date: new Date(Date.now() - i * 86400000 * 9).toISOString(),
+  url: "https://dayz.com/article/updates/stable-update",
+  image_url: null,
+  category: i % 2 ? "Status Report" : "Updates",
+  author: "Bohemia Interactive",
+}));
+
+type Ch<T> = { onmessage: (m: T) => void };
+const pingOf = (k: string) => 20 + ((k.length * 37 + k.charCodeAt(k.length - 1) * 11) % 260);
+
+export function installMock() {
+  // `?theme=chernarus` (or any preset id) and `?view=mods` pick what a screenshot shows.
+  const q = new URLSearchParams(location.search);
+  const t = q.get("theme");
+  if (t) localStorage.setItem("dzch.theme", JSON.stringify({ preset: t, custom: null, frame: {} }));
+  const v = q.get("view");
+  if (v) queueMicrotask(async () => (await import("$lib/stores/app.svelte")).app.go(v as never, q.get("focus")));
+  mockWindows("main");
+  mockIPC((cmd, args) => {
+    const a = (args ?? {}) as Record<string, unknown>;
+    switch (cmd) {
+      case "check_first_launch":
+        return false;
+      case "initialize":
+        return { server_count: servers.length, from_cache: false, is_first_launch: false };
+      case "get_servers":
+      case "refresh_servers":
+        return servers;
+      case "get_server_details": {
+        const s = servers.find((x) => x.ip === a.ip);
+        return { ...s, mods: mods.slice(0, s?.mods_count ?? 0).map((m) => ({ name: m.name, steam_workshop_id: m.id })) };
+      }
+      case "get_app_stats":
+        return { server_count: servers.length, total_players: servers.reduce((n, s) => n + s.players, 0), player_name: profile.player, steam_login: profile.steam_login, has_steamcmd: true };
+      case "fetch_steam_player_count":
+        return 61_204;
+      case "get_profile":
+        return profile;
+      case "get_installed_mods":
+      case "check_mod_updates":
+        return mods;
+      case "fetch_news":
+        return articles;
+      case "get_offline_missions":
+        return ["DayZCommunityOfflineMode.ChernarusPlus", "DayZCommunityOfflineMode.Enoch", "DayZCommunityOfflineMode.Sakhal"];
+      case "get_system_specs":
+        return { logical_cores: 16, physical_cores: 8, total_memory_mb: 32768 };
+      case "get_cli_args":
+        return { connect: null, reconnect: false, open: null };
+      case "check_for_update":
+        return { version: "0.5.0", currentVersion: "0.4.1", body: "- New interface", date: new Date().toISOString() };
+      case "detect_steamcmd":
+        return { found: true, path: "/usr/bin/steamcmd", platform: "linux" };
+      case "ping_all_background":
+      case "ping_servers": {
+        const targets = a.targets as string[];
+        const ch = a.onProgress as Ch<unknown[]>;
+        let i = 0;
+        const step = () => {
+          const batch = targets.slice(i, i + 200).map((k) => {
+            const [ip, port] = k.split(":");
+            const ms = pingOf(k);
+            return { ip, port: Number(port), ms: ms > 270 ? 9999 : ms, failed: ms > 270 };
+          });
+          i += 200;
+          ch.onmessage(batch);
+          if (i < targets.length) setTimeout(step, 60);
+        };
+        setTimeout(step, 200);
+        return null;
+      }
+      case "ping_single":
+        return pingOf(`${a.ip}:${a.port}`);
+      case "query_a2s": {
+        const s = servers.find((x) => x.ip === a.ip);
+        return {
+          server_name: s?.name ?? "?",
+          game: "DayZ",
+          players: s?.players ?? 0,
+          max_players: s?.max_players ?? 60,
+          bots: 0,
+          map: s?.map ?? "",
+          version: s?.version ?? "",
+          players_list: Array.from({ length: Math.min(12, s?.players ?? 0) }, (_, i) => ({ name: `Survivor ${i + 1}`, score: 0, duration: 300 + i * 611 })),
+          mods: [],
+          rules: [{ name: "allowedBuild", value: "0" }, { name: "dedicated", value: "1" }],
+          query_port: s?.query_port ?? 27016,
+          game_port: s?.game_port ?? 2302,
+        };
+      }
+      case "plugin:app|version":
+        return "0.4.1";
+      case "plugin:window|is_maximized":
+        return false;
+      case "toggle_ping_pause":
+        return false;
+      case "fetch_steam_avatar":
+        return null;
+      default:
+        return null;
+    }
+  });
+}

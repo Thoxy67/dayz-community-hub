@@ -23,7 +23,8 @@ export type ProfileSettings = {
   pingScanHistory: boolean;
   pingScanServers: boolean;
 };
-export const saveProfileSettings = (s: ProfileSettings) => call<void>("save_profile_settings", s);
+export const saveProfileSettings = (settings: ProfileSettings) =>
+  call<void>("save_profile_settings", { settings });
 
 export const addFavorite = (name: string, ip: string, port: number, password: string | null) =>
   call<void>("add_favorite", { name, ip, port, password });

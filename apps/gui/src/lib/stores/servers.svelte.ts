@@ -45,7 +45,8 @@ class Servers {
   scan = $state<{ total: number; done: number } | null>(null);
   scanPaused = $state(false);
 
-  #byKey = new Map<string, ServerDto>();
+  // Raw state: replaced whole when the list is, so `find` is reactive to that.
+  #byKey = $state.raw(new Map<string, ServerDto>());
   #batch: PingResult[] = [];
   #raf: number | null = null;
 

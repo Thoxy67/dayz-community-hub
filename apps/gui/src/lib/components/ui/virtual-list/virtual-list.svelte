@@ -26,6 +26,7 @@
     row,
     empty,
     header,
+    onrange,
     "aria-label": ariaLabel,
   }: {
     items: readonly T[];
@@ -40,6 +41,8 @@
     empty?: Snippet;
     /** Stays at the top while the rows scroll under it. */
     header?: Snippet;
+    /** Told which rows are on screen (without overscan) whenever that changes. */
+    onrange?: (first: number, last: number) => void;
     "aria-label"?: string;
   } = $props();
 
@@ -54,6 +57,13 @@
     Math.min(items.length, Math.ceil((scrollTop + height) / rowHeight) + overscan),
   );
   const shown = $derived(items.slice(first, last));
+
+  $effect(() => {
+    if (!onrange) return;
+    const top = Math.floor(scrollTop / rowHeight);
+    const bottom = Math.min(items.length, Math.ceil((scrollTop + height) / rowHeight));
+    onrange(top, bottom);
+  });
 
   function onscroll() {
     if (!viewport) return;

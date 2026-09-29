@@ -3,6 +3,8 @@ import { t, type Dictionary } from "intlayer";
 const content = {
   key: "theme",
   content: {
+    presetChernarus: t({ en: "Chernarus", fr: "Tchernarus", de: "Tschernarus", es: "Chernarus", ru: "Чернарусь" }),
+    presetTopo: t({ en: "Survey map", fr: "Carte d'état-major", de: "Messtischblatt", es: "Mapa topográfico", ru: "Топокарта" }),
     dark: t({ en: "Dark", fr: "Sombre", de: "Dunkel", es: "Oscuro", ru: "Тёмная" }),
     light: t({ en: "Light", fr: "Clair", de: "Hell", es: "Claro", ru: "Светлая" }),
     mixed: t({ en: "Mixed", fr: "Mixte", de: "Gemischt", es: "Mixto", ru: "Смешанная" }),
