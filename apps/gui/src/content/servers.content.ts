@@ -3,6 +3,13 @@ import { insert, t, type Dictionary } from "intlayer";
 const content = {
   key: "servers",
   content: {
+    listUnavailable: t({
+      en: "The server list could not be loaded",
+      fr: "La liste des serveurs n'a pas pu être chargée",
+      de: "Die Serverliste konnte nicht geladen werden",
+      es: "No se pudo cargar la lista de servidores",
+      ru: "Не удалось загрузить список серверов",
+    }),
     savedPassword: t({
       en: "Password saved with this favourite",
       fr: "Mot de passe enregistré avec ce favori",

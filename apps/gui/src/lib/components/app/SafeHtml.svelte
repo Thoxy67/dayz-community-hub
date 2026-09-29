@@ -32,9 +32,12 @@
     html,
     resolveImage,
     onimage,
+    base = "https://dayz.com/",
     class: klass = "",
   }: {
     html: string;
+    /** What relative links are resolved against: the page the HTML came from. */
+    base?: string;
     resolveImage?: (url: string) => Promise<string>;
     onimage?: (shown: string, original: string) => void;
     class?: string;
@@ -60,9 +63,16 @@
     function onclick(e: MouseEvent) {
       const t = e.target as HTMLElement;
       const a = t.closest("a");
-      if (a?.href) {
+      const raw = a?.getAttribute("href");
+      if (a && raw) {
         e.preventDefault();
-        void openUrl(a.href);
+        // `a.href` would resolve a relative link against the window's own
+        // address; the backend only opens absolute http(s) links.
+        try {
+          void openUrl(new URL(raw, base).href);
+        } catch {
+          // Not a link that can be opened.
+        }
         return;
       }
       const img = t.closest("img");

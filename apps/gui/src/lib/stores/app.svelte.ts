@@ -61,6 +61,7 @@ class App {
         this.initialized = true;
       }
       const result = await initialize();
+      servers.listError = result.list_error;
       this.initialized = true;
       // The list first: nothing below waits on the network or the disk
       // before it. The profile is what the rest needs (the rejoin card, the

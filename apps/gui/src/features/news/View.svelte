@@ -216,7 +216,7 @@
           </p>
         {/if}
         {#if article.content_html}
-          <SafeHtml html={article.content_html} resolveImage={(u) => news.image(u)} onimage={zoom} />
+          <SafeHtml html={article.content_html} base={article.url} resolveImage={(u) => news.image(u)} onimage={zoom} />
         {:else}
           <p class="text-sm leading-relaxed whitespace-pre-wrap text-fg-muted" data-selectable>
             {article.content_text || $n.noContent.value}

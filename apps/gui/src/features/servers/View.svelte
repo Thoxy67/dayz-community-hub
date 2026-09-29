@@ -3,6 +3,7 @@
   import RefreshCw from "~icons/lucide/refresh-cw";
   import PanelRight from "~icons/lucide/panel-right";
   import SearchX from "~icons/lucide/search-x";
+  import CloudOff from "~icons/lucide/cloud-off";
   import Clock from "~icons/lucide/clock";
   import Server from "~icons/lucide/server";
   import { Button, IconButton } from "$lib/components/ui/button";
@@ -212,6 +213,15 @@
           <span class="label-stencil">{$c.loading.value}</span>
         </div>
       </div>
+    {:else if servers.total === 0 && servers.listError}
+      <Empty icon={CloudOff} title={$c.listUnavailable.value} class="flex-1">
+        <span class="font-mono text-2xs" data-selectable>{servers.listError}</span>
+        {#snippet action()}
+          <Button variant="accent" disabled={servers.refreshing} onclick={() => servers.refresh()}>
+            <RefreshCw class={cn("size-icon-sm", servers.refreshing && "animate-spin")} />{$c.refresh.value}
+          </Button>
+        {/snippet}
+      </Empty>
     {:else if feed.total === 0}
       <Empty icon={SearchX} title={$c.noMatch.value} class="flex-1">
         {#snippet action()}

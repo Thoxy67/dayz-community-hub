@@ -36,6 +36,8 @@ const WATCHED_MAX = 400;
 class Servers {
   /** How many servers the backend holds. */
   total = $state(0);
+  /** Why the backend has no list (API down and no cache), until a refresh works. */
+  listError = $state<string | null>(null);
   maps = $state.raw<MapCount[]>([]);
   loading = $state(false);
   refreshing = $state(false);
@@ -212,6 +214,7 @@ class Servers {
     try {
       await this.cancelScan();
       const count = await ipc.refreshServers();
+      this.listError = null;
       this.known.clear();
       this.ping.clear();
       await this.load();
