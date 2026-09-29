@@ -4,7 +4,7 @@ use dz_api::{Server, ServerList};
 use serde::{Serialize, Serializer, ser::SerializeSeq};
 
 /// A server with its mod list, for the detail panel and the connect flow.
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, specta::Type)]
 pub struct ServerDto {
     pub game_port: i64,
     pub ip: String,
@@ -27,10 +27,10 @@ pub struct ServerDto {
 /// A server as the browser's table shows it: no mod list, only its length.
 ///
 /// Never built at run time: [`ServerSlimList`] writes the same JSON straight
-/// from the list. It is what that JSON is described as, and what the test
-/// below holds the two against.
+/// from the list. It is what that JSON is described as in `bindings.ts`, and
+/// what the test below holds the two against.
 #[allow(dead_code)]
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, specta::Type)]
 pub struct ServerSlimDto {
     pub game_port: i64,
     pub ip: String,
@@ -49,14 +49,14 @@ pub struct ServerSlimDto {
     pub battl_eye: Option<bool>,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, specta::Type)]
 pub struct ModDto {
     pub name: String,
     pub steam_workshop_id: i64,
 }
 
 /// Response from the `initialize` command.
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, specta::Type)]
 pub struct InitResult {
     pub server_count: usize,
     pub from_cache: bool,
@@ -65,7 +65,7 @@ pub struct InitResult {
 }
 
 /// The title bar's counters.
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, specta::Type)]
 pub struct AppStatsDto {
     pub server_count: usize,
     pub total_players: i64,
@@ -79,6 +79,13 @@ pub struct AppStatsDto {
 /// ~18 000 entries are written out.
 #[derive(Clone, Debug)]
 pub struct ServerSlimList(pub Arc<ServerList>);
+
+/// Described to the window as what it writes: `ServerSlimDto[]`.
+impl specta::Type for ServerSlimList {
+    fn definition(types: &mut specta::Types) -> specta::datatype::DataType {
+        <Vec<ServerSlimDto> as specta::Type>::definition(types)
+    }
+}
 
 impl Serialize for ServerSlimList {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {

@@ -13,20 +13,20 @@ use crate::state::SharedState;
 /// How long a server's details are served from the cache.
 const A2S_CACHE_TTL: Duration = Duration::from_secs(30);
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, specta::Type)]
 pub struct A2sPlayerDto {
     pub name: String,
     pub score: i32,
     pub duration: f32,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, specta::Type)]
 pub struct A2sRuleDto {
     pub name: String,
     pub value: String,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, specta::Type)]
 pub struct A2sDetailsDto {
     pub server_name: String,
     pub game: String,
@@ -42,10 +42,8 @@ pub struct A2sDetailsDto {
     /// Mods from the server list; empty for a server that is not listed.
     pub mods: Vec<ModDto>,
     /// Mod names from the A2S rules (fallback for unlisted servers, no workshop IDs).
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub mods_from_a2s: Vec<String>,
     /// Server rules/cvars other than the mods.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub rules: Vec<A2sRuleDto>,
     /// The query port that was used.
     pub query_port: i64,
@@ -55,6 +53,7 @@ pub struct A2sDetailsDto {
 
 /// Query a server's live details (cached for 30 s).
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn query_a2s(
     ip: String,
     query_port: i64,

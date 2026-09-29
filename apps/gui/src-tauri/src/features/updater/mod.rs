@@ -15,7 +15,7 @@ use tauri::{AppHandle, ipc::Channel};
 /// tauri-plugin-updater's JS side uses: `{ event: "Started", data: { contentLength } }`.
 /// (The variant names stay as they are; only the fields are camelCase.)
 #[cfg_attr(not(windows), allow(dead_code))]
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, specta::Type)]
 #[serde(tag = "event", content = "data")]
 pub enum DownloadEvent {
     #[serde(rename_all = "camelCase")]
@@ -26,7 +26,7 @@ pub enum DownloadEvent {
 }
 
 /// A newer version than the one running.
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateInfo {
     pub version: String,
@@ -43,6 +43,7 @@ const UNSUPPORTED: &str =
 
 /// Look for a newer version. `null` when this one is the latest.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn check_for_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
     #[cfg(windows)]
     {
@@ -58,6 +59,7 @@ pub(crate) async fn check_for_update(app: AppHandle) -> Result<Option<UpdateInfo
 /// Download, verify and install the version `check_for_update` found, then
 /// restart into it.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn install_update(
     app: AppHandle,
     on_event: Channel<DownloadEvent>,

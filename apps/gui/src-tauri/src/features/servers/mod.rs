@@ -19,6 +19,7 @@ use crate::state::{AppState, SharedState};
 /// Whether this is the first launch (no profile yet), asked before
 /// `initialize` so the wizard can show at once.
 #[tauri::command]
+#[specta::specta]
 pub(crate) fn check_first_launch() -> bool {
     !paths::default_profile_path().exists()
 }
@@ -27,6 +28,7 @@ pub(crate) fn check_first_launch() -> bool {
 /// when there is one (the window refreshes it in the background), else from
 /// the API. Called once, when the window mounts.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn initialize(app: AppHandle) -> Result<InitResult, String> {
     let profile_path = paths::default_profile_path();
     let is_first_launch = !profile_path.exists();
@@ -65,12 +67,14 @@ pub(crate) async fn initialize(app: AppHandle) -> Result<InitResult, String> {
 
 /// The server list, without mod details.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn get_servers(state: State<'_, SharedState>) -> Result<ServerSlimList, String> {
     Ok(ServerSlimList(Arc::clone(&state.read().await.servers)))
 }
 
 /// One server with its mods, by query port.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn get_server_details(
     ip: String,
     port: i64,
@@ -85,6 +89,7 @@ pub(crate) async fn get_server_details(
 
 /// Fetch the list from the API again.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn refresh_servers(
     state: State<'_, SharedState>,
 ) -> Result<ServerSlimList, String> {
@@ -97,6 +102,7 @@ pub(crate) async fn refresh_servers(
 
 /// The title bar's counters.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn get_app_stats(state: State<'_, SharedState>) -> Result<AppStatsDto, String> {
     let state = state.read().await;
     Ok(AppStatsDto {

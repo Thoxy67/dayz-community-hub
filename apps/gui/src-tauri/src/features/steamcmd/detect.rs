@@ -2,13 +2,14 @@
 //! Windows) installing it.
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, State};
+use tauri_specta::Event;
 
 use crate::state::SharedState;
 #[cfg(target_os = "windows")]
 use crate::error::ResultExt;
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, serde::Deserialize, Clone, Debug, specta::Type)]
 pub struct SteamcmdStatusDto {
     pub found: bool,
     pub path: Option<String>,
@@ -74,6 +75,7 @@ fn detect_steamcmd_sync(explicit_path: &Option<String>) -> SteamcmdStatusDto {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn detect_steamcmd(
     state: State<'_, SharedState>,
 ) -> Result<SteamcmdStatusDto, String> {
@@ -94,6 +96,7 @@ pub(crate) async fn detect_steamcmd(
 /// editing the path during the wizard takes effect immediately rather than
 /// being stuck with the value captured at watch start.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn watch_steamcmd(
     app: AppHandle,
     state: State<'_, SharedState>,
@@ -113,7 +116,7 @@ pub(crate) async fn watch_steamcmd(
                     Err(_) => continue,
                 };
             if status.found {
-                let _ = app.emit("steamcmd-detected", status);
+                let _ = crate::events::SteamcmdDetected(status).emit(&app);
                 return;
             }
         }
@@ -124,6 +127,7 @@ pub(crate) async fn watch_steamcmd(
 
 /// Windows-only: download steamcmd.zip from Valve and unzip it.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn download_steamcmd_windows() -> Result<String, String> {
     #[cfg(not(target_os = "windows"))]
     return Err("Only available on Windows".into());

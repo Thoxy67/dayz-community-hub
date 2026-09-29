@@ -2,23 +2,35 @@
 //! calls. The work itself lives in `features` and in the `dz-*` crates.
 
 mod error;
+mod events;
 mod features;
+mod ipc;
 mod state;
 
 pub use features::dzch_cli::CliArgs;
 
 use clap::Parser;
 use std::sync::Arc;
-use tauri::{Emitter, Manager};
+use tauri::Manager;
+use tauri_specta::Event;
 
-use features::*;
+use features::{news, ping};
+#[cfg(windows)]
+use features::updater;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run(args: CliArgs) {
     args.remember();
 
+    let builder = ipc::builder();
+    let invoke_handler = builder.invoke_handler();
+    // In a debug build, keep the window's bindings in step with the Rust.
+    #[cfg(debug_assertions)]
+    ipc::export(&builder);
+
     tauri::Builder::default()
-        .setup(|app| {
+        .setup(move |app| {
+            builder.mount_events(app);
             // The one-shot slot the news WebView fallback returns its JSON through.
             app.manage(news::webview::NewsWebviewState::new());
             app.manage(Arc::new(ping::PingState::default()));
@@ -58,7 +70,7 @@ pub fn run(args: CliArgs) {
                             open: Some(url.to_string()),
                             ..CliArgs::none()
                         };
-                        let _ = handle.emit("cli-args", args);
+                        let _ = args.emit(&handle);
                     }
                 });
             }
@@ -75,7 +87,7 @@ pub fn run(args: CliArgs) {
                         let _ = win.show();
                         let _ = win.set_focus();
                     }
-                    let _ = app.emit("cli-args", args);
+                    let _ = args.emit(app);
                 })
                 .build(),
         )
@@ -83,74 +95,7 @@ pub fn run(args: CliArgs) {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![
-            servers::check_first_launch,
-            servers::initialize,
-            servers::get_servers,
-            servers::get_server_details,
-            servers::refresh_servers,
-            servers::get_app_stats,
-            ping::ping_all_background,
-            ping::ping_servers,
-            ping::get_pings,
-            ping::ping_single,
-            ping::cancel_ping,
-            ping::toggle_ping_pause,
-            a2s::query_a2s,
-            battlemetrics::fetch_battlemetrics_server,
-            profile::get_profile,
-            profile::save_profile_settings,
-            profile::add_favorite,
-            profile::remove_favorite,
-            profile::remove_history_entry,
-            profile::clear_history,
-            profile::add_excluded_ip,
-            profile::remove_excluded_ip,
-            profile::io::export_profile,
-            profile::io::import_profile,
-            profile::io::reset_profile,
-            profile::io::restart_app,
-            mods::get_installed_mods,
-            mods::check_mod_updates,
-            mods::delete_mod,
-            mods::delete_mods_bulk,
-            mods::toggle_mod_managed,
-            mods::cleanup_mods,
-            mods::open_workshop_dir,
-            mods::open_mod_dir,
-            mods::setup_mod_symlinks,
-            launch::toggle_launch_option,
-            launch::set_launch_option_value,
-            launch::launch_server,
-            launch::launch_direct,
-            steamcmd::start_mod_operation,
-            steamcmd::send_steamcmd_input,
-            steamcmd::cancel_mod_operation,
-            steamcmd::detect::detect_steamcmd,
-            steamcmd::detect::watch_steamcmd,
-            steamcmd::detect::download_steamcmd_windows,
-            offline::get_offline_missions,
-            offline::update_offline_mode,
-            offline::remove_offline_mode,
-            offline::remove_mission,
-            offline::clear_offline_saves,
-            offline::open_missions_dir,
-            offline::open_mission_dir,
-            offline::launch_offline_mission,
-            news::fetch_news,
-            news::webview::news_webview_result,
-            news::images::fetch_image,
-            news::images::resolve_cached_images,
-            steam::fetch_steam_avatar,
-            steam::fetch_steam_player_count,
-            dzch_cli::get_cli_args,
-            dzch_cli::read_dzch_file,
-            dzch_cli::write_dzch_file,
-            dzch_cli::parse_dzch_url,
-            system::get_system_specs,
-            updater::check_for_update,
-            updater::install_update,
-        ])
+        .invoke_handler(invoke_handler)
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

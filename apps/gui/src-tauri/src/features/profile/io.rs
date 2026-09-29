@@ -20,6 +20,7 @@ const EXPORT_EXCLUDE: &[&str] = &["server_list_cache.json"];
 
 /// Export all settings files from the data directory as a zstd-compressed bundle.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn export_profile(path: String, include_mods: bool) -> Result<(), String> {
     let data_dir = paths::default_data_dir();
 
@@ -79,6 +80,7 @@ pub(crate) async fn export_profile(path: String, include_mods: bool) -> Result<(
 
 /// Import a profile bundle, overwriting all settings files.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn import_profile(
     path: String,
     state: State<'_, SharedState>,
@@ -152,6 +154,7 @@ pub(crate) async fn import_profile(
 
 /// Wipe the entire data directory so the app looks brand-new on next boot.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn reset_profile(_state: State<'_, SharedState>) -> Result<(), String> {
     let data_dir = paths::default_data_dir();
     if data_dir.exists() {
@@ -164,6 +167,7 @@ pub(crate) async fn reset_profile(_state: State<'_, SharedState>) -> Result<(), 
 
 /// Restart the application immediately.
 #[tauri::command]
+#[specta::specta]
 pub(crate) fn restart_app(app: tauri::AppHandle) {
     app.restart();
 }

@@ -11,7 +11,7 @@ use tauri::AppHandle;
 use webview::fetch_news_via_webview;
 
 /// One article, ready to render.
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, specta::Type)]
 pub struct ArticleDto {
     pub title: String,
     pub slug: String,
@@ -31,6 +31,7 @@ pub struct ArticleDto {
 /// dayz.com ever serves a challenge instead, we fall back to fetching it inside
 /// a WebView (see [`fetch_news_via_webview`]).
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn fetch_news(app: AppHandle) -> Result<Vec<ArticleDto>, String> {
     let articles: Vec<Article> = match dz_news::fetch_news().await {
         Ok(articles) => articles,

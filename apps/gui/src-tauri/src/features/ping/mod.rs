@@ -32,20 +32,16 @@ const BATCH_SIZE: usize = 50;
 const FLUSH_INTERVAL_MS: u64 = 200;
 
 /// One ping, as the window receives it.
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, specta::Type)]
 pub struct PingResultDto {
     pub ip: String,
     pub port: i64,
     pub ms: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub players: Option<u8>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_players: Option<u8>,
     /// Bots reported by A2S_INFO (DayZ servers often pad this to fake a full server).
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub bots: Option<u8>,
     /// True when the query failed (timeout or error).
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub failed: bool,
 }
 
@@ -185,6 +181,7 @@ async fn scan(
 /// Ping every target in list order (the window puts favorites and history
 /// first) and stream the results. Aborts the previous background scan.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn ping_all_background(
     targets: Vec<String>,
     concurrency: Option<usize>,
@@ -214,6 +211,7 @@ pub(crate) async fn ping_all_background(
 
 /// Ping the rows on screen. Runs beside the background scan, not instead of it.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn ping_servers(
     targets: Vec<String>,
     concurrency: Option<usize>,
@@ -234,6 +232,7 @@ pub(crate) async fn ping_servers(
 
 /// Cached results for `targets` ("ip:port"); targets never pinged are left out.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn get_pings(
     targets: Vec<String>,
     ping: State<'_, Arc<PingState>>,
@@ -251,6 +250,7 @@ pub(crate) async fn get_pings(
 
 /// Ping one server, with the long manual timeout. Returns the RTT in ms.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn ping_single(
     ip: String,
     port: i64,
@@ -273,6 +273,7 @@ pub(crate) async fn ping_single(
 
 /// Stop the background scan and clear the pause.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn cancel_ping(ping: State<'_, Arc<PingState>>) -> Result<(), String> {
     ping.abort_background();
     ping.paused.store(false, Ordering::Relaxed);
@@ -281,6 +282,7 @@ pub(crate) async fn cancel_ping(ping: State<'_, Arc<PingState>>) -> Result<(), S
 
 /// Pause or resume scanning. Returns whether it is now paused.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn toggle_ping_pause(ping: State<'_, Arc<PingState>>) -> Result<bool, String> {
     Ok(!ping.paused.fetch_xor(true, Ordering::Relaxed))
 }

@@ -1,7 +1,7 @@
 use dz_profile::Profile;
 use serde::Serialize;
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, specta::Type)]
 pub struct FavoriteDto {
     pub name: String,
     pub ip: String,
@@ -10,7 +10,7 @@ pub struct FavoriteDto {
     pub password: Option<String>,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, specta::Type)]
 pub struct HistoryDto {
     pub name: String,
     pub ip: String,
@@ -20,7 +20,7 @@ pub struct HistoryDto {
     pub relative_time: String,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, specta::Type)]
 pub struct LaunchOptionDto {
     pub key: String,
     pub enabled: bool,
@@ -28,7 +28,7 @@ pub struct LaunchOptionDto {
     pub description: String,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, specta::Type)]
 pub struct ProfileDto {
     pub steam_login: Option<String>,
     pub steam_password: Option<String>,

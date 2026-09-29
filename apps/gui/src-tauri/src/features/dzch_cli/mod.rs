@@ -9,7 +9,7 @@ use std::sync::OnceLock;
 use crate::error::{ResultExt, spawn_blocking_mapped};
 
 /// DayZ Community Hub launcher.
-#[derive(Parser, Debug, Clone, Serialize)]
+#[derive(Parser, Debug, Clone, Serialize, serde::Deserialize, specta::Type, tauri_specta::Event)]
 #[command(name = "dayz-community-hub", about = "DayZ Community Hub")]
 pub struct CliArgs {
     /// Open the Direct Connect tab and pre-fill this IP address.
@@ -51,24 +51,28 @@ impl CliArgs {
 
 /// Return the CLI args that were passed when this instance started.
 #[tauri::command]
+#[specta::specta]
 pub(crate) fn get_cli_args() -> CliArgs {
     CLI_ARGS.get().cloned().unwrap_or_else(CliArgs::none)
 }
 
 /// Read a `.dzch` server-connection file and return its contents.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn read_dzch_file(path: String) -> Result<DzchConfig, String> {
     spawn_blocking_mapped(move || DzchConfig::read_file(std::path::Path::new(&path))).await
 }
 
 /// Write a `.dzch` server-connection file to disk.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn write_dzch_file(path: String, config: DzchConfig) -> Result<(), String> {
     spawn_blocking_mapped(move || config.write_file(std::path::Path::new(&path))).await
 }
 
 /// Parse a `dzch://` URL into a DzchConfig.
 #[tauri::command]
+#[specta::specta]
 pub(crate) fn parse_dzch_url(url: String) -> Result<DzchConfig, String> {
     DzchConfig::from_url(&url).cmd_err()
 }

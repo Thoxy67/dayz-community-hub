@@ -2,7 +2,10 @@
 //! missions, remove missions and their saves.
 
 use dz_game::OfflineMode;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, State};
+use tauri_specta::Event;
+
+use crate::events::{OfflineModeError, OfflineModeUpdated};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::error::{ResultExt, spawn_blocking_mapped};
@@ -20,6 +23,7 @@ async fn offline_mode_from_state(state: &SharedState) -> Result<OfflineMode, Str
 
 /// Get available offline missions.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn get_offline_missions(
     state: State<'_, SharedState>,
 ) -> Result<Vec<String>, String> {
@@ -29,6 +33,7 @@ pub(crate) async fn get_offline_missions(
 
 /// Download/update DayZCommunityOfflineMode.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn update_offline_mode(
     app: AppHandle,
     state: State<'_, SharedState>,
@@ -37,10 +42,10 @@ pub(crate) async fn update_offline_mode(
     tokio::spawn(async move {
         match om.update().await {
             Ok(()) => {
-                let _ = app.emit("offline-mode-updated", ());
+                let _ = OfflineModeUpdated.emit(&app);
             }
             Err(e) => {
-                let _ = app.emit("offline-mode-error", e.to_string());
+                let _ = OfflineModeError(e.to_string()).emit(&app);
             }
         }
     });
@@ -49,6 +54,7 @@ pub(crate) async fn update_offline_mode(
 
 /// Remove all DayZCommunityOfflineMode mission folders from DayZ/Missions/.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn remove_offline_mode(state: State<'_, SharedState>) -> Result<usize, String> {
     let om = offline_mode_from_state(state.inner()).await?;
     spawn_blocking_mapped(move || om.remove_offline_mode()).await
@@ -56,6 +62,7 @@ pub(crate) async fn remove_offline_mode(state: State<'_, SharedState>) -> Result
 
 /// Delete storage_-1/ save directories inside each offline mission folder.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn clear_offline_saves(state: State<'_, SharedState>) -> Result<usize, String> {
     let om = offline_mode_from_state(state.inner()).await?;
     spawn_blocking_mapped(move || om.clear_offline_saves()).await
@@ -63,6 +70,7 @@ pub(crate) async fn clear_offline_saves(state: State<'_, SharedState>) -> Result
 
 /// Remove a single mission.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn remove_mission(
     mission: String,
     state: State<'_, SharedState>,
@@ -73,6 +81,7 @@ pub(crate) async fn remove_mission(
 
 /// Open the missions directory in the file manager.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn open_missions_dir(
     app: AppHandle,
     state: State<'_, SharedState>,
@@ -87,6 +96,7 @@ pub(crate) async fn open_missions_dir(
 
 /// Launch an offline mission.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn launch_offline_mission(
     mission: String,
     state: State<'_, SharedState>,
@@ -127,6 +137,7 @@ pub(crate) async fn launch_offline_mission(
 
 /// Open a specific offline mission's folder in the system file manager.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn open_mission_dir(
     app: AppHandle,
     mission: String,

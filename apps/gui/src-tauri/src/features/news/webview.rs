@@ -75,6 +75,7 @@ impl NewsWebviewState {
 
 /// IPC target invoked by the in-page script with the fetched JSON body.
 #[tauri::command]
+#[specta::specta]
 pub(crate) fn news_webview_result(payload: String, state: tauri::State<'_, NewsWebviewState>) {
     if let Ok(mut guard) = state.0.lock()
         && let Some(tx) = guard.take()

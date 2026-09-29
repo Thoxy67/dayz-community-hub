@@ -17,7 +17,7 @@ pub const DZCH_VERSION: u8 = 1;
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct DzchMod {
     pub id: i64,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[serde(default)]
     pub name: String,
 }
 
@@ -32,16 +32,16 @@ pub struct DzchConfig {
     pub port: u16,
     /// Query port (A2S).  Used to fetch live server info.
     /// When absent the receiver can fall back to heuristics.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub query_port: Option<u16>,
     /// Server display name (informational).
-    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[serde(default)]
     pub name: String,
     /// Connection password (empty / absent = no password).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub password: Option<String>,
     /// Required Workshop mods.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub mods: Vec<DzchMod>,
 }
 

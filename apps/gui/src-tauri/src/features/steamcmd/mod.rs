@@ -12,7 +12,7 @@ use crate::error::{ResultExt, spawn_blocking_mapped};
 use crate::state::SharedState;
 
 /// What a [`ModProgressEvent`] reports.
-#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ModProgressKind {
     ShuttingDownSteam,
@@ -27,7 +27,7 @@ pub enum ModProgressKind {
 }
 
 /// One step of a mod operation, as the progress dialog receives it.
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, specta::Type)]
 pub struct ModProgressEvent {
     pub kind: ModProgressKind,
     pub current: usize,
@@ -167,7 +167,7 @@ fn mod_progress_to_event(msg: &ModProgress) -> ModProgressEvent {
 
 
 /// Which mod operation to run.
-#[derive(serde::Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(serde::Deserialize, Clone, Copy, Debug, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ModOpType {
     /// Install what a listed server needs (`ip`, `port`).
@@ -212,6 +212,7 @@ async fn resolve_names(
 // object.
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn start_mod_operation(
     op_type: ModOpType,
     ip: Option<String>,
@@ -301,6 +302,7 @@ pub(crate) async fn start_mod_operation(
 
 /// Send input (password or Steam Guard code) to the running steamcmd PTY.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn send_steamcmd_input(
     input: String,
     state: State<'_, SharedState>,
@@ -317,6 +319,7 @@ pub(crate) async fn send_steamcmd_input(
 
 /// Cancel the running mod operation.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn cancel_mod_operation(state: State<'_, SharedState>) -> Result<(), String> {
     let mut state = state.write().await;
     if let Some(abort) = state.mod_op_abort.take() {

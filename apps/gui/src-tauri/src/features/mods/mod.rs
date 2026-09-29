@@ -12,7 +12,7 @@ use tauri_plugin_opener::OpenerExt;
 use crate::error::{ResultExt, spawn_blocking_mapped};
 use crate::state::SharedState;
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, specta::Type)]
 pub struct InstalledModDto {
     pub name: String,
     pub id: u64,
@@ -57,6 +57,7 @@ fn workshop_client() -> &'static reqwest::Client {
 /// Get installed mods. Uses spawn_blocking for filesystem scan.
 /// Enriches each mod with `remote_updated` / `update_available` from the in-memory cache.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn get_installed_mods(
     state: State<'_, SharedState>,
 ) -> Result<Vec<InstalledModDto>, String> {
@@ -76,6 +77,7 @@ pub(crate) async fn get_installed_mods(
 /// Fetch `time_updated` for all installed mods from the Steam Workshop API and
 /// cache the results. Returns the enriched mod list (same as `get_installed_mods`).
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn check_mod_updates(
     state: State<'_, SharedState>,
 ) -> Result<Vec<InstalledModDto>, String> {
@@ -169,6 +171,7 @@ pub(crate) async fn check_mod_updates(
 
 /// Delete a mod by ID.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn delete_mod(mod_id: u64, state: State<'_, SharedState>) -> Result<(), String> {
     let ctl_clone = { state.read().await.ctl.clone_for_task() };
     spawn_blocking_mapped(move || ctl_clone.delete_mod(mod_id, false)).await
@@ -176,6 +179,7 @@ pub(crate) async fn delete_mod(mod_id: u64, state: State<'_, SharedState>) -> Re
 
 /// Delete multiple mods by ID in one call.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn delete_mods_bulk(
     mod_ids: Vec<u64>,
     state: State<'_, SharedState>,
@@ -192,6 +196,7 @@ pub(crate) async fn delete_mods_bulk(
 
 /// Toggle managed status of a mod.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn toggle_mod_managed(
     mod_id: u64,
     state: State<'_, SharedState>,
@@ -202,6 +207,7 @@ pub(crate) async fn toggle_mod_managed(
 
 /// Cleanup all managed mods and symlinks.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn cleanup_mods(state: State<'_, SharedState>) -> Result<String, String> {
     let ctl_clone = { state.read().await.ctl.clone_for_task() };
     let stats = spawn_blocking_mapped(move || ctl_clone.cleanup_mods()).await?;
@@ -215,6 +221,7 @@ pub(crate) async fn cleanup_mods(state: State<'_, SharedState>) -> Result<String
 
 /// Open the Steam Workshop directory (all mods) in the system file manager.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn open_workshop_dir(
     app: AppHandle,
     state: State<'_, SharedState>,
@@ -230,6 +237,7 @@ pub(crate) async fn open_workshop_dir(
 
 /// Open a specific mod's directory in the system file manager.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn open_mod_dir(
     app: AppHandle,
     mod_id: u64,
@@ -250,6 +258,7 @@ pub(crate) async fn open_mod_dir(
 
 /// Create the `@<id>` links a listed server's mods need.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn setup_mod_symlinks(
     ip: String,
     port: i64,

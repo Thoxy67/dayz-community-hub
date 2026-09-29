@@ -11,6 +11,7 @@ const BM_CACHE_TTL: Duration = Duration::from_secs(300);
 
 /// Find a server on BattleMetrics by IP and ports, falling back to its name.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn fetch_battlemetrics_server(
     ip: String,
     port: i64,

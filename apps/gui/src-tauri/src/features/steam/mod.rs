@@ -7,6 +7,7 @@ use crate::state::{SharedState, insecure_client};
 
 /// Fetch the Steam avatar for the configured account and cache it as a data: URI.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn fetch_steam_avatar(
     state: State<'_, SharedState>,
 ) -> Result<Option<String>, String> {
@@ -75,6 +76,7 @@ pub(crate) async fn fetch_steam_avatar(
 
 /// Fetch Steam player count for DayZ.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn fetch_steam_player_count(state: State<'_, SharedState>) -> Result<u32, String> {
     let client = {
         let state = state.read().await;

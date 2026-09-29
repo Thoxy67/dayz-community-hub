@@ -59,6 +59,7 @@ fn path_to_forward_slashes(path: &std::path::Path) -> String {
 /// Fetch an image URL through Rust (bypasses WebKit TLS cert validation),
 /// cache it to disk, and return the local file path.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn fetch_image(app: AppHandle, url: String) -> Result<String, String> {
     let cache_dir = image_cache_dir(&app).await?;
     let filename = url_to_cache_filename(&url);
@@ -86,6 +87,7 @@ pub(crate) async fn fetch_image(app: AppHandle, url: String) -> Result<String, S
 /// Resolve multiple image URLs at once. Returns a Vec of (url, local_path)
 /// for every URL that is already cached on disk — no network requests.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn resolve_cached_images(
     app: AppHandle,
     urls: Vec<String>,

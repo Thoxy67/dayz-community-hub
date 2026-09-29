@@ -2,12 +2,16 @@
 
 use dz_api::Server;
 use dz_game::DayzCtl;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
+use tauri_specta::Event;
+
+use crate::events::{LaunchDone, LaunchError};
 
 use crate::state::{SharedState, mutate_profile};
 
 /// Flip a launch option. Returns whether it is now enabled.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn toggle_launch_option(
     key: String,
     state: State<'_, SharedState>,
@@ -27,6 +31,7 @@ pub(crate) async fn toggle_launch_option(
 
 /// Set a launch option's value; a value also enables it.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn set_launch_option_value(
     key: String,
     value: Option<String>,
@@ -51,6 +56,7 @@ pub(crate) async fn set_launch_option_value(
 /// Join a listed server by its query port. Returns at once; the outcome
 /// arrives as a `launch-done` or `launch-error` event.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn launch_server(
     ip: String,
     port: i64,
@@ -73,6 +79,7 @@ pub(crate) async fn launch_server(
 /// Join by address, whether or not the server is listed. Returns at once;
 /// the outcome arrives as a `launch-done` or `launch-error` event.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn launch_direct(
     ip: String,
     game_port: u16,
@@ -125,10 +132,10 @@ fn spawn_launch(
                     Ok(())
                 })
                 .await;
-                let _ = app.emit("launch-done", server.name);
+                let _ = LaunchDone(server.name).emit(&app);
             }
             Err(e) => {
-                let _ = app.emit("launch-error", e.to_string());
+                let _ = LaunchError(e.to_string()).emit(&app);
             }
         }
     });

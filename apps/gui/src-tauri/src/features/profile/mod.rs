@@ -13,35 +13,65 @@ use crate::state::{SharedState, mutate_profile};
 
 /// The current profile.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn get_profile(state: State<'_, SharedState>) -> Result<ProfileDto, String> {
     Ok(profile_to_dto(state.read().await.ctl.profile()))
 }
 
+/// The account and ping settings, as the settings dialog saves them.
+#[derive(serde::Deserialize, Clone, Debug, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileSettingsInput {
+    pub player: Option<String>,
+    pub steam_login: Option<String>,
+    pub steam_password: Option<String>,
+    pub steam_root: Option<String>,
+    pub steamcmd_enabled: bool,
+    pub steamcmd_path: Option<String>,
+    pub steam_api_key: Option<String>,
+    pub steam_id: Option<String>,
+    pub battlemetrics_api_key: Option<String>,
+    /// (longitude, latitude).
+    pub user_location: Option<(f64, f64)>,
+    /// Clamped to 5-100.
+    pub ping_concurrency: u32,
+    /// Clamped to 1000-5000 ms.
+    pub ping_timeout_auto: u32,
+    /// Clamped to 1000-30000 ms.
+    pub ping_timeout_manual: u32,
+    /// Clamped to 0-5.
+    pub ping_max_retries: u32,
+    pub ping_scan_favorites: bool,
+    pub ping_scan_history: bool,
+    pub ping_scan_servers: bool,
+}
+
 /// Save the account and ping settings.
-// Tauri receives a command's arguments as one flat object; one parameter per
-// setting keeps each addressable from the window.
-#[allow(clippy::too_many_arguments)]
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn save_profile_settings(
-    player: Option<String>,
-    steam_login: Option<String>,
-    steam_password: Option<String>,
-    steam_root: Option<String>,
-    steamcmd_enabled: bool,
-    steamcmd_path: Option<String>,
-    steam_api_key: Option<String>,
-    steam_id: Option<String>,
-    battlemetrics_api_key: Option<String>,
-    user_location: Option<(f64, f64)>,
-    ping_concurrency: u32,
-    ping_timeout_auto: u32,
-    ping_timeout_manual: u32,
-    ping_max_retries: u32,
-    ping_scan_favorites: bool,
-    ping_scan_history: bool,
-    ping_scan_servers: bool,
+    settings: ProfileSettingsInput,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
+    let ProfileSettingsInput {
+        player,
+        steam_login,
+        steam_password,
+        steam_root,
+        steamcmd_enabled,
+        steamcmd_path,
+        steam_api_key,
+        steam_id,
+        battlemetrics_api_key,
+        user_location,
+        ping_concurrency,
+        ping_timeout_auto,
+        ping_timeout_manual,
+        ping_max_retries,
+        ping_scan_favorites,
+        ping_scan_history,
+        ping_scan_servers,
+    } = settings;
     mutate_profile(&state, |s| {
         let credentials_changed = {
             let p = s.ctl.profile();
@@ -77,6 +107,7 @@ pub(crate) async fn save_profile_settings(
 
 /// Add a favorite (or update its name and password).
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn add_favorite(
     name: String,
     ip: String,
@@ -92,6 +123,7 @@ pub(crate) async fn add_favorite(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn remove_favorite(
     ip: String,
     port: u16,
@@ -105,6 +137,7 @@ pub(crate) async fn remove_favorite(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn remove_history_entry(
     ip: String,
     port: u16,
@@ -118,6 +151,7 @@ pub(crate) async fn remove_history_entry(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn clear_history(state: State<'_, SharedState>) -> Result<(), String> {
     mutate_profile(&state, |s| {
         s.ctl.profile_mut().history.clear();
@@ -128,6 +162,7 @@ pub(crate) async fn clear_history(state: State<'_, SharedState>) -> Result<(), S
 
 /// Hide an IP's servers from the browser.
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn add_excluded_ip(ip: String, state: State<'_, SharedState>) -> Result<(), String> {
     mutate_profile(&state, |s| {
         s.ctl.profile_mut().add_excluded_ip(ip);
@@ -137,6 +172,7 @@ pub(crate) async fn add_excluded_ip(ip: String, state: State<'_, SharedState>) -
 }
 
 #[tauri::command]
+#[specta::specta]
 pub(crate) async fn remove_excluded_ip(
     ip: String,
     state: State<'_, SharedState>,
