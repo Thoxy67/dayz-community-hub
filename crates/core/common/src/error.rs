@@ -29,7 +29,7 @@ pub enum Error {
     /// browser/WebView to solve the challenge.
     #[error("Blocked by Cloudflare challenge")]
     CloudflareChallenge,
-    #[error("Unknown error: {0}")]
+    #[error("{0}")]
     Other(String),
     #[error("A2S query error: {0}")]
     A2sQuery(String),

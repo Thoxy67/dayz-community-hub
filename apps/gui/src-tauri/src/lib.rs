@@ -5,6 +5,7 @@ mod error;
 mod events;
 mod features;
 mod ipc;
+mod net;
 mod state;
 
 pub use features::dzch_cli::CliArgs;

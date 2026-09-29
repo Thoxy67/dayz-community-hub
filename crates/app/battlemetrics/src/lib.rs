@@ -47,9 +47,42 @@ pub struct BattleMetricsServer {
     pub max_players: Option<i64>,
 }
 
+/// GET a BattleMetrics endpoint as JSON, saying plainly what went wrong.
+async fn get_json(
+    client: &reqwest::Client,
+    token: &str,
+    url: &str,
+    query: &[(&str, &str)],
+) -> Result<serde_json::Value, String> {
+    let resp = client
+        .get(url)
+        .query(query)
+        .bearer_auth(token)
+        .send()
+        .await
+        .map_err(|e| {
+            if e.is_timeout() {
+                "BattleMetrics did not answer in time".to_string()
+            } else {
+                format!("BattleMetrics unreachable: {}", e.without_url())
+            }
+        })?;
+    match resp.status().as_u16() {
+        200..=299 => {}
+        401 | 403 => return Err("BattleMetrics rejected the API token".into()),
+        429 => return Err("BattleMetrics rate limit reached, try again in a minute".into()),
+        code => return Err(format!("BattleMetrics answered HTTP {code}")),
+    }
+    resp.json()
+        .await
+        .map_err(|e| format!("Unreadable BattleMetrics response: {}", e.without_url()))
+}
+
 /// Find the server at `ip` (game `port`, `query_port`) on BattleMetrics, then
 /// fetch its player-count history for the last 24 hours. `name` confirms an
 /// IP match, and is searched for when the IP search finds nothing that fits.
+const SERVERS_URL: &str = "https://api.battlemetrics.com/servers";
+
 pub async fn lookup(
     client: &reqwest::Client,
     token: &str,
@@ -59,16 +92,17 @@ pub async fn lookup(
     name: &str,
 ) -> Result<BattleMetricsServer, String> {
     // Search by IP only to get all servers on this IP, then match by port
-    let search_url = format!(
-        "https://api.battlemetrics.com/servers?filter[game]=dayz&filter[search]={ip}&page[size]=50"
-    );
-    let search_resp = client
-        .get(&search_url)
-        .bearer_auth(token)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    let search_json: serde_json::Value = search_resp.json().await.map_err(|e| e.to_string())?;
+    let search_json = get_json(
+        client,
+        token,
+        SERVERS_URL,
+        &[
+            ("filter[game]", "dayz"),
+            ("filter[search]", ip),
+            ("page[size]", "50"),
+        ],
+    )
+    .await?;
 
     let data = search_json["data"]
         .as_array()
@@ -135,17 +169,17 @@ pub async fn lookup(
         if name.is_empty() {
             return Err("Server not found on BattleMetrics".to_string());
         }
-        let name_encoded = urlencoding::encode(name);
-        let name_search_url = format!(
-            "https://api.battlemetrics.com/servers?filter[game]=dayz&filter[search]={name_encoded}&page[size]=10"
-        );
-        let name_resp = client
-            .get(&name_search_url)
-            .bearer_auth(token)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
-        let name_json: serde_json::Value = name_resp.json().await.map_err(|e| e.to_string())?;
+        let name_json = get_json(
+            client,
+            token,
+            SERVERS_URL,
+            &[
+                ("filter[game]", "dayz"),
+                ("filter[search]", name),
+                ("page[size]", "10"),
+            ],
+        )
+        .await?;
         let name_data = name_json["data"]
             .as_array()
             .ok_or_else(|| "Unexpected BattleMetrics response".to_string())?;
@@ -162,14 +196,12 @@ pub async fn lookup(
     };
 
     // Use IP result if valid, otherwise search by name
-    let entry: serde_json::Value = if ip_entry_valid {
-        ip_entry.unwrap()
-    } else if !name.is_empty() {
-        search_by_name().await?
-    } else if let Some(e) = ip_entry {
-        e // Use IP result even if name doesn't match (no name to search with)
-    } else {
-        return Err("Server not found on BattleMetrics".to_string());
+    let entry: serde_json::Value = match ip_entry {
+        Some(e) if ip_entry_valid => e,
+        _ if !name.is_empty() => search_by_name().await?,
+        // The IP result even if the name does not match: no name to search with.
+        Some(e) => e,
+        None => return Err("Server not found on BattleMetrics".to_string()),
     };
 
     let bm_id = entry["id"]
@@ -210,20 +242,18 @@ pub async fn lookup(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let stop = chrono_or_fallback(now);
-    let start = chrono_or_fallback(now.saturating_sub(86400));
+    let stop = iso8601(now);
+    let start = iso8601(now.saturating_sub(86400));
 
-    let history_url = format!(
-        "https://api.battlemetrics.com/servers/{bm_id}/player-count-history\
-         ?start={start}&stop={stop}&resolution=60"
-    );
-    let history_resp = client
-        .get(&history_url)
-        .bearer_auth(token)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    let history_json: serde_json::Value = history_resp.json().await.map_err(|e| e.to_string())?;
+    // The history is a nicety: the panel still shows the rest without it.
+    let history_json = get_json(
+        client,
+        token,
+        &format!("{SERVERS_URL}/{bm_id}/player-count-history"),
+        &[("start", &start), ("stop", &stop), ("resolution", "60")],
+    )
+    .await
+    .unwrap_or_default();
 
     // Iterator-flatten avoids the per-call `vec![]` allocation that the
     // previous `unwrap_or(&vec![])` form created on every panel open.
@@ -262,7 +292,7 @@ pub async fn lookup(
 }
 
 /// Format a Unix timestamp (seconds) as an ISO 8601 string for BattleMetrics API queries.
-fn chrono_or_fallback(unix_secs: u64) -> String {
+fn iso8601(unix_secs: u64) -> String {
     let s = unix_secs;
     let secs = s % 60;
     let mins = (s / 60) % 60;
@@ -325,7 +355,7 @@ mod tests {
     #[test]
     fn iso8601_round_trip() {
         let ts = 1_700_000_000u64;
-        let s = chrono_or_fallback(ts);
+        let s = iso8601(ts);
         assert_eq!(s, "2023-11-14T22:13:20Z");
         assert_eq!(parse_iso8601_approx(&s), ts as i64);
         assert_eq!(parse_iso8601_approx("2023-11-14T22:13:20.000Z"), ts as i64);

@@ -118,8 +118,10 @@ pub async fn fetch_steam_player_count(client: &reqwest::Client) -> Result<u32> {
     let resp = client
         .get("https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/")
         .query(&[("appid", "221100")])
+        .timeout(std::time::Duration::from_secs(15))
         .send()
         .await?
+        .error_for_status()?
         .json::<SteamPlayerCountResponse>()
         .await?;
     Ok(resp.response.player_count.unwrap_or(0))
@@ -181,13 +183,20 @@ pub async fn save_server_list_cache(
 pub async fn fetch_servers(client: &reqwest::Client) -> Result<ServerList> {
     let bytes = client
         .get("https://dayzsalauncher.com/api/v1/launcher/servers/dayz")
+        // Generous: the list is several MB, but it must not hang startup.
+        .timeout(std::time::Duration::from_secs(60))
         .send()
         .await?
+        .error_for_status()?
         .bytes()
         .await?;
     let list = tokio::task::spawn_blocking(move || serde_json::from_slice::<ServerList>(&bytes))
         .await
-        .map_err(|e| Error::Other(format!("server list parse task failed: {e}")))??;
+        .map_err(|e| Error::Other(format!("server list parse task failed: {e}")))?
+        .map_err(|e| Error::Other(format!("the server list could not be read: {e}")))?;
+    if list.result.is_empty() {
+        return Err(Error::Other("the launcher API returned no servers".into()));
+    }
     Ok(list)
 }
 

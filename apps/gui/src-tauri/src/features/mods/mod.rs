@@ -5,10 +5,10 @@ use dz_game::mods::{self, InstalledMod};
 use futures_util::StreamExt;
 use rustc_hash::FxHashMap;
 use serde::Serialize;
-use std::sync::OnceLock;
 use tauri::{AppHandle, State};
 use tauri_plugin_opener::OpenerExt;
 
+use crate::error::{HttpResultExt, send_ok};
 use crate::error::{ResultExt, spawn_blocking_mapped};
 use crate::state::SharedState;
 
@@ -40,18 +40,6 @@ fn installed_mod_to_dto(m: &InstalledMod, update_cache: &FxHashMap<u64, i64>) ->
         remote_updated,
         update_available: remote_updated.is_some_and(|r| r > m.local_updated),
     }
-}
-
-/// The client for the Steam Workshop API, built once.
-fn workshop_client() -> &'static reqwest::Client {
-    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(15))
-            .user_agent("Mozilla/5.0")
-            .build()
-            .expect("Failed to build Workshop HTTP client")
-    })
 }
 
 /// Get installed mods. Uses spawn_blocking for filesystem scan.
@@ -99,7 +87,7 @@ pub(crate) async fn check_mod_updates(
 
     let mod_ids: Vec<u64> = installed_mods.iter().map(|m| m.id).collect();
 
-    let client = workshop_client();
+    let client = crate::net::api();
 
     let api_key = api_key.filter(|k| !k.is_empty());
 
@@ -125,15 +113,16 @@ pub(crate) async fn check_mod_updates(
                     params.push((format!("publishedfileids[{}]", i), id.to_string()));
                 }
 
-                let resp: serde_json::Value = client
-                    .get("https://api.steampowered.com/IPublishedFileService/GetDetails/v1/")
-                    .query(&params)
-                    .send()
-                    .await
-                    .cmd_err()?
-                    .json::<serde_json::Value>()
-                    .await
-                    .cmd_err()?;
+                let resp: serde_json::Value = send_ok(
+                    client
+                        .get("https://api.steampowered.com/IPublishedFileService/GetDetails/v1/")
+                        .query(&params),
+                )
+                .await
+                .http_err("Steam Workshop")?
+                .json::<serde_json::Value>()
+                .await
+                .http_err("Steam Workshop")?;
 
                 let mut out = Vec::new();
                 if let Some(files) = resp["response"]["publishedfiledetails"].as_array() {

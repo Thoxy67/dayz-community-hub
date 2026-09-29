@@ -77,6 +77,18 @@ fn build_steamcmd(profile: &Profile) -> Option<Arc<SteamCmd>> {
     ))
 }
 
+/// The client for the launcher API, Steam and GitHub downloads: a connect
+/// timeout and a stall timeout between reads, but no total limit, since it
+/// also downloads the offline mode's archive.
+fn http_client() -> Client {
+    Client::builder()
+        .user_agent(concat!("DayZCommunityHub/", env!("CARGO_PKG_VERSION")))
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .read_timeout(std::time::Duration::from_secs(30))
+        .build()
+        .unwrap_or_else(|_| Client::new())
+}
+
 pub struct DayzCtl {
     profile: Profile,
     steamcmd: Option<Arc<SteamCmd>>,
@@ -92,7 +104,7 @@ impl DayzCtl {
         Ok(Self {
             profile,
             steamcmd,
-            client: Client::new(),
+            client: http_client(),
         })
     }
 

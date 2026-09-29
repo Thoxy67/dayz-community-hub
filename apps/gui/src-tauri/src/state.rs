@@ -6,7 +6,7 @@ use dz_game::DayzCtl;
 use lru::LruCache;
 use rustc_hash::FxHashMap;
 use std::num::NonZeroUsize;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
 
@@ -101,22 +101,4 @@ pub(crate) async fn mutate_profile<T>(
     crate::features::browser::live::store().touch();
     writer.write(snapshot).await.cmd_err()?;
     Ok(out)
-}
-
-/// One HTTP client for the hosts whose certificates fail validation
-/// (DayZ's CDN) and for Steam/BattleMetrics lookups, reused so its
-/// connection pool stays warm.
-pub(crate) fn insecure_client() -> &'static reqwest::Client {
-    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .danger_accept_invalid_certs(true)
-            .danger_accept_invalid_hostnames(true)
-            .user_agent(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0",
-            )
-            .timeout(std::time::Duration::from_secs(15))
-            .build()
-            .expect("Failed to build insecure HTTP client")
-    })
 }

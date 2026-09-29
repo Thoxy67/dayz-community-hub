@@ -3,7 +3,7 @@
 use std::time::{Duration, Instant};
 use tauri::State;
 
-use crate::state::{SharedState, insecure_client};
+use crate::state::SharedState;
 
 pub use dz_battlemetrics::BattleMetricsServer as BattleMetricsDto;
 
@@ -36,7 +36,7 @@ pub(crate) async fn fetch_battlemetrics_server(
     };
 
     let result =
-        dz_battlemetrics::lookup(insecure_client(), &token, &ip, port, query_port, &name).await?;
+        dz_battlemetrics::lookup(crate::net::api(), &token, &ip, port, query_port, &name).await?;
 
     state
         .write()

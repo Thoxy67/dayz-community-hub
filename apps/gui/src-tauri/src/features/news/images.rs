@@ -3,8 +3,7 @@
 
 use tauri::{AppHandle, Manager};
 
-use crate::error::ResultExt;
-use crate::state::insecure_client;
+use crate::error::{HttpResultExt, ResultExt, send_ok};
 
 /// Resolve the base app-data directory via Tauri's path resolver.
 fn base_data_dir_from_app(app: &AppHandle) -> Result<std::path::PathBuf, String> {
@@ -69,9 +68,19 @@ pub(crate) async fn fetch_image(app: AppHandle, url: String) -> Result<String, S
         return Ok(path_to_forward_slashes(&path));
     }
 
-    let client = insecure_client();
-    let resp = client.get(&url).send().await.cmd_err()?;
-    let bytes = resp.bytes().await.cmd_err()?;
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err(format!("Not a web image: {url}"));
+    }
+    let resp = send_ok(crate::net::dayz_cdn().get(&url))
+        .await
+        .http_err("Image download")?;
+    // An image, not the error page some CDNs answer with a 200.
+    if let Some(ct) = resp.headers().get(reqwest::header::CONTENT_TYPE)
+        && !ct.to_str().unwrap_or("").starts_with("image/")
+    {
+        return Err(format!("Not an image: {url}"));
+    }
+    let bytes = resp.bytes().await.http_err("Image download")?;
 
     let tmp = path.with_extension("tmp");
     tokio::fs::write(&tmp, &bytes)

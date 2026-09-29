@@ -6,7 +6,7 @@ use tauri::{AppHandle, State};
 use tauri_specta::Event;
 
 #[cfg(target_os = "windows")]
-use crate::error::ResultExt;
+use crate::error::{HttpResultExt, ResultExt};
 use crate::state::SharedState;
 
 #[derive(Serialize, serde::Deserialize, Clone, Debug, specta::Type)]
@@ -150,20 +150,15 @@ pub(crate) async fn download_steamcmd_windows() -> Result<String, String> {
             return Ok(exe_path.to_string_lossy().to_string());
         }
 
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(120))
-            .user_agent("Mozilla/5.0")
-            .build()
-            .cmd_err()?;
-
-        let bytes = client
-            .get("https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip")
-            .send()
-            .await
-            .map_err(|e| format!("Download failed: {e}"))?
-            .bytes()
-            .await
-            .map_err(|e| format!("Download read failed: {e}"))?;
+        let bytes = crate::error::send_ok(
+            crate::net::download()
+                .get("https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip"),
+        )
+        .await
+        .http_err("SteamCMD download")?
+        .bytes()
+        .await
+        .http_err("SteamCMD download")?;
 
         let install_dir_clone = install_dir.clone();
         tokio::task::spawn_blocking(move || {

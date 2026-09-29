@@ -9,8 +9,7 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::{DialogExt, FileDialogBuilder, FilePath};
 use tauri_plugin_opener::OpenerExt;
 
-use crate::error::ResultExt;
-use crate::state::insecure_client;
+use crate::error::{HttpResultExt, ResultExt, send_ok};
 
 /// A file-type filter of a file dialog: a label and its extensions (no dot).
 #[derive(Deserialize, Clone, Debug, specta::Type)]
@@ -114,14 +113,16 @@ struct IpApi {
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn geolocate_ip() -> Result<GeoLocation, String> {
-    let r: IpApi = insecure_client()
-        .get("http://ip-api.com/json/?fields=status,message,lat,lon,city,country,countryCode")
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {e}"))?
-        .json()
-        .await
-        .cmd_err()?;
+    // ip-api's free tier is plain HTTP only.
+    let r: IpApi = send_ok(
+        crate::net::api()
+            .get("http://ip-api.com/json/?fields=status,message,lat,lon,city,country,countryCode"),
+    )
+    .await
+    .http_err("IP geolocation")?
+    .json()
+    .await
+    .http_err("IP geolocation")?;
     match (r.status.as_str(), r.lat, r.lon) {
         ("success", Some(lat), Some(lon)) => Ok(GeoLocation {
             lat,
