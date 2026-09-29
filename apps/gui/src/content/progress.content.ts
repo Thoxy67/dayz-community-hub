@@ -3,6 +3,18 @@ import { insert, t, type Dictionary } from "intlayer";
 const content = {
   key: "progress",
   content: {
+    minimise: t({ en: "Keep running in the background", fr: "Continuer en arrière-plan", de: "Im Hintergrund fortsetzen", es: "Seguir en segundo plano", ru: "Продолжить в фоне" }),
+    elapsed: t({ en: "Elapsed", fr: "Écoulé", de: "Vergangen", es: "Transcurrido", ru: "Прошло" }),
+    speed: t({ en: "Speed", fr: "Débit", de: "Geschwindigkeit", es: "Velocidad", ru: "Скорость" }),
+    itemProgress: t({ en: "Current mod", fr: "Mod en cours", de: "Aktueller Mod", es: "Mod actual", ru: "Текущий мод" }),
+    overall: t({ en: "Overall", fr: "Global", de: "Gesamt", es: "Total", ru: "Всего" }),
+    succeeded: t({ en: "Succeeded", fr: "Réussis", de: "Erfolgreich", es: "Correctos", ru: "Успешно" }),
+    failedLabel: t({ en: "Failed", fr: "Échecs", de: "Fehlgeschlagen", es: "Fallidos", ru: "Ошибки" }),
+    queue: t({ en: "Done so far", fr: "Terminés", de: "Bisher erledigt", es: "Completados", ru: "Готово" }),
+    noneYet: t({ en: "Nothing finished yet.", fr: "Rien de terminé pour l'instant.", de: "Noch nichts fertig.", es: "Nada terminado todavía.", ru: "Пока ничего не завершено." }),
+    showPassword: t({ en: "Show the password", fr: "Afficher le mot de passe", de: "Passwort anzeigen", es: "Mostrar la contraseña", ru: "Показать пароль" }),
+    copyLog: t({ en: "Copy the log", fr: "Copier le journal", de: "Protokoll kopieren", es: "Copiar el registro", ru: "Скопировать журнал" }),
+    followLog: t({ en: "Follow", fr: "Suivre", de: "Folgen", es: "Seguir", ru: "Следить" }),
     steamguardTitle: t({ en: "Steam Guard Authorization Required", fr: "Autorisation Steam Guard requise", de: "Steam Guard Autorisierung erforderlich", es: "Se requiere autorización de Steam Guard", ru: "Требуется авторизация Steam Guard" }),
     steamguardDesc: insert(t({ en: "Open the {{app}} on your phone and approve the sign-in to continue.", fr: "Ouvrez l'{{app}} sur votre téléphone et approuvez la connexion pour continuer.", de: "Öffne die {{app}} auf deinem Handy und bestätige die Anmeldung um fortzufahren.", es: "Abre la {{app}} en tu teléfono y aprueba el inicio de sesión para continuar.", ru: "Откройте {{app}} на телефоне и подтвердите вход для продолжения." })),
     steamguardApp: t({ en: "Steam Mobile app", fr: "application Steam Mobile", de: "Steam Mobile App", es: "aplicación Steam Mobile", ru: "приложение Steam Mobile" }),

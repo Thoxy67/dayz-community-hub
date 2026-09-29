@@ -21,13 +21,20 @@ export type ModOp = {
   current: number;
   total: number;
   currentName: string;
-  completed: { id: number; name: string; ok: boolean }[];
+  /** Mods that came through or failed, with how long each took. */
+  completed: { id: number; name: string; ok: boolean; ms: number }[];
   ok: number;
   failed: number;
   hint: string | null;
   /** Raw SteamCMD output. The live download line is rewritten in place. */
   log: string[];
+  /** When each log line arrived, ms since `startedAt` (parallel to `log`). */
+  logAt: number[];
   startedAt: number;
+  /** When the mod being worked on started. */
+  itemStartedAt: number;
+  /** The dialog is closed while the operation carries on; the status bar shows it. */
+  minimised: boolean;
 };
 
 const idle = (): ModOp => ({
@@ -41,7 +48,10 @@ const idle = (): ModOp => ({
   failed: 0,
   hint: null,
   log: [],
+  logAt: [],
   startedAt: 0,
+  itemStartedAt: 0,
+  minimised: false,
 });
 
 class Mods {
@@ -163,7 +173,8 @@ class Mods {
   /** Run an operation; `onSuccess` fires when every mod came through. */
   start(opType: ipc.ModOpType, args: Record<string, unknown>, onSuccess?: () => void) {
     const w = words("mods");
-    this.op = { ...idle(), active: true, currentName: String(w.preparing), startedAt: Date.now() };
+    const t0 = Date.now();
+    this.op = { ...idle(), active: true, currentName: String(w.preparing), startedAt: t0, itemStartedAt: t0 };
     const ch = new Channel<ModProgressEvent>();
     // The last log entry is a transient "\r" progress line: the next one
     // overwrites it instead of appending, so a download is one live line.
@@ -186,22 +197,33 @@ class Mods {
           op.current = ev.current;
           op.total = ev.total;
           op.currentName = ev.name;
+          op.itemStartedAt = Date.now();
           break;
         case "done":
         case "failed":
           op.current = ev.current;
           op.total = ev.total;
-          op.completed = [...op.completed, { id: ev.mod_id, name: ev.name, ok: ev.kind === "done" }];
+          op.completed.push({ id: ev.mod_id, name: ev.name, ok: ev.kind === "done", ms: Date.now() - op.itemStartedAt });
+          op.itemStartedAt = Date.now();
           break;
         case "log_line":
           if (ev.log_line) {
-            op.log = [...op.log, ev.log_line];
+            // `op` is deep state: push is reactive and does not copy the log.
+            op.log.push(ev.log_line);
+            op.logAt.push(Date.now() - op.startedAt);
             lastWasProgress = false;
           }
           break;
         case "log_progress":
           if (ev.log_line) {
-            op.log = lastWasProgress ? [...op.log.slice(0, -1), ev.log_line] : [...op.log, ev.log_line];
+            const at = Date.now() - op.startedAt;
+            if (lastWasProgress && op.log.length > 0) {
+              op.log[op.log.length - 1] = ev.log_line;
+              op.logAt[op.logAt.length - 1] = at;
+            } else {
+              op.log.push(ev.log_line);
+              op.logAt.push(at);
+            }
             lastWasProgress = true;
           }
           break;

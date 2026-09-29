@@ -14,7 +14,7 @@ let seed = 42;
 const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
 const pick = <T>(a: readonly T[]) => a[Math.floor(rnd() * a.length)]!;
 
-const servers = Array.from({ length: 2400 }, (_, i) => {
+const servers = Array.from({ length: 9500 }, (_, i) => {
   const max = pick([40, 50, 60, 60, 60, 80, 100, 127]);
   const players = rnd() < 0.3 ? 0 : rnd() < 0.1 ? max : Math.floor(rnd() * max);
   const ip = `${45 + (i % 180)}.${(i * 7) % 255}.${(i * 13) % 255}.${(i * 31) % 250}`;
@@ -70,13 +70,13 @@ const profile = {
   favorites: servers.slice(3, 9).map((s) => ({ name: s.name, ip: s.ip, port: s.query_port, password: null })),
   history: servers.slice(10, 22).map((s, i) => ({ name: s.name, ip: s.ip, port: s.query_port, ts: now - i * 7200 - 600, relative_time: "" })),
   options: [
-    ["-window", "Run in windowed mode"], ["-noborder", "Borderless window"], ["-nosplash", "Skip splash screen"],
-    ["-skipIntro", "Skip intro videos"], ["-nolauncher", "Skip the Bohemia launcher"], ["-filePatching", "Load unpacked files"],
-    ["-doLogs", "Write RPT logs"], ["-high", "High process priority"], ["-world", "World loaded at start"],
-    ["-noPause", "Keep running when unfocused"], ["-maxMem", "Maximum memory (MB)"], ["-maxVRAM", "Maximum video memory (MB)"],
-    ["-cpuCount", "CPU cores to use"], ["-exThreads", "Extra threads mask"], ["-noBenchmark", "Skip the benchmark"],
-    ["-scriptDebug", "Script debugging"], ["-profiles", "Profile folder"],
-  ].map(([key, description], i) => ({ key, description, enabled: i % 3 === 0, value: key === "-maxMem" ? "8192" : key === "-world" ? "empty" : null })),
+    ["window", "Run in windowed mode"], ["noborder", "Borderless window"], ["nosplash", "Skip splash screen"],
+    ["skipintro", "Skip intro videos"], ["nolauncher", "Skip the Bohemia launcher"], ["file_patching", "Load unpacked files"],
+    ["do_logs", "Write RPT logs"], ["high", "High process priority"], ["world", "World loaded at start"],
+    ["no_pause", "Keep running when unfocused"], ["max_mem", "Maximum memory (MB)"], ["max_vram", "Maximum video memory (MB)"],
+    ["cpu_count", "CPU cores to use"], ["ex_threads", "Extra threads mask"], ["no_benchmark", "Skip the benchmark"],
+    ["script_debug", "Script debugging"], ["buldozer", "Buldozer mode"], ["winxp", "DirectX 9"], ["profiles", "Profile folder"],
+  ].map(([key, description], i) => ({ key, description, enabled: i % 3 === 0, value: key === "max_mem" ? "8192" : key === "world" ? "empty" : null })),
   excluded_ips: [servers[40]!.ip],
   ping_concurrency: 64,
   ping_timeout_auto: 2000,
@@ -108,6 +108,8 @@ export function installMock() {
   const q = new URLSearchParams(location.search);
   const t = q.get("theme");
   if (t) localStorage.setItem("dzch.theme", JSON.stringify({ preset: t, custom: null, frame: {} }));
+  if (q.get("rail") === "collapsed")
+    localStorage.setItem("dzch.prefs", JSON.stringify({ panes: {}, railCollapsed: true, dismissedRejoin: null }));
   const v = q.get("view");
   if (v) queueMicrotask(async () => (await import("$lib/stores/app.svelte")).app.go(v as never, q.get("focus")));
   mockWindows("main");
@@ -187,6 +189,54 @@ export function installMock() {
         return "0.4.1";
       case "plugin:window|is_maximized":
         return false;
+      case "start_mod_operation": {
+        // A plausible SteamCMD run: close Steam, log in, then each mod with
+        // live progress lines (rewritten in place), one failure, a summary.
+        const ch = a.onProgress as Ch<Record<string, unknown>>;
+        const ids = (a.modIds as number[] | undefined) ?? mods.filter((m) => m.update_available).map((m) => m.id);
+        const list = ids.length ? ids : mods.slice(0, 3).map((m) => m.id);
+        const ev = (kind: string, extra: Record<string, unknown> = {}) =>
+          ch.onmessage({ kind, current: 0, total: list.length, mod_id: 0, name: "", ok: 0, failed: 0, hint: null, log_line: null, ...extra });
+        const log = (line: string, progress = false) => ev(progress ? "log_progress" : "log_line", { log_line: line });
+        const steps: Array<[number, () => void]> = [];
+        let t = 0;
+        const at = (dt: number, fn: () => void) => steps.push([(t += dt), fn]);
+        at(50, () => ev("shutting_down_steam"));
+        at(300, () => log("Redirecting stderr to '/home/player/.local/share/Steam/logs/stderr.txt'"));
+        at(100, () => log("[  0%] Checking for available updates..."));
+        at(100, () => log("[----] Verifying installation..."));
+        at(100, () => log("Steam Console Client (c) Valve Corporation - version 1726604893"));
+        at(100, () => log("Logging in user 'survivor_42' to Steam Public...OK"));
+        at(80, () => log("Waiting for client config...OK"));
+        at(80, () => log("Waiting for user info...OK"));
+        let ok = 0;
+        list.forEach((id, i) => {
+          const m = mods.find((x) => x.id === id);
+          const name = m?.name ?? `Workshop ${id}`;
+          const total = m?.size ?? 300_000_000;
+          at(120, () => ev("starting", { current: i + 1, name, mod_id: id }));
+          at(60, () => log(`Downloading item ${id} ...`));
+          for (let k = 1; k <= 12; k++) {
+            at(90, () => {
+              const done = Math.floor((total * k) / 12);
+              log(`Update state (0x61) downloading, progress: ${((done / total) * 100).toFixed(2)} (${done} / ${total})`, true);
+            });
+          }
+          if (i === 1 && list.length > 2) {
+            at(80, () => log(`ERROR! Download item ${id} failed (Failure).`));
+            at(20, () => ev("failed", { current: i + 1, name, mod_id: id }));
+          } else {
+            ok++;
+            at(80, () => log(`Success. Downloaded item ${id} to "/home/player/steamcmd/steamapps/workshop/content/221100/${id}" (${total} bytes)`));
+            at(20, () => ev("done", { current: i + 1, name, mod_id: id }));
+          }
+        });
+        const failed = list.length - ok;
+        at(200, () => log("Unloading Steam API...OK"));
+        at(50, () => ev("finished", { ok, failed }));
+        for (const [when, fn] of steps) setTimeout(fn, when);
+        return null;
+      }
       case "toggle_ping_pause":
         return false;
       case "fetch_steam_avatar":
