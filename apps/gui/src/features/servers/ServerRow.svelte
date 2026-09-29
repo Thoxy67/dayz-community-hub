@@ -41,6 +41,7 @@
   role="row"
   tabindex="-1"
   aria-selected={selected}
+  aria-rowindex={index + 1}
   class={cn(
     GRID,
     "group h-full border-b border-border/50 px-2 text-xs transition-colors",

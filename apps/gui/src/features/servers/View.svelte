@@ -24,6 +24,7 @@
   import Toolbar from "./Toolbar.svelte";
 
   const c = dict("servers");
+  const n = dict("nav");
 
   // ── the one long list ───────────────────────────────────────────────────
   // As tall as every matching server; only the rows in view exist, and only
@@ -271,7 +272,7 @@
 {/snippet}
 
 <div class="flex h-full min-h-0 flex-col">
-  <PageHeader title={$c.colServer.value + "s"}>
+  <PageHeader title={$n.servers.value}>
     {#snippet stats()}
       <Figure label={$c.statShown.value} value={num(feed.total)} />
       <Figure label={$c.statPlayers.value} value={compact(fig?.players)} tone="text-ok" />
