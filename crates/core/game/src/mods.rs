@@ -516,6 +516,22 @@ pub fn delete_mod(dirs: &ModDirs, dayz_path: Option<&Path>, mod_id: u64) -> Resu
     })
 }
 
+/// Delete a mod's copies in the Steam libraries. Only for a mod Steam said
+/// the account is not subscribed to: Steam does not manage those copies and
+/// never removes them.
+pub fn delete_steam_copies(dirs: &ModDirs, mod_id: u64) -> Result<()> {
+    for (dir, source) in dirs.all() {
+        if source != ModSource::Steam {
+            continue;
+        }
+        let copy = dir.join(mod_id.to_string());
+        if copy.join("meta.cpp").is_file() {
+            fs::remove_dir_all(&copy)?;
+        }
+    }
+    Ok(())
+}
+
 /// Link or unlink a mod: a linked mod loses its `@<id>` link, another gets
 /// one to its chosen copy. Nothing is written into the mod's folder.
 ///
@@ -765,6 +781,25 @@ mod tests {
             dirs.launcher.join("5")
         );
         assert!(dayz.join("@6").symlink_metadata().is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_unsubscribed_steam_copy_is_deleted_in_every_library_only() {
+        let root = tmp("steam-copies");
+        let dirs = ModDirs {
+            launcher: root.join("launcher"),
+            steam: vec![root.join("lib1"), root.join("lib2")],
+        };
+        fake_mod(&dirs.launcher, 4, "four", 1);
+        fake_mod(&dirs.steam[0], 4, "four", 1);
+        fake_mod(&dirs.steam[1], 4, "four", 1);
+        fake_mod(&dirs.steam[0], 5, "five", 1);
+        delete_steam_copies(&dirs, 4).unwrap();
+        assert!(!dirs.steam[0].join("4").exists());
+        assert!(!dirs.steam[1].join("4").exists());
+        assert!(dirs.launcher.join("4").join("meta.cpp").is_file());
+        assert!(dirs.steam[0].join("5").join("meta.cpp").is_file());
         let _ = fs::remove_dir_all(&root);
     }
 

@@ -225,11 +225,24 @@ pub(crate) async fn delete_mods_bulk(
             }
         }
         // Even after a failure: what was deleted must not come back.
-        let unsubscribed = dz_game::steam_download::unsubscribe(&deleted);
+        let steam = dz_game::steam_download::unsubscribe(&deleted);
+        // Copies Steam does not manage (not subscribed) go now; Steam
+        // removes the unsubscribed ones itself.
+        in_steam.retain(|id| {
+            if steam.unsubscribed.contains(id) {
+                return false;
+            }
+            if steam.not_subscribed.contains(id) {
+                match ctl_clone.delete_steam_copies(*id) {
+                    Ok(_) => return false,
+                    Err(e) => eprintln!("[mods] Steam copy of {id} not deleted: {e}"),
+                }
+            }
+            true
+        });
         if let Some(e) = failed {
             return Err(e);
         }
-        in_steam.retain(|id| !unsubscribed.contains(id));
         Ok(in_steam)
     })
     .await

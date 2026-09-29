@@ -267,6 +267,12 @@ impl DayzCtl {
         mods::delete_mod(&self.mod_dirs(), self.dayz_path().ok().as_deref(), mod_id)
     }
 
+    /// Delete a mod's copies in the Steam libraries: only for a mod the
+    /// account is not subscribed to (see [`mods::delete_steam_copies`]).
+    pub fn delete_steam_copies(&self, mod_id: u64) -> Result<()> {
+        mods::delete_steam_copies(&self.mod_dirs(), mod_id)
+    }
+
     /// The directory of the copy of a mod in use.
     pub fn mod_dir(&self, mod_id: u64) -> Option<PathBuf> {
         self.mod_dirs().copy_of(mod_id).map(|(p, _)| p)

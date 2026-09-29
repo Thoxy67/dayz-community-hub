@@ -27,32 +27,39 @@ impl Drop for CancelOnDrop {
     }
 }
 
+/// What Steam said when asked to unsubscribe from deleted mods.
+#[derive(Debug, Default)]
+pub struct Unsubscription {
+    /// Unsubscribed: Steam removes their files from its library itself.
+    pub unsubscribed: Vec<u64>,
+    /// Steam answered they were not subscribed: their copies in a Steam
+    /// library are nobody's (SteamCMD versions before 0.5 downloaded into
+    /// the Steam library), and Steam will never remove them.
+    pub not_subscribed: Vec<u64>,
+}
+
 /// Unsubscribe the Steam account from the mods of `ids` it is subscribed
-/// to, so a deleted mod stays deleted: Steam removes its files from its
-/// library and stops updating it. Blocking. Does nothing when Steam is not
-/// running; a failure is logged, not raised, since the mods themselves are
-/// already deleted. Returns the ids Steam unsubscribed from.
-pub fn unsubscribe(ids: &[u64]) -> Vec<u64> {
+/// to, so a deleted mod stays deleted. Blocking. Does nothing when Steam is
+/// not running; a failure is logged, not raised, since the mods themselves
+/// are already deleted. A mod Steam gave no answer for is in neither list.
+pub fn unsubscribe(ids: &[u64]) -> Unsubscription {
+    let mut out = Unsubscription::default();
     if ids.is_empty() || !dz_steamworks::steam_running() {
-        return Vec::new();
+        return out;
     }
     match dz_steamworks::unsubscribe(ids) {
-        Ok(results) => results
-            .into_iter()
-            .filter_map(|(id, r)| match r {
-                Ok(true) => Some(id),
-                Ok(false) => None,
-                Err(e) => {
-                    eprintln!("[steamworks] mod {id} stays subscribed: {e}");
-                    None
+        Ok(results) => {
+            for (id, r) in results {
+                match r {
+                    Ok(true) => out.unsubscribed.push(id),
+                    Ok(false) => out.not_subscribed.push(id),
+                    Err(e) => eprintln!("[steamworks] mod {id} stays subscribed: {e}"),
                 }
-            })
-            .collect(),
-        Err(e) => {
-            eprintln!("[steamworks] no unsubscription: {e}");
-            Vec::new()
+            }
         }
+        Err(e) => eprintln!("[steamworks] no unsubscription: {e}"),
     }
+    out
 }
 
 /// Have Steam download `mods` ((id, name) pairs). Sends progress on `tx`,
