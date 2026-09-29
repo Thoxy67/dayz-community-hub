@@ -1,7 +1,7 @@
 # DayZ Community Hub
 
 [![CI](https://git.thoxy.xyz/thoxy/dayz-community-hub/actions/workflows/ci.yml/badge.svg)](https://git.thoxy.xyz/thoxy/dayz-community-hub/actions?workflow=ci.yml)
-[![Version](https://img.shields.io/badge/version-0.4.1-blue?style=flat-square)](https://git.thoxy.xyz/thoxy/dayz-community-hub/releases)
+[![Version](https://img.shields.io/badge/version-0.5.0-blue?style=flat-square)](https://git.thoxy.xyz/thoxy/dayz-community-hub/releases)
 ![Platform](<https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20(AppImage%2C%20deb%2C%20rpm)-lightgrey?style=flat-square>)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 
