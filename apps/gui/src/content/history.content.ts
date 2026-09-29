@@ -15,6 +15,11 @@ const content = {
     clearMessage: insert(t({ en: "Clear all {{count}} history entries?", fr: "Effacer toutes les {{count}} entrées de l'historique ?", de: "Alle {{count}} Verlaufseinträge löschen?", es: "¿Limpiar todas las {{count}} entradas del historial?", ru: "Очистить все {{count}} записей истории?" })),
     cleared: t({ en: "History cleared", fr: "Historique effacé", de: "Verlauf gelöscht", es: "Historial limpiado", ru: "История очищена" }),
     addedToFavorites: insert(t({ en: "Added {{name}} to favorites", fr: "{{name}} ajouté aux favoris", de: "{{name}} zu Favoriten hinzugefügt", es: "Añadido {{name}} a favoritos", ru: "Добавлено {{name}} в избранное" })),
+    statEntries: t({ en: "Servers played", fr: "Serveurs joués", de: "Gespielte Server", es: "Servidores jugados", ru: "Серверов сыграно" }),
+    statLastPlayed: t({ en: "Last session", fr: "Dernière session", de: "Letzte Sitzung", es: "Última sesión", ru: "Последняя сессия" }),
+    statThisWeek: t({ en: "This week", fr: "Cette semaine", de: "Diese Woche", es: "Esta semana", ru: "За неделю" }),
+    noHistoryHint: t({ en: "Every server you join is kept here, newest first, so you can go back in one click.", fr: "Chaque serveur rejoint est gardé ici, du plus récent au plus ancien, pour y revenir en un clic.", de: "Jeder Server, dem du beitrittst, landet hier – neueste zuerst –, damit du mit einem Klick zurückkehrst.", es: "Cada servidor al que te unes se guarda aquí, del más reciente al más antiguo, para volver con un clic.", ru: "Каждый сервер, на который вы заходили, сохраняется здесь — новые сверху, чтобы вернуться в один клик." }),
+    sortRecent: t({ en: "Most recent", fr: "Plus récents", de: "Neueste", es: "Más recientes", ru: "Недавние" }),
   },
 } satisfies Dictionary;
 
