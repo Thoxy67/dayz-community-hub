@@ -26,6 +26,7 @@ check:
 	CARGO_TARGET_DIR=$(CHECK_TARGET) cargo test --workspace
 	CARGO_TARGET_DIR=$(CHECK_TARGET) cargo clippy --workspace --all-targets
 	cd apps/gui && bunx svelte-check --threshold error
+	cd apps/gui && bun test
 	uv run --project tools pytest
 	uv tool run ruff check tools
 fmt:

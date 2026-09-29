@@ -46,6 +46,10 @@ jobs:
         working-directory: apps/gui
         run: bunx svelte-check --threshold error
 
+      - name: Interface tests
+        working-directory: apps/gui
+        run: bun test
+
       - name: Rust format
         run: cargo fmt --all --check
 
