@@ -64,6 +64,7 @@
 {/snippet}
 
 <footer
+  data-pad-region
   class="flex h-7 shrink-0 items-stretch divide-x divide-border border-t border-border bg-bg text-2xs text-fg-faint"
 >
   <!-- The server list: how many, how fresh; a click fetches it again. -->

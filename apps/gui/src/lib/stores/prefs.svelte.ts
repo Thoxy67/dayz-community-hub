@@ -13,9 +13,21 @@ type Stored = {
   railCollapsed: boolean;
   /** The last-played strip was put away for this server ("ip:port"). */
   dismissedRejoin: string | null;
+  /** Controller mode: follow the last input used, or always, or never. */
+  padMode: PadMode;
+  /** How much larger the interface is drawn while a controller drives it. */
+  padScale: number;
 };
 
-const DEFAULTS: Stored = { panes: {}, railCollapsed: false, dismissedRejoin: null };
+export type PadMode = "auto" | "always" | "never";
+
+const DEFAULTS: Stored = {
+  panes: {},
+  railCollapsed: false,
+  dismissedRejoin: null,
+  padMode: "auto",
+  padScale: 1.15,
+};
 
 function load(): Stored {
   try {
@@ -63,6 +75,22 @@ class Prefs {
   }
   set dismissedRejoin(v: string | null) {
     this.#s.dismissedRejoin = v;
+    this.#save();
+  }
+
+  get padMode() {
+    return this.#s.padMode;
+  }
+  set padMode(v: PadMode) {
+    this.#s.padMode = v;
+    this.#save();
+  }
+
+  get padScale() {
+    return this.#s.padScale;
+  }
+  set padScale(v: number) {
+    this.#s.padScale = v;
     this.#save();
   }
 }

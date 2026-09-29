@@ -37,3 +37,4 @@ export { default as MasterDetail } from "./MasterDetail.svelte";
 export { mapName } from "./map-name";
 export { default as ServerListRow } from "./ServerListRow.svelte";
 export { LIST_GRID, LIST_GRID_EXTRA, LIST_NARROW_HIDDEN, LIST_ROW_PX } from "./server-list";
+export { default as PadGlyph, type PadButton } from "./PadGlyph.svelte";

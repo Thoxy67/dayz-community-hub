@@ -78,6 +78,7 @@
 {/snippet}
 
 <nav
+  data-pad-region
   class={cn(
     "relative flex shrink-0 flex-col border-r border-border bg-bg transition-[width] duration-150",
     collapsed ? "w-rail-collapsed" : "w-rail",

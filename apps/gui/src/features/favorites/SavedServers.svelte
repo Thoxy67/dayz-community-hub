@@ -58,6 +58,7 @@
   import { connect } from "$lib/stores/connect.svelte";
   import { dialogs } from "$lib/stores/dialogs.svelte";
   import { dateTime, relative } from "$lib/format";
+  import { indexOf, pad, padActions } from "$lib/gamepad";
 
   let {
     kind,
@@ -85,6 +86,7 @@
   const h = dict("history");
   const sv = dict("servers");
   const nav = dict("nav");
+  const p = dict("pad");
 
   // ── rows ────────────────────────────────────────────────────────────────
   type Row = Entry & {
@@ -235,6 +237,34 @@
       r.password ?? undefined,
     );
   const toggleFav = (r: Row) => void profile.toggleFavorite(r.name, r.ip, r.port);
+
+  // ── a controller: X joins, Y stars (or unstars) the server under the focus ─
+  let listEl: HTMLElement | undefined = $state();
+  /** The row a pad is on, else the selected one. */
+  function padRow(): Row | null {
+    void pad.focused;
+    const a = document.activeElement;
+    const i = listEl?.contains(a) ? indexOf(a) : null;
+    return (i !== null ? shown[i] : null) ?? selected;
+  }
+  padActions(() => view, {
+    primary: {
+      label: () => $p.join.value,
+      when: () => padRow() !== null,
+      run: () => {
+        const r = padRow();
+        if (r) join(r);
+      },
+    },
+    secondary: {
+      label: () => $p.favorite.value,
+      when: () => padRow() !== null,
+      run: () => {
+        const r = padRow();
+        if (r) toggleFav(r);
+      },
+    },
+  });
 
   // ── keyboard, only while this view shows and nothing else has the keys ──
   function onkeydown(e: KeyboardEvent) {
@@ -423,7 +453,7 @@
 {/snippet}
 
 {#snippet listPane()}
-  <div class="@container flex min-h-0 flex-1 flex-col bg-panel">
+  <div class="@container flex min-h-0 flex-1 flex-col bg-panel" bind:this={listEl}>
     <VirtualList
       bind:this={list}
       items={shown}
@@ -432,6 +462,7 @@
       header={head}
       {row}
       {onrange}
+      padCurrent={() => (selected ? shown.indexOf(selected) : -1)}
       aria-label={$nav[kind].value}
     >
       {#snippet empty()}

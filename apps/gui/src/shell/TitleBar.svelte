@@ -42,6 +42,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <header
+  data-pad-region
   class="relative z-titlebar flex h-titlebar shrink-0 items-stretch border-b border-border bg-bg select-none"
   {onmousedown}
 >

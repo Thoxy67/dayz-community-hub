@@ -316,6 +316,10 @@ export function installMock() {
   // `?modop=1` starts a pretend SteamCMD operation, to look at its dialog.
   if (q.get("modop") === "1")
     setTimeout(async () => (await import("$lib/stores/mods.svelte")).mods.updateStale(), 1500);
+  // `?pad=1` (`?pad=ps`: a PlayStation one) pretends a controller is connected and drives the window
+  // (keyboard stand-ins, `&padseq=down,accept`): see lib/gamepad/mock.ts.
+  const padKind = q.get("pad");
+  if (padKind) void import("$lib/gamepad/mock").then(({ installMockPad }) => installMockPad(q));
   const v = q.get("view");
   if (v)
     queueMicrotask(async () =>
@@ -448,6 +452,18 @@ export function installMock() {
           "DayZCommunityOfflineMode.Enoch",
           "DayZCommunityOfflineMode.Sakhal",
         ];
+      case "gamepad_status":
+        return {
+          available: true,
+          pads: padKind
+            ? [
+                padKind === "ps"
+                  ? { name: "DualSense Wireless Controller", kind: "playStation" }
+                  : { name: "Xbox Wireless Controller", kind: "xbox" },
+              ]
+            : [],
+          steam_ui: false,
+        };
       case "get_system_specs":
         return { logical_cores: 16, physical_cores: 8, total_memory_mb: 32768 };
       case "get_cli_args":

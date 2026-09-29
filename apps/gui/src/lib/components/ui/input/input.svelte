@@ -54,6 +54,7 @@
   <input
     {...rest}
     type={search ? "text" : type}
+    data-pad-search={search || undefined}
     bind:value
     class={cn(
       "h-full w-full min-w-0 rounded-sm border border-border bg-bg text-fg",

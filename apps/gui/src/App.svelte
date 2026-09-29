@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { getCurrentWebview } from "@tauri-apps/api/webview";
   import { dict } from "$lib/i18n";
   import type { Component } from "svelte";
   import TriangleAlert from "~icons/lucide/triangle-alert";
@@ -20,6 +21,8 @@
   import { profile } from "$lib/stores/profile.svelte";
   import { connect } from "$lib/stores/connect.svelte";
   import { say } from "$lib/stores/say";
+  import { prefs } from "$lib/stores/prefs.svelte";
+  import { pad, start as startPad } from "$lib/gamepad";
   import { words } from "$lib/i18n";
   import { PLACES } from "$shell/nav";
   import TitleBar from "$shell/TitleBar.svelte";
@@ -27,6 +30,7 @@
   import StatusBar from "$shell/StatusBar.svelte";
   import ConfirmHost from "$shell/ConfirmHost.svelte";
   import ConnectDialog from "$shell/ConnectDialog.svelte";
+  import PadHints from "$shell/PadHints.svelte";
 
   initI18n();
   const s = dict("shell");
@@ -51,6 +55,21 @@
 
   const lazyModOp = () => import("$features/mods/ModOpDialog.svelte");
   const lazyWizard = () => import("$features/setup/Wizard.svelte");
+
+  // ── controllers: the pads' events, the focus ring, a larger interface ────
+  $effect(() => untrack(() => startPad(PLACES.map((p) => p.id))));
+  $effect(() => {
+    document.documentElement.dataset.input = pad.mode;
+  });
+  // Drawn larger while a pad drives (a Steam Deck's 7-inch screen): the
+  // webview's own zoom, so every measure in CSS pixels stays what it was.
+  $effect(() => {
+    const zoom = pad.mode === "gamepad" ? prefs.padScale : 1;
+    if (inTauri)
+      void getCurrentWebview()
+        .setZoom(zoom)
+        .catch(() => {});
+  });
 
   // ── keyboard ────────────────────────────────────────────────────────────
   function onkeydown(e: KeyboardEvent) {
@@ -151,7 +170,7 @@
     <TitleBar />
     <div class="flex min-h-0 flex-1">
       <Rail />
-      <main class="relative min-w-0 flex-1 bg-panel">
+      <main class="relative min-w-0 flex-1 bg-panel" data-pad-region>
         {#if !app.initialized}
           <div class="relative grid h-full place-items-center overflow-hidden">
             <Topo opacity={0.6} />
@@ -173,7 +192,7 @@
           </div>
         {:else}
           {#each opened as id (id)}
-            <section class="absolute inset-0 flex flex-col" hidden={app.view !== id}>
+            <section class="absolute inset-0 flex flex-col" hidden={app.view !== id} data-view={id}>
               {#await viewOf(id) then mod}
                 <mod.default />
               {/await}
@@ -182,6 +201,7 @@
         {/if}
       </main>
     </div>
+    {#if pad.mode === "gamepad"}<PadHints />{/if}
     <StatusBar />
   </div>
 

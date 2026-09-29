@@ -27,6 +27,7 @@
   import { keyOf, servers, STALE_MS } from "$lib/stores/servers.svelte";
   import { profile } from "$lib/stores/profile.svelte";
   import { connect } from "$lib/stores/connect.svelte";
+  import { indexOf, pad, padActions, padList } from "$lib/gamepad";
   import ServerDetail from "./detail/ServerDetail.svelte";
   import { filters, type SortCol } from "./filters.svelte";
   import { feed } from "./feed.svelte";
@@ -35,6 +36,7 @@
 
   const c = dict("servers");
   const n = dict("nav");
+  const p = dict("pad");
 
   // ── the one long list ───────────────────────────────────────────────────
   // As tall as every matching server; only the rows in view exist, and only
@@ -175,6 +177,28 @@
     }
   }
 
+  // ── a controller: X refreshes, Y stars the server under the focus ───────
+  /** The row a pad is on, else the selected one. */
+  function padRow(): Row | null {
+    void pad.focused;
+    const i = indexOf(document.activeElement);
+    return (
+      (i !== null && scroller?.contains(document.activeElement) ? feed.rows.get(i) : null) ??
+      selected
+    );
+  }
+  padActions("servers", {
+    primary: { label: () => $p.refresh.value, run: () => void servers.refresh() },
+    secondary: {
+      label: () => $p.favorite.value,
+      when: () => padRow() !== null,
+      run: () => {
+        const r = padRow();
+        if (r) void profile.toggleFavorite(r.name, r.ip, r.query_port);
+      },
+    },
+  });
+
   // ── the list's age ──────────────────────────────────────────────────────
   let now = $state(Date.now());
   $effect(() => {
@@ -275,12 +299,18 @@
           aria-label={$c.serverList.value}
           aria-rowcount={feed.total}
           class="absolute inset-0 overflow-y-auto overscroll-contain"
+          use:padList={{
+            count: () => feed.total,
+            reveal: scrollIntoView,
+            current: () => selectedIndex,
+            page: () => Math.max(1, Math.floor(height / ROW_PX) - 1),
+          }}
         >
           <div class="relative" style:height="{feed.total * ROW_PX}px">
             <div class="absolute inset-x-0 top-0" style:transform="translateY({first * ROW_PX}px)">
               {#each indices as i (i)}
                 {@const r = feed.rows.get(i)}
-                <div style:height="{ROW_PX}px">
+                <div style:height="{ROW_PX}px" data-pad-index={i} tabindex="-1">
                   {#if r}
                     <ServerRow
                       server={r}

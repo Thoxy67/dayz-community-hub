@@ -1,6 +1,7 @@
 <script lang="ts" generics="T">
   import type { Snippet } from "svelte";
   import { cn } from "$lib/cx";
+  import { padList } from "$lib/gamepad/list";
 
   /**
    * A long list of which only the rows on screen exist.
@@ -15,6 +16,10 @@
    * Rows are one height, which every list in the app already was: that is
    * what lets this be arithmetic instead of measurement. `rowHeight` is in
    * pixels and should be the density's row measure; `rowPx()` reads it.
+   *
+   * A controller walks it row by row through every item, mounted or not
+   * (`lib/gamepad/list.ts`); `padCurrent` is the row it starts from when it
+   * enters the list, usually the selection.
    */
   let {
     items,
@@ -27,6 +32,7 @@
     empty,
     header,
     onrange,
+    padCurrent,
     "aria-label": ariaLabel,
   }: {
     items: readonly T[];
@@ -43,6 +49,8 @@
     header?: Snippet;
     /** Told which rows are on screen (without overscan) whenever that changes. */
     onrange?: (first: number, last: number) => void;
+    /** The row a controller enters the list at (the selection), or -1. */
+    padCurrent?: () => number;
     "aria-label"?: string;
   } = $props();
 
@@ -107,6 +115,12 @@
   aria-label={ariaLabel}
   class={cn("relative min-h-0 flex-1 overflow-y-auto overscroll-contain", klass)}
   {onscroll}
+  use:padList={{
+    count: () => items.length,
+    reveal: scrollToIndex,
+    current: padCurrent,
+    page: () => Math.max(1, Math.floor(height / rowHeight) - 1),
+  }}
 >
   {#if header}<div class="sticky top-0 z-raised">{@render header()}</div>{/if}
   {#if items.length === 0}
@@ -118,7 +132,12 @@
     <div style:height="{total}px" class="relative">
       <div class="absolute inset-x-0 top-0" style:transform="translateY({first * rowHeight}px)">
         {#each shown as item, i (key(item, first + i))}
-          <div style:height="{rowHeight}px" role={ariaLabel ? "listitem" : undefined}>
+          <div
+            style:height="{rowHeight}px"
+            role={ariaLabel ? "listitem" : undefined}
+            data-pad-index={first + i}
+            tabindex="-1"
+          >
             {@render row(item, first + i)}
           </div>
         {/each}
