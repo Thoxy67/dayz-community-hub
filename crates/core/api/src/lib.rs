@@ -1,9 +1,13 @@
-//! The public server list (dayzsalauncher.com), its on-disk cache, and the
-//! Steam player count.
+//! The public server list (dayzsalauncher.com), the official servers (from
+//! Steam's master server), the on-disk cache, and the Steam player count.
 
 mod index;
+mod official;
 
 pub use index::ServerIndex;
+pub use official::{
+    fetch_official_servers, merge_official, name_looks_official, tags_say_official,
+};
 
 use dz_common::{Error, Result};
 use serde::{Deserialize, Serialize};
@@ -41,6 +45,10 @@ pub struct Server {
     /// In-game time, "HH:MM".
     pub time: String,
     pub mods: Vec<Mod>,
+    /// Bohemia's own server, on the public hive (see `official`). The
+    /// launcher list never says so; set when the official list is merged in.
+    #[serde(default)]
+    pub official: bool,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
