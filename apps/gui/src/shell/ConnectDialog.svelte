@@ -8,6 +8,7 @@
   import { Switch } from "$lib/components/ui/switch";
   import { Tag } from "$lib/components/ui/tag";
   import { connect } from "$lib/stores/connect.svelte";
+  import { profile } from "$lib/stores/profile.svelte";
   import { openUrl } from "$lib/ipc/native";
   import { date } from "$lib/format";
 
@@ -99,7 +100,9 @@
           ? $c.connectModalInstallMods.value
           : $c.connectModalUpdateMods.value}
         hint={fetch
-          ? $m.confirmWarning.value
+          ? profile.viaSteam
+            ? $m.confirmWarningSteam.value
+            : $m.confirmWarning.value
           : req.kind === "missing"
             ? $c.connectModalWarning.value
             : ""}

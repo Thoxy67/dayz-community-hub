@@ -28,6 +28,10 @@ notes; without one, the notes are the commit titles since the last release.
   and Steam keeps it updated. The same window shows the progress.
 - **The SteamCMD window** shows each mod's progress, speed and time left, and
   SteamCMD's own log live. It can keep running in the background.
+- **SteamCMD no longer closes Steam or touches your libraries.** It downloads
+  into the launcher's own folder. Steam still disconnects while SteamCMD uses
+  your account (one session per account per computer): put it back online
+  afterwards, or download through the Steam client instead.
 - **Safer.** Links opened from news articles and imported profiles are checked
   before use, every network request gives up after a timeout instead of
   hanging, and a damaged profile no longer stops the app from starting.

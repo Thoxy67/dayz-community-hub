@@ -2,6 +2,7 @@
   import { dict } from "$lib/i18n";
   import ExternalLink from "~icons/lucide/external-link";
   import Info from "~icons/lucide/info";
+  import TriangleAlert from "~icons/lucide/triangle-alert";
   import Download from "~icons/lucide/download";
   import RefreshCw from "~icons/lucide/refresh-cw";
   import { Dialog } from "$lib/components/ui/dialog";
@@ -9,6 +10,8 @@
   import { Tag } from "$lib/components/ui/tag";
   import { openUrl } from "$lib/ipc/native";
   import { bytes, date } from "$lib/format";
+  import { profile } from "$lib/stores/profile.svelte";
+  import { cn } from "$lib/cx";
   import { review, workshopUrl } from "./review.svelte";
 
   /** What an update or install will touch, before SteamCMD is started. */
@@ -65,8 +68,15 @@
         </li>
       {/each}
     </ul>
-    <p class="m-0 mt-2.5 flex items-center gap-1.5 text-2xs text-fg-faint">
-      <Info class="size-3.5 shrink-0" />{$m.confirmWarning.value}
+    <p
+      class={cn(
+        "m-0 mt-2.5 flex items-start gap-1.5 text-2xs",
+        profile.viaSteam ? "text-fg-faint" : "text-warn",
+      )}
+    >
+      {#if profile.viaSteam}<Info class="size-3.5 shrink-0" />{:else}<TriangleAlert
+          class="size-3.5 shrink-0"
+        />{/if}{profile.viaSteam ? $m.confirmWarningSteam.value : $m.confirmWarning.value}
     </p>
   {/if}
   {#snippet footer()}

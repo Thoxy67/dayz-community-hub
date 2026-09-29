@@ -164,11 +164,11 @@ const content = {
       ru: "Клиент Steam",
     }),
     steamcmdExplain: t({
-      en: "SteamCMD downloads into the launcher's own folder with its own login. Your Steam account and libraries are left alone.",
-      fr: "SteamCMD télécharge dans le dossier propre au lanceur, avec sa propre connexion. Votre compte et vos bibliothèques Steam ne sont pas touchés.",
-      de: "SteamCMD lädt mit eigener Anmeldung in den eigenen Ordner des Launchers. Ihr Steam-Konto und Ihre Bibliotheken bleiben unberührt.",
-      es: "SteamCMD descarga en la carpeta propia del lanzador, con su propio inicio de sesión. Tu cuenta y tus bibliotecas de Steam no se tocan.",
-      ru: "SteamCMD загружает в собственную папку лаунчера со своим входом. Ваш аккаунт и библиотеки Steam не затрагиваются.",
+      en: "SteamCMD downloads into the launcher's own folder with its own login. Your Steam account and libraries are left alone. Steam allows one session per account on a computer: each SteamCMD login disconnects the Steam client, which you then put back online.",
+      fr: "SteamCMD télécharge dans le dossier propre au lanceur, avec sa propre connexion. Votre compte et vos bibliothèques Steam ne sont pas touchés. Steam n'accepte qu'une session par compte sur un ordinateur : chaque connexion de SteamCMD déconnecte le client Steam, qu'il faut ensuite repasser en ligne.",
+      de: "SteamCMD lädt mit eigener Anmeldung in den eigenen Ordner des Launchers. Ihr Steam-Konto und Ihre Bibliotheken bleiben unberührt. Steam erlaubt pro Konto nur eine Sitzung auf einem Computer: Jede Anmeldung von SteamCMD trennt den Steam-Client, den Sie danach wieder online schalten.",
+      es: "SteamCMD descarga en la carpeta propia del lanzador, con su propio inicio de sesión. Tu cuenta y tus bibliotecas de Steam no se tocan. Steam solo admite una sesión por cuenta en un ordenador: cada inicio de sesión de SteamCMD desconecta el cliente de Steam, que luego debes volver a conectar.",
+      ru: "SteamCMD загружает в собственную папку лаунчера со своим входом. Ваш аккаунт и библиотеки Steam не затрагиваются. Steam допускает одну сессию на аккаунт на компьютере: каждый вход SteamCMD отключает клиент Steam, и его потом нужно снова вывести в сеть.",
     }),
     steamworksExplain: t({
       en: "Like the DZSA launcher, the Steam client downloads: Steam must be running and logged in. Each mod is subscribed on your Steam account, lands in your own Steam library (steamapps/workshop/content/221100), and Steam keeps it updated from then on. While mods download, Steam shows you as playing DayZ.",
@@ -215,11 +215,11 @@ const content = {
       ru: "Steam ответил: моды будут загружаться через него.",
     }),
     contentDirHint: t({
-      en: "SteamCMD's own folder. Your Steam libraries are only read, never written, and Steam stays open.",
-      fr: "Le dossier propre à SteamCMD. Vos bibliothèques Steam sont seulement lues, jamais modifiées, et Steam reste ouvert.",
-      de: "SteamCMDs eigener Ordner. Ihre Steam-Bibliotheken werden nur gelesen, nie beschrieben, und Steam bleibt offen.",
-      es: "La carpeta propia de SteamCMD. Tus bibliotecas de Steam solo se leen, nunca se modifican, y Steam sigue abierto.",
-      ru: "Собственная папка SteamCMD. Библиотеки Steam только читаются, никогда не изменяются, и Steam остаётся открытым.",
+      en: "SteamCMD's own folder. Your Steam libraries are only read, never written.",
+      fr: "Le dossier propre à SteamCMD. Vos bibliothèques Steam sont seulement lues, jamais modifiées.",
+      de: "SteamCMDs eigener Ordner. Ihre Steam-Bibliotheken werden nur gelesen, nie beschrieben.",
+      es: "La carpeta propia de SteamCMD. Tus bibliotecas de Steam solo se leen, nunca se modifican.",
+      ru: "Собственная папка SteamCMD. Библиотеки Steam только читаются, никогда не изменяются.",
     }),
     openFolder: t({
       en: "Open folder",

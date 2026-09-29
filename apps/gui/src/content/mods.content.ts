@@ -782,11 +782,18 @@ const content = {
       }),
     ),
     confirmWarning: t({
-      en: "Steam stays open. Launch the game once the download has finished.",
-      fr: "Steam reste ouvert. Lancez le jeu une fois le téléchargement terminé.",
-      de: "Steam bleibt geöffnet. Starten Sie das Spiel, wenn der Download abgeschlossen ist.",
-      es: "Steam permanece abierto. Inicia el juego cuando termine la descarga.",
-      ru: "Steam остаётся открытым. Запускайте игру после завершения загрузки.",
+      en: "SteamCMD logs in with your account, which disconnects the Steam client: go back online in Steam afterwards. The Steam client mode in Settings avoids this.",
+      fr: "SteamCMD se connecte avec votre compte, ce qui déconnecte le client Steam : repassez en ligne dans Steam ensuite. Le mode « Client Steam » des paramètres évite cela.",
+      de: "SteamCMD meldet sich mit Ihrem Konto an, wodurch der Steam-Client getrennt wird: Gehen Sie danach in Steam wieder online. Der Modus „Steam-Client“ in den Einstellungen vermeidet das.",
+      es: "SteamCMD inicia sesión con tu cuenta, lo que desconecta el cliente de Steam: vuelve a conectarte en Steam después. El modo «Cliente de Steam» de los ajustes lo evita.",
+      ru: "SteamCMD входит в ваш аккаунт, из-за чего клиент Steam отключается: после этого снова выйдите в сеть в Steam. Режим «Клиент Steam» в настройках этого избегает.",
+    }),
+    confirmWarningSteam: t({
+      en: "Steam downloads the mods and shows you as playing DayZ meanwhile. Launch the game once the download has finished.",
+      fr: "Steam télécharge les mods et vous montre en train de jouer à DayZ pendant ce temps. Lancez le jeu une fois le téléchargement terminé.",
+      de: "Steam lädt die Mods herunter und zeigt Sie währenddessen als DayZ spielend an. Starten Sie das Spiel, wenn der Download abgeschlossen ist.",
+      es: "Steam descarga los mods y mientras tanto te muestra jugando a DayZ. Inicia el juego cuando termine la descarga.",
+      ru: "Steam загружает моды и в это время показывает, что вы играете в DayZ. Запускайте игру после завершения загрузки.",
     }),
     confirmUpdate: insert(
       t({
