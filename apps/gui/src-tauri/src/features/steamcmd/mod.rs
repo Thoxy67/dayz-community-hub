@@ -7,7 +7,7 @@ use dz_steamcmd::ModProgress;
 use serde::Serialize;
 use tauri::{State, ipc::Channel};
 
-use crate::error::{ResultExt, spawn_blocking_mapped};
+use crate::error::spawn_blocking_mapped;
 use crate::state::SharedState;
 
 /// What a [`ModProgressEvent`] reports.
@@ -39,127 +39,89 @@ pub struct ModProgressEvent {
     pub log_line: Option<String>,
 }
 
+impl ModProgressEvent {
+    /// An event of `kind` with every other field empty.
+    fn of(kind: ModProgressKind) -> Self {
+        Self {
+            kind,
+            current: 0,
+            total: 0,
+            mod_id: 0,
+            name: String::new(),
+            ok: 0,
+            failed: 0,
+            hint: None,
+            log_line: None,
+        }
+    }
+
+    /// A step about one mod: which, and how far the operation has got.
+    fn about(
+        kind: ModProgressKind,
+        current: usize,
+        total: usize,
+        mod_id: u64,
+        name: String,
+    ) -> Self {
+        Self {
+            current,
+            total,
+            mod_id,
+            name,
+            ..Self::of(kind)
+        }
+    }
+}
+
 fn mod_progress_to_event(msg: &ModProgress) -> ModProgressEvent {
+    use ModProgressKind as K;
     match msg {
         ModProgress::ShuttingDownSteam => ModProgressEvent {
-            kind: ModProgressKind::ShuttingDownSteam,
-            current: 0,
-            total: 0,
-            mod_id: 0,
             name: "Closing Steam...".into(),
-            ok: 0,
-            failed: 0,
-            hint: None,
-            log_line: None,
+            ..ModProgressEvent::of(K::ShuttingDownSteam)
         },
-        ModProgress::SteamGuardMobileRequired => ModProgressEvent {
-            kind: ModProgressKind::SteamGuardMobileRequired,
-            current: 0,
-            total: 0,
-            mod_id: 0,
-            name: String::new(),
-            ok: 0,
-            failed: 0,
-            hint: None,
-            log_line: None,
-        },
-        ModProgress::PasswordRequired => ModProgressEvent {
-            kind: ModProgressKind::PasswordRequired,
-            current: 0,
-            total: 0,
-            mod_id: 0,
-            name: String::new(),
-            ok: 0,
-            failed: 0,
-            hint: None,
-            log_line: None,
-        },
+        ModProgress::SteamGuardMobileRequired => ModProgressEvent::of(K::SteamGuardMobileRequired),
+        ModProgress::PasswordRequired => ModProgressEvent::of(K::PasswordRequired),
         ModProgress::LogLine(line) => ModProgressEvent {
-            kind: ModProgressKind::LogLine,
-            current: 0,
-            total: 0,
-            mod_id: 0,
-            name: String::new(),
-            ok: 0,
-            failed: 0,
-            hint: None,
             log_line: Some(line.clone()),
+            ..ModProgressEvent::of(K::LogLine)
         },
         ModProgress::LogProgress(line) => ModProgressEvent {
-            kind: ModProgressKind::LogProgress,
-            current: 0,
-            total: 0,
-            mod_id: 0,
-            name: String::new(),
-            ok: 0,
-            failed: 0,
-            hint: None,
             log_line: Some(line.clone()),
+            ..ModProgressEvent::of(K::LogProgress)
         },
         ModProgress::Starting {
             current,
             total,
             mod_id,
             name,
-        } => ModProgressEvent {
-            kind: ModProgressKind::Starting,
-            current: *current,
-            total: *total,
-            mod_id: *mod_id,
-            name: name.clone(),
-            ok: 0,
-            failed: 0,
-            hint: None,
-            log_line: None,
-        },
+        } => ModProgressEvent::about(K::Starting, *current, *total, *mod_id, name.clone()),
         ModProgress::Done {
             current,
             total,
             mod_id,
             name,
-        } => ModProgressEvent {
-            kind: ModProgressKind::Done,
-            current: *current,
-            total: *total,
-            mod_id: *mod_id,
-            name: name.clone(),
-            ok: 0,
-            failed: 0,
-            hint: None,
-            log_line: None,
-        },
+        } => ModProgressEvent::about(K::Done, *current, *total, *mod_id, name.clone()),
         ModProgress::Failed {
             current,
             total,
             mod_id,
             name,
             error,
-        } => ModProgressEvent {
-            kind: ModProgressKind::Failed,
-            current: *current,
-            total: *total,
-            mod_id: *mod_id,
-            name: format!("{} ({})", name, error),
-            ok: 0,
-            failed: 0,
-            hint: None,
-            log_line: None,
-        },
+        } => ModProgressEvent::about(
+            K::Failed,
+            *current,
+            *total,
+            *mod_id,
+            format!("{name} ({error})"),
+        ),
         ModProgress::Finished {
-            ok,
-            failed,
-            total: _,
-            hint,
+            ok, failed, hint, ..
         } => ModProgressEvent {
-            kind: ModProgressKind::Finished,
-            current: 0,
-            total: 0,
-            mod_id: 0,
-            name: String::new(),
             ok: *ok,
             failed: *failed,
             hint: hint.clone(),
-            log_line: None,
+            ..ModProgressEvent::of(K::Finished)
         },
     }
 }
@@ -276,13 +238,24 @@ pub(crate) async fn start_mod_operation(
         },
     };
 
-    let mut rx = {
-        let mut state = state.write().await;
-        let (rx, pty_input_tx, handle) = state.ctl.start_mod_operation(op).cmd_err()?;
-        state.pty_input_tx = Some(pty_input_tx);
-        state.mod_op_abort = Some(handle.abort_handle());
-        rx
+    // One operation at a time: two steamcmd sessions fight over the login,
+    // and the first would lose its input channel.
+    let ctl = {
+        let s = state.read().await;
+        if s.mod_op_abort.is_some() {
+            return Err("A mod operation is already running".into());
+        }
+        s.ctl.clone_for_task()
     };
+    // Starting scans the workshop directory: off the runtime, and without
+    // holding the state's lock.
+    let (mut rx, pty_input_tx, handle) =
+        spawn_blocking_mapped(move || ctl.start_mod_operation(op)).await?;
+    {
+        let mut s = state.write().await;
+        s.pty_input_tx = Some(pty_input_tx);
+        s.mod_op_abort = Some(handle.abort_handle());
+    }
 
     let state = state.inner().clone();
     tauri::async_runtime::spawn(async move {
