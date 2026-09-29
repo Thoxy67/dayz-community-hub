@@ -98,22 +98,25 @@ pub(crate) fn builder() -> tauri_specta::Builder<tauri::Wry> {
 
 /// Write `bindings.ts`, only when its contents change (a rewrite of an
 /// identical file would still set off vite's reload).
-pub(crate) fn export(builder: &tauri_specta::Builder<tauri::Wry>) {
+pub(crate) fn export(builder: &tauri_specta::Builder<tauri::Wry>) -> Result<(), String> {
     let tmp = std::env::temp_dir().join(format!("dzch-bindings-{}.ts", std::process::id()));
     builder
         .export(
             specta_typescript::Typescript::default().header(HEADER),
             &tmp,
         )
-        .expect("exporting the bindings");
-    let fresh = std::fs::read_to_string(&tmp).expect("reading the exported bindings");
+        .map_err(|e| format!("exporting the bindings: {e}"))?;
+    let fresh =
+        std::fs::read_to_string(&tmp).map_err(|e| format!("reading {}: {e}", tmp.display()));
     let _ = std::fs::remove_file(&tmp);
+    let fresh = fresh?;
     if std::fs::read_to_string(BINDINGS).ok().as_deref() != Some(fresh.as_str()) {
         if let Some(dir) = std::path::Path::new(BINDINGS).parent() {
             let _ = std::fs::create_dir_all(dir);
         }
-        std::fs::write(BINDINGS, fresh).expect("writing bindings.ts");
+        std::fs::write(BINDINGS, fresh).map_err(|e| format!("writing {BINDINGS}: {e}"))?;
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -121,6 +124,6 @@ mod tests {
     /// `make bindings`: `cargo test -p dayz-community-hub export_bindings`.
     #[test]
     fn export_bindings() {
-        super::export(&super::builder());
+        super::export(&super::builder()).unwrap();
     }
 }

@@ -25,9 +25,12 @@ pub fn run(args: CliArgs) {
 
     let builder = ipc::builder();
     let invoke_handler = builder.invoke_handler();
-    // In a debug build, keep the window's bindings in step with the Rust.
+    // In a debug build, keep the window's bindings in step with the Rust. A
+    // debug binary run away from the sources cannot write them: say so, run.
     #[cfg(debug_assertions)]
-    ipc::export(&builder);
+    if let Err(e) = ipc::export(&builder) {
+        eprintln!("bindings not refreshed: {e}");
+    }
 
     tauri::Builder::default()
         .setup(move |app| {
