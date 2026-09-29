@@ -1,16 +1,20 @@
 //! A2S (Source query protocol) against DayZ servers: ping, info, players
 //! and rules.
 //!
-//! Every function takes the query address as `"ip:port"`. A2S_RULES is read
-//! by [`rules`] rather than `async-a2s`, which drops the mods' Workshop ids.
+//! Every function takes the query address as `"ip:port"`. A2S_RULES and
+//! A2S_PLAYER are read here ([`rules`], [`players`]) rather than by
+//! `async-a2s`, which drops the mods' Workshop ids and fails on the players
+//! of busy servers.
 
 pub mod keywords;
+pub mod players;
 pub mod rules;
 
 pub use keywords::DayzInfo;
+pub use players::{A2sPlayer, query_players};
 pub use rules::{A2sMod, DayzRules, query_dayz_rules};
 
-use async_a2s::{A2SClient, info::Info, players::Player};
+use async_a2s::{A2SClient, info::Info};
 use dz_common::{Error, Result};
 
 use std::time::Duration;
@@ -92,16 +96,6 @@ pub async fn query_info(addr: &str) -> Result<Info> {
         .await
         .map_err(|e| Error::A2sQuery(format!("A2S query failed: {e}")))?;
     Ok(info)
-}
-
-/// A2S_PLAYER.
-pub async fn query_players(addr: &str) -> Result<Vec<Player>> {
-    let client = new_client().await?;
-    let (players, _latency) = client
-        .players(addr, None)
-        .await
-        .map_err(|e| Error::A2sQuery(format!("A2S players query failed: {e}")))?;
-    Ok(players)
 }
 
 #[cfg(test)]

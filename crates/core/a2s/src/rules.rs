@@ -63,12 +63,19 @@ impl DayzRules {
 /// a silent server is asked once more after a short pause, since a single lost
 /// UDP datagram (of up to a dozen for a heavily modded server) is common.
 pub async fn fetch_rules(addr: &str, timeout: Duration) -> Result<Vec<u8>> {
-    let mut last = Error::A2sQuery(format!("A2S rules query to {addr} was never sent"));
+    fetch(addr, A2S_RULES, S2A_RULES, timeout).await
+}
+
+/// Send the challenge-guarded request `kind` (A2S_RULES, A2S_PLAYER) and
+/// return the reassembled answer, starting at its `answer` byte. A silent
+/// server is asked once more after a short pause.
+pub(crate) async fn fetch(addr: &str, kind: u8, answer: u8, timeout: Duration) -> Result<Vec<u8>> {
+    let mut last = Error::A2sQuery(format!("A2S query to {addr} was never sent"));
     for attempt in 0..2u32 {
         if attempt > 0 {
             sleep(Duration::from_millis(300)).await;
         }
-        match fetch_once(addr, timeout).await {
+        match fetch_once(addr, kind, answer, timeout).await {
             Ok(payload) => return Ok(payload),
             Err(e) => last = e,
         }
@@ -76,8 +83,13 @@ pub async fn fetch_rules(addr: &str, timeout: Duration) -> Result<Vec<u8>> {
     Err(last)
 }
 
-async fn fetch_once(addr: &str, timeout: Duration) -> Result<Vec<u8>> {
-    let err = |what: String| Error::A2sQuery(format!("A2S rules query to {addr}: {what}"));
+async fn fetch_once(addr: &str, kind: u8, answer: u8, timeout: Duration) -> Result<Vec<u8>> {
+    let what = if kind == A2S_RULES {
+        "rules"
+    } else {
+        "players"
+    };
+    let err = |e: String| Error::A2sQuery(format!("A2S {what} query to {addr}: {e}"));
     let socket = UdpSocket::bind("0.0.0.0:0")
         .await
         .map_err(|e| err(e.to_string()))?;
@@ -87,7 +99,7 @@ async fn fetch_once(addr: &str, timeout: Duration) -> Result<Vec<u8>> {
     let mut challenge = [0xFF; 4];
     for _ in 0..MAX_CHALLENGES {
         let mut request = HEADER.to_vec();
-        request.push(A2S_RULES);
+        request.push(kind);
         request.extend_from_slice(&challenge);
         socket
             .send(&request)
@@ -97,7 +109,7 @@ async fn fetch_once(addr: &str, timeout: Duration) -> Result<Vec<u8>> {
         let payload = receive(&socket, deadline).await.map_err(err)?;
         match payload.first() {
             Some(&S2C_CHALLENGE) if payload.len() >= 5 => challenge.copy_from_slice(&payload[1..5]),
-            Some(&S2A_RULES) => return Ok(payload),
+            Some(&b) if b == answer => return Ok(payload),
             Some(b) => return Err(err(format!("unexpected answer {b:#04x}"))),
             None => return Err(err("empty answer".into())),
         }

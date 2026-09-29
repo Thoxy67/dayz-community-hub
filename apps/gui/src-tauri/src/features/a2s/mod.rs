@@ -132,7 +132,7 @@ pub(crate) async fn query_a2s(
     // Info, players and rules concurrently.
     let (info, players, rules) = tokio::join!(
         tokio::time::timeout(ANSWER_TIMEOUT, dz_a2s::query_info(&addr)),
-        tokio::time::timeout(ANSWER_TIMEOUT, dz_a2s::query_players(&addr)),
+        tokio::time::timeout(ANSWER_TIMEOUT, dz_a2s::query_players(&addr, RULES_TIMEOUT)),
         dz_a2s::query_dayz_rules(&addr, RULES_TIMEOUT),
     );
     let info = info
