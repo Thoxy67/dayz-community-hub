@@ -6,6 +6,8 @@ notes; without one, the notes are the commit titles since the last release.
 
 ## Unreleased
 
+## 0.5.0 - 2026-09-29
+
 - **Update by hand once.** Releases are now signed with a new key, so 0.4.1
   and older cannot install this version by themselves: download it from the
   releases page. From this version on, updates install from inside the app on
