@@ -3,6 +3,20 @@ import { insert, t, type Dictionary } from "intlayer";
 const content = {
   key: "about",
   content: {
+    updatesRestart: t({
+      en: "Restart now",
+      fr: "Redémarrer maintenant",
+      de: "Jetzt neu starten",
+      es: "Reiniciar ahora",
+      ru: "Перезапустить",
+    }),
+    updatesDevBuild: t({
+      en: "This is a development build: updates are not installed from here.",
+      fr: "Ceci est une version de développement : les mises à jour ne s'installent pas d'ici.",
+      de: "Dies ist ein Entwicklungs-Build: Updates werden hier nicht installiert.",
+      es: "Esta es una versión de desarrollo: las actualizaciones no se instalan desde aquí.",
+      ru: "Это сборка для разработки: обновления здесь не устанавливаются.",
+    }),
     system: t({ en: "This machine", fr: "Cette machine", de: "Dieser Rechner", es: "Este equipo", ru: "Этот компьютер" }),
     systemCpu: t({ en: "Processor", fr: "Processeur", de: "Prozessor", es: "Procesador", ru: "Процессор" }),
     systemCores: insert(t({ en: "{{physical}} cores · {{logical}} threads", fr: "{{physical}} cœurs · {{logical}} threads", de: "{{physical}} Kerne · {{logical}} Threads", es: "{{physical}} núcleos · {{logical}} hilos", ru: "{{physical}} ядер · {{logical}} потоков" })),

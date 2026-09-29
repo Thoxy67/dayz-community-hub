@@ -1,4 +1,5 @@
 /** The machine, Steam, SteamCMD, the command line, .dzch files, images, the launcher's own updates. */
+import type { UpdateSupport } from "./bindings";
 import { commands, run, type Channel } from "./core";
 import type { DzchConfig, SteamcmdStatusDto, UpdateInfo, DownloadEvent } from "./types";
 
@@ -23,4 +24,8 @@ export const fetchImage = (url: string) => run(commands.fetchImage(url));
 export const resolveCachedImages = (urls: string[]) => run(commands.resolveCachedImages(urls));
 
 export const checkForUpdate = (): Promise<UpdateInfo | null> => run(commands.checkForUpdate());
+/** Whether this copy can replace itself (AppImage, Windows zip) or not (a package, a dev build). */
+export const updateSupport = (): Promise<UpdateSupport> => run(commands.updateSupport());
 export const installUpdate = (onEvent: Channel<DownloadEvent>) => run(commands.installUpdate(onEvent));
+
+export type { UpdateSupport };
