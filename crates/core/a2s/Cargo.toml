@@ -13,6 +13,4 @@ workspace = true
 [dependencies]
 async-a2s.workspace = true
 dz-common.workspace = true
-
-[dev-dependencies]
 tokio.workspace = true

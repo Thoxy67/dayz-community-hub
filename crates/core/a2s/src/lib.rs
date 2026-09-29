@@ -3,6 +3,12 @@
 //!
 //! Every function takes the query address as `"ip:port"`.
 
+pub mod keywords;
+pub mod rules;
+
+pub use keywords::DayzInfo;
+pub use rules::{A2sMod, DayzRules, query_dayz_rules};
+
 use async_a2s::{A2SClient, info::Info, players::Player, rules::Rule};
 use dz_common::{Error, Result};
 
