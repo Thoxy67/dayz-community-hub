@@ -86,10 +86,27 @@ pub(crate) async fn detect_steamcmd(
     // Push the FS walk (which::which + path.exists) onto the blocking pool —
     // it touches the filesystem and on Windows can spawn `reg query` for the
     // registry lookup, neither of which belong on the runtime thread.
-    tokio::task::spawn_blocking(move || detect_steamcmd_sync(&explicit_path))
+    let status = tokio::task::spawn_blocking(move || detect_steamcmd_sync(&explicit_path))
         .await
-        .map_err(|e| format!("Task join error: {e}"))
+        .map_err(|e| format!("Task join error: {e}"))?;
+    adopt_if_found(&state, &status).await;
+    Ok(status)
 }
+
+/// steamcmd was found but the controller was built without it (installed
+/// after startup, during setup): take it up now, so mod operations work and
+/// the "SteamCMD not found" warning goes away without a settings save.
+async fn adopt_if_found(state: &SharedState, status: &SteamcmdStatusDto) {
+    if status.found && !state.read().await.ctl.has_steamcmd() {
+        state.write().await.ctl.rebuild_steamcmd();
+    }
+}
+
+/// Whether a `watch_steamcmd` poller is running, so repeated calls (the setup
+/// wizard mounting again) do not stack pollers.
+static WATCHING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// A poller gives up after this long: setup is not left open for hours.
+const WATCH_FOR: std::time::Duration = std::time::Duration::from_secs(15 * 60);
 
 /// Start a background task that polls for steamcmd every 3 seconds.
 /// Each tick re-reads `steamcmd_path` from the live profile, so a user
@@ -101,25 +118,30 @@ pub(crate) async fn watch_steamcmd(
     app: AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
+    use std::sync::atomic::Ordering;
+    if WATCHING.swap(true, Ordering::AcqRel) {
+        return Ok(());
+    }
     let state_clone = (*state).clone();
 
     tokio::spawn(async move {
+        let started = std::time::Instant::now();
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(3));
-        loop {
+        while started.elapsed() < WATCH_FOR {
             interval.tick().await;
             let explicit_path = state_clone.read().await.ctl.profile().steamcmd_path.clone();
-            let status =
-                match tokio::task::spawn_blocking(move || detect_steamcmd_sync(&explicit_path))
-                    .await
-                {
-                    Ok(s) => s,
-                    Err(_) => continue,
-                };
+            let Ok(status) =
+                tokio::task::spawn_blocking(move || detect_steamcmd_sync(&explicit_path)).await
+            else {
+                continue;
+            };
             if status.found {
+                adopt_if_found(&state_clone, &status).await;
                 let _ = crate::events::SteamcmdDetected(status).emit(&app);
-                return;
+                break;
             }
         }
+        WATCHING.store(false, Ordering::Release);
     });
 
     Ok(())
