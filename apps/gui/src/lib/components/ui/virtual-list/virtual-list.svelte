@@ -74,9 +74,12 @@
   $effect(() => {
     if (!viewport) return;
     const el = viewport;
-    const watch = new ResizeObserver(() => (height = el.clientHeight));
+    // Capped at the window: a parent that lets the viewport grow with its
+    // content would otherwise make every row "visible" and mount them all.
+    const measure = () => (height = Math.min(el.clientHeight, window.innerHeight));
+    const watch = new ResizeObserver(measure);
     watch.observe(el);
-    height = el.clientHeight;
+    measure();
     return () => watch.disconnect();
   });
 

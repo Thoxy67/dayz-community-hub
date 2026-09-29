@@ -49,9 +49,12 @@
   $effect(() => {
     if (!scroller) return;
     const el = scroller;
-    const ro = new ResizeObserver(() => (height = el.clientHeight));
+    // Never more than the window: a guard against a layout that lets the
+    // scroller grow with its content, which would mount every row.
+    const measure = () => (height = Math.min(el.clientHeight, window.innerHeight));
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
-    height = el.clientHeight;
+    measure();
     return () => ro.disconnect();
   });
 
@@ -172,7 +175,7 @@
 <svelte:window {onkeydown} />
 
 {#snippet listPane()}
-  <div class="flex h-full min-h-0 flex-col">
+  <div class="flex h-full min-h-0 flex-1 flex-col">
     <TableHead grid={GRID}>
       <span class="text-right">#</span>
       <span></span>
@@ -205,13 +208,17 @@
         {/snippet}
       </Empty>
     {:else}
+      <!-- The scroller is pinned to a box whose size does not depend on its
+           content: if it could grow with the list, "the rows in view" would be
+           all nine thousand of them. -->
+      <div class="relative min-h-0 flex-1">
       <div
         bind:this={scroller}
         {onscroll}
         role="grid"
         aria-label={$c.serverList.value}
         aria-rowcount={feed.total}
-        class="relative min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        class="absolute inset-0 overflow-y-auto overscroll-contain"
       >
         <div class="relative" style:height="{feed.total * ROW_PX}px">
           <div class="absolute inset-x-0 top-0" style:transform="translateY({first * ROW_PX}px)">
@@ -243,6 +250,7 @@
             {/each}
           </div>
         </div>
+      </div>
       </div>
     {/if}
   </div>
@@ -302,7 +310,7 @@
     </div>
   {/if}
 
-  <div class="min-h-0 flex-1">
+  <div class="flex min-h-0 flex-1 flex-col">
     {#if showDetail}
       <Split id="servers-detail" pane="end" initial={400} min={320} max={620} keep={520} main={listPane} aside={detailPane} />
     {:else}

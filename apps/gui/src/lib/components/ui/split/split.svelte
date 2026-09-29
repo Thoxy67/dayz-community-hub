@@ -127,7 +127,7 @@
   </div>
 {/snippet}
 
-<div bind:this={box} class="flex min-h-0 min-w-0 flex-1 {vertical ? '' : 'flex-col'}">
+<div bind:this={box} class="flex h-full min-h-0 min-w-0 flex-1 {vertical ? '' : 'flex-col'}">
   {#if atStart}{@render sized()}{:else}{@render flexible()}{/if}
 
   <Splitter
