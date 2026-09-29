@@ -8,7 +8,6 @@ import { profile, type AccountSettings } from "$lib/stores/profile.svelte";
 type Fields = {
   player: string;
   steamLogin: string;
-  steamPassword: string;
   steamRoot: string;
   steamcmdPath: string;
   steamApiKey: string;
@@ -19,7 +18,9 @@ type Fields = {
 };
 
 /** The profile's location as a point, or none if either half is missing. */
-function toPoint(v: readonly [number | null, number | null] | null | undefined): [number, number] | null {
+function toPoint(
+  v: readonly [number | null, number | null] | null | undefined,
+): [number, number] | null {
   return v && v[0] != null && v[1] != null ? [v[0], v[1]] : null;
 }
 
@@ -28,7 +29,6 @@ function fromProfile(): Fields {
   return {
     player: p?.player ?? "",
     steamLogin: p?.steam_login ?? "",
-    steamPassword: p?.steam_password ?? "",
     steamRoot: p?.steam_root ?? "",
     steamcmdPath: p?.steamcmd_path ?? "",
     steamApiKey: p?.steam_api_key ?? "",
@@ -67,7 +67,6 @@ class AccountForm {
       await profile.saveAccount({
         player: orNull(f.player),
         steamLogin: orNull(f.steamLogin),
-        steamPassword: f.steamPassword === "" ? null : f.steamPassword,
         steamRoot: orNull(f.steamRoot),
         steamcmdPath: orNull(f.steamcmdPath),
         steamApiKey: orNull(f.steamApiKey),

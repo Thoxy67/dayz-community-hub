@@ -15,7 +15,6 @@ export type AccountSettings = Pick<
   ipc.ProfileSettings,
   | "player"
   | "steamLogin"
-  | "steamPassword"
   | "steamRoot"
   | "steamcmdPath"
   | "steamApiKey"
@@ -65,7 +64,12 @@ class Profile {
   }
 
   /** Apply locally, write, and on failure reload and say why. */
-  async #write(apply: () => void, write: () => Promise<unknown>, done?: unknown, failPrefix?: unknown) {
+  async #write(
+    apply: () => void,
+    write: () => Promise<unknown>,
+    done?: unknown,
+    failPrefix?: unknown,
+  ) {
     apply();
     try {
       await write();
@@ -81,7 +85,6 @@ class Profile {
     return {
       player: p?.player ?? null,
       steamLogin: p?.steam_login ?? null,
-      steamPassword: p?.steam_password ?? null,
       steamRoot: p?.steam_root ?? null,
       steamcmdEnabled: p?.steamcmd_enabled ?? true,
       steamcmdPath: p?.steamcmd_path ?? null,
@@ -141,7 +144,10 @@ class Profile {
         if (!this.data) return;
         const rest = this.data.favorites.filter((f) => !(f.ip === ip && f.port === port));
         const prev = this.data.favorites.find((f) => f.ip === ip && f.port === port);
-        this.data.favorites = [...rest, { name, ip, port, password: password ?? prev?.password ?? null }];
+        this.data.favorites = [
+          ...rest,
+          { name, ip, port, password: password ?? prev?.password ?? null },
+        ];
       },
       () => ipc.addFavorite(name, ip, port, password),
       words("favorites").added({ name }),
@@ -151,7 +157,10 @@ class Profile {
   async removeFavorite(ip: string, port: number) {
     await this.#write(
       () => {
-        if (this.data) this.data.favorites = this.data.favorites.filter((f) => !(f.ip === ip && f.port === port));
+        if (this.data)
+          this.data.favorites = this.data.favorites.filter(
+            (f) => !(f.ip === ip && f.port === port),
+          );
       },
       () => ipc.removeFavorite(ip, port),
       words("favorites").removed,
@@ -166,7 +175,13 @@ class Profile {
   /** Remove, after asking. */
   async confirmRemoveFavorite(fav: FavoriteDto) {
     const w = words("favorites");
-    if (await confirm({ title: String(w.removeTitle), message: String(w.removeMessage({ name: fav.name })), danger: true })) {
+    if (
+      await confirm({
+        title: String(w.removeTitle),
+        message: String(w.removeMessage({ name: fav.name })),
+        danger: true,
+      })
+    ) {
       await this.removeFavorite(fav.ip, fav.port);
     }
   }
@@ -174,10 +189,20 @@ class Profile {
   // ── history ─────────────────────────────────────────────────────────────
   async removeHistory(h: HistoryDto) {
     const w = words("history");
-    if (!(await confirm({ title: String(w.removeTitle), message: String(w.removeMessage({ name: h.name })), danger: true }))) return;
+    if (
+      !(await confirm({
+        title: String(w.removeTitle),
+        message: String(w.removeMessage({ name: h.name })),
+        danger: true,
+      }))
+    )
+      return;
     await this.#write(
       () => {
-        if (this.data) this.data.history = this.data.history.filter((e) => !(e.ip === h.ip && e.port === h.port));
+        if (this.data)
+          this.data.history = this.data.history.filter(
+            (e) => !(e.ip === h.ip && e.port === h.port),
+          );
       },
       () => ipc.removeHistoryEntry(h.ip, h.port),
       w.removed,
@@ -187,7 +212,14 @@ class Profile {
   async clearHistory() {
     const w = words("history");
     const count = this.data?.history.length ?? 0;
-    if (!(await confirm({ title: String(w.clearTitle), message: String(w.clearMessage({ count })), danger: true }))) return;
+    if (
+      !(await confirm({
+        title: String(w.clearTitle),
+        message: String(w.clearMessage({ count })),
+        danger: true,
+      }))
+    )
+      return;
     await this.#write(
       () => {
         if (this.data) this.data.history = [];
@@ -202,7 +234,8 @@ class Profile {
     const w = words("favorites");
     await this.#write(
       () => {
-        if (this.data && !this.data.excluded_ips.includes(ip)) this.data.excluded_ips = [...this.data.excluded_ips, ip];
+        if (this.data && !this.data.excluded_ips.includes(ip))
+          this.data.excluded_ips = [...this.data.excluded_ips, ip];
       },
       () => ipc.addExcludedIp(ip),
       w.ipExcluded({ ip }),
@@ -224,11 +257,15 @@ class Profile {
   async toggleOption(key: string) {
     const w = words("settings");
     const prev = this.data?.options.find((o) => o.key === key);
-    if (this.data) this.data.options = this.data.options.map((o) => (o.key === key ? { ...o, enabled: !o.enabled } : o));
+    if (this.data)
+      this.data.options = this.data.options.map((o) =>
+        o.key === key ? { ...o, enabled: !o.enabled } : o,
+      );
     try {
       await ipc.toggleLaunchOption(key);
     } catch (e) {
-      if (this.data && prev) this.data.options = this.data.options.map((o) => (o.key === key ? prev : o));
+      if (this.data && prev)
+        this.data.options = this.data.options.map((o) => (o.key === key ? prev : o));
       say.err(w.profileOptionToggleFailed({ error: errorText(e) }));
     }
   }
@@ -244,7 +281,8 @@ class Profile {
     try {
       await ipc.setLaunchOptionValue(key, value);
     } catch (e) {
-      if (this.data && prev) this.data.options = this.data.options.map((o) => (o.key === key ? prev : o));
+      if (this.data && prev)
+        this.data.options = this.data.options.map((o) => (o.key === key ? prev : o));
       say.err(w.profileOptionSetFailed({ error: errorText(e) }));
     }
   }
@@ -253,7 +291,11 @@ class Profile {
   async exportTo(includeMods: boolean) {
     const w = words("settings");
     const filters = [{ name: String(w.profileFilterName), extensions: ["dchub"] }];
-    const path = await saveFile(String(w.profileExportTitle), "dayz-community-hub-profile.dchub", filters);
+    const path = await saveFile(
+      String(w.profileExportTitle),
+      "dayz-community-hub-profile.dchub",
+      filters,
+    );
     if (!path) return;
     try {
       await ipc.exportProfile(path, includeMods);
@@ -268,7 +310,13 @@ class Profile {
     const filters = [{ name: String(w.profileFilterName), extensions: ["dchub"] }];
     const path = await pickFile(String(w.profileImportTitle), { filters });
     if (!path) return;
-    if (!(await confirm({ title: String(w.profileImportConfirmTitle), message: String(w.profileImportConfirmMessage) }))) return;
+    if (
+      !(await confirm({
+        title: String(w.profileImportConfirmTitle),
+        message: String(w.profileImportConfirmMessage),
+      }))
+    )
+      return;
     try {
       await ipc.importProfile(path);
       await ipc.restartApp();
@@ -279,7 +327,14 @@ class Profile {
 
   async reset() {
     const w = words("settings");
-    if (!(await confirm({ title: String(w.profileResetTitle), message: String(w.profileResetMessage), danger: true }))) return;
+    if (
+      !(await confirm({
+        title: String(w.profileResetTitle),
+        message: String(w.profileResetMessage),
+        danger: true,
+      }))
+    )
+      return;
     try {
       await ipc.resetProfile();
       await ipc.restartApp();

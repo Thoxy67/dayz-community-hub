@@ -1,24 +1,32 @@
 <script lang="ts">
   import { dict } from "$lib/i18n";
   import Gamepad from "~icons/lucide/gamepad-2";
-  import TriangleAlert from "~icons/lucide/triangle-alert";
+  import LogIn from "~icons/lucide/log-in";
+  import FolderOpen from "~icons/lucide/folder-open";
+  import ShieldCheck from "~icons/lucide/shield-check";
   import CircleCheck from "~icons/lucide/circle-check";
   import CircleX from "~icons/lucide/circle-x";
   import RefreshCw from "~icons/lucide/refresh-cw";
   import Download from "~icons/lucide/download";
-  import Trash from "~icons/lucide/trash-2";
   import { Field } from "$lib/components/ui/field";
   import { Input } from "$lib/components/ui/input";
   import { Button } from "$lib/components/ui/button";
   import { Tag } from "$lib/components/ui/tag";
   import { Spinner } from "$lib/components/ui/spinner";
   import { Copy } from "$lib/components/ui/copy";
-  import { detectSteamcmd, downloadSteamcmdWindows, type SteamcmdStatus } from "$lib/ipc/system";
+  import {
+    detectSteamcmd,
+    downloadSteamcmdWindows,
+    openSteamcmdDir,
+    steamcmdDirs,
+    type SteamcmdStatus,
+  } from "$lib/ipc/system";
   import { errorText } from "$lib/ipc/core";
-  import { confirm } from "$lib/stores/dialogs.svelte";
+  import { mods } from "$lib/stores/mods.svelte";
+  import { profile } from "$lib/stores/profile.svelte";
   import { servers } from "$lib/stores/servers.svelte";
   import { SettingsSection as Section } from "$lib/components/app";
-  import { PathInput, SecretInput as Secret } from "$lib/components/app";
+  import { PathInput } from "$lib/components/app";
   import { form } from "./account-form.svelte";
 
   const s = dict("settings");
@@ -55,13 +63,16 @@
     }
   }
 
-  /** Removing the saved password is written at once, not left pending. */
-  async function clearPassword() {
-    const ok = await confirm({ title: $s.clearPassword.value, message: $s.passwordWarning.value, danger: true });
-    if (!ok) return;
-    form.f.steamPassword = "";
-    await form.save({ steamPassword: null });
-  }
+  // SteamCMD's own folder: shown so the player can see it is not a Steam library.
+  let contentDir = $state("");
+  $effect(() => {
+    steamcmdDirs()
+      .then((d) => (contentDir = d.content))
+      .catch(() => {});
+  });
+
+  const savedLogin = $derived(profile.data?.steam_login ?? "");
+  const loggedIn = $derived(!!savedLogin && profile.data?.steamcmd_logged_in === savedLogin);
 
   const LINUX = [
     { label: () => $a.steamcmdLinuxDebian.value, cmd: "sudo apt install steamcmd" },
@@ -70,7 +81,12 @@
   ];
 </script>
 
-<Section id="steam" title={$s.sectionSteam.value} description={$s.steamLoginDesc.value} icon={Gamepad}>
+<Section
+  id="steam"
+  title={$s.sectionSteam.value}
+  description={$s.steamLoginDesc.value}
+  icon={Gamepad}
+>
   {#snippet aside()}
     {#if detecting}
       <Spinner />
@@ -82,30 +98,71 @@
   {/snippet}
 
   <Field label={$s.username.value} hint={$s.usernameHint.value} for="set-login">
-    <Input id="set-login" bind:value={form.f.steamLogin} autocomplete="username" spellcheck={false} class="flex-1 font-mono" />
+    <Input
+      id="set-login"
+      bind:value={form.f.steamLogin}
+      autocomplete="username"
+      spellcheck={false}
+      class="flex-1 font-mono"
+    />
   </Field>
-  <Field label={$s.password.value} hint={$s.passwordHint.value} for="set-password">
-    <Secret id="set-password" bind:value={form.f.steamPassword} placeholder={$s.passwordPlaceholder.value} autocomplete="current-password" />
-    {#if form.f.steamPassword}
-      <button
-        type="button"
-        class="grid size-control shrink-0 place-items-center rounded-sm text-fg-faint hover:bg-err/10 hover:text-err"
-        aria-label={$s.clearPassword.value}
-        title={$s.clearPassword.value}
-        onclick={clearPassword}><Trash class="size-icon-sm" /></button
+  <!-- The login: never a password here, SteamCMD asks once and caches it. -->
+  <div class="flex flex-col gap-1.5 border-b border-border/60 px-pad py-2.5">
+    <div class="flex items-center gap-2 text-xs">
+      {#if loggedIn}
+        <CircleCheck class="size-icon-sm shrink-0 text-ok" />
+        <span class="text-fg">{$s.loggedInAs({ name: savedLogin }).value}</span>
+      {:else}
+        <ShieldCheck class="size-icon-sm shrink-0 text-fg-faint" />
+        <span class="text-fg-muted"
+          >{savedLogin ? $s.notLoggedIn.value : $s.loginNeedsUsername.value}</span
+        >
+      {/if}
+      <Button
+        variant="ghost"
+        size="xs"
+        class="ml-auto"
+        onclick={() => mods.login()}
+        disabled={!savedLogin || !status?.found || mods.busy || form.dirty}
       >
-    {/if}
-  </Field>
-  {#if form.f.steamPassword}
-    <div class="flex items-center gap-2 border-b border-border/60 bg-warn/8 px-pad py-1.5 text-2xs text-warn">
-      <TriangleAlert class="size-3.5 shrink-0" />{$s.passwordWarning.value}
+        <LogIn class="size-3" />{$s.loginButton.value}
+      </Button>
     </div>
-  {/if}
+    <p class="m-0 text-2xs text-fg-faint">{$s.loginOnceHint.value}</p>
+    {#if profile.data?.has_saved_password}
+      <p class="m-0 text-2xs text-warn">{$s.savedPasswordPending.value}</p>
+    {/if}
+  </div>
   <Field label={$s.steamRoot.value} hint={$s.steamRootHint.value} for="set-root">
-    <PathInput id="set-root" bind:value={form.f.steamRoot} title={$s.selectSteamRoot.value} directory placeholder="~/.steam/steam" />
+    <PathInput
+      id="set-root"
+      bind:value={form.f.steamRoot}
+      title={$s.selectSteamRoot.value}
+      directory
+      placeholder="~/.steam/steam"
+    />
   </Field>
   <Field label={$s.steamcmdPath.value} hint={$s.steamcmdPathHint.value} for="set-steamcmd">
-    <PathInput id="set-steamcmd" bind:value={form.f.steamcmdPath} title={$s.selectSteamcmd.value} placeholder={status?.path ?? "auto"} />
+    <PathInput
+      id="set-steamcmd"
+      bind:value={form.f.steamcmdPath}
+      title={$s.selectSteamcmd.value}
+      placeholder={status?.path ?? "auto"}
+    />
+  </Field>
+
+  <Field label={$s.contentDir.value} hint={$s.contentDirHint.value}>
+    <div class="flex min-w-0 flex-1 items-center gap-1.5">
+      {#if contentDir}<Copy text={contentDir} class="min-w-0 text-fg-muted" />{/if}
+      <Button
+        variant="ghost"
+        size="xs"
+        class="ml-auto shrink-0"
+        onclick={() => openSteamcmdDir().catch(() => {})}
+      >
+        <FolderOpen class="size-3" />{$s.openFolder.value}
+      </Button>
+    </div>
   </Field>
 
   <!-- What was found, and what to do when nothing was. -->
@@ -124,17 +181,20 @@
       </Button>
     </div>
     {#if status && !status.found}
-      <p class="m-0 text-2xs text-fg-muted">{$a.steamcmdDesc({ notFound: $a.steamcmdNotFound.value }).value}</p>
+      <p class="m-0 text-2xs text-fg-muted">
+        {$a.steamcmdDesc({ notFound: $a.steamcmdNotFound.value }).value}
+      </p>
       {#if status.platform === "windows"}
         <div class="flex items-center gap-2">
           <Button variant="accent" onclick={install} disabled={installing}>
-            {#if installing}<Spinner class="size-3 text-accent-fg" />{$s.steamcmdInstalling.value}{:else}<Download
-                class="size-icon-sm"
-              />{$s.steamcmdInstallWin.value}{/if}
+            {#if installing}<Spinner class="size-3 text-accent-fg" />{$s.steamcmdInstalling
+                .value}{:else}<Download class="size-icon-sm" />{$s.steamcmdInstallWin.value}{/if}
           </Button>
           <span class="text-2xs text-fg-faint">{$a.steamcmdWinDesc.value}</span>
         </div>
-        {#if installError}<p class="m-0 font-mono text-2xs text-err" data-selectable>{installError}</p>{/if}
+        {#if installError}<p class="m-0 font-mono text-2xs text-err" data-selectable>
+            {installError}
+          </p>{/if}
       {:else}
         <p class="m-0 text-2xs text-fg-muted">{$s.steamcmdInstallLinux.value}</p>
         <div class="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1">

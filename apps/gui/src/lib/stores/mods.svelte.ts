@@ -18,10 +18,12 @@ const UPDATES_TTL_MS = 5 * 60 * 1000;
  */
 export const LOG_MAX = 5000;
 
-export type ModOpPhase = "shutting_down" | "steam_guard_mobile" | "password_required" | "downloading" | "finished";
+export type ModOpPhase = "steam_guard_mobile" | "password_required" | "downloading" | "finished";
 
 export type ModOp = {
   active: boolean;
+  /** What was asked for: a login alone reports differently from downloads. */
+  kind: ipc.ModOpType;
   phase: ModOpPhase;
   current: number;
   total: number;
@@ -44,6 +46,7 @@ export type ModOp = {
 
 const idle = (): ModOp => ({
   active: false,
+  kind: "update_all",
   phase: "downloading",
   current: 0,
   total: 0,
@@ -117,14 +120,18 @@ class Mods {
     const w = words("mods");
     const ok = await confirm({
       title: String(w.deleteSingleTitle),
-      message: String(w.deleteSingleMessage({ name: mod.name, id: String(mod.id), size: mod.size_human })),
+      message: String(
+        w.deleteSingleMessage({ name: mod.name, id: String(mod.id), size: mod.size_human }),
+      ),
       danger: true,
     });
     if (!ok) return;
     try {
-      await ipc.deleteMod(mod.id);
+      const keptInSteam = await ipc.deleteMod(mod.id);
       await this.load();
-      say.ok(w.deletedSingle({ name: mod.name }));
+      // The launcher never deletes in a Steam library: only the link went.
+      if (keptInSteam) say.info(w.keptInSteam({ name: mod.name }));
+      else say.ok(w.deletedSingle({ name: mod.name }));
     } catch (e) {
       say.err(`${String(words("shell").errorFailed)}: ${errorText(e)}`);
     }
@@ -133,21 +140,30 @@ class Mods {
   async removeMany(ids: number[]) {
     if (ids.length === 0) return;
     const w = words("mods");
-    const size = bytes(this.installed.filter((m) => ids.includes(m.id)).reduce((a, m) => a + m.size, 0));
+    const size = bytes(
+      this.installed.filter((m) => ids.includes(m.id)).reduce((a, m) => a + m.size, 0),
+    );
     const many = ids.length > 1;
     const ok = await confirm({
       title: String(w.deleteSelectedTitle),
       message: String(
-        many ? w.deleteSelectedMessagePlural({ count: ids.length, size }) : w.deleteSelectedMessage({ count: ids.length, size }),
+        many
+          ? w.deleteSelectedMessagePlural({ count: ids.length, size })
+          : w.deleteSelectedMessage({ count: ids.length, size }),
       ),
       confirmLabel: String(w.deleteButton({ count: ids.length })),
       danger: true,
     });
     if (!ok) return;
     try {
-      await ipc.deleteModsBulk(ids);
+      const kept = await ipc.deleteModsBulk(ids);
       await this.load();
-      say.ok(many ? w.deletedSelectedPlural({ count: ids.length }) : w.deletedSelected({ count: ids.length }));
+      say.ok(
+        many
+          ? w.deletedSelectedPlural({ count: ids.length })
+          : w.deletedSelected({ count: ids.length }),
+      );
+      if (kept.length > 0) say.info(w.keptInSteamMany({ count: kept.length }));
     } catch (e) {
       say.err(`${String(w.deleteFailed)}: ${errorText(e)}`);
     }
@@ -167,7 +183,8 @@ class Mods {
 
   async cleanup() {
     const w = words("mods");
-    if (!(await confirm({ title: String(w.cleanupTitle), message: String(w.cleanupMessage) }))) return;
+    if (!(await confirm({ title: String(w.cleanupTitle), message: String(w.cleanupMessage) })))
+      return;
     try {
       const result = await ipc.cleanupMods();
       await this.load();
@@ -185,6 +202,11 @@ class Mods {
   updateAll = () => this.start("update_all", {});
   updateStale = () => this.start("update_stale", {});
   updateMany = (ids: number[]) => ids.length > 0 && this.start("update_selected", { modIds: ids });
+  /** Download again and check every file: slow, for a mod that does not load. */
+  repair = (mod: InstalledModDto) =>
+    this.start("repair", { modIds: [mod.id], modNames: [mod.name] });
+  /** Log SteamCMD in once, so downloads use its cached login. */
+  login = () => this.start("login", {});
   install = (ids: number[]) =>
     ids.length > 0 && this.start("install_manual", { modIds: ids, modNames: ids.map(String) });
 
@@ -206,7 +228,14 @@ class Mods {
     }
     const id = ++this.#opId;
     const t0 = Date.now();
-    this.op = { ...idle(), active: true, currentName: String(w.preparing), startedAt: t0, itemStartedAt: t0 };
+    this.op = {
+      ...idle(),
+      active: true,
+      kind: opType,
+      currentName: String(w.preparing),
+      startedAt: t0,
+      itemStartedAt: t0,
+    };
     const ch = new Channel<ModProgressEvent>();
     // The last log entry is a transient "\r" progress line: the next one
     // overwrites it instead of appending, so a download is one live line.
@@ -222,9 +251,9 @@ class Mods {
       if (id !== this.#opId) return;
       const op = this.op;
       switch (ev.kind) {
-        case "shutting_down_steam":
-          op.phase = "shutting_down";
-          op.currentName = String(w.closingSteam);
+        case "logged_in":
+          // Its login is cached now, and a saved password forgotten.
+          void profile.load();
           break;
         case "steam_guard_mobile_required":
           op.phase = "steam_guard_mobile";
@@ -243,7 +272,12 @@ class Mods {
         case "failed":
           op.current = ev.current;
           op.total = ev.total;
-          op.completed.push({ id: ev.mod_id, name: ev.name, ok: ev.kind === "done", ms: Date.now() - op.itemStartedAt });
+          op.completed.push({
+            id: ev.mod_id,
+            name: ev.name,
+            ok: ev.kind === "done",
+            ms: Date.now() - op.itemStartedAt,
+          });
           op.itemStartedAt = Date.now();
           break;
         case "log_line":
@@ -273,7 +307,10 @@ class Mods {
           op.ok = ev.ok;
           op.failed = ev.failed;
           op.hint = ev.hint;
-          if (!ev.hint && ev.failed === 0) {
+          if (op.kind === "login") {
+            if (ev.ok > 0) say.ok(w.loginOk);
+            else say.err(w.loginFailed);
+          } else if (!ev.hint && ev.failed === 0) {
             say.ok(w.updatedSuccessfully({ count: ev.ok }));
             onSuccess?.();
           } else if (ev.failed > 0) {

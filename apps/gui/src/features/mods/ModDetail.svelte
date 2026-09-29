@@ -7,6 +7,7 @@
   import ExternalLink from "~icons/lucide/external-link";
   import RefreshCw from "~icons/lucide/refresh-cw";
   import Trash from "~icons/lucide/trash-2";
+  import Wrench from "~icons/lucide/wrench";
   import { Button } from "$lib/components/ui/button";
   import { Copy } from "$lib/components/ui/copy";
   import { Meter } from "$lib/components/ui/meter";
@@ -18,6 +19,7 @@
   import type { InstalledModDto } from "$lib/ipc/types";
   import { mods } from "$lib/stores/mods.svelte";
   import { review, workshopUrl } from "./review.svelte";
+  import SourceTag from "./SourceTag.svelte";
 
   /** Everything known about one installed mod, and what can be done to it. */
   let { mod, onclose }: { mod: InstalledModDto | null; onclose?: () => void } = $props();
@@ -37,26 +39,52 @@
   <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
     <header class="border-b border-border px-pad py-3">
       <div class="flex items-start gap-2">
-        <h2 class="m-0 min-w-0 flex-1 text-base leading-tight font-semibold break-words text-fg" data-selectable>{mod.name}</h2>
+        <h2
+          class="m-0 min-w-0 flex-1 text-base leading-tight font-semibold break-words text-fg"
+          data-selectable
+        >
+          {mod.name}
+        </h2>
         {#if onclose}
-          <IconButton icon={X} size="icon-xs" label={$m.closeDetail.value} kbd="Esc" onclick={onclose} />
+          <IconButton
+            icon={X}
+            size="icon-xs"
+            label={$m.closeDetail.value}
+            kbd="Esc"
+            onclick={onclose}
+          />
         {/if}
       </div>
       <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
         {#if mod.update_available}
-          <Tag tone="warn">{$m.updateAvailable.value}{behind > 0 ? ` · ${$m.daysBehind({ days: behind }).value}` : ""}</Tag>
+          <Tag tone="warn"
+            >{$m.updateAvailable.value}{behind > 0
+              ? ` · ${$m.daysBehind({ days: behind }).value}`
+              : ""}</Tag
+          >
         {:else if mod.remote_updated}
           <Tag tone="ok">{$m.detailsUpToDate.value}</Tag>
         {:else}
           <Tag>{$m.detailsUnknown.value}</Tag>
         {/if}
-        <Tag tone={mod.managed ? "accent" : "neutral"}>{mod.managed ? $m.statusLinked.value : $m.statusUnlinked.value}</Tag>
+        <Tag tone={mod.managed ? "accent" : "neutral"}
+          >{mod.managed ? $m.statusLinked.value : $m.statusUnlinked.value}</Tag
+        >
+        <SourceTag {mod} />
       </div>
     </header>
 
     <DetailList class="px-pad py-3">
       <DetailRow label={$m.colWorkshopId.value}><Copy text={String(mod.id)} /></DetailRow>
       <DetailRow label={$m.detailsLaunchParam.value}><Copy text={`@${mod.id}`} /></DetailRow>
+      <DetailRow label={$m.detailsSource.value}>
+        <span class="block text-fg"
+          >{mod.source === "steam" ? $m.sourceSteamHint.value : $m.sourceLauncherHint.value}</span
+        >
+        {#if mod.other_copy}<span class="block text-2xs text-fg-faint">{$m.otherCopy.value}</span
+          >{/if}
+      </DetailRow>
+      <DetailRow label={$m.detailsFolder.value}><Copy text={mod.path} class="min-w-0" /></DetailRow>
       <DetailRow label={$m.colSize.value} value={`${mod.size_human} (${bytes(mod.size)})`} />
       <DetailRow label={$m.detailsShare.value}>
         <div class="flex items-center gap-2">
@@ -70,7 +98,9 @@
       </DetailRow>
       <DetailRow label={$m.colRemote.value}>
         {#if mod.remote_updated}
-          <span class={["block font-mono", mod.update_available ? "text-warn" : "text-fg"]}>{date(mod.remote_updated * 1000)}</span>
+          <span class={["block font-mono", mod.update_available ? "text-warn" : "text-fg"]}
+            >{date(mod.remote_updated * 1000)}</span
+          >
           <span class="block text-2xs text-fg-faint">{relative(mod.remote_updated)}</span>
         {:else}<span class="font-mono text-fg-faint">—</span>{/if}
       </DetailRow>
@@ -88,12 +118,26 @@
     </section>
 
     <div class="mt-auto flex flex-wrap gap-1.5 border-t border-border px-pad py-2.5">
-      <Button variant={mod.update_available ? "accent" : "default"} onclick={() => review.updateSelected([mod.id])}>
-        <RefreshCw class="size-icon-sm" />{mod.update_available ? $m.update.value : $m.revalidate.value}
+      <Button
+        variant={mod.update_available ? "accent" : "default"}
+        onclick={() => review.updateSelected([mod.id])}
+      >
+        <RefreshCw class="size-icon-sm" />{mod.update_available
+          ? $m.update.value
+          : $m.revalidate.value}
       </Button>
-      <Button onclick={() => mods.openModDir(mod.id)}><FolderOpen class="size-icon-sm" />{$m.openModFolder.value}</Button>
-      <Button onclick={() => openUrl(workshopUrl(mod.id))}><ExternalLink class="size-icon-sm" />Workshop</Button>
-      <Button variant="danger" onclick={() => mods.remove(mod)}><Trash class="size-icon-sm" />{$m.delete.value}</Button>
+      <Button title={$m.repairHint.value} onclick={() => mods.repair(mod)}>
+        <Wrench class="size-icon-sm" />{$m.repair.value}
+      </Button>
+      <Button onclick={() => mods.openModDir(mod.id)}
+        ><FolderOpen class="size-icon-sm" />{$m.openModFolder.value}</Button
+      >
+      <Button onclick={() => openUrl(workshopUrl(mod.id))}
+        ><ExternalLink class="size-icon-sm" />Workshop</Button
+      >
+      <Button variant="danger" onclick={() => mods.remove(mod)}
+        ><Trash class="size-icon-sm" />{$m.delete.value}</Button
+      >
     </div>
   </div>
 {/if}

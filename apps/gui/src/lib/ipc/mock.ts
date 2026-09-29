@@ -6,12 +6,34 @@
  */
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 
-const MAPS = ["chernarusplus", "enoch", "sakhal", "deerisle", "namalsk", "banov", "pripyat", "esseker", "takistanplus"];
-const TAGS = ["PVP", "PVE", "1PP", "3PP", "Loot x2", "Trader", "Raid Weekends", "Vanilla+", "Hardcore", "KOTH", "Airdrops"];
+const MAPS = [
+  "chernarusplus",
+  "enoch",
+  "sakhal",
+  "deerisle",
+  "namalsk",
+  "banov",
+  "pripyat",
+  "esseker",
+  "takistanplus",
+];
+const TAGS = [
+  "PVP",
+  "PVE",
+  "1PP",
+  "3PP",
+  "Loot x2",
+  "Trader",
+  "Raid Weekends",
+  "Vanilla+",
+  "Hardcore",
+  "KOTH",
+  "Airdrops",
+];
 const REGIONS = ["EU", "US", "RU", "UK", "DE", "FR", "AU", "PL", "NA-East"];
 
 let seed = 42;
-const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
 const pick = <T>(a: readonly T[]) => a[Math.floor(rnd() * a.length)]!;
 
 const servers = Array.from({ length: 9500 }, (_, i) => {
@@ -42,7 +64,13 @@ const servers = Array.from({ length: 9500 }, (_, i) => {
 });
 
 // Twenty official servers, and between them a few community ones wearing their names.
-const OFFICIAL_REGIONS = ["EUROPE - DE", "EUROPE - FR", "EUROPE - GB", "UNITED STATES - NY", "AUSTRALIA - SYD"];
+const OFFICIAL_REGIONS = [
+  "EUROPE - DE",
+  "EUROPE - FR",
+  "EUROPE - GB",
+  "UNITED STATES - NY",
+  "AUSTRALIA - SYD",
+];
 servers.forEach((x, i) => {
   if (i >= 26) return;
   if (i % 4 !== 3) {
@@ -66,12 +94,44 @@ const mods = Array.from({ length: 24 }, (_, i) => {
   const local = 1_750_000_000 + Math.floor(rnd() * 5_000_000);
   const stale = i % 6 === 0;
   return {
-    name: ["CF", "Community-Online-Tools", "Dabs Framework", "VPPAdminTools", "Expansion-Core", "BuilderItems", "MuchCarKey", "Code Lock", "BaseBuildingPlus", "DayZ-Expansion-Map", "SchanaModParty", "Trader", "MMG Storage", "RedFalcon Heliz", "Airdrop-Upgraded", "Breachingcharge", "Server_Information_Panel", "GoreZ", "Survivor Animations", "WindstridesClothing", "Mass'sManyItemOverhaul", "CannabisPlus", "SNAFU Weapons", "DeerIsle"][i]!,
+    name: [
+      "CF",
+      "Community-Online-Tools",
+      "Dabs Framework",
+      "VPPAdminTools",
+      "Expansion-Core",
+      "BuilderItems",
+      "MuchCarKey",
+      "Code Lock",
+      "BaseBuildingPlus",
+      "DayZ-Expansion-Map",
+      "SchanaModParty",
+      "Trader",
+      "MMG Storage",
+      "RedFalcon Heliz",
+      "Airdrop-Upgraded",
+      "Breachingcharge",
+      "Server_Information_Panel",
+      "GoreZ",
+      "Survivor Animations",
+      "WindstridesClothing",
+      "Mass'sManyItemOverhaul",
+      "CannabisPlus",
+      "SNAFU Weapons",
+      "DeerIsle",
+    ][i]!,
     id: 1_559_212_036 + i * 97_331,
     local_updated: local,
     size,
     size_human: size > 1e9 ? `${(size / 1e9).toFixed(1)} GB` : `${(size / 1e6).toFixed(0)} MB`,
     managed: i % 5 !== 0,
+    // Some in a Steam library (subscriptions), the rest the launcher's.
+    source: i % 3 === 0 ? ("steam" as const) : ("launcher" as const),
+    path:
+      i % 3 === 0
+        ? `/home/player/.local/share/Steam/steamapps/workshop/content/221100/${1_559_212_036 + i * 97_331}`
+        : `/home/player/.local/share/dayz-community-hub/steamcmd-content/steamapps/workshop/content/221100/${1_559_212_036 + i * 97_331}`,
+    other_copy: i === 3,
     remote_updated: stale ? local + 86400 * 4 : local,
     update_available: stale,
   };
@@ -80,7 +140,8 @@ const mods = Array.from({ length: 24 }, (_, i) => {
 const now = Math.floor(Date.now() / 1000);
 const profile = {
   steam_login: "survivor_42",
-  steam_password: null,
+  has_saved_password: false,
+  steamcmd_logged_in: "survivor_42",
   steam_root: "/home/player/.local/share/Steam",
   steamcmd_enabled: true,
   steamcmd_path: null,
@@ -89,16 +150,44 @@ const profile = {
   steam_id: "76561198000000000",
   battlemetrics_api_key: "mock",
   user_location: [2.35, 48.85],
-  favorites: servers.slice(3, 9).map((s) => ({ name: s.name, ip: s.ip, port: s.query_port, password: null })),
-  history: servers.slice(10, 22).map((s, i) => ({ name: s.name, ip: s.ip, port: s.query_port, ts: now - i * 7200 - 600, relative_time: "" })),
+  favorites: servers
+    .slice(3, 9)
+    .map((s) => ({ name: s.name, ip: s.ip, port: s.query_port, password: null })),
+  history: servers
+    .slice(10, 22)
+    .map((s, i) => ({
+      name: s.name,
+      ip: s.ip,
+      port: s.query_port,
+      ts: now - i * 7200 - 600,
+      relative_time: "",
+    })),
   options: [
-    ["window", "Run in windowed mode"], ["noborder", "Borderless window"], ["nosplash", "Skip splash screen"],
-    ["skipintro", "Skip intro videos"], ["nolauncher", "Skip the Bohemia launcher"], ["file_patching", "Load unpacked files"],
-    ["do_logs", "Write RPT logs"], ["high", "High process priority"], ["world", "World loaded at start"],
-    ["no_pause", "Keep running when unfocused"], ["max_mem", "Maximum memory (MB)"], ["max_vram", "Maximum video memory (MB)"],
-    ["cpu_count", "CPU cores to use"], ["ex_threads", "Extra threads mask"], ["no_benchmark", "Skip the benchmark"],
-    ["script_debug", "Script debugging"], ["buldozer", "Buldozer mode"], ["winxp", "DirectX 9"], ["profiles", "Profile folder"],
-  ].map(([key, description], i) => ({ key, description, enabled: i % 3 === 0, value: key === "max_mem" ? "8192" : key === "world" ? "empty" : null })),
+    ["window", "Run in windowed mode"],
+    ["noborder", "Borderless window"],
+    ["nosplash", "Skip splash screen"],
+    ["skipintro", "Skip intro videos"],
+    ["nolauncher", "Skip the Bohemia launcher"],
+    ["file_patching", "Load unpacked files"],
+    ["do_logs", "Write RPT logs"],
+    ["high", "High process priority"],
+    ["world", "World loaded at start"],
+    ["no_pause", "Keep running when unfocused"],
+    ["max_mem", "Maximum memory (MB)"],
+    ["max_vram", "Maximum video memory (MB)"],
+    ["cpu_count", "CPU cores to use"],
+    ["ex_threads", "Extra threads mask"],
+    ["no_benchmark", "Skip the benchmark"],
+    ["script_debug", "Script debugging"],
+    ["buldozer", "Buldozer mode"],
+    ["winxp", "DirectX 9"],
+    ["profiles", "Profile folder"],
+  ].map(([key, description], i) => ({
+    key,
+    description,
+    enabled: i % 3 === 0,
+    value: key === "max_mem" ? "8192" : key === "world" ? "empty" : null,
+  })),
   excluded_ips: [servers[40]!.ip],
   ping_concurrency: 64,
   ping_timeout_auto: 2000,
@@ -110,11 +199,22 @@ const profile = {
 };
 
 const articles = Array.from({ length: 8 }, (_, i) => ({
-  title: ["Update 1.28 is live", "Status Report – September", "Frostline: what's next", "Community spotlight", "Server hosting changes", "Stable Update 1.27", "Winter event", "Console patch notes"][i]!,
+  title: [
+    "Update 1.28 is live",
+    "Status Report – September",
+    "Frostline: what's next",
+    "Community spotlight",
+    "Server hosting changes",
+    "Stable Update 1.27",
+    "Winter event",
+    "Console patch notes",
+  ][i]!,
   slug: `article-${i}`,
-  excerpt: "Survivors, a new update brings changes to vehicles, base building and the economy across every map.",
+  excerpt:
+    "Survivors, a new update brings changes to vehicles, base building and the economy across every map.",
   content_text: "Lorem ipsum dolor sit amet.",
-  content_html: "<p>Survivors, a new update brings changes to vehicles, base building and the economy.</p><h2>Vehicles</h2><p>Handling was reworked on every terrain type.</p>",
+  content_html:
+    "<p>Survivors, a new update brings changes to vehicles, base building and the economy.</p><h2>Vehicles</h2><p>Handling was reworked on every terrain type.</p>",
   date: new Date(Date.now() - i * 86400000 * 9).toISOString(),
   url: "https://dayz.com/article/updates/stable-update",
   image_url: null,
@@ -145,7 +245,10 @@ function queryServers(q: Record<string, unknown>) {
   const search = String(q.search ?? "").toLowerCase();
   let list = servers.filter(
     (x) =>
-      (!search || x.name.toLowerCase().includes(search) || x.ip.includes(search) || x.map.includes(search)) &&
+      (!search ||
+        x.name.toLowerCase().includes(search) ||
+        x.ip.includes(search) ||
+        x.map.includes(search)) &&
       (!q.map || x.map === q.map) &&
       tri(q.firstPerson, x.first_person_only) &&
       tri(q.password, x.password) &&
@@ -194,16 +297,24 @@ export function installMock() {
   const t = q.get("theme");
   if (t) localStorage.setItem("dzch.theme", JSON.stringify({ preset: t, custom: null, frame: {} }));
   if (q.get("rail") === "collapsed")
-    localStorage.setItem("dzch.prefs", JSON.stringify({ panes: {}, railCollapsed: true, dismissedRejoin: null }));
+    localStorage.setItem(
+      "dzch.prefs",
+      JSON.stringify({ panes: {}, railCollapsed: true, dismissedRejoin: null }),
+    );
   // `?official=only` (or `none`) sets the servers view's official filter.
   const official = q.get("official");
   if (official === "only" || official === "none")
-    void import("../../features/servers/filters.svelte").then(({ filters }) => (filters.official = official));
+    void import("../../features/servers/filters.svelte").then(
+      ({ filters }) => (filters.official = official),
+    );
   // `?modop=1` starts a pretend SteamCMD operation, to look at its dialog.
   if (q.get("modop") === "1")
     setTimeout(async () => (await import("$lib/stores/mods.svelte")).mods.updateStale(), 600);
   const v = q.get("view");
-  if (v) queueMicrotask(async () => (await import("$lib/stores/app.svelte")).app.go(v as never, q.get("focus")));
+  if (v)
+    queueMicrotask(async () =>
+      (await import("$lib/stores/app.svelte")).app.go(v as never, q.get("focus")),
+    );
   mockWindows("main");
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as Record<string, unknown>;
@@ -227,7 +338,9 @@ export function installMock() {
       case "servers_lookup":
         return (a.keys as string[]).map((k) => {
           const [ip, port] = k.split(":");
-          const x = servers.find((s) => s.ip === ip && (s.query_port === Number(port) || s.game_port === Number(port)));
+          const x = servers.find(
+            (s) => s.ip === ip && (s.query_port === Number(port) || s.game_port === Number(port)),
+          );
           return x ? toRow(x) : null;
         });
       case "start_scan": {
@@ -235,7 +348,12 @@ export function installMock() {
         let done = 0;
         const step = () => {
           done = Math.min(servers.length, done + 700);
-          ch.onmessage({ done, total: servers.length, paused: false, running: done < servers.length });
+          ch.onmessage({
+            done,
+            total: servers.length,
+            paused: false,
+            running: done < servers.length,
+          });
           if (done < servers.length) setTimeout(step, 250);
         };
         setTimeout(step, 100);
@@ -243,10 +361,21 @@ export function installMock() {
       }
       case "get_server_details": {
         const s = servers.find((x) => x.ip === a.ip);
-        return { ...s, mods: mods.slice(0, s?.mods_count ?? 0).map((m) => ({ name: m.name, steam_workshop_id: m.id })) };
+        return {
+          ...s,
+          mods: mods
+            .slice(0, s?.mods_count ?? 0)
+            .map((m) => ({ name: m.name, steam_workshop_id: m.id })),
+        };
       }
       case "get_app_stats":
-        return { server_count: servers.length, total_players: servers.reduce((n, s) => n + s.players, 0), player_name: profile.player, steam_login: profile.steam_login, has_steamcmd: true };
+        return {
+          server_count: servers.length,
+          total_players: servers.reduce((n, s) => n + s.players, 0),
+          player_name: profile.player,
+          steam_login: profile.steam_login,
+          has_steamcmd: true,
+        };
       case "fetch_steam_player_count":
         return 61_204;
       case "get_profile":
@@ -257,15 +386,35 @@ export function installMock() {
       case "fetch_news":
         return articles;
       case "get_offline_missions":
-        return ["DayZCommunityOfflineMode.ChernarusPlus", "DayZCommunityOfflineMode.Enoch", "DayZCommunityOfflineMode.Sakhal"];
+        return [
+          "DayZCommunityOfflineMode.ChernarusPlus",
+          "DayZCommunityOfflineMode.Enoch",
+          "DayZCommunityOfflineMode.Sakhal",
+        ];
       case "get_system_specs":
         return { logical_cores: 16, physical_cores: 8, total_memory_mb: 32768 };
       case "get_cli_args":
         return { connect: null, reconnect: false, open: null };
       case "check_for_update":
-        return { version: "0.5.0", currentVersion: "0.4.1", body: "- New interface", date: new Date().toISOString() };
+        return {
+          version: "0.5.0",
+          currentVersion: "0.4.1",
+          body: "- New interface",
+          date: new Date().toISOString(),
+        };
       case "detect_steamcmd":
         return { found: true, path: "/usr/bin/steamcmd", platform: "linux" };
+      case "steamcmd_dirs":
+        return {
+          content: "/home/player/.local/share/dayz-community-hub/steamcmd-content",
+          home: "/home/player/.local/share/dayz-community-hub/steamcmd-home",
+        };
+      case "delete_mod":
+        return mods.find((m) => m.id === a.modId)?.source === "steam";
+      case "delete_mods_bulk":
+        return (a.modIds as number[]).filter(
+          (id) => mods.find((m) => m.id === id)?.source === "steam",
+        );
       case "ping_all_background":
       case "ping_servers": {
         const targets = a.targets as string[];
@@ -296,7 +445,11 @@ export function installMock() {
           bots: 0,
           map: s?.map ?? "",
           version: s?.version ?? "",
-          players_list: Array.from({ length: Math.min(12, s?.players ?? 0) }, (_, i) => ({ name: `Survivor ${i + 1}`, score: 0, duration: 300 + i * 611 })),
+          players_list: Array.from({ length: Math.min(12, s?.players ?? 0) }, (_, i) => ({
+            name: `Survivor ${i + 1}`,
+            score: 0,
+            duration: 300 + i * 611,
+          })),
           mods: [],
           // What DayZ puts in A2S: the plain rules, the mods from the binary
           // block and the keywords' settings. An unlisted server has only these.
@@ -322,8 +475,15 @@ export function installMock() {
             game_time: "14:09",
           },
           rules: [
-            ["allowedBuild", "0"], ["clientPort", "0"], ["dedicated", "1"], ["island", s?.map ?? "chernarusplus"],
-            ["language", "65545"], ["platform", "win"], ["requiredBuild", "0"], ["requiredVersion", "129"], ["timeLeft", "15"],
+            ["allowedBuild", "0"],
+            ["clientPort", "0"],
+            ["dedicated", "1"],
+            ["island", s?.map ?? "chernarusplus"],
+            ["language", "65545"],
+            ["platform", "win"],
+            ["requiredBuild", "0"],
+            ["requiredVersion", "129"],
+            ["timeLeft", "15"],
           ].map(([name, value]) => ({ name, value })),
           query_port: s?.query_port ?? 27016,
           game_port: s?.game_port ?? 2302,
@@ -334,25 +494,49 @@ export function installMock() {
       case "plugin:window|is_maximized":
         return false;
       case "start_mod_operation": {
-        // A plausible SteamCMD run: close Steam, log in, then each mod with
-        // live progress lines (rewritten in place), one failure, a summary.
+        // A plausible SteamCMD run: log in (Steam stays open), then each mod
+        // with live progress lines (rewritten in place), one failure, a summary.
         const ch = a.onProgress as Ch<Record<string, unknown>>;
-        const ids = (a.modIds as number[] | undefined) ?? mods.filter((m) => m.update_available).map((m) => m.id);
+        const ids =
+          (a.modIds as number[] | undefined) ??
+          mods.filter((m) => m.update_available).map((m) => m.id);
         const list = ids.length ? ids : mods.slice(0, 3).map((m) => m.id);
         const ev = (kind: string, extra: Record<string, unknown> = {}) =>
-          ch.onmessage({ kind, current: 0, total: list.length, mod_id: 0, name: "", ok: 0, failed: 0, hint: null, log_line: null, ...extra });
-        const log = (line: string, progress = false) => ev(progress ? "log_progress" : "log_line", { log_line: line });
+          ch.onmessage({
+            kind,
+            current: 0,
+            total: list.length,
+            mod_id: 0,
+            name: "",
+            ok: 0,
+            failed: 0,
+            hint: null,
+            log_line: null,
+            ...extra,
+          });
+        const log = (line: string, progress = false) =>
+          ev(progress ? "log_progress" : "log_line", { log_line: line });
         const steps: Array<[number, () => void]> = [];
         let t = 0;
         const at = (dt: number, fn: () => void) => steps.push([(t += dt), fn]);
-        at(50, () => ev("shutting_down_steam"));
-        at(300, () => log("Redirecting stderr to '/home/player/.local/share/Steam/logs/stderr.txt'"));
+        at(300, () =>
+          log(
+            "Redirecting stderr to '/home/player/.local/share/dayz-community-hub/steamcmd-home/.steam/steamcmd/logs/stderr.txt'",
+          ),
+        );
         at(100, () => log("[  0%] Checking for available updates..."));
         at(100, () => log("[----] Verifying installation..."));
         at(100, () => log("Steam Console Client (c) Valve Corporation - version 1726604893"));
         at(100, () => log("Logging in user 'survivor_42' to Steam Public...OK"));
         at(80, () => log("Waiting for client config...OK"));
         at(80, () => log("Waiting for user info...OK"));
+        at(10, () => ev("logged_in"));
+        if (a.opType === "login") {
+          at(200, () => log("Unloading Steam API...OK"));
+          at(50, () => ev("finished", { ok: 1, failed: 0, total: 1 }));
+          for (const [when, fn] of steps) setTimeout(fn, when);
+          return null;
+        }
         let ok = 0;
         list.forEach((id, i) => {
           const m = mods.find((x) => x.id === id);
@@ -363,7 +547,10 @@ export function installMock() {
           for (let k = 1; k <= 12; k++) {
             at(90, () => {
               const done = Math.floor((total * k) / 12);
-              log(`Update state (0x61) downloading, progress: ${((done / total) * 100).toFixed(2)} (${done} / ${total})`, true);
+              log(
+                `Update state (0x61) downloading, progress: ${((done / total) * 100).toFixed(2)} (${done} / ${total})`,
+                true,
+              );
             });
           }
           if (i === 1 && list.length > 2) {
@@ -371,7 +558,11 @@ export function installMock() {
             at(20, () => ev("failed", { current: i + 1, name, mod_id: id }));
           } else {
             ok++;
-            at(80, () => log(`Success. Downloaded item ${id} to "/home/player/steamcmd/steamapps/workshop/content/221100/${id}" (${total} bytes)`));
+            at(80, () =>
+              log(
+                `Success. Downloaded item ${id} to "/home/player/.local/share/dayz-community-hub/steamcmd-content/steamapps/workshop/content/221100/${id}" (${total} bytes)`,
+              ),
+            );
             at(20, () => ev("done", { current: i + 1, name, mod_id: id }));
           }
         });
@@ -390,7 +581,10 @@ export function installMock() {
           const t = now - (287 - i) * 300;
           const h = new Date(t * 1000).getUTCHours();
           const wave = 0.55 + 0.4 * Math.sin(((h - 6) / 24) * Math.PI * 2);
-          return [t, Math.max(0, Math.round(s.max_players * wave * (fake ? 1 : 0.8)))] as [number, number];
+          return [t, Math.max(0, Math.round(s.max_players * wave * (fake ? 1 : 0.8)))] as [
+            number,
+            number,
+          ];
         });
         return {
           id: 160155 + Math.max(0, idx),
@@ -436,7 +630,9 @@ export function installMock() {
             period_days: 28,
           },
           is_fake: fake,
-          fake_reasons: fake ? ["Player count never drops below 90 %", "Same names reappear on every restart"] : [],
+          fake_reasons: fake
+            ? ["Player count never drops below 90 %", "Same names reappear on every restart"]
+            : [],
           behavior_verdict: fake ? "fake" : "real",
           behavior_score: fake ? 0.1 : 0.76,
           flagged: false,

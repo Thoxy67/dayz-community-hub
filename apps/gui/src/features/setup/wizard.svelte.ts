@@ -20,7 +20,6 @@ class Wizard {
 
   player = $state("");
   steamLogin = $state("");
-  steamPassword = $state("");
   steamRoot = $state("");
   steamcmdPath = $state("");
   steamApiKey = $state("");
@@ -84,7 +83,9 @@ class Wizard {
     // Set before the await: two detections in a row must not listen twice.
     if (this.#watching) return;
     this.#watching = true;
-    const off = await events.steamcmdDetected.listen((e) => this.#apply(e.payload)).catch(() => null);
+    const off = await events.steamcmdDetected
+      .listen((e) => this.#apply(e.payload))
+      .catch(() => null);
     if (!this.#watching) {
       off?.();
       return;
@@ -124,7 +125,6 @@ class Wizard {
     await profile.saveAccount({
       player: blank(this.player),
       steamLogin: blank(this.steamLogin),
-      steamPassword: this.steamPassword || null,
       steamRoot: blank(this.steamRoot),
       steamcmdPath: blank(this.steamcmdPath),
       steamApiKey: blank(this.steamApiKey),

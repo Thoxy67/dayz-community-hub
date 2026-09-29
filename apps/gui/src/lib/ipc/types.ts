@@ -3,7 +3,12 @@
  * from `bindings.ts`, generated from the Rust types by `make bindings`; only
  * the names the interface uses are chosen here.
  */
-import type { BattleMetricsServer, PingResultDto, ServerDto as ServerFull, ServerRow } from "./bindings";
+import type {
+  BattleMetricsServer,
+  PingResultDto,
+  ServerDto as ServerFull,
+  ServerRow,
+} from "./bindings";
 
 export type {
   A2sDetailsDto,
@@ -24,10 +29,12 @@ export type {
   LaunchOptionDto,
   ModDto,
   ModOpType,
+  ModSourceDto,
   ModProgressEvent,
   ModProgressKind,
   ProfileDto,
   ProfileSettingsInput,
+  SteamcmdDirsDto,
   SteamcmdStatusDto,
   SystemSpecsDto,
   UpdateInfo,

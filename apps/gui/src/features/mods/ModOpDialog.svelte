@@ -13,7 +13,6 @@
   import EyeOff from "~icons/lucide/eye-off";
   import Send from "~icons/lucide/send";
   import ShieldOff from "~icons/lucide/shield-off";
-  import Power from "~icons/lucide/power";
   import { Button } from "$lib/components/ui/button";
   import { Meter } from "$lib/components/ui/meter";
   import { Input } from "$lib/components/ui/input";
@@ -21,6 +20,7 @@
   import { cn } from "$lib/cx";
   import { bytes } from "$lib/format";
   import { copyText } from "$lib/ipc/native";
+  import { steamcmdDirs } from "$lib/ipc/system";
   import { mods } from "$lib/stores/mods.svelte";
   import { profile } from "$lib/stores/profile.svelte";
   import TerminalIcon from "~icons/lucide/terminal";
@@ -104,7 +104,18 @@
   let sending = $state(false);
   let distrust = $state(false);
   const login = $derived(profile.data?.steam_login || "YOUR_USERNAME");
-  const manualCmd = $derived(`steamcmd +login ${login} +quit`);
+  // On Linux SteamCMD runs with a HOME of its own (its login is cached
+  // there, away from the Steam client's): a login by hand must use it too.
+  let steamcmdHome = $state<string | null>(null);
+  $effect(() => {
+    if (op.phase === "password_required" && steamcmdHome === null)
+      steamcmdDirs()
+        .then((d) => (steamcmdHome = d.home))
+        .catch(() => {});
+  });
+  const manualCmd = $derived(
+    `${steamcmdHome ? `HOME="${steamcmdHome}" ` : ""}steamcmd +login ${login} +quit`,
+  );
   $effect(() => {
     if (op.phase !== "password_required") {
       sending = false;
@@ -123,16 +134,17 @@
   // ── status line ─────────────────────────────────────────────────────────
   const status = $derived.by(() => {
     switch (op.phase) {
-      case "shutting_down":
-        return $c.statusShuttingDown.value;
       case "steam_guard_mobile":
         return $c.statusSteamGuard.value;
       case "password_required":
         return $c.statusPassword.value;
       case "finished":
+        if (op.kind === "login")
+          return op.ok > 0 ? $c.statusLoggedIn.value : $c.statusLoginFailed.value;
         if (op.hint) return $c.statusLoginFailed.value;
         if (op.failed === 0)
-          return (op.ok === 1 ? $c.statusDone({ ok: op.ok }) : $c.statusDonePlural({ ok: op.ok })).value;
+          return (op.ok === 1 ? $c.statusDone({ ok: op.ok }) : $c.statusDonePlural({ ok: op.ok }))
+            .value;
         return $c.statusDoneFailed({ ok: op.ok, failed: op.failed }).value;
       default:
         return op.currentName
@@ -199,12 +211,20 @@
             <span>{$c.succeeded.value}</span>
           </span>
           <span class="flex flex-col items-end">
-            <span class={cn("num text-sm", failCount > 0 ? "text-err" : "text-fg")}>{failCount}</span>
+            <span class={cn("num text-sm", failCount > 0 ? "text-err" : "text-fg")}
+              >{failCount}</span
+            >
             <span>{$c.failedLabel.value}</span>
           </span>
         </div>
         {#if running}
-          <Button variant="ghost" size="icon" aria-label={$c.minimise.value} title={$c.minimise.value} onclick={close}>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={$c.minimise.value}
+            title={$c.minimise.value}
+            onclick={close}
+          >
             <Minimize class="size-icon" />
           </Button>
         {:else}
@@ -216,14 +236,9 @@
 
       <div class="grid min-h-0 flex-1 grid-cols-[22rem_minmax(0,1fr)]">
         <!-- ── left: where it is, and what came through ───────────────────── -->
-        <aside class="flex min-h-0 flex-col gap-3 overflow-y-auto border-r border-border bg-bg/40 p-3">
-          {#if op.phase === "shutting_down"}
-            <div class="flex items-center gap-2.5 rounded-md border border-info/30 bg-info/10 p-3 text-xs text-info">
-              <Power class="size-icon shrink-0" />
-              {$c.statusShuttingDown.value}
-            </div>
-          {/if}
-
+        <aside
+          class="flex min-h-0 flex-col gap-3 overflow-y-auto border-r border-border bg-bg/40 p-3"
+        >
           {#if op.phase === "steam_guard_mobile"}
             <section class="rounded-md border border-warn/35 bg-warn/8 p-3">
               <div class="flex items-start gap-2.5">
@@ -301,7 +316,9 @@
                   <KeyRound class="mt-0.5 size-icon-lg shrink-0 text-warn" />
                   <div>
                     <h3 class="m-0 text-sm font-semibold text-fg">{$c.passwordTitle.value}</h3>
-                    <p class="m-0 mt-0.5 text-2xs leading-snug text-fg-muted">{$c.passwordDesc.value}</p>
+                    <p class="m-0 mt-0.5 text-2xs leading-snug text-fg-muted">
+                      {$c.passwordDesc.value}
+                    </p>
                   </div>
                 </div>
                 <form class="mt-2.5 flex items-center gap-1.5" onsubmit={sendPassword}>
@@ -319,10 +336,14 @@
                     aria-label={$c.showPassword.value}
                     onclick={() => (reveal = !reveal)}
                   >
-                    {#if reveal}<EyeOff class="size-icon-sm" />{:else}<Eye class="size-icon-sm" />{/if}
+                    {#if reveal}<EyeOff class="size-icon-sm" />{:else}<Eye
+                        class="size-icon-sm"
+                      />{/if}
                   </Button>
                   <Button type="submit" variant="accent" disabled={!password || sending}>
-                    {#if sending}<Loader class="size-icon-sm animate-spin" />{:else}<Send class="size-icon-sm" />{/if}
+                    {#if sending}<Loader class="size-icon-sm animate-spin" />{:else}<Send
+                        class="size-icon-sm"
+                      />{/if}
                     {$c.passwordSend.value}
                   </Button>
                 </form>
@@ -344,7 +365,9 @@
 
           {#if op.hint}
             <section class="rounded-md border border-err/35 bg-err/8 p-3">
-              <pre class="m-0 font-mono text-2xs leading-snug whitespace-pre-wrap text-err" data-selectable>{op.hint}</pre>
+              <pre
+                class="m-0 font-mono text-2xs leading-snug whitespace-pre-wrap text-err"
+                data-selectable>{op.hint}</pre>
             </section>
           {/if}
 
@@ -354,7 +377,14 @@
               <span class="label-stencil text-fg-faint">{$c.overall.value}</span>
               <span class="num font-mono text-xs text-fg">{Math.round(overall * 100)}%</span>
             </div>
-            <Meter class="mt-1.5" value={overall} max={1} size="md" tone={failCount > 0 ? "warn" : "accent"} label={$c.overall.value} />
+            <Meter
+              class="mt-1.5"
+              value={overall}
+              max={1}
+              size="md"
+              tone={failCount > 0 ? "warn" : "accent"}
+              label={$c.overall.value}
+            />
             <div class="mt-1.5 flex justify-between font-mono text-2xs text-fg-faint">
               <span>{op.completed.length} / {op.total || "—"}</span>
               <span>{clock(elapsed)}</span>
@@ -372,7 +402,12 @@
               {speed}
               {eta}
               elapsed={now - op.itemStartedAt}
-              labels={{ size: $m.colSize.value, speed: $c.speed.value, eta: "ETA", elapsed: $c.elapsed.value }}
+              labels={{
+                size: $m.colSize.value,
+                speed: $c.speed.value,
+                eta: "ETA",
+                elapsed: $c.elapsed.value,
+              }}
             />
           {/if}
 

@@ -12,10 +12,14 @@ export const detectSteamcmd = () => run(commands.detectSteamcmd());
 /** Poll for SteamCMD in the background; its arrival is the `steamcmdDetected` event. */
 export const watchSteamcmd = () => run(commands.watchSteamcmd());
 export const downloadSteamcmdWindows = () => run(commands.downloadSteamcmdWindows());
+/** Where SteamCMD downloads (its own folder, never a Steam library) and keeps its login. */
+export const steamcmdDirs = () => run(commands.steamcmdDirs());
+export const openSteamcmdDir = () => run(commands.openSteamcmdDir());
 
 export const getCliArgs = () => run(commands.getCliArgs());
 export const readDzchFile = (path: string) => run(commands.readDzchFile(path));
-export const writeDzchFile = (path: string, config: DzchConfig) => run(commands.writeDzchFile(path, config));
+export const writeDzchFile = (path: string, config: DzchConfig) =>
+  run(commands.writeDzchFile(path, config));
 export const parseDzchUrl = (url: string) => run(commands.parseDzchUrl(url));
 
 /** A remote image cached to disk; resolves to its local path. */
@@ -26,6 +30,7 @@ export const resolveCachedImages = (urls: string[]) => run(commands.resolveCache
 export const checkForUpdate = (): Promise<UpdateInfo | null> => run(commands.checkForUpdate());
 /** Whether this copy can replace itself (AppImage, Windows zip) or not (a package, a dev build). */
 export const updateSupport = (): Promise<UpdateSupport> => run(commands.updateSupport());
-export const installUpdate = (onEvent: Channel<DownloadEvent>) => run(commands.installUpdate(onEvent));
+export const installUpdate = (onEvent: Channel<DownloadEvent>) =>
+  run(commands.installUpdate(onEvent));
 
 export type { UpdateSupport };
