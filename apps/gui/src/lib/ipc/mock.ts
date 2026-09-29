@@ -144,6 +144,11 @@ const profile = {
   steamcmd_logged_in: "survivor_42",
   steam_root: "/home/player/.local/share/Steam",
   steamcmd_enabled: true,
+  // `?downloader=steamworks` starts on the Steam client.
+  mod_downloader:
+    new URLSearchParams(location.search).get("downloader") === "steamworks"
+      ? "steamworks"
+      : "steamcmd",
   steamcmd_path: null,
   player: "Survivor",
   steam_api_key: "XXXXXXXX",
@@ -307,7 +312,7 @@ export function installMock() {
     );
   // `?modop=1` starts a pretend SteamCMD operation, to look at its dialog.
   if (q.get("modop") === "1")
-    setTimeout(async () => (await import("$lib/stores/mods.svelte")).mods.updateStale(), 600);
+    setTimeout(async () => (await import("$lib/stores/mods.svelte")).mods.updateStale(), 1500);
   const v = q.get("view");
   if (v)
     queueMicrotask(async () =>
@@ -402,6 +407,13 @@ export function installMock() {
         };
       case "detect_steamcmd":
         return { found: true, path: "/usr/bin/steamcmd", platform: "linux" };
+      case "set_mod_downloader":
+        profile.mod_downloader = a.downloader as typeof profile.mod_downloader;
+        return null;
+      case "steamworks_status":
+        return { library: true, error: null, steam_running: true };
+      case "steamworks_check":
+        return null;
       case "steamcmd_dirs":
         return {
           content: "/home/player/.local/share/dayz-community-hub/steamcmd-content",
@@ -517,6 +529,52 @@ export function installMock() {
         const steps: Array<[number, () => void]> = [];
         let t = 0;
         const at = (dt: number, fn: () => void) => steps.push([(t += dt), fn]);
+        if (profile.mod_downloader === "steamworks" && a.opType !== "login") {
+          // What dz-steamworks reports: subscribe, Steam downloads, installed.
+          at(200, () => log("Connected to Steam as DayZ (app 221100)"));
+          list.forEach((id) => at(40, () => log(`Subscribing to ${id}`)));
+          list.forEach((id) => at(80, () => log(`Subscribed ${id}`)));
+          let ok = 0;
+          list.forEach((id, i) => {
+            const m = mods.find((x) => x.id === id);
+            const name = m?.name ?? `Workshop ${id}`;
+            const total = m?.size ?? 300_000_000;
+            at(120, () => ev("starting", { current: i + 1, name, mod_id: id }));
+            at(10, () => log(`Downloading item ${id} (${name}) through Steam`));
+            at(40, () => log(`${id}: subscribed, needs update, downloading, download pending`));
+            for (let k = 1; k <= 12; k++) {
+              at(90, () => {
+                const done = Math.floor((total * k) / 12);
+                log(
+                  `Steam: item ${id} downloading, progress: ${((done / total) * 100).toFixed(2)} (${done} / ${total})`,
+                  true,
+                );
+              });
+            }
+            if (i === 1 && list.length > 2) {
+              const error =
+                "Download failed: access denied: the item is private, friends-only or hidden";
+              at(80, () => log(`${id} failed: ${error}`));
+              at(10, () =>
+                ev("failed", { current: i + 1, name: `${name} (${error})`, mod_id: id }),
+              );
+            } else {
+              ok++;
+              at(60, () => log(`${id}: subscribed, installed`));
+              at(10, () =>
+                log(
+                  `Installed ${id} at /home/player/.local/share/Steam/steamapps/workshop/content/221100/${id}`,
+                ),
+              );
+              at(10, () => ev("done", { current: i + 1, name, mod_id: id }));
+            }
+          });
+          const failed = list.length - ok;
+          at(150, () => log("Disconnected from Steam"));
+          at(20, () => ev("finished", { ok, failed }));
+          for (const [when, fn] of steps) setTimeout(fn, when);
+          return null;
+        }
         at(300, () =>
           log(
             "Redirecting stderr to '/home/player/.local/share/dayz-community-hub/steamcmd-home/.steam/steamcmd/logs/stderr.txt'",

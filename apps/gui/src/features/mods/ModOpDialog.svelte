@@ -27,9 +27,10 @@
   import { parseProgress } from "./steamcmd-log";
 
   /**
-   * A SteamCMD operation, as it happens: the phase it is in, how far the
+   * A download operation (SteamCMD's, or the Steam client's: both report the
+   * same steps), as it happens: the phase it is in, how far the
    * current mod and the whole batch have got (bytes, speed, time left), what
-   * has come through, and SteamCMD's own log streaming live beside it.
+   * has come through, and the downloader's own log streaming live beside it.
    *
    * Closing it while it runs only hides it: the operation carries on and
    * the status bar keeps showing it.
@@ -141,7 +142,8 @@
       case "finished":
         if (op.kind === "login")
           return op.ok > 0 ? $c.statusLoggedIn.value : $c.statusLoginFailed.value;
-        if (op.hint) return $c.statusLoginFailed.value;
+        if (op.hint)
+          return op.via === "steamworks" ? $c.statusSteamFailed.value : $c.statusLoginFailed.value;
         if (op.failed === 0)
           return (op.ok === 1 ? $c.statusDone({ ok: op.ok }) : $c.statusDonePlural({ ok: op.ok }))
             .value;
@@ -439,13 +441,20 @@
           </section>
         </aside>
 
-        <!-- ── right: SteamCMD, live ──────────────────────────────────────── -->
-        <LogPane lines={op.log} times={op.logAt} title="$ steamcmd" live={running} />
+        <!-- ── right: the downloader, live ────────────────────────────────── -->
+        <LogPane
+          lines={op.log}
+          times={op.logAt}
+          title={op.via === "steamworks" ? "$ steam (steamworks)" : "$ steamcmd"}
+          live={running}
+        />
       </div>
 
       <!-- ── footer ──────────────────────────────────────────────────────── -->
       <footer class="flex shrink-0 items-center gap-2 border-t border-border px-4 py-2">
-        <span class="text-2xs text-fg-faint">{$m.confirmWarning.value}</span>
+        <span class="text-2xs text-fg-faint"
+          >{op.via === "steamworks" ? $c.steamworksFooter.value : $m.confirmWarning.value}</span
+        >
         <div class="ml-auto flex items-center gap-1.5">
           {#if running}
             <Button variant="ghost" onclick={close}>

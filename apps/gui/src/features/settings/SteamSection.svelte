@@ -8,12 +8,14 @@
   import CircleX from "~icons/lucide/circle-x";
   import RefreshCw from "~icons/lucide/refresh-cw";
   import Download from "~icons/lucide/download";
+  import PlugZap from "~icons/lucide/plug-zap";
   import { Field } from "$lib/components/ui/field";
   import { Input } from "$lib/components/ui/input";
   import { Button } from "$lib/components/ui/button";
   import { Tag } from "$lib/components/ui/tag";
   import { Spinner } from "$lib/components/ui/spinner";
   import { Copy } from "$lib/components/ui/copy";
+  import { Segmented } from "$lib/components/ui/segmented";
   import {
     detectSteamcmd,
     downloadSteamcmdWindows,
@@ -22,6 +24,9 @@
     type SteamcmdStatus,
   } from "$lib/ipc/system";
   import { errorText } from "$lib/ipc/core";
+  import { steamworksCheck, steamworksStatus } from "$lib/ipc/mods";
+  import type { ModDownloaderDto, SteamworksStatusDto } from "$lib/ipc/types";
+  import { say } from "$lib/stores/say";
   import { mods } from "$lib/stores/mods.svelte";
   import { profile } from "$lib/stores/profile.svelte";
   import { servers } from "$lib/stores/servers.svelte";
@@ -71,6 +76,30 @@
       .catch(() => {});
   });
 
+  // ── what downloads: SteamCMD, or the Steam client (Steamworks) ─────────
+  const downloader = $derived<ModDownloaderDto>(profile.data?.mod_downloader ?? "steamcmd");
+  let sw = $state<SteamworksStatusDto | null>(null);
+  let testing = $state(false);
+  // Valve's library is only loaded once the Steam client is chosen.
+  $effect(() => {
+    if (downloader !== "steamworks") return;
+    steamworksStatus()
+      .then((st) => (sw = st))
+      .catch(() => (sw = null));
+  });
+  async function testSteam() {
+    testing = true;
+    try {
+      await steamworksCheck();
+      say.ok($s.steamworksTestOk.value);
+    } catch (e) {
+      say.err(errorText(e));
+    } finally {
+      testing = false;
+      sw = await steamworksStatus().catch(() => sw);
+    }
+  }
+
   const savedLogin = $derived(profile.data?.steam_login ?? "");
   const loggedIn = $derived(!!savedLogin && profile.data?.steamcmd_logged_in === savedLogin);
 
@@ -96,6 +125,52 @@
       <Tag tone="err"><CircleX class="size-3" />SteamCMD</Tag>
     {/if}
   {/snippet}
+
+  <Field label={$s.modDownloads.value} hint={$s.modDownloadsHint.value}>
+    <Segmented
+      value={downloader}
+      aria-label={$s.modDownloads.value}
+      options={[
+        // Not while an operation runs: it was started with the other one.
+        { value: "steamcmd", label: "SteamCMD", disabled: mods.busy },
+        { value: "steamworks", label: $s.downloaderSteam.value, disabled: mods.busy },
+      ]}
+      onchange={(v) => profile.setModDownloader(v)}
+    />
+  </Field>
+  <div class="flex flex-col gap-1.5 border-b border-border/60 px-pad py-2.5">
+    <p class="m-0 text-2xs leading-snug text-fg-muted">
+      {downloader === "steamworks" ? $s.steamworksExplain.value : $s.steamcmdExplain.value}
+    </p>
+    {#if downloader === "steamworks"}
+      <div class="flex items-center gap-2 text-xs">
+        {#if !sw}
+          <Spinner />
+        {:else if !sw.library}
+          <CircleX class="size-icon-sm shrink-0 text-err" />
+          <span class="text-err" data-selectable
+            >{$s.steamworksUnavailable({ error: sw.error ?? "" }).value}</span
+          >
+        {:else if sw.steam_running}
+          <CircleCheck class="size-icon-sm shrink-0 text-ok" />
+          <span class="text-fg">{$s.steamRunning.value}</span>
+        {:else}
+          <CircleX class="size-icon-sm shrink-0 text-warn" />
+          <span class="text-warn">{$s.steamNotRunning.value}</span>
+        {/if}
+        <Button
+          variant="ghost"
+          size="xs"
+          class="ml-auto"
+          onclick={testSteam}
+          disabled={testing || mods.busy || !sw?.library}
+        >
+          {#if testing}<Spinner class="size-3" />{:else}<PlugZap class="size-3" />{/if}
+          {$s.steamworksTest.value}
+        </Button>
+      </div>
+    {/if}
+  </div>
 
   <Field label={$s.username.value} hint={$s.usernameHint.value} for="set-login">
     <Input

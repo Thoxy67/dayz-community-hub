@@ -157,6 +157,20 @@ const content = {
       es: "Esperando contraseña…",
       ru: "Ожидание пароля…",
     }),
+    steamworksFooter: t({
+      en: "Steam shows you as playing DayZ until the download ends; launch the game after.",
+      fr: "Steam vous montre en train de jouer à DayZ jusqu'à la fin du téléchargement ; lancez le jeu ensuite.",
+      de: "Steam zeigt Sie bis zum Ende des Downloads als DayZ spielend an; starten Sie das Spiel danach.",
+      es: "Steam te muestra jugando a DayZ hasta que termine la descarga; inicia el juego después.",
+      ru: "До конца загрузки Steam показывает, что вы играете в DayZ; запускайте игру после.",
+    }),
+    statusSteamFailed: t({
+      en: "Could not download through Steam",
+      fr: "Impossible de télécharger via Steam",
+      de: "Download über Steam nicht möglich",
+      es: "No se pudo descargar mediante Steam",
+      ru: "Не удалось загрузить через Steam",
+    }),
     statusLoginFailed: t({
       en: "Login failed or credentials expired",
       fr: "Échec de connexion ou identifiants expirés",

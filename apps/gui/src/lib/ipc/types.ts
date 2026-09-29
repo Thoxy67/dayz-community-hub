@@ -28,6 +28,7 @@ export type {
   InstalledModDto,
   LaunchOptionDto,
   ModDto,
+  ModDownloaderDto,
   ModOpType,
   ModSourceDto,
   ModProgressEvent,
@@ -36,6 +37,7 @@ export type {
   ProfileSettingsInput,
   SteamcmdDirsDto,
   SteamcmdStatusDto,
+  SteamworksStatusDto,
   SystemSpecsDto,
   UpdateInfo,
 } from "./bindings";

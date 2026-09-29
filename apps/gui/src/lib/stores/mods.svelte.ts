@@ -1,6 +1,8 @@
 /**
- * Installed Workshop mods, their update state, and the one SteamCMD operation
- * that may run at a time (install, update, delete), with its live log.
+ * Installed Workshop mods, their update state, and the one download
+ * operation that may run at a time (install, update, delete), with its live
+ * log. SteamCMD or the running Steam client downloads, as the profile says:
+ * both report the same steps.
  */
 import * as ipc from "$lib/ipc/mods";
 import { Channel } from "$lib/ipc/core";
@@ -24,6 +26,8 @@ export type ModOp = {
   active: boolean;
   /** What was asked for: a login alone reports differently from downloads. */
   kind: ipc.ModOpType;
+  /** What downloads: SteamCMD, or the Steam client (Steamworks). */
+  via: "steamcmd" | "steamworks";
   phase: ModOpPhase;
   current: number;
   total: number;
@@ -47,6 +51,7 @@ export type ModOp = {
 const idle = (): ModOp => ({
   active: false,
   kind: "update_all",
+  via: "steamcmd",
   phase: "downloading",
   current: 0,
   total: 0,
@@ -232,6 +237,8 @@ class Mods {
       ...idle(),
       active: true,
       kind: opType,
+      // A login is always SteamCMD's.
+      via: profile.viaSteam && opType !== "login" ? "steamworks" : "steamcmd",
       currentName: String(w.preparing),
       startedAt: t0,
       itemStartedAt: t0,

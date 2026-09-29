@@ -6,7 +6,8 @@
 import * as ipc from "$lib/ipc/profile";
 import { fetchSteamAvatar } from "$lib/ipc/system";
 import { pickFile, saveFile } from "$lib/ipc/native";
-import type { FavoriteDto, HistoryDto, ProfileDto } from "$lib/ipc/types";
+import type { FavoriteDto, HistoryDto, ModDownloaderDto, ProfileDto } from "$lib/ipc/types";
+import { setModDownloader } from "$lib/ipc/mods";
 import { words } from "$lib/i18n";
 import { confirm } from "./dialogs.svelte";
 import { say, errorText } from "./say";
@@ -135,6 +136,21 @@ class Profile {
     } catch (e) {
       say.err(words("settings").profileSettingsSaveFailed({ error: errorText(e) }));
     }
+  }
+
+  /** SteamCMD or the Steam client: takes effect at once, from the next operation. */
+  async setModDownloader(downloader: ModDownloaderDto) {
+    await this.#write(
+      () => {
+        if (this.data) this.data.mod_downloader = downloader;
+      },
+      () => setModDownloader(downloader),
+    );
+  }
+
+  /** Mods download through the running Steam client rather than SteamCMD. */
+  get viaSteam() {
+    return this.data?.mod_downloader === "steamworks";
   }
 
   // ── favourites ──────────────────────────────────────────────────────────

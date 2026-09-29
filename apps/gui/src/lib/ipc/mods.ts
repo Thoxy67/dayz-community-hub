@@ -1,6 +1,6 @@
-/** Installed Workshop mods, and the SteamCMD operations that fetch them. */
+/** Installed Workshop mods, and the operations that fetch them (SteamCMD or the Steam client). */
 import { commands, run, type Channel } from "./core";
-import type { ModOpType, ModProgressEvent } from "./types";
+import type { ModDownloaderDto, ModOpType, ModProgressEvent } from "./types";
 
 export type { ModOpType };
 
@@ -42,3 +42,11 @@ export const startModOperation = (
   );
 export const sendSteamcmdInput = (input: string) => run(commands.sendSteamcmdInput(input));
 export const cancelModOperation = () => run(commands.cancelModOperation());
+
+/** What downloads mods from the next operation on. */
+export const setModDownloader = (downloader: ModDownloaderDto) =>
+  run(commands.setModDownloader(downloader));
+/** Whether downloads through the Steam client can work here (loads Valve's library). */
+export const steamworksStatus = () => run(commands.steamworksStatus());
+/** Connect to Steam as DayZ and let go: rejects with why a download would fail. */
+export const steamworksCheck = () => run(commands.steamworksCheck());

@@ -1,6 +1,8 @@
 use dz_profile::Profile;
 use serde::Serialize;
 
+use crate::features::steamworks::ModDownloaderDto;
+
 #[derive(Serialize, Clone, Debug, specta::Type)]
 pub struct FavoriteDto {
     pub name: String,
@@ -38,6 +40,8 @@ pub struct ProfileDto {
     pub steamcmd_logged_in: Option<String>,
     pub steam_root: Option<String>,
     pub steamcmd_enabled: bool,
+    /// What downloads mods: SteamCMD or the Steam client.
+    pub mod_downloader: ModDownloaderDto,
     /// Explicit path to the steamcmd binary (overrides auto-detection).
     pub steamcmd_path: Option<String>,
     pub player: Option<String>,
@@ -74,6 +78,7 @@ pub(crate) fn profile_to_dto(profile: &Profile) -> ProfileDto {
         steamcmd_logged_in: profile.steamcmd_logged_in.clone(),
         steam_root: profile.steam_root.clone(),
         steamcmd_enabled: profile.steamcmd_enabled,
+        mod_downloader: profile.mod_downloader.into(),
         steamcmd_path: profile.steamcmd_path.clone(),
         player: profile.player.clone(),
         steam_api_key: profile.steam_api_key.clone(),

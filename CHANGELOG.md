@@ -21,6 +21,11 @@ notes; without one, the notes are the commit titles since the last release.
   its map, live ping and players, and tabs for the players online, its mods
   (what you have, what is missing or out of date, with one button to fetch
   them and join), its rules and its BattleMetrics history.
+- **Download mods through Steam, if you prefer.** Settings → Steam has a new
+  choice: SteamCMD (still the default) or the Steam client, as the DZSA
+  launcher does it. With the Steam client, Steam must be running and logged
+  in; each mod is subscribed on your account, lands in your own Steam library
+  and Steam keeps it updated. The same window shows the progress.
 - **The SteamCMD window** shows each mod's progress, speed and time left, and
   SteamCMD's own log live. It can keep running in the background.
 - **Safer.** Links opened from news articles and imported profiles are checked

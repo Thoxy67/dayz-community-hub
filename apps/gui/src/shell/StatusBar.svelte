@@ -17,6 +17,7 @@
   import { servers, STALE_MS } from "$lib/stores/servers.svelte";
   import { mods } from "$lib/stores/mods.svelte";
   import { updater } from "$lib/stores/updater.svelte";
+  import { profile } from "$lib/stores/profile.svelte";
   import { num, relative } from "$lib/format";
   import { cn } from "$lib/cx";
 
@@ -117,13 +118,16 @@
     </Tooltip>
   {/if}
 
-  <!-- SteamCMD: a job running in the background comes back from here. -->
+  <!-- A download (SteamCMD or Steam) running in the background comes back from here. -->
   {#if op}
     <Tooltip text={$n.showProgress.value} side="top" class="flex min-w-0">
       <button class={cn(btn, "min-w-0 text-info")} onclick={() => (mods.op.minimised = false)}>
         <HardDriveDownload class="size-3 shrink-0 animate-pulse" />
         <span class="num shrink-0 font-mono"
-          >{$n.modOpRunning({ current: op.current, total: op.total }).value}</span
+          >{(op.via === "steamworks" ? $n.modOpRunningSteam : $n.modOpRunning)({
+            current: op.current,
+            total: op.total,
+          }).value}</span
         >
         {@render bar(opPct, "bg-info")}
         <span class="max-w-48 min-w-0 truncate text-fg-muted">{op.currentName}</span>
@@ -131,11 +135,17 @@
     </Tooltip>
   {:else}
     <button
-      class={cn(btn, !hasSteamcmd && "text-warn")}
+      class={cn(btn, !hasSteamcmd && !profile.viaSteam && "text-warn")}
       onclick={() => app.go("settings", "steam")}
     >
       <Terminal class="size-3" />
-      <span>{hasSteamcmd ? $n.sbSteamcmdReady.value : $n.sbSteamcmdMissing.value}</span>
+      <span
+        >{profile.viaSteam
+          ? $n.sbSteamworks.value
+          : hasSteamcmd
+            ? $n.sbSteamcmdReady.value
+            : $n.sbSteamcmdMissing.value}</span
+      >
     </button>
   {/if}
 

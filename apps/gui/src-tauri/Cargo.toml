@@ -33,6 +33,7 @@ dz-api.workspace = true
 dz-a2s.workspace = true
 dz-profile.workspace = true
 dz-steamcmd.workspace = true
+dz-steamworks.workspace = true
 dz-game.workspace = true
 dz-news.workspace = true
 dz-battlemetrics.workspace = true

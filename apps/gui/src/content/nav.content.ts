@@ -49,6 +49,13 @@ const content = {
       es: "SteamCMD listo",
       ru: "SteamCMD готов",
     }),
+    sbSteamworks: t({
+      en: "Downloads via Steam",
+      fr: "Téléchargements via Steam",
+      de: "Downloads über Steam",
+      es: "Descargas vía Steam",
+      ru: "Загрузка через Steam",
+    }),
     sbSteamcmdMissing: t({
       en: "SteamCMD not found",
       fr: "SteamCMD introuvable",
@@ -227,6 +234,15 @@ const content = {
       es: "La lista de servidores está desactualizada",
       ru: "Список серверов устарел",
     }),
+    modOpRunningSteam: insert(
+      t({
+        en: "Steam: {{current}} of {{total}}",
+        fr: "Steam : {{current}} sur {{total}}",
+        de: "Steam: {{current}} von {{total}}",
+        es: "Steam: {{current}} de {{total}}",
+        ru: "Steam: {{current}} из {{total}}",
+      }),
+    ),
     modOpRunning: insert(
       t({
         en: "SteamCMD: {{current}} of {{total}}",

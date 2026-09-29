@@ -95,7 +95,8 @@
   </div>
 
   <div class="ml-auto flex items-stretch">
-    {#if servers.stats && !servers.stats.has_steamcmd}
+    <!-- Downloading through the Steam client needs no SteamCMD. -->
+    {#if servers.stats && !servers.stats.has_steamcmd && !profile.viaSteam}
       <button
         class="flex items-center gap-1.5 px-2.5 text-2xs font-medium text-warn hover:bg-warn/10"
         onclick={() => app.go("settings", "steam")}

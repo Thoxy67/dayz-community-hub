@@ -161,6 +161,18 @@ export const commands = {
 	watchSteamcmd: () => __TAURI_INVOKE<null>("watch_steamcmd"),
 	/**  Windows-only: download steamcmd.zip from Valve and unzip it. */
 	downloadSteamcmdWindows: () => __TAURI_INVOKE<string>("download_steamcmd_windows"),
+	/**  Choose what downloads mods; the next operation uses it. */
+	setModDownloader: (downloader: ModDownloaderDto) => __TAURI_INVOKE<null>("set_mod_downloader", { downloader }),
+	/**
+	 *  Load Valve's library (the first call writes it to disk) and look for a
+	 *  running Steam, without connecting to it.
+	 */
+	steamworksStatus: () => __TAURI_INVOKE<SteamworksStatusDto>("steamworks_status"),
+	/**
+	 *  Connect to Steam as DayZ and disconnect at once: rejects with the
+	 *  sentence a download would fail with.
+	 */
+	steamworksCheck: () => __TAURI_INVOKE<null>("steamworks_check"),
 	/**  Get available offline missions. */
 	getOfflineMissions: () => __TAURI_INVOKE<string[]>("get_offline_missions"),
 	/**  Download/update DayZCommunityOfflineMode. */
@@ -536,6 +548,13 @@ export type MetricsLink = {
 	url: string,
 };
 
+/**  What downloads mods. */
+export type ModDownloaderDto = 
+/**  SteamCMD, into the launcher's folder (the default). */
+"steamcmd" | 
+/**  The running Steam client, into the user's Steam library. */
+"steamworks";
+
 export type ModDto = {
 	name: string,
 	steam_workshop_id: number,
@@ -616,6 +635,8 @@ export type ProfileDto = {
 	steamcmd_logged_in: string | null,
 	steam_root: string | null,
 	steamcmd_enabled: boolean,
+	/**  What downloads mods: SteamCMD or the Steam client. */
+	mod_downloader: ModDownloaderDto,
 	/**  Explicit path to the steamcmd binary (overrides auto-detection). */
 	steamcmd_path: string | null,
 	player: string | null,
@@ -887,6 +908,16 @@ export type SteamcmdStatusDto = {
 	found: boolean,
 	path: string | null,
 	platform: string,
+};
+
+/**  Whether downloads through Steam can work on this machine. */
+export type SteamworksStatusDto = {
+	/**  Valve's library loaded. */
+	library: boolean,
+	/**  Why it did not, when it did not. */
+	error: string | null,
+	/**  The Steam client is running. */
+	steam_running: boolean,
 };
 
 /**  Hardware specs used to recommend optimal DayZ launch options. */
