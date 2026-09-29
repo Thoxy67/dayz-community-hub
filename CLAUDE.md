@@ -61,6 +61,10 @@ commit or edit it.
 - **Reuse before writing.** A header, a figure, a server's flags, a ping or
   players cell, an empty state: they exist in `lib/components/app`. Extend
   the shared component rather than copying it into a feature.
+- **No `<style>` block in a component.** Tailwind's Vite plugin treats it as a
+  CSS module and, during hot reloads, was sometimes handed the component's
+  script instead ("Invalid declaration: `const doc = …`"). Style with
+  utilities; rules for HTML the app does not write go in `styles/*.css`.
 - **Never pass `name` to a bits-ui primitive** (hidden inputs crash
   WebKitGTK); `tv` comes from `tailwind-variants/lite`.
 - **Cross-platform**: every `#[cfg(windows)]` path must keep working

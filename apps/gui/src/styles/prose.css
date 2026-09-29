@@ -1,0 +1,91 @@
+/* Articles and other HTML from elsewhere, as SafeHtml renders it. Kept out
+   of the component: a component <style> block goes through the Tailwind
+   plugin as a module of its own, and during hot reloads that module was
+   sometimes handed the component's script, which Tailwind rejected. */
+.safe-html {
+  font-size: var(--text-sm);
+  line-height: 1.7;
+  color: var(--color-fg-muted);
+}
+.safe-html :is(h1, h2, h3, h4) {
+  margin: 1.6em 0 0.5em;
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  line-height: 1.05;
+  color: var(--color-fg);
+}
+.safe-html h1 {
+  font-size: var(--text-2xl);
+}
+.safe-html h2 {
+  font-size: var(--text-xl);
+}
+.safe-html :is(h3, h4) {
+  font-size: var(--text-lg);
+}
+.safe-html p {
+  margin: 0 0 1em;
+}
+.safe-html a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.safe-html :is(strong, b) {
+  color: var(--color-fg);
+  font-weight: 600;
+}
+.safe-html :is(ul, ol) {
+  margin: 0 0 1em;
+  padding-left: 1.4em;
+}
+.safe-html li {
+  margin: 0.25em 0;
+}
+.safe-html li::marker {
+  color: var(--color-accent);
+}
+.safe-html img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1.2em 0;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+.zoomable img {
+  cursor: zoom-in;
+}
+.safe-html blockquote {
+  margin: 1em 0;
+  padding: 0.5em 1em;
+  border-left: 2px solid var(--color-accent);
+  background: color-mix(in oklch, var(--color-raised) 50%, transparent);
+  color: var(--color-fg);
+}
+.safe-html code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--color-plot);
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius-xs);
+}
+.safe-html hr {
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  margin: 2em 0;
+}
+.safe-html table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+  margin: 1em 0;
+}
+.safe-html :is(th, td) {
+  border: 1px solid var(--color-border);
+  padding: 0.4em 0.6em;
+  text-align: left;
+}
