@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-cancel-ping"
+description = "Enables the cancel_ping command without any pre-configured scope."
+commands.allow = ["cancel_ping"]
+
+[[permission]]
+identifier = "deny-cancel-ping"
+description = "Denies the cancel_ping command without any pre-configured scope."
+commands.deny = ["cancel_ping"]

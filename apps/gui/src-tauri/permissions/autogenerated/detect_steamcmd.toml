@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-detect-steamcmd"
+description = "Enables the detect_steamcmd command without any pre-configured scope."
+commands.allow = ["detect_steamcmd"]
+
+[[permission]]
+identifier = "deny-detect-steamcmd"
+description = "Denies the detect_steamcmd command without any pre-configured scope."
+commands.deny = ["detect_steamcmd"]

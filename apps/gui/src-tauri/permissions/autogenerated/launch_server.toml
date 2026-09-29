@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-launch-server"
+description = "Enables the launch_server command without any pre-configured scope."
+commands.allow = ["launch_server"]
+
+[[permission]]
+identifier = "deny-launch-server"
+description = "Denies the launch_server command without any pre-configured scope."
+commands.deny = ["launch_server"]

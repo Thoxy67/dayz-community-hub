@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-delete-mods-bulk"
+description = "Enables the delete_mods_bulk command without any pre-configured scope."
+commands.allow = ["delete_mods_bulk"]
+
+[[permission]]
+identifier = "deny-delete-mods-bulk"
+description = "Denies the delete_mods_bulk command without any pre-configured scope."
+commands.deny = ["delete_mods_bulk"]

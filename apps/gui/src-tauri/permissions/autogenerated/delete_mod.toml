@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-delete-mod"
+description = "Enables the delete_mod command without any pre-configured scope."
+commands.allow = ["delete_mod"]
+
+[[permission]]
+identifier = "deny-delete-mod"
+description = "Denies the delete_mod command without any pre-configured scope."
+commands.deny = ["delete_mod"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-fetch-steam-player-count"
+description = "Enables the fetch_steam_player_count command without any pre-configured scope."
+commands.allow = ["fetch_steam_player_count"]
+
+[[permission]]
+identifier = "deny-fetch-steam-player-count"
+description = "Denies the fetch_steam_player_count command without any pre-configured scope."
+commands.deny = ["fetch_steam_player_count"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-toggle-launch-option"
+description = "Enables the toggle_launch_option command without any pre-configured scope."
+commands.allow = ["toggle_launch_option"]
+
+[[permission]]
+identifier = "deny-toggle-launch-option"
+description = "Denies the toggle_launch_option command without any pre-configured scope."
+commands.deny = ["toggle_launch_option"]

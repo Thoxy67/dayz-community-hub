@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-remove-excluded-ip"
+description = "Enables the remove_excluded_ip command without any pre-configured scope."
+commands.allow = ["remove_excluded_ip"]
+
+[[permission]]
+identifier = "deny-remove-excluded-ip"
+description = "Denies the remove_excluded_ip command without any pre-configured scope."
+commands.deny = ["remove_excluded_ip"]

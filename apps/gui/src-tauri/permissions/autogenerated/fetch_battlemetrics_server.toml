@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-fetch-battlemetrics-server"
+description = "Enables the fetch_battlemetrics_server command without any pre-configured scope."
+commands.allow = ["fetch_battlemetrics_server"]
+
+[[permission]]
+identifier = "deny-fetch-battlemetrics-server"
+description = "Denies the fetch_battlemetrics_server command without any pre-configured scope."
+commands.deny = ["fetch_battlemetrics_server"]
