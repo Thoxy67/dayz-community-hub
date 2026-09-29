@@ -15,7 +15,9 @@ pub(crate) const PING_FAILED_MS: u32 = 5_000;
 /// The last query of one server.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Live {
-    pub ms: u32,
+    /// Round trip; `None` when only the counts are known (from an A2S
+    /// details query), which is "not pinged yet", not a timeout.
+    pub ms: Option<u32>,
     pub players: Option<u8>,
     pub max_players: Option<u8>,
     pub bots: Option<u8>,
@@ -26,14 +28,14 @@ impl Live {
     pub(crate) fn from_result(r: &dz_common::Result<dz_a2s::Ping>) -> Self {
         match r {
             Ok(p) => Self {
-                ms: p.ms,
+                ms: Some(p.ms),
                 players: Some(p.players),
                 max_players: Some(p.max_players),
                 bots: Some(p.bots),
                 failed: false,
             },
             Err(_) => Self {
-                ms: dz_a2s::PING_TIMEOUT_SENTINEL,
+                ms: Some(dz_a2s::PING_TIMEOUT_SENTINEL),
                 players: None,
                 max_players: None,
                 bots: None,
@@ -44,7 +46,7 @@ impl Live {
 
     /// Failed, or so slow it counts as a timeout.
     pub(crate) fn ping_failed(&self) -> bool {
-        self.failed || self.ms >= PING_FAILED_MS
+        self.failed || self.ms.is_some_and(|ms| ms >= PING_FAILED_MS)
     }
 }
 
@@ -143,7 +145,7 @@ impl LiveStore {
                 ip,
                 port,
                 Live {
-                    ms: dz_a2s::PING_TIMEOUT_SENTINEL,
+                    ms: None,
                     players: Some(players),
                     max_players: Some(max_players),
                     bots: Some(bots),
@@ -181,7 +183,7 @@ impl LiveMap {
             ip,
             port,
             Live {
-                ms,
+                ms: Some(ms),
                 players: None,
                 max_players: None,
                 bots: None,

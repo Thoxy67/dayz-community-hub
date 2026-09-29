@@ -163,7 +163,11 @@ impl View<'_> {
     }
     /// `None` never pinged, `Some(None)` failed, `Some(Some(ms))` answered.
     fn ping(&self) -> Option<Option<u32>> {
-        self.live.map(|l| (!l.ping_failed()).then_some(l.ms))
+        let l = self.live?;
+        if l.ping_failed() {
+            return Some(None);
+        }
+        l.ms.map(Some)
     }
     fn is_full(&self) -> bool {
         let max = self.max_players();
@@ -357,7 +361,7 @@ pub(crate) fn row(s: &Server, live: &LiveMap, profile: &ProfileView) -> ServerRo
         vac: s.vac,
         battl_eye: s.battl_eye,
         bots: v.ok_live().and_then(|l| l.bots).map_or(0, u32::from),
-        ping_ms: v.live.map(|l| l.ms),
+        ping_ms: v.live.and_then(|l| l.ms),
         ping_failed: v.live.is_some_and(Live::ping_failed),
         favorite: profile.is_favorite(s),
         excluded: profile.excluded.contains(&s.endpoint.ip),

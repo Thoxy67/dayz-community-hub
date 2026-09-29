@@ -43,7 +43,7 @@ fn to_dto(l: &Live, ip: String, port: i64) -> PingResultDto {
     PingResultDto {
         ip,
         port,
-        ms: l.ms,
+        ms: l.ms.unwrap_or(dz_a2s::PING_TIMEOUT_SENTINEL),
         players: l.players,
         max_players: l.max_players,
         bots: l.bots,
@@ -247,7 +247,8 @@ pub(crate) async fn get_pings(targets: Vec<String>) -> Result<Vec<PingResultDto>
         .iter()
         .filter_map(|key| {
             let (ip, port) = parse_target(key)?;
-            Some(to_dto(map.get(ip, port)?, ip.to_owned(), port))
+            let l = map.get(ip, port).filter(|l| l.ms.is_some() || l.failed)?;
+            Some(to_dto(l, ip.to_owned(), port))
         })
         .collect())
 }
