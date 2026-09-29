@@ -35,6 +35,8 @@ pub struct InitResult {
     pub from_cache: bool,
     /// True when no profile existed yet (the setup wizard should run).
     pub is_first_launch: bool,
+    /// Why there is no list: no cache and the API could not be reached.
+    pub list_error: Option<String>,
 }
 
 /// The title bar's counters.

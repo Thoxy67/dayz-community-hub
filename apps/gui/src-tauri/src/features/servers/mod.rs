@@ -28,43 +28,52 @@ pub(crate) async fn check_first_launch() -> bool {
 
 /// Create the controller and load the server list: from the on-disk cache
 /// when there is one (the window refreshes it in the background), else from
-/// the API. Called once, when the window mounts.
+/// the API. The profile and the cache are read at the same time.
+///
+/// Called when the window mounts, and again when it reloads (the "Retry"
+/// after a failed start): a second call replaces the state in place.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn initialize(app: AppHandle) -> Result<InitResult, String> {
     let profile_path = paths::default_profile_path();
-    let is_first_launch = !profile_path.exists();
-    let ctl = DayzCtl::new(&profile_path)
-        .await
-        .map_err(|e| format!("Failed to init controller: {e}"))?;
-
+    let is_first_launch = !tokio::fs::try_exists(&profile_path).await.unwrap_or(false);
     let cache_path = paths::server_list_cache_path();
-    let (list, from_cache) = if let Some(cache) = dz_api::load_server_list_cache(&cache_path).await
-    {
-        (dedup(cache.list), true)
-    } else {
-        match dz_api::fetch_servers(ctl.http_client()).await {
+
+    let (ctl, cache) = tokio::join!(
+        DayzCtl::new(&profile_path),
+        dz_api::load_server_list_cache(&cache_path)
+    );
+    let ctl = ctl.map_err(|e| format!("Could not load the profile: {e}"))?;
+
+    let (list, from_cache, list_error) = match cache {
+        Some(cache) if !cache.list.result.is_empty() => (dedup(cache.list), true, None),
+        _ => match dz_api::fetch_servers(ctl.http_client()).await {
             Ok(list) => {
                 let list = dedup(list);
                 save_cache_in_background(Arc::clone(&list));
-                (list, false)
+                (list, false, None)
             }
-            Err(_) => (Arc::default(), false),
-        }
+            Err(e) => (Arc::default(), false, Some(e.to_string())),
+        },
     };
 
     let server_count = list.result.len();
     let mut app_state = AppState::new(ctl);
     app_state.set_servers(Arc::clone(&list));
-    crate::features::browser::list_replaced(list);
 
-    let state: SharedState = Arc::new(RwLock::new(app_state));
-    app.manage(state);
+    match app.try_state::<SharedState>() {
+        Some(existing) => *existing.write().await = app_state,
+        None => {
+            app.manage::<SharedState>(Arc::new(RwLock::new(app_state)));
+        }
+    }
+    crate::features::browser::list_replaced(list);
 
     Ok(InitResult {
         server_count,
         from_cache,
         is_first_launch,
+        list_error,
     })
 }
 
