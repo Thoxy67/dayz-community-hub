@@ -9,7 +9,17 @@
   import { Button, IconButton } from "$lib/components/ui/button";
   import { Spinner } from "$lib/components/ui/spinner";
   import { Topo } from "$lib/components/ui/topo";
-  import { Empty, Figure, MasterDetail, PageHeader, SortHead, TableHead } from "$lib/components/app";
+  import {
+    Empty,
+    Figure,
+    LIST_GRID,
+    LIST_NARROW_HIDDEN,
+    LIST_ROW_PX as ROW_PX,
+    MasterDetail,
+    PageHeader,
+    SortHead,
+    TableHead,
+  } from "$lib/components/app";
   import { cn } from "$lib/cx";
   import { compact, num } from "$lib/format";
   import type { ServerRow as Row } from "$lib/ipc/servers";
@@ -20,7 +30,6 @@
   import ServerDetail from "./detail/ServerDetail.svelte";
   import { filters, type SortCol } from "./filters.svelte";
   import { feed } from "./feed.svelte";
-  import { GRID, NARROW_HIDDEN, ROW_PX } from "./columns";
   import ServerRow from "./ServerRow.svelte";
   import Toolbar from "./Toolbar.svelte";
 
@@ -189,20 +198,38 @@
 
 {#snippet listPane()}
   <div class="@container flex h-full min-h-0 flex-1 flex-col">
-    <TableHead grid={GRID}>
-      <span class="text-right">#</span>
+    <TableHead grid={LIST_GRID}>
       <span></span>
-      {#each COLS as col (col.id)}
+      {#each COLS.filter((col) => col.id === "ping" || col.id === "players" || col.id === "name") as col (col.id)}
         <SortHead
           label={col.label()}
-          title={col.title?.()}
           active={filters.sort === col.id}
           asc={filters.asc}
-          class={col.id === "time" ? NARROW_HIDDEN : ""}
           onclick={() => filters.toggleSort(col.id)}
         />
       {/each}
-      <span class={cn("text-center uppercase", NARROW_HIDDEN)}>{$c.colOs.value}</span>
+      <span class={cn("flex items-center gap-2", LIST_NARROW_HIDDEN)}>
+        <SortHead
+          label={$c.colMap.value}
+          active={filters.sort === "map"}
+          asc={filters.asc}
+          onclick={() => filters.toggleSort("map")}
+        />
+        <SortHead
+          label={$c.colTime.value}
+          title={$c.colTimeTitle.value}
+          active={filters.sort === "time"}
+          asc={filters.asc}
+          onclick={() => filters.toggleSort("time")}
+        />
+      </span>
+      <SortHead
+        label={$c.colMods.value}
+        active={filters.sort === "mods"}
+        asc={filters.asc}
+        onclick={() => filters.toggleSort("mods")}
+      />
+      <span></span>
     </TableHead>
 
     {#if feed.loading && feed.total === 0}
@@ -259,14 +286,13 @@
                   />
                 {:else}
                   <!-- Not arrived yet: the row's shape, so the list does not jump. -->
-                  <div class={cn(GRID, "h-full border-b border-border/50 px-2")} aria-hidden="true">
-                    <span class="num text-right font-mono text-3xs text-fg-faint">{i + 1}</span>
+                  <div class={cn(LIST_GRID, "h-full border-b border-border/50 px-2")} aria-hidden="true">
                     <span></span>
                     <span class="h-2 w-12 animate-pulse rounded-full bg-raised"></span>
                     <span class="h-2 w-16 animate-pulse rounded-full bg-raised"></span>
                     <span class="h-2.5 w-3/5 animate-pulse rounded-full bg-raised"></span>
-                    <span class="h-2 w-20 animate-pulse rounded-full bg-raised"></span>
-                    <span class={NARROW_HIDDEN}></span><span></span><span class={NARROW_HIDDEN}></span>
+                    <span class={cn("h-2 w-20 animate-pulse rounded-full bg-raised", LIST_NARROW_HIDDEN)}></span>
+                    <span></span><span></span>
                   </div>
                 {/if}
               </div>

@@ -1,21 +1,12 @@
 <script lang="ts">
-  import { Copy } from "$lib/components/ui/copy";
-  import {
-    ExcludeButton,
-    FavoriteButton,
-    ModsCount,
-    OsIcon,
-    PingButton,
-    PlayersButton,
-    ServerFlags,
-    TimeOfDay,
-  } from "$lib/components/app";
+  import PlugZap from "~icons/lucide/plug-zap";
   import { dict } from "$lib/i18n";
-  import { cn } from "$lib/cx";
+  import { IconButton } from "$lib/components/ui/button";
+  import { ExcludeButton, ServerListRow } from "$lib/components/app";
   import type { ServerRow } from "$lib/ipc/servers";
-  import { GRID, NARROW_HIDDEN } from "./columns";
+  import { connect } from "$lib/stores/connect.svelte";
 
-  /** One server in the browser: every cell is a shared component, so favourites and history read the same. */
+  /** One server in the browser: the shared list row, with the browser's own hover actions. */
   let {
     server,
     index,
@@ -32,44 +23,39 @@
     onmods: () => void;
   } = $props();
 
-  const c = dict("servers");
-  const address = $derived(`${server.ip}:${server.game_port}`);
+  const sv = dict("servers");
 </script>
 
-<!-- svelte-ignore a11y_click_events_have_key_events -->
-<div
-  role="row"
-  tabindex="-1"
-  aria-selected={selected}
-  aria-rowindex={index + 1}
-  class={cn(
-    GRID,
-    "group h-full border-b border-border/50 px-2 text-xs transition-colors",
-    selected ? "bg-accent/10 shadow-[inset_2px_0_0_var(--color-accent)]" : "hover:bg-raised/50",
-    server.excluded && "opacity-45",
-  )}
-  onclick={onselect}
-  ondblclick={onjoin}
+<ServerListRow
+  ip={server.ip}
+  queryPort={server.query_port}
+  gamePort={server.game_port}
+  name={server.name}
+  map={server.map}
+  time={server.time}
+  version={server.version}
+  environment={server.environment}
+  modsCount={server.mods_count}
+  password={server.password}
+  firstPerson={server.first_person_only}
+  battleye={server.battl_eye}
+  excluded={server.excluded}
+  {selected}
+  rowindex={index + 1}
+  {onselect}
+  {onjoin}
+  {onmods}
 >
-  <span class="num text-right font-mono text-3xs text-fg-faint">{index + 1}</span>
-  <span class="flex flex-col items-center gap-0.5">
-    <FavoriteButton name={server.name} ip={server.ip} port={server.query_port} />
-    <ExcludeButton ip={server.ip} />
-  </span>
-  <PingButton ip={server.ip} queryPort={server.query_port} />
-  <PlayersButton ip={server.ip} queryPort={server.query_port} />
-  <span class="flex min-w-0 flex-col gap-0.5">
-    <span class="flex min-w-0 items-center gap-1.5">
-      <span class="truncate font-medium text-fg" title={server.name}>{server.name}</span>
-      <ServerFlags password={server.password} firstPerson={server.first_person_only} battleye={server.battl_eye} />
-    </span>
-    <span class="flex min-w-0 items-center gap-2">
-      <Copy class="shrink-0" text={address} title={$c.copyIp({ address }).value} />
-      <span class="min-w-0 truncate font-mono text-3xs text-fg-faint">{server.version}</span>
-    </span>
-  </span>
-  <span class="truncate text-map" title={server.map}>{server.map}</span>
-  <TimeOfDay time={server.time} class={NARROW_HIDDEN} />
-  <ModsCount count={server.mods_count} onclick={onmods} />
-  <span class={NARROW_HIDDEN}><OsIcon environment={server.environment} /></span>
-</div>
+  {#snippet actions()}
+    <IconButton
+      icon={PlugZap}
+      size="icon-xs"
+      label={$sv.directConnect.value}
+      onclick={(e) => {
+        e.stopPropagation();
+        connect.openInDirect(server.ip, server.game_port, server.query_port);
+      }}
+    />
+    <ExcludeButton ip={server.ip} always />
+  {/snippet}
+</ServerListRow>

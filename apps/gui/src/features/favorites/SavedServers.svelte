@@ -34,24 +34,20 @@
   import PanelRight from "~icons/lucide/panel-right";
   import Search from "~icons/lucide/search";
   import { VirtualList } from "$lib/components/ui/virtual-list";
-  import { Copy } from "$lib/components/ui/copy";
   import { Tag } from "$lib/components/ui/tag";
   import { Button, IconButton } from "$lib/components/ui/button";
   import { Input } from "$lib/components/ui/input";
   import { Chip } from "$lib/components/ui/chip";
   import ServerIcon from "~icons/lucide/server";
-  import { cn } from "$lib/cx";
   import {
     Empty,
-    FavoriteButton,
-    JoinButton,
-    ModsCount,
-    PingButton,
-    PlayersButton,
-    ServerFlags,
+    LIST_GRID,
+    LIST_GRID_EXTRA,
+    LIST_NARROW_HIDDEN,
+    LIST_ROW_PX,
+    ServerListRow,
     SortHead,
     TableHead,
-    TimeOfDay,
     MasterDetail,
   } from "$lib/components/app";
   import ServerDetail from "$features/servers/detail/ServerDetail.svelte";
@@ -290,12 +286,8 @@
     e.preventDefault();
   }
 
-  const COLS = $derived(
-    kind === "history"
-      ? "grid-cols-[4.5rem_6rem_minmax(0,1fr)_6.5rem_2.75rem_7.75rem_7.25rem]"
-      : "grid-cols-[4.5rem_6rem_minmax(0,1fr)_7.5rem_2.75rem_7.25rem]",
-  );
-  const ROW = 50;
+  const GRID = $derived(kind === "history" ? LIST_GRID_EXTRA : LIST_GRID);
+  const ROW = LIST_ROW_PX;
 </script>
 
 <svelte:window {onkeydown} />
@@ -330,150 +322,96 @@
 {/snippet}
 
 {#snippet head()}
-  <TableHead grid="grid items-center gap-3 {COLS}">
-    <SortHead
-      label={$sv.colPing.value}
-      active={sortCol === "ping"}
-      asc={sortAsc}
-      onclick={() => sortBy("ping")}
-    />
+  <TableHead grid={GRID}>
+    <span></span>
+    <SortHead label={$sv.colPing.value} active={sortCol === "ping"} asc={sortAsc} onclick={() => sortBy("ping")} />
     <SortHead
       label={$sv.colPlayers.value}
       active={sortCol === "players"}
       asc={sortAsc}
       onclick={() => sortBy("players")}
     />
+    <SortHead label={$sv.colServer.value} active={sortCol === "name"} asc={sortAsc} onclick={() => sortBy("name")} />
     <SortHead
-      label={$sv.colServer.value}
-      active={sortCol === "name"}
-      asc={sortAsc}
-      onclick={() => sortBy("name")}
-    />
-    <SortHead
+      class={LIST_NARROW_HIDDEN}
       label={`${$sv.colMap.value} · ${$sv.colTime.value}`}
       active={sortCol === "map"}
       asc={sortAsc}
       onclick={() => sortBy("map")}
     />
-    <span class="text-center uppercase">{$sv.colMods.value}</span>
-    {#if kind === "history"}<SortHead
+    <span class="uppercase">{$sv.colMods.value}</span>
+    {#if kind === "history"}
+      <SortHead
         label={$h.colLastPlayed.value}
         active={sortCol === "recent"}
         asc={sortAsc}
         onclick={() => sortBy("recent")}
-      />{/if}
+      />
+    {/if}
     <span></span>
   </TableHead>
 {/snippet}
 
 {#snippet row(r: Row)}
-  {@const on = selectedKey === r.key}
   {@const s = r.listed}
-  {@const qp = s?.query_port ?? r.port}
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div
-    role="row"
-    tabindex="-1"
-    aria-selected={on}
-    class={cn(
-      "group relative grid h-full cursor-pointer items-center gap-3 border-b border-border/50 px-2 transition-colors",
-      COLS,
-      on ? "bg-accent/10" : "hover:bg-raised/50",
-      !s && "opacity-70",
-    )}
-    onclick={() => (selectedKey = r.key)}
-    ondblclick={() => join(r)}
+  <ServerListRow
+    ip={r.ip}
+    queryPort={s?.query_port ?? r.port}
+    gamePort={s?.game_port ?? r.port}
+    joinPort={r.port}
+    name={r.name}
+    map={s?.map}
+    time={s?.time}
+    version={s?.version}
+    environment={s?.environment}
+    modsCount={s?.mods_count ?? 0}
+    password={s?.password}
+    firstPerson={s?.first_person_only}
+    battleye={s?.battl_eye}
+    savedPassword={r.password}
+    listed={!!s}
+    selected={selectedKey === r.key}
+    wide={kind === "history"}
+    onselect={() => (selectedKey = r.key)}
+    onjoin={() => join(r)}
   >
-    {#if on}<span class="absolute inset-y-0 left-0 w-0.5 bg-accent"></span>{/if}
-
-    <PingButton ip={r.ip} queryPort={qp} />
-    <PlayersButton ip={r.ip} queryPort={qp} />
-
-    <div class="min-w-0 overflow-hidden">
-      <div class="flex min-w-0 items-center gap-1.5">
-        <span class="truncate text-xs font-semibold text-fg" title={r.name}>{r.name}</span>
-        <ServerFlags
-          password={s?.password}
-          firstPerson={s?.first_person_only}
-          battleye={s?.battl_eye}
-          savedPassword={!!r.password}
-        />
-        {#if !s}
-          <Tag tone="warn" title={$f.serverOfflineHint.value}>{$f.notInList.value}</Tag>
-        {/if}
-      </div>
-      <div class="flex min-w-0 items-center gap-2">
-        <Copy
-          class="shrink-0"
-          text={s ? `${r.ip}:${s.game_port}` : r.key}
-          title={$sv.copyIp({ address: s ? `${r.ip}:${s.game_port}` : r.key }).value}
-        />
-        {#if s}
-          <span
-            class="min-w-0 truncate font-mono text-3xs text-fg-faint"
-            title="query {s.query_port} · {s.version}">q{s.query_port} · {s.version}</span
-          >
-        {/if}
-      </div>
-    </div>
-
-    <div class="min-w-0">
-      {#if s}
-        <div class="truncate text-xs text-map" title={s.map}>{s.map}</div>
-        {#if s.time}<TimeOfDay time={s.time} class="text-3xs" />{/if}
-      {:else}
-        <span class="text-2xs text-fg-faint">—</span>
-      {/if}
-    </div>
-
-    <div class="flex justify-center">
-      <ModsCount count={s?.mods_count ?? 0} />
-    </div>
-
-    {#if kind === "history"}
-      <div class="min-w-0" title={r.ts ? dateTime(r.ts) : ""}>
-        {#if r.ts}
+    {#snippet tag()}
+      {#if !s}<Tag tone="warn" title={$f.serverOfflineHint.value}>{$f.notInList.value}</Tag>{/if}
+    {/snippet}
+    {#snippet extra()}
+      {#if kind === "history" && r.ts}
+        <div title={dateTime(r.ts)}>
           <div class="truncate text-2xs text-fg">{(void now, relative(r.ts))}</div>
           <div class="truncate font-mono text-3xs text-fg-faint">{dateTime(r.ts)}</div>
-        {/if}
-      </div>
-    {/if}
-
-    <div class="flex items-center justify-end gap-0.5">
-      <div
-        class={cn(
-          "flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100",
-          on && "opacity-100",
-        )}
-      >
-        {#if kind === "history"}<FavoriteButton name={r.name} ip={r.ip} port={r.port} />{/if}
-        <IconButton
-          icon={PlugZap}
-          size="icon-xs"
-          label={$f.openDirect.value}
-          onclick={(e) => {
-            e.stopPropagation();
-            direct(r);
-          }}
-        />
-        <IconButton
-          icon={Trash}
-          size="icon-xs"
-          label={kind === "history" ? $h.remove.value : $sv.removeFavorite.value}
-          iconClass="hover:text-err"
-          onclick={(e) => {
-            e.stopPropagation();
-            onremove(r);
-          }}
-        />
-      </div>
-      <JoinButton ip={r.ip} port={r.port} password={r.password} compact={!on} />
-    </div>
-  </div>
+        </div>
+      {/if}
+    {/snippet}
+    {#snippet actions()}
+      <IconButton
+        icon={PlugZap}
+        size="icon-xs"
+        label={$f.openDirect.value}
+        onclick={(e) => {
+          e.stopPropagation();
+          direct(r);
+        }}
+      />
+      <IconButton
+        icon={Trash}
+        size="icon-xs"
+        label={kind === "history" ? $h.remove.value : $sv.removeFavorite.value}
+        iconClass="hover:text-err"
+        onclick={(e) => {
+          e.stopPropagation();
+          onremove(r);
+        }}
+      />
+    {/snippet}
+  </ServerListRow>
 {/snippet}
 
 {#snippet listPane()}
-  <div class="flex min-h-0 flex-1 flex-col bg-panel">
+  <div class="@container flex min-h-0 flex-1 flex-col bg-panel">
     <VirtualList
       bind:this={list}
       items={shown}
