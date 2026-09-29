@@ -25,7 +25,7 @@
     id: string;
     /** The details pane is wanted at all (the view's toggle). */
     show?: boolean;
-    /** Something is selected: the narrow drawer only opens then. */
+    /** Something is selected: the details pane (side or drawer) only shows then. */
     selected?: boolean;
     initial?: number;
     min?: number;
@@ -40,7 +40,7 @@
 </script>
 
 <div class="relative flex min-h-0 min-w-0 flex-1" bind:clientWidth={width}>
-  {#if show && !narrow}
+  {#if show && selected && !narrow}
     <Split {id} pane="end" {initial} {min} {max} keep={Math.min(520, breakpoint - initial)} {main} aside={detail} />
   {:else}
     <div class="flex min-h-0 min-w-0 flex-1 flex-col">{@render main()}</div>

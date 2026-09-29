@@ -499,7 +499,7 @@
           ip={selected.ip}
           port={selected.port}
           name={selected.name}
-          onclose={() => (showDetail = false)}
+          onclose={() => (selectedKey = null)}
         />
       {/key}
     {:else}

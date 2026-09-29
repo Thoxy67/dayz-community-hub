@@ -128,8 +128,8 @@
       case "End":
         return (e.preventDefault(), move(feed.total));
       case "Escape":
-        if (showDetail && selected) showDetail = false;
-        else selected = null;
+        selected = null;
+        selectedIndex = -1;
         return;
     }
     const s = selected;
@@ -264,7 +264,10 @@
       port={selected.query_port}
       name={selected.name}
       {focusMods}
-      onclose={() => (showDetail = false)}
+      onclose={() => {
+        selected = null;
+        selectedIndex = -1;
+      }}
     />
   {:else}
     <Empty icon={Server} title={$c.selectServer.value} />
