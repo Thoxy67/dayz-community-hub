@@ -9,26 +9,31 @@
   import FolderOpen from "~icons/lucide/folder-open";
   import Ellipsis from "~icons/lucide/ellipsis";
   import Brush from "~icons/lucide/brush-cleaning";
-  import ExternalLink from "~icons/lucide/external-link";
   import Trash from "~icons/lucide/trash-2";
   import KeyRound from "~icons/lucide/key-round";
   import Link from "~icons/lucide/link";
   import Unlink from "~icons/lucide/unlink";
+  import HardDrive from "~icons/lucide/hard-drive-download";
   import X from "~icons/lucide/x";
   import SearchX from "~icons/lucide/search-x";
-  import { PageHeader, Figure, SortHead, TableHead, Empty, BulkBar } from "$lib/components/app";
+  import {
+    PageHeader,
+    Figure,
+    SortHead,
+    TableHead,
+    Empty,
+    BulkBar,
+    MasterDetail,
+  } from "$lib/components/app";
   import { Button, IconButton } from "$lib/components/ui/button";
   import { Input } from "$lib/components/ui/input";
   import { Segmented } from "$lib/components/ui/segmented";
   import { Checkbox } from "$lib/components/ui/checkbox";
-  import { Copy } from "$lib/components/ui/copy";
-  import { Tag } from "$lib/components/ui/tag";
-  import { Split } from "$lib/components/ui/split";
   import { VirtualList } from "$lib/components/ui/virtual-list";
   import { Alert } from "$lib/components/ui/alert";
   import { Spinner } from "$lib/components/ui/spinner";
-  import { MiniSwitch } from "$lib/components/ui/switch";
   import { Tooltip } from "$lib/components/ui/tooltip";
+  import { SteamIcon } from "$lib/components/ui/brand";
   import {
     DropdownMenuContent,
     DropdownMenuItem,
@@ -36,26 +41,30 @@
   } from "$lib/components/ui/dropdown-menu";
   import { cn } from "$lib/cx";
   import { bytes, date, relative } from "$lib/format";
-  import { openUrl } from "$lib/ipc/native";
   import type { InstalledModDto } from "$lib/ipc/types";
   import { app } from "$lib/stores/app.svelte";
   import { mods } from "$lib/stores/mods.svelte";
   import { profile } from "$lib/stores/profile.svelte";
   import ModDetail from "./ModDetail.svelte";
-  import SourceTag from "./SourceTag.svelte";
+  import ModState from "./ModState.svelte";
+  import ModMenu from "./ModMenu.svelte";
   import ReviewDialog from "./ReviewDialog.svelte";
   import InstallDialog from "./InstallDialog.svelte";
-  import { review, workshopUrl } from "./review.svelte";
+  import { review } from "./review.svelte";
 
   /**
-   * Installed Workshop mods: how much room they take, which are behind the
-   * Workshop, which are linked into the game, and every operation on them,
-   * one at a time or in bulk.
+   * Installed Workshop mods. The header says how many there are, what they
+   * weigh and how many are behind, with the one button that brings them
+   * level; each row says in words whether that mod is current, whose folder
+   * it is in and whether the game loads it; everything else is in its menu,
+   * its details, or the bar that appears once some are ticked.
    */
   const m = dict("mods");
 
   $effect(() => {
-    if (mods.installed.length === 0 && !mods.loading) void mods.load();
+    // Once: with nothing installed, re-reading whenever the (empty) list
+    // arrived again read the disk in a loop.
+    if (!mods.loaded && !mods.loading) void mods.load();
     void mods.checkUpdates();
   });
 
@@ -63,19 +72,15 @@
 
   // ── filter and sort ─────────────────────────────────────────────────────
   type Filter = "all" | "updates" | "unmanaged";
-  type Col = "name" | "id" | "size" | "local" | "remote" | "status";
+  type Col = "name" | "status" | "managed" | "size" | "local";
   let filter = $state<Filter>("all");
   let query = $state("");
-  let col = $state<Col>("name");
+  let col = $state<Col>("status");
   let asc = $state(true);
 
   const unmanaged = $derived(mods.installed.filter((x) => !x.managed).length);
-  const largest = $derived(
-    mods.installed.reduce<InstalledModDto | null>((a, x) => (!a || x.size > a.size ? x : a), null),
-  );
 
-  const status = (x: InstalledModDto) =>
-    x.update_available ? 0 : !x.managed ? 1 : x.remote_updated ? 2 : 3;
+  const status = (x: InstalledModDto) => (x.update_available ? 0 : x.remote_updated ? 2 : 1);
   const rows = $derived.by(() => {
     const q = query.trim().toLowerCase();
     const list = mods.installed.filter(
@@ -84,20 +89,19 @@
         (!q || x.name.toLowerCase().includes(q) || String(x.id).includes(q)),
     );
     const dir = asc ? 1 : -1;
+    const byName = (a: InstalledModDto, b: InstalledModDto) => a.name.localeCompare(b.name);
     return list.sort((a, b) => {
       switch (col) {
         case "name":
-          return dir * a.name.localeCompare(b.name);
-        case "id":
-          return dir * (a.id - b.id);
+          return dir * byName(a, b);
         case "size":
           return dir * (a.size - b.size);
         case "local":
           return dir * (a.local_updated - b.local_updated);
-        case "remote":
-          return dir * ((a.remote_updated ?? 0) - (b.remote_updated ?? 0));
+        case "managed":
+          return dir * (Number(b.managed) - Number(a.managed)) || byName(a, b);
         default:
-          return dir * (status(a) - status(b)) || a.name.localeCompare(b.name);
+          return dir * (status(a) - status(b)) || byName(a, b);
       }
     });
   });
@@ -106,7 +110,7 @@
     if (col === c) asc = !asc;
     else {
       col = c;
-      asc = c === "name" || c === "status";
+      asc = c === "name" || c === "status" || c === "managed";
     }
   }
 
@@ -143,7 +147,7 @@
   let list = $state<{ scrollToIndex: (i: number) => void } | null>(null);
   function onkeydown(e: KeyboardEvent) {
     if (app.view !== "mods" || e.ctrlKey || e.metaKey || e.altKey) return;
-    if ((e.target as HTMLElement)?.closest("input, textarea, [role=dialog]")) return;
+    if ((e.target as HTMLElement)?.closest("input, textarea, [role=dialog], [role=menu]")) return;
     const i = rows.findIndex((x) => x.id === focusId);
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
@@ -165,11 +169,15 @@
   }
 
   let installOpen = $state(false);
-  // The Workshop id column leaves below 1280 px (the detail pane still shows
-  // it): at the window's minimum width the eight columns did not fit and the
-  // row actions were cut off.
+  /**
+   * tick · mod · state · in game · size · your version · actions. The list
+   * is a size container: narrow, "your version" goes first, then "in game"
+   * (the details still show both).
+   */
   const COLS =
-    "grid-cols-[1.25rem_minmax(10rem,1fr)_6.5rem_4.5rem_6.5rem_7rem_2.25rem_4.5rem] max-xl:grid-cols-[1.25rem_minmax(8rem,1fr)_4.5rem_6.5rem_7rem_2.25rem_4.5rem]";
+    "grid items-center gap-x-3 grid-cols-[1.25rem_minmax(0,1fr)_10.5rem_6rem_4.5rem_6.5rem_3.75rem] @max-[820px]:grid-cols-[1.25rem_minmax(0,1fr)_10.5rem_6rem_4.5rem_3.75rem] @max-[620px]:grid-cols-[1.25rem_minmax(0,1fr)_10.5rem_4.5rem_3.75rem]";
+  const HIDE_VERSION = "@max-[820px]:hidden";
+  const HIDE_IN_GAME = "@max-[620px]:hidden";
 
   const filterOptions = $derived([
     { value: "all" as const, label: `${$m.filterAll.value} · ${mods.installed.length}` },
@@ -185,8 +193,8 @@
 {/snippet}
 
 {#snippet listPane()}
-  <div class="flex min-h-0 flex-1 flex-col">
-    {#if mods.loading && mods.installed.length === 0}
+  <div class="@container flex min-h-0 flex-1 flex-col">
+    {#if !mods.loaded && mods.installed.length === 0}
       <div class="grid flex-1 place-items-center">
         <Spinner class="size-6" label={$m.loading.value} />
       </div>
@@ -200,138 +208,120 @@
         {/snippet}
       </Empty>
     {:else}
-      <VirtualList
-        bind:this={list}
-        items={rows}
-        rowHeight={40}
-        key={(x) => x.id}
-        aria-label={$m.title.value}
-      >
-        {#snippet header()}
-          <TableHead grid="grid {COLS} items-center gap-2 !px-pad">
-            <Checkbox
-              checked={allTicked}
-              indeterminate={someTicked}
-              onchange={(v) => tickAll(v)}
-              aria-label={allTicked ? $m.deselectAll.value : $m.selectAll.value}
-            />
-            {@render sortHead("name", $m.colName.value)}
-            {@render sortHead("id", $m.colWorkshopId.value, "max-xl:hidden")}
-            {@render sortHead("size", $m.colSize.value, "justify-end")}
-            {@render sortHead("remote", $m.colRemote.value)}
-            {@render sortHead("status", $m.colStatus.value)}
-            <span title={$m.colStatusTitle.value}><Link class="size-3" /></span>
-            <span class="text-right uppercase">{$m.rowActions.value}</span>
-          </TableHead>
-        {/snippet}
-        {#snippet row(x: InstalledModDto)}
-          {@const on = focusId === x.id}
-          {@const days =
-            x.remote_updated && x.remote_updated > x.local_updated
-              ? Math.floor((x.remote_updated - x.local_updated) / 86400)
-              : 0}
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <div
-            role="row"
-            tabindex="-1"
-            class={cn(
-              `group grid ${COLS} h-full cursor-pointer items-center gap-2 border-b border-border/40 px-pad text-xs`,
-              on ? "bg-accent/10" : ticked.has(x.id) ? "bg-raised/50" : "hover:bg-raised/40",
-            )}
-            onclick={() => (focusId = x.id)}
-          >
-            <Checkbox
-              checked={ticked.has(x.id)}
-              onchange={(v) => tick(x.id, v)}
-              aria-label={x.name}
-            />
-            <div class="flex min-w-0 items-center gap-2">
-              {#if x.update_available}<span class="size-1.5 shrink-0 rounded-full bg-warn"
-                ></span>{/if}
-              <span class={cn("truncate font-medium", x.managed ? "text-fg" : "text-fg-muted")}
-                >{x.name}</span
+      <!-- A sized box with the scroller pinned inside: rows are only
+           mounted while on screen. -->
+      <div class="relative min-h-0 flex-1">
+        <VirtualList
+          bind:this={list}
+          class="absolute inset-0"
+          items={rows}
+          rowHeight={48}
+          key={(x) => x.id}
+          aria-label={$m.title.value}
+        >
+          {#snippet header()}
+            <TableHead grid="{COLS} !px-pad">
+              <Checkbox
+                checked={allTicked}
+                indeterminate={someTicked}
+                onchange={(v) => tickAll(v)}
+                aria-label={allTicked ? $m.deselectAll.value : $m.selectAll.value}
+              />
+              {@render sortHead("name", $m.colName.value)}
+              {@render sortHead("status", $m.colStatus.value)}
+              {@render sortHead("managed", $m.colInGame.value, HIDE_IN_GAME)}
+              {@render sortHead("size", $m.colSize.value, "justify-self-end")}
+              {@render sortHead("local", $m.colDownloaded.value, HIDE_VERSION)}
+              <span></span>
+            </TableHead>
+          {/snippet}
+          {#snippet row(x: InstalledModDto)}
+            {@const on = focusId === x.id}
+            {@const steam = x.source === "steam"}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <div
+              role="row"
+              tabindex="-1"
+              class={cn(
+                `group ${COLS} h-full cursor-pointer border-b border-border/40 px-pad text-xs`,
+                on ? "bg-accent/10" : ticked.has(x.id) ? "bg-raised/50" : "hover:bg-raised/40",
+              )}
+              onclick={() => (focusId = x.id)}
+            >
+              <Checkbox
+                checked={ticked.has(x.id)}
+                onchange={(v) => tick(x.id, v)}
+                aria-label={x.name}
+              />
+              <div class="flex min-w-0 flex-col gap-0.5">
+                <span class="truncate font-medium text-fg">{x.name}</span>
+                <span
+                  class="flex min-w-0 items-center gap-1 text-2xs text-fg-faint"
+                  title={steam ? $m.sourceSteamHint.value : $m.sourceLauncherHint.value}
+                >
+                  {#if steam}<SteamIcon class="size-2.5 shrink-0" />{:else}<HardDrive
+                      class="size-2.5 shrink-0"
+                    />{/if}
+                  <span class="truncate"
+                    >{steam ? $m.whereSteam.value : $m.whereLauncher.value}</span
+                  >
+                </span>
+              </div>
+              <ModState mod={x} behind />
+              <span
+                class={cn(
+                  "flex min-w-0 items-center gap-1",
+                  HIDE_IN_GAME,
+                  x.managed ? "text-fg-muted" : "text-fg-faint",
+                )}
+                title={x.managed ? $m.inGameLinkedTitle.value : $m.inGameNotLinkedTitle.value}
               >
-              <SourceTag mod={x} />
+                {#if x.managed}<Link class="size-3 shrink-0" />{:else}<Unlink
+                    class="size-3 shrink-0"
+                  />{/if}
+                <span class="truncate"
+                  >{x.managed ? $m.inGameLinked.value : $m.inGameNotLinked.value}</span
+                >
+              </span>
+              <span class="num text-right font-mono text-2xs text-fg-muted">{x.size_human}</span>
+              <span
+                class={cn("truncate font-mono text-2xs text-fg-muted", HIDE_VERSION)}
+                title={x.remote_updated
+                  ? `${$m.workshopCopy.value}: ${date(x.remote_updated * 1000)}`
+                  : undefined}>{date(x.local_updated * 1000)}</span
+              >
+              <span class="flex items-center justify-end gap-0.5">
+                {#if x.update_available && !mods.opState(x.id)}
+                  <IconButton
+                    size="icon-xs"
+                    icon={RefreshCw}
+                    label={$m.update.value}
+                    kbd="U"
+                    variant="accent"
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      review.updateSelected([x.id]);
+                    }}
+                  />
+                {/if}
+                <ModMenu mod={x} />
+              </span>
             </div>
-            <span class="min-w-0 max-xl:hidden"
-              ><Copy text={String(x.id)} title={$m.copyWorkshopId.value} /></span
-            >
-            <span class="num text-right font-mono text-2xs text-fg-muted">{x.size_human}</span>
-            <span
-              class="flex min-w-0 items-center gap-1 font-mono text-2xs"
-              title={`${$m.colLocal.value}: ${new Date(x.local_updated * 1000).toLocaleString()}`}
-            >
-              {#if x.remote_updated}
-                <span class={x.update_available ? "text-warn" : "text-fg-muted"}
-                  >{date(x.remote_updated * 1000)}</span
+          {/snippet}
+          {#snippet empty()}
+            <Empty icon={SearchX} title={$m.noMatch.value}>
+              {#snippet action()}
+                <Button
+                  onclick={() => {
+                    query = "";
+                    filter = "all";
+                  }}>{$m.clearFilters.value}</Button
                 >
-              {:else}<span class="text-fg-faint">{date(x.local_updated * 1000)}</span>{/if}
-            </span>
-            <span>
-              {#if x.update_available}
-                <Tag tone="warn" title={$m.updateClick.value}
-                  >{days > 0 ? $m.daysBehind({ days }).value : $m.behindToday.value}</Tag
-                >
-              {:else if x.remote_updated}
-                <Tag tone="ok">{$m.statusOk.value}</Tag>
-              {:else}
-                <Tag>—</Tag>
-              {/if}
-            </span>
-            <span title={x.managed ? $m.linkedHint.value : $m.unlinkedHint.value}>
-              <MiniSwitch
-                bind:checked={() => x.managed, () => void mods.toggleManaged(x)}
-                aria-label={x.managed ? $m.statusLinked.value : $m.statusUnlinked.value}
-              />
-            </span>
-            <span
-              class="flex justify-end gap-0.5 opacity-60 group-hover:opacity-100 focus-within:opacity-100"
-            >
-              <IconButton
-                size="icon-xs"
-                icon={RefreshCw}
-                label={x.update_available ? $m.updateClick.value : $m.revalidate.value}
-                variant={x.update_available ? "accent" : "ghost"}
-                onclick={(e) => {
-                  e.stopPropagation();
-                  review.updateSelected([x.id]);
-                }}
-              />
-              <IconButton
-                size="icon-xs"
-                icon={ExternalLink}
-                label={$m.openWorkshop.value}
-                onclick={(e) => {
-                  e.stopPropagation();
-                  void openUrl(workshopUrl(x.id));
-                }}
-              />
-              <IconButton
-                size="icon-xs"
-                icon={Trash}
-                label={$m.delete.value}
-                class="hover:bg-err/10 hover:text-err"
-                onclick={(e) => {
-                  e.stopPropagation();
-                  void mods.remove(x);
-                }}
-              />
-            </span>
-          </div>
-        {/snippet}
-        {#snippet empty()}
-          <Empty icon={SearchX} title={$m.noMatch.value}>
-            {#snippet action()}
-              <Button
-                onclick={() => {
-                  query = "";
-                  filter = "all";
-                }}>{$m.clearFilters.value}</Button
-              >
-            {/snippet}
-          </Empty>
-        {/snippet}
-      </VirtualList>
+              {/snippet}
+            </Empty>
+          {/snippet}
+        </VirtualList>
+      </div>
     {/if}
 
     {#if ticked.size > 0}
@@ -339,7 +329,7 @@
         label={ticked.size === 1
           ? $m.selectedOne({ count: 1 }).value
           : $m.selected({ count: ticked.size }).value}
-        info={`${bytes(tickedSize)} · ${Math.round((ticked.size / Math.max(1, mods.installed.length)) * 100)}%`}
+        info={$m.selectedSize({ size: bytes(tickedSize) }).value}
       >
         {#snippet lead()}
           {#if mods.stale.length > 0 && tickedStale < mods.stale.length}
@@ -397,66 +387,53 @@
         >
           <Trash class="size-3" />{$m.deleteCount({ count: ticked.size }).value}
         </Button>
-        <Button
-          size="xs"
-          variant="ghost"
-          title={$m.clearSelectionTitle.value}
+        <IconButton
+          size="icon-xs"
+          icon={X}
+          label={$m.clearSelectionTitle.value}
           onclick={() => (ticked = new Set())}
-        >
-          <X class="size-3" />{$m.clearSelection.value}
-        </Button>
+        />
       </BulkBar>
     {/if}
   </div>
 {/snippet}
 
 {#snippet detailPane()}
-  <div class="flex min-h-0 flex-1 flex-col border-l border-border bg-panel">
-    <ModDetail mod={focused} onclose={() => (focusId = null)} />
-  </div>
+  {#if focused}
+    <div class="flex min-h-0 flex-1 flex-col border-l border-border">
+      <ModDetail mod={focused} onclose={() => (focusId = null)} />
+    </div>
+  {/if}
 {/snippet}
 
 <div class="flex min-h-0 flex-1 flex-col">
   <PageHeader title={$m.title.value}>
     {#snippet stats()}
-      <Figure label={$m.statInstalled.value} value={String(mods.installed.length)} />
-      <Figure label={$m.statSize.value} value={bytes(mods.totalSize)} />
-      <Figure
-        label={$m.statStale.value}
-        value={String(mods.stale.length)}
-        tone={mods.stale.length ? "text-warn" : "text-ok"}
-      />
-      <Figure
-        label={$m.statLinked.value}
-        value={String(mods.installed.length - unmanaged)}
-        tone="text-accent"
-      />
-      <Figure
-        label={$m.statUnlinked.value}
-        value={String(unmanaged)}
-        tone={unmanaged ? "text-fg-muted" : "text-fg-faint"}
-      />
-      <Figure
-        label={$m.statChecked.value}
-        value={mods.lastChecked
-          ? relative(Math.floor(mods.lastChecked / 1000))
-          : $m.neverChecked.value}
-      />
-      {#if largest}
-        <Figure label={$m.statLargest.value} value={bytes(largest.size)} title={largest.name} />
+      {#if mods.installed.length > 0}
+        <Figure label={$m.statInstalled.value} value={String(mods.installed.length)} />
+        <Figure label={$m.statSize.value} value={bytes(mods.totalSize)} />
+        {#if hasKey}
+          <Figure
+            label={$m.filterUpdates.value}
+            value={String(mods.stale.length)}
+            tone={mods.stale.length ? "text-warn" : "text-ok"}
+            title={mods.stale.length
+              ? $m.toDownload({ count: mods.stale.length }).value
+              : $m.upToDate.value}
+          />
+          <Figure
+            label={$m.statChecked.value}
+            value={mods.checking
+              ? $m.checking.value
+              : mods.lastChecked
+                ? relative(Math.floor(mods.lastChecked / 1000))
+                : $m.neverChecked.value}
+            secondary
+          />
+        {/if}
       {/if}
     {/snippet}
     {#snippet actions()}
-      {#if hasKey}
-        <Button
-          onclick={() => mods.checkUpdates(true)}
-          disabled={mods.checking || mods.installed.length === 0}
-          title={$m.checkUpdatesTitle.value}
-        >
-          {#if mods.checking}<Spinner class="size-icon-sm" />{$m.checking
-              .value}{:else}<CloudDownload class="size-icon-sm" />{$m.checkUpdates.value}{/if}
-        </Button>
-      {/if}
       {#if mods.stale.length > 0}
         <Button
           variant="accent"
@@ -466,15 +443,22 @@
           <RefreshCw class="size-icon-sm" />{$m.updateCount({ count: mods.stale.length }).value}
         </Button>
       {/if}
+      {#if hasKey && mods.installed.length > 0}
+        <Tooltip text={$m.checkUpdatesTitle.value} side="bottom">
+          <Button
+            variant={mods.stale.length > 0 ? "ghost" : "default"}
+            onclick={() => mods.checkUpdates(true)}
+            disabled={mods.checking}
+          >
+            {#if mods.checking}<Spinner class="size-icon-sm" />{:else}<CloudDownload
+                class="size-icon-sm"
+              />{/if}{$m.checkUpdates.value}
+          </Button>
+        </Tooltip>
+      {/if}
       <Button onclick={() => (installOpen = true)} title={$m.installTitle.value}>
         <Download class="size-icon-sm" />{$m.install.value}
       </Button>
-      <IconButton
-        icon={RotateCw}
-        label={$m.refreshTitle.value}
-        onclick={() => mods.refresh()}
-        disabled={mods.loading}
-      />
       <Menu.Root>
         <Tooltip text={$m.moreActions.value} side="bottom">
           <Menu.Trigger
@@ -483,35 +467,40 @@
           >
         </Tooltip>
         <DropdownMenuContent>
+          <DropdownMenuItem icon={RotateCw} onselect={() => mods.refresh()} disabled={mods.loading}>
+            {$m.rescan.value}
+          </DropdownMenuItem>
           <DropdownMenuItem
             icon={RefreshCw}
             onselect={() => review.updateAll()}
             disabled={mods.installed.length === 0}
           >
-            {$m.updateAll.value}
+            {$m.redownloadAll.value}
           </DropdownMenuItem>
-          <DropdownMenuItem icon={FolderOpen} onselect={() => mods.openWorkshopDir()}
-            >{$m.openFolder.value}</DropdownMenuItem
-          >
+          <DropdownMenuItem icon={FolderOpen} onselect={() => mods.openWorkshopDir()}>
+            {$m.openFolderTitle.value}
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem icon={Brush} tone="danger" onselect={() => mods.cleanup()}
-            >{$m.cleanup.value}</DropdownMenuItem
-          >
+          <DropdownMenuItem icon={Brush} tone="danger" onselect={() => mods.cleanup()}>
+            {$m.cleanup.value}
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </Menu.Root>
     {/snippet}
-    <div class="flex items-center gap-2">
-      <Input
-        type="search"
-        class="w-72"
-        placeholder={$m.searchPlaceholder.value}
-        bind:value={query}
-      />
-      <Segmented bind:value={filter} options={filterOptions} aria-label={$m.filterLabel.value} />
-      <span class="ml-auto font-mono text-2xs text-fg-faint"
-        >{rows.length} / {mods.installed.length}</span
-      >
-    </div>
+    {#if mods.installed.length > 0}
+      <div class="flex items-center gap-2">
+        <Input
+          type="search"
+          class="w-72 max-w-full"
+          placeholder={$m.searchPlaceholder.value}
+          bind:value={query}
+        />
+        <Segmented bind:value={filter} options={filterOptions} aria-label={$m.filterLabel.value} />
+        <span class="ml-auto font-mono text-2xs text-fg-faint"
+          >{rows.length} / {mods.installed.length}</span
+        >
+      </div>
+    {/if}
   </PageHeader>
 
   {#if !hasKey && mods.installed.length > 0}
@@ -525,23 +514,16 @@
     </Alert>
   {/if}
 
-  <!-- The detail pane only when there is a mod to detail: an empty one took
-       half the list's height at the window's minimum width. -->
-  <div class="flex min-h-0 flex-1 flex-col">
-    {#if focused}
-      <Split
-        id="mods-detail"
-        initial={340}
-        min={260}
-        max={520}
-        keep={520}
-        main={listPane}
-        aside={detailPane}
-      />
-    {:else}
-      {@render listPane()}
-    {/if}
-  </div>
+  <MasterDetail
+    id="mods-detail"
+    selected={focused !== null}
+    initial={360}
+    min={300}
+    max={520}
+    breakpoint={900}
+    main={listPane}
+    detail={detailPane}
+  />
 </div>
 
 <ReviewDialog />

@@ -32,6 +32,10 @@ export type ModOp = {
   current: number;
   total: number;
   currentName: string;
+  /** The mod being worked on (0 before the first starts). */
+  currentId: number;
+  /** Every mod this operation works on, as far as known when it started. */
+  ids: number[];
   /** Mods that came through or failed, with how long each took. */
   completed: { id: number; name: string; ok: boolean; ms: number }[];
   ok: number;
@@ -56,6 +60,8 @@ const idle = (): ModOp => ({
   current: 0,
   total: 0,
   currentName: "",
+  currentId: 0,
+  ids: [],
   completed: [],
   ok: 0,
   failed: 0,
@@ -71,6 +77,8 @@ class Mods {
   // Raw: always replaced whole from the backend, never edited in place.
   installed = $state.raw<InstalledModDto[]>([]);
   loading = $state(false);
+  /** The disk has been read at least once (an empty list is then an answer). */
+  loaded = $state(false);
   checking = $state(false);
   lastChecked = $state(0);
   op = $state<ModOp>(idle());
@@ -92,6 +100,7 @@ class Mods {
         say.err(words("mods").loadFailed({ error: errorText(e) }));
       } finally {
         this.loading = false;
+        this.loaded = true;
         this.#loading = null;
       }
     })());
@@ -215,6 +224,17 @@ class Mods {
   install = (ids: number[]) =>
     ids.length > 0 && this.start("install_manual", { modIds: ids, modNames: ids.map(String) });
 
+  /**
+   * Where a mod stands in the running operation: being downloaded now,
+   * waiting its turn, or neither (no operation, or already through).
+   */
+  opState(id: number): "downloading" | "queued" | null {
+    const op = this.op;
+    if (!this.busy || !op.ids.includes(id)) return null;
+    if (op.currentId === id && !op.completed.some((c) => c.id === id)) return "downloading";
+    return op.completed.some((c) => c.id === id) ? null : "queued";
+  }
+
   /** Run an operation; `onSuccess` fires when every mod came through. */
   #opId = 0;
 
@@ -240,6 +260,15 @@ class Mods {
       // A login is always SteamCMD's.
       via: profile.viaSteam && opType !== "login" ? "steamworks" : "steamcmd",
       currentName: String(w.preparing),
+      ids:
+        args.modIds ??
+        (args.modId !== undefined
+          ? [args.modId]
+          : opType === "update_stale"
+            ? this.stale.map((m) => m.id)
+            : opType === "update_all"
+              ? this.installed.map((m) => m.id)
+              : []),
       startedAt: t0,
       itemStartedAt: t0,
     };
@@ -273,6 +302,7 @@ class Mods {
           op.current = ev.current;
           op.total = ev.total;
           op.currentName = ev.name;
+          op.currentId = ev.mod_id;
           op.itemStartedAt = Date.now();
           break;
         case "done":

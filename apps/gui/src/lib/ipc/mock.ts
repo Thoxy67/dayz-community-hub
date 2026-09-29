@@ -132,7 +132,8 @@ const mods = Array.from({ length: 24 }, (_, i) => {
         ? `/home/player/.local/share/Steam/steamapps/workshop/content/221100/${1_559_212_036 + i * 97_331}`
         : `/home/player/.local/share/dayz-community-hub/steamcmd-content/steamapps/workshop/content/221100/${1_559_212_036 + i * 97_331}`,
     other_copy: i === 3,
-    remote_updated: stale ? local + 86400 * 4 : local,
+    // One the Workshop check has not reached (a hidden or removed item).
+    remote_updated: i === 7 ? null : stale ? local + 86400 * (4 + i) : local,
     update_available: stale,
   };
 });
@@ -310,6 +311,8 @@ export function installMock() {
     void import("../../features/servers/filters.svelte").then(
       ({ filters }) => (filters.official = official),
     );
+  // `?mods=none`: nothing installed, to look at the mods view's empty state.
+  if (q.get("mods") === "none") mods.length = 0;
   // `?modop=1` starts a pretend SteamCMD operation, to look at its dialog.
   if (q.get("modop") === "1")
     setTimeout(async () => (await import("$lib/stores/mods.svelte")).mods.updateStale(), 1500);
