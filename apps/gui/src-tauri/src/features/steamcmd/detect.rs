@@ -5,9 +5,9 @@ use serde::Serialize;
 use tauri::{AppHandle, State};
 use tauri_specta::Event;
 
-use crate::state::SharedState;
 #[cfg(target_os = "windows")]
 use crate::error::ResultExt;
+use crate::state::SharedState;
 
 #[derive(Serialize, serde::Deserialize, Clone, Debug, specta::Type)]
 pub struct SteamcmdStatusDto {

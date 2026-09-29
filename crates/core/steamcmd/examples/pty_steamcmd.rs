@@ -29,7 +29,10 @@ fn main() {
         .unwrap_or_else(|e| panic!("read {profile_path}: {e}"));
     let v: serde_json::Value = serde_json::from_str(&raw).expect("parse profile.json");
 
-    let steamcmd_path = v["steamcmd_path"].as_str().expect("steamcmd_path").to_string();
+    let steamcmd_path = v["steamcmd_path"]
+        .as_str()
+        .expect("steamcmd_path")
+        .to_string();
     let login = v["steam_login"].as_str().expect("steam_login").to_string();
     let password = v["steam_password"].as_str().map(|s| s.to_string());
 
@@ -55,7 +58,7 @@ fn main() {
     args.push("+quit".into());
 
     // --- Spawn under PTY (mirrors spawn_pty_streamed) ----------------------
-    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+    use portable_pty::{CommandBuilder, PtySize, native_pty_system};
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {

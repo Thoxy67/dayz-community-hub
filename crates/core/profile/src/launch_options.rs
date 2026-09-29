@@ -322,7 +322,6 @@ impl LaunchOptions {
     }
 }
 
-
 impl LaunchOptions {
     /// The option stored under `key` (the snake_case name the window uses).
     pub fn get_mut(&mut self, key: &str) -> Option<&mut LaunchOption> {

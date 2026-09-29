@@ -194,11 +194,21 @@ pub(crate) async fn ping_all_background(
         return Ok(());
     }
     let concurrency = concurrency.unwrap_or(BACKGROUND_CONCURRENT).clamp(5, 200);
-    let timeout =
-        Duration::from_millis(timeout_ms.unwrap_or(BACKGROUND_TIMEOUT_MS).clamp(1000, 5000));
+    let timeout = Duration::from_millis(
+        timeout_ms
+            .unwrap_or(BACKGROUND_TIMEOUT_MS)
+            .clamp(1000, 5000),
+    );
     let state = Arc::clone(&ping);
     let handle = tauri::async_runtime::spawn(async move {
-        scan(targets, concurrency, timeout, on_progress, Arc::clone(&state)).await;
+        scan(
+            targets,
+            concurrency,
+            timeout,
+            on_progress,
+            Arc::clone(&state),
+        )
+        .await;
         if let Ok(mut h) = state.background.lock() {
             *h = None;
         }
@@ -223,8 +233,7 @@ pub(crate) async fn ping_servers(
         return Ok(());
     }
     let concurrency = concurrency.unwrap_or(VISIBLE_CONCURRENT).clamp(5, 100);
-    let timeout =
-        Duration::from_millis(timeout_ms.unwrap_or(VISIBLE_TIMEOUT_MS).clamp(1000, 5000));
+    let timeout = Duration::from_millis(timeout_ms.unwrap_or(VISIBLE_TIMEOUT_MS).clamp(1000, 5000));
     let state = Arc::clone(&ping);
     tauri::async_runtime::spawn(scan(targets, concurrency, timeout, on_progress, state));
     Ok(())

@@ -2,7 +2,6 @@
 
 pub(crate) mod detect;
 
-
 use dz_game::ModOperation;
 use dz_steamcmd::ModProgress;
 use serde::Serialize;
@@ -165,7 +164,6 @@ fn mod_progress_to_event(msg: &ModProgress) -> ModProgressEvent {
     }
 }
 
-
 /// Which mod operation to run.
 #[derive(serde::Deserialize, Clone, Copy, Debug, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "snake_case")]
@@ -253,7 +251,11 @@ pub(crate) async fn start_mod_operation(
                 .unwrap_or_default();
             let stale_mods = installed
                 .into_iter()
-                .filter(|m| update_cache.get(&m.id).is_some_and(|&r| r > m.local_updated))
+                .filter(|m| {
+                    update_cache
+                        .get(&m.id)
+                        .is_some_and(|&r| r > m.local_updated)
+                })
                 .map(|m| (m.id, m.name))
                 .collect();
             ModOperation::UpdateStale { stale_mods }

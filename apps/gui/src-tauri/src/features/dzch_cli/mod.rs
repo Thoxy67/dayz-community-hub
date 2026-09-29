@@ -9,7 +9,9 @@ use std::sync::OnceLock;
 use crate::error::{ResultExt, spawn_blocking_mapped};
 
 /// DayZ Community Hub launcher.
-#[derive(Parser, Debug, Clone, Serialize, serde::Deserialize, specta::Type, tauri_specta::Event)]
+#[derive(
+    Parser, Debug, Clone, Serialize, serde::Deserialize, specta::Type, tauri_specta::Event,
+)]
 #[command(name = "dayz-community-hub", about = "DayZ Community Hub")]
 pub struct CliArgs {
     /// Open the Direct Connect tab and pre-fill this IP address.
@@ -47,7 +49,6 @@ impl CliArgs {
         }
     }
 }
-
 
 /// Return the CLI args that were passed when this instance started.
 #[tauri::command]

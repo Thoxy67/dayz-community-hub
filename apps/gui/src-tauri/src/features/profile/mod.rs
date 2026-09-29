@@ -163,7 +163,10 @@ pub(crate) async fn clear_history(state: State<'_, SharedState>) -> Result<(), S
 /// Hide an IP's servers from the browser.
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn add_excluded_ip(ip: String, state: State<'_, SharedState>) -> Result<(), String> {
+pub(crate) async fn add_excluded_ip(
+    ip: String,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
     mutate_profile(&state, |s| {
         s.ctl.profile_mut().add_excluded_ip(ip);
         Ok(())

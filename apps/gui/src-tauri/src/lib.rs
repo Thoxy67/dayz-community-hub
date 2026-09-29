@@ -14,9 +14,9 @@ use std::sync::Arc;
 use tauri::Manager;
 use tauri_specta::Event;
 
-use features::{news, ping};
 #[cfg(windows)]
 use features::updater;
+use features::{news, ping};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run(args: CliArgs) {

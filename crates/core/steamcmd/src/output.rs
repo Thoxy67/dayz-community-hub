@@ -106,7 +106,9 @@ mod tests {
 
     #[test]
     fn detects_prompts() {
-        assert!(is_steam_guard_prompt("Please confirm the login in the Steam Mobile app on your phone."));
+        assert!(is_steam_guard_prompt(
+            "Please confirm the login in the Steam Mobile app on your phone."
+        ));
         assert!(is_steam_guard_prompt("Steam Guard code:"));
         assert!(is_password_prompt("password: "));
         assert!(!is_password_prompt("Logging in user"));

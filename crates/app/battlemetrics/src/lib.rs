@@ -58,7 +58,6 @@ pub async fn lookup(
     query_port: i64,
     name: &str,
 ) -> Result<BattleMetricsServer, String> {
-
     // Search by IP only to get all servers on this IP, then match by port
     let search_url = format!(
         "https://api.battlemetrics.com/servers?filter[game]=dayz&filter[search]={ip}&page[size]=50"

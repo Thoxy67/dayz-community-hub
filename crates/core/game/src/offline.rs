@@ -209,16 +209,10 @@ impl OfflineMode {
                     }
                     // Write directly from the archive stream — no intermediate buffer.
                     let mut out = std::fs::File::create(&full_path).map_err(|e| {
-                        dz_common::Error::Other(format!(
-                            "Failed to create {:?}: {}",
-                            full_path, e
-                        ))
+                        dz_common::Error::Other(format!("Failed to create {:?}: {}", full_path, e))
                     })?;
                     std::io::copy(&mut entry, &mut out).map_err(|e| {
-                        dz_common::Error::Other(format!(
-                            "Failed to write {:?}: {}",
-                            full_path, e
-                        ))
+                        dz_common::Error::Other(format!("Failed to write {:?}: {}", full_path, e))
                     })?;
                 }
             }

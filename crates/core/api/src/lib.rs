@@ -154,7 +154,10 @@ struct ServerListCacheRef<'a> {
 /// Persist a freshly-fetched server list. Serialized from a reference (no
 /// clone of the list) on the blocking pool, then written asynchronously.
 /// Failures are ignored: the cache only speeds up the next start.
-pub async fn save_server_list_cache(cache_path: &std::path::Path, list: std::sync::Arc<ServerList>) {
+pub async fn save_server_list_cache(
+    cache_path: &std::path::Path,
+    list: std::sync::Arc<ServerList>,
+) {
     let fetched_at = dz_common::time::now_secs();
     let data = tokio::task::spawn_blocking(move || {
         serde_json::to_vec(&ServerListCacheRef {

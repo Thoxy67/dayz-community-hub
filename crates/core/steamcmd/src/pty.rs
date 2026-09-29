@@ -119,7 +119,6 @@ impl SteamCmd {
         // Return a no-op child since the real child is owned by the watcher thread.
         Ok((Box::new(NoopChild), chunk_rx, writer))
     }
-
 }
 
 /// A no-op `portable_pty::Child` returned by `spawn_pty_streamed`.

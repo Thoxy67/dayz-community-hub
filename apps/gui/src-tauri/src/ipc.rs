@@ -99,7 +99,10 @@ pub(crate) fn builder() -> tauri_specta::Builder<tauri::Wry> {
 pub(crate) fn export(builder: &tauri_specta::Builder<tauri::Wry>) {
     let tmp = std::env::temp_dir().join(format!("dzch-bindings-{}.ts", std::process::id()));
     builder
-        .export(specta_typescript::Typescript::default().header(HEADER), &tmp)
+        .export(
+            specta_typescript::Typescript::default().header(HEADER),
+            &tmp,
+        )
         .expect("exporting the bindings");
     let fresh = std::fs::read_to_string(&tmp).expect("reading the exported bindings");
     let _ = std::fs::remove_file(&tmp);

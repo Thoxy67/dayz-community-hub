@@ -155,4 +155,3 @@ pub(crate) async fn open_mission_dir(
         .open_path(path.to_string_lossy().as_ref(), None::<&str>)
         .cmd_err()
 }
-

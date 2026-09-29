@@ -1,5 +1,5 @@
-use dz_common::Result;
 use dz_common::Error;
+use dz_common::Result;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
