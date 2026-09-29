@@ -1,7 +1,7 @@
 <script lang="ts">
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import type { Component } from "svelte";
   import TriangleAlert from "~icons/lucide/triangle-alert";
   import { initI18n } from "$lib/i18n";
@@ -29,7 +29,7 @@
   import ConnectDialog from "$shell/ConnectDialog.svelte";
 
   initI18n();
-  const s = useIntlayer("shell");
+  const s = dict("shell");
 
   // ── theme and frame ─────────────────────────────────────────────────────
   $effect(() => theme.apply());

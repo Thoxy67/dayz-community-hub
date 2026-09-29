@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Puzzle from "~icons/lucide/puzzle";
 
   /** How many mods a server runs; a button when there is somewhere to show them. */
   let { count, onclick }: { count: number; onclick?: () => void } = $props();
-  const c = useIntlayer("servers");
+  const c = dict("servers");
 </script>
 
 {#if count > 0}

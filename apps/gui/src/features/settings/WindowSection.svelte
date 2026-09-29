@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import AppWindow from "~icons/lucide/app-window";
   import { Field } from "$lib/components/ui/field";
   import { Slider } from "$lib/components/ui/slider";
@@ -7,7 +7,7 @@
   import { SettingsSection as Section } from "$lib/components/app";
   import { ColorToken } from "$lib/components/app";
 
-  const s = useIntlayer("settings");
+  const s = dict("settings");
   const frame = $derived(theme.frame);
 </script>
 

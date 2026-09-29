@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import ChevronUp from "~icons/lucide/chevron-up";
   import ChevronDown from "~icons/lucide/chevron-down";
   import X from "~icons/lucide/x";
@@ -20,7 +20,7 @@
    * typed by hand. Each can be switched off, moved and removed; the exact
    * command line is previewed underneath.
    */
-  const c = useIntlayer("connect");
+  const c = dict("connect");
 
   let pick = $state<string | null>(null);
   let custom = $state("");

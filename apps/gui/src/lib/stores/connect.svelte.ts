@@ -7,7 +7,8 @@
 import { getServerDetails } from "$lib/ipc/servers";
 import { launchDirect, launchServer, setupModSymlinks } from "$lib/ipc/launch";
 import { parseDzchUrl, readDzchFile } from "$lib/ipc/system";
-import type { CliArgs, ModDto, ServerDto } from "$lib/ipc/types";
+import type { CliArgs, ModDto } from "$lib/ipc/types";
+import type { ServerRow as ServerDto } from "$lib/ipc/servers";
 import { words } from "$lib/i18n";
 import { app } from "./app.svelte";
 import { mods } from "./mods.svelte";
@@ -97,14 +98,14 @@ class Connect {
 
   /** An address from a favourite or the history: the list's entry if there is one. */
   async address(ip: string, port: number) {
-    const s = servers.find(ip, port);
+    const s = await servers.resolve(ip, port);
     if (s) await this.server(s);
     else await this.direct({ ip, port });
   }
 
   /** Straight to an address (Direct Connect, the command line). */
   async direct(t: Target) {
-    const listed = servers.find(t.ip, t.port);
+    const listed = await servers.resolve(t.ip, t.port);
     const serverMods = listed ? await this.#modsOf(t.ip, listed.query_port, listed.mods_count) : [];
     if (serverMods.length === 0) return this.#launchAddress(t);
     const { missing, present } = this.#split(serverMods);

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Database from "~icons/lucide/database";
   import Upload from "~icons/lucide/upload";
   import Download from "~icons/lucide/download";
@@ -9,8 +9,8 @@
   import { profile } from "$lib/stores/profile.svelte";
   import { SettingsSection as Section } from "$lib/components/app";
 
-  const s = useIntlayer("settings");
-  const a = useIntlayer("about");
+  const s = dict("settings");
+  const a = dict("about");
   let includeMods = $state(true);
 </script>
 

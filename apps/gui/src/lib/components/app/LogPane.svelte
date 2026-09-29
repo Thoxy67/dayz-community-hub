@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Terminal from "~icons/lucide/terminal";
   import ArrowDownToLine from "~icons/lucide/arrow-down-to-line";
   import CopyIcon from "~icons/lucide/copy";
@@ -35,7 +35,7 @@
     class?: string;
   } = $props();
 
-  const c = useIntlayer("common");
+  const c = dict("common");
   let box = $state<HTMLDivElement | null>(null);
   let follow = $state(true);
   let filter = $state("");

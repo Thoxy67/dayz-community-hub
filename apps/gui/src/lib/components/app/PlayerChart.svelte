@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
 
   /**
    * A day of player counts, drawn as an area under a line, with the minimum,
@@ -8,7 +8,7 @@
    */
   let { points, max: capacity = null }: { points: [number, number][]; max?: number | null } =
     $props();
-  const c = useIntlayer("detail");
+  const c = dict("detail");
 
   const W = 300;
   const H = 64;

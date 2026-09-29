@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Star from "~icons/lucide/star";
   import History from "~icons/lucide/history";
   import { Signal } from "$lib/components/ui/signal";
@@ -13,7 +13,7 @@
    * then the servers joined most recently. A click fills the form and asks
    * the server.
    */
-  const c = useIntlayer("connect");
+  const c = dict("connect");
 
   type Pick = { key: string; name: string; ip: string; port: number; ts?: number; password?: string | null; fav: boolean };
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import RefreshCw from "~icons/lucide/refresh-cw";
   import Download from "~icons/lucide/download";
   import CircleCheck from "~icons/lucide/circle-check";
@@ -15,7 +15,7 @@
 
   /** The launcher's own version against the newest release, and installing it. */
   let { version, highlight = false }: { version: string; highlight?: boolean } = $props();
-  const a = useIntlayer("about");
+  const a = dict("about");
 
   // The backend answers "use your package manager" where it cannot update in place.
   const packaged = $derived(updater.state === "error" && /package|paquet|manager/i.test(updater.error));

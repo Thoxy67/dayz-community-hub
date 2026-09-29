@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Newspaper from "~icons/lucide/newspaper";
   import RefreshCw from "~icons/lucide/refresh-cw";
   import ExternalLink from "~icons/lucide/external-link";
@@ -20,7 +20,7 @@
   import { cn } from "$lib/cx";
   import { news, readMinutes } from "./news.svelte";
 
-  const n = useIntlayer("news");
+  const n = dict("news");
   void news.load();
 
   let category = $state<string | null>(null);

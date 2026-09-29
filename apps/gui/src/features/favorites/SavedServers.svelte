@@ -28,7 +28,7 @@
 
 <script lang="ts">
   import type { Component, Snippet } from "svelte";
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import PlugZap from "~icons/lucide/plug-zap";
   import Trash from "~icons/lucide/trash-2";
   import PanelRight from "~icons/lucide/panel-right";
@@ -85,10 +85,10 @@
     header: Snippet<[stats: Stats, toolbar: Snippet]>;
   } = $props();
 
-  const f = useIntlayer("favorites");
-  const h = useIntlayer("history");
-  const sv = useIntlayer("servers");
-  const nav = useIntlayer("nav");
+  const f = dict("favorites");
+  const h = dict("history");
+  const sv = dict("servers");
+  const nav = dict("nav");
 
   // ── rows ────────────────────────────────────────────────────────────────
   type Row = Entry & {

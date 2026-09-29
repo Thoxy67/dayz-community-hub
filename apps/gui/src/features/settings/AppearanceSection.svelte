@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Palette from "~icons/lucide/palette";
   import Monitor from "~icons/lucide/monitor";
   import Check from "~icons/lucide/check";
@@ -18,8 +18,8 @@
   import { SettingsSection as Section } from "$lib/components/app";
   import { ColorToken } from "$lib/components/app";
 
-  const s = useIntlayer("settings");
-  const t = useIntlayer("theme");
+  const s = dict("settings");
+  const t = dict("theme");
 
   function label(id: string): string {
     const key = `preset${id.replace(/(^|_)(\w)/g, (_, __, c: string) => c.toUpperCase())}` as keyof typeof $t;

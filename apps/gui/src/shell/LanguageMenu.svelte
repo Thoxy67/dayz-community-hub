@@ -1,6 +1,6 @@
 <script lang="ts">
   import { DropdownMenu as Menu } from "bits-ui";
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import FlagGb from "~icons/circle-flags/gb";
   import FlagFr from "~icons/circle-flags/fr";
   import FlagDe from "~icons/circle-flags/de";
@@ -12,7 +12,7 @@
   import { LOCALES, LOCALE_LABELS, getLocale, setLocale, type Locale } from "$lib/i18n";
 
   const FLAGS = { en: FlagGb, fr: FlagFr, de: FlagDe, es: FlagEs, ru: FlagRu } as const;
-  const s = useIntlayer("shell");
+  const s = dict("shell");
   let current = $state<Locale>(getLocale());
   const Flag = $derived(FLAGS[current]);
 </script>

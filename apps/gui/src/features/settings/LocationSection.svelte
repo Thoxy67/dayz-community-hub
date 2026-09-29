@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import MapPin from "~icons/lucide/map-pin";
   import Crosshair from "~icons/lucide/crosshair";
   import MapIcon from "~icons/lucide/map";
@@ -14,7 +14,7 @@
   import { SettingsSection as Section } from "$lib/components/app";
   import { form } from "./account-form.svelte";
 
-  const s = useIntlayer("settings");
+  const s = dict("settings");
 
   let detecting = $state(false);
   let error = $state("");

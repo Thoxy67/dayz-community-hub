@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getVersion } from "@tauri-apps/api/app";
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import type { Component } from "svelte";
   import ServerIcon from "~icons/lucide/server";
   import Puzzle from "~icons/lucide/puzzle";
@@ -36,7 +36,7 @@
    * What this launcher is, how to use it, and whether it is current: the
    * version and its update, the ways in, the keys, the machine it runs on.
    */
-  const a = useIntlayer("about");
+  const a = dict("about");
 
   let version = $state("");
   let specs = $state<SystemSpecsDto | null>(null);

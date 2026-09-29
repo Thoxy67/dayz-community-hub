@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getVersion } from "@tauri-apps/api/app";
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Pause from "~icons/lucide/pause";
   import PlayIcon from "~icons/lucide/play";
   import RefreshCw from "~icons/lucide/refresh-cw";
@@ -19,7 +19,7 @@
    * ping scan and its progress, how old the server list is, a SteamCMD job
    * running behind a closed window, and the build.
    */
-  const n = useIntlayer("nav");
+  const n = dict("nav");
   let version = $state("");
   if (inTauri) getVersion().then((v) => (version = v)).catch(() => {});
 

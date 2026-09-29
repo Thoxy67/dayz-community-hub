@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Ban from "~icons/lucide/ban";
   import { cn } from "$lib/cx";
   import { profile } from "$lib/stores/profile.svelte";
 
   /** Hide every server at this IP from the browser, or bring them back. Shows on row hover. */
   let { ip, always = false }: { ip: string; always?: boolean } = $props();
-  const c = useIntlayer("servers");
+  const c = dict("servers");
   const on = $derived(profile.excludedIps.has(ip));
 </script>
 

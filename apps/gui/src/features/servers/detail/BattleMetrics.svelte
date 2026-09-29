@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import ChartLine from "~icons/lucide/chart-line";
   import RefreshCw from "~icons/lucide/refresh-cw";
   import ExternalLink from "~icons/lucide/external-link";
@@ -21,7 +21,7 @@
   /** BattleMetrics' view of the server: rank, uptime, where it is, a day of players. */
   let { ip, port, queryPort, name }: { ip: string; port: number; queryPort: number; name: string } =
     $props();
-  const c = useIntlayer("detail");
+  const c = dict("detail");
 
   const hasKey = $derived(!!profile.data?.battlemetrics_api_key);
   const entry = $derived(serverData.bm(ip, port, queryPort));

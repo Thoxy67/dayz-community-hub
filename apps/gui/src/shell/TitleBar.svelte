@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Minus from "~icons/lucide/minus";
   import Square from "~icons/lucide/square";
   import Copy from "~icons/lucide/copy";
@@ -24,8 +24,8 @@
   import LanguageMenu from "./LanguageMenu.svelte";
   import ThemeMenu from "./ThemeMenu.svelte";
 
-  const s = useIntlayer("shell");
-  const n = useIntlayer("nav");
+  const s = dict("shell");
+  const n = dict("nav");
   const win = inTauri ? getCurrentWindow() : null;
 
   const here = $derived(placeOf(app.view));
@@ -67,7 +67,7 @@
         </span>
       </Tooltip>
     {/snippet}
-    {@render stat(ServerIcon, num(servers.stats?.server_count ?? (servers.list.length || null)), $s.titlebarServers.value, "text-info")}
+    {@render stat(ServerIcon, num(servers.stats?.server_count ?? (servers.total || null)), $s.titlebarServers.value, "text-info")}
     {@render stat(Users, num(servers.stats?.total_players), $s.titlebarPlayersIngame.value, "text-ok")}
     {@render stat(SteamIcon, num(servers.steamPlayers), $s.titlebarPlayersSteam.value, "text-fg-muted")}
   </div>

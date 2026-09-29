@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Gamepad from "~icons/lucide/gamepad-2";
   import KeyRound from "~icons/lucide/key-round";
   import TriangleAlert from "~icons/lucide/triangle-alert";
@@ -9,7 +9,7 @@
   import SecretInput from "$lib/components/app/SecretInput.svelte";
   import { wizard } from "./wizard.svelte";
 
-  const w = useIntlayer("setup");
+  const w = dict("setup");
 </script>
 
 <div class="space-y-3">

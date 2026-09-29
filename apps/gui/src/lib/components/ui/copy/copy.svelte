@@ -2,7 +2,7 @@
   import type { Snippet } from "svelte";
   import Copy from "~icons/lucide/copy";
   import Check from "~icons/lucide/check";
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import { copyText } from "$lib/ipc/native";
   import { cn } from "$lib/cx";
 
@@ -18,7 +18,7 @@
     children,
   }: { text: string; title?: string; class?: string; children?: Snippet } = $props();
 
-  const c = useIntlayer("common");
+  const c = dict("common");
   let copied = $state(false);
   let timer: ReturnType<typeof setTimeout> | undefined;
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Wand from "~icons/lucide/wand-sparkles";
   import Check from "~icons/lucide/check";
   import Cpu from "~icons/lucide/cpu";
@@ -18,7 +18,7 @@
   import { GROUPS, META, OTHER, flagText, recommend, wordOf, type Group } from "./catalog";
   import OptionRow from "./OptionRow.svelte";
 
-  const o = useIntlayer("options");
+  const o = dict("options");
 
   let search = $state("");
   let activeOnly = $state(false);

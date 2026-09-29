@@ -65,7 +65,6 @@ class App {
       connect.flushCli();
       await servers.load();
       void servers.startScan();
-      void servers.prefetchTop();
       if (result.from_cache) void servers.refresh(true);
     } catch (e) {
       this.initError = errorText(e);

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Radar from "~icons/lucide/radar";
   import { Field } from "$lib/components/ui/field";
   import { Slider } from "$lib/components/ui/slider";
@@ -7,8 +7,8 @@
   import { profile, type PingSettings } from "$lib/stores/profile.svelte";
   import { SettingsSection as Section } from "$lib/components/app";
 
-  const s = useIntlayer("settings");
-  const a = useIntlayer("about");
+  const s = dict("settings");
+  const a = dict("about");
 
   // Local while dragging; written when the thumb is let go.
   let v = $state<PingSettings>(read());

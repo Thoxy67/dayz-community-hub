@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import { Players } from "$lib/components/ui/players";
   import { serverData } from "$lib/stores/server-data.svelte";
   import { servers } from "$lib/stores/servers.svelte";
 
   /** Who is on a server right now, from the freshest source; click to ask it directly. */
   let { ip, queryPort, compact = false }: { ip: string; queryPort: number; compact?: boolean } = $props();
-  const c = useIntlayer("servers");
+  const c = dict("servers");
   const listed = $derived(servers.find(ip, queryPort));
   const n = $derived(listed ? servers.count(listed) : serverData.players(ip, queryPort));
 </script>

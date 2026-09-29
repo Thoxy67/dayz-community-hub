@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import X from "~icons/lucide/x";
   import PlugZap from "~icons/lucide/plug-zap";
   import RefreshCw from "~icons/lucide/refresh-cw";
@@ -54,7 +54,7 @@
     focusMods?: boolean;
   } = $props();
 
-  const c = useIntlayer("detail");
+  const c = dict("detail");
 
   const listed = $derived(servers.find(ip, port));
   const live = $derived(serverData.a2s(ip, port));

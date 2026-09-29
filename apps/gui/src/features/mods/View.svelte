@@ -1,6 +1,6 @@
 <script lang="ts">
   import { DropdownMenu as Menu } from "bits-ui";
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Puzzle from "~icons/lucide/puzzle";
   import CloudDownload from "~icons/lucide/cloud-download";
   import RefreshCw from "~icons/lucide/refresh-cw";
@@ -51,7 +51,7 @@
    * Workshop, which are linked into the game, and every operation on them,
    * one at a time or in bulk.
    */
-  const m = useIntlayer("mods");
+  const m = dict("mods");
 
   $effect(() => {
     if (mods.installed.length === 0 && !mods.loading) void mods.load();

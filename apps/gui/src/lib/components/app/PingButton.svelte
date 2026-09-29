@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import TriangleAlert from "~icons/lucide/triangle-alert";
   import { Signal } from "$lib/components/ui/signal";
   import { servers } from "$lib/stores/servers.svelte";
@@ -14,7 +14,7 @@
     size = "sm",
     label = true,
   }: { ip: string; queryPort: number; size?: "xs" | "sm" | "md"; label?: boolean } = $props();
-  const c = useIntlayer("servers");
+  const c = dict("servers");
   const key = $derived(`${ip}:${queryPort}`);
   const listed = $derived(servers.find(ip, queryPort));
   const warn = $derived.by(() => {

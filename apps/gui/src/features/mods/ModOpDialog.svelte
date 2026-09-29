@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Dialog } from "bits-ui";
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import X from "~icons/lucide/x";
   import Minimize from "~icons/lucide/minimize-2";
   import Check from "~icons/lucide/check";
@@ -34,8 +34,8 @@
    * Closing it while it runs only hides it: the operation carries on and
    * the status bar keeps showing it.
    */
-  const c = useIntlayer("progress");
-  const m = useIntlayer("mods");
+  const c = dict("progress");
+  const m = dict("mods");
   const op = $derived(mods.op);
   const running = $derived(op.phase !== "finished");
 

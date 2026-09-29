@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import History from "~icons/lucide/history";
   import Trash from "~icons/lucide/trash-2";
   import { PageHeader, Figure } from "$lib/components/app";
@@ -9,9 +9,9 @@
   import SavedServers, { type Entry } from "$features/favorites/SavedServers.svelte";
 
   /** Every server joined, newest first: one click back into any of them. */
-  const h = useIntlayer("history");
-  const f = useIntlayer("favorites");
-  const nav = useIntlayer("nav");
+  const h = dict("history");
+  const f = dict("favorites");
+  const nav = dict("nav");
 
   const entries = $derived(
     (profile.data?.history ?? []).map((hist): Entry => ({

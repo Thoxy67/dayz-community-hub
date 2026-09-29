@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Play from "~icons/lucide/play";
   import { Button } from "$lib/components/ui/button";
   import { connect } from "$lib/stores/connect.svelte";
@@ -15,7 +15,7 @@
     size = "sm",
     compact = false,
   }: { ip: string; port: number; password?: string | null; size?: "sm" | "lg"; compact?: boolean } = $props();
-  const c = useIntlayer("servers");
+  const c = dict("servers");
 </script>
 
 <Button

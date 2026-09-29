@@ -1,16 +1,23 @@
 /**
  * Languages: which one, installing it, and reading words outside components.
  *
- * `initI18n` must run during the root component's initialisation, before any
- * child reads a dictionary. Components read words with `useIntlayer(key)` and
- * `$c.word`; code that is not a component (actions, toasts) reads the current
- * language's words with `words(key)`.
+ * `initI18n` must run during the root component's initialisation. Components
+ * read words with `dict(key)` and `$c.word`; code that is not a component
+ * (actions, toasts) reads the current language's words with `words(key)`.
+ *
+ * `dict` and not svelte-intlayer's `useIntlayer`: that one builds a new store
+ * per component and transforms the whole dictionary again for each. A server
+ * row holds eight components reading the same dictionary and rows mount as
+ * the list scrolls, so that was hundreds of full dictionary transforms per
+ * frame, enough to freeze the window. Here each dictionary is one shared
+ * store, transformed once per language.
  *
  * The choice lives in one `localStorage` key: this is a desktop app with no
  * server and no routing. A first run follows the OS language when it is one
  * we ship, English otherwise.
  */
-import { getIntlayer, setupIntlayer } from "svelte-intlayer";
+import { derived, type Readable } from "svelte/store";
+import { getIntlayer, intlayerStore, setupIntlayer, type useIntlayer } from "svelte-intlayer";
 import type { DictionaryKeys } from "@intlayer/types/module_augmentation";
 
 export const LOCALES = ["en", "fr", "de", "es", "ru"] as const;
@@ -49,7 +56,11 @@ let setter: ((l: Locale) => void) | null = null;
 /** Install the locale context. Call once, at the root. */
 export function initI18n() {
   const ctx = setupIntlayer(current);
-  setter = (l) => ctx.setLocale(l);
+  intlayerStore.setLocale(current);
+  setter = (l) => {
+    ctx.setLocale(l);
+    intlayerStore.setLocale(l);
+  };
   document.documentElement.lang = current;
   return ctx;
 }
@@ -68,6 +79,18 @@ export function setLocale(locale: Locale) {
   } catch {
     // The language still changes for this session.
   }
+}
+
+const shared = new Map<string, Readable<unknown>>();
+
+/** A dictionary as a store that follows the language: one per key, shared by every component. */
+export function dict<K extends DictionaryKeys>(key: K): ReturnType<typeof useIntlayer<K>> {
+  let store = shared.get(key);
+  if (!store) {
+    store = derived(intlayerStore, ($s) => getIntlayer(key, $s.locale));
+    shared.set(key, store);
+  }
+  return store as ReturnType<typeof useIntlayer<K>>;
 }
 
 /** A dictionary in the current language, for code outside components. */

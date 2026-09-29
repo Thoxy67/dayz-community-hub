@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Gamepad from "~icons/lucide/gamepad-2";
   import TriangleAlert from "~icons/lucide/triangle-alert";
   import CircleCheck from "~icons/lucide/circle-check";
@@ -21,8 +21,8 @@
   import { PathInput, SecretInput as Secret } from "$lib/components/app";
   import { form } from "./account-form.svelte";
 
-  const s = useIntlayer("settings");
-  const a = useIntlayer("about");
+  const s = dict("settings");
+  const a = dict("about");
 
   let status = $state<SteamcmdStatus | null>(null);
   let detecting = $state(false);

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Download from "~icons/lucide/download";
   import { Dialog } from "$lib/components/ui/dialog";
   import { Button } from "$lib/components/ui/button";
@@ -9,7 +9,7 @@
 
   /** Workshop mods by id or link, pasted in, then reviewed like any update. */
   let { open = $bindable(false) }: { open?: boolean } = $props();
-  const m = useIntlayer("mods");
+  const m = dict("mods");
   let text = $state("");
   const ids = $derived(parseWorkshopIds(text));
   $effect(() => {

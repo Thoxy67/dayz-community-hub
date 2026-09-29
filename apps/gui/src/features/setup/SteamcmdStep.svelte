@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import CircleCheck from "~icons/lucide/circle-check";
   import TriangleAlert from "~icons/lucide/triangle-alert";
   import Download from "~icons/lucide/download";
@@ -18,7 +18,7 @@
   import { cn } from "$lib/cx";
   import { wizard } from "./wizard.svelte";
 
-  const w = useIntlayer("setup");
+  const w = dict("setup");
 
   const DISTROS = [
     { label: "Arch / Manjaro", cmd: "yay -S steamcmd" },

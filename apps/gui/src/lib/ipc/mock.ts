@@ -101,6 +101,67 @@ const articles = Array.from({ length: 8 }, (_, i) => ({
 }));
 
 type Ch<T> = { onmessage: (m: T) => void };
+
+type Server = (typeof servers)[number];
+const toRow = (x: Server) => {
+  const k = `${x.ip}:${x.query_port}`;
+  const ms = pingOf(k);
+  return {
+    ...x,
+    bots: 0,
+    ping_ms: ms > 270 ? 9999 : ms,
+    ping_failed: ms > 270,
+    favorite: profile.favorites.some((f) => f.ip === x.ip && f.port === x.query_port),
+    excluded: profile.excluded_ips.includes(x.ip),
+    unverified_full: false,
+  };
+};
+
+// What the backend does for real in `servers_query`, done here just enough for screenshots.
+function queryServers(q: Record<string, unknown>) {
+  const tri = (f: unknown, v: boolean) => f === "all" || (f === "only" ? v : !v);
+  const search = String(q.search ?? "").toLowerCase();
+  let list = servers.filter(
+    (x) =>
+      (!search || x.name.toLowerCase().includes(search) || x.ip.includes(search) || x.map.includes(search)) &&
+      (!q.map || x.map === q.map) &&
+      tri(q.firstPerson, x.first_person_only) &&
+      tri(q.password, x.password) &&
+      tri(q.battleye, x.battl_eye) &&
+      tri(q.modded, x.mods_count > 0) &&
+      (!q.hideEmpty || x.players > 0) &&
+      (!q.hideFull || x.players < x.max_players) &&
+      (q.showExcluded || !profile.excluded_ips.includes(x.ip)),
+  );
+  const dir = q.asc ? 1 : -1;
+  const by: Record<string, (x: Server) => number | string> = {
+    ping: (x) => pingOf(`${x.ip}:${x.query_port}`),
+    players: (x) => x.players,
+    name: (x) => x.name,
+    map: (x) => x.map,
+    mods: (x) => x.mods_count,
+    time: (x) => x.time,
+  };
+  const f = by[String(q.sort)];
+  if (f) list = [...list].sort((a, b) => (f(a) > f(b) ? dir : f(a) < f(b) ? -dir : 0));
+  const offset = Number(q.offset ?? 0);
+  const rows = list.slice(offset, offset + Number(q.limit ?? 100)).map(toRow);
+  const pings = list.map((x) => pingOf(`${x.ip}:${x.query_port}`)).filter((m) => m <= 270);
+  return {
+    total: list.length,
+    rows,
+    stats: {
+      shown: list.length,
+      players: list.reduce((n, x) => n + x.players, 0),
+      full: list.filter((x) => x.players > 0 && x.players >= x.max_players).length,
+      empty: list.filter((x) => x.players === 0).length,
+      modded: list.filter((x) => x.mods_count > 0).length,
+      pinged: pings.length,
+      best_ping: pings.length ? Math.min(...pings) : null,
+    },
+    generation: 1,
+  };
+}
 const pingOf = (k: string) => 20 + ((k.length * 37 + k.charCodeAt(k.length - 1) * 11) % 260);
 
 export function installMock() {
@@ -117,12 +178,38 @@ export function installMock() {
     const a = (args ?? {}) as Record<string, unknown>;
     switch (cmd) {
       case "check_first_launch":
-        return false;
+        // `?wizard=1` opens the first-launch setup.
+        return new URLSearchParams(location.search).get("wizard") === "1";
       case "initialize":
         return { server_count: servers.length, from_cache: false, is_first_launch: false };
       case "get_servers":
-      case "refresh_servers":
         return servers;
+      case "refresh_servers":
+        return servers.length;
+      case "server_maps": {
+        const m = new Map<string, number>();
+        for (const x of servers) m.set(x.map, (m.get(x.map) ?? 0) + 1);
+        return [...m].sort((a, b) => b[1] - a[1]).map(([map, count]) => ({ map, count }));
+      }
+      case "servers_query":
+        return queryServers(a.query as Record<string, unknown>);
+      case "servers_lookup":
+        return (a.keys as string[]).map((k) => {
+          const [ip, port] = k.split(":");
+          const x = servers.find((s) => s.ip === ip && (s.query_port === Number(port) || s.game_port === Number(port)));
+          return x ? toRow(x) : null;
+        });
+      case "start_scan": {
+        const ch = a.onProgress as Ch<unknown>;
+        let done = 0;
+        const step = () => {
+          done = Math.min(servers.length, done + 700);
+          ch.onmessage({ done, total: servers.length, paused: false, running: done < servers.length });
+          if (done < servers.length) setTimeout(step, 250);
+        };
+        setTimeout(step, 100);
+        return null;
+      }
       case "get_server_details": {
         const s = servers.find((x) => x.ip === a.ip);
         return { ...s, mods: mods.slice(0, s?.mods_count ?? 0).map((m) => ({ name: m.name, steam_workshop_id: m.id })) };

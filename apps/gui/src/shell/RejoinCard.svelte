@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Play from "~icons/lucide/play";
   import X from "~icons/lucide/x";
   import MapIcon from "~icons/lucide/map";
@@ -19,7 +19,7 @@
    * before joining. Put away until another server becomes the last one.
    */
   let { collapsed = false }: { collapsed?: boolean } = $props();
-  const n = useIntlayer("nav");
+  const n = dict("nav");
 
   const last = $derived(profile.data?.history?.[0] ?? null);
   const addr = $derived(last ? `${last.ip}:${last.port}` : "");

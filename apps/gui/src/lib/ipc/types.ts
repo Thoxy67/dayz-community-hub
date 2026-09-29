@@ -3,12 +3,7 @@
  * from `bindings.ts`, generated from the Rust types by `make bindings`; only
  * the names the interface uses are chosen here.
  */
-import type {
-  BattleMetricsServer,
-  PingResultDto,
-  ServerDto as ServerFull,
-  ServerSlimDto,
-} from "./bindings";
+import type { BattleMetricsServer, PingResultDto, ServerDto as ServerFull, ServerRow } from "./bindings";
 
 export type {
   A2sDetailsDto,
@@ -38,11 +33,8 @@ export type {
   UpdateInfo,
 } from "./bindings";
 
-/**
- * A server as the browser's table shows it. `bots` is not in the list: it
- * comes from pings (see the servers store), and old code read it from here.
- */
-export type ServerDto = ServerSlimDto & { bots?: number };
+/** A server as every list shows it, with its live ping and head-count merged in by the backend. */
+export type ServerDto = ServerRow;
 /** A server with its mod list, fetched on demand. */
 export type ServerFullDto = ServerFull;
 export type BattleMetricsDto = BattleMetricsServer;

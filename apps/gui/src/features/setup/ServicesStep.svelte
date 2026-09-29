@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import IdCard from "~icons/lucide/id-card";
   import ChartLine from "~icons/lucide/chart-line";
   import ExternalLink from "~icons/lucide/external-link";
@@ -11,7 +11,7 @@
   import { openUrl } from "$lib/ipc/native";
   import { wizard } from "./wizard.svelte";
 
-  const w = useIntlayer("setup");
+  const w = dict("setup");
 </script>
 
 <div class="space-y-3">

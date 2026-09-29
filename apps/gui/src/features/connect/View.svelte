@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import PlugZap from "~icons/lucide/plug-zap";
   import TriangleAlert from "~icons/lucide/triangle-alert";
   import Search from "~icons/lucide/search";
@@ -29,8 +29,8 @@
   import LaunchArgs from "./LaunchArgs.svelte";
   import RecentList from "./RecentList.svelte";
 
-  const c = useIntlayer("connect");
-  const common = useIntlayer("common");
+  const c = dict("connect");
+  const common = dict("common");
 
   // Arriving from elsewhere ("open in Direct Connect", a .dzch): fill and ask.
   $effect(() => {

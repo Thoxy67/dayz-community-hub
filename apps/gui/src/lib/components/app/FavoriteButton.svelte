@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Star from "~icons/lucide/star";
   import { cn } from "$lib/cx";
   import { profile } from "$lib/stores/profile.svelte";
@@ -11,7 +11,7 @@
     port,
     size = "sm",
   }: { name: string; ip: string; port: number; size?: "sm" | "md" } = $props();
-  const c = useIntlayer("servers");
+  const c = dict("servers");
   const on = $derived(profile.isFavorite(ip, port));
 </script>
 

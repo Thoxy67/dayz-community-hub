@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import KeyRound from "~icons/lucide/key-round";
   import ExternalLink from "~icons/lucide/external-link";
   import { Field } from "$lib/components/ui/field";
@@ -10,8 +10,8 @@
   import { SecretInput as Secret } from "$lib/components/app";
   import { form } from "./account-form.svelte";
 
-  const s = useIntlayer("settings");
-  const a = useIntlayer("about");
+  const s = dict("settings");
+  const a = dict("about");
   const steamReady = $derived(!!form.f.steamApiKey && !!form.f.steamId);
   const bmReady = $derived(!!form.f.battlemetricsApiKey);
 </script>

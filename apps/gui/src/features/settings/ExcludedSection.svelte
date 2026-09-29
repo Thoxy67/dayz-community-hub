@@ -1,21 +1,14 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Ban from "~icons/lucide/ban";
   import X from "~icons/lucide/x";
   import { Tag } from "$lib/components/ui/tag";
   import { profile } from "$lib/stores/profile.svelte";
-  import { servers } from "$lib/stores/servers.svelte";
   import { SettingsSection as Section } from "$lib/components/app";
 
-  const s = useIntlayer("settings");
+  const s = dict("settings");
   const ips = $derived(profile.data?.excluded_ips ?? []);
-  /** How many listed servers each address hides. */
-  const hidden = $derived.by(() => {
-    const m = new Map<string, number>();
-    const set = new Set(ips);
-    for (const sv of servers.list) if (set.has(sv.ip)) m.set(sv.ip, (m.get(sv.ip) ?? 0) + 1);
-    return m;
-  });
+
 </script>
 
 <Section id="excluded" title={$s.sectionExcluded.value} description={$s.excludedHint.value} icon={Ban}>
@@ -32,7 +25,6 @@
         <li class="flex items-center gap-2 bg-bg px-pad py-1.5">
           <Ban class="size-3.5 shrink-0 text-err" />
           <span class="font-mono text-xs text-fg" data-selectable>{ip}</span>
-          {#if hidden.get(ip)}<span class="num font-mono text-2xs text-fg-faint">×{hidden.get(ip)}</span>{/if}
           <button
             type="button"
             class="ml-auto grid size-control-sm place-items-center rounded-sm text-fg-faint hover:bg-raised hover:text-fg"

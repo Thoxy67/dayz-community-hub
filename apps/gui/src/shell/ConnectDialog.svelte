@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import TriangleAlert from "~icons/lucide/triangle-alert";
   import ExternalLink from "~icons/lucide/external-link";
   import Play from "~icons/lucide/play";
@@ -16,8 +16,8 @@
    * or which are here and may be behind, each with its dates and size, and
    * whether to fetch them first. One dialog, where there used to be two.
    */
-  const c = useIntlayer("connect");
-  const m = useIntlayer("mods");
+  const c = dict("connect");
+  const m = dict("mods");
 
   const req = $derived(connect.request);
   let fetch = $state(false);

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import FolderOpen from "~icons/lucide/folder-open";
   import { Input } from "$lib/components/ui/input";
   import { Button } from "$lib/components/ui/button";
@@ -28,7 +28,7 @@
     onpick?: (path: string) => void;
   } = $props();
 
-  const s = useIntlayer("settings");
+  const s = dict("settings");
 
   async function browse() {
     const path = await pickFile(title, { directory, filters });

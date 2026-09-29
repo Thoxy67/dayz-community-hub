@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Puzzle from "~icons/lucide/puzzle";
   import FolderOpen from "~icons/lucide/folder-open";
   import ExternalLink from "~icons/lucide/external-link";
@@ -19,7 +19,7 @@
 
   /** Everything known about one installed mod, and what can be done to it. */
   let { mod }: { mod: InstalledModDto | null } = $props();
-  const m = useIntlayer("mods");
+  const m = dict("mods");
 
   const behind = $derived(
     mod?.remote_updated && mod.remote_updated > mod.local_updated

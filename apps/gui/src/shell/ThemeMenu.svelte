@@ -1,6 +1,6 @@
 <script lang="ts">
   import { DropdownMenu as Menu } from "bits-ui";
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Palette from "~icons/lucide/palette";
   import Monitor from "~icons/lucide/monitor";
   import Pencil from "~icons/lucide/pencil";
@@ -11,7 +11,7 @@
   import type { Preset } from "$lib/theme/presets";
   import { app } from "$lib/stores/app.svelte";
 
-  const t = useIntlayer("theme");
+  const t = dict("theme");
 
   // Each preset is shown by its own colours: ground, panel, accent and the
   // two status colours, so choosing is looking, not reading names.

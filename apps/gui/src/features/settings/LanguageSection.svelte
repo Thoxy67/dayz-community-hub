@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Languages from "~icons/lucide/languages";
   import Check from "~icons/lucide/check";
   import FlagGb from "~icons/circle-flags/gb";
@@ -11,7 +11,7 @@
   import { LOCALES, LOCALE_LABELS, getLocale, setLocale, type Locale } from "$lib/i18n";
   import { SettingsSection as Section } from "$lib/components/app";
 
-  const s = useIntlayer("settings");
+  const s = dict("settings");
   const FLAGS = { en: FlagGb, fr: FlagFr, de: FlagDe, es: FlagEs, ru: FlagRu } as const;
   let current = $state<Locale>(getLocale());
 </script>

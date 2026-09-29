@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Monitor from "~icons/lucide/monitor";
   import Check from "~icons/lucide/check";
   import { theme, PRESETS } from "$lib/theme/theme.svelte";
@@ -17,7 +17,7 @@
     class: klass = "",
   }: { systemLabel: string; columns?: 3 | 4 | 5 | 6; class?: string } = $props();
 
-  const t = useIntlayer("theme");
+  const t = dict("theme");
   const ordered = [...PRESETS].sort((a, b) => (a.scheme === b.scheme ? 0 : a.scheme === "dark" ? -1 : 1));
   const cols = { 3: "grid-cols-3", 4: "grid-cols-4", 5: "grid-cols-5", 6: "grid-cols-6" } as const;
 

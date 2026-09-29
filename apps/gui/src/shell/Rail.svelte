@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import PanelLeftClose from "~icons/lucide/panel-left-close";
   import PanelLeftOpen from "~icons/lucide/panel-left-open";
   import { Tooltip } from "$lib/components/ui/tooltip";
@@ -14,14 +14,14 @@
   import { GROUPS, PLACES, type Place } from "./nav";
   import RejoinCard from "./RejoinCard.svelte";
 
-  const n = useIntlayer("nav");
+  const n = dict("nav");
   const collapsed = $derived(prefs.railCollapsed);
 
   /** The figure beside each place: how many are in there. */
   function countOf(id: ViewId): { value: string; tone?: string } | null {
     switch (id) {
       case "servers":
-        return servers.list.length ? { value: compact(servers.list.length) } : null;
+        return servers.total ? { value: compact(servers.total) } : null;
       case "favorites":
         return profile.data?.favorites.length ? { value: String(profile.data.favorites.length) } : null;
       case "history":

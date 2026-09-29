@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Lock from "~icons/lucide/lock";
   import KeyRound from "~icons/lucide/key-round";
 
@@ -10,7 +10,7 @@
     battleye = false,
     savedPassword = false,
   }: { password?: boolean; firstPerson?: boolean; battleye?: boolean | null; savedPassword?: boolean } = $props();
-  const c = useIntlayer("servers");
+  const c = dict("servers");
 </script>
 
 {#if password}<Lock class="size-3 shrink-0 text-err" aria-label={$c.passwordProtected.value} />{/if}

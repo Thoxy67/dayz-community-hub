@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import UserRound from "~icons/lucide/user-round";
   import { Field } from "$lib/components/ui/field";
   import { Input } from "$lib/components/ui/input";
@@ -7,7 +7,7 @@
   import { SettingsSection as Section } from "$lib/components/app";
   import { form } from "./account-form.svelte";
 
-  const s = useIntlayer("settings");
+  const s = dict("settings");
 </script>
 
 <Section id="account" title={$s.sectionAccount.value} description={$s.identity.value} icon={UserRound}>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Eye from "~icons/lucide/eye";
   import EyeOff from "~icons/lucide/eye-off";
   import { Input } from "$lib/components/ui/input";
@@ -13,7 +13,7 @@
     autocomplete = "off",
   }: { value: string; id?: string; placeholder?: string; autocomplete?: "off" | "current-password" } = $props();
 
-  const s = useIntlayer("settings");
+  const s = dict("settings");
   let shown = $state(false);
 </script>
 

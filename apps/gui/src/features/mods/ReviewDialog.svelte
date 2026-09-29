@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import ExternalLink from "~icons/lucide/external-link";
   import TriangleAlert from "~icons/lucide/triangle-alert";
   import Download from "~icons/lucide/download";
@@ -12,7 +12,7 @@
   import { review, workshopUrl } from "./review.svelte";
 
   /** What an update or install will touch, before SteamCMD is started. */
-  const m = useIntlayer("mods");
+  const m = dict("mods");
   const p = $derived(review.pending);
   const install = $derived(p?.kind === "install");
   const count = $derived(p?.mods.length ?? 0);

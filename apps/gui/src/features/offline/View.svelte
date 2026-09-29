@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Tent from "~icons/game-icons/camping-tent";
   import Download from "~icons/lucide/download";
   import FolderOpen from "~icons/lucide/folder-open";
@@ -23,7 +23,7 @@
   import { offline, type Mission, type Tone } from "./offline.svelte";
 
   const REPO_URL = "https://github.com/Arkensor/DayZCommunityOfflineMode";
-  const o = useIntlayer("offline");
+  const o = dict("offline");
 
   offline.listen();
   $effect(() => {

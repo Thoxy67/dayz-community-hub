@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import SlidersHorizontal from "~icons/lucide/sliders-horizontal";
   import Sparkles from "~icons/lucide/sparkles";
   import FolderOpen from "~icons/lucide/folder-open";
@@ -22,7 +22,7 @@
   let { opt, tone, recommended }: { opt: LaunchOptionDto; tone: string; recommended?: string } =
     $props();
 
-  const o = useIntlayer("options");
+  const o = dict("options");
   const meta = $derived(META[opt.key]);
   const Icon = $derived(meta?.icon ?? SlidersHorizontal);
   const kind = $derived(meta?.value ?? (opt.value !== null ? "text" : "none"));

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import ServerIcon from "~icons/lucide/server";
   import Puzzle from "~icons/lucide/puzzle";
   import Star from "~icons/lucide/star";
@@ -33,9 +33,9 @@
    * hand on the right, and a way out at every step. Everything asked here
    * can be changed later in Settings.
    */
-  const w = useIntlayer("setup");
-  const nav = useIntlayer("nav");
-  const tt = useIntlayer("theme");
+  const w = dict("setup");
+  const nav = dict("nav");
+  const tt = dict("theme");
 
   /** The worn preset's own name. */
   function themeName(id: string | null): string {

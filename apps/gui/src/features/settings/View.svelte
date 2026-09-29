@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Save from "~icons/lucide/save";
   import Undo from "~icons/lucide/undo-2";
   import TriangleAlert from "~icons/lucide/triangle-alert";
@@ -25,7 +25,7 @@
    * The account fields are edited together and saved together; everything
    * else (ping, theme, language, window) takes effect as it is changed.
    */
-  const s = useIntlayer("settings");
+  const s = dict("settings");
 
   const SECTIONS = [
     { id: "account", label: () => $s.sectionAccount.value },

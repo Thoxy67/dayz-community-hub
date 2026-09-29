@@ -1,11 +1,11 @@
 /** The public server list, one server's details, and live queries. */
 import { call, type Channel } from "./core";
+import type { MapCount, ScanProgress, ServerPage, ServerQuery, ServerRow } from "./bindings";
 import type {
   A2sDetailsDto,
   AppStatsDto,
   BattleMetricsDto,
   PingResult,
-  ServerDto,
   ServerFullDto,
 } from "./types";
 
@@ -13,8 +13,26 @@ export type InitResult = { server_count: number; from_cache: boolean; is_first_l
 
 export const checkFirstLaunch = () => call<boolean>("check_first_launch");
 export const initialize = () => call<InitResult>("initialize");
-export const getServers = () => call<ServerDto[]>("get_servers");
-export const refreshServers = () => call<ServerDto[]>("refresh_servers");
+/** Fetch a fresh list into the backend; the UI only learns how many. */
+export const refreshServers = () => call<number>("refresh_servers");
+
+// ── the list, filtered, sorted and paged by the backend ─────────────────
+export type {
+  MapCount,
+  ScanProgress,
+  ServerPage,
+  ServerQuery,
+  ServerRow,
+  ServerStats,
+  SortCol,
+  Tri,
+} from "./bindings";
+
+export const serversQuery = (query: ServerQuery) => call<ServerPage>("servers_query", { query });
+export const serverMaps = () => call<MapCount[]>("server_maps");
+/** Rows for a few addresses ("ip:port", query or game port); null where unknown. */
+export const serversLookup = (keys: string[]) => call<(ServerRow | null)[]>("servers_lookup", { keys });
+export const startScan = (onProgress: Channel<ScanProgress>) => call<void>("start_scan", { onProgress });
 export const getServerDetails = (ip: string, port: number) =>
   call<ServerFullDto>("get_server_details", { ip, port });
 export const getAppStats = () => call<AppStatsDto>("get_app_stats");
@@ -27,13 +45,6 @@ export const fetchBattleMetrics = (ip: string, port: number, queryPort: number, 
   call<BattleMetricsDto>("fetch_battlemetrics_server", { ip, port, queryPort, name });
 
 // ── ping ──────────────────────────────────────────────────────────────────
-export const pingAllBackground = (
-  targets: string[],
-  concurrency: number,
-  timeoutMs: number,
-  onProgress: Channel<PingResult[]>,
-) => call<void>("ping_all_background", { targets, concurrency, timeoutMs, onProgress });
-
 export const pingServers = (
   targets: string[],
   concurrency: number,

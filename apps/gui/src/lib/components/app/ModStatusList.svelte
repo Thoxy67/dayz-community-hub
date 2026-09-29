@@ -3,7 +3,7 @@
 </script>
 
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import ExternalLink from "~icons/lucide/external-link";
   import Download from "~icons/lucide/download";
   import { Copy } from "$lib/components/ui/copy";
@@ -23,7 +23,7 @@
     summary = true,
     class: klass = "",
   }: { items: readonly ModRef[]; summary?: boolean; class?: string } = $props();
-  const c = useIntlayer("detail");
+  const c = dict("detail");
 
   const rows = $derived(
     items.map((m) => {

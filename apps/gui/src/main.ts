@@ -14,6 +14,24 @@ if (import.meta.env.DEV || import.meta.env.VITE_MOCK === "1") {
   window.addEventListener("unhandledrejection", (e) =>
     show(e.reason instanceof Error ? (e.reason.stack ?? e.reason.message) : String(e.reason)),
   );
+  // Anything that blocks the main thread for more than 50 ms, counted and
+  // exposed on <body> for the headless performance check.
+  try {
+    let n = 0;
+    document.body.dataset.longtasks = "0 tasks";
+    let worst = 0;
+    let total = 0;
+    new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) {
+        n++;
+        total += e.duration;
+        worst = Math.max(worst, e.duration);
+      }
+      document.body.dataset.longtasks = `${n} tasks, ${Math.round(total)} ms total, worst ${Math.round(worst)} ms`;
+    }).observe({ type: "longtask", buffered: true });
+  } catch {
+    // Not every engine reports long tasks.
+  }
   // In a plain browser, a pretend backend stands in for Tauri (dev, or a
   // `VITE_MOCK=1` build used for screenshots).
   if (!("__TAURI_INTERNALS__" in window)) (await import("$lib/ipc/mock")).installMock();

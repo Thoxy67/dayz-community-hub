@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import Puzzle from "~icons/lucide/puzzle";
   import RefreshCw from "~icons/lucide/refresh-cw";
   import { Spinner } from "$lib/components/ui/spinner";
@@ -17,7 +17,7 @@
     a2sMods = [],
     focus = false,
   }: { listed: ServerDto | undefined; a2sMods?: string[]; focus?: boolean } = $props();
-  const c = useIntlayer("detail");
+  const c = dict("detail");
 
   let el = $state<HTMLElement>();
   $effect(() => {

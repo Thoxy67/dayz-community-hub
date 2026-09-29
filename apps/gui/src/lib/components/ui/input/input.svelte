@@ -2,7 +2,7 @@
   import type { HTMLInputAttributes } from "svelte/elements";
   import Search from "~icons/lucide/search";
   import X from "~icons/lucide/x";
-  import { useIntlayer } from "svelte-intlayer";
+  import { dict } from "$lib/i18n";
   import { cn } from "$lib/cx";
 
   /**
@@ -34,7 +34,7 @@
     class?: string;
   } = $props();
 
-  const common = useIntlayer("common");
+  const common = dict("common");
   const search = $derived(type === "search");
   const filled = $derived(value !== "" && value !== null && value !== undefined);
 </script>
