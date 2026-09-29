@@ -30,6 +30,7 @@ const blank = <T>(): Entry<T> => ({ data: null, loading: false, error: null, fet
 function evict<T>(cache: Map<string, Entry<T>>, max: number) {
   if (cache.size <= max) return;
   const oldest = [...cache.entries()]
+    .filter(([, e]) => !e.loading)
     .sort((a, b) => (a[1].fetchedAt ?? 0) - (b[1].fetchedAt ?? 0))
     .slice(0, cache.size - max);
   for (const [k] of oldest) cache.delete(k);
@@ -93,22 +94,33 @@ class ServerData {
     return !!e?.data && !!e.fetchedAt && Date.now() - e.fetchedAt < A2S_TTL_MS;
   }
 
-  /** Ask the server itself. Concurrent callers share one query. */
+  /**
+   * Ask the server itself. Concurrent callers share one query. The address
+   * may carry the game port (a favourite, a history entry): the row is
+   * resolved first, so the query goes to the query port and the answer is
+   * kept under the key `a2s()` reads once the row is known.
+   */
   refreshA2s(ip: string, port: number): Promise<A2sDetailsDto | null> {
-    const key = this.key(ip, port);
-    const inflight = this.#a2sFlight.get(key);
+    const asked = this.key(ip, port);
+    const inflight = this.#a2sFlight.get(asked);
     if (inflight) return inflight;
-    const p = this.#queryA2s(ip, port, key).finally(() => this.#a2sFlight.delete(key));
-    this.#a2sFlight.set(key, p);
+    const p = (async () => {
+      const shown = this.#a2s.get(asked) ?? blank<A2sDetailsDto>();
+      this.#a2s.set(asked, { ...shown, loading: true, error: null });
+      const sv = servers.find(ip, port) ?? (await servers.resolve(ip, port));
+      const key = `${ip}:${sv?.query_port ?? port}`;
+      if (key !== asked) this.#a2s.set(asked, { ...shown, loading: false });
+      return this.#queryA2s(ip, sv?.query_port ?? port, sv?.game_port ?? null, key);
+    })().finally(() => this.#a2sFlight.delete(asked));
+    this.#a2sFlight.set(asked, p);
     return p;
   }
 
-  async #queryA2s(ip: string, port: number, key: string) {
+  async #queryA2s(ip: string, queryPort: number, gamePort: number | null, key: string) {
     const prev = this.#a2s.get(key) ?? blank<A2sDetailsDto>();
     this.#a2s.set(key, { ...prev, loading: true, error: null });
-    const sv = servers.find(ip, port);
     try {
-      const data = await queryA2s(ip, sv?.query_port ?? port, sv?.game_port ?? null);
+      const data = await queryA2s(ip, queryPort, gamePort);
       this.#a2s.set(key, { data, loading: false, error: null, fetchedAt: Date.now() });
       servers.applyLiveCount(key, data.players, data.max_players, data.bots);
       servers.a2sFailures.delete(key);

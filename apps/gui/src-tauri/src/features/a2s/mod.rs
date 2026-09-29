@@ -14,6 +14,10 @@ use crate::state::SharedState;
 const A2S_CACHE_TTL: Duration = Duration::from_secs(30);
 /// How long one A2S_RULES attempt waits (it is tried twice).
 const RULES_TIMEOUT: Duration = Duration::from_secs(3);
+/// The longest the panel waits for a server's info and players. async-a2s
+/// retries a silent server twice at 5 s each: 15 s of a panel loading,
+/// which reads as never.
+const ANSWER_TIMEOUT: Duration = Duration::from_secs(6);
 
 #[derive(Serialize, Clone, Debug, specta::Type)]
 pub struct A2sPlayerDto {
@@ -127,11 +131,19 @@ pub(crate) async fn query_a2s(
 
     // Info, players and rules concurrently.
     let (info, players, rules) = tokio::join!(
-        dz_a2s::query_info(&addr),
-        dz_a2s::query_players(&addr),
+        tokio::time::timeout(ANSWER_TIMEOUT, dz_a2s::query_info(&addr)),
+        tokio::time::timeout(ANSWER_TIMEOUT, dz_a2s::query_players(&addr)),
         dz_a2s::query_dayz_rules(&addr, RULES_TIMEOUT),
     );
-    let info = info.cmd_err()?;
+    let info = info
+        .map_err(|_| {
+            format!(
+                "{addr} did not answer within {} s",
+                ANSWER_TIMEOUT.as_secs()
+            )
+        })?
+        .cmd_err()?;
+    let players = players.unwrap_or_else(|_| Err(dz_common::Error::A2sQuery("timed out".into())));
 
     let players_list = players
         .map(|pl| {

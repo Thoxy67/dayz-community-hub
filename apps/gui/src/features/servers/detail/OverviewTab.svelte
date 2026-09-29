@@ -278,6 +278,8 @@
         {$c.seeAll({ count: m.players.length }).value}
       </button>
     {/if}
+  {:else if m.live.error && !m.a2s}
+    <p class="m-0 text-2xs text-err">{$c.liveFailed.value}</p>
   {:else if m.a2s && m.a2s.players === 0}
     <p class="m-0 text-2xs text-fg-faint italic">{$c.a2sNoPlayers.value}</p>
   {:else if m.a2s}
