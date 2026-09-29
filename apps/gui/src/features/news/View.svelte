@@ -28,11 +28,11 @@
   const shown = $derived(category ? news.articles.filter((a) => a.category === category) : news.articles);
   const article = $derived(shown[news.selected] ?? shown[0] ?? null);
 
-  let hero = $state<string | null>(null);
+  // The hero picture, once cached; asking for it fills the cache.
+  const hero = $derived(article?.image_url ? (news.images.get(article.image_url) ?? null) : null);
   $effect(() => {
     const url = article?.image_url;
-    hero = url ? (news.images.get(url) ?? null) : null;
-    if (url && !hero) news.image(url).then((src) => article?.image_url === url && (hero = src)).catch(() => {});
+    if (url && !news.images.has(url)) news.image(url).catch(() => {});
   });
 
   let lightbox = $state<string | null>(null);

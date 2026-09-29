@@ -27,10 +27,8 @@
   const Icon = $derived(meta?.icon ?? SlidersHorizontal);
   const kind = $derived(meta?.value ?? (opt.value !== null ? "text" : "none"));
 
-  let draft = $state("");
-  $effect(() => {
-    draft = opt.value ?? "";
-  });
+  // What is typed, reset whenever the saved value changes.
+  let draft = $derived(opt.value ?? "");
 
   function commit() {
     const v = draft.trim();
