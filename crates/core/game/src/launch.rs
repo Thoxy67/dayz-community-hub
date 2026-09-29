@@ -65,3 +65,50 @@ pub fn build_steam_applaunch_args(
     steam_args.extend(args.iter().cloned());
     steam_args
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn args_carry_mods_address_password_and_options() {
+        let server = Server {
+            game_port: 2402,
+            endpoint: dz_api::Endpoint {
+                ip: "1.2.3.4".into(),
+                port: 27016,
+            },
+            ..Default::default()
+        };
+        let args = build_launch_args(
+            &server,
+            &[1, 2],
+            Some("secret"),
+            &LaunchOptions::defaults(),
+            &["-extra".into()],
+        );
+        assert_eq!(args[0], "-mod=@1;@2");
+        assert!(args.contains(&"-connect=1.2.3.4".to_string()));
+        assert!(
+            args.contains(&"-port=2402".to_string()),
+            "the game port, not the query port"
+        );
+        assert!(args.contains(&"-password=secret".to_string()));
+        assert_eq!(args.last().map(String::as_str), Some("-extra"));
+
+        let none = build_launch_args(&server, &[], Some(""), &LaunchOptions::defaults(), &[]);
+        assert!(
+            !none
+                .iter()
+                .any(|a| a.starts_with("-mod=") || a.starts_with("-password="))
+        );
+    }
+
+    #[test]
+    fn steam_wraps_them_with_applaunch_and_the_name() {
+        let args = build_steam_applaunch_args(221100, &["-connect=x".into()], Some("Survivor"));
+        assert_eq!(&args[..2], ["-applaunch", "221100"]);
+        assert!(args.contains(&"-name=Survivor".to_string()));
+        assert_eq!(args.last().map(String::as_str), Some("-connect=x"));
+    }
+}

@@ -165,3 +165,57 @@ impl DzchConfig {
         url
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_url_round_trips() {
+        let c = DzchConfig {
+            version: DZCH_VERSION,
+            ip: "1.2.3.4".into(),
+            port: 2402,
+            query_port: Some(27017),
+            name: "My server & friends".into(),
+            password: Some("p@ss word".into()),
+            mods: vec![
+                DzchMod {
+                    id: 1559212036,
+                    name: String::new(),
+                },
+                DzchMod {
+                    id: 42,
+                    name: String::new(),
+                },
+            ],
+        };
+        let back = DzchConfig::from_url(&c.to_url()).unwrap();
+        assert_eq!(back.ip, "1.2.3.4");
+        assert_eq!(back.port, 2402);
+        assert_eq!(back.query_port, Some(27017));
+        assert_eq!(back.name, "My server & friends");
+        assert_eq!(back.password.as_deref(), Some("p@ss word"));
+        assert_eq!(
+            back.mods.iter().map(|m| m.id).collect::<Vec<_>>(),
+            [1559212036, 42]
+        );
+    }
+
+    #[test]
+    fn a_bare_url_defaults_the_port() {
+        let c = DzchConfig::from_url("dzch://example.org/").unwrap();
+        assert_eq!((c.ip.as_str(), c.port), ("example.org", 2302));
+        assert!(c.mods.is_empty());
+        assert!(DzchConfig::from_url("http://x").is_err());
+        assert!(DzchConfig::from_url("dzch://1.2.3.4:notaport").is_err());
+    }
+
+    #[test]
+    fn a_file_needs_only_address_and_port() {
+        let c: DzchConfig =
+            serde_json::from_str(r#"{"version":1,"ip":"1.2.3.4","port":2302}"#).unwrap();
+        assert_eq!(c.query_port, None);
+        assert!(c.password.is_none());
+    }
+}

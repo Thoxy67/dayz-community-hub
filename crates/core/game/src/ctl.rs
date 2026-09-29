@@ -209,8 +209,13 @@ impl DayzCtl {
         mods::scan_workshop_dir(&self.workshop_path()?)
     }
 
+    /// Delete a mod and the `@<id>` link that pointed at it.
     pub fn delete_mod(&self, mod_id: u64, only_managed: bool) -> Result<()> {
-        mods::delete_mod(&self.workshop_path()?, mod_id, only_managed)
+        mods::delete_mod(&self.workshop_path()?, mod_id, only_managed)?;
+        if let Ok(dayz) = self.dayz_path() {
+            let _ = mods::remove_mod_symlink(&dayz, mod_id);
+        }
+        Ok(())
     }
 
     pub fn toggle_mod_managed(&self, mod_id: u64) -> Result<bool> {

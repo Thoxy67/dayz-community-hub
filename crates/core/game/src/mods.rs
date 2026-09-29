@@ -23,12 +23,15 @@ pub struct InstalledMod {
 static NAME_RE: OnceLock<Regex> = OnceLock::new();
 static ID_RE: OnceLock<Regex> = OnceLock::new();
 
-/// Process-lifetime cache: mod directory path → (dir_mtime_secs, total_size_bytes).
-/// A directory's mtime is updated by the OS when its contents change, so this
-/// avoids the expensive recursive walk on every scan when nothing has changed.
-static SIZE_CACHE: OnceLock<Mutex<HashMap<PathBuf, (u64, u64)>>> = OnceLock::new();
+/// Process-lifetime cache: mod directory → (stamp, total size in bytes). The
+/// stamp is the directory's mtime together with `meta.cpp`'s: the directory's
+/// own mtime only moves when an entry is added or removed at its top level,
+/// while steamcmd rewrites `meta.cpp` on every download, so an update that
+/// only changed files deeper down still invalidates the size.
+type SizeCache = Mutex<HashMap<PathBuf, ((u64, u64), u64)>>;
+static SIZE_CACHE: OnceLock<SizeCache> = OnceLock::new();
 
-fn size_cache() -> &'static Mutex<HashMap<PathBuf, (u64, u64)>> {
+fn size_cache() -> &'static SizeCache {
     SIZE_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -44,8 +47,8 @@ pub fn scan_workshop_dir(workshop_path: &Path) -> Result<Vec<InstalledMod>> {
     let name_re = NAME_RE.get_or_init(|| Regex::new(r#"name\s*=\s*"([^"]+)""#).unwrap());
     let id_re = ID_RE.get_or_init(|| Regex::new(r#"publishedid\s*=\s*(\d+)"#).unwrap());
 
-    for entry in entries {
-        let entry = entry?;
+    // An entry that cannot be read is skipped, not a reason to list nothing.
+    for entry in entries.flatten() {
         let path = entry.path();
         if !path.is_dir() {
             continue;
@@ -91,7 +94,7 @@ pub fn scan_workshop_dir(workshop_path: &Path) -> Result<Vec<InstalledMod>> {
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
 
-        let size = du_dir_cached(&path).unwrap_or(0);
+        let size = du_dir_cached(&path, local_updated.max(0) as u64).unwrap_or(0);
         let managed = path.join(".dayz-community-hub").exists();
 
         mods.push(InstalledMod {
@@ -108,9 +111,9 @@ pub fn scan_workshop_dir(workshop_path: &Path) -> Result<Vec<InstalledMod>> {
     Ok(mods)
 }
 
-/// Cached directory size: skips the recursive walk when the directory's mtime
-/// has not changed since the last scan.
-fn du_dir_cached(path: &Path) -> Result<u64> {
+/// Cached directory size: skips the recursive walk when neither the
+/// directory's mtime nor `meta.cpp`'s (`meta_mtime`) has changed.
+fn du_dir_cached(path: &Path, meta_mtime: u64) -> Result<u64> {
     // Read the directory's own mtime — changes when files are added/removed.
     let dir_mtime = fs::metadata(path)
         .and_then(|m| m.modified())
@@ -120,9 +123,10 @@ fn du_dir_cached(path: &Path) -> Result<u64> {
         .unwrap_or(0);
 
     // Check the cache first.
+    let stamp = (dir_mtime, meta_mtime);
     if let Ok(cache) = size_cache().lock()
-        && let Some(&(cached_mtime, cached_size)) = cache.get(path)
-        && cached_mtime == dir_mtime
+        && let Some(&(cached_stamp, cached_size)) = cache.get(path)
+        && cached_stamp == stamp
         && dir_mtime != 0
     {
         return Ok(cached_size);
@@ -133,22 +137,27 @@ fn du_dir_cached(path: &Path) -> Result<u64> {
 
     // Update the cache.
     if let Ok(mut cache) = size_cache().lock() {
-        cache.insert(path.to_path_buf(), (dir_mtime, size));
+        cache.insert(path.to_path_buf(), (stamp, size));
     }
 
     Ok(size)
 }
 
-/// Calculate total directory size recursively.
+/// Total size of the files under `path`. Links are not followed (a link
+/// cycle would never end), and unreadable entries count as nothing.
 fn du_dir(path: &Path) -> Result<u64> {
     let mut total = 0;
     if path.is_dir() {
-        for entry in fs::read_dir(path)? {
-            let entry = entry?;
-            let meta = entry.metadata()?;
-            if meta.is_dir() {
-                total += du_dir(&entry.path())?;
-            } else {
+        for entry in fs::read_dir(path)?.flatten() {
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            if kind.is_symlink() {
+                continue;
+            }
+            if kind.is_dir() {
+                total += du_dir(&entry.path()).unwrap_or(0);
+            } else if let Ok(meta) = entry.metadata() {
                 total += meta.len();
             }
         }
@@ -297,13 +306,11 @@ pub fn remove_all_mod_symlinks(dayz_path: &Path) -> Result<usize> {
     }
     let entries = fs::read_dir(dayz_path)?;
 
-    for entry in entries {
-        let entry = entry?;
+    for entry in entries.flatten() {
         let path = entry.path();
         let file_name = path.file_name().unwrap_or_default().to_string_lossy();
         #[cfg(unix)]
-        if file_name.starts_with('@') && path.is_symlink() {
-            fs::remove_file(&path)?;
+        if file_name.starts_with('@') && path.is_symlink() && fs::remove_file(&path).is_ok() {
             count += 1;
         }
         // On Windows, mod links are NTFS junctions which appear as directories.
@@ -329,9 +336,10 @@ pub fn remove_managed_mods(workshop_path: &Path) -> Result<(usize, u64)> {
         return Ok((0, 0));
     }
 
+    // Best effort: a mod that cannot be removed (in use, permissions) does
+    // not stop the others from being.
     let entries = fs::read_dir(workshop_path)?;
-    for entry in entries {
-        let entry = entry?;
+    for entry in entries.flatten() {
         let path = entry.path();
         if !path.is_dir() {
             continue;
@@ -343,9 +351,10 @@ pub fn remove_managed_mods(workshop_path: &Path) -> Result<(usize, u64)> {
         }
 
         let size = du_dir(&path).unwrap_or(0);
-        fs::remove_dir_all(&path)?;
-        count += 1;
-        total_size += size;
+        if fs::remove_dir_all(&path).is_ok() {
+            count += 1;
+            total_size += size;
+        }
     }
 
     Ok((count, total_size))
@@ -397,9 +406,10 @@ pub fn toggle_mod_managed(workshop_path: &Path, dayz_path: &Path, mod_id: u64) -
         let _ = remove_mod_symlink(dayz_path, mod_id);
         Ok(false)
     } else {
-        // Link: write marker + create symlink
+        // Link: the link first, so a failure leaves the mod unmanaged and says
+        // why instead of claiming success.
+        create_mod_symlink(workshop_path, dayz_path, mod_id)?;
         fs::write(&managed_file, mod_id.to_string())?;
-        let _ = create_mod_symlink(workshop_path, dayz_path, mod_id);
         Ok(true)
     }
 }
@@ -461,4 +471,86 @@ pub struct ModManagementStats {
     pub removed_count: usize,
     pub removed_size: u64,
     pub symlinks_removed: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("dz-mods-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn fake_mod(workshop: &Path, id: u64, name: &str, bytes: usize) {
+        let dir = workshop.join(id.to_string());
+        fs::create_dir_all(dir.join("addons")).unwrap();
+        fs::write(
+            dir.join("meta.cpp"),
+            format!("protocol = 1;\npublishedid = {id};\nname = \"{name}\";\n"),
+        )
+        .unwrap();
+        fs::write(dir.join("addons").join("data.pbo"), vec![0u8; bytes]).unwrap();
+    }
+
+    #[test]
+    fn scans_names_ids_and_sizes() {
+        let ws = tmp("scan");
+        fake_mod(&ws, 1559212036, "CF", 2048);
+        fake_mod(&ws, 42, "alpha", 10);
+        fs::create_dir_all(ws.join("not-a-mod")).unwrap();
+        let mods = scan_workshop_dir(&ws).unwrap();
+        let names: Vec<_> = mods.iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(names, ["alpha", "CF"], "sorted by name, case-insensitively");
+        let cf = mods.iter().find(|m| m.id == 1559212036).unwrap();
+        assert!(cf.size >= 2048);
+        assert!(!cf.managed);
+        let _ = fs::remove_dir_all(&ws);
+    }
+
+    #[test]
+    fn missing_mods_are_the_uninstalled_ones() {
+        let installed = vec![InstalledMod {
+            name: "a".into(),
+            id: 1,
+            local_updated: 0,
+            size: 0,
+            managed: true,
+        }];
+        assert_eq!(get_missing_mods(&[1, 2, 3], &installed), [2, 3]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn link_cycles_do_not_hang_the_size_walk() {
+        let d = tmp("cycle");
+        fs::create_dir_all(d.join("a")).unwrap();
+        symlink(&d, d.join("a").join("loop")).unwrap();
+        fs::write(d.join("a").join("f"), [0u8; 5]).unwrap();
+        assert_eq!(du_dir(&d).unwrap(), 5);
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn toggling_links_and_unlinks() {
+        let root = tmp("toggle");
+        let (ws, dayz) = (root.join("ws"), root.join("DayZ"));
+        fs::create_dir_all(&dayz).unwrap();
+        fake_mod(&ws, 7, "seven", 1);
+        assert!(toggle_mod_managed(&ws, &dayz, 7).unwrap());
+        assert!(dayz.join("@7").is_symlink());
+        assert!(!toggle_mod_managed(&ws, &dayz, 7).unwrap());
+        assert!(dayz.join("@7").symlink_metadata().is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn sizes_read_as_people_say_them() {
+        assert_eq!(format_size(512 * 1024), "512 KB");
+        assert_eq!(format_size(5 * 1024 * 1024), "5.0 MB");
+        assert_eq!(format_size(3 * 1024 * 1024 * 1024), "3.0 GB");
+    }
 }

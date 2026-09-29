@@ -9,7 +9,7 @@ use tar::Archive;
 const COMMUNITY_OFFLINE_REPO: &str = "Arkensor/DayZCommunityOfflineMode";
 const MISSIONS_DIR: &str = "Missions";
 /// User-Agent required by GitHub API (any non-empty string works).
-const UA: &str = "dayz-community-hub/0.1";
+const UA: &str = concat!("dayz-community-hub/", env!("CARGO_PKG_VERSION"));
 
 pub struct OfflineMode {
     dayz_path: PathBuf,
@@ -73,18 +73,29 @@ impl OfflineMode {
             COMMUNITY_OFFLINE_REPO
         );
 
-        let release: Release = self
+        let resp = self
             .client
             .get(&url)
             .header("User-Agent", UA)
             .header("Accept", "application/vnd.github+json")
             .send()
-            .await?
-            .json::<Release>()
-            .await
-            .map_err(|e| {
-                dz_common::Error::Other(format!("Failed to parse GitHub release info: {}", e))
-            })?;
+            .await?;
+        match resp.status().as_u16() {
+            200..=299 => {}
+            403 | 429 => {
+                return Err(dz_common::Error::Other(
+                    "GitHub's rate limit was reached; try again in a few minutes".into(),
+                ));
+            }
+            code => {
+                return Err(dz_common::Error::Other(format!(
+                    "GitHub answered HTTP {code} for the latest release"
+                )));
+            }
+        }
+        let release: Release = resp.json::<Release>().await.map_err(|e| {
+            dz_common::Error::Other(format!("Failed to parse GitHub release info: {}", e))
+        })?;
 
         Ok(release.tag_name)
     }
@@ -95,11 +106,9 @@ impl OfflineMode {
             .join("DayZCommunityOfflineMode.ChernarusPlus")
             .join(".version");
 
-        if version_file.exists() {
-            fs::read_to_string(version_file).ok()
-        } else {
-            None
-        }
+        fs::read_to_string(version_file)
+            .ok()
+            .map(|v| v.trim().to_owned())
     }
 
     async fn download_and_extract(&self, tag: &str) -> Result<()> {
@@ -183,6 +192,20 @@ impl OfflineMode {
                 // Only keep entries whose second component is "Missions".
                 let second = components[1].as_os_str().to_string_lossy();
                 if second != "Missions" {
+                    continue;
+                }
+
+                // Only plain names below Missions/: a `..`, a root or a drive
+                // prefix in an archive entry would write outside the game.
+                if !components[2..]
+                    .iter()
+                    .all(|c| matches!(c, std::path::Component::Normal(_)))
+                {
+                    continue;
+                }
+                // Links are not followed out of the archive either.
+                let kind = entry.header().entry_type();
+                if kind.is_symlink() || kind.is_hard_link() {
                     continue;
                 }
 
