@@ -29,34 +29,32 @@
 <script lang="ts">
   import type { Component, Snippet } from "svelte";
   import { useIntlayer } from "svelte-intlayer";
-  import Play from "~icons/lucide/play";
-  import Star from "~icons/lucide/star";
   import PlugZap from "~icons/lucide/plug-zap";
   import Trash from "~icons/lucide/trash-2";
-  import Lock from "~icons/lucide/lock";
-  import KeyRound from "~icons/lucide/key-round";
-  import Puzzle from "~icons/lucide/puzzle";
-  import Sun from "~icons/lucide/sun";
-  import Moon from "~icons/lucide/moon";
-  import Sunset from "~icons/lucide/sunset";
-  import ArrowUp from "~icons/lucide/arrow-up";
-  import ArrowDown from "~icons/lucide/arrow-down";
   import PanelRight from "~icons/lucide/panel-right";
   import Search from "~icons/lucide/search";
   import { VirtualList } from "$lib/components/ui/virtual-list";
-  import { Signal } from "$lib/components/ui/signal";
-  import { Players } from "$lib/components/ui/players";
   import { Copy } from "$lib/components/ui/copy";
   import { Tag } from "$lib/components/ui/tag";
-  import { Tooltip } from "$lib/components/ui/tooltip";
   import { Button, IconButton } from "$lib/components/ui/button";
   import { Split } from "$lib/components/ui/split";
   import { Input } from "$lib/components/ui/input";
   import { Chip } from "$lib/components/ui/chip";
-  import { EmptyState } from "$lib/components/ui/empty-state";
   import { Topo } from "$lib/components/ui/topo";
-  import { Spinner } from "$lib/components/ui/spinner";
   import { cn } from "$lib/cx";
+  import {
+    Empty,
+    FavoriteButton,
+    JoinButton,
+    ModsCount,
+    PingButton,
+    PlayersButton,
+    ServerFlags,
+    SortHead,
+    TableHead,
+    TimeOfDay,
+  } from "$lib/components/app";
+  import ServerDetail from "$features/servers/detail/ServerDetail.svelte";
   import { app, type ViewId } from "$lib/stores/app.svelte";
   import { servers, keyOf } from "$lib/stores/servers.svelte";
   import { serverData } from "$lib/stores/server-data.svelte";
@@ -92,14 +90,6 @@
   const sv = useIntlayer("servers");
   const nav = useIntlayer("nav");
 
-  // ── the detail pane: the server browser's, loaded when it exists ───────
-  // Looked up with a glob so this list builds and runs before (or without)
-  // the browser's detail component: the pane falls back to a summary.
-  const detailModules = import.meta.glob<{ default: Component<Record<string, unknown>> }>(
-    "../servers/detail/ServerDetail.svelte",
-  );
-  const loadDetail = Object.values(detailModules)[0];
-
   // ── rows ────────────────────────────────────────────────────────────────
   type Row = Entry & {
     key: string;
@@ -119,7 +109,8 @@
     }),
   );
 
-  const countOf = (r: Row) => (r.listed ? servers.count(r.listed) : serverData.players(r.ip, r.port));
+  const countOf = (r: Row) =>
+    r.listed ? servers.count(r.listed) : serverData.players(r.ip, r.port);
 
   // ── search, filter, sort ────────────────────────────────────────────────
   type SortCol = "name" | "players" | "ping" | "map" | "recent";
@@ -238,26 +229,27 @@
 
   // ── actions ─────────────────────────────────────────────────────────────
   const join = (r: Row) => void connect.address(r.ip, r.port);
-  const ping = (r: Row) => void (r.listed ? servers.pingOne(r.ip, r.listed.query_port) : servers.pingOne(r.ip, r.port));
+  const ping = (r: Row) =>
+    void (r.listed ? servers.pingOne(r.ip, r.listed.query_port) : servers.pingOne(r.ip, r.port));
   const direct = (r: Row) =>
-    connect.openInDirect(r.ip, r.listed?.game_port ?? r.port, r.listed?.query_port, r.password ?? undefined);
-  const isFav = (r: Row) => profile.isFavorite(r.ip, r.port);
+    connect.openInDirect(
+      r.ip,
+      r.listed?.game_port ?? r.port,
+      r.listed?.query_port,
+      r.password ?? undefined,
+    );
   const toggleFav = (r: Row) => void profile.toggleFavorite(r.name, r.ip, r.port);
-  const refreshPlayers = (r: Row) => void serverData.refreshA2s(r.ip, r.listed?.query_port ?? r.port);
-
-  function timeIcon(time: string | undefined) {
-    const hr = parseInt(time?.split(":")[0] ?? "", 10);
-    if (Number.isNaN(hr)) return Sunset;
-    if (hr >= 7 && hr < 19) return Sun;
-    if ((hr >= 5 && hr < 7) || (hr >= 19 && hr < 21)) return Sunset;
-    return Moon;
-  }
 
   // ── keyboard, only while this view shows and nothing else has the keys ──
   function onkeydown(e: KeyboardEvent) {
     if (app.view !== view || dialogs.pending || connect.request) return;
     if (e.ctrlKey || e.altKey || e.metaKey) return;
-    if ((e.target as HTMLElement)?.closest("input, textarea, select, [contenteditable], [role=dialog]")) return;
+    if (
+      (e.target as HTMLElement)?.closest(
+        "input, textarea, select, [contenteditable], [role=dialog]",
+      )
+    )
+      return;
     const i = selected ? shown.indexOf(selected) : -1;
     const r = selected;
     switch (e.key) {
@@ -300,39 +292,34 @@
 
   const COLS = $derived(
     kind === "history"
-      ? "grid-cols-[4.75rem_6rem_minmax(0,1fr)_7rem_3rem_7.5rem_8.5rem]"
-      : "grid-cols-[4.75rem_6rem_minmax(0,1fr)_7.5rem_3rem_8.5rem]",
+      ? "grid-cols-[4.75rem_6rem_minmax(0,1fr)_7rem_3rem_7.5rem_10rem]"
+      : "grid-cols-[4.75rem_6rem_minmax(0,1fr)_7.5rem_3rem_10rem]",
   );
   const ROW = 50;
 </script>
 
 <svelte:window {onkeydown} />
 
-{#snippet sortHead(col: SortCol, label: string, cls = "")}
-  <button
-    class={cn(
-      "flex items-center gap-1 truncate text-left hover:text-fg",
-      sortCol === col && "text-accent",
-      cls,
-    )}
-    onclick={() => sortBy(col)}
-    aria-sort={sortCol === col ? (sortAsc ? "ascending" : "descending") : "none"}
-  >
-    <span class="truncate">{label}</span>
-    {#if sortCol === col}
-      {#if sortAsc}<ArrowUp class="size-3 shrink-0" />{:else}<ArrowDown class="size-3 shrink-0" />{/if}
-    {/if}
-  </button>
-{/snippet}
-
 {#snippet toolbar()}
   <div class="relative min-w-52 flex-1">
-    <Input class="w-full" bind:value={query} type="search" placeholder={$f.searchPlaceholder.value} clearLabel={$sv.clearSearch.value} />
+    <Input
+      class="w-full"
+      bind:value={query}
+      type="search"
+      placeholder={$f.searchPlaceholder.value}
+      clearLabel={$sv.clearSearch.value}
+    />
   </div>
-  <Chip active={listedOnly} title={$f.onlineOnlyTitle.value} onclick={() => (listedOnly = !listedOnly)}>
+  <Chip
+    active={listedOnly}
+    title={$f.onlineOnlyTitle.value}
+    onclick={() => (listedOnly = !listedOnly)}
+  >
     {$f.onlineOnly.value}
   </Chip>
-  <span class="num font-mono text-2xs text-fg-faint">{shown.length}<span class="opacity-60">/{rows.length}</span></span>
+  <span class="num font-mono text-2xs text-fg-faint"
+    >{shown.length}<span class="opacity-60">/{rows.length}</span></span
+  >
   <span class="ml-auto hidden text-3xs text-fg-faint lg:inline">{$f.keysHint.value}</span>
   <IconButton
     icon={PanelRight}
@@ -343,34 +330,53 @@
 {/snippet}
 
 {#snippet head()}
-  <div
-    class={cn(
-      "grid items-center gap-3 border-b border-border bg-panel/95 px-pad py-1.5 label-stencil text-fg-faint",
-      COLS,
-    )}
-  >
-    {@render sortHead("ping", $sv.colPing.value)}
-    {@render sortHead("players", $sv.colPlayers.value)}
-    {@render sortHead("name", $sv.colServer.value)}
-    {@render sortHead("map", `${$sv.colMap.value} · ${$sv.colTime.value}`)}
+  <TableHead grid="grid items-center gap-3 {COLS}">
+    <SortHead
+      label={$sv.colPing.value}
+      active={sortCol === "ping"}
+      asc={sortAsc}
+      onclick={() => sortBy("ping")}
+    />
+    <SortHead
+      label={$sv.colPlayers.value}
+      active={sortCol === "players"}
+      asc={sortAsc}
+      onclick={() => sortBy("players")}
+    />
+    <SortHead
+      label={$sv.colServer.value}
+      active={sortCol === "name"}
+      asc={sortAsc}
+      onclick={() => sortBy("name")}
+    />
+    <SortHead
+      label={`${$sv.colMap.value} · ${$sv.colTime.value}`}
+      active={sortCol === "map"}
+      asc={sortAsc}
+      onclick={() => sortBy("map")}
+    />
     <span class="text-center">{$sv.colMods.value}</span>
-    {#if kind === "history"}{@render sortHead("recent", $h.colLastPlayed.value)}{/if}
+    {#if kind === "history"}<SortHead
+        label={$h.colLastPlayed.value}
+        active={sortCol === "recent"}
+        asc={sortAsc}
+        onclick={() => sortBy("recent")}
+      />{/if}
     <span></span>
-  </div>
+  </TableHead>
 {/snippet}
 
 {#snippet row(r: Row)}
-  {@const count = countOf(r)}
   {@const on = selectedKey === r.key}
   {@const s = r.listed}
-  {@const loadingPlayers = serverData.a2s(r.ip, r.port).loading}
+  {@const qp = s?.query_port ?? r.port}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
     role="row"
     tabindex="-1"
     aria-selected={on}
     class={cn(
-      "group relative grid h-full cursor-pointer items-center gap-3 border-b border-border/50 px-pad transition-colors",
+      "group relative grid h-full cursor-pointer items-center gap-3 border-b border-border/50 px-2 transition-colors",
       COLS,
       on ? "bg-accent/10" : "hover:bg-raised/50",
       !s && "opacity-70",
@@ -380,86 +386,48 @@
   >
     {#if on}<span class="absolute inset-y-0 left-0 w-0.5 bg-accent"></span>{/if}
 
-    <button
-      class="justify-self-start rounded-xs px-0.5 hover:bg-raised"
-      title={$sv.clickPing.value}
-      onclick={(e) => {
-        e.stopPropagation();
-        ping(r);
-      }}
-    >
-      <Signal ms={servers.ping.get(r.pingKey)} pending={servers.pending.has(r.pingKey)} />
-    </button>
-
-    <button
-      class="min-w-0 justify-self-start text-left"
-      title={$sv.clickRefreshPlayers.value}
-      onclick={(e) => {
-        e.stopPropagation();
-        refreshPlayers(r);
-      }}
-    >
-      {#if s || count.max > 0}
-        <Players
-          players={count.players}
-          max={count.max}
-          bots={count.bots}
-          loading={loadingPlayers}
-          botsLabel={$sv.bots({ count: count.bots }).value}
-        />
-      {:else if loadingPlayers}
-        <Spinner class="size-3.5" />
-      {:else}
-        <span class="font-mono text-2xs text-fg-faint">—</span>
-      {/if}
-    </button>
+    <PingButton ip={r.ip} queryPort={qp} />
+    <PlayersButton ip={r.ip} queryPort={qp} />
 
     <div class="min-w-0 overflow-hidden">
       <div class="flex min-w-0 items-center gap-1.5">
         <span class="truncate text-xs font-semibold text-fg" title={r.name}>{r.name}</span>
-        {#if s?.password}
-          <span title={$sv.passwordProtected.value}><Lock class="size-3 shrink-0 text-err" /></span>
-        {/if}
-        {#if r.password}
-          <span title={$f.passwordSaved.value}><KeyRound class="size-3 shrink-0 text-accent" /></span>
-        {/if}
-        {#if s?.first_person_only}
-          <span class="font-display text-2xs font-extrabold text-warn" title={$sv.firstPerson.value}>1PP</span>
-        {/if}
-        {#if s?.battl_eye}
-          <img src="/battleeye.png" alt="BE" title={$sv.battleye.value} class="h-3 w-auto shrink-0 rounded-[2px]" />
-        {/if}
+        <ServerFlags
+          password={s?.password}
+          firstPerson={s?.first_person_only}
+          battleye={s?.battl_eye}
+          savedPassword={!!r.password}
+        />
         {#if !s}
           <Tag tone="warn" title={$f.serverOfflineHint.value}>{$f.notInList.value}</Tag>
         {/if}
       </div>
       <div class="flex min-w-0 items-center gap-2">
-        <Copy text={s ? `${r.ip}:${s.game_port}` : r.key} title={$sv.copyIp({ address: s ? `${r.ip}:${s.game_port}` : r.key }).value} />
+        <Copy
+          class="shrink-0"
+          text={s ? `${r.ip}:${s.game_port}` : r.key}
+          title={$sv.copyIp({ address: s ? `${r.ip}:${s.game_port}` : r.key }).value}
+        />
+        {#if s}
+          <span
+            class="min-w-0 truncate font-mono text-3xs text-fg-faint"
+            title="query {s.query_port} · {s.version}">q{s.query_port} · {s.version}</span
+          >
+        {/if}
       </div>
     </div>
 
     <div class="min-w-0">
       {#if s}
         <div class="truncate text-xs text-map" title={s.map}>{s.map}</div>
-        {#if s.time}
-          {@const TimeIcon = timeIcon(s.time)}
-          <div class="flex items-center gap-1 font-mono text-3xs text-fg-faint">
-            <TimeIcon class="size-3" />{s.time}
-          </div>
-        {/if}
+        {#if s.time}<TimeOfDay time={s.time} class="text-3xs" />{/if}
       {:else}
         <span class="text-2xs text-fg-faint">—</span>
       {/if}
     </div>
 
     <div class="flex justify-center">
-      {#if s && s.mods_count > 0}
-        <span class="flex items-center gap-1 font-mono text-2xs text-mods" title={$sv.modOther({ count: s.mods_count }).value}>
-          <Puzzle class="size-3" />{s.mods_count}
-        </span>
-      {:else}
-        <span class="text-2xs text-fg-faint">—</span>
-      {/if}
+      <ModsCount count={s?.mods_count ?? 0} />
     </div>
 
     {#if kind === "history"}
@@ -472,19 +440,13 @@
     {/if}
 
     <div class="flex items-center justify-end gap-0.5">
-      <div class="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-aria-selected:opacity-100 {on ? 'opacity-100' : ''}">
-        {#if kind === "history"}
-          <IconButton
-            icon={Star}
-            size="icon-xs"
-            label={isFav(r) ? $sv.removeFavorite.value : $sv.addFavorite.value}
-            iconClass={isFav(r) ? "text-warn" : ""}
-            onclick={(e) => {
-              e.stopPropagation();
-              toggleFav(r);
-            }}
-          />
-        {/if}
+      <div
+        class={cn(
+          "flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100",
+          on && "opacity-100",
+        )}
+      >
+        {#if kind === "history"}<FavoriteButton name={r.name} ip={r.ip} port={r.port} />{/if}
         <IconButton
           icon={PlugZap}
           size="icon-xs"
@@ -497,7 +459,6 @@
         <IconButton
           icon={Trash}
           size="icon-xs"
-          variant="ghost"
           label={kind === "history" ? $h.remove.value : $sv.removeFavorite.value}
           iconClass="hover:text-err"
           onclick={(e) => {
@@ -506,18 +467,7 @@
           }}
         />
       </div>
-      <Tooltip text={$f.joinTitle.value} side="left">
-        <Button
-          variant={on ? "play" : "default"}
-          size="xs"
-          onclick={(e) => {
-            e.stopPropagation();
-            join(r);
-          }}
-        >
-          <Play class="size-3" />{$f.join.value}
-        </Button>
-      </Tooltip>
+      <JoinButton ip={r.ip} port={r.port} password={r.password} compact={!on} />
     </div>
   </div>
 {/snippet}
@@ -535,9 +485,7 @@
       aria-label={$nav[kind].value}
     >
       {#snippet empty()}
-        <div class="relative grid h-64 place-items-center">
-          <EmptyState icon={Search} title={$f.noMatch.value} compact />
-        </div>
+        <Empty icon={Search} title={$f.noMatch.value} compact class="min-h-64" />
       {/snippet}
     </VirtualList>
   </div>
@@ -546,30 +494,14 @@
 {#snippet detailPane()}
   <aside class="flex min-h-0 flex-col border-l border-border bg-bg">
     {#if selected}
-      {#if loadDetail}
-        {#await loadDetail() then mod}
-          {#key selected.key}
-            <mod.default
-              ip={selected.ip}
-              port={selected.port}
-              name={selected.name}
-              onclose={() => (showDetail = false)}
-            />
-          {/key}
-        {/await}
-      {:else}
-        {@const s = selected.listed}
-        <div class="space-y-2 p-pad">
-          <h2 class="m-0 text-sm font-semibold text-fg">{selected.name}</h2>
-          <Copy text={selected.key} />
-          {#if s}
-            <p class="m-0 text-xs text-map">{s.map} · {s.version}</p>
-          {/if}
-          <Button variant="play" size="lg" class="w-full" onclick={() => join(selected)}>
-            <Play class="size-icon-sm" />{$f.join.value}
-          </Button>
-        </div>
-      {/if}
+      {#key selected.key}
+        <ServerDetail
+          ip={selected.ip}
+          port={selected.port}
+          name={selected.name}
+          onclose={() => (showDetail = false)}
+        />
+      {/key}
     {:else}
       <div class="relative grid flex-1 place-items-center overflow-hidden p-pad">
         <Topo opacity={0.35} />
@@ -582,19 +514,22 @@
 <div class="flex min-h-0 flex-1 flex-col">
   {@render header(stats, toolbar)}
   {#if rows.length === 0}
-    <div class="relative grid flex-1 place-items-center overflow-hidden bg-panel">
-      <Topo opacity={0.55} />
-      <div class="relative">
-        <EmptyState icon={emptyIcon} title={emptyTitle}>
-          {emptyHint}
-          {#snippet action()}
-            <Button variant="accent" onclick={() => app.go("servers")}>{$f.browseServers.value}</Button>
-          {/snippet}
-        </EmptyState>
-      </div>
-    </div>
+    <Empty icon={emptyIcon} title={emptyTitle}>
+      {emptyHint}
+      {#snippet action()}
+        <Button variant="accent" onclick={() => app.go("servers")}>{$f.browseServers.value}</Button>
+      {/snippet}
+    </Empty>
   {:else if showDetail}
-    <Split id="{kind}-detail" initial={380} min={300} max={620} keep={520} main={listPane} aside={detailPane} />
+    <Split
+      id="{kind}-detail"
+      initial={380}
+      min={300}
+      max={620}
+      keep={520}
+      main={listPane}
+      aside={detailPane}
+    />
   {:else}
     {@render listPane()}
   {/if}
