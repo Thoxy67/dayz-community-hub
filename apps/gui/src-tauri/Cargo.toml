@@ -36,6 +36,7 @@ dz-steamcmd.workspace = true
 dz-game.workspace = true
 dz-news.workspace = true
 dz-battlemetrics.workspace = true
+dz-dayzmetrics.workspace = true
 # The window's `bindings.ts`, generated from the commands' own signatures.
 specta.workspace = true
 specta-typescript.workspace = true

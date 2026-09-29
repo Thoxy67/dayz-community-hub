@@ -47,6 +47,10 @@ pub struct BattleMetricsServer {
     pub max_players: Option<i64>,
 }
 
+/// BattleMetrics' answer to a token without a paid plan.
+pub const SUBSCRIPTION_REQUIRED: &str =
+    "BattleMetrics now requires a paid subscription for API access";
+
 /// GET a BattleMetrics endpoint as JSON, saying plainly what went wrong.
 async fn get_json(
     client: &reqwest::Client,
@@ -69,7 +73,16 @@ async fn get_json(
         })?;
     match resp.status().as_u16() {
         200..=299 => {}
-        401 | 403 => return Err("BattleMetrics rejected the API token".into()),
+        401 => return Err("BattleMetrics rejected the API token".into()),
+        // Since 2026 the API answers 403 to everyone without a paid plan.
+        403 => {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(if body.to_lowercase().contains("subscription") {
+                SUBSCRIPTION_REQUIRED.into()
+            } else {
+                "BattleMetrics rejected the API token".into()
+            });
+        }
         429 => return Err("BattleMetrics rate limit reached, try again in a minute".into()),
         code => return Err(format!("BattleMetrics answered HTTP {code}")),
     }

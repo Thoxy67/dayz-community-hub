@@ -6,7 +6,7 @@
 #                  A2S queries, the profile on disk, SteamCMD, the game itself
 #                  (mods, launch, offline mode, .dzch files) and the news feed.
 #   crates/app/    what the app needs around the domain that is not the shell:
-#                  the BattleMetrics lookup.
+#                  the DayZ Metrics and BattleMetrics lookups.
 #   apps/gui/src-tauri  the shell: windows, commands, events, the bridge.
 
 [workspace]
@@ -35,6 +35,7 @@ dz-steamcmd = { path = "crates/core/steamcmd" }
 dz-game = { path = "crates/core/game" }
 dz-news = { path = "crates/core/news" }
 dz-battlemetrics = { path = "crates/app/battlemetrics" }
+dz-dayzmetrics = { path = "crates/app/dayzmetrics" }
 
 # Async runtime
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time", "sync", "io-util", "process", "fs", "net"] }

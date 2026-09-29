@@ -6,6 +6,7 @@ pub(crate) mod battlemetrics;
 pub(crate) mod browser;
 pub(crate) mod dzch_cli;
 pub(crate) mod launch;
+pub(crate) mod metrics;
 pub(crate) mod mods;
 pub(crate) mod native;
 pub(crate) mod news;

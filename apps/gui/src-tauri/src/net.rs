@@ -31,6 +31,24 @@ pub(crate) fn api() -> &'static Client {
     })
 }
 
+/// DayZ Metrics: its own client, so the site sees which app asks and where
+/// to find it, as a courtesy for using the endpoints its pages use.
+pub(crate) fn dayzmetrics() -> &'static Client {
+    static C: OnceLock<Client> = OnceLock::new();
+    C.get_or_init(|| {
+        build(
+            Client::builder()
+                .user_agent(concat!(
+                    "DayZ-Community-Hub/",
+                    env!("CARGO_PKG_VERSION"),
+                    " (+https://git.thoxy.xyz/thoxy/dayz-community-hub)"
+                ))
+                .connect_timeout(Duration::from_secs(10))
+                .timeout(Duration::from_secs(20)),
+        )
+    })
+}
+
 /// Large downloads (updates, SteamCMD): no total limit, but a stall of 30 s
 /// between two reads fails the download. Only Windows downloads those.
 #[cfg_attr(not(windows), allow(dead_code))]

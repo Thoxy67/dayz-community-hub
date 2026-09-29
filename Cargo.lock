@@ -961,6 +961,7 @@ dependencies = [
  "dz-api",
  "dz-battlemetrics",
  "dz-common",
+ "dz-dayzmetrics",
  "dz-game",
  "dz-news",
  "dz-profile",
@@ -1272,6 +1273,17 @@ dependencies = [
  "reqwest",
  "serde_json",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "dz-dayzmetrics"
+version = "0.4.1"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "specta",
+ "tokio",
 ]
 
 [[package]]

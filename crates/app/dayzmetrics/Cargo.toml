@@ -1,0 +1,20 @@
+[package]
+name = "dz-dayzmetrics"
+description = "Looking a DayZ server up on DayZ Metrics: rank, uptime, restart and wipe schedules, fake-population verdict and 24 h of player counts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+specta.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

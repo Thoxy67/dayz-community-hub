@@ -62,6 +62,8 @@ export const commands = {
 	queryA2s: (ip: string, queryPort: number, gamePort: number | null) => __TAURI_INVOKE<A2sDetailsDto>("query_a2s", { ip, queryPort, gamePort }),
 	/**  Find a server on BattleMetrics by IP and ports, falling back to its name. */
 	fetchBattlemetricsServer: (ip: string, port: number, queryPort: number, name: string) => __TAURI_INVOKE<BattleMetricsServer>("fetch_battlemetrics_server", { ip, port, queryPort, name }),
+	/**  What DayZ Metrics knows about the server at `ip`, by game or query port. */
+	fetchServerMetrics: (ip: string, gamePort: number, queryPort: number) => __TAURI_INVOKE<ServerMetrics>("fetch_server_metrics", { ip, gamePort, queryPort }),
 	/**  The current profile. */
 	getProfile: () => __TAURI_INVOKE<ProfileDto>("get_profile"),
 	/**  Save the account and ping settings. */
@@ -475,6 +477,12 @@ export type MapCount = {
 	count: number,
 };
 
+/**  A link the server lists on its page. */
+export type MetricsLink = {
+	label: string,
+	url: string,
+};
+
 export type ModDto = {
 	name: string,
 	steam_workshop_id: number,
@@ -592,6 +600,19 @@ export type ProfileSettingsInput = {
 	pingScanServers: boolean,
 };
 
+/**  When the server restarts, as the site has measured it. */
+export type RestartSchedule = {
+	period_hours: number | null,
+	/**  ISO 8601. */
+	last_restart: string | null,
+	/**  ISO 8601. */
+	next_restart: string | null,
+	/**  "high" | "medium" | "low", as the site rates its own guess. */
+	confidence: string | null,
+	/**  Restart times of day, "HH:MM" UTC. */
+	slots_utc: string[],
+};
+
 /**  How far the scan of the whole list has got. */
 export type ScanProgress = {
 	done: number,
@@ -618,6 +639,76 @@ export type ServerDto = {
 	mods: ModDto[],
 	vac: boolean,
 	battl_eye: boolean | null,
+};
+
+/**  What DayZ Metrics knows about a server, for the server panel's Stats tab. */
+export type ServerMetrics = {
+	/**  The site's id for the server. */
+	id: number,
+	/**  Its page on dayzmetrics.com. */
+	url: string,
+	name: string,
+	map: string | null,
+	version: string | null,
+	/**  "online" | "offline" | … */
+	status: string | null,
+	/**  ISO 3166-1 alpha-2. */
+	country: string | null,
+	players: number | null,
+	max_players: number | null,
+	queue: number | null,
+	/**  Position in the site's ranking (1 is the top). */
+	rank_pos: number | null,
+	rank_score: number | null,
+	/**  How reliably it is up, 0–1, as the ranking weighs it. */
+	rank_alive: number | null,
+	/**  How sought after it is, 0–1, as the ranking weighs it. */
+	rank_demand: number | null,
+	avg_players_7d: number | null,
+	peak_7d: number | null,
+	/**  Percent of the last seven days it answered. */
+	uptime_7d: number | null,
+	/**  Players week over week, percent (+12 means 12 % more than last week). */
+	wow_pct: number | null,
+	/**  ISO 8601. */
+	first_seen: string | null,
+	/**  ISO 8601. */
+	last_seen: string | null,
+	/**  The site's own pings to it, milliseconds. */
+	ping_lo: number | null,
+	ping_hi: number | null,
+	ping_jitter: number | null,
+	ping_stability: number | null,
+	/**  In-game time multiplier, by day and by night. */
+	time_accel: number | null,
+	night_time_accel: number | null,
+	restart: RestartSchedule | null,
+	wipe: WipeSchedule | null,
+	/**  The site judges the player count to be padded (bots, fake slots). */
+	is_fake: boolean,
+	fake_reasons: string[],
+	/**  "real" | "suspicious" | "fake" | …: how the count behaves over time. */
+	behavior_verdict: string | null,
+	behavior_score: number | null,
+	/**  Reported by players and flagged by the site. */
+	flagged: boolean,
+	/**  Named to look like an official server without being one. */
+	mimics_official: boolean,
+	discord: string | null,
+	website: string | null,
+	links: MetricsLink[],
+	notices: string[],
+	playstyle: string | null,
+	/**  "Vanilla" … "Heavily Modded", and the score behind it (0–100). */
+	vanilla_band: string | null,
+	vanilla_score: number | null,
+	mod_count: number | null,
+	/**  Bytes to download for every mod the server runs. */
+	mod_total_bytes: number | null,
+	/**  The last 24 hours: (unix seconds, players), every five minutes. */
+	player_history: ([number, number | null])[],
+	/**  The last 24 hours: (unix seconds, ms), where the site measured it. */
+	ping_history: ([number, number | null])[],
 };
 
 /**  A window of the filtered, sorted list. */
@@ -741,6 +832,21 @@ export type UpdateSupport = {
 	supported: boolean,
 	kind: UpdateKind,
 	reason: string | null,
+};
+
+/**  When the server wipes: the last one and the next, each announced or guessed. */
+export type WipeSchedule = {
+	/**  "YYYY-MM-DD". */
+	last: string | null,
+	/**  "announced" | "detected" | … */
+	last_source: string | null,
+	days_since: number | null,
+	/**  "YYYY-MM-DD". */
+	next: string | null,
+	/**  "announced" | "predicted" | … */
+	next_source: string | null,
+	days_until: number | null,
+	period_days: number | null,
 };
 
 /* Tauri Specta runtime */
