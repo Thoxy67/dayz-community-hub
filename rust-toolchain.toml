@@ -1,0 +1,7 @@
+# Stable, pinned so a nightly default on the dev machine cannot change what
+# `cargo build` means. The MSVC target is listed so a fresh clone can build
+# the Windows release (through cargo-xwin) without an extra setup step.
+[toolchain]
+channel = "1.98.0"
+components = ["rustfmt", "clippy"]
+targets = ["x86_64-pc-windows-msvc"]
