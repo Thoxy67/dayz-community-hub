@@ -93,6 +93,18 @@
     if (mods) showDetail = true;
   }
 
+  // Screenshot aid, in mock and dev builds only: `?select=N` selects row N
+  // once it has arrived, so a capture can show the detail panel.
+  const wantSelect =
+    import.meta.env.DEV || import.meta.env.VITE_MOCK === "1"
+      ? Number(new URLSearchParams(location.search).get("select") ?? NaN)
+      : NaN;
+  $effect(() => {
+    if (Number.isNaN(wantSelect) || selected) return;
+    const r = feed.rows.get(wantSelect);
+    if (r) select(r, wantSelect);
+  });
+
   function scrollIntoView(i: number) {
     if (!scroller) return;
     const top = i * ROW_PX;

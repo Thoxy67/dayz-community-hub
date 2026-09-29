@@ -65,7 +65,7 @@ const profile = {
   player: "Survivor",
   steam_api_key: "XXXXXXXX",
   steam_id: "76561198000000000",
-  battlemetrics_api_key: null,
+  battlemetrics_api_key: "mock",
   user_location: [2.35, 48.85],
   favorites: servers.slice(3, 9).map((s) => ({ name: s.name, ip: s.ip, port: s.query_port, password: null })),
   history: servers.slice(10, 22).map((s, i) => ({ name: s.name, ip: s.ip, port: s.query_port, ts: now - i * 7200 - 600, relative_time: "" })),
@@ -270,7 +270,12 @@ export function installMock() {
           version: s?.version ?? "",
           players_list: Array.from({ length: Math.min(12, s?.players ?? 0) }, (_, i) => ({ name: `Survivor ${i + 1}`, score: 0, duration: 300 + i * 611 })),
           mods: [],
-          rules: [{ name: "allowedBuild", value: "0" }, { name: "dedicated", value: "1" }],
+          rules: [
+            ["allowedBuild", "0"], ["dedicated", "1"], ["island", s?.map ?? "chernarusplus"], ["language", "65545"],
+            ["platform", "win"], ["requiredBuild", "0"], ["requiredVersion", "128"], ["timeLeft", "15"],
+            ["disable3rdPerson", s?.first_person_only ? "1" : "0"], ["serverTimeAcceleration", "4"],
+            ["serverNightTimeAcceleration", "12"], ["lootHistory", "1"], ["battleye", "1"],
+          ].map(([name, value]) => ({ name, value })),
           query_port: s?.query_port ?? 27016,
           game_port: s?.game_port ?? 2302,
         };
@@ -326,6 +331,37 @@ export function installMock() {
         at(50, () => ev("finished", { ok, failed }));
         for (const [when, fn] of steps) setTimeout(fn, when);
         return null;
+      }
+      case "fetch_battlemetrics_server": {
+        const x = servers.find((v) => v.ip === a.ip);
+        const max = x?.max_players ?? 60;
+        const now = Math.floor(Date.now() / 1000);
+        // A day in half-hour steps: quiet at dawn, full in the evening.
+        const history = Array.from({ length: 48 }, (_, i) => {
+          const t = now - (47 - i) * 1800;
+          const h = new Date(t * 1000).getHours() + new Date(t * 1000).getMinutes() / 60;
+          const curve = 0.5 + 0.45 * Math.sin(((h - 13) / 24) * 2 * Math.PI);
+          return [t, Math.max(0, Math.min(max, Math.round(max * curve + ((i * 7) % 5) - 2)))];
+        });
+        return {
+          id: String(10_000_000 + servers.indexOf(x!)),
+          name: x?.name ?? "?",
+          rank: 40 + (servers.indexOf(x!) % 900),
+          status: "online",
+          country: ["DE", "FR", "GB", "US", "PL", "RU", "NL"][servers.indexOf(x!) % 7],
+          location: [8.68, 50.11],
+          uptime: 97.4,
+          private: x?.password ?? false,
+          official: false,
+          third_person: !(x?.first_person_only ?? false),
+          modded: (x?.mods_count ?? 0) > 0,
+          query_status: "valid",
+          server_steam_id: "90202066736795652",
+          created_at: "2023-03-14T10:00:00Z",
+          player_history: history,
+          players: x?.players ?? 0,
+          max_players: max,
+        };
       }
       case "toggle_ping_pause":
         return false;

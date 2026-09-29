@@ -16,9 +16,14 @@
   import { openUrl } from "$lib/ipc/native";
   import { getLocale } from "$lib/i18n";
   import { distanceKm, date } from "$lib/format";
-  import { PlayerChart, Section } from "$lib/components/app";
+  import { Button } from "$lib/components/ui/button";
+  import { Empty, PlayerChart } from "$lib/components/app";
+  import { app } from "$lib/stores/app.svelte";
 
-  /** BattleMetrics' view of the server: rank, uptime, where it is, a day of players. */
+  /**
+   * BattleMetrics' long view of the server: rank, uptime, where it is, and a
+   * day of player counts drawn large. Only shown when a token is configured.
+   */
   let { ip, port, queryPort, name }: { ip: string; port: number; queryPort: number; name: string } =
     $props();
   const c = dict("detail");
@@ -70,11 +75,12 @@
   const uptoneTone = (u: number) => (u >= 90 ? "text-ok" : u >= 70 ? "text-warn" : "text-err");
 </script>
 
-<Section icon={ChartLine} title={$c.bmTitle.value}>
-  {#snippet actions()}
+<div class="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-pad py-2.5">
+  <div class="flex items-center gap-2">
+    <span class="label-stencil text-fg-faint">{$c.bmTitle.value}</span>
     {#if hasKey}
       <button
-        class="grid size-control-sm place-items-center rounded-sm text-fg-faint hover:bg-raised hover:text-fg disabled:opacity-40"
+        class="ml-auto grid size-control-sm place-items-center rounded-sm text-fg-faint hover:bg-raised hover:text-fg disabled:opacity-40"
         title={$c.bmRefreshTitle.value}
         aria-label={$c.bmRefreshTitle.value}
         disabled={entry.loading}
@@ -83,13 +89,18 @@
         {#if entry.loading}<Spinner class="size-3.5" />{:else}<RefreshCw class="size-3.5" />{/if}
       </button>
     {/if}
-  {/snippet}
+  </div>
 
   {#if !hasKey}
-    <p class="m-0 text-2xs leading-snug text-fg-faint">{$c.bmConfigure.value}</p>
+    <Empty icon={ChartLine} title={$c.statsNeedKey.value} compact>
+      {#snippet action()}
+        <Button onclick={() => app.go("settings", "apis")}>{$c.openSettings.value}</Button>
+      {/snippet}
+    </Empty>
   {:else if entry.loading && !bm}
-    <div class="flex items-center gap-2 text-2xs text-fg-faint">
-      <Spinner class="size-3.5" />{$c.bmLoading.value}
+    <div class="flex flex-col gap-2">
+      <div class="h-14 animate-pulse rounded-sm bg-raised/60"></div>
+      <div class="h-32 animate-pulse rounded-sm bg-raised/60"></div>
     </div>
   {:else if bm}
     <div class="flex flex-wrap gap-1">
@@ -155,7 +166,8 @@
     </div>
 
     {#if bm.player_history.length > 1}
-      <PlayerChart points={bm.player_history} max={bm.max_players} />
+      <!-- Drawn taller than the kit's default: here the chart is the tab's point. -->
+      <div class="[&_svg]:h-36"><PlayerChart points={bm.player_history} max={bm.max_players} /></div>
     {/if}
 
     <dl class="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-2xs">
@@ -193,7 +205,7 @@
       class="inline-flex items-center gap-1.5 self-start text-2xs text-fg-faint hover:text-accent"
       onclick={() => openUrl(`https://www.battlemetrics.com/servers/dayz/${bm.id}`)}
     >
-      <ExternalLink class="size-3" />{$c.bmView.value}
+      <ExternalLink class="size-3" />{$c.openBm.value}
     </button>
   {:else if entry.error}
     <div
@@ -206,6 +218,6 @@
       >
     </div>
   {:else}
-    <p class="m-0 text-2xs text-fg-faint">{$c.bmNotFound.value}</p>
+    <Empty icon={ChartLine} title={$c.bmNotFound.value} compact />
   {/if}
-</Section>
+</div>
