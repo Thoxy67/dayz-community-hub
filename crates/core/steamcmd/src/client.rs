@@ -137,16 +137,19 @@ impl SteamClient {
         system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
         for process in system.processes().values() {
-            let name = process.name().to_string_lossy();
-            // Matches "steam", "steam.exe", "steamwebhelper", … — any process
-            // whose name starts with "steam" (case-insensitive). Avoids
-            // allocating a lowercased String per process.
-            let bytes = name.as_bytes();
-            if bytes.len() >= 5 && bytes[..5].eq_ignore_ascii_case(b"steam") {
+            if is_steam_client_process(&process.name().to_string_lossy()) {
                 process.kill();
             }
         }
         Ok(())
+    }
+
+    /// [`SteamClient::is_running`] off the async runtime: it scans the whole
+    /// process table.
+    async fn is_running_async() -> bool {
+        tokio::task::spawn_blocking(Self::is_running)
+            .await
+            .unwrap_or(false)
     }
 
     /// Shut down Steam gracefully before running steamcmd.
@@ -157,7 +160,7 @@ impl SteamClient {
     ///   2. Sends `steam -shutdown` and waits up to 15 s for all processes to exit.
     ///   3. Force-kills any remaining Steam processes if they didn't exit in time.
     pub async fn shutdown_for_steamcmd() {
-        if !Self::is_running() {
+        if !Self::is_running_async().await {
             return;
         }
 
@@ -173,15 +176,58 @@ impl SteamClient {
         // Poll every 500 ms for up to 15 s
         for _ in 0..30 {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            if !Self::is_running() {
+            if !Self::is_running_async().await {
                 return;
             }
         }
 
         // Still running — force kill
-        Self::shutdown_force().ok();
+        let _ = tokio::task::spawn_blocking(Self::shutdown_force).await;
 
         // Brief pause to let OS release file locks before steamcmd starts
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+}
+
+/// The Steam client's own processes, and nothing else whose name merely
+/// starts with "steam": steamcmd, SteamOS services on a Steam Deck
+/// (`steamos-*`), third-party tools such as steamtinkerlaunch.
+fn is_steam_client_process(name: &str) -> bool {
+    let name = name.strip_suffix(".exe").unwrap_or(name);
+    [
+        "steam",
+        "steamwebhelper",
+        "steamservice",
+        "steamerrorreporter",
+        "steamerrorreporter64",
+    ]
+    .iter()
+    .any(|n| name.eq_ignore_ascii_case(n))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_steam_client_process;
+
+    #[test]
+    fn only_the_client_is_force_closed() {
+        for name in [
+            "steam",
+            "Steam.exe",
+            "steamwebhelper",
+            "steamwebhelper.exe",
+            "steamservice.exe",
+        ] {
+            assert!(is_steam_client_process(name), "{name}");
+        }
+        for name in [
+            "steamcmd",
+            "steamcmd.exe",
+            "steamos-manager",
+            "steamtinkerlaunch",
+            "steamapps",
+        ] {
+            assert!(!is_steam_client_process(name), "{name}");
+        }
     }
 }
