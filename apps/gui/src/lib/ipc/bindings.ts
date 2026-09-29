@@ -100,17 +100,27 @@ export const commands = {
 	 *  cache the results. Returns the enriched mod list (same as `get_installed_mods`).
 	 */
 	checkModUpdates: () => __TAURI_INVOKE<InstalledModDto[]>("check_mod_updates"),
-	/**  Delete a mod by ID. */
-	deleteMod: (modId: number) => __TAURI_INVOKE<null>("delete_mod", { modId }),
-	/**  Delete multiple mods by ID in one call. */
-	deleteModsBulk: (modIds: number[]) => __TAURI_INVOKE<null>("delete_mods_bulk", { modIds }),
+	/**
+	 *  Delete a mod by ID: the launcher's copy and its link. Returns true when
+	 *  a copy in a Steam library remains (the launcher never deletes there:
+	 *  unsubscribing in Steam does).
+	 */
+	deleteMod: (modId: number) => __TAURI_INVOKE<boolean>("delete_mod", { modId }),
+	/**  Delete several mods by ID. Returns the ids whose Steam copy remains. */
+	deleteModsBulk: (modIds: number[]) => __TAURI_INVOKE<number[]>("delete_mods_bulk", { modIds }),
 	/**  Toggle managed status of a mod. */
 	toggleModManaged: (modId: number) => __TAURI_INVOKE<boolean>("toggle_mod_managed", { modId }),
-	/**  Cleanup all managed mods and symlinks. */
+	/**
+	 *  Delete every mod the launcher downloaded and every `@` link; mods in
+	 *  Steam libraries stay.
+	 */
 	cleanupMods: () => __TAURI_INVOKE<string>("cleanup_mods"),
-	/**  Open the Steam Workshop directory (all mods) in the system file manager. */
+	/**
+	 *  Open the launcher's workshop folder (where SteamCMD downloads) in the
+	 *  system file manager.
+	 */
 	openWorkshopDir: () => __TAURI_INVOKE<null>("open_workshop_dir"),
-	/**  Open a specific mod's directory in the system file manager. */
+	/**  Open the directory of the copy of a mod in use in the system file manager. */
 	openModDir: (modId: number) => __TAURI_INVOKE<null>("open_mod_dir", { modId }),
 	/**  Create the `@<id>` links a listed server's mods need. */
 	setupModSymlinks: (ip: string, port: number) => __TAURI_INVOKE<null>("setup_mod_symlinks", { ip, port }),
@@ -137,6 +147,10 @@ export const commands = {
 	sendSteamcmdInput: (input: string) => __TAURI_INVOKE<null>("send_steamcmd_input", { input }),
 	/**  Cancel the running mod operation. */
 	cancelModOperation: () => __TAURI_INVOKE<null>("cancel_mod_operation"),
+	/**  Where SteamCMD downloads and keeps its login. */
+	steamcmdDirs: () => __TAURI_INVOKE<SteamcmdDirsDto>("steamcmd_dirs"),
+	/**  Open SteamCMD's install directory in the system file manager. */
+	openSteamcmdDir: () => __TAURI_INVOKE<null>("open_steamcmd_dir"),
 	detectSteamcmd: () => __TAURI_INVOKE<SteamcmdStatusDto>("detect_steamcmd"),
 	/**
 	 *  Start a background task that polls for steamcmd every 3 seconds.
@@ -480,8 +494,17 @@ export type InstalledModDto = {
 	local_updated: number,
 	size: number,
 	size_human: string,
-	/**  Installed by this app (it may delete or unlink it). */
+	/**  An `@<id>` link in the DayZ directory loads it. */
 	managed: boolean,
+	/**
+	 *  Whose folder the copy in use is in: the launcher's, which it updates
+	 *  and deletes, or a Steam library's, which it only reads.
+	 */
+	source: ModSourceDto,
+	/**  The copy's directory. */
+	path: string,
+	/**  Another, older copy is in the other kind of folder. */
+	other_copy: boolean,
 	/**  `time_updated` on the Workshop; null until checked. */
 	remote_updated: number | null,
 	/**  True when `remote_updated > local_updated`. */
@@ -533,7 +556,14 @@ export type ModOpType =
 /**  Re-download these mods (`mod_ids`, optionally `mod_names`). */
 "update_selected" | 
 /**  Install these mods by Workshop id (`mod_ids`, `mod_names`). */
-"install_manual";
+"install_manual" | 
+/**
+ *  Download these mods again and check every file (`mod_ids`,
+ *  optionally `mod_names`): slow, for a mod that does not load.
+ */
+"repair" | 
+/**  Log SteamCMD in and quit, so later downloads use its cached login. */
+"login";
 
 /**  One step of a mod operation, as the progress dialog receives it. */
 export type ModProgressEvent = {
@@ -549,7 +579,12 @@ export type ModProgressEvent = {
 };
 
 /**  What a [`ModProgressEvent`] reports. */
-export type ModProgressKind = "shutting_down_steam" | "steam_guard_mobile_required" | "password_required" | "log_line" | "log_progress" | "starting" | "done" | "failed" | "finished";
+export type ModProgressKind = 
+/**  SteamCMD logged in; its login is cached from now on. */
+"logged_in" | "steam_guard_mobile_required" | "password_required" | "log_line" | "log_progress" | "starting" | "done" | "failed" | "finished";
+
+/**  Whose folder a mod is in. */
+export type ModSourceDto = "launcher" | "steam";
 
 /**  The offline mode download failed; carries the error. */
 export type OfflineModeError = string;
@@ -572,7 +607,13 @@ export type PingResultDto = {
 
 export type ProfileDto = {
 	steam_login: string | null,
-	steam_password: string | null,
+	/**
+	 *  A password an earlier version saved is still to be typed once at
+	 *  SteamCMD's prompt (never sent back to the window).
+	 */
+	has_saved_password: boolean,
+	/**  The account SteamCMD last logged in as; its login is cached. */
+	steamcmd_logged_in: string | null,
 	steam_root: string | null,
 	steamcmd_enabled: boolean,
 	/**  Explicit path to the steamcmd binary (overrides auto-detection). */
@@ -608,7 +649,6 @@ export type ProfileDto = {
 export type ProfileSettingsInput = {
 	player: string | null,
 	steamLogin: string | null,
-	steamPassword: string | null,
 	steamRoot: string | null,
 	steamcmdEnabled: boolean,
 	steamcmdPath: string | null,
@@ -831,6 +871,17 @@ export type SortCol = "none" | "ping" | "players" | "name" | "map" | "mods" |
 
 /**  steamcmd appeared while `watch_steamcmd` was polling. */
 export type SteamcmdDetected = SteamcmdStatusDto;
+
+/**  Where SteamCMD keeps its things: the launcher's, never the Steam client's. */
+export type SteamcmdDirsDto = {
+	/**  Its install directory, where mods download. */
+	content: string,
+	/**
+	 *  The `HOME` it runs with (Linux), where its login is cached; null on
+	 *  Windows, where it keeps everything beside its executable.
+	 */
+	home: string | null,
+};
 
 export type SteamcmdStatusDto = {
 	found: boolean,

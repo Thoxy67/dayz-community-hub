@@ -24,7 +24,6 @@ pub(crate) async fn get_profile(state: State<'_, SharedState>) -> Result<Profile
 pub struct ProfileSettingsInput {
     pub player: Option<String>,
     pub steam_login: Option<String>,
-    pub steam_password: Option<String>,
     pub steam_root: Option<String>,
     pub steamcmd_enabled: bool,
     pub steamcmd_path: Option<String>,
@@ -56,7 +55,6 @@ pub(crate) async fn save_profile_settings(
     let ProfileSettingsInput {
         player,
         steam_login,
-        steam_password,
         steam_root,
         steamcmd_enabled,
         steamcmd_path,
@@ -79,8 +77,13 @@ pub(crate) async fn save_profile_settings(
         };
         let profile = s.ctl.profile_mut();
         profile.player = player;
+        // Another account: SteamCMD's cached login and a saved password
+        // were the old one's.
+        if profile.steam_login != steam_login {
+            profile.steamcmd_logged_in = None;
+            profile.steam_password = None;
+        }
         profile.steam_login = steam_login;
-        profile.steam_password = steam_password;
         profile.steam_root = steam_root;
         profile.steamcmd_enabled = steamcmd_enabled;
         profile.steamcmd_path = steamcmd_path;

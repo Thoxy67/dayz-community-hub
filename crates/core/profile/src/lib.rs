@@ -23,10 +23,14 @@ const MAX_HISTORY: usize = 200;
 #[serde(default)]
 pub struct Profile {
     pub steam_login: Option<String>,
-    /// Steam account password — stored in plaintext so steamcmd can log in
-    /// non-interactively without relying on cached credentials.
-    #[serde(default)]
+    /// A Steam password saved by versions before 0.5. Never saved any more:
+    /// typed once at SteamCMD's prompt so SteamCMD caches the login, then
+    /// forgotten.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub steam_password: Option<String>,
+    /// The account SteamCMD last logged in as, its login cached since.
+    #[serde(default)]
+    pub steamcmd_logged_in: Option<String>,
     #[serde(default)]
     pub steam_root: Option<String>,
     #[serde(default = "default_steamcmd_enabled")]
@@ -205,6 +209,7 @@ impl Profile {
         Self {
             steam_login: None,
             steam_password: None,
+            steamcmd_logged_in: None,
             steam_root: None,
             steamcmd_enabled: true,
             steamcmd_path: None,

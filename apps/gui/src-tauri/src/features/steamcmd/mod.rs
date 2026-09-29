@@ -5,16 +5,18 @@ pub(crate) mod detect;
 use dz_game::ModOperation;
 use dz_steamcmd::ModProgress;
 use serde::Serialize;
-use tauri::{State, ipc::Channel};
+use tauri::{AppHandle, State, ipc::Channel};
+use tauri_plugin_opener::OpenerExt;
 
-use crate::error::spawn_blocking_mapped;
-use crate::state::SharedState;
+use crate::error::{ResultExt, spawn_blocking_mapped};
+use crate::state::{SharedState, mutate_profile};
 
 /// What a [`ModProgressEvent`] reports.
 #[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ModProgressKind {
-    ShuttingDownSteam,
+    /// SteamCMD logged in; its login is cached from now on.
+    LoggedIn,
     SteamGuardMobileRequired,
     PasswordRequired,
     LogLine,
@@ -76,9 +78,10 @@ impl ModProgressEvent {
 fn mod_progress_to_event(msg: &ModProgress) -> ModProgressEvent {
     use ModProgressKind as K;
     match msg {
-        ModProgress::ShuttingDownSteam => ModProgressEvent {
-            name: "Closing Steam...".into(),
-            ..ModProgressEvent::of(K::ShuttingDownSteam)
+        ModProgress::LoggedIn => ModProgressEvent::of(K::LoggedIn),
+        ModProgress::SavedPasswordRefused => ModProgressEvent {
+            log_line: Some("The saved password was refused and forgotten.".into()),
+            ..ModProgressEvent::of(K::LogLine)
         },
         ModProgress::SteamGuardMobileRequired => ModProgressEvent::of(K::SteamGuardMobileRequired),
         ModProgress::PasswordRequired => ModProgressEvent::of(K::PasswordRequired),
@@ -144,6 +147,11 @@ pub enum ModOpType {
     UpdateSelected,
     /// Install these mods by Workshop id (`mod_ids`, `mod_names`).
     InstallManual,
+    /// Download these mods again and check every file (`mod_ids`,
+    /// optionally `mod_names`): slow, for a mod that does not load.
+    Repair,
+    /// Log SteamCMD in and quit, so later downloads use its cached login.
+    Login,
 }
 
 /// Pair ids with names, or with the installed mods' names when none are given.
@@ -229,6 +237,10 @@ pub(crate) async fn start_mod_operation(
         ModOpType::UpdateSelected => ModOperation::UpdateSelected {
             mods: resolve_names(mod_ids.unwrap_or_default(), mod_names, &state).await?,
         },
+        ModOpType::Repair => ModOperation::Repair {
+            mods: resolve_names(mod_ids.unwrap_or_default(), mod_names, &state).await?,
+        },
+        ModOpType::Login => ModOperation::Login,
         ModOpType::InstallManual => ModOperation::InstallManual {
             mods: mod_ids
                 .unwrap_or_default()
@@ -260,6 +272,7 @@ pub(crate) async fn start_mod_operation(
     let state = state.inner().clone();
     tauri::async_runtime::spawn(async move {
         while let Some(msg) = rx.recv().await {
+            remember_login(&state, &msg).await;
             let evt = mod_progress_to_event(&msg);
             let finished = evt.kind == ModProgressKind::Finished;
             let _ = on_progress.send(evt);
@@ -273,6 +286,42 @@ pub(crate) async fn start_mod_operation(
     });
 
     Ok(())
+}
+
+/// What a session says about SteamCMD's login, kept in the profile:
+/// logged in, the account is remembered and a password saved by an earlier
+/// version is forgotten (SteamCMD caches the login itself); asked for a
+/// password, its cached login is gone.
+async fn remember_login(state: &SharedState, msg: &ModProgress) {
+    let _ = match msg {
+        ModProgress::LoggedIn => {
+            mutate_profile(state, |s| {
+                let p = s.ctl.profile_mut();
+                p.steamcmd_logged_in = p.steam_login.clone();
+                if p.steam_password.take().is_some() {
+                    s.ctl.rebuild_steamcmd();
+                }
+                Ok(())
+            })
+            .await
+        }
+        ModProgress::SavedPasswordRefused => {
+            mutate_profile(state, |s| {
+                s.ctl.profile_mut().steam_password = None;
+                s.ctl.rebuild_steamcmd();
+                Ok(())
+            })
+            .await
+        }
+        ModProgress::PasswordRequired => {
+            mutate_profile(state, |s| {
+                s.ctl.profile_mut().steamcmd_logged_in = None;
+                Ok(())
+            })
+            .await
+        }
+        _ => Ok(()),
+    };
 }
 
 /// Send input (password or Steam Guard code) to the running steamcmd PTY.
@@ -302,4 +351,45 @@ pub(crate) async fn cancel_mod_operation(state: State<'_, SharedState>) -> Resul
     }
     state.pty_input_tx = None;
     Ok(())
+}
+
+/// Where SteamCMD keeps its things: the launcher's, never the Steam client's.
+#[derive(Serialize, Clone, Debug, specta::Type)]
+pub struct SteamcmdDirsDto {
+    /// Its install directory, where mods download.
+    pub content: String,
+    /// The `HOME` it runs with (Linux), where its login is cached; null on
+    /// Windows, where it keeps everything beside its executable.
+    pub home: Option<String>,
+}
+
+/// Where SteamCMD downloads and keeps its login.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn steamcmd_dirs(
+    state: State<'_, SharedState>,
+) -> Result<SteamcmdDirsDto, String> {
+    let content = state.read().await.ctl.steamcmd_content_dir();
+    Ok(SteamcmdDirsDto {
+        content: content.to_string_lossy().into_owned(),
+        home: cfg!(unix).then(|| {
+            dz_common::paths::steamcmd_home_dir()
+                .to_string_lossy()
+                .into_owned()
+        }),
+    })
+}
+
+/// Open SteamCMD's install directory in the system file manager.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn open_steamcmd_dir(
+    app: AppHandle,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
+    let dir = state.read().await.ctl.steamcmd_content_dir();
+    tokio::fs::create_dir_all(&dir).await.cmd_err()?;
+    app.opener()
+        .open_path(dir.to_string_lossy().as_ref(), None::<&str>)
+        .cmd_err()
 }

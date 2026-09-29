@@ -31,7 +31,11 @@ pub struct LaunchOptionDto {
 #[derive(Serialize, Clone, Debug, specta::Type)]
 pub struct ProfileDto {
     pub steam_login: Option<String>,
-    pub steam_password: Option<String>,
+    /// A password an earlier version saved is still to be typed once at
+    /// SteamCMD's prompt (never sent back to the window).
+    pub has_saved_password: bool,
+    /// The account SteamCMD last logged in as; its login is cached.
+    pub steamcmd_logged_in: Option<String>,
     pub steam_root: Option<String>,
     pub steamcmd_enabled: bool,
     /// Explicit path to the steamcmd binary (overrides auto-detection).
@@ -66,7 +70,8 @@ pub struct ProfileDto {
 pub(crate) fn profile_to_dto(profile: &Profile) -> ProfileDto {
     ProfileDto {
         steam_login: profile.steam_login.clone(),
-        steam_password: profile.steam_password.clone(),
+        has_saved_password: profile.steam_password.is_some(),
+        steamcmd_logged_in: profile.steamcmd_logged_in.clone(),
         steam_root: profile.steam_root.clone(),
         steamcmd_enabled: profile.steamcmd_enabled,
         steamcmd_path: profile.steamcmd_path.clone(),

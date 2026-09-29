@@ -58,6 +58,10 @@ impl SteamCmd {
         for arg in args {
             cmd.arg(arg);
         }
+        #[cfg(unix)]
+        if let Some(home) = &self.home_dir {
+            cmd.env("HOME", home);
+        }
 
         let mut child = pty_pair
             .slave

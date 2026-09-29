@@ -1,7 +1,7 @@
 //! Installed workshop mods: list them, check them against the Workshop,
 //! delete them, link and unlink them, and open their folders.
 
-use dz_game::mods::{self, InstalledMod};
+use dz_game::mods::{self, DeleteOutcome, InstalledMod, ModSource};
 use futures_util::StreamExt;
 use rustc_hash::FxHashMap;
 use serde::Serialize;
@@ -20,12 +20,36 @@ pub struct InstalledModDto {
     pub local_updated: i64,
     pub size: u64,
     pub size_human: String,
-    /// Installed by this app (it may delete or unlink it).
+    /// An `@<id>` link in the DayZ directory loads it.
     pub managed: bool,
+    /// Whose folder the copy in use is in: the launcher's, which it updates
+    /// and deletes, or a Steam library's, which it only reads.
+    pub source: ModSourceDto,
+    /// The copy's directory.
+    pub path: String,
+    /// Another, older copy is in the other kind of folder.
+    pub other_copy: bool,
     /// `time_updated` on the Workshop; null until checked.
     pub remote_updated: Option<i64>,
     /// True when `remote_updated > local_updated`.
     pub update_available: bool,
+}
+
+/// Whose folder a mod is in.
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ModSourceDto {
+    Launcher,
+    Steam,
+}
+
+impl From<ModSource> for ModSourceDto {
+    fn from(s: ModSource) -> Self {
+        match s {
+            ModSource::Launcher => Self::Launcher,
+            ModSource::Steam => Self::Steam,
+        }
+    }
 }
 
 fn installed_mod_to_dto(m: &InstalledMod, update_cache: &FxHashMap<u64, i64>) -> InstalledModDto {
@@ -37,6 +61,9 @@ fn installed_mod_to_dto(m: &InstalledMod, update_cache: &FxHashMap<u64, i64>) ->
         size: m.size,
         size_human: mods::format_size(m.size),
         managed: m.managed,
+        source: m.source.into(),
+        path: m.path.to_string_lossy().into_owned(),
+        other_copy: m.other_copy,
         remote_updated,
         update_available: remote_updated.is_some_and(|r| r > m.local_updated),
     }
@@ -158,27 +185,37 @@ pub(crate) async fn check_mod_updates(
     Ok(dtos)
 }
 
-/// Delete a mod by ID.
+/// Delete a mod by ID: the launcher's copy and its link. Returns true when
+/// a copy in a Steam library remains (the launcher never deletes there:
+/// unsubscribing in Steam does).
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn delete_mod(mod_id: u64, state: State<'_, SharedState>) -> Result<(), String> {
+pub(crate) async fn delete_mod(mod_id: u64, state: State<'_, SharedState>) -> Result<bool, String> {
     let ctl_clone = { state.read().await.ctl.clone_for_task() };
-    spawn_blocking_mapped(move || ctl_clone.delete_mod(mod_id, false)).await
+    spawn_blocking_mapped(move || {
+        ctl_clone
+            .delete_mod(mod_id)
+            .map(|o| o == DeleteOutcome::KeptInSteam)
+    })
+    .await
 }
 
-/// Delete multiple mods by ID in one call.
+/// Delete several mods by ID. Returns the ids whose Steam copy remains.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn delete_mods_bulk(
     mod_ids: Vec<u64>,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
+) -> Result<Vec<u64>, String> {
     let ctl_clone = { state.read().await.ctl.clone_for_task() };
-    spawn_blocking_mapped(move || -> std::result::Result<(), String> {
+    spawn_blocking_mapped(move || -> std::result::Result<Vec<u64>, String> {
+        let mut kept = Vec::new();
         for id in mod_ids {
-            ctl_clone.delete_mod(id, false).cmd_err()?;
+            if ctl_clone.delete_mod(id).cmd_err()? == DeleteOutcome::KeptInSteam {
+                kept.push(id);
+            }
         }
-        Ok(())
+        Ok(kept)
     })
     .await
 }
@@ -194,7 +231,8 @@ pub(crate) async fn toggle_mod_managed(
     spawn_blocking_mapped(move || ctl_clone.toggle_mod_managed(mod_id)).await
 }
 
-/// Cleanup all managed mods and symlinks.
+/// Delete every mod the launcher downloaded and every `@` link; mods in
+/// Steam libraries stay.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn cleanup_mods(state: State<'_, SharedState>) -> Result<String, String> {
@@ -208,23 +246,22 @@ pub(crate) async fn cleanup_mods(state: State<'_, SharedState>) -> Result<String
     ))
 }
 
-/// Open the Steam Workshop directory (all mods) in the system file manager.
+/// Open the launcher's workshop folder (where SteamCMD downloads) in the
+/// system file manager.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn open_workshop_dir(
     app: AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    let path = {
-        let state = state.read().await;
-        state.ctl.workshop_path().cmd_err()?
-    };
+    let path = state.read().await.ctl.workshop_path();
+    tokio::fs::create_dir_all(&path).await.cmd_err()?;
     app.opener()
         .open_path(path.to_string_lossy().as_ref(), None::<&str>)
         .cmd_err()
 }
 
-/// Open a specific mod's directory in the system file manager.
+/// Open the directory of the copy of a mod in use in the system file manager.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn open_mod_dir(
@@ -232,14 +269,12 @@ pub(crate) async fn open_mod_dir(
     mod_id: u64,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    let path = {
-        let state = state.read().await;
-        state
-            .ctl
-            .workshop_path()
-            .cmd_err()?
-            .join(mod_id.to_string())
-    };
+    let ctl = state.read().await.ctl.clone_for_task();
+    let path = spawn_blocking_mapped(move || {
+        ctl.mod_dir(mod_id)
+            .ok_or_else(|| dz_common::Error::Mod(format!("Mod {mod_id} is not installed")))
+    })
+    .await?;
     app.opener()
         .open_path(path.to_string_lossy().as_ref(), None::<&str>)
         .cmd_err()

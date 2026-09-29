@@ -59,6 +59,8 @@ pub(crate) fn builder() -> tauri_specta::Builder<tauri::Wry> {
             steamcmd::start_mod_operation,
             steamcmd::send_steamcmd_input,
             steamcmd::cancel_mod_operation,
+            steamcmd::steamcmd_dirs,
+            steamcmd::open_steamcmd_dir,
             steamcmd::detect::detect_steamcmd,
             steamcmd::detect::watch_steamcmd,
             steamcmd::detect::download_steamcmd_windows,

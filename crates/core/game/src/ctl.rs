@@ -46,9 +46,28 @@ fn normalize_steamapps(p: PathBuf) -> PathBuf {
     }
 }
 
+/// The Steam client's `steamapps` directory that holds DayZ: the profile's,
+/// or the one found on this machine.
+fn resolve_steam_root(profile: &Profile) -> PathBuf {
+    profile
+        .steam_root
+        .as_ref()
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+        .map(normalize_steamapps)
+        .or_else(find_steam_root)
+        .unwrap_or_else(default_steamapps_fallback)
+}
+
+/// SteamCMD's own install directory; its workshop folder is the launcher's.
+fn content_dir() -> PathBuf {
+    dz_common::paths::steamcmd_content_dir()
+}
+
 /// Build a `SteamCmd` from the profile's settings, or `None` when steamcmd is
-/// disabled or cannot be found.
-fn build_steamcmd(profile: &Profile) -> Option<Arc<SteamCmd>> {
+/// disabled or cannot be found. It installs into the launcher's own
+/// directory, never into `steam_root`.
+fn build_steamcmd(profile: &Profile, steam_root: &Path) -> Option<Arc<SteamCmd>> {
     if !profile.steamcmd_enabled {
         return None;
     }
@@ -59,21 +78,14 @@ fn build_steamcmd(profile: &Profile) -> Option<Arc<SteamCmd>> {
         .map(PathBuf::from)
         .filter(|p| p.exists())
         .or_else(find_steamcmd)?;
-    let steam_root = profile
-        .steam_root
-        .as_ref()
-        .filter(|s| !s.is_empty())
-        .map(PathBuf::from)
-        .map(normalize_steamapps)
-        .or_else(find_steam_root)
-        .unwrap_or_else(default_steamapps_fallback);
     let login = profile
         .steam_login
         .clone()
         .unwrap_or_else(|| "anonymous".to_string());
-    let password = profile.steam_password.clone();
     Some(Arc::new(
-        SteamCmd::new(resolved_path, steam_root, Some(login)).with_password(password),
+        SteamCmd::new(resolved_path, steam_root, content_dir(), Some(login))
+            .with_saved_password(profile.steam_password.clone())
+            .with_home(Some(dz_common::paths::steamcmd_home_dir())),
     ))
 }
 
@@ -91,6 +103,8 @@ fn http_client() -> Client {
 
 pub struct DayzCtl {
     profile: Profile,
+    /// The Steam client's `steamapps` holding DayZ (read only).
+    steam_root: PathBuf,
     steamcmd: Option<Arc<SteamCmd>>,
     client: Client,
 }
@@ -100,9 +114,11 @@ impl DayzCtl {
     /// steamcmd from it.
     pub async fn new(profile_path: impl AsRef<Path>) -> Result<Self> {
         let profile = Profile::load_async(profile_path).await?;
-        let steamcmd = build_steamcmd(&profile);
+        let steam_root = resolve_steam_root(&profile);
+        let steamcmd = build_steamcmd(&profile, &steam_root);
         Ok(Self {
             profile,
+            steam_root,
             steamcmd,
             client: http_client(),
         })
@@ -131,12 +147,38 @@ impl DayzCtl {
 
     // --- Paths ---
 
-    pub fn workshop_path(&self) -> Result<PathBuf> {
-        self.steamcmd_ref().map(|sc| sc.workshop_path())
+    /// The launcher's workshop folder, where SteamCMD downloads.
+    pub fn workshop_path(&self) -> PathBuf {
+        self.mod_dirs_without_steam().launcher
+    }
+
+    /// SteamCMD's own install directory.
+    pub fn steamcmd_content_dir(&self) -> PathBuf {
+        content_dir()
     }
 
     pub fn dayz_path(&self) -> Result<PathBuf> {
-        self.steamcmd_ref().map(|sc| sc.dayz_path())
+        Ok(self.steam_root.join("common").join("DayZ"))
+    }
+
+    fn mod_dirs_without_steam(&self) -> mods::ModDirs {
+        mods::ModDirs {
+            launcher: content_dir()
+                .join("steamapps")
+                .join("workshop")
+                .join("content")
+                .join(dz_steamcmd::DAYZ_GAME_ID.to_string()),
+            steam: Vec::new(),
+        }
+    }
+
+    /// Where installed mods are: the launcher's folder and every Steam
+    /// library's workshop folder. Reads `libraryfolders.vdf`: blocking.
+    pub fn mod_dirs(&self) -> mods::ModDirs {
+        mods::ModDirs {
+            steam: dz_steamcmd::steam_workshop_dirs(&self.steam_root),
+            ..self.mod_dirs_without_steam()
+        }
     }
 
     pub fn has_steamcmd(&self) -> bool {
@@ -148,7 +190,8 @@ impl DayzCtl {
     /// `steamcmd_path` or `steamcmd_enabled` so the new values take effect
     /// without restarting the app.
     pub fn rebuild_steamcmd(&mut self) {
-        self.steamcmd = build_steamcmd(&self.profile);
+        self.steam_root = resolve_steam_root(&self.profile);
+        self.steamcmd = build_steamcmd(&self.profile, &self.steam_root);
     }
 
     /// The shared HTTP client.
@@ -162,6 +205,7 @@ impl DayzCtl {
     pub fn clone_for_task(&self) -> Self {
         Self {
             profile: self.profile.clone(),
+            steam_root: self.steam_root.clone(),
             steamcmd: self.steamcmd.clone(),
             client: self.client.clone(),
         }
@@ -187,15 +231,11 @@ impl DayzCtl {
         tokio::task::JoinHandle<ModOpResult>,
     )> {
         let steamcmd = self.steamcmd_ref()?.clone();
-        let workshop_path = self.workshop_path()?;
+        let dirs = self.mod_dirs();
         let dayz_path = self.dayz_path()?;
-        let installed = self.get_installed_mods().unwrap_or_default();
+        let installed = dirs.scan(None);
         Ok(spawn_mod_operation(
-            steamcmd,
-            workshop_path,
-            dayz_path,
-            op,
-            installed,
+            steamcmd, dirs, dayz_path, op, installed,
         ))
     }
 
@@ -205,34 +245,33 @@ impl DayzCtl {
 
     // --- Mod management (blocking filesystem work: call off the runtime) ---
 
+    /// Every installed mod, launcher's and Steam's, one entry per id.
     pub fn get_installed_mods(&self) -> Result<Vec<InstalledMod>> {
-        mods::scan_workshop_dir(&self.workshop_path()?)
+        Ok(self.mod_dirs().scan(self.dayz_path().ok().as_deref()))
     }
 
-    /// Delete a mod and the `@<id>` link that pointed at it.
-    pub fn delete_mod(&self, mod_id: u64, only_managed: bool) -> Result<()> {
-        mods::delete_mod(&self.workshop_path()?, mod_id, only_managed)?;
-        if let Ok(dayz) = self.dayz_path() {
-            let _ = mods::remove_mod_symlink(&dayz, mod_id);
-        }
-        Ok(())
+    /// Delete a mod's launcher copy and its `@<id>` link. A copy in a Steam
+    /// library is never deleted: see [`mods::DeleteOutcome::KeptInSteam`].
+    pub fn delete_mod(&self, mod_id: u64) -> Result<mods::DeleteOutcome> {
+        mods::delete_mod(&self.mod_dirs(), self.dayz_path().ok().as_deref(), mod_id)
+    }
+
+    /// The directory of the copy of a mod in use.
+    pub fn mod_dir(&self, mod_id: u64) -> Option<PathBuf> {
+        self.mod_dirs().copy_of(mod_id).map(|(p, _)| p)
     }
 
     pub fn toggle_mod_managed(&self, mod_id: u64) -> Result<bool> {
-        mods::toggle_mod_managed(&self.workshop_path()?, &self.dayz_path()?, mod_id)
+        mods::toggle_mod_managed(&self.mod_dirs(), &self.dayz_path()?, mod_id)
     }
 
     pub fn cleanup_mods(&self) -> Result<ModManagementStats> {
-        mods::cleanup_mods(&self.workshop_path()?, &self.dayz_path()?)
+        mods::cleanup_mods(&self.mod_dirs(), &self.dayz_path()?)
     }
 
     /// Create the `@<id>` links DayZ loads a server's mods through.
     pub fn setup_mod_symlinks(&self, server: &Server) -> Result<Vec<u64>> {
-        mods::create_mod_symlinks(
-            &self.workshop_path()?,
-            &self.dayz_path()?,
-            &server.mod_ids(),
-        )
+        mods::create_mod_symlinks(&self.mod_dirs(), &self.dayz_path()?, &server.mod_ids())
     }
 
     // --- Launch ---

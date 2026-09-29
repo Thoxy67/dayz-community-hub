@@ -49,6 +49,8 @@ permissions = [
   "allow-start-mod-operation",
   "allow-send-steamcmd-input",
   "allow-cancel-mod-operation",
+  "allow-steamcmd-dirs",
+  "allow-open-steamcmd-dir",
   "allow-detect-steamcmd",
   "allow-watch-steamcmd",
   "allow-download-steamcmd-windows",

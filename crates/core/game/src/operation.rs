@@ -1,4 +1,9 @@
 //! Background mod operations: install or update through steamcmd, then link.
+//!
+//! Everything downloads into the launcher's own folder. A mod that is only in
+//! a Steam library is updated by downloading a launcher copy, which is then
+//! the newer and the one linked: the Steam client only updates the items its
+//! account is subscribed to, and the launcher never writes in its libraries.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -8,7 +13,7 @@ use dz_common::Result;
 use dz_steamcmd::{ModProgress, PtyInputTx, SteamCmd};
 use tokio::sync::mpsc;
 
-use crate::mods::{self, InstalledMod};
+use crate::mods::{self, InstalledMod, ModDirs};
 
 /// Describes what kind of background mod operation to perform.
 #[derive(Clone)]
@@ -30,6 +35,11 @@ pub enum ModOperation {
     /// Downloads, marks as managed, and creates symlinks — same as InstallOnly
     /// but driven by a user-provided list instead of a server's mod list.
     InstallManual { mods: Vec<(u64, String)> },
+    /// Download these mods again and check every file (`validate`): slow,
+    /// for a mod that does not load.
+    Repair { mods: Vec<(u64, String)> },
+    /// Log SteamCMD in and quit, so later downloads use its cached login.
+    Login,
 }
 
 /// Emit a "nothing to do" finished message. Used by operation branches that
@@ -48,7 +58,7 @@ fn emit_nothing_to_do(tx: &mpsc::UnboundedSender<ModProgress>) {
 /// When the operation completes, the final message is `ModProgress::Finished`.
 pub fn spawn_mod_operation(
     steamcmd: Arc<SteamCmd>,
-    workshop_path: PathBuf,
+    dirs: ModDirs,
     dayz_path: PathBuf,
     op: ModOperation,
     installed_mods: Vec<InstalledMod>,
@@ -76,7 +86,7 @@ pub fn spawn_mod_operation(
                 let missing = mods::get_missing_mods(&server_mod_ids, &installed_mods);
 
                 if missing.is_empty() {
-                    let _ = mods::create_mod_symlinks(&workshop_path, &dayz_path, &server_mod_ids);
+                    let _ = mods::create_mod_symlinks(&dirs, &dayz_path, &server_mod_ids);
                     let _ = tx.send(ModProgress::Finished {
                         ok: 0,
                         failed: 0,
@@ -105,7 +115,7 @@ pub fn spawn_mod_operation(
                     .collect();
 
                 let results = steamcmd
-                    .download_mods_with_progress(&mods_info, &tx, take_pty_rx!())
+                    .download_mods_with_progress(&mods_info, false, &tx, take_pty_rx!())
                     .await;
 
                 let mut installed_ids = Vec::new();
@@ -113,7 +123,6 @@ pub fn spawn_mod_operation(
                 for (mod_id, result) in &results {
                     match result {
                         Ok(_) => {
-                            let _ = mods::mark_mod_as_managed(&workshop_path, *mod_id);
                             installed_ids.push(*mod_id);
                         }
                         Err(e) => {
@@ -122,7 +131,7 @@ pub fn spawn_mod_operation(
                     }
                 }
 
-                let _ = mods::create_mod_symlinks(&workshop_path, &dayz_path, &server_mod_ids);
+                let _ = mods::create_mod_symlinks(&dirs, &dayz_path, &server_mod_ids);
 
                 ModOpResult::InstallDone(InstallResult {
                     installed: installed_ids,
@@ -139,10 +148,10 @@ pub fn spawn_mod_operation(
                     .collect();
 
                 let results = steamcmd
-                    .download_mods_with_progress(&mods_info, &tx, take_pty_rx!())
+                    .download_mods_with_progress(&mods_info, false, &tx, take_pty_rx!())
                     .await;
 
-                let _ = mods::create_mod_symlinks(&workshop_path, &dayz_path, &server.mod_ids());
+                let _ = mods::create_mod_symlinks(&dirs, &dayz_path, &server.mod_ids());
 
                 let per_mod: Vec<(u64, Result<()>)> = results;
                 ModOpResult::UpdateDone(per_mod)
@@ -155,9 +164,9 @@ pub fn spawn_mod_operation(
                     .collect();
 
                 let results = steamcmd
-                    .download_mods_with_progress(&mods_info, &tx, take_pty_rx!())
+                    .download_mods_with_progress(&mods_info, false, &tx, take_pty_rx!())
                     .await;
-                ModOpResult::UpdateDone(results)
+                updated(&dirs, &dayz_path, results)
             }
 
             ModOperation::UpdateStale { stale_mods } => {
@@ -166,17 +175,17 @@ pub fn spawn_mod_operation(
                     return ModOpResult::UpdateDone(vec![]);
                 }
                 let results = steamcmd
-                    .download_mods_with_progress(&stale_mods, &tx, take_pty_rx!())
+                    .download_mods_with_progress(&stale_mods, false, &tx, take_pty_rx!())
                     .await;
-                ModOpResult::UpdateDone(results)
+                updated(&dirs, &dayz_path, results)
             }
 
             ModOperation::UpdateOne { mod_id, name } => {
                 let mods_info = vec![(mod_id, name)];
                 let results = steamcmd
-                    .download_mods_with_progress(&mods_info, &tx, take_pty_rx!())
+                    .download_mods_with_progress(&mods_info, false, &tx, take_pty_rx!())
                     .await;
-                ModOpResult::UpdateDone(results)
+                updated(&dirs, &dayz_path, results)
             }
 
             ModOperation::UpdateSelected { mods } => {
@@ -185,9 +194,25 @@ pub fn spawn_mod_operation(
                     return ModOpResult::UpdateDone(vec![]);
                 }
                 let results = steamcmd
-                    .download_mods_with_progress(&mods, &tx, take_pty_rx!())
+                    .download_mods_with_progress(&mods, false, &tx, take_pty_rx!())
                     .await;
-                ModOpResult::UpdateDone(results)
+                updated(&dirs, &dayz_path, results)
+            }
+
+            ModOperation::Repair { mods } => {
+                if mods.is_empty() {
+                    emit_nothing_to_do(&tx);
+                    return ModOpResult::UpdateDone(vec![]);
+                }
+                let results = steamcmd
+                    .download_mods_with_progress(&mods, true, &tx, take_pty_rx!())
+                    .await;
+                updated(&dirs, &dayz_path, results)
+            }
+
+            ModOperation::Login => {
+                steamcmd.login_with_progress(&tx, take_pty_rx!()).await;
+                ModOpResult::UpdateDone(vec![])
             }
 
             ModOperation::InstallManual { mods: mods_info } => {
@@ -212,7 +237,7 @@ pub fn spawn_mod_operation(
                 if missing.is_empty() {
                     // All requested mods are already installed — just create symlinks
                     let all_ids: Vec<u64> = mods_info.iter().map(|(id, _)| *id).collect();
-                    let _ = mods::create_mod_symlinks(&workshop_path, &dayz_path, &all_ids);
+                    let _ = mods::create_mod_symlinks(&dirs, &dayz_path, &all_ids);
                     emit_nothing_to_do(&tx);
                     return ModOpResult::InstallDone(InstallResult {
                         installed: Vec::new(),
@@ -222,7 +247,7 @@ pub fn spawn_mod_operation(
                 }
 
                 let results = steamcmd
-                    .download_mods_with_progress(&missing, &tx, take_pty_rx!())
+                    .download_mods_with_progress(&missing, false, &tx, take_pty_rx!())
                     .await;
 
                 let mut installed_new = Vec::new();
@@ -230,7 +255,6 @@ pub fn spawn_mod_operation(
                 for (mod_id, result) in &results {
                     match result {
                         Ok(_) => {
-                            let _ = mods::mark_mod_as_managed(&workshop_path, *mod_id);
                             installed_new.push(*mod_id);
                         }
                         Err(e) => {
@@ -241,7 +265,7 @@ pub fn spawn_mod_operation(
 
                 // Create symlinks for all requested mods (including previously installed ones)
                 let all_ids: Vec<u64> = mods_info.iter().map(|(id, _)| *id).collect();
-                let _ = mods::create_mod_symlinks(&workshop_path, &dayz_path, &all_ids);
+                let _ = mods::create_mod_symlinks(&dirs, &dayz_path, &all_ids);
 
                 ModOpResult::InstallDone(InstallResult {
                     installed: installed_new,
@@ -253,6 +277,21 @@ pub fn spawn_mod_operation(
     });
 
     (rx, pty_input_tx, handle)
+}
+
+/// The mods downloaded are now the newest copies: their links move to them.
+fn updated(
+    dirs: &ModDirs,
+    dayz_path: &std::path::Path,
+    results: Vec<(u64, Result<()>)>,
+) -> ModOpResult {
+    let ok: Vec<u64> = results
+        .iter()
+        .filter(|(_, r)| r.is_ok())
+        .map(|(id, _)| *id)
+        .collect();
+    mods::relink_linked(dirs, dayz_path, &ok);
+    ModOpResult::UpdateDone(results)
 }
 
 /// Result from a completed background mod operation.

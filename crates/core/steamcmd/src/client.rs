@@ -1,14 +1,14 @@
-//! The Steam client itself: find it, start it, shut it down.
+//! The Steam client itself: find it and start it. The launcher never closes
+//! it: SteamCMD runs beside it with its own install directory.
 
 use dz_common::Result;
 use std::path::PathBuf;
 use std::process::Stdio;
-use tokio::process::Command;
 
 #[cfg(target_os = "windows")]
 use crate::detect::query_steam_registry_path;
 
-/// Steam client management (detect, start, shutdown).
+/// Steam client management (detect, start).
 pub struct SteamClient;
 
 impl SteamClient {
@@ -114,120 +114,5 @@ impl SteamClient {
         }
 
         Ok(false)
-    }
-
-    /// Graceful shutdown via `steam -shutdown`.
-    pub async fn shutdown() -> Result<()> {
-        let mut cmd = Command::new(Self::steam_exe_path());
-        cmd.arg("-shutdown")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        #[cfg(target_os = "windows")]
-        cmd.creation_flags(dz_common::CREATE_NO_WINDOW);
-        let _ = cmd.spawn()?.wait().await;
-        // Give it time to shut down
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-        Ok(())
-    }
-
-    /// Force kill all Steam processes.
-    pub fn shutdown_force() -> Result<()> {
-        use sysinfo::System;
-        let mut system = System::new();
-        system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-
-        for process in system.processes().values() {
-            if is_steam_client_process(&process.name().to_string_lossy()) {
-                process.kill();
-            }
-        }
-        Ok(())
-    }
-
-    /// [`SteamClient::is_running`] off the async runtime: it scans the whole
-    /// process table.
-    async fn is_running_async() -> bool {
-        tokio::task::spawn_blocking(Self::is_running)
-            .await
-            .unwrap_or(false)
-    }
-
-    /// Shut down Steam gracefully before running steamcmd.
-    ///
-    /// steamcmd and the Steam client share the same auth session — running both
-    /// simultaneously causes Steam to kick you offline. This function:
-    ///   1. Does nothing if Steam is not running.
-    ///   2. Sends `steam -shutdown` and waits up to 15 s for all processes to exit.
-    ///   3. Force-kills any remaining Steam processes if they didn't exit in time.
-    pub async fn shutdown_for_steamcmd() {
-        if !Self::is_running_async().await {
-            return;
-        }
-
-        // Ask Steam to shut down gracefully
-        let mut cmd = Command::new(Self::steam_exe_path());
-        cmd.arg("-shutdown")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        #[cfg(target_os = "windows")]
-        cmd.creation_flags(dz_common::CREATE_NO_WINDOW);
-        let _ = cmd.spawn();
-
-        // Poll every 500 ms for up to 15 s
-        for _ in 0..30 {
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            if !Self::is_running_async().await {
-                return;
-            }
-        }
-
-        // Still running — force kill
-        let _ = tokio::task::spawn_blocking(Self::shutdown_force).await;
-
-        // Brief pause to let OS release file locks before steamcmd starts
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-    }
-}
-
-/// The Steam client's own processes, and nothing else whose name merely
-/// starts with "steam": steamcmd, SteamOS services on a Steam Deck
-/// (`steamos-*`), third-party tools such as steamtinkerlaunch.
-fn is_steam_client_process(name: &str) -> bool {
-    let name = name.strip_suffix(".exe").unwrap_or(name);
-    [
-        "steam",
-        "steamwebhelper",
-        "steamservice",
-        "steamerrorreporter",
-        "steamerrorreporter64",
-    ]
-    .iter()
-    .any(|n| name.eq_ignore_ascii_case(n))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::is_steam_client_process;
-
-    #[test]
-    fn only_the_client_is_force_closed() {
-        for name in [
-            "steam",
-            "Steam.exe",
-            "steamwebhelper",
-            "steamwebhelper.exe",
-            "steamservice.exe",
-        ] {
-            assert!(is_steam_client_process(name), "{name}");
-        }
-        for name in [
-            "steamcmd",
-            "steamcmd.exe",
-            "steamos-manager",
-            "steamtinkerlaunch",
-            "steamapps",
-        ] {
-            assert!(!is_steam_client_process(name), "{name}");
-        }
     }
 }

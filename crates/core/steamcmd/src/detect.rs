@@ -1,6 +1,6 @@
 //! Finding Steam, its libraries, and steamcmd on this machine.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::DAYZ_GAME_ID;
 
@@ -111,6 +111,31 @@ fn steam_libraries_from_vdf(steamapps: &std::path::Path) -> Vec<PathBuf> {
         .collect()
 }
 
+/// Every Steam library's DayZ workshop folder
+/// (`<library>/steamapps/workshop/content/221100`) that exists: the library
+/// at `steam_root`, the default install's, and every library their
+/// `libraryfolders.vdf` lists. These belong to the Steam client: read only.
+pub fn steam_workshop_dirs(steam_root: &Path) -> Vec<PathBuf> {
+    let mut steamapps = vec![steam_root.to_path_buf()];
+    steamapps.extend(default_steamapps_candidates());
+    let mut libraries: Vec<PathBuf> = Vec::new();
+    for sa in &steamapps {
+        libraries.push(sa.clone());
+        libraries.extend(
+            steam_libraries_from_vdf(sa)
+                .into_iter()
+                .map(|lib| lib.join("steamapps")),
+        );
+    }
+    let mut seen = rustc_hash::FxHashSet::default();
+    libraries
+        .into_iter()
+        .map(|sa| crate::cmd::workshop_content(&sa, DAYZ_GAME_ID))
+        .filter(|dir| dir.is_dir())
+        .filter(|dir| seen.insert(dir.canonicalize().unwrap_or_else(|_| dir.clone())))
+        .collect()
+}
+
 /// Read the Steam install path from the Windows registry.
 ///
 /// Queries `HKCU\Software\Valve\Steam` → `SteamPath` (REG_SZ).
@@ -159,13 +184,18 @@ pub fn find_steamcmd() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     {
         let candidates: Vec<PathBuf> = {
+            // Never a steamcmd.exe inside the Steam client's own directory:
+            // it would update and write over the client's files.
             let mut v = Vec::new();
-            // If Steam is found via registry, its bundled steamcmd is in the same directory.
-            if let Some(steam_path) = query_steam_registry_path() {
-                v.push(PathBuf::from(&steam_path).join("steamcmd.exe"));
+            if let Ok(appdata) = std::env::var("APPDATA") {
+                v.push(
+                    PathBuf::from(appdata)
+                        .join("dayz-community-hub")
+                        .join("steamcmd")
+                        .join("steamcmd.exe"),
+                );
             }
             for base in &[
-                "C:\\Program Files (x86)\\Steam\\steamcmd.exe",
                 "C:\\Program Files (x86)\\SteamCMD\\steamcmd.exe",
                 "C:\\SteamCMD\\steamcmd.exe",
             ] {

@@ -1,3 +1,11 @@
+//! Installed workshop mods and the `@<id>` links DayZ loads them through.
+//!
+//! A mod can be in two places: the launcher's SteamCMD directory, which the
+//! launcher owns, and the Steam client's workshop folders (one per library,
+//! subscriptions and mods an earlier version downloaded there), which it
+//! only reads. The list is the union; when both hold a mod, the copy updated
+//! last is the one linked and shown.
+
 use dz_common::Error;
 use dz_common::Result;
 use regex::Regex;
@@ -9,6 +17,16 @@ use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
+/// Whose folder a mod copy is in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModSource {
+    /// The launcher's SteamCMD directory: it may update and delete it.
+    Launcher,
+    /// A Steam library's workshop folder: read only.
+    Steam,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstalledMod {
     pub name: String,
@@ -16,7 +34,117 @@ pub struct InstalledMod {
     /// Local install/update time (filesystem mtime of meta.cpp, rewritten by steamcmd on each download)
     pub local_updated: i64,
     pub size: u64,
+    /// An `@<id>` link in the DayZ directory loads it.
     pub managed: bool,
+    pub source: ModSource,
+    /// The mod's directory.
+    pub path: PathBuf,
+    /// Another, older copy exists in the other kind of folder.
+    pub other_copy: bool,
+}
+
+/// Where installed mods are looked for.
+#[derive(Debug, Clone)]
+pub struct ModDirs {
+    /// The launcher's workshop folder
+    /// (`<data>/steamcmd-content/steamapps/workshop/content/221100`).
+    pub launcher: PathBuf,
+    /// The Steam client's workshop folders, one per library. Read only.
+    pub steam: Vec<PathBuf>,
+}
+
+impl ModDirs {
+    /// Every folder with its source, the launcher's first; a Steam folder
+    /// that is the launcher's own (a link) is left out.
+    fn all(&self) -> impl Iterator<Item = (&Path, ModSource)> {
+        let own = self.launcher.canonicalize().ok();
+        std::iter::once((self.launcher.as_path(), ModSource::Launcher)).chain(
+            self.steam
+                .iter()
+                .filter(move |d| own.is_none() || d.canonicalize().ok() != own)
+                .map(|d| (d.as_path(), ModSource::Steam)),
+        )
+    }
+
+    /// Every installed mod, one entry per id (the copy updated last), sorted
+    /// by name. `dayz` tells which are linked.
+    pub fn scan(&self, dayz: Option<&Path>) -> Vec<InstalledMod> {
+        let copies = self
+            .all()
+            .flat_map(|(dir, source)| scan_workshop_dir(dir, source).unwrap_or_default())
+            .collect();
+        let mut mods = merge_copies(copies);
+        if let Some(dayz) = dayz {
+            for m in &mut mods {
+                m.managed = is_linked(dayz, m.id);
+            }
+        }
+        mods
+    }
+
+    /// The directory of the copy of `id` to use: the one updated last, the
+    /// launcher's on a tie. Reads only each copy's `meta.cpp`.
+    pub fn copy_of(&self, id: u64) -> Option<(PathBuf, ModSource)> {
+        let mut best: Option<(PathBuf, ModSource, i64)> = None;
+        for (dir, source) in self.all() {
+            let path = dir.join(id.to_string());
+            let Some(updated) = meta_mtime(&path.join("meta.cpp")) else {
+                continue;
+            };
+            if best.as_ref().is_none_or(|(_, _, b)| updated > *b) {
+                best = Some((path, source, updated));
+            }
+        }
+        best.map(|(path, source, _)| (path, source))
+    }
+
+    /// The launcher's copy of `id`, whether or not it exists.
+    pub fn launcher_copy(&self, id: u64) -> PathBuf {
+        self.launcher.join(id.to_string())
+    }
+
+    /// A Steam copy of `id` exists.
+    pub fn in_steam(&self, id: u64) -> bool {
+        self.all()
+            .filter(|(_, s)| *s == ModSource::Steam)
+            .any(|(dir, _)| dir.join(id.to_string()).join("meta.cpp").is_file())
+    }
+}
+
+/// One entry per mod id from copies in several folders: the copy updated
+/// last wins, the launcher's on a tie (it is the one the launcher can
+/// update). Sorted by name.
+pub fn merge_copies(copies: Vec<InstalledMod>) -> Vec<InstalledMod> {
+    let mut by_id: HashMap<u64, InstalledMod> = HashMap::with_capacity(copies.len());
+    for c in copies {
+        match by_id.get_mut(&c.id) {
+            None => {
+                by_id.insert(c.id, c);
+            }
+            Some(kept) => {
+                let newer = c.local_updated > kept.local_updated
+                    || (c.local_updated == kept.local_updated
+                        && c.source == ModSource::Launcher
+                        && kept.source != ModSource::Launcher);
+                let other_copy = kept.source != c.source || kept.other_copy;
+                if newer {
+                    *kept = c;
+                }
+                kept.other_copy = other_copy;
+            }
+        }
+    }
+    let mut mods: Vec<InstalledMod> = by_id.into_values().collect();
+    mods.sort_by_key(|a| a.name.to_lowercase());
+    mods
+}
+
+fn meta_mtime(meta: &Path) -> Option<i64> {
+    fs::metadata(meta)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
 }
 
 /// Regexes for parsing meta.cpp — compiled once at first use.
@@ -35,9 +163,9 @@ fn size_cache() -> &'static SizeCache {
     SIZE_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// Scan the workshop directory and return all installed mods with metadata.
-/// Reads `meta.cpp` from each mod directory to extract name and ID.
-pub fn scan_workshop_dir(workshop_path: &Path) -> Result<Vec<InstalledMod>> {
+/// Scan one workshop folder and return the mods in it, as `source`, sorted
+/// by name. Reads `meta.cpp` from each mod directory for its name and id.
+pub fn scan_workshop_dir(workshop_path: &Path, source: ModSource) -> Result<Vec<InstalledMod>> {
     if !workshop_path.exists() {
         return Ok(Vec::new());
     }
@@ -54,59 +182,43 @@ pub fn scan_workshop_dir(workshop_path: &Path) -> Result<Vec<InstalledMod>> {
             continue;
         }
         let meta_path = path.join("meta.cpp");
-        if !meta_path.exists() {
+        let Ok(meta_content) = fs::read_to_string(&meta_path) else {
             continue;
-        }
-        let meta_content = match fs::read_to_string(&meta_path) {
-            Ok(c) => c,
-            Err(_) => continue, // Skip unreadable mods
         };
         let name = name_re
             .captures(&meta_content)
             .and_then(|c| c.get(1))
             .map(|m| m.as_str().to_string())
             .unwrap_or_else(|| "Unknown".to_string());
+        // Without an id in meta.cpp, the directory's name is the id.
         let id = id_re
             .captures(&meta_content)
             .and_then(|c| c.get(1))
-            .and_then(|m| m.as_str().parse::<u64>().ok());
-
-        // If no ID in meta.cpp, try to use the directory name as the ID
-        let id = match id {
-            Some(id) => id,
-            None => {
-                match path
-                    .file_name()
+            .and_then(|m| m.as_str().parse::<u64>().ok())
+            .or_else(|| {
+                path.file_name()
                     .and_then(|n| n.to_str())
                     .and_then(|n| n.parse::<u64>().ok())
-                {
-                    Some(id) => id,
-                    None => continue, // Skip mods without any identifiable ID
-                }
-            }
+            });
+        let Some(id) = id else {
+            continue;
         };
 
-        // Local install/update time: use meta.cpp mtime (rewritten by steamcmd on each download)
-        let local_updated = fs::metadata(&meta_path)
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
-
+        let local_updated = meta_mtime(&meta_path).unwrap_or(0);
         let size = du_dir_cached(&path, local_updated.max(0) as u64).unwrap_or(0);
-        let managed = path.join(".dayz-community-hub").exists();
 
         mods.push(InstalledMod {
             name,
             id,
             local_updated,
             size,
-            managed,
+            managed: false,
+            source,
+            path,
+            other_copy: false,
         });
     }
 
-    // Sort by name for consistent display
     mods.sort_by_key(|a| a.name.to_lowercase());
     Ok(mods)
 }
@@ -176,17 +288,35 @@ pub fn get_missing_mods(server_mods: &[u64], installed_mods: &[InstalledMod]) ->
         .collect()
 }
 
-/// Create a symlink from `dayz_path/@<mod_id>` -> `workshop_path/<mod_id>`.
-/// This is how DayZ discovers mods at launch time.
-pub fn create_mod_symlink(workshop_path: &Path, dayz_path: &Path, mod_id: u64) -> Result<()> {
-    let source = workshop_path.join(mod_id.to_string());
-    let link_name = format!("@{mod_id}");
-    let target = dayz_path.join(link_name);
+/// `dayz_path/@<mod_id>`.
+fn link_path(dayz_path: &Path, mod_id: u64) -> PathBuf {
+    dayz_path.join(format!("@{mod_id}"))
+}
+
+/// An `@<id>` link (a symlink, or on Windows a junction) is in the DayZ
+/// directory.
+pub fn is_linked(dayz_path: &Path, mod_id: u64) -> bool {
+    let link = link_path(dayz_path, mod_id);
+    #[cfg(windows)]
+    if is_junction(&link) {
+        return true;
+    }
+    link.is_symlink()
+}
+
+/// Link `dayz_path/@<mod_id>` to `source`, the mod's directory. This is how
+/// DayZ discovers mods at launch time. A link already pointing there is
+/// left as it is.
+pub fn create_mod_symlink(source: &Path, dayz_path: &Path, mod_id: u64) -> Result<()> {
+    let target = link_path(dayz_path, mod_id);
 
     if !source.exists() {
         return Err(Error::Mod(format!(
             "Mod directory does not exist: {source:?}"
         )));
+    }
+    if fs::read_link(&target).is_ok_and(|to| to == source) {
+        return Ok(());
     }
 
     // Remove existing link/file if it exists
@@ -202,7 +332,7 @@ pub fn create_mod_symlink(workshop_path: &Path, dayz_path: &Path, mod_id: u64) -
     }
 
     #[cfg(unix)]
-    symlink(&source, &target)?;
+    symlink(source, &target)?;
 
     #[cfg(windows)]
     {
@@ -243,16 +373,15 @@ pub fn create_mod_symlink(workshop_path: &Path, dayz_path: &Path, mod_id: u64) -
     Ok(())
 }
 
-/// Create symlinks for all given mod IDs.
-pub fn create_mod_symlinks(
-    workshop_path: &Path,
-    dayz_path: &Path,
-    mod_ids: &[u64],
-) -> Result<Vec<u64>> {
+/// Link each of `mod_ids` to its chosen copy. Returns the ids linked.
+pub fn create_mod_symlinks(dirs: &ModDirs, dayz_path: &Path, mod_ids: &[u64]) -> Result<Vec<u64>> {
     let mut created = Vec::new();
     for &mod_id in mod_ids {
-        match create_mod_symlink(workshop_path, dayz_path, mod_id) {
-            Ok(_) => created.push(mod_id),
+        let Some((source, _)) = dirs.copy_of(mod_id) else {
+            continue;
+        };
+        match create_mod_symlink(&source, dayz_path, mod_id) {
+            Ok(()) => created.push(mod_id),
             Err(e) => {
                 // Log error but continue with other mods
                 eprintln!("Warning: failed to create symlink for mod {mod_id}: {e}");
@@ -262,20 +391,20 @@ pub fn create_mod_symlinks(
     Ok(created)
 }
 
-/// Mark a mod as managed by writing the mod ID to a `.dayz-community-hub` marker file.
-/// This matches the bash script's behavior: `echo "$id" > "$dayz_workshop_path/$id/.dayz-community-hub"`
-pub fn mark_mod_as_managed(workshop_path: &Path, mod_id: u64) -> Result<()> {
-    let managed_file = workshop_path
-        .join(mod_id.to_string())
-        .join(".dayz-community-hub");
-    fs::write(managed_file, mod_id.to_string())?;
-    Ok(())
+/// Point the links of those `mod_ids` that are linked at their chosen copy:
+/// after an update the launcher's fresh copy wins over an older Steam one.
+pub fn relink_linked(dirs: &ModDirs, dayz_path: &Path, mod_ids: &[u64]) {
+    let linked: Vec<u64> = mod_ids
+        .iter()
+        .copied()
+        .filter(|&id| is_linked(dayz_path, id))
+        .collect();
+    let _ = create_mod_symlinks(dirs, dayz_path, &linked);
 }
 
 /// Remove a single `@<mod_id>` symlink/junction from the DayZ game directory.
 pub fn remove_mod_symlink(dayz_path: &Path, mod_id: u64) -> Result<()> {
-    let link_name = format!("@{mod_id}");
-    let target = dayz_path.join(link_name);
+    let target = link_path(dayz_path, mod_id);
 
     if target.symlink_metadata().is_err() {
         return Ok(()); // nothing to remove
@@ -321,29 +450,22 @@ pub fn remove_all_mod_symlinks(dayz_path: &Path) -> Result<usize> {
     Ok(count)
 }
 
-/// Remove all mods that have the `.dayz-community-hub` marker file (managed mods).
-pub fn remove_managed_mods(workshop_path: &Path) -> Result<(usize, u64)> {
+/// Delete every mod in the launcher's folder. Returns (count, bytes).
+pub fn remove_launcher_mods(launcher: &Path) -> Result<(usize, u64)> {
     let mut count = 0;
     let mut total_size = 0;
 
-    if !workshop_path.exists() {
+    if !launcher.exists() {
         return Ok((0, 0));
     }
 
     // Best effort: a mod that cannot be removed (in use, permissions) does
     // not stop the others from being.
-    let entries = fs::read_dir(workshop_path)?;
-    for entry in entries.flatten() {
+    for entry in fs::read_dir(launcher)?.flatten() {
         let path = entry.path();
-        if !path.is_dir() {
+        if !path.is_dir() || path.is_symlink() {
             continue;
         }
-
-        let managed_file = path.join(".dayz-community-hub");
-        if !managed_file.exists() {
-            continue;
-        }
-
         let size = du_dir(&path).unwrap_or(0);
         if fs::remove_dir_all(&path).is_ok() {
             count += 1;
@@ -354,62 +476,57 @@ pub fn remove_managed_mods(workshop_path: &Path) -> Result<(usize, u64)> {
     Ok((count, total_size))
 }
 
-/// Delete a specific mod by ID.
-pub fn delete_mod(workshop_path: &Path, mod_id: u64, only_managed: bool) -> Result<()> {
-    let mod_path = workshop_path.join(mod_id.to_string());
-    if !mod_path.exists() {
-        return Err(Error::Mod(format!("Mod {mod_id} does not exist")));
-    }
-
-    if only_managed {
-        let managed_file = mod_path.join(".dayz-community-hub");
-        if !managed_file.exists() {
-            return Err(Error::Mod(format!(
-                "Mod {mod_id} is not managed (no .dayz-community-hub file)"
-            )));
-        }
-    }
-
-    fs::remove_dir_all(&mod_path)?;
-    Ok(())
+/// What deleting a mod did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeleteOutcome {
+    /// The launcher's copy and the link are gone.
+    Deleted,
+    /// A copy in a Steam library remains: the launcher never deletes there.
+    /// Its link is gone; unsubscribing in Steam removes the files.
+    KeptInSteam,
 }
 
-/// Toggle the managed status of a mod.
-///
-/// When **linking** (marking as managed): writes the `.dayz-community-hub`
-/// marker file and creates a symlink/junction `@<mod_id>` in the DayZ
-/// game directory so the mod is loaded at launch time.
-///
-/// When **unlinking** (marking as unmanaged): removes the marker file and
-/// the symlink/junction so the mod is no longer loaded.
-///
-/// Returns the new managed state.
-pub fn toggle_mod_managed(workshop_path: &Path, dayz_path: &Path, mod_id: u64) -> Result<bool> {
-    let mod_path = workshop_path.join(mod_id.to_string());
-    if !mod_path.exists() {
+/// Delete a mod: the launcher's copy, and its `@<id>` link. A Steam copy is
+/// left where it is (see [`DeleteOutcome::KeptInSteam`]).
+pub fn delete_mod(dirs: &ModDirs, dayz_path: Option<&Path>, mod_id: u64) -> Result<DeleteOutcome> {
+    let own = dirs.launcher_copy(mod_id);
+    let in_steam = dirs.in_steam(mod_id);
+    if !own.exists() && !in_steam {
         return Err(Error::Mod(format!("Mod {mod_id} does not exist")));
     }
-
-    let managed_file = mod_path.join(".dayz-community-hub");
-    let currently_managed = managed_file.exists();
-
-    if currently_managed {
-        // Unlink: remove marker + symlink
-        fs::remove_file(&managed_file)?;
-        let _ = remove_mod_symlink(dayz_path, mod_id);
-        Ok(false)
+    if own.exists() {
+        fs::remove_dir_all(&own)?;
+    }
+    if let Some(dayz) = dayz_path {
+        let _ = remove_mod_symlink(dayz, mod_id);
+    }
+    Ok(if in_steam {
+        DeleteOutcome::KeptInSteam
     } else {
-        // Link: the link first, so a failure leaves the mod unmanaged and says
-        // why instead of claiming success.
-        create_mod_symlink(workshop_path, dayz_path, mod_id)?;
-        fs::write(&managed_file, mod_id.to_string())?;
-        Ok(true)
-    }
+        DeleteOutcome::Deleted
+    })
 }
 
-/// Remove all managed mods and all mod symlinks.
-pub fn cleanup_mods(workshop_path: &Path, dayz_path: &Path) -> Result<ModManagementStats> {
-    let (removed_count, removed_size) = remove_managed_mods(workshop_path)?;
+/// Link or unlink a mod: a linked mod loses its `@<id>` link, another gets
+/// one to its chosen copy. Nothing is written into the mod's folder.
+///
+/// Returns the new state (linked or not).
+pub fn toggle_mod_managed(dirs: &ModDirs, dayz_path: &Path, mod_id: u64) -> Result<bool> {
+    if is_linked(dayz_path, mod_id) {
+        remove_mod_symlink(dayz_path, mod_id)?;
+        return Ok(false);
+    }
+    let (source, _) = dirs
+        .copy_of(mod_id)
+        .ok_or_else(|| Error::Mod(format!("Mod {mod_id} does not exist")))?;
+    create_mod_symlink(&source, dayz_path, mod_id)?;
+    Ok(true)
+}
+
+/// Delete every mod the launcher downloaded and every `@` link. Mods in
+/// Steam libraries stay.
+pub fn cleanup_mods(dirs: &ModDirs, dayz_path: &Path) -> Result<ModManagementStats> {
+    let (removed_count, removed_size) = remove_launcher_mods(&dirs.launcher)?;
     let symlinks_removed = remove_all_mod_symlinks(dayz_path)?;
 
     Ok(ModManagementStats {
@@ -417,21 +534,6 @@ pub fn cleanup_mods(workshop_path: &Path, dayz_path: &Path) -> Result<ModManagem
         removed_size,
         symlinks_removed,
     })
-}
-
-/// Check if a specific mod directory exists in the workshop path.
-pub fn mod_exists(workshop_path: &Path, mod_id: u64) -> bool {
-    workshop_path.join(mod_id.to_string()).exists()
-}
-
-/// Verify that all required mods exist in the workshop directory.
-/// Returns a list of mod IDs that are missing.
-pub fn verify_mods(workshop_path: &Path, mod_ids: &[u64]) -> Vec<u64> {
-    mod_ids
-        .iter()
-        .filter(|&&id| !mod_exists(workshop_path, id))
-        .copied()
-        .collect()
 }
 
 /// Format a file size in bytes to a human-readable string.
@@ -488,30 +590,112 @@ mod tests {
         fs::write(dir.join("addons").join("data.pbo"), vec![0u8; bytes]).unwrap();
     }
 
+    /// Set a copy's `meta.cpp` mtime: which copy is newer is decided by it.
+    fn touch(workshop: &Path, id: u64, secs: u64) {
+        let f = fs::File::options()
+            .write(true)
+            .open(workshop.join(id.to_string()).join("meta.cpp"))
+            .unwrap();
+        f.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs))
+            .unwrap();
+    }
+
+    fn copy(id: u64, source: ModSource, updated: i64) -> InstalledMod {
+        InstalledMod {
+            name: format!("m{id}"),
+            id,
+            local_updated: updated,
+            size: 0,
+            managed: false,
+            source,
+            path: PathBuf::from(format!("/{source:?}/{id}")),
+            other_copy: false,
+        }
+    }
+
     #[test]
     fn scans_names_ids_and_sizes() {
         let ws = tmp("scan");
         fake_mod(&ws, 1559212036, "CF", 2048);
         fake_mod(&ws, 42, "alpha", 10);
         fs::create_dir_all(ws.join("not-a-mod")).unwrap();
-        let mods = scan_workshop_dir(&ws).unwrap();
+        let mods = scan_workshop_dir(&ws, ModSource::Launcher).unwrap();
         let names: Vec<_> = mods.iter().map(|m| m.name.as_str()).collect();
         assert_eq!(names, ["alpha", "CF"], "sorted by name, case-insensitively");
         let cf = mods.iter().find(|m| m.id == 1559212036).unwrap();
         assert!(cf.size >= 2048);
         assert!(!cf.managed);
+        assert_eq!(cf.path, ws.join("1559212036"));
         let _ = fs::remove_dir_all(&ws);
     }
 
     #[test]
+    fn the_newer_copy_wins_and_the_launcher_on_a_tie() {
+        let merged = merge_copies(vec![
+            copy(1, ModSource::Steam, 200),
+            copy(1, ModSource::Launcher, 100),
+            copy(2, ModSource::Steam, 100),
+            copy(2, ModSource::Launcher, 300),
+            copy(3, ModSource::Steam, 100),
+            copy(3, ModSource::Launcher, 100),
+            copy(4, ModSource::Steam, 50),
+        ]);
+        let got: Vec<_> = merged
+            .iter()
+            .map(|m| (m.id, m.source, m.other_copy))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                (1, ModSource::Steam, true),
+                (2, ModSource::Launcher, true),
+                (3, ModSource::Launcher, true),
+                (4, ModSource::Steam, false),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_list_is_the_union_of_both_folders() {
+        let root = tmp("union");
+        let dirs = ModDirs {
+            launcher: root.join("launcher"),
+            steam: vec![root.join("lib1"), root.join("lib2"), root.join("gone")],
+        };
+        fake_mod(&dirs.launcher, 1, "one", 1);
+        fake_mod(&dirs.steam[0], 1, "one", 1);
+        fake_mod(&dirs.steam[0], 2, "two", 1);
+        fake_mod(&dirs.steam[1], 3, "three", 1);
+        touch(&dirs.launcher, 1, 1_000);
+        touch(&dirs.steam[0], 1, 2_000);
+        let mods = dirs.scan(None);
+        let got: Vec<_> = mods.iter().map(|m| (m.id, m.source)).collect();
+        assert_eq!(
+            got,
+            [
+                (1, ModSource::Steam),
+                (3, ModSource::Steam),
+                (2, ModSource::Steam)
+            ]
+        );
+        assert_eq!(mods[0].path, dirs.steam[0].join("1"));
+        assert_eq!(
+            dirs.copy_of(1),
+            Some((dirs.steam[0].join("1"), ModSource::Steam))
+        );
+        // The launcher downloads an update: its copy is now the newer.
+        touch(&dirs.launcher, 1, 3_000);
+        assert_eq!(
+            dirs.copy_of(1),
+            Some((dirs.launcher.join("1"), ModSource::Launcher))
+        );
+        assert_eq!(dirs.copy_of(9), None);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn missing_mods_are_the_uninstalled_ones() {
-        let installed = vec![InstalledMod {
-            name: "a".into(),
-            id: 1,
-            local_updated: 0,
-            size: 0,
-            managed: true,
-        }];
+        let installed = vec![copy(1, ModSource::Steam, 0)];
         assert_eq!(get_missing_mods(&[1, 2, 3], &installed), [2, 3]);
     }
 
@@ -528,15 +712,96 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn toggling_links_and_unlinks() {
+    fn toggling_links_and_unlinks_without_writing_into_the_mod() {
         let root = tmp("toggle");
-        let (ws, dayz) = (root.join("ws"), root.join("DayZ"));
+        let dirs = ModDirs {
+            launcher: root.join("launcher"),
+            steam: vec![root.join("steam")],
+        };
+        let dayz = root.join("DayZ");
         fs::create_dir_all(&dayz).unwrap();
-        fake_mod(&ws, 7, "seven", 1);
-        assert!(toggle_mod_managed(&ws, &dayz, 7).unwrap());
-        assert!(dayz.join("@7").is_symlink());
-        assert!(!toggle_mod_managed(&ws, &dayz, 7).unwrap());
+        fake_mod(&dirs.steam[0], 7, "seven", 1);
+        let before: Vec<_> = fs::read_dir(dirs.steam[0].join("7")).unwrap().collect();
+        assert!(toggle_mod_managed(&dirs, &dayz, 7).unwrap());
+        assert_eq!(
+            fs::read_link(dayz.join("@7")).unwrap(),
+            dirs.steam[0].join("7")
+        );
+        assert!(dirs.scan(Some(&dayz))[0].managed);
+        assert!(!toggle_mod_managed(&dirs, &dayz, 7).unwrap());
         assert!(dayz.join("@7").symlink_metadata().is_err());
+        let after: Vec<_> = fs::read_dir(dirs.steam[0].join("7")).unwrap().collect();
+        assert_eq!(before.len(), after.len());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_update_moves_the_link_to_the_launchers_copy() {
+        let root = tmp("relink");
+        let dirs = ModDirs {
+            launcher: root.join("launcher"),
+            steam: vec![root.join("steam")],
+        };
+        let dayz = root.join("DayZ");
+        fs::create_dir_all(&dayz).unwrap();
+        fake_mod(&dirs.steam[0], 5, "five", 1);
+        touch(&dirs.steam[0], 5, 1_000);
+        create_mod_symlinks(&dirs, &dayz, &[5]).unwrap();
+        fake_mod(&dirs.launcher, 5, "five", 1);
+        touch(&dirs.launcher, 5, 2_000);
+        relink_linked(&dirs, &dayz, &[5, 6]);
+        assert_eq!(
+            fs::read_link(dayz.join("@5")).unwrap(),
+            dirs.launcher.join("5")
+        );
+        assert!(dayz.join("@6").symlink_metadata().is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn deleting_never_touches_a_steam_library() {
+        let root = tmp("delete");
+        let dirs = ModDirs {
+            launcher: root.join("launcher"),
+            steam: vec![root.join("steam")],
+        };
+        let dayz = root.join("DayZ");
+        fs::create_dir_all(&dayz).unwrap();
+        fake_mod(&dirs.launcher, 1, "own", 1);
+        fake_mod(&dirs.steam[0], 2, "subscribed", 1);
+        fake_mod(&dirs.launcher, 3, "both", 1);
+        fake_mod(&dirs.steam[0], 3, "both", 1);
+        create_mod_symlinks(&dirs, &dayz, &[1, 2, 3]).unwrap();
+
+        assert_eq!(
+            delete_mod(&dirs, Some(&dayz), 1).unwrap(),
+            DeleteOutcome::Deleted
+        );
+        assert!(!dirs.launcher.join("1").exists());
+        assert!(!is_linked(&dayz, 1));
+
+        assert_eq!(
+            delete_mod(&dirs, Some(&dayz), 2).unwrap(),
+            DeleteOutcome::KeptInSteam
+        );
+        assert!(dirs.steam[0].join("2").join("meta.cpp").is_file());
+        assert!(!is_linked(&dayz, 2));
+
+        assert_eq!(
+            delete_mod(&dirs, Some(&dayz), 3).unwrap(),
+            DeleteOutcome::KeptInSteam
+        );
+        assert!(!dirs.launcher.join("3").exists());
+        assert!(dirs.steam[0].join("3").join("meta.cpp").is_file());
+
+        assert!(delete_mod(&dirs, Some(&dayz), 4).is_err());
+
+        fake_mod(&dirs.launcher, 8, "eight", 1);
+        let stats = cleanup_mods(&dirs, &dayz).unwrap();
+        assert_eq!(stats.removed_count, 1);
+        assert!(dirs.steam[0].join("2").exists() && dirs.steam[0].join("3").exists());
         let _ = fs::remove_dir_all(&root);
     }
 

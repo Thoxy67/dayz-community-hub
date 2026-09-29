@@ -1,5 +1,5 @@
-//! steamcmd, which downloads workshop mods, and the Steam client it has to
-//! share a login with.
+//! steamcmd, which downloads workshop mods into its own directory, and the
+//! Steam client whose libraries it only reads.
 
 mod client;
 mod cmd;
@@ -11,7 +11,7 @@ mod pty;
 
 pub use client::SteamClient;
 pub use cmd::SteamCmd;
-pub use detect::{find_steam_root, find_steamcmd};
+pub use detect::{find_steam_root, find_steamcmd, steam_workshop_dirs};
 pub use progress::{ModProgress, ProgressTx, PtyInputRx, PtyInputTx};
 
 /// DayZ's Steam app id.

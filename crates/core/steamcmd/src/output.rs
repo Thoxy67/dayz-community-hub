@@ -81,6 +81,15 @@ pub(crate) fn is_password_prompt(buf: &str) -> bool {
     trimmed.ends_with("password:") || trimmed.ends_with("password: ")
 }
 
+/// True for the line SteamCMD prints once it is logged in:
+/// `Logging in user 'name' [U:1:…] to Steam Public...OK` or
+/// `Waiting for user info...OK`. A failed login ends in `FAILED (…)`.
+pub(crate) fn is_login_ok(line: &str) -> bool {
+    let l = line.trim_end();
+    (ascii_contains_ci(l, "logging in user") || ascii_contains_ci(l, "waiting for user info"))
+        && l.ends_with("OK")
+}
+
 /// Regex for extracting a workshop mod ID from a steamcmd output line — compiled once.
 static MOD_ID_RE: OnceLock<Regex> = OnceLock::new();
 
@@ -112,6 +121,18 @@ mod tests {
         assert!(is_steam_guard_prompt("Steam Guard code:"));
         assert!(is_password_prompt("password: "));
         assert!(!is_password_prompt("Logging in user"));
+    }
+
+    #[test]
+    fn detects_a_login() {
+        assert!(is_login_ok(
+            "Logging in user 'player' [U:1:123] to Steam Public...OK"
+        ));
+        assert!(is_login_ok("Waiting for user info...OK\r"));
+        assert!(!is_login_ok(
+            "Logging in user 'player' [U:1:123] to Steam Public...FAILED (Invalid Password)"
+        ));
+        assert!(!is_login_ok("Waiting for client config...OK"));
     }
 
     #[test]

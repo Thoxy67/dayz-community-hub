@@ -5,13 +5,17 @@ use tokio::sync::mpsc;
 /// Progress messages sent during mod download/update operations.
 #[derive(Debug, Clone)]
 pub enum ModProgress {
-    /// Steam is being shut down to avoid session conflict with steamcmd
-    ShuttingDownSteam,
+    /// SteamCMD logged in: its login is cached from now on, so a password
+    /// saved by an earlier version is no longer needed.
+    LoggedIn,
+    /// Steam refused the password saved by an earlier version: it is no
+    /// use and can be forgotten.
+    SavedPasswordRefused,
     /// steamcmd is waiting for Steam Guard Mobile confirmation on the user's phone
     SteamGuardMobileRequired,
-    /// steamcmd is prompting for a password (cached credentials not found).
-    /// The UI should show a password input and send the password via the
-    /// `PtyInputTx` channel.
+    /// steamcmd is prompting for a password (no cached login, or the saved
+    /// one was refused). The UI should show a password input and send the
+    /// password via the `PtyInputTx` channel.
     PasswordRequired,
     /// Starting download/update for a mod: (current_index, total_count, mod_id, mod_name)
     Starting {

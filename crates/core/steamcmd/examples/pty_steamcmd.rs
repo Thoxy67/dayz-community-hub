@@ -34,30 +34,28 @@ fn main() {
         .expect("steamcmd_path")
         .to_string();
     let login = v["steam_login"].as_str().expect("steam_login").to_string();
-    let password = v["steam_password"]
-        .as_str()
-        .map(std::string::ToString::to_string);
 
     eprintln!("steamcmd : {steamcmd_path}");
     eprintln!("login    : {login}");
     eprintln!("mod_id   : {mod_id}");
     eprintln!("--- streaming (control chars shown as \\r \\n \\e \\t) ---\n");
 
-    // --- Build args (mirrors download_mods_batched) ------------------------
-    let mut args: Vec<std::ffi::OsString> = vec![
+    // --- Build args (mirrors SteamCmd::session_args) -----------------------
+    // Into a scratch directory, never a Steam library; the login is by name
+    // only, a password is typed at SteamCMD's prompt.
+    let content_dir = std::env::temp_dir().join("dzch-pty-example");
+    let args: Vec<std::ffi::OsString> = vec![
         "+@ShutdownOnFailedCommand".into(),
         "0".into(),
+        "+force_install_dir".into(),
+        content_dir.into_os_string(),
         "+login".into(),
         (&login).into(),
+        "+workshop_download_item".into(),
+        "221100".into(),
+        (&mod_id).into(),
+        "+quit".into(),
     ];
-    if let Some(pw) = &password {
-        args.push(pw.into());
-    }
-    args.push("+workshop_download_item".into());
-    args.push("221100".into());
-    args.push((&mod_id).into());
-    args.push("validate".into());
-    args.push("+quit".into());
 
     // --- Spawn under PTY (mirrors spawn_pty_streamed) ----------------------
     use portable_pty::{CommandBuilder, PtySize, native_pty_system};

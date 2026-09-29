@@ -210,24 +210,9 @@ pub(crate) async fn download_steamcmd_windows() -> Result<String, String> {
         .await
         .map_err(|e| format!("Task join error: {e}"))??;
 
-        {
-            use std::os::windows::process::CommandExt;
-            let steamcmd_steamapps = install_dir.join("steamapps");
-            if !steamcmd_steamapps.exists()
-                && let Some(steam_root) = dz_steamcmd::find_steam_root()
-            {
-                let _ = std::process::Command::new("cmd")
-                    .args([
-                        "/c",
-                        "mklink",
-                        "/J",
-                        steamcmd_steamapps.to_string_lossy().as_ref(),
-                        steam_root.to_string_lossy().as_ref(),
-                    ])
-                    .creation_flags(dz_common::CREATE_NO_WINDOW)
-                    .output();
-            }
-        }
+        // No link from SteamCMD's `steamapps` to the Steam client's library
+        // (an earlier version made one): SteamCMD would write its manifests
+        // there. It installs into the launcher's own directory instead.
 
         Ok(exe_path.to_string_lossy().to_string())
     }

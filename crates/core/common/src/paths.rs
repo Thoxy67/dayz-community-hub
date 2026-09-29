@@ -34,3 +34,15 @@ pub fn default_profile_path() -> PathBuf {
 pub fn server_list_cache_path() -> PathBuf {
     default_data_dir().join("server_list_cache.json")
 }
+
+/// `<data dir>/steamcmd-content`: SteamCMD's own install directory, where it
+/// downloads workshop mods. Never a Steam library.
+pub fn steamcmd_content_dir() -> PathBuf {
+    default_data_dir().join("steamcmd-content")
+}
+
+/// `<data dir>/steamcmd-home`: the `HOME` SteamCMD runs with on Linux, so
+/// it keeps its config and login away from the Steam client's.
+pub fn steamcmd_home_dir() -> PathBuf {
+    default_data_dir().join("steamcmd-home")
+}
