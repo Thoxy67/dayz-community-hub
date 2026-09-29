@@ -38,6 +38,8 @@ export type {
   SteamcmdDirsDto,
   SteamcmdStatusDto,
   SteamworksStatusDto,
+  SteamSubscriptionDto,
+  SteamSubscriptionsDto,
   SystemSpecsDto,
   UpdateInfo,
 } from "./bindings";

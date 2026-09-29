@@ -13,6 +13,13 @@ export const cleanupMods = () => run(commands.cleanupMods());
 export const openWorkshopDir = () => run(commands.openWorkshopDir());
 export const openModDir = (modId: number) => run(commands.openModDir(modId));
 
+/**
+ * The account's Workshop subscriptions as the running Steam client has them:
+ * subscribed, installed, downloading, waiting. `available: false` when Steam
+ * is not running or not signed in.
+ */
+export const steamSubscriptions = () => run(commands.steamSubscriptions());
+
 /** What an operation works on; which fields matter depends on its type (see `ModOpType`). */
 export type ModOpArgs = {
   ip?: string;

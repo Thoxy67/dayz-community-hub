@@ -22,6 +22,7 @@
   import { review, workshopUrl } from "./review.svelte";
   import SourceTag from "./SourceTag.svelte";
   import ModState from "./ModState.svelte";
+  import { whereOf } from "./where";
 
   /**
    * One installed mod, top to bottom in the order a player asks about it:
@@ -32,7 +33,8 @@
   const m = dict("mods");
 
   const share = $derived(mods.totalSize > 0 ? mod.size / mods.totalSize : 0);
-  const steam = $derived(mod.source === "steam");
+  const item = $derived(mods.steamById.get(mod.id));
+  const where = $derived(whereOf(mod, item, !!mods.steam?.available));
   const days = $derived(
     mod.remote_updated && mod.remote_updated > mod.local_updated
       ? Math.floor((mod.remote_updated - mod.local_updated) / 86400)
@@ -63,7 +65,7 @@
       {/if}
     </div>
     <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
-      <ModState {mod} />
+      <ModState id={mod.id} {mod} />
       <SourceTag {mod} />
       <span class="font-mono text-2xs text-fg-faint">{mod.size_human}</span>
     </div>
@@ -111,14 +113,19 @@
           {:else}<span class="text-fg-faint">{$m.detailsUnknown.value}</span>{/if}
         </DetailRow>
       </DetailList>
-      {#if steam}
+      {#if where === "subscribed"}
         <p class="m-0 text-2xs leading-snug text-fg-faint">{$m.steamKeepsUpToDate.value}</p>
       {/if}
     </Section>
 
     <Section title={$m.sectionWhere.value} icon={MapPin}>
       <p class="m-0 text-xs leading-snug text-fg-muted">
-        {steam ? $m.sourceSteamHint.value : $m.sourceLauncherHint.value}
+        {{
+          launcher: $m.sourceLauncherHint.value,
+          subscribed: $m.subscribedHint.value,
+          unsubscribed: $m.notSubscribedHint.value,
+          steam: $m.sourceSteamHint.value,
+        }[where]}
       </p>
       <div class="flex items-center gap-1">
         <Copy text={mod.path} class="min-w-0 flex-1" />
@@ -129,6 +136,13 @@
           onclick={() => mods.openModDir(mod.id)}
         />
       </div>
+      {#if where === "launcher" && item?.subscribed}
+        <p class="m-0 text-2xs text-fg-faint">{$m.subscribedHint.value}</p>
+      {:else if where === "steam"}
+        <p class="m-0 text-2xs text-fg-faint" title={mods.steam?.reason ?? undefined}>
+          {$m.steamUnknown.value}
+        </p>
+      {/if}
       {#if mod.other_copy}
         <p class="m-0 text-2xs text-fg-faint">{$m.otherCopy.value}</p>
       {/if}

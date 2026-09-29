@@ -3,21 +3,66 @@
   import { SteamIcon } from "$lib/components/ui/brand";
   import HardDrive from "~icons/lucide/hard-drive-download";
   import { Tag } from "$lib/components/ui/tag";
+  import { cn } from "$lib/cx";
   import type { InstalledModDto } from "$lib/ipc/types";
+  import { mods } from "$lib/stores/mods.svelte";
+  import { whereOf } from "./where";
 
   /**
-   * Whose folder a mod is in: the launcher's (it updates and deletes it) or a
-   * Steam library's (read only).
+   * Whose copy a mod is: the launcher's folder, a Steam subscription, or a
+   * Steam library copy nobody is subscribed to. As a tag (the details'
+   * header) or as the quiet line under a name in the list (`line`).
    */
-  let { mod }: { mod: Pick<InstalledModDto, "source" | "other_copy"> } = $props();
+  let {
+    mod,
+    line = false,
+  }: { mod: Pick<InstalledModDto, "id" | "source" | "other_copy">; line?: boolean } = $props();
   const m = dict("mods");
-  const steam = $derived(mod.source === "steam");
+
+  const item = $derived(mods.steamById.get(mod.id));
+  const where = $derived(whereOf(mod, item, !!mods.steam?.available));
+  const label = $derived(
+    {
+      launcher: line ? $m.whereLauncher.value : $m.sourceLauncher.value,
+      subscribed: line ? $m.whereSubscribed.value : $m.sourceSubscribed.value,
+      unsubscribed: line ? $m.whereNotSubscribed.value : $m.sourceSteam.value,
+      steam: line ? $m.whereSteam.value : $m.sourceSteam.value,
+    }[where] +
+      (line && where === "launcher" && item?.subscribed ? ` · ${$m.alsoSubscribed.value}` : ""),
+  );
   const title = $derived(
-    `${steam ? $m.sourceSteamHint.value : $m.sourceLauncherHint.value}${mod.other_copy ? `\n${$m.otherCopy.value}` : ""}`,
+    [
+      {
+        launcher: $m.sourceLauncherHint.value,
+        subscribed: $m.subscribedHint.value,
+        unsubscribed: $m.notSubscribedHint.value,
+        steam: $m.sourceSteamHint.value,
+      }[where],
+      mod.other_copy ? $m.otherCopy.value : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
   );
 </script>
 
-<Tag tone={steam ? "accent" : "neutral"} {title} class="shrink-0">
-  {#if steam}<SteamIcon class="size-2.5" />{:else}<HardDrive class="size-2.5" />{/if}
-  {steam ? $m.sourceSteam.value : $m.sourceLauncher.value}
-</Tag>
+{#snippet icon()}
+  {#if mod.source === "steam"}<SteamIcon class="size-2.5 shrink-0" />{:else}<HardDrive
+      class="size-2.5 shrink-0"
+    />{/if}
+{/snippet}
+
+{#if line}
+  <span
+    class={cn(
+      "flex min-w-0 items-center gap-1 text-2xs",
+      where === "subscribed" ? "text-fg-muted" : "text-fg-faint",
+    )}
+    {title}
+  >
+    {@render icon()}<span class="truncate">{label}</span>
+  </span>
+{:else}
+  <Tag tone={where === "subscribed" ? "accent" : "neutral"} {title} class="shrink-0">
+    {@render icon()}{label}
+  </Tag>
+{/if}

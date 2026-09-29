@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { DropdownMenu as Menu } from "bits-ui";
   import { dict } from "$lib/i18n";
   import Puzzle from "~icons/lucide/puzzle";
@@ -13,8 +14,8 @@
   import KeyRound from "~icons/lucide/key-round";
   import Link from "~icons/lucide/link";
   import Unlink from "~icons/lucide/unlink";
-  import HardDrive from "~icons/lucide/hard-drive-download";
   import X from "~icons/lucide/x";
+  import ExternalLink from "~icons/lucide/external-link";
   import SearchX from "~icons/lucide/search-x";
   import {
     PageHeader,
@@ -33,6 +34,7 @@
   import { Alert } from "$lib/components/ui/alert";
   import { Spinner } from "$lib/components/ui/spinner";
   import { Tooltip } from "$lib/components/ui/tooltip";
+  import { Tag } from "$lib/components/ui/tag";
   import { SteamIcon } from "$lib/components/ui/brand";
   import {
     DropdownMenuContent,
@@ -41,6 +43,7 @@
   } from "$lib/components/ui/dropdown-menu";
   import { cn } from "$lib/cx";
   import { bytes, date, relative } from "$lib/format";
+  import { openUrl } from "$lib/ipc/native";
   import type { InstalledModDto } from "$lib/ipc/types";
   import { app } from "$lib/stores/app.svelte";
   import { mods } from "$lib/stores/mods.svelte";
@@ -50,7 +53,8 @@
   import ModMenu from "./ModMenu.svelte";
   import ReviewDialog from "./ReviewDialog.svelte";
   import InstallDialog from "./InstallDialog.svelte";
-  import { review } from "./review.svelte";
+  import SourceTag from "./SourceTag.svelte";
+  import { review, workshopUrl } from "./review.svelte";
 
   /**
    * Installed Workshop mods. The header says how many there are, what they
@@ -68,6 +72,18 @@
     void mods.checkUpdates();
   });
 
+  // What Steam is doing: asked when the view shows, then every few seconds
+  // while it has downloads under way (never faster: each question opens a
+  // short Steam session).
+  $effect(() => {
+    if (app.view === "mods") untrack(() => void mods.loadSteam());
+  });
+  $effect(() => {
+    if (app.view !== "mods" || !mods.steamBusy) return;
+    const timer = setInterval(() => void mods.loadSteam(), 5000);
+    return () => clearInterval(timer);
+  });
+
   const hasKey = $derived(!!profile.data?.steam_api_key);
 
   // ── filter and sort ─────────────────────────────────────────────────────
@@ -80,16 +96,38 @@
 
   const unmanaged = $derived(mods.installed.filter((x) => !x.managed).length);
 
-  const status = (x: InstalledModDto) => (x.update_available ? 0 : x.remote_updated ? 2 : 1);
+  /**
+   * A row: an installed mod, or (`mod` null) a subscription Steam is still
+   * fetching, which is not on disk yet and has no name but its id.
+   */
+  type Row = { id: number; name: string; size: number; mod: InstalledModDto | null };
+  const incoming = $derived(
+    (mods.steam?.items ?? [])
+      .filter(
+        (i) =>
+          i.subscribed &&
+          !mods.byId.has(i.id) &&
+          (i.downloading || i.pending || i.needs_update || !i.installed),
+      )
+      .map((i): Row => ({ id: i.id, name: `Workshop ${i.id}`, size: i.bytes_total, mod: null })),
+  );
+  const all = $derived([
+    ...incoming,
+    ...mods.installed.map((x): Row => ({ id: x.id, name: x.name, size: x.size, mod: x })),
+  ]);
+
+  const status = (x: Row) =>
+    !x.mod ? -1 : x.mod.update_available ? 0 : x.mod.remote_updated ? 2 : 1;
   const rows = $derived.by(() => {
     const q = query.trim().toLowerCase();
-    const list = mods.installed.filter(
+    const list = all.filter(
       (x) =>
-        (filter === "all" || (filter === "updates" ? x.update_available : !x.managed)) &&
+        (filter === "all" ||
+          (filter === "updates" ? !x.mod || x.mod.update_available : x.mod && !x.mod.managed)) &&
         (!q || x.name.toLowerCase().includes(q) || String(x.id).includes(q)),
     );
     const dir = asc ? 1 : -1;
-    const byName = (a: InstalledModDto, b: InstalledModDto) => a.name.localeCompare(b.name);
+    const byName = (a: Row, b: Row) => a.name.localeCompare(b.name);
     return list.sort((a, b) => {
       switch (col) {
         case "name":
@@ -97,9 +135,9 @@
         case "size":
           return dir * (a.size - b.size);
         case "local":
-          return dir * (a.local_updated - b.local_updated);
+          return dir * ((a.mod?.local_updated ?? 0) - (b.mod?.local_updated ?? 0));
         case "managed":
-          return dir * (Number(b.managed) - Number(a.managed)) || byName(a, b);
+          return dir * (Number(!!b.mod?.managed) - Number(!!a.mod?.managed)) || byName(a, b);
         default:
           return dir * (status(a) - status(b)) || byName(a, b);
       }
@@ -127,8 +165,9 @@
   const tickedSize = $derived(tickedMods.reduce((a, x) => a + x.size, 0));
   const tickedStale = $derived(tickedMods.filter((x) => x.update_available).length);
   const tickedLinked = $derived(tickedMods.filter((x) => x.managed).length);
-  const allTicked = $derived(rows.length > 0 && rows.every((x) => ticked.has(x.id)));
-  const someTicked = $derived(!allTicked && rows.some((x) => ticked.has(x.id)));
+  const tickable = $derived(rows.filter((x) => x.mod));
+  const allTicked = $derived(tickable.length > 0 && tickable.every((x) => ticked.has(x.id)));
+  const someTicked = $derived(!allTicked && tickable.some((x) => ticked.has(x.id)));
 
   function tick(id: number, on: boolean) {
     const next = new Set(ticked);
@@ -137,7 +176,7 @@
     ticked = next;
   }
   function tickAll(on: boolean) {
-    ticked = on ? new Set(rows.map((x) => x.id)) : new Set();
+    ticked = on ? new Set(tickable.map((x) => x.id)) : new Set();
   }
   async function linkTicked(link: boolean) {
     for (const x of tickedMods) if (x.managed !== link) await mods.toggleManaged(x);
@@ -180,8 +219,11 @@
   const HIDE_IN_GAME = "@max-[620px]:hidden";
 
   const filterOptions = $derived([
-    { value: "all" as const, label: `${$m.filterAll.value} · ${mods.installed.length}` },
-    { value: "updates" as const, label: `${$m.filterUpdates.value} · ${mods.stale.length}` },
+    { value: "all" as const, label: `${$m.filterAll.value} · ${all.length}` },
+    {
+      value: "updates" as const,
+      label: `${$m.filterUpdates.value} · ${mods.stale.length + incoming.length}`,
+    },
     { value: "unmanaged" as const, label: `${$m.filterUnmanaged.value} · ${unmanaged}` },
   ]);
 </script>
@@ -198,7 +240,7 @@
       <div class="grid flex-1 place-items-center">
         <Spinner class="size-6" label={$m.loading.value} />
       </div>
-    {:else if mods.installed.length === 0}
+    {:else if all.length === 0}
       <Empty icon={Puzzle} title={$m.noMods.value}>
         {$m.noModsHint.value}
         {#snippet action()}
@@ -235,76 +277,97 @@
               <span></span>
             </TableHead>
           {/snippet}
-          {#snippet row(x: InstalledModDto)}
-            {@const on = focusId === x.id}
-            {@const steam = x.source === "steam"}
+          {#snippet row(r: Row)}
+            {@const x = r.mod}
+            {@const on = focusId === r.id}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <div
               role="row"
               tabindex="-1"
               class={cn(
-                `group ${COLS} h-full cursor-pointer border-b border-border/40 px-pad text-xs`,
-                on ? "bg-accent/10" : ticked.has(x.id) ? "bg-raised/50" : "hover:bg-raised/40",
+                `group ${COLS} h-full border-b border-border/40 px-pad text-xs`,
+                x && "cursor-pointer",
+                on ? "bg-accent/10" : ticked.has(r.id) ? "bg-raised/50" : "hover:bg-raised/40",
               )}
-              onclick={() => (focusId = x.id)}
+              onclick={() => x && (focusId = r.id)}
             >
-              <Checkbox
-                checked={ticked.has(x.id)}
-                onchange={(v) => tick(x.id, v)}
-                aria-label={x.name}
-              />
+              {#if x}
+                <Checkbox
+                  checked={ticked.has(r.id)}
+                  onchange={(v) => tick(r.id, v)}
+                  aria-label={r.name}
+                />
+              {:else}<span></span>{/if}
               <div class="flex min-w-0 flex-col gap-0.5">
-                <span class="truncate font-medium text-fg">{x.name}</span>
-                <span
-                  class="flex min-w-0 items-center gap-1 text-2xs text-fg-faint"
-                  title={steam ? $m.sourceSteamHint.value : $m.sourceLauncherHint.value}
+                <span class={cn("truncate font-medium", x ? "text-fg" : "text-fg-muted")}
+                  >{r.name}</span
                 >
-                  {#if steam}<SteamIcon class="size-2.5 shrink-0" />{:else}<HardDrive
-                      class="size-2.5 shrink-0"
+                {#if x}
+                  <SourceTag mod={x} line />
+                {:else}
+                  <span class="flex min-w-0 items-center gap-1 text-2xs text-fg-muted">
+                    <SteamIcon class="size-2.5 shrink-0" /><span class="truncate"
+                      >{$m.whereSubscribed.value}</span
+                    >
+                  </span>
+                {/if}
+              </div>
+              <ModState id={r.id} mod={x} behind />
+              {#if x}
+                <span
+                  class={cn(
+                    "flex min-w-0 items-center gap-1",
+                    HIDE_IN_GAME,
+                    x.managed ? "text-fg-muted" : "text-fg-faint",
+                  )}
+                  title={x.managed ? $m.inGameLinkedTitle.value : $m.inGameNotLinkedTitle.value}
+                >
+                  {#if x.managed}<Link class="size-3 shrink-0" />{:else}<Unlink
+                      class="size-3 shrink-0"
                     />{/if}
                   <span class="truncate"
-                    >{steam ? $m.whereSteam.value : $m.whereLauncher.value}</span
+                    >{x.managed ? $m.inGameLinked.value : $m.inGameNotLinked.value}</span
                   >
                 </span>
-              </div>
-              <ModState mod={x} behind />
-              <span
-                class={cn(
-                  "flex min-w-0 items-center gap-1",
-                  HIDE_IN_GAME,
-                  x.managed ? "text-fg-muted" : "text-fg-faint",
-                )}
-                title={x.managed ? $m.inGameLinkedTitle.value : $m.inGameNotLinkedTitle.value}
-              >
-                {#if x.managed}<Link class="size-3 shrink-0" />{:else}<Unlink
-                    class="size-3 shrink-0"
-                  />{/if}
-                <span class="truncate"
-                  >{x.managed ? $m.inGameLinked.value : $m.inGameNotLinked.value}</span
+                <span class="num text-right font-mono text-2xs text-fg-muted">{x.size_human}</span>
+                <span
+                  class={cn("truncate font-mono text-2xs text-fg-muted", HIDE_VERSION)}
+                  title={x.remote_updated
+                    ? `${$m.workshopCopy.value}: ${date(x.remote_updated * 1000)}`
+                    : undefined}>{date(x.local_updated * 1000)}</span
                 >
-              </span>
-              <span class="num text-right font-mono text-2xs text-fg-muted">{x.size_human}</span>
-              <span
-                class={cn("truncate font-mono text-2xs text-fg-muted", HIDE_VERSION)}
-                title={x.remote_updated
-                  ? `${$m.workshopCopy.value}: ${date(x.remote_updated * 1000)}`
-                  : undefined}>{date(x.local_updated * 1000)}</span
-              >
+              {:else}
+                <span class={HIDE_IN_GAME}></span>
+                <span class="num text-right font-mono text-2xs text-fg-faint"
+                  >{r.size > 0 ? bytes(r.size) : "—"}</span
+                >
+                <span class={HIDE_VERSION}></span>
+              {/if}
               <span class="flex items-center justify-end gap-0.5">
-                {#if x.update_available && !mods.opState(x.id)}
+                {#if x}
+                  {@const s = mods.steamById.get(r.id)}
+                  {#if x.update_available && !mods.opState(r.id) && !(s?.downloading || s?.pending)}
+                    <IconButton
+                      size="icon-xs"
+                      icon={RefreshCw}
+                      label={$m.update.value}
+                      kbd="U"
+                      variant="accent"
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        review.updateSelected([r.id]);
+                      }}
+                    />
+                  {/if}
+                  <ModMenu mod={x} />
+                {:else}
                   <IconButton
                     size="icon-xs"
-                    icon={RefreshCw}
-                    label={$m.update.value}
-                    kbd="U"
-                    variant="accent"
-                    onclick={(e) => {
-                      e.stopPropagation();
-                      review.updateSelected([x.id]);
-                    }}
+                    icon={ExternalLink}
+                    label={$m.openWorkshop.value}
+                    onclick={() => openUrl(workshopUrl(r.id))}
                   />
                 {/if}
-                <ModMenu mod={x} />
               </span>
             </div>
           {/snippet}
@@ -487,7 +550,7 @@
         </DropdownMenuContent>
       </Menu.Root>
     {/snippet}
-    {#if mods.installed.length > 0}
+    {#if all.length > 0}
       <div class="flex items-center gap-2">
         <Input
           type="search"
@@ -496,9 +559,18 @@
           bind:value={query}
         />
         <Segmented bind:value={filter} options={filterOptions} aria-label={$m.filterLabel.value} />
-        <span class="ml-auto font-mono text-2xs text-fg-faint"
-          >{rows.length} / {mods.installed.length}</span
-        >
+        <span class="ml-auto flex items-center gap-2">
+          {#if mods.steamActive.length > 0}
+            <Tag tone="accent" title={$m.steamDownloadsTitle.value}>
+              <Spinner class="size-2.5 text-current" /><SteamIcon
+                class="size-2.5"
+              />{$m.steamDownloads({
+                count: mods.steamActive.length,
+              }).value}
+            </Tag>
+          {/if}
+          <span class="font-mono text-2xs text-fg-faint">{rows.length} / {all.length}</span>
+        </span>
       </div>
     {/if}
   </PageHeader>

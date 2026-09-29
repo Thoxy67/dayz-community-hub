@@ -24,7 +24,7 @@
   import { mods } from "$lib/stores/mods.svelte";
   import { profile } from "$lib/stores/profile.svelte";
   import TerminalIcon from "~icons/lucide/terminal";
-  import { parseProgress } from "./steamcmd-log";
+  import { latestProgress } from "./steamcmd-log";
 
   /**
    * A download operation (SteamCMD's, or the Steam client's: both report the
@@ -52,13 +52,8 @@
   // ── the current mod's bytes, read from the log ──────────────────────────
   // The newest progress line since the current mod started ("Downloading item").
   const progress = $derived.by(() => {
-    for (let i = op.log.length - 1; i >= 0; i--) {
-      const line = op.log[i]!;
-      const p = parseProgress(line);
-      if (p) return { ...p, at: op.startedAt + (op.logAt[i] ?? 0) };
-      if (/downloading item/i.test(line)) return null;
-    }
-    return null;
+    const p = latestProgress(op.log, op.logAt);
+    return p && { ...p, at: op.startedAt + p.at };
   });
   // Speed needs the history of samples, which a derivation does not keep.
   const rate = new Rate();

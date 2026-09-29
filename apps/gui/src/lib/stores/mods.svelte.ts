@@ -6,7 +6,7 @@
  */
 import * as ipc from "$lib/ipc/mods";
 import { Channel } from "$lib/ipc/core";
-import type { InstalledModDto, ModProgressEvent } from "$lib/ipc/types";
+import type { InstalledModDto, ModProgressEvent, SteamSubscriptionsDto } from "$lib/ipc/types";
 import { words } from "$lib/i18n";
 import { bytes } from "$lib/format";
 import { confirm } from "./dialogs.svelte";
@@ -83,12 +83,25 @@ class Mods {
   lastChecked = $state(0);
   op = $state<ModOp>(idle());
 
+  /**
+   * What the running Steam client says about the account's Workshop items:
+   * which are subscribed, which it is downloading. Null until asked, and
+   * `available: false` while Steam is not running.
+   */
+  steam = $state.raw<SteamSubscriptionsDto | null>(null);
+  steamById = $derived(new Map((this.steam?.items ?? []).map((i) => [i.id, i])));
+  /** Items Steam is downloading or has queued, installed here or not. */
+  steamActive = $derived((this.steam?.items ?? []).filter((i) => i.downloading || i.pending));
+  /** Steam has downloads under way: its view is worth asking for again. */
+  steamBusy = $derived(this.steamActive.length > 0);
+
   stale = $derived(this.installed.filter((m) => m.update_available));
   totalSize = $derived(this.installed.reduce((a, m) => a + m.size, 0));
   byId = $derived(new Map(this.installed.map((m) => [m.id, m])));
 
   #loading: Promise<void> | null = null;
   #checking: Promise<void> | null = null;
+  #asking: Promise<void> | null = null;
 
   /** Read what is on disk. Callers at the same moment share one read. */
   load(): Promise<void> {
@@ -125,8 +138,30 @@ class Mods {
     })());
   }
 
+  /**
+   * Ask Steam which items the account is subscribed to and which it is
+   * downloading (the backend keeps the answer a few seconds). When a
+   * download of Steam's ends, the disk is read again for the new copy.
+   * Callers at the same moment share one question.
+   */
+  loadSteam(): Promise<void> {
+    return (this.#asking ??= (async () => {
+      const before = new Set(this.steamActive.map((i) => i.id));
+      try {
+        this.steam = await ipc.steamSubscriptions();
+        const still = new Set(this.steamActive.map((i) => i.id));
+        if ([...before].some((id) => !still.has(id))) await this.load();
+      } catch {
+        // Only an extra: the list stands without Steam's view of it.
+      } finally {
+        this.#asking = null;
+      }
+    })());
+  }
+
   async refresh() {
     await this.load();
+    void this.loadSteam();
     await this.checkUpdates(true);
   }
 
@@ -368,6 +403,7 @@ class Mods {
     this.op.active = false;
     if (profile.data?.steam_api_key) await this.checkUpdates(true);
     else await this.load();
+    void this.loadSteam();
     const { servers } = await import("./servers.svelte");
     void servers.loadStats();
   }

@@ -389,6 +389,47 @@ export function installMock() {
       case "get_installed_mods":
       case "check_mod_updates":
         return mods;
+      case "steam_subscriptions": {
+        // Most Steam-library mods subscribed (one not), one downloading, one
+        // waiting, a launcher mod also subscribed, and two subscriptions not
+        // on disk yet (one downloading, one waiting).
+        const cycle = (Date.now() % 60_000) / 60_000;
+        const item = (id: number, o: Record<string, unknown> = {}) => ({
+          id,
+          subscribed: true,
+          installed: true,
+          needs_update: false,
+          downloading: false,
+          pending: false,
+          bytes_done: 0,
+          bytes_total: 0,
+          ...o,
+        });
+        const at = (i: number) => mods[i]?.id ?? 0;
+        return {
+          available: true,
+          reason: null,
+          items: [
+            ...[0, 3, 6, 9, 21].map((i) => item(at(i))),
+            item(at(1)),
+            item(at(12), {
+              needs_update: true,
+              downloading: true,
+              bytes_total: 1_400_000_000,
+              bytes_done: Math.floor(1_400_000_000 * cycle),
+            }),
+            item(at(18), { needs_update: true, pending: true }),
+            item(2_900_000_001, {
+              installed: false,
+              needs_update: true,
+              downloading: true,
+              bytes_total: 640_000_000,
+              bytes_done: Math.floor(640_000_000 * cycle),
+            }),
+            item(2_900_000_002, { installed: false, needs_update: true }),
+          ].filter((x) => x.id !== 0),
+        };
+      }
       case "fetch_news":
         return articles;
       case "get_offline_missions":
