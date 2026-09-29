@@ -69,11 +69,17 @@
   {/if}
 
   {#if mods.op.active && mods.op.phase !== "finished"}
-    <span class="flex items-center gap-1.5 text-info">
-      <HardDriveDownload class="size-3 animate-pulse" />
-      <span class="num font-mono">{$n.modOpRunning({ current: mods.op.current, total: mods.op.total }).value}</span>
-      <span class="max-w-48 truncate text-fg-muted">{mods.op.currentName}</span>
-    </span>
+    <!-- A job sent to the background comes back from here. -->
+    <Tooltip text={$n.showProgress.value} side="top">
+      <button
+        class="flex items-center gap-1.5 rounded-xs px-1 text-info hover:bg-info/10"
+        onclick={() => (mods.op.minimised = false)}
+      >
+        <HardDriveDownload class="size-3 animate-pulse" />
+        <span class="num font-mono">{$n.modOpRunning({ current: mods.op.current, total: mods.op.total }).value}</span>
+        <span class="max-w-48 truncate text-fg-muted">{mods.op.currentName}</span>
+      </button>
+    </Tooltip>
   {/if}
 
   <span class="ml-auto font-mono">{version ? $n.version({ version }).value : ""}</span>

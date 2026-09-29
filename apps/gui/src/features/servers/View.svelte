@@ -6,10 +6,9 @@
   import Clock from "~icons/lucide/clock";
   import Server from "~icons/lucide/server";
   import { Button, IconButton } from "$lib/components/ui/button";
-  import { Split } from "$lib/components/ui/split";
   import { Spinner } from "$lib/components/ui/spinner";
   import { Topo } from "$lib/components/ui/topo";
-  import { Empty, Figure, PageHeader, SortHead, TableHead } from "$lib/components/app";
+  import { Empty, Figure, MasterDetail, PageHeader, SortHead, TableHead } from "$lib/components/app";
   import { cn } from "$lib/cx";
   import { compact, num } from "$lib/format";
   import type { ServerRow as Row } from "$lib/ipc/servers";
@@ -20,7 +19,7 @@
   import ServerDetail from "./detail/ServerDetail.svelte";
   import { filters, type SortCol } from "./filters.svelte";
   import { feed } from "./feed.svelte";
-  import { GRID, ROW_PX } from "./columns";
+  import { GRID, NARROW_HIDDEN, ROW_PX } from "./columns";
   import ServerRow from "./ServerRow.svelte";
   import Toolbar from "./Toolbar.svelte";
 
@@ -175,7 +174,7 @@
 <svelte:window {onkeydown} />
 
 {#snippet listPane()}
-  <div class="flex h-full min-h-0 flex-1 flex-col">
+  <div class="@container flex h-full min-h-0 flex-1 flex-col">
     <TableHead grid={GRID}>
       <span class="text-right">#</span>
       <span></span>
@@ -185,10 +184,11 @@
           title={col.title?.()}
           active={filters.sort === col.id}
           asc={filters.asc}
+          class={col.id === "time" ? NARROW_HIDDEN : ""}
           onclick={() => filters.toggleSort(col.id)}
         />
       {/each}
-      <span class="text-center uppercase">{$c.colOs.value}</span>
+      <span class={cn("text-center uppercase", NARROW_HIDDEN)}>{$c.colOs.value}</span>
     </TableHead>
 
     {#if feed.loading && feed.total === 0}
@@ -243,7 +243,7 @@
                     <span class="h-2 w-16 animate-pulse rounded-full bg-raised"></span>
                     <span class="h-2.5 w-3/5 animate-pulse rounded-full bg-raised"></span>
                     <span class="h-2 w-20 animate-pulse rounded-full bg-raised"></span>
-                    <span></span><span></span><span></span>
+                    <span class={NARROW_HIDDEN}></span><span></span><span class={NARROW_HIDDEN}></span>
                   </div>
                 {/if}
               </div>
@@ -266,7 +266,7 @@
       onclose={() => (showDetail = false)}
     />
   {:else}
-    <Empty icon={Server} title={$c.selectServer.value} compact />
+    <Empty icon={Server} title={$c.selectServer.value} />
   {/if}
 {/snippet}
 
@@ -276,14 +276,14 @@
       <Figure label={$c.statShown.value} value={num(feed.total)} />
       <Figure label={$c.statPlayers.value} value={compact(fig?.players)} tone="text-ok" />
       <Figure label={$c.statFull.value} value={num(fig?.full)} tone={fig?.full ? "text-err" : "text-fg-muted"} />
-      <Figure label={$c.statEmpty.value} value={num(fig?.empty)} tone="text-fg-muted" />
+      <Figure secondary label={$c.statEmpty.value} value={num(fig?.empty)} tone="text-fg-muted" />
       <Figure
         label={$c.statModded.value}
         value={fig && fig.shown ? `${Math.round((fig.modded / fig.shown) * 100)}%` : "—"}
         tone="text-mods"
       />
-      <Figure label={$c.statPinged.value} value={num(fig?.pinged)} tone="text-fg-muted" />
-      <Figure label={$c.statBestPing.value} value={fig?.best_ping != null ? `${fig.best_ping} ms` : "—"} tone="text-ok" />
+      <Figure secondary label={$c.statPinged.value} value={num(fig?.pinged)} tone="text-fg-muted" />
+      <Figure secondary label={$c.statBestPing.value} value={fig?.best_ping != null ? `${fig.best_ping} ms` : "—"} tone="text-ok" />
     {/snippet}
     {#snippet actions()}
       <span class="mr-2 hidden font-mono text-3xs text-fg-faint 2xl:inline">{$c.keys.value}</span>
@@ -311,10 +311,6 @@
   {/if}
 
   <div class="flex min-h-0 flex-1 flex-col">
-    {#if showDetail}
-      <Split id="servers-detail" pane="end" initial={400} min={320} max={620} keep={520} main={listPane} aside={detailPane} />
-    {:else}
-      {@render listPane()}
-    {/if}
+    <MasterDetail id="servers-detail" show={showDetail} selected={selected !== null} main={listPane} detail={detailPane} />
   </div>
 </div>

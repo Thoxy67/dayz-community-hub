@@ -13,7 +13,7 @@
   import { dict } from "$lib/i18n";
   import { cn } from "$lib/cx";
   import type { ServerRow } from "$lib/ipc/servers";
-  import { GRID } from "./columns";
+  import { GRID, NARROW_HIDDEN } from "./columns";
 
   /** One server in the browser: every cell is a shared component, so favourites and history read the same. */
   let {
@@ -63,12 +63,12 @@
       <ServerFlags password={server.password} firstPerson={server.first_person_only} battleye={server.battl_eye} />
     </span>
     <span class="flex min-w-0 items-center gap-2">
-      <Copy text={address} title={$c.copyIp({ address }).value} />
-      <span class="truncate font-mono text-3xs text-fg-faint">{server.version}</span>
+      <Copy class="shrink-0" text={address} title={$c.copyIp({ address }).value} />
+      <span class="min-w-0 truncate font-mono text-3xs text-fg-faint">{server.version}</span>
     </span>
   </span>
   <span class="truncate text-map" title={server.map}>{server.map}</span>
-  <TimeOfDay time={server.time} />
+  <TimeOfDay time={server.time} class={NARROW_HIDDEN} />
   <ModsCount count={server.mods_count} onclick={onmods} />
-  <OsIcon environment={server.environment} />
+  <span class={NARROW_HIDDEN}><OsIcon environment={server.environment} /></span>
 </div>

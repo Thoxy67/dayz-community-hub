@@ -74,7 +74,7 @@
     "relative flex shrink-0 flex-col border-r border-border bg-bg transition-[width] duration-150",
     collapsed ? "w-rail-collapsed" : "w-rail",
   )}
-  aria-label="Navigation"
+  aria-label={$n.navigation.value}
 >
   <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1.5 py-2.5">
     {#each GROUPS as g (g.id)}

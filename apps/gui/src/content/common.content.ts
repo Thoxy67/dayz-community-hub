@@ -27,6 +27,8 @@ const content = {
     all: t({ en: "All", fr: "Tous", de: "Alle", es: "Todos", ru: "Все" }),
     yes: t({ en: "Yes", fr: "Oui", de: "Ja", es: "Sí", ru: "Да" }),
     no: t({ en: "No", fr: "Non", de: "Nein", es: "No", ru: "Нет" }),
+    live: t({ en: "Live", fr: "Direct", de: "Live", es: "En vivo", ru: "Онлайн" }),
+    filterLines: t({ en: "Filter lines…", fr: "Filtrer les lignes…", de: "Zeilen filtern…", es: "Filtrar líneas…", ru: "Фильтр строк…" }),
     unknown: t({ en: "Unknown", fr: "Inconnu", de: "Unbekannt", es: "Desconocido", ru: "Неизвестно" }),
   },
 } satisfies Dictionary;

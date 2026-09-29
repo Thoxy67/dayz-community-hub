@@ -20,6 +20,24 @@
   --t-map: oklch(77% 0.078 88);
   --t-mods: oklch(74.7% 0.086 173);
   color-scheme: dark;
+
+  /* Read through var() by components, so they live here rather than in the
+     inline theme below. */
+  --glow-accent-soft: 0 0 8px color-mix(in oklch, var(--t-accent) 28%, transparent);
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 240ms;
+
+  /* The deepest grounds (terminal output, code, wells) go darker than the
+     floor in a dark theme and lighter in a light one: black in a light theme
+     made the SteamCMD log and the command previews unreadable. */
+  --t-sunken: color-mix(in oklch, var(--t-bg) 70%, black);
+  --t-plot: color-mix(in oklch, var(--t-bg) 55%, black);
+}
+
+:root[data-scheme="light"] {
+  --t-sunken: color-mix(in oklch, var(--t-bg) 55%, white);
+  --t-plot: color-mix(in oklch, var(--t-bg) 35%, white);
 }
 
 /* `inline`: utilities reference the variables themselves, so a theme change
@@ -35,13 +53,13 @@
   --color-bg: var(--t-bg);
   --color-panel: var(--t-panel);
   --color-raised: var(--t-raised);
-  --color-sunken: color-mix(in oklch, var(--t-bg) 70%, black);
+  --color-sunken: var(--t-sunken);
   --color-overlay: color-mix(in oklch, var(--t-raised) 88%, var(--t-fg));
   --color-border: color-mix(in oklch, var(--t-raised) 72%, var(--t-fg) 12%);
   --color-border-strong: color-mix(in oklch, var(--t-raised) 55%, var(--t-fg) 30%);
   --color-scrim: color-mix(in oklch, var(--t-bg) 55%, transparent);
   /* The deepest ground: dialog veils, terminal output, the sparkline's well. */
-  --color-plot: color-mix(in oklch, var(--t-bg) 55%, black);
+  --color-plot: var(--t-plot);
 
   /* ── text ─────────────────────────────────────────────────────────── */
   --color-fg: var(--t-fg);
@@ -114,7 +132,6 @@
   /* ── depth ────────────────────────────────────────────────────────── */
   --shadow-pop:
     0 8px 24px -6px rgb(0 0 0 / 0.5), 0 0 0 1px color-mix(in oklch, var(--t-fg) 9%, transparent);
-  --glow-accent-soft: 0 0 8px color-mix(in oklch, var(--t-accent) 28%, transparent);
   --shadow-glow: 0 0 0 1px color-mix(in oklch, var(--t-accent) 45%, transparent),
     0 0 14px -2px color-mix(in oklch, var(--t-accent) 40%, transparent);
 

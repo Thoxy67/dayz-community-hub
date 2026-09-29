@@ -3,6 +3,25 @@ import { insert, t, type Dictionary } from "intlayer";
 const content = {
   key: "servers",
   content: {
+    savedPassword: t({
+      en: "Password saved with this favourite",
+      fr: "Mot de passe enregistré avec ce favori",
+      de: "Passwort mit diesem Favoriten gespeichert",
+      es: "Contraseña guardada con este favorito",
+      ru: "Пароль сохранён в избранном",
+    }),
+    moreFilters: t({ en: "More filters", fr: "Plus de filtres", de: "Weitere Filter", es: "Más filtros", ru: "Ещё фильтры" }),
+    activeFilters: insert(
+      t({
+        en: "{{count}} active",
+        fr: "{{count}} actif(s)",
+        de: "{{count}} aktiv",
+        es: "{{count}} activo(s)",
+        ru: "активно: {{count}}",
+      }),
+    ),
+    ping: t({ en: "Ping", fr: "Ping", de: "Ping", es: "Ping", ru: "Пинг" }),
+    occupancy: t({ en: "Occupancy", fr: "Occupation", de: "Belegung", es: "Ocupación", ru: "Заполненность" }),
     statShown: t({ en: "Shown", fr: "Affichés", de: "Angezeigt", es: "Mostrados", ru: "Показано" }),
     statPlayers: t({ en: "Players", fr: "Joueurs", de: "Spieler", es: "Jugadores", ru: "Игроки" }),
     statFull: t({ en: "Full", fr: "Pleins", de: "Voll", es: "Llenos", ru: "Заполнены" }),

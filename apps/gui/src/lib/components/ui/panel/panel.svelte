@@ -25,7 +25,10 @@
   } = $props();
 </script>
 
-<section class={cn("flex min-h-0 min-w-0 flex-col bg-panel", klass)}>
+<!-- A panel that does not scroll itself keeps the height of what it holds:
+     with `min-h-0` in a scrolling column it was squeezed under its content,
+     which then spilled over the panel below. -->
+<section class={cn("flex min-w-0 flex-col bg-panel", scroll ? "min-h-0" : "shrink-0", klass)}>
   {#if title}
     <header
       class="flex h-control shrink-0 items-center justify-between gap-2 border-b border-border
@@ -34,10 +37,7 @@
       <!-- The tick marks this header as a header: the same accent the app
            acts in, at quarter strength, so the panel's name sits beside a
            dash of the colour the app does things in. -->
-      <h2
-        class="flex min-w-0 items-center gap-1.5 font-mono text-2xs tracking-wider text-fg-muted
-               uppercase"
-      >
+      <h2 class="m-0 flex min-w-0 items-center gap-1.5 label-stencil text-fg-muted">
         <span class="h-2.5 w-[2px] shrink-0 rounded-full bg-accent/60"></span>
         <!-- One line, cut short in a narrow window: wrapped, it grew past the
              header's fixed height and slid under the toolbar. -->
@@ -46,7 +46,7 @@
       {#if toolbar}<div class="flex items-center gap-1">{@render toolbar()}</div>{/if}
     </header>
   {/if}
-  <div class={cn("flex min-h-0 flex-1 flex-col", scroll && "overflow-y-auto", padded && "p-2")}>
+  <div class={cn("flex flex-1 flex-col", scroll && "min-h-0 overflow-y-auto", padded && "p-2")}>
     {@render children()}
   </div>
 </section>

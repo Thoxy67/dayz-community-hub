@@ -20,6 +20,7 @@
    */
   let { collapsed = false }: { collapsed?: boolean } = $props();
   const n = dict("nav");
+  const common = dict("common");
 
   const last = $derived(profile.data?.history?.[0] ?? null);
   const addr = $derived(last ? `${last.ip}:${last.port}` : "");
@@ -42,13 +43,26 @@
       </Tooltip>
     </div>
   {:else}
-    <div class="relative mx-2 overflow-hidden rounded-md border border-border bg-panel">
+    <!-- A short window gets one line: the full card would cover the menu. -->
+    <div class="mx-2 hidden [@media(max-height:760px)]:block">
+      <Tooltip text={`${$n.rejoin.value}: ${last.name}`} class="flex">
+        <button
+          class="flex h-control-lg w-full min-w-0 items-center gap-2 rounded-sm bg-accent/15 px-2 text-left text-accent hover:bg-accent/25"
+          onclick={() => connect.rejoin()}
+        >
+          <Play class="size-icon shrink-0" />
+          <span class="min-w-0 flex-1 truncate text-xs font-semibold">{last.name}</span>
+        </button>
+      </Tooltip>
+    </div>
+    <div class="relative mx-2 overflow-hidden rounded-md border border-border bg-panel [@media(max-height:760px)]:hidden">
       <div class="flex items-center gap-1.5 border-b border-border/70 px-2 py-1">
         <span class="label-stencil whitespace-nowrap text-fg-faint">{$n.lastPlayed.value}</span>
         <span class="ml-auto truncate font-mono text-3xs whitespace-nowrap text-fg-faint" title={dateTime(last.ts)}>{relative(last.ts)}</span>
         <button
           class="grid size-4 place-items-center rounded-xs text-fg-faint hover:bg-raised hover:text-fg"
-          aria-label="✕"
+          aria-label={$common.close.value}
+          title={$common.close.value}
           onclick={() => (prefs.dismissedRejoin = addr)}><X class="size-3" /></button
         >
       </div>

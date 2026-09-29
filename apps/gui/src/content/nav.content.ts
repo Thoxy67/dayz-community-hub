@@ -4,6 +4,7 @@ import { insert, t, type Dictionary } from "intlayer";
 const content = {
   key: "nav",
   content: {
+    navigation: t({ en: "Navigation", fr: "Navigation", de: "Navigation", es: "Navegación", ru: "Навигация" }),
     groupPlay: t({ en: "Play", fr: "Jouer", de: "Spielen", es: "Jugar", ru: "Игра" }),
     groupGear: t({ en: "Gear", fr: "Équipement", de: "Ausrüstung", es: "Equipo", ru: "Снаряжение" }),
     groupIntel: t({ en: "Intel", fr: "Infos", de: "Infos", es: "Info", ru: "Сводки" }),

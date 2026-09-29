@@ -37,10 +37,9 @@
   import { Copy } from "$lib/components/ui/copy";
   import { Tag } from "$lib/components/ui/tag";
   import { Button, IconButton } from "$lib/components/ui/button";
-  import { Split } from "$lib/components/ui/split";
   import { Input } from "$lib/components/ui/input";
   import { Chip } from "$lib/components/ui/chip";
-  import { Topo } from "$lib/components/ui/topo";
+  import ServerIcon from "~icons/lucide/server";
   import { cn } from "$lib/cx";
   import {
     Empty,
@@ -53,6 +52,7 @@
     SortHead,
     TableHead,
     TimeOfDay,
+    MasterDetail,
   } from "$lib/components/app";
   import ServerDetail from "$features/servers/detail/ServerDetail.svelte";
   import { app, type ViewId } from "$lib/stores/app.svelte";
@@ -292,8 +292,8 @@
 
   const COLS = $derived(
     kind === "history"
-      ? "grid-cols-[4.75rem_6rem_minmax(0,1fr)_7rem_3rem_7.5rem_10rem]"
-      : "grid-cols-[4.75rem_6rem_minmax(0,1fr)_7.5rem_3rem_10rem]",
+      ? "grid-cols-[4.5rem_6rem_minmax(0,1fr)_6.5rem_2.75rem_7.75rem_7.25rem]"
+      : "grid-cols-[4.5rem_6rem_minmax(0,1fr)_7.5rem_2.75rem_7.25rem]",
   );
   const ROW = 50;
 </script>
@@ -355,7 +355,7 @@
       asc={sortAsc}
       onclick={() => sortBy("map")}
     />
-    <span class="text-center">{$sv.colMods.value}</span>
+    <span class="text-center uppercase">{$sv.colMods.value}</span>
     {#if kind === "history"}<SortHead
         label={$h.colLastPlayed.value}
         active={sortCol === "recent"}
@@ -503,10 +503,7 @@
         />
       {/key}
     {:else}
-      <div class="relative grid flex-1 place-items-center overflow-hidden p-pad">
-        <Topo opacity={0.35} />
-        <p class="relative m-0 max-w-56 text-center text-xs text-fg-faint">{$f.selectHint.value}</p>
-      </div>
+      <Empty icon={ServerIcon} title={$f.selectHint.value} />
     {/if}
   </aside>
 {/snippet}
@@ -520,17 +517,15 @@
         <Button variant="accent" onclick={() => app.go("servers")}>{$f.browseServers.value}</Button>
       {/snippet}
     </Empty>
-  {:else if showDetail}
-    <Split
+  {:else}
+    <MasterDetail
       id="{kind}-detail"
+      show={showDetail}
+      selected={selected !== null}
       initial={380}
       min={300}
-      max={620}
-      keep={520}
       main={listPane}
-      aside={detailPane}
+      detail={detailPane}
     />
-  {:else}
-    {@render listPane()}
   {/if}
 </div>

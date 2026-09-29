@@ -33,3 +33,4 @@ export { default as Lightbox } from "./Lightbox.svelte";
 export { default as CommandPreview } from "./CommandPreview.svelte";
 export { default as LanguagePicker } from "./LanguagePicker.svelte";
 export { default as ThemeSwatches } from "./ThemeSwatches.svelte";
+export { default as MasterDetail } from "./MasterDetail.svelte";

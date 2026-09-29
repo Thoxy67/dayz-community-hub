@@ -78,10 +78,10 @@
     <Tag><span class="num font-mono">{lines.length}</span></Tag>
     {#if live}
       <span class="flex items-center gap-1 font-mono text-3xs text-ok">
-        <span class="size-1.5 animate-pulse rounded-full bg-ok"></span>LIVE
+        <span class="size-1.5 animate-pulse rounded-full bg-ok"></span>{$c.live.value}
       </span>
     {/if}
-    <Input type="search" size="xs" class="ml-auto w-48" placeholder="grep…" bind:value={filter} />
+    <Input type="search" size="xs" class="ml-auto w-48" placeholder={$c.filterLines.value} bind:value={filter} />
     <Button variant="ghost" size="xs" onclick={copyAll}>
       {#if copied}<Check class="size-3 text-ok" />{$c.copied.value}{:else}<CopyIcon class="size-3" />{$c.copy.value}{/if}
     </Button>
@@ -111,7 +111,7 @@
       class="absolute right-4 bottom-4 flex items-center gap-1.5 rounded-full border border-accent/50 bg-accent px-3 py-1 text-2xs font-semibold text-accent-fg shadow-pop"
       onclick={jump}
     >
-      <ArrowDownToLine class="size-3" />LIVE
+      <ArrowDownToLine class="size-3" />{$c.live.value}
     </button>
   {/if}
 </section>
