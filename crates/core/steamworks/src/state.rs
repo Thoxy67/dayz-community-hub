@@ -97,6 +97,7 @@ pub(crate) const CALL_COMPLETED: i32 = 703; // SteamAPICallCompleted_t
 pub(crate) const SUBSCRIBE_RESULT: i32 = 1313; // RemoteStorageSubscribePublishedFileResult_t
 pub(crate) const UNSUBSCRIBE_RESULT: i32 = 1315; // RemoteStorageUnsubscribePublishedFileResult_t
 pub(crate) const DOWNLOAD_RESULT: i32 = 3406; // DownloadItemResult_t
+pub(crate) const UGC_QUERY_COMPLETED: i32 = 3401; // SteamUGCQueryCompleted_t
 
 /// Where a `uint64` that follows a 4-byte field starts: Valve packs
 /// callbacks to 4 bytes on Linux and macOS, to 8 on Windows.
@@ -133,6 +134,34 @@ pub(crate) fn call_completed(b: &[u8]) -> Option<CallCompleted> {
 /// unsubscribe result (`…UnsubscribePublishedFileResult_t`) has the same layout.
 pub(crate) fn subscribe_result(b: &[u8]) -> Option<(i32, u64)> {
     Some((i32_at(b, 0)?, u64_at(b, U64_AFTER_U32)?))
+}
+
+/// `SteamUGCQueryCompleted_t`: (query handle, result, results returned).
+pub(crate) fn query_completed(b: &[u8]) -> Option<(u64, i32, u32)> {
+    Some((u64_at(b, 0)?, i32_at(b, 8)?, u32_at(b, 12)?))
+}
+
+/// From the start of a `SteamUGCDetails_t`: the item's id, the result, and
+/// its title (`char[129]` at offset 24, after four 4-byte fields; the same
+/// under pack(4) and pack(8)).
+pub(crate) fn details_head(b: &[u8]) -> Option<(u64, i32, String)> {
+    let title = b.get(24..24 + 129)?;
+    let end = title.iter().position(|&c| c == 0).unwrap_or(title.len());
+    Some((
+        u64_at(b, 0)?,
+        i32_at(b, 8)?,
+        String::from_utf8_lossy(&title[..end]).into_owned(),
+    ))
+}
+
+/// Where `m_unNumChildren` sits in a `SteamUGCDetails_t`: after the 8000-byte
+/// description, the 64-bit fields fall on 4-byte boundaries under Linux's
+/// pack(4) and on 8-byte ones under Windows' pack(8).
+const NUM_CHILDREN_AT: usize = if cfg!(windows) { 9768 } else { 9760 };
+
+/// How many items a `SteamUGCDetails_t` says the item requires.
+pub(crate) fn details_children(b: &[u8]) -> Option<u32> {
+    u32_at(b, NUM_CHILDREN_AT)
 }
 
 /// `DownloadItemResult_t`: (app, item, result).

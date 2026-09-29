@@ -21,6 +21,8 @@
 
   const item = $derived(mods.steamById.get(mod.id));
   const where = $derived(whereOf(mod, item, !!mods.steam?.available));
+  /** The mods that require this one. */
+  const parents = $derived(mods.requiredBy.get(mod.id) ?? []);
   const label = $derived(
     {
       launcher: line ? $m.whereLauncher.value : $m.sourceLauncher.value,
@@ -28,7 +30,11 @@
       unsubscribed: line ? $m.whereNotSubscribed.value : $m.sourceSteam.value,
       steam: line ? $m.whereSteam.value : $m.sourceSteam.value,
     }[where] +
-      (line && where === "launcher" && item?.subscribed ? ` · ${$m.alsoSubscribed.value}` : ""),
+      (line && where === "launcher" && item?.subscribed ? ` · ${$m.alsoSubscribed.value}` : "") +
+      (line && parents.length > 0
+        ? ` · ${$m.requiredByLine({ name: mods.nameOf(parents[0]!) }).value}` +
+          (parents.length > 1 ? ` +${parents.length - 1}` : "")
+        : ""),
   );
   const title = $derived(
     [

@@ -428,6 +428,16 @@ export function installMock() {
             }),
             item(2_900_000_002, { installed: false, needs_update: true }),
           ].filter((x) => x.id !== 0),
+          // The first mod (CF-like) required by a few others, one of which
+          // also needs a mod that is not installed.
+          details: [
+            { id: at(0), title: mods[0]?.name ?? "", requires: [] },
+            { id: at(3), title: mods[3]?.name ?? "", requires: [at(0)] },
+            { id: at(6), title: mods[6]?.name ?? "", requires: [at(0), 2_900_000_003] },
+            { id: 2_900_000_001, title: "Incoming Weapons Pack", requires: [at(0)] },
+            { id: 2_900_000_002, title: "Base Building Plus", requires: [] },
+            { id: 2_900_000_003, title: "Missing Library", requires: [] },
+          ].filter((d) => d.id !== 0),
         };
       }
       case "fetch_news":

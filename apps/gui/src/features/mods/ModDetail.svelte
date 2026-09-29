@@ -10,6 +10,7 @@
   import MapPin from "~icons/lucide/map-pin";
   import Gamepad from "~icons/lucide/gamepad-2";
   import Hash from "~icons/lucide/hash";
+  import Network from "~icons/lucide/network";
   import { Button, IconButton } from "$lib/components/ui/button";
   import { Copy } from "$lib/components/ui/copy";
   import { Meter } from "$lib/components/ui/meter";
@@ -41,9 +42,26 @@
       : 0,
   );
   const busy = $derived(mods.opState(mod.id) !== null);
+  /** What this mod requires, and what requires it (the Workshop's "Required items"). */
+  const requires = $derived(mods.workshop.get(mod.id)?.requires ?? []);
+  const requiredBy = $derived(mods.requiredBy.get(mod.id) ?? []);
   /** "3 days ago" says more than a date for a month; past that it only says "long ago". */
   const recent = (ts: number) => Date.now() / 1000 - ts < 30 * 86400;
 </script>
+
+{#snippet list(ids: number[])}
+  <ul class="m-0 flex list-none flex-col gap-0.5 p-0">
+    {#each ids as id (id)}
+      <li class="flex items-center gap-2 text-xs">
+        <span class="min-w-0 flex-1 truncate text-fg" data-selectable>{mods.nameOf(id)}</span>
+        {#if !mods.byId.has(id)}<span class="shrink-0 text-2xs text-err">{$m.depMissing.value}</span
+          >{:else if mods.steamById.get(id)?.subscribed}<span
+            class="shrink-0 text-2xs text-fg-faint">{$m.sourceSubscribed.value}</span
+          >{/if}
+      </li>
+    {/each}
+  </ul>
+{/snippet}
 
 <div class="flex min-h-0 flex-1 flex-col bg-panel">
   <header class="border-b border-border px-pad py-3">
@@ -153,6 +171,19 @@
         >
       </div>
     </Section>
+
+    {#if requires.length > 0 || requiredBy.length > 0}
+      <Section title={$m.sectionDependencies.value} icon={Network}>
+        {#if requires.length > 0}
+          <span class="label-stencil text-fg-faint">{$m.requiresLabel.value}</span>
+          {@render list(requires)}
+        {/if}
+        {#if requiredBy.length > 0}
+          <span class="label-stencil text-fg-faint">{$m.requiredByLabel.value}</span>
+          {@render list(requiredBy)}
+        {/if}
+      </Section>
+    {/if}
 
     <Section title={$m.colInGame.value} icon={Gamepad}>
       <label class="flex cursor-pointer items-center justify-between gap-2">

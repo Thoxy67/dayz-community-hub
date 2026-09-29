@@ -192,12 +192,35 @@ pub struct Subscribed {
     pub bytes: (u64, u64),
 }
 
+/// What the Workshop says about an item: its title and the items it
+/// requires ("Required items" on its page; Steam calls them children).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Details {
+    pub id: u64,
+    pub title: String,
+    pub requires: Vec<u64>,
+}
+
+/// How long the Workshop may take to answer a details query.
+const DETAILS_TIMEOUT: Duration = Duration::from_secs(20);
+/// Items per details query (`kNumUGCResultsPerPage`).
+const DETAILS_PAGE: usize = 50;
+/// More than `sizeof(SteamUGCDetails_t)` (about 9.7 KB) under any packing.
+const DETAILS_BUF: usize = 16 * 1024;
+/// How deep requirements of requirements are followed.
+const DETAILS_DEPTH: usize = 3;
+
 /// Every DayZ Workshop item the account is subscribed to (locally disabled
-/// ones too), with what Steam is doing with each. A short session: Steam
-/// shows DayZ running for a moment.
+/// ones too), with what Steam is doing with each, and the Workshop's details
+/// (title, required items) of the subscribed items, of `also` (the mods on
+/// disk), and of what they require, followed a few levels down, except the
+/// ids `known` says are already known. A short session: Steam shows DayZ running for a moment.
 ///
 /// `Err` when no session could be opened, as for [`download`].
-pub fn subscriptions() -> Result<Vec<Subscribed>, String> {
+pub fn subscriptions(
+    also: &[u64],
+    known: &dyn Fn(u64) -> bool,
+) -> Result<(Vec<Subscribed>, Vec<Details>), String> {
     let (_one, api) = begin()?;
     // SAFETY (all calls into `api` below): as in `download`.
     let session = Session::open(api)?;
@@ -211,9 +234,9 @@ pub fn subscriptions() -> Result<Vec<Subscribed>, String> {
     // SAFETY: `ids` holds `n` entries, the most Steam writes.
     let got = unsafe { (api.subscribed_items)(ugc, ids.as_mut_ptr(), n, true) };
     ids.truncate(got.min(n) as usize);
-    Ok(ids
-        .into_iter()
-        .map(|id| {
+    let subscribed: Vec<Subscribed> = ids
+        .iter()
+        .map(|&id| {
             let state = ItemState(unsafe { (api.item_state)(ugc, id) });
             let mut bytes = (0u64, 0u64);
             if state.downloading() || state.pending() {
@@ -224,7 +247,100 @@ pub fn subscriptions() -> Result<Vec<Subscribed>, String> {
             }
             Subscribed { id, state, bytes }
         })
-        .collect())
+        .collect();
+
+    let mut details: Vec<Details> = Vec::new();
+    let mut asked: std::collections::HashSet<u64> = std::collections::HashSet::new();
+    let mut next: Vec<u64> = ids.iter().chain(also).copied().collect();
+    for _ in 0..DETAILS_DEPTH {
+        let want: Vec<u64> = next
+            .into_iter()
+            .filter(|&id| !known(id) && asked.insert(id))
+            .collect();
+        if want.is_empty() {
+            break;
+        }
+        let found = session.details(ugc, &want);
+        next = found
+            .iter()
+            .flat_map(|d| d.requires.iter().copied())
+            .collect();
+        details.extend(found);
+    }
+    Ok((subscribed, details))
+}
+
+impl Session {
+    /// The Workshop's details of `ids`, those it answered for. A query that
+    /// fails or times out gives nothing for its page.
+    fn details(&self, ugc: Iface, ids: &[u64]) -> Vec<Details> {
+        let api = self.api;
+        let mut out = Vec::new();
+        for page in ids.chunks(DETAILS_PAGE) {
+            let mut page = page.to_vec();
+            let handle = unsafe { (api.query_details)(ugc, page.as_mut_ptr(), page.len() as u32) };
+            if handle == u64::MAX {
+                continue;
+            }
+            unsafe { (api.set_return_children)(ugc, handle, true) };
+            let call = unsafe { (api.send_query)(ugc, handle) };
+            let mut returned = None;
+            let deadline = Instant::now() + DETAILS_TIMEOUT;
+            while call != 0 && returned.is_none() && Instant::now() < deadline {
+                self.pump(|callback, bytes| {
+                    if callback == state::CALL_COMPLETED
+                        && let Some(c) = state::call_completed(bytes)
+                        && c.call == call
+                        && c.callback == state::UGC_QUERY_COMPLETED
+                    {
+                        returned = Some(
+                            self.call_result(c.call, c.callback, c.size)
+                                .and_then(|b| state::query_completed(&b)),
+                        );
+                    }
+                });
+                if returned.is_none() {
+                    std::thread::sleep(TICK);
+                }
+            }
+            if let Some(Some((_, state::RESULT_OK, count))) = returned {
+                let mut buf = vec![0u8; DETAILS_BUF];
+                for i in 0..count {
+                    buf.fill(0);
+                    if !unsafe { (api.query_result)(ugc, handle, i, buf.as_mut_ptr()) } {
+                        continue;
+                    }
+                    let Some((id, state::RESULT_OK, title)) = state::details_head(&buf) else {
+                        continue;
+                    };
+                    let count = state::details_children(&buf).unwrap_or(0).min(1024);
+                    let mut children = vec![0u64; count as usize];
+                    let requires = if count > 0
+                        && unsafe {
+                            (api.query_children)(
+                                ugc,
+                                handle,
+                                i,
+                                children.as_mut_ptr(),
+                                children.len() as u32,
+                            )
+                        } {
+                        children.retain(|&c| c != 0);
+                        children
+                    } else {
+                        Vec::new()
+                    };
+                    out.push(Details {
+                        id,
+                        title,
+                        requires,
+                    });
+                }
+            }
+            unsafe { (api.release_query)(ugc, handle) };
+        }
+        out
+    }
 }
 
 const NO_UGC: &str = "This Steam client does not offer the Workshop interface the launcher needs. Update Steam and try again.";

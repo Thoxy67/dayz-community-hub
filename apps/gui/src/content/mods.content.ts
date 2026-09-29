@@ -1206,6 +1206,43 @@ const content = {
       es: "Suscrito en Steam",
       ru: "Подписка в Steam",
     }),
+    requiredByLine: insert(
+      t({
+        en: "required by {{name}}",
+        fr: "requis par {{name}}",
+        de: "benötigt von {{name}}",
+        es: "requerido por {{name}}",
+        ru: "нужен для {{name}}",
+      }),
+    ),
+    sectionDependencies: t({
+      en: "Dependencies",
+      fr: "Dépendances",
+      de: "Abhängigkeiten",
+      es: "Dependencias",
+      ru: "Зависимости",
+    }),
+    requiresLabel: t({
+      en: "Requires",
+      fr: "Nécessite",
+      de: "Benötigt",
+      es: "Requiere",
+      ru: "Требует",
+    }),
+    requiredByLabel: t({
+      en: "Required by",
+      fr: "Requis par",
+      de: "Benötigt von",
+      es: "Requerido por",
+      ru: "Нужен для",
+    }),
+    depMissing: t({
+      en: "not installed",
+      fr: "non installé",
+      de: "nicht installiert",
+      es: "no instalado",
+      ru: "не установлен",
+    }),
     whereNotSubscribed: t({
       en: "Steam library, not subscribed",
       fr: "Bibliothèque Steam, sans abonnement",

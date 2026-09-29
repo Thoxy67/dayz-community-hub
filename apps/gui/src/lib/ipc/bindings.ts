@@ -179,12 +179,13 @@ export const commands = {
 	steamworksCheck: () => __TAURI_INVOKE<null>("steamworks_check"),
 	/**
 	 *  The DayZ Workshop items the Steam account is subscribed to, with what
-	 *  Steam is doing with each (installed, downloading, waiting). Asks the
-	 *  running Steam client in a short session (Steam shows DayZ running for a
-	 *  moment), at most every few seconds; while another session is open (a
-	 *  download through Steam), the last answer.
+	 *  Steam is doing with each (installed, downloading, waiting), and the
+	 *  Workshop's details (title, required items) of those and of `ids` (the
+	 *  mods on disk). Asks the running Steam client in a short session (Steam
+	 *  shows DayZ running for a moment), at most every few seconds; while
+	 *  another session is open (a download through Steam), the last answer.
 	 */
-	steamSubscriptions: () => __TAURI_INVOKE<SteamSubscriptionsDto>("steam_subscriptions"),
+	steamSubscriptions: (ids: number[]) => __TAURI_INVOKE<SteamSubscriptionsDto>("steam_subscriptions", { ids }),
 	/**  Get available offline missions. */
 	getOfflineMissions: () => __TAURI_INVOKE<string[]>("get_offline_missions"),
 	/**  Download/update DayZCommunityOfflineMode. */
@@ -921,6 +922,11 @@ export type SteamSubscriptionsDto = {
 	/**  Why it did not, when it did not. */
 	reason: string | null,
 	items: SteamSubscriptionDto[],
+	/**
+	 *  Title and requirements of the subscribed items, of the mods asked
+	 *  about, and of what they require.
+	 */
+	details: WorkshopItemDto[],
 };
 
 /**  steamcmd appeared while `watch_steamcmd` was polling. */
@@ -999,6 +1005,14 @@ export type WipeSchedule = {
 	next_source: string | null,
 	days_until: number | null,
 	period_days: number | null,
+};
+
+/**  What the Workshop says about an item. */
+export type WorkshopItemDto = {
+	id: number,
+	title: string,
+	/**  The items it requires ("Required items" on its Workshop page). */
+	requires: number[],
 };
 
 /* Tauri Specta runtime */

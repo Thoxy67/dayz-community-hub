@@ -116,7 +116,7 @@
           !mods.byId.has(i.id) &&
           (i.downloading || i.pending || i.needs_update || !i.installed),
       )
-      .map((i): Row => ({ id: i.id, name: `Workshop ${i.id}`, size: i.bytes_total, mod: null })),
+      .map((i): Row => ({ id: i.id, name: mods.nameOf(i.id), size: i.bytes_total, mod: null })),
   );
   const all = $derived([
     ...incoming,

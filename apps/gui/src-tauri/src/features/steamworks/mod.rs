@@ -99,6 +99,15 @@ pub struct SteamSubscriptionDto {
     pub bytes_total: u64,
 }
 
+/// What the Workshop says about an item.
+#[derive(Serialize, Clone, Debug, specta::Type)]
+pub struct WorkshopItemDto {
+    pub id: u64,
+    pub title: String,
+    /// The items it requires ("Required items" on its Workshop page).
+    pub requires: Vec<u64>,
+}
+
 /// The account's subscriptions, or why they are not known.
 #[derive(Serialize, Clone, Debug, specta::Type)]
 pub struct SteamSubscriptionsDto {
@@ -107,22 +116,30 @@ pub struct SteamSubscriptionsDto {
     /// Why it did not, when it did not.
     pub reason: Option<String>,
     pub items: Vec<SteamSubscriptionDto>,
+    /// Title and requirements of the subscribed items, of the mods asked
+    /// about, and of what they require.
+    pub details: Vec<WorkshopItemDto>,
 }
 
 /// The last answer and when it came: Steam is asked at most this often.
 static LAST: std::sync::Mutex<Option<(std::time::Instant, SteamSubscriptionsDto)>> =
     std::sync::Mutex::new(None);
 const FRESH: std::time::Duration = std::time::Duration::from_secs(4);
+/// Workshop details by id, asked once per run: titles and requirements
+/// hardly change, and each question goes to Steam's servers.
+static DETAILS: std::sync::Mutex<Option<std::collections::HashMap<u64, WorkshopItemDto>>> =
+    std::sync::Mutex::new(None);
 
 /// The DayZ Workshop items the Steam account is subscribed to, with what
-/// Steam is doing with each (installed, downloading, waiting). Asks the
-/// running Steam client in a short session (Steam shows DayZ running for a
-/// moment), at most every few seconds; while another session is open (a
-/// download through Steam), the last answer.
+/// Steam is doing with each (installed, downloading, waiting), and the
+/// Workshop's details (title, required items) of those and of `ids` (the
+/// mods on disk). Asks the running Steam client in a short session (Steam
+/// shows DayZ running for a moment), at most every few seconds; while
+/// another session is open (a download through Steam), the last answer.
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn steam_subscriptions() -> Result<SteamSubscriptionsDto, String> {
-    spawn_blocking_mapped(|| {
+pub(crate) async fn steam_subscriptions(ids: Vec<u64>) -> Result<SteamSubscriptionsDto, String> {
+    spawn_blocking_mapped(move || {
         let last = LAST.lock().map(|l| l.clone()).unwrap_or(None);
         if let Some((at, dto)) = &last
             && at.elapsed() < FRESH
@@ -133,6 +150,7 @@ pub(crate) async fn steam_subscriptions() -> Result<SteamSubscriptionsDto, Strin
             available: false,
             reason: Some(reason),
             items: Vec::new(),
+            details: Vec::new(),
         };
         if !dz_steamworks::steam_running() {
             return Ok(unavailable("Steam is not running.".into()));
@@ -142,24 +160,49 @@ pub(crate) async fn steam_subscriptions() -> Result<SteamSubscriptionsDto, Strin
         {
             return Ok(dto);
         }
-        let dto = match dz_steamworks::subscriptions() {
-            Ok(items) => SteamSubscriptionsDto {
-                available: true,
-                reason: None,
-                items: items
-                    .into_iter()
-                    .map(|s| SteamSubscriptionDto {
-                        id: s.id,
-                        subscribed: s.state.subscribed(),
-                        installed: s.state.installed(),
-                        needs_update: s.state.needs_update(),
-                        downloading: s.state.downloading(),
-                        pending: s.state.pending(),
-                        bytes_done: s.bytes.0,
-                        bytes_total: s.bytes.1,
+        let known: std::collections::HashSet<u64> = DETAILS
+            .lock()
+            .ok()
+            .and_then(|d| d.as_ref().map(|d| d.keys().copied().collect()))
+            .unwrap_or_default();
+        let dto = match dz_steamworks::subscriptions(&ids, &|id| known.contains(&id)) {
+            Ok((items, found)) => {
+                let details = DETAILS
+                    .lock()
+                    .map(|mut d| {
+                        let d = d.get_or_insert_with(Default::default);
+                        for f in found {
+                            d.insert(
+                                f.id,
+                                WorkshopItemDto {
+                                    id: f.id,
+                                    title: f.title,
+                                    requires: f.requires,
+                                },
+                            );
+                        }
+                        d.values().cloned().collect()
                     })
-                    .collect(),
-            },
+                    .unwrap_or_default();
+                SteamSubscriptionsDto {
+                    available: true,
+                    reason: None,
+                    items: items
+                        .into_iter()
+                        .map(|s| SteamSubscriptionDto {
+                            id: s.id,
+                            subscribed: s.state.subscribed(),
+                            installed: s.state.installed(),
+                            needs_update: s.state.needs_update(),
+                            downloading: s.state.downloading(),
+                            pending: s.state.pending(),
+                            bytes_done: s.bytes.0,
+                            bytes_total: s.bytes.1,
+                        })
+                        .collect(),
+                    details,
+                }
+            }
             // A session busy elsewhere: the last answer is still the best.
             Err(e) => {
                 eprintln!("[steamworks] subscriptions: {e}");

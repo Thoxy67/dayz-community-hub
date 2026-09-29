@@ -92,6 +92,19 @@ class Mods {
   /** Why Steam's view is missing: its own reason, or the call's error. */
   steamError = $state<string | null>(null);
   steamById = $derived(new Map((this.steam?.items ?? []).map((i) => [i.id, i])));
+  /** The Workshop's title and required items, by id. */
+  workshop = $derived(new Map((this.steam?.details ?? []).map((d) => [d.id, d])));
+  /** For each mod, the mods that require it (its Workshop "Required items"). */
+  requiredBy = $derived.by(() => {
+    const out = new Map<number, number[]>();
+    for (const d of this.steam?.details ?? [])
+      for (const c of d.requires) out.set(c, [...(out.get(c) ?? []), d.id]);
+    return out;
+  });
+  /** A mod's name: from its files, else the Workshop, else its id. */
+  nameOf(id: number): string {
+    return this.byId.get(id)?.name ?? (this.workshop.get(id)?.title || `Workshop ${id}`);
+  }
   /** Items Steam is downloading or has queued, installed here or not. */
   steamActive = $derived((this.steam?.items ?? []).filter((i) => i.downloading || i.pending));
   /** Steam has downloads under way: its view is worth asking for again. */
@@ -150,7 +163,7 @@ class Mods {
     return (this.#asking ??= (async () => {
       const before = new Set(this.steamActive.map((i) => i.id));
       try {
-        const answer = await ipc.steamSubscriptions();
+        const answer = await ipc.steamSubscriptions(this.installed.map((m) => m.id));
         // A failed question keeps the last good answer on screen.
         if (answer.available || !this.steam?.available) this.steam = answer;
         this.steamError = answer.available ? null : answer.reason;

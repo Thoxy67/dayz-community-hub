@@ -42,6 +42,7 @@ export type {
   SteamSubscriptionsDto,
   SystemSpecsDto,
   UpdateInfo,
+  WorkshopItemDto,
 } from "./bindings";
 
 /** A server as every list shows it, with its live ping and head-count merged in by the backend. */

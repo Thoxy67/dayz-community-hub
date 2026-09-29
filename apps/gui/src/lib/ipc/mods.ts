@@ -18,7 +18,7 @@ export const openModDir = (modId: number) => run(commands.openModDir(modId));
  * subscribed, installed, downloading, waiting. `available: false` when Steam
  * is not running or not signed in.
  */
-export const steamSubscriptions = () => run(commands.steamSubscriptions());
+export const steamSubscriptions = (ids: number[]) => run(commands.steamSubscriptions(ids));
 
 /** What an operation works on; which fields matter depends on its type (see `ModOpType`). */
 export type ModOpArgs = {

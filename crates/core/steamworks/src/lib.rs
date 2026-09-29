@@ -14,8 +14,8 @@ mod session;
 mod state;
 
 pub use session::{
-    Event, ItemResult, Subscribed, Unsubscribed, check, download, session_open, subscriptions,
-    unsubscribe,
+    Details, Event, ItemResult, Subscribed, Unsubscribed, check, download, session_open,
+    subscriptions, unsubscribe,
 };
 pub use state::{ItemState, percent, result_text};
 
