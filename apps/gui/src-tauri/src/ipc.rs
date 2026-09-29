@@ -95,6 +95,7 @@ pub(crate) fn builder() -> tauri_specta::Builder<tauri::Wry> {
             native::pick_file,
             native::save_file,
             native::geolocate_ip,
+            gamepad::gamepad_status,
         ])
         .events(crate::events::collect())
         // Ports, timestamps, sizes and workshop ids are numbers in the window,

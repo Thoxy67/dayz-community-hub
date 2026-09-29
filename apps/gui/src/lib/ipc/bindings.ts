@@ -271,11 +271,15 @@ export const commands = {
 	saveFile: (title: string, defaultName: string, filters: FileFilter[]) => __TAURI_INVOKE<string | null>("save_file", { title, defaultName, filters }),
 	/**  The player's approximate location, from ip-api.com. */
 	geolocateIp: () => __TAURI_INVOKE<GeoLocation>("geolocate_ip"),
+	/**  The pads, and whether a controller UI is to be expected. */
+	gamepadStatus: () => __TAURI_INVOKE<GamepadStatus>("gamepad_status"),
 };
 
 /** Events */
 export const events = {
 	cliArgs: makeEvent<CliArgs>("cli-args"),
+	gamepadInput: makeEvent<GamepadInput>("gamepad-input"),
+	gamepadPads: makeEvent<GamepadPads>("gamepad-pads"),
 	launchDone: makeEvent<LaunchDone>("launch-done"),
 	launchError: makeEvent<LaunchError>("launch-error"),
 	offlineModeError: makeEvent<OfflineModeError>("offline-mode-error"),
@@ -484,6 +488,28 @@ export type FileFilter = {
 	extensions: string[],
 };
 
+/**  A pad asked the window to do something. */
+export type GamepadInput = {
+	action: PadAction,
+	/**  Fired again because the button or stick is still held. */
+	repeat: boolean,
+};
+
+/**  The pads connected now; sent whenever one comes or goes. */
+export type GamepadPads = PadInfo[];
+
+/**  What the window needs to know at start-up. */
+export type GamepadStatus = {
+	/**  Pads could be opened at all. */
+	available: boolean,
+	pads: PadInfo[],
+	/**
+	 *  Running inside Steam's big-screen interface, a Steam Deck's Game Mode
+	 *  or Big Picture, where Steam's on-screen keyboard is there to type with.
+	 */
+	steam_ui: boolean,
+};
+
 /**  Where the player is, approximately, from their IP address. */
 export type GeoLocation = {
 	lat: number | null,
@@ -623,6 +649,41 @@ export type OfflineModeError = string;
 
 /**  The offline mode finished downloading. */
 export type OfflineModeUpdated = null;
+
+/**
+ *  What the window is asked to do. Named after what they do, not after the
+ *  buttons, so the interface reads the same whatever the pad.
+ */
+export type PadAction = "up" | "down" | "left" | "right" | 
+/**  A (Xbox), Cross (PlayStation): the bottom face button. */
+"accept" | 
+/**  B, Circle: the right face button. */
+"back" | 
+/**  X, Square: the left face button. */
+"primary" | 
+/**  Y, Triangle: the top face button. */
+"secondary" | 
+/**  Start, Options, ≡. */
+"menu" | 
+/**  Back/View, Share/Create, ⧉. */
+"view" | 
+/**  LB, L1. */
+"prevTab" | 
+/**  RB, R1. */
+"nextTab" | 
+/**  LT, L2. */
+"pageUp" | 
+/**  RT, R2. */
+"pageDown";
+
+/**  A connected pad. */
+export type PadInfo = {
+	name: string,
+	kind: PadKind,
+};
+
+/**  What kind of pad, for the glyphs the window draws. */
+export type PadKind = "xbox" | "playStation" | "nintendo" | "steamDeck" | "generic";
 
 /**  One ping, as the window receives it. */
 export type PingResultDto = {

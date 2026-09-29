@@ -5,6 +5,7 @@ pub(crate) mod a2s;
 pub(crate) mod battlemetrics;
 pub(crate) mod browser;
 pub(crate) mod dzch_cli;
+pub(crate) mod gamepad;
 pub(crate) mod launch;
 pub(crate) mod metrics;
 pub(crate) mod mods;

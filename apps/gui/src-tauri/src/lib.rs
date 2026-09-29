@@ -34,6 +34,7 @@ pub fn run(args: CliArgs) {
         .setup(move |app| {
             builder.mount_events(app);
             features::browser::spawn_change_notifier(app.handle().clone());
+            features::gamepad::spawn(app.handle().clone());
             // The one-shot slot the news WebView fallback returns its JSON through.
             app.manage(news::webview::NewsWebviewState::new());
             app.manage(Arc::new(ping::PingState::default()));
@@ -92,6 +93,14 @@ pub fn run(args: CliArgs) {
                 })
                 .build(),
         )
+        // The pads speak only to a focused window.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Focused(f) = event
+                && window.label() == "main"
+            {
+                features::gamepad::set_focused(*f);
+            }
+        })
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())

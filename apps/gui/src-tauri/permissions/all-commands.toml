@@ -85,4 +85,5 @@ permissions = [
   "allow-pick-file",
   "allow-save-file",
   "allow-geolocate-ip",
+  "allow-gamepad-status",
 ]
