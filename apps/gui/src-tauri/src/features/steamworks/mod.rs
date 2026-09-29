@@ -161,10 +161,13 @@ pub(crate) async fn steam_subscriptions() -> Result<SteamSubscriptionsDto, Strin
                     .collect(),
             },
             // A session busy elsewhere: the last answer is still the best.
-            Err(e) => match last {
-                Some((_, dto)) => dto,
-                None => unavailable(e),
-            },
+            Err(e) => {
+                eprintln!("[steamworks] subscriptions: {e}");
+                match last {
+                    Some((_, dto)) => dto,
+                    None => unavailable(e),
+                }
+            }
         };
         if dto.available
             && let Ok(mut l) = LAST.lock()

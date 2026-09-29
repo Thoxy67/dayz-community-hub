@@ -83,6 +83,13 @@
     const timer = setInterval(() => void mods.loadSteam(), 5000);
     return () => clearInterval(timer);
   });
+  // Steam did not answer (closed, offline, busy): asked again now and then,
+  // so its view comes back without leaving the page.
+  $effect(() => {
+    if (app.view !== "mods" || !mods.steamError) return;
+    const timer = setInterval(() => void mods.loadSteam(), 15_000);
+    return () => clearInterval(timer);
+  });
 
   const hasKey = $derived(!!profile.data?.steam_api_key);
 
@@ -560,6 +567,19 @@
         />
         <Segmented bind:value={filter} options={filterOptions} aria-label={$m.filterLabel.value} />
         <span class="ml-auto flex items-center gap-2">
+          {#if mods.steamError}
+            <button
+              class="rounded-xs hover:bg-raised"
+              title={mods.steamError}
+              onclick={() => void mods.loadSteam()}
+            >
+              <Tag tone="warn"
+                ><SteamIcon class="size-2.5" />{$m.steamNoAnswer.value}<RotateCw
+                  class="size-2.5"
+                /></Tag
+              >
+            </button>
+          {/if}
           {#if mods.steamActive.length > 0}
             <Tag tone="accent" title={$m.steamDownloadsTitle.value}>
               <Spinner class="size-2.5 text-current" /><SteamIcon

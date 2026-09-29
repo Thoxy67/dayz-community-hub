@@ -1248,6 +1248,13 @@ const content = {
       es: "No se sabe si tu cuenta de Steam está suscrita mientras Steam no esté abierto.",
       ru: "Пока Steam не запущен, неизвестно, подписан ли ваш аккаунт.",
     }),
+    steamNoAnswer: t({
+      en: "Steam did not answer",
+      fr: "Steam n'a pas répondu",
+      de: "Steam hat nicht geantwortet",
+      es: "Steam no respondió",
+      ru: "Steam не ответил",
+    }),
     steamDownloading: t({
       en: "Steam downloading",
       fr: "Steam télécharge",

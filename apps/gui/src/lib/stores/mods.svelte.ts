@@ -89,6 +89,8 @@ class Mods {
    * `available: false` while Steam is not running.
    */
   steam = $state.raw<SteamSubscriptionsDto | null>(null);
+  /** Why Steam's view is missing: its own reason, or the call's error. */
+  steamError = $state<string | null>(null);
   steamById = $derived(new Map((this.steam?.items ?? []).map((i) => [i.id, i])));
   /** Items Steam is downloading or has queued, installed here or not. */
   steamActive = $derived((this.steam?.items ?? []).filter((i) => i.downloading || i.pending));
@@ -148,11 +150,15 @@ class Mods {
     return (this.#asking ??= (async () => {
       const before = new Set(this.steamActive.map((i) => i.id));
       try {
-        this.steam = await ipc.steamSubscriptions();
+        const answer = await ipc.steamSubscriptions();
+        // A failed question keeps the last good answer on screen.
+        if (answer.available || !this.steam?.available) this.steam = answer;
+        this.steamError = answer.available ? null : answer.reason;
         const still = new Set(this.steamActive.map((i) => i.id));
         if ([...before].some((id) => !still.has(id))) await this.load();
-      } catch {
+      } catch (e) {
         // Only an extra: the list stands without Steam's view of it.
+        this.steamError = errorText(e);
       } finally {
         this.#asking = null;
       }
