@@ -1,5 +1,9 @@
 //! The Windows self-updater: download the release zip, check its minisign
-//! signature, swap the executable in place and relaunch.
+//! signature, swap the executable in place and relaunch. The swap is ours
+//! rather than a crate's, so it can put the old executable back when the new
+//! one cannot be moved in (an antivirus holding it).
+
+use std::path::Path;
 
 use base64::Engine;
 use serde::Serialize;
@@ -88,7 +92,7 @@ pub(super) async fn install(
         });
     }
 
-    // ── 2. Verify minisign signature ──────────────────────────────────────
+    // ── 2-5. Verify, unpack, swap: CPU and disk work, off the async runtime
     let pubkey_b64 = app
         .config()
         .plugins
@@ -96,8 +100,21 @@ pub(super) async fn install(
         .get("updater")
         .and_then(|v| v.get("pubkey"))
         .and_then(|v| v.as_str())
-        .ok_or_else(|| UpdateError::Other("updater pubkey not found in config".into()))?;
+        .ok_or_else(|| UpdateError::Other("updater pubkey not found in config".into()))?
+        .to_owned();
+    let signature = signature.clone();
+    tokio::task::spawn_blocking(move || verify_and_replace(&zip_bytes, &pubkey_b64, &signature))
+        .await
+        .map_err(|e| UpdateError::Other(format!("update task: {e}")))??;
 
+    let _ = on_event.send(DownloadEvent::Finished);
+    Ok(())
+}
+
+/// Check `zip_bytes` against the minisign `signature` and the public key,
+/// take the executable out of it and put it in place of the running one.
+fn verify_and_replace(zip_bytes: &[u8], pubkey_b64: &str, signature: &str) -> Result<()> {
+    // ── 2. Verify minisign signature ──────────────────────────────────────
     let pubkey_text = String::from_utf8(
         base64::engine::general_purpose::STANDARD
             .decode(pubkey_b64)
@@ -117,11 +134,11 @@ pub(super) async fn install(
     let signature = minisign_verify::Signature::decode(&sig_text)
         .map_err(|e| UpdateError::Other(format!("signature decode: {e}")))?;
     public_key
-        .verify(&zip_bytes, &signature, false)
+        .verify(zip_bytes, &signature, false)
         .map_err(|e| UpdateError::Other(format!("signature verification failed: {e}")))?;
 
     // ── 3. Extract exe from zip ───────────────────────────────────────────
-    let cursor = std::io::Cursor::new(&zip_bytes);
+    let cursor = std::io::Cursor::new(zip_bytes);
     let mut archive =
         zip::ZipArchive::new(cursor).map_err(|e| UpdateError::Other(format!("zip open: {e}")))?;
 
@@ -138,30 +155,68 @@ pub(super) async fn install(
         let mut entry = archive
             .by_index(exe_index)
             .map_err(|e| UpdateError::Other(format!("zip entry: {e}")))?;
+        exe_bytes.reserve(entry.size() as usize);
         std::io::Read::read_to_end(&mut entry, &mut exe_bytes)
             .map_err(|e| UpdateError::Other(format!("zip read: {e}")))?;
     }
 
     // ── 4. Write new exe to a temp path beside the current exe ───────────
-    let current_exe = std::env::current_exe()
-        .and_then(|p| p.canonicalize())
-        .map_err(|e| UpdateError::Other(format!("current_exe: {e}")))?;
+    let current_exe =
+        std::env::current_exe().map_err(|e| UpdateError::Other(format!("current_exe: {e}")))?;
     let exe_dir = current_exe
         .parent()
         .ok_or_else(|| UpdateError::Other("no parent dir".into()))?;
 
-    let new_exe = exe_dir.join("dayz-community-hub-update.exe");
-    std::fs::write(&new_exe, &exe_bytes)
-        .map_err(|e| UpdateError::Other(format!("write new exe: {e}")))?;
+    let new_exe = exe_dir.join(NEW_EXE);
+    // A leftover from an update that stopped halfway is replaced.
+    let _ = std::fs::remove_file(&new_exe);
+    std::fs::write(&new_exe, &exe_bytes).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::PermissionDenied {
+            UpdateError::Other(format!(
+                "cannot write in {}: move the launcher to a folder you can write to \
+                 (not Program Files), or download the new version by hand",
+                exe_dir.display()
+            ))
+        } else {
+            UpdateError::Other(format!("write new exe: {e}"))
+        }
+    })?;
 
-    // ── 5. Replace this exe with the new one ────────────────────────────────
-    let new_exe_canon = new_exe
-        .canonicalize()
-        .map_err(|e| UpdateError::Other(format!("canonicalize new exe: {e}")))?;
-    self_replace::self_replace(&new_exe_canon)
-        .map_err(|e| UpdateError::Other(format!("self_replace failed: {e}")))?;
-    let _ = std::fs::remove_file(&new_exe_canon);
+    // ── 5. Swap: running exe aside, new exe in, old one back on failure ───
+    let swapped = swap(&current_exe, &new_exe, &exe_dir.join(OLD_EXE));
+    let _ = std::fs::remove_file(&new_exe);
+    swapped.map_err(|e| UpdateError::Other(format!("could not replace the executable: {e}")))
+}
 
-    let _ = on_event.send(DownloadEvent::Finished);
+/// The new executable, written beside the running one before the swap.
+const NEW_EXE: &str = "dayz-community-hub-update.exe";
+/// The previous executable, renamed aside by the swap. Windows lets a running
+/// program's file be renamed but not deleted: it goes at the next start.
+const OLD_EXE: &str = "dayz-community-hub.old.exe";
+
+/// Put `new` at `exe`, the running executable's path, keeping the running
+/// file as `old`. Each rename is retried while an antivirus scanner holds the
+/// file it has just seen written; if the new file cannot be moved in, the
+/// old one is moved back, so a failed update never leaves the folder without
+/// a launcher.
+fn swap(exe: &Path, new: &Path, old: &Path) -> std::io::Result<()> {
+    use dz_common::win::retry_locked;
+    let _ = std::fs::remove_file(old);
+    retry_locked(|| std::fs::rename(exe, old))?;
+    if let Err(e) = retry_locked(|| std::fs::rename(new, exe)) {
+        let _ = retry_locked(|| std::fs::rename(old, exe));
+        return Err(e);
+    }
     Ok(())
+}
+
+/// Remove what the last update left beside the executable: the previous
+/// version, no longer running.
+pub(super) fn remove_leftovers() {
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(Path::to_path_buf))
+    {
+        let _ = std::fs::remove_file(dir.join(OLD_EXE));
+    }
 }

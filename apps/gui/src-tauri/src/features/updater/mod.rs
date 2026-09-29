@@ -126,6 +126,8 @@ pub(crate) async fn update_support() -> UpdateSupport {
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn check_for_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
+    #[cfg(windows)]
+    windows::remove_leftovers();
     let update = app
         .updater()
         .map_err(|e| format!("Update check: {e}"))?
