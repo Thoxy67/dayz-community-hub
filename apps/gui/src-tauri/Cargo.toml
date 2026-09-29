@@ -48,6 +48,9 @@ tauri-plugin-dialog = "2.8.0"
 tauri-plugin-clipboard-manager = "2.4.0"
 tauri-plugin-single-instance = { version = "2.5.0", features = ["deep-link"] }
 tauri-plugin-deep-link = "2.5.0"
+# Checks the release manifest on both platforms; installs the AppImage on
+# Linux. The Windows zip is installed by our own code (features/updater).
+tauri-plugin-updater = "2.13.0"
 lru = "0.18.5"
 rustc-hash.workspace = true
 sysinfo.workspace = true
@@ -57,7 +60,6 @@ zstd = { version = "0.14.0", features = ["pkg-config"] }
 
 [target."cfg(windows)".dependencies]
 zstd = "0.14.0"
-tauri-plugin-updater = "2.13.0"
 tauri-plugin-process = "2.4.0"
 thiserror.workspace = true
 minisign-verify = "0.3.0"

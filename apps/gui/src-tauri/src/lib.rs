@@ -15,9 +15,7 @@ use std::sync::Arc;
 use tauri::Manager;
 use tauri_specta::Event;
 
-#[cfg(windows)]
-use features::updater;
-use features::{news, ping};
+use features::{news, ping, updater};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run(args: CliArgs) {
@@ -40,13 +38,11 @@ pub fn run(args: CliArgs) {
             app.manage(news::webview::NewsWebviewState::new());
             app.manage(Arc::new(ping::PingState::default()));
 
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
+            app.manage(updater::Pending::default());
             #[cfg(windows)]
-            {
-                app.handle()
-                    .plugin(tauri_plugin_updater::Builder::new().build())?;
-                app.handle().plugin(tauri_plugin_process::init())?;
-                app.manage(updater::PendingUpdate(std::sync::Mutex::new(None)));
-            }
+            app.handle().plugin(tauri_plugin_process::init())?;
 
             // Allow the image cache in the asset protocol scope, resolved by
             // Tauri's own path resolver (the same one the protocol checks).

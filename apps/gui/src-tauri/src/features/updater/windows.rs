@@ -3,11 +3,10 @@
 
 use base64::Engine;
 use serde::Serialize;
-use std::sync::Mutex;
-use tauri::{AppHandle, Manager, State, ipc::Channel};
+use tauri::{AppHandle, ipc::Channel};
+use tauri_plugin_updater::Update;
 
-use super::{DownloadEvent, UpdateInfo};
-use tauri_plugin_updater::UpdaterExt;
+use super::DownloadEvent;
 
 // ── Error type ────────────────────────────────────────────────────────────
 
@@ -15,8 +14,6 @@ use tauri_plugin_updater::UpdaterExt;
 pub enum UpdateError {
     #[error(transparent)]
     Updater(#[from] tauri_plugin_updater::Error),
-    #[error("no pending update — call check_for_update first")]
-    NoPendingUpdate,
     #[error("update error: {0}")]
     Other(String),
 }
@@ -43,91 +40,22 @@ impl From<&str> for UpdateError {
 
 type Result<T> = std::result::Result<T, UpdateError>;
 
-// ── Pending update state ──────────────────────────────────────────────────
+// ── Install ───────────────────────────────────────────────────────────────
 
-/// Holds the download URL + minisign signature from the last check_for_update.
-pub struct PendingUpdate(pub Mutex<Option<PendingUpdateData>>);
-
-pub struct PendingUpdateData {
-    pub url: String,
-    pub signature: String,
-}
-
-// ── Entry points ──────────────────────────────────────────────────────────
-
-/// Ask the release endpoint for a newer version, and remember it for `install`.
-pub(super) async fn check(app: &AppHandle) -> Result<Option<UpdateInfo>> {
-    let pending = app.state::<PendingUpdate>();
-    fetch_update_info(app, &pending).await
-}
-
-/// Download and install the update the last `check` found.
-pub(super) async fn install(app: &AppHandle, on_event: Channel<DownloadEvent>) -> Result<()> {
-    let pending = app.state::<PendingUpdate>();
-    do_install(app, &pending, on_event).await
-}
-
-// ── Internals ─────────────────────────────────────────────────────────────
-
-async fn fetch_update_info(
+/// Download the zip `update` names (the manifest's `windows-x86_64` entry),
+/// verify it against the configured public key, and put its executable in
+/// place of this one. The window restarts through `restart_app`.
+pub(super) async fn install(
     app: &AppHandle,
-    pending: &State<'_, PendingUpdate>,
-) -> Result<Option<UpdateInfo>> {
-    let update = match app.updater()?.check().await? {
-        Some(u) => u,
-        None => {
-            *pending
-                .0
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-            return Ok(None);
-        }
-    };
-
-    let info = UpdateInfo {
-        version: update.version.clone(),
-        current_version: update.current_version.clone(),
-        body: update.body.clone(),
-        date: update.date.map(|d| {
-            format!(
-                "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-                d.year(),
-                d.month() as u8,
-                d.day(),
-                d.hour(),
-                d.minute(),
-                d.second(),
-            )
-        }),
-    };
-
-    let url = update.download_url.to_string();
-    let signature = update.signature;
-
-    *pending
-        .0
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) =
-        Some(PendingUpdateData { url, signature });
-
-    Ok(Some(info))
-}
-
-async fn do_install(
-    app: &AppHandle,
-    pending: &State<'_, PendingUpdate>,
+    update: &Update,
     on_event: Channel<DownloadEvent>,
 ) -> Result<()> {
-    let data = pending
-        .0
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .take()
-        .ok_or(UpdateError::NoPendingUpdate)?;
+    let url = update.download_url.to_string();
+    let signature = &update.signature;
 
     // ── 1. Download ───────────────────────────────────────────────────────
     let response = crate::net::download()
-        .get(&data.url)
+        .get(&url)
         .send()
         .await
         .and_then(reqwest::Response::error_for_status)
@@ -179,7 +107,7 @@ async fn do_install(
 
     let sig_text = String::from_utf8(
         base64::engine::general_purpose::STANDARD
-            .decode(&data.signature)
+            .decode(signature)
             .map_err(|e| UpdateError::Other(format!("signature base64 decode: {e}")))?,
     )
     .map_err(|e| UpdateError::Other(format!("signature utf8: {e}")))?;
@@ -226,23 +154,14 @@ async fn do_install(
     std::fs::write(&new_exe, &exe_bytes)
         .map_err(|e| UpdateError::Other(format!("write new exe: {e}")))?;
 
-    let _ = on_event.send(DownloadEvent::Finished);
-
-    // ── 5. Replace this exe with the new one and relaunch ─────────────────
+    // ── 5. Replace this exe with the new one ────────────────────────────────
     let new_exe_canon = new_exe
         .canonicalize()
         .map_err(|e| UpdateError::Other(format!("canonicalize new exe: {e}")))?;
-
     self_replace::self_replace(&new_exe_canon)
         .map_err(|e| UpdateError::Other(format!("self_replace failed: {e}")))?;
-
     let _ = std::fs::remove_file(&new_exe_canon);
 
-    use std::os::windows::process::CommandExt;
-    std::process::Command::new(&current_exe)
-        .creation_flags(0x00000008) // CREATE_NO_WINDOW
-        .spawn()
-        .map_err(|e| UpdateError::Other(format!("relaunch failed: {e}")))?;
-
-    std::process::exit(0);
+    let _ = on_event.send(DownloadEvent::Finished);
+    Ok(())
 }

@@ -82,6 +82,7 @@ pub(crate) fn builder() -> tauri_specta::Builder<tauri::Wry> {
             system::get_system_specs,
             updater::check_for_update,
             updater::install_update,
+            updater::update_support,
             native::open_url,
             native::copy_text,
             native::pick_file,

@@ -210,11 +210,12 @@ pub(crate) async fn reset_profile(_state: State<'_, SharedState>) -> Result<(), 
     Ok(())
 }
 
-/// Restart the application immediately.
+/// Restart the application immediately (into the new version after an
+/// update: an AppImage restarts from `$APPIMAGE`).
 #[tauri::command]
 #[specta::specta]
 pub(crate) fn restart_app(app: tauri::AppHandle) {
-    app.restart();
+    crate::features::updater::restart(&app);
 }
 
 #[cfg(test)]

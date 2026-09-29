@@ -83,7 +83,10 @@ export const commands = {
 	importProfile: (path: string) => __TAURI_INVOKE<ProfileDto>("import_profile", { path }),
 	/**  Wipe the entire data directory so the app looks brand-new on next boot. */
 	resetProfile: () => __TAURI_INVOKE<null>("reset_profile"),
-	/**  Restart the application immediately. */
+	/**
+	 *  Restart the application immediately (into the new version after an
+	 *  update: an AppImage restarts from `$APPIMAGE`).
+	 */
 	restartApp: () => __TAURI_INVOKE<void>("restart_app"),
 	/**
 	 *  Get installed mods. Uses spawn_blocking for filesystem scan.
@@ -196,11 +199,8 @@ export const commands = {
 	 */
 	getSystemSpecs: () => __TAURI_INVOKE<SystemSpecsDto>("get_system_specs"),
 	/**
-	 *  Look for a newer version. `null` when this one is the latest.
-	 * 
-	 *  On Windows the updater plugin checks and remembers the download. On
-	 *  Linux the same release manifest is read directly, so the player still
-	 *  learns that a new version is out; installing it is the package manager's.
+	 *  Look for a newer version. `null` when this one is the latest. Works on
+	 *  every kind of copy, so a package user still learns a release is out.
 	 */
 	checkForUpdate: () => __TAURI_INVOKE<{
 	version: string,
@@ -211,10 +211,12 @@ export const commands = {
 	date: string | null,
 } | null>("check_for_update"),
 	/**
-	 *  Download, verify and install the version `check_for_update` found, then
-	 *  restart into it.
+	 *  Download, verify and install the version `check_for_update` found. Ends
+	 *  with a `Finished` event; the window then calls `restart_app`.
 	 */
 	installUpdate: (onEvent: Channel<DownloadEvent>) => __TAURI_INVOKE<null>("install_update", { onEvent }),
+	/**  Whether this copy can update itself. */
+	updateSupport: () => __TAURI_INVOKE<UpdateSupport>("update_support"),
 	/**  Open a web page (or a steam:// link) in the system's handler. */
 	openUrl: (url: string) => __TAURI_INVOKE<null>("open_url", { url }),
 	/**  Copy text to the clipboard. */
@@ -361,13 +363,14 @@ export type CliArgs = {
 /**
  *  How far an update's download has got, sent over a `Channel`, in the shape
  *  tauri-plugin-updater's JS side uses: `{ event: "Started", data: { contentLength } }`.
- *  (The variant names stay as they are; only the fields are camelCase.)
  */
 export type DownloadEvent = { event: "Started"; data: {
 	contentLength: number | null,
 } } | { event: "Progress"; data: {
 	chunkLength: number,
-} } | { event: "Finished" };
+} } | 
+/**  Downloaded, verified and in place: restart to use it. */
+{ event: "Finished" };
 
 /**  The `.dzch` server connection config. */
 export type DzchConfig = {
@@ -728,6 +731,16 @@ export type UpdateInfo = {
 	body: string | null,
 	/**  Release date, ISO 8601. */
 	date: string | null,
+};
+
+/**  What kind of copy this is, as far as updating goes. */
+export type UpdateKind = "appimage" | "windows-zip" | "package-manager" | "dev";
+
+/**  Whether this copy can install an update, and if not, why. */
+export type UpdateSupport = {
+	supported: boolean,
+	kind: UpdateKind,
+	reason: string | null,
 };
 
 /* Tauri Specta runtime */
