@@ -1,0 +1,21 @@
+[package]
+name = "dz-steamworks"
+description = "Workshop downloads through the running Steam client (Steamworks ISteamUGC), with Valve's library loaded on demand"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+dz-common.workspace = true
+libloading.workspace = true
+
+[build-dependencies]
+# Never linked: it only puts Valve's redistributable library on disk, where
+# the build script finds it and embeds the one for the target (see build.rs).
+steamworks-sys.workspace = true
+serde_json.workspace = true

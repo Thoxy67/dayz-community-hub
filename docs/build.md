@@ -231,6 +231,31 @@ need Windows-only tooling), and zips it into
 `var/dist/dayz-community-hub-x86_64-windows.zip`. That zip is unsigned: the
 signed one a release ships is made by `make publish`.
 
+## Steamworks library
+
+The optional "download mods through the Steam client" mode (`crates/core/steamworks`)
+talks to Steam through Valve's redistributable, `libsteam_api.so` (Linux
+x86_64) or `steam_api64.dll` (Windows x86_64). Nothing binary is committed:
+`steamworks-sys` (pinned `=0.13.0` in the workspace `Cargo.toml`) is a
+build-dependency of `dz-steamworks` only for its sources, which ship the SDK's
+`lib/steam/redistributable_bin/`. Its build script finds them in cargo's
+registry sources (`$CARGO_HOME/registry/src/*/steamworks-sys-0.13.0`), else
+through `cargo metadata --offline` (vendored sources), and embeds the file for
+the **target** with `include_bytes!`: the cross build through cargo-xwin gets
+the DLL, the Linux build the `.so`, and the CI image needs nothing extra.
+`DZ_STEAMWORKS_SDK=<sdk dir>` overrides the source. Other targets embed
+nothing and the mode reports itself unavailable.
+
+The app never links it. The first time the mode is used, the library is
+written to `~/.local/share/dayz-community-hub/steamworks/<hash>/` (Linux) or
+`%LOCALAPPDATA%\dayz-community-hub\steamworks\<hash>\` (Windows) and loaded
+with `libloading`, which resolves the flat API by name (`SteamAPI_InitFlat`,
+`SteamAPI_SteamUGC_v021`, …, checked against the SDK's `steam_api_flat.h`).
+If it is missing or fails to load, only that mode fails, with a sentence
+saying so. Moving to a newer `steamworks-sys` means checking those names
+(the interface accessors are versioned) in `src/api.rs`. Valve's SDK licence
+lets an application ship the redistributable.
+
 ## CI
 
 `.forgejo/workflows/ci.yml` runs on every push to `master`: the interface

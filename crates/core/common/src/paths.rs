@@ -46,3 +46,14 @@ pub fn steamcmd_content_dir() -> PathBuf {
 pub fn steamcmd_home_dir() -> PathBuf {
     default_data_dir().join("steamcmd-home")
 }
+
+/// Where Valve's Steamworks library is written before it is loaded:
+/// `<data dir>/steamworks` on Linux, `%LOCALAPPDATA%\dayz-community-hub\steamworks`
+/// on Windows (a binary has no business in the roaming profile).
+pub fn steamworks_dir() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        return PathBuf::from(local).join(APP_NAME).join("steamworks");
+    }
+    default_data_dir().join("steamworks")
+}

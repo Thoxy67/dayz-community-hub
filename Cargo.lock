@@ -966,6 +966,7 @@ dependencies = [
  "dz-news",
  "dz-profile",
  "dz-steamcmd",
+ "dz-steamworks",
  "futures-util",
  "lru",
  "minisign-verify 0.3.0",
@@ -1294,6 +1295,7 @@ dependencies = [
  "dz-common",
  "dz-profile",
  "dz-steamcmd",
+ "dz-steamworks",
  "flate2",
  "regex",
  "reqwest",
@@ -1344,6 +1346,16 @@ dependencies = [
  "sysinfo",
  "tokio",
  "which",
+]
+
+[[package]]
+name = "dz-steamworks"
+version = "0.4.1"
+dependencies = [
+ "dz-common",
+ "libloading 0.9.0",
+ "serde_json",
+ "steamworks-sys",
 ]
 
 [[package]]
@@ -2644,7 +2656,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e9ec52138abedcc58dc17a7c6c0c00a2bdb4f3427c7f63fa97fd0d859155caf"
 dependencies = [
  "gtk-sys",
- "libloading",
+ "libloading 0.7.4",
  "once_cell",
 ]
 
@@ -2677,6 +2689,16 @@ checksum = "b67380fd3b2fbe7527a606e18729d21c6f3951633d0500574c4dc22d2d638b9f"
 dependencies = [
  "cfg-if",
  "winapi",
+]
+
+[[package]]
+name = "libloading"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "754ca22de805bb5744484a5b151a9e1a8e837d5dc232c2d7d8c2e3492edc8b60"
+dependencies = [
+ "cfg-if",
+ "windows-link 0.2.1",
 ]
 
 [[package]]
@@ -4472,6 +4494,12 @@ name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
+
+[[package]]
+name = "steamworks-sys"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae139f051204a4af015d4f0ed3a1f7a51020d03a44c7cf249168c543d88131e9"
 
 [[package]]
 name = "string_cache"

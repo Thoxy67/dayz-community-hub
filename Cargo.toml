@@ -3,7 +3,8 @@
 # One workspace, crates grouped by what they are:
 #
 #   crates/core/   the domain, with no knowledge of the window: the server list,
-#                  A2S queries, the profile on disk, SteamCMD, the game itself
+#                  A2S queries, the profile on disk, SteamCMD, the Steam client's
+#                  Workshop API (Steamworks), the game itself
 #                  (mods, launch, offline mode, .dzch files) and the news feed.
 #   crates/app/    what the app needs around the domain that is not the shell:
 #                  the DayZ Metrics and BattleMetrics lookups.
@@ -32,6 +33,7 @@ dz-api = { path = "crates/core/api" }
 dz-a2s = { path = "crates/core/a2s" }
 dz-profile = { path = "crates/core/profile" }
 dz-steamcmd = { path = "crates/core/steamcmd" }
+dz-steamworks = { path = "crates/core/steamworks" }
 dz-game = { path = "crates/core/game" }
 dz-news = { path = "crates/core/news" }
 dz-battlemetrics = { path = "crates/app/battlemetrics" }
@@ -82,6 +84,13 @@ clap = { version = "4.6.7", features = ["derive"] }
 rustc-hash = "2.1.3"
 urlencoding = "2.1.3"
 portable-pty = { version = "0.9.0", default-features = false }
+# Loads Valve's Steamworks library at run time, only when mods download
+# through the Steam client (dz-steamworks): the app never links it.
+libloading = "0.9.0"
+# Only its sources are used: dz-steamworks' build script takes Valve's
+# redistributable library from them. Pinned, since the flat API's names are
+# versioned (SteamAPI_SteamUGC_v021).
+steamworks-sys = "=0.13.0"
 
 # Compression / archive
 zip = { version = "8.6.0", default-features = false, features = ["deflate", "deflate64"] }
