@@ -8,8 +8,9 @@ pub mod launch;
 pub mod mods;
 pub mod offline;
 pub mod operation;
+mod steam_download;
 
 pub use ctl::{DayzCtl, run_through_steam};
 pub use dzch::{DzchConfig, DzchMod};
 pub use offline::OfflineMode;
-pub use operation::ModOperation;
+pub use operation::{Downloader, ModOperation};

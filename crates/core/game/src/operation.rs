@@ -1,11 +1,14 @@
-//! Background mod operations: install or update through steamcmd, then link.
+//! Background mod operations: install or update, then link.
 //!
-//! Everything downloads into the launcher's own folder. A mod that is only in
-//! a Steam library is updated by downloading a launcher copy, which is then
-//! the newer and the one linked: the Steam client only updates the items its
-//! account is subscribed to, and the launcher never writes in its libraries.
+//! Mods download one of two ways ([`Downloader`]). SteamCMD, the default,
+//! downloads into the launcher's own folder: a mod that is only in a Steam
+//! library is updated by downloading a launcher copy, which is then the newer
+//! and the one linked, since the launcher never writes in Steam's libraries.
+//! The Steam client (Steamworks) subscribes the account to each mod and
+//! downloads it into its own library, where Steam keeps it updated; the
+//! launcher links that copy.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use dz_api::Server;
@@ -42,6 +45,49 @@ pub enum ModOperation {
     Login,
 }
 
+/// What downloads the mods.
+#[derive(Clone)]
+pub enum Downloader {
+    /// SteamCMD, into the launcher's folder.
+    SteamCmd(Arc<SteamCmd>),
+    /// The running Steam client, into its library (dz-steamworks).
+    Steam,
+}
+
+impl Downloader {
+    /// Download `mods` with progress on `tx`, ending with `Finished`. Mods
+    /// the Steam client installed in a library `dirs` did not know yet (its
+    /// first DayZ mod) add that folder, so they can be linked.
+    async fn download(
+        &self,
+        dirs: &mut ModDirs,
+        mods: &[(u64, String)],
+        validate: bool,
+        tx: &mpsc::UnboundedSender<ModProgress>,
+        pty_input: dz_steamcmd::PtyInputRx,
+    ) -> Vec<(u64, Result<()>)> {
+        match self {
+            Self::SteamCmd(steamcmd) => {
+                steamcmd
+                    .download_mods_with_progress(mods, validate, tx, pty_input)
+                    .await
+            }
+            Self::Steam => crate::steam_download::download(mods, validate, tx)
+                .await
+                .into_iter()
+                .map(|(id, r)| {
+                    let r = r.map(|path| {
+                        if let Some(folder) = path.parent() {
+                            dirs.add_steam(folder);
+                        }
+                    });
+                    (id, r)
+                })
+                .collect(),
+        }
+    }
+}
+
 /// Emit a "nothing to do" finished message. Used by operation branches that
 /// have an empty input list and can skip the steamcmd invocation entirely.
 fn emit_nothing_to_do(tx: &mpsc::UnboundedSender<ModProgress>) {
@@ -57,8 +103,8 @@ fn emit_nothing_to_do(tx: &mpsc::UnboundedSender<ModProgress>) {
 /// Returns a (receiver, join_handle). The caller polls the receiver for progress messages.
 /// When the operation completes, the final message is `ModProgress::Finished`.
 pub fn spawn_mod_operation(
-    steamcmd: Arc<SteamCmd>,
-    dirs: ModDirs,
+    downloader: Downloader,
+    mut dirs: ModDirs,
     dayz_path: PathBuf,
     op: ModOperation,
     installed_mods: Vec<InstalledMod>,
@@ -114,8 +160,8 @@ pub fn spawn_mod_operation(
                     })
                     .collect();
 
-                let results = steamcmd
-                    .download_mods_with_progress(&mods_info, false, &tx, take_pty_rx!())
+                let results = downloader
+                    .download(&mut dirs, &mods_info, false, &tx, take_pty_rx!())
                     .await;
 
                 let mut installed_ids = Vec::new();
@@ -147,8 +193,8 @@ pub fn spawn_mod_operation(
                     .map(|m| (m.steam_workshop_id as u64, m.name.clone()))
                     .collect();
 
-                let results = steamcmd
-                    .download_mods_with_progress(&mods_info, false, &tx, take_pty_rx!())
+                let results = downloader
+                    .download(&mut dirs, &mods_info, false, &tx, take_pty_rx!())
                     .await;
 
                 let _ = mods::create_mod_symlinks(&dirs, &dayz_path, &server.mod_ids());
@@ -163,8 +209,8 @@ pub fn spawn_mod_operation(
                     .map(|m| (m.id, m.name.clone()))
                     .collect();
 
-                let results = steamcmd
-                    .download_mods_with_progress(&mods_info, false, &tx, take_pty_rx!())
+                let results = downloader
+                    .download(&mut dirs, &mods_info, false, &tx, take_pty_rx!())
                     .await;
                 updated(&dirs, &dayz_path, results)
             }
@@ -174,16 +220,16 @@ pub fn spawn_mod_operation(
                     emit_nothing_to_do(&tx);
                     return ModOpResult::UpdateDone(vec![]);
                 }
-                let results = steamcmd
-                    .download_mods_with_progress(&stale_mods, false, &tx, take_pty_rx!())
+                let results = downloader
+                    .download(&mut dirs, &stale_mods, false, &tx, take_pty_rx!())
                     .await;
                 updated(&dirs, &dayz_path, results)
             }
 
             ModOperation::UpdateOne { mod_id, name } => {
                 let mods_info = vec![(mod_id, name)];
-                let results = steamcmd
-                    .download_mods_with_progress(&mods_info, false, &tx, take_pty_rx!())
+                let results = downloader
+                    .download(&mut dirs, &mods_info, false, &tx, take_pty_rx!())
                     .await;
                 updated(&dirs, &dayz_path, results)
             }
@@ -193,8 +239,8 @@ pub fn spawn_mod_operation(
                     emit_nothing_to_do(&tx);
                     return ModOpResult::UpdateDone(vec![]);
                 }
-                let results = steamcmd
-                    .download_mods_with_progress(&mods, false, &tx, take_pty_rx!())
+                let results = downloader
+                    .download(&mut dirs, &mods, false, &tx, take_pty_rx!())
                     .await;
                 updated(&dirs, &dayz_path, results)
             }
@@ -204,14 +250,29 @@ pub fn spawn_mod_operation(
                     emit_nothing_to_do(&tx);
                     return ModOpResult::UpdateDone(vec![]);
                 }
-                let results = steamcmd
-                    .download_mods_with_progress(&mods, true, &tx, take_pty_rx!())
+                let results = downloader
+                    .download(&mut dirs, &mods, true, &tx, take_pty_rx!())
                     .await;
                 updated(&dirs, &dayz_path, results)
             }
 
             ModOperation::Login => {
-                steamcmd.login_with_progress(&tx, take_pty_rx!()).await;
+                match &downloader {
+                    Downloader::SteamCmd(steamcmd) => {
+                        steamcmd.login_with_progress(&tx, take_pty_rx!()).await;
+                    }
+                    Downloader::Steam => {
+                        let _ = tx.send(ModProgress::Finished {
+                            ok: 0,
+                            failed: 1,
+                            total: 1,
+                            hint: Some(
+                                "Only SteamCMD logs in: the Steam client uses its own login."
+                                    .into(),
+                            ),
+                        });
+                    }
+                }
                 ModOpResult::UpdateDone(vec![])
             }
 
@@ -246,8 +307,8 @@ pub fn spawn_mod_operation(
                     });
                 }
 
-                let results = steamcmd
-                    .download_mods_with_progress(&missing, false, &tx, take_pty_rx!())
+                let results = downloader
+                    .download(&mut dirs, &missing, false, &tx, take_pty_rx!())
                     .await;
 
                 let mut installed_new = Vec::new();
@@ -280,11 +341,7 @@ pub fn spawn_mod_operation(
 }
 
 /// The mods downloaded are now the newest copies: their links move to them.
-fn updated(
-    dirs: &ModDirs,
-    dayz_path: &std::path::Path,
-    results: Vec<(u64, Result<()>)>,
-) -> ModOpResult {
+fn updated(dirs: &ModDirs, dayz_path: &Path, results: Vec<(u64, Result<()>)>) -> ModOpResult {
     let ok: Vec<u64> = results
         .iter()
         .filter(|(_, r)| r.is_ok())

@@ -103,6 +103,15 @@ impl ModDirs {
         self.launcher.join(id.to_string())
     }
 
+    /// Look in `dir` too, a Steam library's workshop folder, unless it is
+    /// already listed.
+    pub fn add_steam(&mut self, dir: &Path) {
+        let same = |d: &PathBuf| d == dir || (d.canonicalize().ok() == dir.canonicalize().ok());
+        if !self.steam.iter().any(same) {
+            self.steam.push(dir.to_path_buf());
+        }
+    }
+
     /// A Steam copy of `id` exists.
     pub fn in_steam(&self, id: u64) -> bool {
         self.all()

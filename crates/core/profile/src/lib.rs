@@ -35,6 +35,9 @@ pub struct Profile {
     pub steam_root: Option<String>,
     #[serde(default = "default_steamcmd_enabled")]
     pub steamcmd_enabled: bool,
+    /// What downloads mods: SteamCMD (the default) or the Steam client.
+    #[serde(default, deserialize_with = "ModDownloader::lenient")]
+    pub mod_downloader: ModDownloader,
     pub player: Option<String>,
     /// Steam Web API key — used to fetch player avatar via GetPlayerSummaries.
     #[serde(default)]
@@ -90,6 +93,27 @@ pub struct Profile {
 impl Default for Profile {
     fn default() -> Self {
         Self::default_with_version(APP_VERSION)
+    }
+}
+
+/// What downloads workshop mods.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModDownloader {
+    /// SteamCMD, into the launcher's own folder, logged in on its own.
+    #[default]
+    Steamcmd,
+    /// The running Steam client (Steamworks): the account subscribes to
+    /// each mod, Steam downloads it into its library and keeps it updated.
+    Steamworks,
+}
+
+impl ModDownloader {
+    /// A value this version does not know (a newer one wrote it, or a hand
+    /// edit) reads as the default instead of failing the whole profile.
+    fn lenient<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        Ok(serde_json::from_value(v).unwrap_or_default())
     }
 }
 
@@ -212,6 +236,7 @@ impl Profile {
             steamcmd_logged_in: None,
             steam_root: None,
             steamcmd_enabled: true,
+            mod_downloader: ModDownloader::Steamcmd,
             steamcmd_path: None,
             user_location: None,
             player: None,
@@ -381,8 +406,20 @@ mod tests {
         let p: Profile = serde_json::from_str("{}").unwrap();
         assert!(p.favorites.is_empty());
         assert!(p.steamcmd_enabled);
+        assert_eq!(p.mod_downloader, ModDownloader::Steamcmd);
         assert_eq!(p.ping_concurrency, 64);
         assert!(!p.options.window.description.is_empty());
+    }
+
+    #[test]
+    fn the_mod_downloader_round_trips_and_an_unknown_one_reads_as_steamcmd() {
+        let p: Profile = serde_json::from_str(r#"{"mod_downloader": "steamworks"}"#).unwrap();
+        assert_eq!(p.mod_downloader, ModDownloader::Steamworks);
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(json.contains(r#""mod_downloader":"steamworks""#));
+        let p: Profile = serde_json::from_str(r#"{"mod_downloader": "torrent"}"#).unwrap();
+        assert_eq!(p.mod_downloader, ModDownloader::Steamcmd);
+        assert!(serde_json::from_str::<Profile>(r#"{"mod_downloader": 3}"#).is_ok());
     }
 
     #[test]

@@ -15,6 +15,7 @@ dz-api.workspace = true
 dz-common.workspace = true
 dz-profile.workspace = true
 dz-steamcmd.workspace = true
+dz-steamworks.workspace = true
 flate2.workspace = true
 regex.workspace = true
 reqwest.workspace = true

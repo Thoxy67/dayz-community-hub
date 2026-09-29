@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use dz_api::Server;
 use dz_common::{Error, Result};
-use dz_profile::{Profile, Snapshot};
+use dz_profile::{ModDownloader, Profile, Snapshot};
 use dz_steamcmd::{ModProgress, PtyInputTx, SteamClient, SteamCmd, find_steam_root, find_steamcmd};
 use reqwest::Client;
 use tokio::process::Command;
@@ -15,7 +15,7 @@ use tokio::sync::mpsc;
 
 use crate::launch;
 use crate::mods::{self, InstalledMod, ModManagementStats};
-use crate::operation::{ModOpResult, ModOperation, spawn_mod_operation};
+use crate::operation::{Downloader, ModOpResult, ModOperation, spawn_mod_operation};
 
 /// Returns the fallback steamapps path when Steam root is not configured.
 fn default_steamapps_fallback() -> PathBuf {
@@ -185,6 +185,11 @@ impl DayzCtl {
         self.steamcmd.is_some()
     }
 
+    /// Mods download through the Steam client rather than SteamCMD.
+    pub fn downloads_through_steam(&self) -> bool {
+        self.profile.mod_downloader == ModDownloader::Steamworks
+    }
+
     /// Rebuild the `SteamCmd` instance from the current profile.
     /// Call this after mutating `steam_login`, `steam_password`, `steam_root`,
     /// `steamcmd_path` or `steamcmd_enabled` so the new values take effect
@@ -230,12 +235,18 @@ impl DayzCtl {
         PtyInputTx,
         tokio::task::JoinHandle<ModOpResult>,
     )> {
-        let steamcmd = self.steamcmd_ref()?.clone();
+        // Logging in is SteamCMD's alone, whichever downloads.
+        let downloader = match (&op, self.profile.mod_downloader) {
+            (ModOperation::Login, _) | (_, ModDownloader::Steamcmd) => {
+                Downloader::SteamCmd(self.steamcmd_ref()?.clone())
+            }
+            (_, ModDownloader::Steamworks) => Downloader::Steam,
+        };
         let dirs = self.mod_dirs();
         let dayz_path = self.dayz_path()?;
         let installed = dirs.scan(None);
         Ok(spawn_mod_operation(
-            steamcmd, dirs, dayz_path, op, installed,
+            downloader, dirs, dayz_path, op, installed,
         ))
     }
 
@@ -313,6 +324,13 @@ impl DayzCtl {
 /// 1. start Steam if it is not running and wait for it to be ready,
 /// 2. run it with the arguments.
 pub async fn run_through_steam(args: Vec<String>) -> Result<()> {
+    // Connected to Steam as DayZ, the launcher is DayZ as far as Steam is
+    // concerned: the game would not start, or would start beside it.
+    if dz_steamworks::session_open() {
+        return Err(Error::Other(
+            "Mods are downloading through Steam. Wait until it finishes, then launch DayZ.".into(),
+        ));
+    }
     // `start` spawns a process and scans the process table (sysinfo), both
     // blocking, so run them off the async runtime thread.
     let already_running = tokio::task::spawn_blocking(SteamClient::start)
