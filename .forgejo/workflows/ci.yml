@@ -46,10 +46,18 @@ jobs:
         working-directory: apps/gui
         run: bunx svelte-check --threshold error
 
+      - name: Rust format
+        run: cargo fmt --all --check
+
       - name: Rust tests
         env:
           CARGO_BUILD_JOBS: "4"
         run: cargo test --workspace
+
+      - name: Clippy
+        env:
+          CARGO_BUILD_JOBS: "4"
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Build (Linux, no-bundle)
         working-directory: apps/gui

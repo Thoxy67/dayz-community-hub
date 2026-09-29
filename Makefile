@@ -22,6 +22,7 @@ help: ; @sed -n '2,/^$$/p' Makefile | sed 's/^# \{0,1\}//'
 
 dev:        ; cd apps/gui && bun run tauri dev
 check:
+	cargo fmt --all --check
 	CARGO_TARGET_DIR=$(CHECK_TARGET) cargo test --workspace
 	CARGO_TARGET_DIR=$(CHECK_TARGET) cargo clippy --workspace --all-targets
 	cd apps/gui && bunx svelte-check --threshold error
