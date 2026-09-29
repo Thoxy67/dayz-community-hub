@@ -15,7 +15,10 @@ export const commands = {
 	/**
 	 *  Create the controller and load the server list: from the on-disk cache
 	 *  when there is one (the window refreshes it in the background), else from
-	 *  the API. Called once, when the window mounts.
+	 *  the API. The profile and the cache are read at the same time.
+	 * 
+	 *  Called when the window mounts, and again when it reloads (the "Retry"
+	 *  after a failed start): a second call replaces the state in place.
 	 */
 	initialize: () => __TAURI_INVOKE<InitResult>("initialize"),
 	/**  One server with its mods, by query port. */
@@ -73,7 +76,10 @@ export const commands = {
 	removeExcludedIp: (ip: string) => __TAURI_INVOKE<null>("remove_excluded_ip", { ip }),
 	/**  Export all settings files from the data directory as a zstd-compressed bundle. */
 	exportProfile: (path: string, includeMods: boolean) => __TAURI_INVOKE<null>("export_profile", { path, includeMods }),
-	/**  Import a profile bundle, overwriting all settings files. */
+	/**
+	 *  Import a profile bundle, replacing the settings files. The bundle is read
+	 *  and checked in full first, so a bad file leaves the current settings alone.
+	 */
 	importProfile: (path: string) => __TAURI_INVOKE<ProfileDto>("import_profile", { path }),
 	/**  Wipe the entire data directory so the app looks brand-new on next boot. */
 	resetProfile: () => __TAURI_INVOKE<null>("reset_profile"),
@@ -189,7 +195,13 @@ export const commands = {
 	 *  options (`-cpuCount`, `-exThreads`, `-maxMem`, …).
 	 */
 	getSystemSpecs: () => __TAURI_INVOKE<SystemSpecsDto>("get_system_specs"),
-	/**  Look for a newer version. `null` when this one is the latest. */
+	/**
+	 *  Look for a newer version. `null` when this one is the latest.
+	 * 
+	 *  On Windows the updater plugin checks and remembers the download. On
+	 *  Linux the same release manifest is read directly, so the player still
+	 *  learns that a new version is out; installing it is the package manager's.
+	 */
 	checkForUpdate: () => __TAURI_INVOKE<{
 	version: string,
 	currentVersion: string,
@@ -203,7 +215,7 @@ export const commands = {
 	 *  restart into it.
 	 */
 	installUpdate: (onEvent: Channel<DownloadEvent>) => __TAURI_INVOKE<null>("install_update", { onEvent }),
-	/**  Open a web page in the system browser. */
+	/**  Open a web page (or a steam:// link) in the system's handler. */
 	openUrl: (url: string) => __TAURI_INVOKE<null>("open_url", { url }),
 	/**  Copy text to the clipboard. */
 	copyText: (text: string) => __TAURI_INVOKE<null>("copy_text", { text }),
@@ -422,6 +434,8 @@ export type InitResult = {
 	from_cache: boolean,
 	/**  True when no profile existed yet (the setup wizard should run). */
 	is_first_launch: boolean,
+	/**  Why there is no list: no cache and the API could not be reached. */
+	list_error: string | null,
 };
 
 export type InstalledModDto = {
