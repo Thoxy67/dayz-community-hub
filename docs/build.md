@@ -26,6 +26,11 @@ var/                 what builds leave behind (git-ignored): var/dist/
   root.
 - [Tauri's system dependencies](https://tauri.app/start/prerequisites/)
   (webkit2gtk-4.1 and friends on Linux).
+- On Linux, libudev's headers for the controller support (gilrs, through
+  `libudev-sys`): `libudev-dev` on Debian/Ubuntu, `systemd-libs` on Arch
+  (always installed), `systemd-devel` on Fedora. At run time the app reads
+  pads from `/dev/input/event*`; without access to them it starts anyway and
+  says so on stderr ("controllers unavailable").
 - uv for everything under `tools/`: `tools/pyproject.toml` and `tools/uv.lock`
   are the one Python project, and every `make` target that needs it runs it as
   `uv run --project tools ...`. Nothing here touches the system Python.
@@ -230,6 +235,40 @@ x86_64-pc-windows-msvc --no-bundle`, which leaves a plain executable in
 need Windows-only tooling), and zips it into
 `var/dist/dayz-community-hub-x86_64-windows.zip`. That zip is unsigned: the
 signed one a release ships is made by `make publish`.
+
+What makes the one executable enough on a bare Windows 10/11:
+
+- **The C runtime is linked in.** Tauri's `build > windows > staticVCRuntime`
+  defaults to true, so the exe imports only the Universal CRT (part of
+  Windows 10+) and no `vcruntime140.dll`: no Visual C++ redistributable to
+  install. Check with `llvm-objdump -p <exe> | grep "DLL Name"`: no
+  `vcruntime`, no `msvcp`.
+- **No console window**: `windows_subsystem = "windows"` in `src/main.rs`
+  for release builds. With no console a panic would close the window without
+  a word, so a release build on Windows shows it in a message box first
+  (with what to do when the WebView2 runtime is missing or broken).
+- **The manifest** is `apps/gui/src-tauri/windows/app.manifest`, embedded by
+  `build.rs`: Common Controls v6 (the native dialogs), `asInvoker`, Windows
+  10/11 `supportedOS`, per-monitor-v2 DPI awareness and `longPathAware`.
+- **The window** differs on Windows through `tauri.windows.conf.json`, which
+  Tauri merges over `tauri.conf.json` when building for Windows (a merge
+  patch: the `app.windows` array is replaced whole, so keep both entries in
+  step). It is opaque there, painted `#111310` (the default theme's
+  background) until the page draws: a transparent window costs WebView2 and
+  DWM an alpha-blended composition on every frame, and the interface paints
+  an opaque surface over all of it anyway.
+- **WebView2** is not in the zip: Windows 10 and 11 ship the Evergreen
+  runtime. Its profile (cache, local storage) is in
+  `%LOCALAPPDATA%\com.thoxy.dayz-community-hub\EBWebView`, Tauri's default,
+  never beside the exe. The launcher's own data is in
+  `%APPDATA%\dayz-community-hub`, the Steamworks library in
+  `%LOCALAPPDATA%\dayz-community-hub\steamworks`.
+- **Only the executable** goes in the zip. The updater swaps it in place: the
+  running exe is renamed to `dayz-community-hub.old.exe` (removed at the next
+  start), the new one moved in, and the old one moved back if that fails.
+- The library crate is built as an `rlib` only: Tauri's template also asks
+  for a `staticlib` and a `cdylib` (for mobile), each another full LTO link
+  in a release build.
 
 ## Steamworks library
 

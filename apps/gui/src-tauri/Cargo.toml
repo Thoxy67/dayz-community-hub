@@ -10,9 +10,11 @@ license.workspace = true
 [lints]
 workspace = true
 
+# Desktop only: the binary links the rlib. Tauri's mobile template also
+# builds a staticlib and a cdylib, each a second full LTO link in release.
 [lib]
 name = "dayz_community_hub_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.7.0", features = [] }
@@ -54,6 +56,8 @@ tauri-plugin-deep-link = "2.5.0"
 # Linux. The Windows zip is installed by our own code (features/updater).
 tauri-plugin-updater = "2.13.0"
 lru = "0.18.5"
+# Controllers (Steam Deck, Xbox, PlayStation) for the gamepad navigation mode.
+gilrs = "0.11.2"
 rustc-hash.workspace = true
 sysinfo.workspace = true
 
@@ -65,5 +69,4 @@ zstd = "0.14.0"
 tauri-plugin-process = "2.4.0"
 thiserror.workspace = true
 minisign-verify = "0.3.0"
-self-replace = "1.5.0"
 

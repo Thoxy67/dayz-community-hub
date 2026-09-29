@@ -1,4 +1,5 @@
-//! Tauri's build step, plus the app's own command permissions.
+//! Tauri's build step, plus the app's own command permissions and the
+//! Windows application manifest (`windows/app.manifest`).
 //!
 //! Every command is declared to Tauri's ACL so a window may only call the
 //! commands its capability grants. The main window gets them all (the
@@ -27,6 +28,7 @@ fn commands() -> Vec<&'static str> {
 
 fn main() {
     println!("cargo:rerun-if-changed=src/ipc.rs");
+    println!("cargo:rerun-if-changed=windows/app.manifest");
     let commands = commands();
 
     // The set the main window's capability grants: every command.
@@ -44,8 +46,13 @@ fn main() {
     }
 
     let commands: &'static [&'static str] = Box::leak(commands.into_boxed_slice());
+    // The Windows manifest: DPI awareness, Windows 10/11, long paths, no
+    // elevation (Tauri's default only asks for Common Controls v6).
+    let windows = tauri_build::WindowsAttributes::new()
+        .app_manifest(fs::read_to_string("windows/app.manifest").expect("windows/app.manifest"));
     tauri_build::try_build(
         tauri_build::Attributes::new()
+            .windows_attributes(windows)
             .app_manifest(tauri_build::AppManifest::new().commands(commands)),
     )
     .expect("tauri build step");
