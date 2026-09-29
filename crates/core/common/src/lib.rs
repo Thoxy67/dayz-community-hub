@@ -4,6 +4,8 @@
 pub mod error;
 pub mod paths;
 pub mod time;
+#[cfg(windows)]
+pub mod win;
 
 pub use error::Error;
 

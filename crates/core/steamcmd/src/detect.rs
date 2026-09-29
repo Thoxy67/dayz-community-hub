@@ -141,32 +141,22 @@ pub fn steam_workshop_dirs(steam_root: &Path) -> Vec<PathBuf> {
 /// Queries `HKCU\Software\Valve\Steam` → `SteamPath` (REG_SZ).
 /// This is the most reliable way to find Steam when it was installed
 /// to a non-default drive or directory (e.g. `D:\Games\Steam`).
+///
+/// Read through the registry API, not `reg query`: it runs on every mod
+/// scan (through [`steam_workshop_dirs`]), where a `reg.exe` start cost tens
+/// of milliseconds each time, and `reg` prints in the console's code page,
+/// which mangled a path with accents.
 #[cfg(target_os = "windows")]
 pub(crate) fn query_steam_registry_path() -> Option<String> {
-    use std::os::windows::process::CommandExt;
-    let out = std::process::Command::new("reg")
-        .args(["query", "HKCU\\Software\\Valve\\Steam", "/v", "SteamPath"])
-        .creation_flags(dz_common::CREATE_NO_WINDOW) // CREATE_NO_WINDOW
-        .output()
-        .ok()?;
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    // reg query output format:
-    //   HKEY_CURRENT_USER\Software\Valve\Steam
-    //       SteamPath    REG_SZ    C:/Program Files (x86)/Steam
-    for line in stdout.lines() {
-        let line = line.trim();
-        if line.to_lowercase().starts_with("steampath") {
-            // Split on "REG_SZ" and take the value after it
-            if let Some(pos) = line.to_uppercase().find("REG_SZ") {
-                let value = line[pos + "REG_SZ".len()..].trim();
-                if !value.is_empty() {
-                    // Steam writes forward slashes in the registry; normalise to backslashes.
-                    return Some(value.replace('/', "\\"));
-                }
-            }
-        }
-    }
-    None
+    let value = dz_common::win::reg_string(
+        dz_common::win::HKEY_CURRENT_USER,
+        "Software\\Valve\\Steam",
+        "SteamPath",
+    )
+    .ok()??;
+    let value = value.trim();
+    // Steam writes forward slashes in the registry; normalise to backslashes.
+    (!value.is_empty()).then(|| value.replace('/', "\\"))
 }
 
 /// Try to find steamcmd binary in PATH or common locations.

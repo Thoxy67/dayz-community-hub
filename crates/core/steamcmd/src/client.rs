@@ -65,9 +65,17 @@ impl SteamClient {
 
     /// Check if the Steam client is currently running.
     pub fn is_running() -> bool {
-        use sysinfo::System;
+        use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
+        // Names only. The default refresh also reads each process's memory,
+        // CPU, disk use and executable path: on Windows that opens every
+        // process in the table, a hundred milliseconds and more per poll,
+        // and launching polls this every second while Steam starts.
         let mut system = System::new();
-        system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+        system.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing(),
+        );
         system.processes().values().any(|process| {
             let name = process.name().to_string_lossy();
             // "steam" — native Linux / macOS / Flatpak entry-point.
