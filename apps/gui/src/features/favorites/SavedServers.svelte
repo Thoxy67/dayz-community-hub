@@ -368,6 +368,8 @@
     password={s?.password}
     firstPerson={s?.first_person_only}
     battleye={s?.battl_eye}
+    official={s?.official}
+    mimicsOfficial={s?.mimics_official}
     savedPassword={r.password}
     listed={!!s}
     selected={selectedKey === r.key}

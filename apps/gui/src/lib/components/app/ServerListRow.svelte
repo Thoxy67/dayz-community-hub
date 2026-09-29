@@ -33,6 +33,8 @@
     password = false,
     firstPerson = false,
     battleye = null,
+    official = false,
+    mimicsOfficial = false,
     savedPassword = null,
     listed = true,
     excluded = false,
@@ -61,6 +63,9 @@
     password?: boolean;
     firstPerson?: boolean;
     battleye?: boolean | null;
+    official?: boolean;
+    /** A community server named like an official one. */
+    mimicsOfficial?: boolean;
     /** A password saved with the favourite: joining uses it. */
     savedPassword?: string | null;
     /** In the current list; an unlisted server is shown dimmed but joinable. */
@@ -109,7 +114,14 @@
   <div class="flex min-w-0 flex-col gap-0.5">
     <div class="flex min-w-0 items-center gap-1.5">
       <span class="truncate font-semibold text-fg" title={name}>{name}</span>
-      <ServerFlags {password} {firstPerson} {battleye} savedPassword={!!savedPassword} />
+      <ServerFlags
+        {password}
+        {firstPerson}
+        {battleye}
+        {official}
+        {mimicsOfficial}
+        savedPassword={!!savedPassword}
+      />
       {#if tag}{@render tag()}{/if}
     </div>
     <div class="flex min-w-0 items-center gap-2 text-fg-faint">

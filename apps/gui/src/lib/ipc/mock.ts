@@ -36,7 +36,29 @@ const servers = Array.from({ length: 9500 }, (_, i) => {
     mods_count: rnd() < 0.35 ? 0 : Math.floor(rnd() * 40),
     vac: true,
     battl_eye: rnd() < 0.9,
+    official: false,
+    mimics_official: false,
   };
+});
+
+// Twenty official servers, and between them a few community ones wearing their names.
+const OFFICIAL_REGIONS = ["EUROPE - DE", "EUROPE - FR", "EUROPE - GB", "UNITED STATES - NY", "AUSTRALIA - SYD"];
+servers.forEach((x, i) => {
+  if (i >= 26) return;
+  if (i % 4 !== 3) {
+    const map = ["chernarusplus", "enoch", "sakhal"][i % 3]!;
+    Object.assign(x, {
+      name: `${4100 + i * 7} | ${OFFICIAL_REGIONS[i % 5]}${x.first_person_only ? " | 1st Person Only" : ""}`,
+      map,
+      password: false,
+      mods_count: 0,
+      battl_eye: true,
+      official: true,
+    });
+  } else {
+    x.name = `${4200 + i} | ${OFFICIAL_REGIONS[i % 5]} | x10 Loot`;
+    x.mimics_official = true;
+  }
 });
 
 const mods = Array.from({ length: 24 }, (_, i) => {
@@ -129,6 +151,7 @@ function queryServers(q: Record<string, unknown>) {
       tri(q.password, x.password) &&
       tri(q.battleye, x.battl_eye) &&
       tri(q.modded, x.mods_count > 0) &&
+      tri(q.official, x.official) &&
       (!q.hideEmpty || x.players > 0) &&
       (!q.hideFull || x.players < x.max_players) &&
       (q.showExcluded || !profile.excluded_ips.includes(x.ip)),
@@ -156,6 +179,7 @@ function queryServers(q: Record<string, unknown>) {
       full: list.filter((x) => x.players > 0 && x.players >= x.max_players).length,
       empty: list.filter((x) => x.players === 0).length,
       modded: list.filter((x) => x.mods_count > 0).length,
+      official: list.filter((x) => x.official).length,
       pinged: pings.length,
       best_ping: pings.length ? Math.min(...pings) : null,
     },
@@ -171,6 +195,10 @@ export function installMock() {
   if (t) localStorage.setItem("dzch.theme", JSON.stringify({ preset: t, custom: null, frame: {} }));
   if (q.get("rail") === "collapsed")
     localStorage.setItem("dzch.prefs", JSON.stringify({ panes: {}, railCollapsed: true, dismissedRejoin: null }));
+  // `?official=only` (or `none`) sets the servers view's official filter.
+  const official = q.get("official");
+  if (official === "only" || official === "none")
+    void import("../../features/servers/filters.svelte").then(({ filters }) => (filters.official = official));
   // `?modop=1` starts a pretend SteamCMD operation, to look at its dialog.
   if (q.get("modop") === "1")
     setTimeout(async () => (await import("$lib/stores/mods.svelte")).mods.updateStale(), 600);

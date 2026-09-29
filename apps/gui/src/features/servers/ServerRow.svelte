@@ -39,6 +39,8 @@
   password={server.password}
   firstPerson={server.first_person_only}
   battleye={server.battl_eye}
+  official={server.official}
+  mimicsOfficial={server.mimics_official}
   excluded={server.excluded}
   {selected}
   rowindex={index + 1}

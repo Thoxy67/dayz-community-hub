@@ -18,6 +18,7 @@ class ServerFilters {
   password = $state<Tri>("all");
   battleye = $state<Tri>("all");
   modded = $state<Tri>("all");
+  official = $state<Tri>("all");
   hideEmpty = $state(false);
   hideFull = $state(false);
   /** Hide servers slower than this (ms); 0 for any. */
@@ -41,6 +42,7 @@ class ServerFilters {
       this.password !== "all" ||
       this.battleye !== "all" ||
       this.modded !== "all" ||
+      this.official !== "all" ||
       this.hideEmpty ||
       this.hideFull ||
       this.maxPing > 0
@@ -51,7 +53,7 @@ class ServerFilters {
     this.setSearch("");
     this.query = "";
     this.map = null;
-    this.firstPerson = this.password = this.battleye = this.modded = "all";
+    this.firstPerson = this.password = this.battleye = this.modded = this.official = "all";
     this.hideEmpty = this.hideFull = false;
     this.maxPing = 0;
   }
@@ -74,6 +76,7 @@ class ServerFilters {
       password: this.password,
       battleye: this.battleye,
       modded: this.modded,
+      official: this.official,
       hideEmpty: this.hideEmpty,
       hideFull: this.hideFull,
       maxPing: this.maxPing,

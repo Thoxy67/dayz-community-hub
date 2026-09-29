@@ -3,6 +3,7 @@
   import Lock from "~icons/lucide/lock";
   import Puzzle from "~icons/lucide/puzzle";
   import ShieldCheck from "~icons/lucide/shield-check";
+  import BadgeCheck from "~icons/lucide/badge-check";
   import SlidersHorizontal from "~icons/lucide/sliders-horizontal";
   import Eye from "~icons/lucide/eye";
   import EyeOff from "~icons/lucide/eye-off";
@@ -50,6 +51,13 @@
     <TriChip bind:value={filters.password} label={$c.passwordProtected.value} icon={Lock} compact title={$c.filterPwdTitleAll.value} />
     <TriChip bind:value={filters.battleye} label="BattlEye" icon={ShieldCheck} compact title={$c.filterBeTitleAll.value} />
     <TriChip bind:value={filters.modded} label={$c.colMods.value} icon={Puzzle} compact title={$c.filterModsTitleAll.value} />
+    <TriChip
+      bind:value={filters.official}
+      label={$c.official.value}
+      icon={BadgeCheck}
+      compact
+      title={profile.data?.steam_api_key ? $c.filterOfficialTitleAll.value : $c.filterOfficialNoKey.value}
+    />
   </div>
 
   <Select
