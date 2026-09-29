@@ -1,0 +1,18 @@
+[package]
+name = "dz-a2s"
+description = "A2S (Source query) against DayZ servers: ping, info, players and rules"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+async-a2s.workspace = true
+dz-common.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

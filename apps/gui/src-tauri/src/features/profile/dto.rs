@@ -1,0 +1,119 @@
+use dz_profile::Profile;
+use serde::Serialize;
+
+#[derive(Serialize, Clone, Debug)]
+pub struct FavoriteDto {
+    pub name: String,
+    pub ip: String,
+    pub port: u16,
+    /// Saved join password, filled into Direct Connect.
+    pub password: Option<String>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct HistoryDto {
+    pub name: String,
+    pub ip: String,
+    pub port: u16,
+    /// Unix seconds of the last join.
+    pub ts: i64,
+    pub relative_time: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct LaunchOptionDto {
+    pub key: String,
+    pub enabled: bool,
+    pub value: Option<String>,
+    pub description: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct ProfileDto {
+    pub steam_login: Option<String>,
+    pub steam_password: Option<String>,
+    pub steam_root: Option<String>,
+    pub steamcmd_enabled: bool,
+    /// Explicit path to the steamcmd binary (overrides auto-detection).
+    pub steamcmd_path: Option<String>,
+    pub player: Option<String>,
+    pub steam_api_key: Option<String>,
+    pub steam_id: Option<String>,
+    pub battlemetrics_api_key: Option<String>,
+    /// The user's location for distances, as (longitude, latitude).
+    pub user_location: Option<(f64, f64)>,
+    pub favorites: Vec<FavoriteDto>,
+    pub history: Vec<HistoryDto>,
+    pub options: Vec<LaunchOptionDto>,
+    /// IPs hidden from the server browser.
+    pub excluded_ips: Vec<String>,
+    /// Ping concurrency (5-100).
+    pub ping_concurrency: u32,
+    /// Background ping timeout in ms (1000-5000).
+    pub ping_timeout_auto: u32,
+    /// Manual ping timeout in ms (1000-30000).
+    pub ping_timeout_manual: u32,
+    /// Consecutive timeouts before auto-retry stops (0-5).
+    pub ping_max_retries: u32,
+    /// Include favorites in the background scan.
+    pub ping_scan_favorites: bool,
+    /// Include history in the background scan.
+    pub ping_scan_history: bool,
+    /// Include every other server in the background scan.
+    pub ping_scan_servers: bool,
+}
+
+pub(crate) fn profile_to_dto(profile: &Profile) -> ProfileDto {
+    ProfileDto {
+        steam_login: profile.steam_login.clone(),
+        steam_password: profile.steam_password.clone(),
+        steam_root: profile.steam_root.clone(),
+        steamcmd_enabled: profile.steamcmd_enabled,
+        steamcmd_path: profile.steamcmd_path.clone(),
+        player: profile.player.clone(),
+        steam_api_key: profile.steam_api_key.clone(),
+        steam_id: profile.steam_id.clone(),
+        battlemetrics_api_key: profile.battlemetrics_api_key.clone(),
+        user_location: profile.user_location,
+        favorites: profile
+            .favorites
+            .iter()
+            .map(|f| FavoriteDto {
+                name: f.name.clone(),
+                ip: f.ip.clone(),
+                port: f.port,
+                password: f.password.clone(),
+            })
+            .collect(),
+        history: profile
+            .history
+            .iter()
+            .map(|h| HistoryDto {
+                name: h.name.clone(),
+                ip: h.ip.clone(),
+                port: h.port,
+                ts: h.ts,
+                relative_time: h.relative_time(),
+            })
+            .collect(),
+        options: profile
+            .options
+            .all_options()
+            .into_iter()
+            .map(|(key, opt)| LaunchOptionDto {
+                key: key.to_string(),
+                enabled: opt.enabled,
+                value: opt.value.clone(),
+                description: opt.description.clone(),
+            })
+            .collect(),
+        excluded_ips: profile.excluded_ips.clone(),
+        ping_concurrency: profile.ping_concurrency,
+        ping_timeout_auto: profile.ping_timeout_auto,
+        ping_timeout_manual: profile.ping_timeout_manual,
+        ping_max_retries: profile.ping_max_retries,
+        ping_scan_favorites: profile.ping_scan_favorites,
+        ping_scan_history: profile.ping_scan_history,
+        ping_scan_servers: profile.ping_scan_servers,
+    }
+}

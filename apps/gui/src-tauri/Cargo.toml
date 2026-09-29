@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 description = "DayZ Community Hub"
 authors.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
 
 [lib]
 name = "dayz_community_hub_lib"
@@ -23,7 +28,18 @@ base64.workspace = true
 which.workspace = true
 zip.workspace = true
 clap.workspace = true
-dayz-community-hub-core.workspace = true
+dz-common.workspace = true
+dz-api.workspace = true
+dz-a2s.workspace = true
+dz-profile.workspace = true
+dz-steamcmd.workspace = true
+dz-game.workspace = true
+dz-news.workspace = true
+dz-battlemetrics.workspace = true
+# The window's `bindings.ts`, generated from the commands' own signatures.
+specta.workspace = true
+specta-typescript.workspace = true
+tauri-specta.workspace = true
 
 # Tauri + plugins
 tauri = { version = "2.11", features = ["protocol-asset", "native-tls"] }
@@ -32,22 +48,20 @@ tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2.3.2"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-deep-link = "2"
-urlencoding = "2"
 lru = "0.18"
 rustc-hash.workspace = true
 sysinfo.workspace = true
-tauri-plugin-http = "2"
 
 [target."cfg(not(windows))".dependencies]
-zstd = { version = "0.13.3", features = ["pkg-config"] }
+zstd = { version = "0.14.0", features = ["pkg-config"] }
 
 [target."cfg(windows)".dependencies]
-zstd = "0.13.3"
+zstd = "0.14.0"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 thiserror.workspace = true
-minisign-verify = "0.2"
+minisign-verify = "0.3.0"
 self-replace = "1"
 
 [target."cfg(target_os = \"macos\")".dependencies]
-cocoa = "0.26"
+cocoa = "0.27.0"

@@ -1,35 +1,28 @@
-mod cli;
-mod commands;
-mod convert;
-mod dto;
-mod helpers;
+//! The DayZ Community Hub shell: plugins, windows and the commands the window
+//! calls. The work itself lives in `features` and in the `dz-*` crates.
+
+mod error;
+mod features;
 mod state;
-mod utils;
 
-#[cfg(windows)]
-mod updater;
-
-pub use cli::CliArgs;
+pub use features::dzch_cli::CliArgs;
 
 use clap::Parser;
-use tauri::Manager;
+use std::sync::Arc;
+use tauri::{Emitter, Manager};
 
-use cli::CLI_ARGS;
-
-// ─── Application entry point ──────────────────────────────────────────────────
+use features::*;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run(args: CliArgs) {
-    // Store args globally so `get_cli_args` can serve them later.
-    let _ = CLI_ARGS.set(args);
+    args.remember();
 
     tauri::Builder::default()
         .setup(|app| {
-            // Holds the one-shot channel used by the news WebView fallback to
-            // return Cloudflare-cleared JSON back to the fetch command.
-            app.manage(commands::news_webview::NewsWebviewState::new());
+            // The one-shot slot the news WebView fallback returns its JSON through.
+            app.manage(news::webview::NewsWebviewState::new());
+            app.manage(Arc::new(ping::PingState::default()));
 
-            // Register Windows-only plugins via setup so we can use cfg guards.
             #[cfg(windows)]
             {
                 app.handle()
@@ -38,39 +31,33 @@ pub fn run(args: CliArgs) {
                 app.manage(updater::PendingUpdate(std::sync::Mutex::new(None)));
             }
 
-            // Register the image cache directory into the asset protocol scope at
-            // runtime. This is more reliable than the static `tauri.conf.json` scope
-            // because it uses Tauri's own path resolver — the exact same source that
-            // the asset protocol uses when checking requests.
-            if let Ok(cache_dir) = app.path().app_data_dir() {
-                let images_dir = cache_dir.join("cache").join("images");
+            // Allow the image cache in the asset protocol scope, resolved by
+            // Tauri's own path resolver (the same one the protocol checks).
+            if let Ok(data_dir) = app.path().app_data_dir() {
+                let images_dir = data_dir.join("cache").join("images");
                 let _ = app
                     .asset_protocol_scope()
                     .allow_directory(&images_dir, false);
             }
 
-            // Deep-link: register dzch:// scheme at runtime on Linux (and
-            // Windows debug builds) so it works outside of an installed package.
+            // Register dzch:// at runtime on Linux (and Windows debug builds),
+            // so it works outside an installed package.
             #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 let _ = app.deep_link().register_all();
             }
 
-            // Forward dzch:// deep-link opens to the frontend as a CliArgs event
-            // so it follows the same code path as --connect / --open.
+            // A dzch:// link follows the same path as --open.
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 let handle = app.handle().clone();
                 app.deep_link().on_open_url(move |event| {
                     if let Some(url) = event.urls().first() {
-                        let url_str = url.to_string();
                         let args = CliArgs {
-                            connect: None,
-                            reconnect: false,
-                            open: Some(url_str),
+                            open: Some(url.to_string()),
+                            ..CliArgs::none()
                         };
-                        use tauri::Emitter;
                         let _ = handle.emit("cli-args", args);
                     }
                 });
@@ -78,23 +65,17 @@ pub fn run(args: CliArgs) {
 
             Ok(())
         })
-        // Single-instance guard: if another instance is already running,
-        // that instance's frontend receives a "cli-args" event carrying the
-        // new invocation's arguments, then this process exits.
+        // Single instance: a second launch hands its arguments to this one
+        // (as a "cli-args" event) and exits.
         .plugin(
             tauri_plugin_single_instance::Builder::new()
                 .callback(|app, argv, _cwd| {
-                    let new_args = CliArgs::try_parse_from(&argv).unwrap_or(CliArgs {
-                        connect: None,
-                        reconnect: false,
-                        open: None,
-                    });
+                    let args = CliArgs::try_parse_from(&argv).unwrap_or_else(|_| CliArgs::none());
                     if let Some(win) = app.get_webview_window("main") {
                         let _ = win.show();
                         let _ = win.set_focus();
                     }
-                    use tauri::Emitter;
-                    let _ = app.emit("cli-args", new_args);
+                    let _ = app.emit("cli-args", args);
                 })
                 .build(),
         )
@@ -103,80 +84,71 @@ pub fn run(args: CliArgs) {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            commands::servers::initialize,
-            commands::servers::check_first_launch,
-            commands::servers::get_servers,
-            commands::servers::get_server_details,
-            commands::servers::refresh_servers,
-            commands::servers::get_servers_cache_age_secs,
-            commands::servers::get_ping,
-            commands::profile::get_profile,
-            commands::profile::save_profile_settings,
-            commands::profile::add_favorite,
-            commands::profile::remove_favorite,
-            commands::profile::remove_history_entry,
-            commands::profile::clear_history,
-            commands::profile::add_excluded_ip,
-            commands::profile::remove_excluded_ip,
-            commands::mods::get_installed_mods,
-            commands::mods::delete_mod,
-            commands::mods::delete_mods_bulk,
-            commands::mods::toggle_mod_managed,
-            commands::mods::cleanup_mods,
-            commands::mods::open_workshop_dir,
-            commands::mods::open_mod_dir,
-            commands::mods::open_mission_dir,
-            commands::mods::get_missing_mods,
-            commands::launch::toggle_launch_option,
-            commands::launch::set_launch_option_value,
-            commands::launch::launch_server,
-            commands::launch::launch_direct,
-            commands::steamcmd_ops::start_mod_operation,
-            commands::steamcmd_ops::send_steamcmd_input,
-            commands::steamcmd_ops::cancel_mod_operation,
-            commands::a2s::query_a2s,
-            commands::images::fetch_image,
-            commands::images::resolve_cached_images,
-            commands::steam::fetch_steam_avatar,
-            commands::mods::check_mod_updates,
-            commands::news_stats::fetch_news,
-            commands::news_webview::news_webview_result,
-            commands::news_stats::get_app_stats,
-            commands::steam::fetch_steam_player_count,
-            commands::offline::get_offline_missions,
-            commands::offline::update_offline_mode,
-            commands::offline::remove_offline_mode,
-            commands::offline::remove_mission,
-            commands::offline::open_missions_dir,
-            commands::offline::clear_offline_saves,
-            commands::offline::launch_offline_mission,
-            commands::ping::ping_servers,
-            commands::ping::ping_single,
-            commands::ping::ping_all_background,
-            commands::ping::get_pings,
-            commands::ping::cancel_ping,
-            commands::ping::toggle_ping_pause,
-            commands::ping::get_ping_paused,
-            commands::misc::is_favorite,
-            commands::misc::setup_mod_symlinks,
-            commands::misc::find_server,
-            commands::misc::get_system_specs,
-            commands::profile_io::export_profile,
-            commands::profile_io::import_profile,
-            commands::profile_io::reset_profile,
-            commands::profile_io::restart_app,
-            commands::steamcmd_detect::detect_steamcmd,
-            commands::steamcmd_detect::watch_steamcmd,
-            commands::steamcmd_detect::download_steamcmd_windows,
-            commands::cli_cmd::get_cli_args,
-            commands::cli_cmd::read_dzch_file,
-            commands::cli_cmd::write_dzch_file,
-            commands::cli_cmd::parse_dzch_url,
-            commands::battlemetrics::fetch_battlemetrics_server,
-            // Windows-only auto-updater commands
-            #[cfg(windows)]
+            servers::check_first_launch,
+            servers::initialize,
+            servers::get_servers,
+            servers::get_server_details,
+            servers::refresh_servers,
+            servers::get_app_stats,
+            ping::ping_all_background,
+            ping::ping_servers,
+            ping::get_pings,
+            ping::ping_single,
+            ping::cancel_ping,
+            ping::toggle_ping_pause,
+            a2s::query_a2s,
+            battlemetrics::fetch_battlemetrics_server,
+            profile::get_profile,
+            profile::save_profile_settings,
+            profile::add_favorite,
+            profile::remove_favorite,
+            profile::remove_history_entry,
+            profile::clear_history,
+            profile::add_excluded_ip,
+            profile::remove_excluded_ip,
+            profile::io::export_profile,
+            profile::io::import_profile,
+            profile::io::reset_profile,
+            profile::io::restart_app,
+            mods::get_installed_mods,
+            mods::check_mod_updates,
+            mods::delete_mod,
+            mods::delete_mods_bulk,
+            mods::toggle_mod_managed,
+            mods::cleanup_mods,
+            mods::open_workshop_dir,
+            mods::open_mod_dir,
+            mods::setup_mod_symlinks,
+            launch::toggle_launch_option,
+            launch::set_launch_option_value,
+            launch::launch_server,
+            launch::launch_direct,
+            steamcmd::start_mod_operation,
+            steamcmd::send_steamcmd_input,
+            steamcmd::cancel_mod_operation,
+            steamcmd::detect::detect_steamcmd,
+            steamcmd::detect::watch_steamcmd,
+            steamcmd::detect::download_steamcmd_windows,
+            offline::get_offline_missions,
+            offline::update_offline_mode,
+            offline::remove_offline_mode,
+            offline::remove_mission,
+            offline::clear_offline_saves,
+            offline::open_missions_dir,
+            offline::open_mission_dir,
+            offline::launch_offline_mission,
+            news::fetch_news,
+            news::webview::news_webview_result,
+            news::images::fetch_image,
+            news::images::resolve_cached_images,
+            steam::fetch_steam_avatar,
+            steam::fetch_steam_player_count,
+            dzch_cli::get_cli_args,
+            dzch_cli::read_dzch_file,
+            dzch_cli::write_dzch_file,
+            dzch_cli::parse_dzch_url,
+            system::get_system_specs,
             updater::check_for_update,
-            #[cfg(windows)]
             updater::install_update,
         ])
         .run(tauri::generate_context!())

@@ -1,0 +1,26 @@
+[package]
+name = "dz-game"
+description = "The game on this machine: workshop mods and their links, joining through Steam, offline mode, .dzch files"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+dz-api.workspace = true
+dz-common.workspace = true
+dz-profile.workspace = true
+dz-steamcmd.workspace = true
+flate2.workspace = true
+regex.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+specta.workspace = true
+tar.workspace = true
+tokio.workspace = true
+urlencoding.workspace = true

@@ -1,0 +1,25 @@
+[package]
+name = "dz-steamcmd"
+description = "steamcmd driven inside a pseudo-terminal to download workshop mods, and the Steam client it shares a login with"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+dz-common.workspace = true
+# steamcmd only line-buffers and prompts for a password or Steam Guard code
+# when it runs on a terminal, so it always runs under a PTY / ConPTY.
+portable-pty.workspace = true
+regex.workspace = true
+rustc-hash.workspace = true
+sysinfo.workspace = true
+tokio.workspace = true
+which.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

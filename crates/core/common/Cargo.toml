@@ -1,0 +1,16 @@
+[package]
+name = "dz-common"
+description = "What every DayZ Community Hub crate shares: the error type, the data directory and the clock"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+reqwest.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

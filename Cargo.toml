@@ -1,21 +1,44 @@
+# DayZ Community Hub: a server browser, mod manager and launcher for DayZ.
+#
+# One workspace, crates grouped by what they are:
+#
+#   crates/core/   the domain, with no knowledge of the window: the server list,
+#                  A2S queries, the profile on disk, SteamCMD, the game itself
+#                  (mods, launch, offline mode, .dzch files) and the news feed.
+#   crates/app/    what the app needs around the domain that is not the shell:
+#                  the BattleMetrics lookup.
+#   apps/gui/src-tauri  the shell: windows, commands, events, the bridge.
+
 [workspace]
-members = [
-    "crates/core/dayz",
-    "apps/gui/src-tauri",
-]
-resolver = "2"
+resolver = "3"
+# Every crate is two levels down: crates/<role>/<name>. A new crate is a new
+# directory there and a line in [workspace.dependencies] below.
+members = ["crates/*/*", "apps/gui/src-tauri"]
 
 [workspace.package]
 version = "0.4.1"
 edition = "2024"
+rust-version = "1.98"
 authors = ["thoxy"]
+license = "MIT"
+repository = "https://git.thoxy.xyz/thoxy/dayz-community-hub"
 
 # ── Shared dependencies ────────────────────────────────────────────────────────
 
 [workspace.dependencies]
+# Internal crates
+dz-common = { path = "crates/core/common" }
+dz-api = { path = "crates/core/api" }
+dz-a2s = { path = "crates/core/a2s" }
+dz-profile = { path = "crates/core/profile" }
+dz-steamcmd = { path = "crates/core/steamcmd" }
+dz-game = { path = "crates/core/game" }
+dz-news = { path = "crates/core/news" }
+dz-battlemetrics = { path = "crates/app/battlemetrics" }
+
 # Async runtime
-tokio = { version = "1.52", features = ["rt-multi-thread", "macros", "time", "sync", "io-util", "process", "fs", "net"] }
-futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time", "sync", "io-util", "process", "fs", "net"] }
+futures-util = { version = "0.3.34", default-features = false, features = ["alloc"] }
 
 # HTTP
 reqwest = { version = "0.13", default-features = false, features = ["native-tls", "json", "query"] }
@@ -23,33 +46,41 @@ reqwest = { version = "0.13", default-features = false, features = ["native-tls"
 # Cloudflare-gated. Passing it requires mimicking a browser at three layers:
 # a Chrome-like TLS fingerprint (rustls + aws-lc-rs/BoringSSL), an advertised
 # `http/1.1` ALPN, and title-cased HTTP/1.1 header names, none of which
-# reqwest/native-tls produce. See `news::fetch_news_raw`.
+# reqwest/native-tls produce. See `dz_news::fetch_news_raw`.
 # Must be aws-lc-rs, not `ring`: ring's ClientHello is reliably challenged by
 # Cloudflare (verified 403 vs aws-lc-rs 200). aws-lc-sys compiles a C library;
 # packaging builds must disable C LTO (PKGBUILD `options=(!lto)`) so its objects
 # are not turned into bitcode the final link cannot resolve.
-hyper = { version = "1.10", features = ["client", "http1"] }
-hyper-util = { version = "0.1", features = ["tokio"] }
-http-body-util = "0.1"
-bytes = "1"
-tokio-rustls = { version = "0.26", default-features = false, features = ["aws-lc-rs", "tls12", "logging"] }
-webpki-roots = "1"
+hyper = { version = "1.11.1", features = ["client", "http1"] }
+hyper-util = { version = "0.1.21", features = ["tokio"] }
+http-body-util = "0.1.5"
+bytes = "1.12.1"
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws-lc-rs", "tls12", "logging"] }
+webpki-roots = "1.0.9"
 
 # Serialisation
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# One description of the commands and the DTOs, from which the window's
+# `bindings.ts` is generated. tauri-specta pins specta exactly, so the three
+# move together.
+specta = { version = "=2.0.0-rc.25", features = ["derive", "function", "serde_json"] }
+specta-typescript = "=0.0.12"
+tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
+
 # Error handling
-thiserror = "2"
+thiserror = "2.0.21"
 
 # Utilities
-base64 = "0.22.1"
-regex = "1.12"
-which = "8"
+base64 = "0.23.1"
+regex = "1.13.1"
+which = "8.0.6"
 sysinfo = "0.39"
-chrono = { version = "0.4" }
 clap = { version = "4.6", features = ["derive"] }
 rustc-hash = "2.1"
+urlencoding = "2"
+portable-pty = { version = "0.9.0", default-features = false }
 
 # Compression / archive
 zip = { version = "8.6", default-features = false, features = ["deflate", "deflate64"] }
@@ -59,8 +90,12 @@ tar = "0.4"
 # DayZ A2S queries
 async-a2s = { git = "https://git.thoxy.xyz/thoxy/async-a2s" }
 
-# Internal crates
-dayz-community-hub-core = { path = "crates/core/dayz" }
+# One lint table for the workspace, opted into by every manifest with
+# `lints.workspace = true`.
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+redundant_clone = "warn"
+needless_collect = "warn"
 
 # ── Profile overrides ─────────────────────────────────────────────────────────
 
