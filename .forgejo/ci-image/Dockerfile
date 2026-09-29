@@ -40,13 +40,14 @@ ENV BUN_INSTALL=/usr/local
 RUN curl -fsSL https://bun.sh/install | bash \
     && ln -s /usr/local/bin/bun /usr/local/bin/node
 
-# ── Rust (nightly, for edition 2024) ─────────────────────────────────────────
+# ── Rust (the version rust-toolchain.toml pins, so jobs do not download it) ──
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH
 RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y \
-        --default-toolchain nightly \
+        --default-toolchain 1.98.0 \
         --profile minimal \
+        --component rustfmt,clippy \
         --no-modify-path \
     && rustup target add x86_64-pc-windows-msvc
 
