@@ -1,0 +1,39 @@
+# Every Python tool in the repository, one environment: `uv sync --project tools`
+# once, then `uv run --project tools dzch <command>`. The Makefile does both.
+[project]
+name = "dzch-tools"
+version = "0.1.0"
+description = "Publish DayZ Community Hub releases"
+requires-python = ">=3.12"
+# The standard library is enough: the forge APIs are plain HTTP + JSON.
+dependencies = []
+
+[project.scripts]
+dzch = "dzch.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["dzch"]
+
+[tool.pytest.ini_options]
+testpaths = ["dzch"]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+ignore = [
+    # Modules are run as `python -m dzch...` or `uv run --project tools dzch`,
+    # never as `./foo.py`.
+    "EXE001",
+    # Small files are read as one-liners, `open(path).read()`.
+    "SIM115",
+    # The changelog date is the release manager's local calendar day.
+    "DTZ011",
+]
+
+[dependency-groups]
+dev = ["pytest>=9"]

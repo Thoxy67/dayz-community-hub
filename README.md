@@ -1,17 +1,16 @@
 # DayZ Community Hub
 
 [![CI](https://git.thoxy.xyz/thoxy/dayz-community-hub/actions/workflows/ci.yml/badge.svg)](https://git.thoxy.xyz/thoxy/dayz-community-hub/actions?workflow=ci.yml)
-[![Release](https://git.thoxy.xyz/thoxy/dayz-community-hub/actions/workflows/release.yml/badge.svg)](https://git.thoxy.xyz/thoxy/dayz-community-hub/actions?workflow=release.yml)
 [![Version](https://img.shields.io/badge/version-0.4.1-blue?style=flat-square)](https://git.thoxy.xyz/thoxy/dayz-community-hub/releases)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20(AppImage%2C%20deb%2C%20rpm)-lightgrey?style=flat-square)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 
 [![Rust](https://img.shields.io/badge/Rust-2024-orange?style=flat-square&logo=rust&logoColor=white)](https://rust-lang.org/)
 [![Tauri](https://img.shields.io/badge/Tauri-2-24C8D8?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app/)
-[![Svelte](https://img.shields.io/badge/SvelteKit-5-FF3E00?style=flat-square&logo=svelte&logoColor=white)](https://svelte.dev/)
+[![Svelte](https://img.shields.io/badge/Svelte-5-FF3E00?style=flat-square&logo=svelte&logoColor=white)](https://svelte.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
-[![DaisyUI](https://img.shields.io/badge/DaisyUI-5-5A0EF8?style=flat-square&logo=daisyui&logoColor=white)](https://daisyui.com/)
+[![bits-ui](https://img.shields.io/badge/bits--ui-2-181818?style=flat-square&logo=svelte&logoColor=white)](https://bits-ui.com/)
 
 A fast, feature-rich DayZ launcher that replaces the official one — browse servers, manage mods, and connect in one click.
 
@@ -88,24 +87,20 @@ Full docs available in the [Wiki](https://git.thoxy.xyz/thoxy/dayz-community-hub
 
 ## Building from Source
 
-**Prerequisites:** Rust (nightly), Bun, [Tauri v2 system deps](https://tauri.app/start/prerequisites/)
+**Prerequisites:** Rust, Bun, uv, [Tauri v2 system deps](https://tauri.app/start/prerequisites/)
 
 ```bash
 git clone https://git.thoxy.xyz/thoxy/dayz-community-hub
 cd dayz-community-hub
-bun install
-bun tauri dev        # development
-bun tauri build      # production
+(cd apps/gui && bun install)
+make dev             # development
+make check           # everything a commit must pass
+make build           # production (Linux)
+make windows         # Windows, cross-compiled with cargo-xwin
 ```
 
-**Cross-compile for Windows from Linux** (requires [cargo-xwin](https://github.com/rust-cross/cargo-xwin)):
-
-```bash
-rustup target add x86_64-pc-windows-msvc
-cargo install cargo-xwin
-TAURI_SIGNING_PRIVATE_KEY="" bun tauri build \
-  --runner cargo-xwin --target x86_64-pc-windows-msvc --no-bundle
-```
+`make` alone lists every target. Layout, releases (`make publish`), the glibc
+floor and Windows cross-compilation are explained in [docs/build.md](docs/build.md).
 
 ---
 

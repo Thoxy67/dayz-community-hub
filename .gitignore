@@ -27,3 +27,16 @@ Desktop.ini
 
 # Logs
 *.log
+
+# Agent skills and settings, imported per machine (see skills-lock.json upstream)
+.agents/
+skills-lock.json
+
+# Release staging and scratch (make windows, make publish)
+/var
+
+# Python tools (uv)
+/tools/.venv
+.ruff_cache/
+__pycache__/
+.pytest_cache/

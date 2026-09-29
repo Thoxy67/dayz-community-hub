@@ -1,5 +1,9 @@
 name: CI
 
+# What a push to master must pass, the CI half of `make check`. Releases are
+# not built here: `make publish` builds, signs and publishes them from the
+# release machine (see docs/build.md, "Publish").
+
 on:
   push:
     branches:
@@ -18,11 +22,7 @@ jobs:
       credentials:
         username: ${{ forgejo.repository_owner }}
         password: ${{ secrets.FORGEJO_TOKEN }}
-    timeout-minutes: 30
-
-    defaults:
-      run:
-        working-directory: dayz-community-hub-ui
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -39,9 +39,20 @@ jobs:
           restore-keys: linux-cargo-
 
       - name: Install JS dependencies
+        working-directory: apps/gui
         run: bun install --frozen-lockfile
 
+      - name: Check the interface
+        working-directory: apps/gui
+        run: bunx svelte-check --threshold error
+
+      - name: Rust tests
+        env:
+          CARGO_BUILD_JOBS: "4"
+        run: cargo test --workspace
+
       - name: Build (Linux, no-bundle)
+        working-directory: apps/gui
         env:
           TAURI_SIGNING_PRIVATE_KEY: ""
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
