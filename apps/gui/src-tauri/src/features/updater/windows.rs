@@ -76,7 +76,10 @@ async fn fetch_update_info(
     let update = match app.updater()?.check().await? {
         Some(u) => u,
         None => {
-            *pending.0.lock().unwrap() = None;
+            *pending
+                .0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
             return Ok(None);
         }
     };
@@ -101,7 +104,11 @@ async fn fetch_update_info(
     let url = update.download_url.to_string();
     let signature = update.signature.clone();
 
-    *pending.0.lock().unwrap() = Some(PendingUpdateData { url, signature });
+    *pending
+        .0
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) =
+        Some(PendingUpdateData { url, signature });
 
     Ok(Some(info))
 }
@@ -114,17 +121,17 @@ async fn do_install(
     let data = pending
         .0
         .lock()
-        .unwrap()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .take()
         .ok_or(UpdateError::NoPendingUpdate)?;
 
     // ── 1. Download ───────────────────────────────────────────────────────
-    let client = reqwest::Client::new();
-    let response = client
+    let response = crate::net::download()
         .get(&data.url)
         .send()
         .await
-        .map_err(|e| UpdateError::Other(format!("download failed: {e}")))?;
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|e| UpdateError::Other(format!("download failed: {}", e.without_url())))?;
 
     let content_length = response.content_length();
     let _ = on_event.send(DownloadEvent::Started { content_length });
@@ -190,10 +197,18 @@ async fn do_install(
     let mut archive =
         zip::ZipArchive::new(cursor).map_err(|e| UpdateError::Other(format!("zip open: {e}")))?;
 
+    // The executable, found by name rather than assumed to be the first entry.
+    let exe_index = (0..archive.len())
+        .find(|&i| {
+            archive
+                .name_for_index(i)
+                .is_some_and(|n| n.to_ascii_lowercase().ends_with(".exe"))
+        })
+        .ok_or_else(|| UpdateError::Other("the update archive holds no .exe".into()))?;
     let mut exe_bytes: Vec<u8> = Vec::new();
     {
         let mut entry = archive
-            .by_index(0)
+            .by_index(exe_index)
             .map_err(|e| UpdateError::Other(format!("zip entry: {e}")))?;
         std::io::Read::read_to_end(&mut entry, &mut exe_bytes)
             .map_err(|e| UpdateError::Other(format!("zip read: {e}")))?;
