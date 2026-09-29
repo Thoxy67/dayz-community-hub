@@ -20,8 +20,9 @@ import { derived, type Readable } from "svelte/store";
 import { getIntlayer, intlayerStore, setupIntlayer, type useIntlayer } from "svelte-intlayer";
 import type { DictionaryKeys } from "@intlayer/types/module_augmentation";
 
-export const LOCALES = ["en", "fr", "de", "es", "ru"] as const;
-export type Locale = (typeof LOCALES)[number];
+import { pickLocale, type Locale } from "./locale";
+
+export { LOCALES, isLocale, pickLocale, plural, type Locale } from "./locale";
 
 /** Each language named in itself, which is what a picker should show. */
 export const LOCALE_LABELS: Record<Locale, string> = {
@@ -36,18 +37,14 @@ const KEY = "dzch.locale";
 // The key the previous interface (paraglide) stored the choice under.
 const LEGACY_KEY = "PARAGLIDE_LOCALE";
 
-const isLocale = (v: string | null | undefined): v is Locale =>
-  !!v && (LOCALES as readonly string[]).includes(v);
-
 function initialLocale(): Locale {
+  let saved: string | null = null;
   try {
-    const saved = localStorage.getItem(KEY) ?? localStorage.getItem(LEGACY_KEY);
-    if (isLocale(saved)) return saved;
+    saved = localStorage.getItem(KEY) ?? localStorage.getItem(LEGACY_KEY);
   } catch {
     // A disabled store is not worth failing startup over.
   }
-  const os = (navigator.language || "en").slice(0, 2).toLowerCase();
-  return isLocale(os) ? os : "en";
+  return pickLocale(saved, navigator.language);
 }
 
 let current: Locale = initialLocale();
@@ -98,7 +95,3 @@ export function words<K extends DictionaryKeys>(key: K) {
   return getIntlayer(key, current);
 }
 
-/** `one` or `other` by count. The dictionaries carry both forms as two keys. */
-export function plural<T>(count: number, one: T, other: T): T {
-  return count === 1 ? one : other;
-}

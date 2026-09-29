@@ -19,26 +19,7 @@ export function compact(n: number | null | undefined): string {
   return n == null ? "—" : numberFormat({ notation: "compact", maximumFractionDigits: 1 }).format(n);
 }
 
-/** 1.4 GB, from bytes. */
-export function bytes(n: number): string {
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let i = 0;
-  let v = n;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v.toFixed(v >= 100 || i === 0 ? 0 : 1)} ${units[i]}`;
-}
-
-/** 2h 15m, from seconds. Under a minute is "<1m". */
-export function duration(secs: number): string {
-  const s = Math.floor(secs);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  if (h > 0) return `${h}h ${m}m`;
-  return m > 0 ? `${m}m` : "<1m";
-}
+export { bytes, duration, distanceKm } from "./units";
 
 /** "3 minutes ago", from a Unix timestamp in seconds, in the current language. */
 export function relative(ts: number): string {
@@ -64,13 +45,4 @@ export function dateTime(ts: number): string {
 /** A calendar date. */
 export function date(d: Date | string | number): string {
   return new Date(d).toLocaleDateString(getLocale(), { year: "numeric", month: "short", day: "numeric" });
-}
-
-/** Great-circle distance in km between two [lon, lat] points. */
-export function distanceKm(a: [number, number], b: [number, number]): number {
-  const rad = (d: number) => (d * Math.PI) / 180;
-  const dLat = rad(b[1] - a[1]);
-  const dLon = rad(b[0] - a[0]);
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a[1])) * Math.cos(rad(b[1])) * Math.sin(dLon / 2) ** 2;
-  return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
