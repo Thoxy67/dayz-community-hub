@@ -172,7 +172,7 @@ pub fn get_missing_mods(server_mods: &[u64], installed_mods: &[InstalledMod]) ->
     server_mods
         .iter()
         .filter(|id| !installed_ids.contains(id))
-        .cloned()
+        .copied()
         .collect()
 }
 
@@ -180,13 +180,12 @@ pub fn get_missing_mods(server_mods: &[u64], installed_mods: &[InstalledMod]) ->
 /// This is how DayZ discovers mods at launch time.
 pub fn create_mod_symlink(workshop_path: &Path, dayz_path: &Path, mod_id: u64) -> Result<()> {
     let source = workshop_path.join(mod_id.to_string());
-    let link_name = format!("@{}", mod_id);
+    let link_name = format!("@{mod_id}");
     let target = dayz_path.join(link_name);
 
     if !source.exists() {
         return Err(Error::Mod(format!(
-            "Mod directory does not exist: {:?}",
-            source
+            "Mod directory does not exist: {source:?}"
         )));
     }
 
@@ -256,10 +255,7 @@ pub fn create_mod_symlinks(
             Ok(_) => created.push(mod_id),
             Err(e) => {
                 // Log error but continue with other mods
-                eprintln!(
-                    "Warning: failed to create symlink for mod {}: {}",
-                    mod_id, e
-                );
+                eprintln!("Warning: failed to create symlink for mod {mod_id}: {e}");
             }
         }
     }
@@ -278,7 +274,7 @@ pub fn mark_mod_as_managed(workshop_path: &Path, mod_id: u64) -> Result<()> {
 
 /// Remove a single `@<mod_id>` symlink/junction from the DayZ game directory.
 pub fn remove_mod_symlink(dayz_path: &Path, mod_id: u64) -> Result<()> {
-    let link_name = format!("@{}", mod_id);
+    let link_name = format!("@{mod_id}");
     let target = dayz_path.join(link_name);
 
     if target.symlink_metadata().is_err() {
@@ -364,15 +360,14 @@ pub fn remove_managed_mods(workshop_path: &Path) -> Result<(usize, u64)> {
 pub fn delete_mod(workshop_path: &Path, mod_id: u64, only_managed: bool) -> Result<()> {
     let mod_path = workshop_path.join(mod_id.to_string());
     if !mod_path.exists() {
-        return Err(Error::Mod(format!("Mod {} does not exist", mod_id)));
+        return Err(Error::Mod(format!("Mod {mod_id} does not exist")));
     }
 
     if only_managed {
         let managed_file = mod_path.join(".dayz-community-hub");
         if !managed_file.exists() {
             return Err(Error::Mod(format!(
-                "Mod {} is not managed (no .dayz-community-hub file)",
-                mod_id
+                "Mod {mod_id} is not managed (no .dayz-community-hub file)"
             )));
         }
     }
@@ -394,7 +389,7 @@ pub fn delete_mod(workshop_path: &Path, mod_id: u64, only_managed: bool) -> Resu
 pub fn toggle_mod_managed(workshop_path: &Path, dayz_path: &Path, mod_id: u64) -> Result<bool> {
     let mod_path = workshop_path.join(mod_id.to_string());
     if !mod_path.exists() {
-        return Err(Error::Mod(format!("Mod {} does not exist", mod_id)));
+        return Err(Error::Mod(format!("Mod {mod_id} does not exist")));
     }
 
     let managed_file = mod_path.join(".dayz-community-hub");
@@ -437,7 +432,7 @@ pub fn verify_mods(workshop_path: &Path, mod_ids: &[u64]) -> Vec<u64> {
     mod_ids
         .iter()
         .filter(|&&id| !mod_exists(workshop_path, id))
-        .cloned()
+        .copied()
         .collect()
 }
 
@@ -447,7 +442,7 @@ pub fn format_size(bytes: u64) -> String {
     if mb >= 1024.0 {
         format!("{:.1} GB", mb / 1024.0)
     } else if mb >= 1.0 {
-        format!("{:.1} MB", mb)
+        format!("{mb:.1} MB")
     } else {
         format!("{} KB", bytes / 1024)
     }

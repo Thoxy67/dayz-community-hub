@@ -285,7 +285,7 @@ pub(crate) async fn send_steamcmd_input(
     let state = state.read().await;
     if let Some(ref tx) = state.pty_input_tx {
         tx.send(input)
-            .map_err(|e| format!("Failed to send input to steamcmd: {}", e))?;
+            .map_err(|e| format!("Failed to send input to steamcmd: {e}"))?;
     } else {
         return Err("No active steamcmd session".into());
     }

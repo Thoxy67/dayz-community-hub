@@ -91,8 +91,7 @@ impl Article {
             let original_ext = fmts_str.split(',').next().unwrap_or("png").trim();
 
             format!(
-                r#"<img src="https://dayz.com/app-static/uploads/{}_{}.{}" data-full="https://dayz.com/app-static/uploads/{}.{}" alt="" loading="lazy" />"#,
-                code, display_size, display_ext, code, original_ext
+                r#"<img src="https://dayz.com/app-static/uploads/{code}_{display_size}.{display_ext}" data-full="https://dayz.com/app-static/uploads/{code}.{original_ext}" alt="" loading="lazy" />"#
             )
         })
         .into_owned()
@@ -162,7 +161,7 @@ impl Article {
             .map(|c| c.slug.as_str())
             .unwrap_or("news");
         let slug = self.slug.replace(' ', "%20");
-        format!("https://dayz.com/article/{}/{}", cat, slug)
+        format!("https://dayz.com/article/{cat}/{slug}")
     }
 }
 

@@ -261,7 +261,7 @@ impl LaunchOptions {
         for (flag, opt) in all_options {
             if opt.enabled {
                 if let Some(ref value) = opt.value {
-                    args.push(format!("{}={}", flag, value));
+                    args.push(format!("{flag}={value}"));
                 } else {
                     args.push(flag.to_string());
                 }

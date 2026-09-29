@@ -212,7 +212,9 @@ pub async fn lookup(
     let bm_name = attrs["name"].as_str().unwrap_or("Unknown").to_string();
     let rank = attrs["rank"].as_i64();
     let status = attrs["status"].as_str().unwrap_or("unknown").to_string();
-    let country = attrs["country"].as_str().map(|s| s.to_string());
+    let country = attrs["country"]
+        .as_str()
+        .map(std::string::ToString::to_string);
     // BattleMetrics may return location as GeoJSON: {"type":"Point","coordinates":[lon,lat]}
     // or as a direct array [lon, lat] - handle both formats
     let location: Option<(f64, f64)> = attrs["location"]["coordinates"]
@@ -232,9 +234,15 @@ pub async fn lookup(
     let official = attrs["official"].as_bool();
     let third_person = attrs["details"]["third_person"].as_bool();
     let modded = attrs["details"]["modded"].as_bool();
-    let query_status = attrs["queryStatus"].as_str().map(|s| s.to_string());
-    let server_steam_id = attrs["serverSteamId"].as_str().map(|s| s.to_string());
-    let created_at = attrs["createdAt"].as_str().map(|s| s.to_string());
+    let query_status = attrs["queryStatus"]
+        .as_str()
+        .map(std::string::ToString::to_string);
+    let server_steam_id = attrs["serverSteamId"]
+        .as_str()
+        .map(std::string::ToString::to_string);
+    let created_at = attrs["createdAt"]
+        .as_str()
+        .map(std::string::ToString::to_string);
     let players = attrs["players"].as_i64();
     let max_players = attrs["maxPlayers"].as_i64();
 

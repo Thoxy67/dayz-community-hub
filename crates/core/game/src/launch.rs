@@ -18,10 +18,10 @@ pub fn build_launch_args(
     if !mod_ids.is_empty() {
         let mods_str = mod_ids
             .iter()
-            .map(|id| format!("@{}", id))
+            .map(|id| format!("@{id}"))
             .collect::<Vec<_>>()
             .join(";");
-        args.push(format!("-mod={}", mods_str));
+        args.push(format!("-mod={mods_str}"));
     }
 
     // Connection
@@ -32,7 +32,7 @@ pub fn build_launch_args(
     if let Some(pass) = password
         && !pass.is_empty()
     {
-        args.push(format!("-password={}", pass));
+        args.push(format!("-password={pass}"));
     }
 
     // Profile launch options (nosplash, skipintro, high, etc.)
@@ -60,7 +60,7 @@ pub fn build_steam_applaunch_args(
     if let Some(user) = username
         && !user.is_empty()
     {
-        steam_args.push(format!("-name={}", user));
+        steam_args.push(format!("-name={user}"));
     }
     steam_args.extend(args.iter().cloned());
     steam_args

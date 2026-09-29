@@ -122,16 +122,21 @@ fn spawn_launch(
             Ok(()) => {
                 // Recorded on the profile the app keeps, not the task's copy,
                 // so the window sees the entry and the next save keeps it.
-                let state = app.state::<SharedState>();
-                let _ = mutate_profile(&state, |s| {
-                    s.ctl.profile_mut().add_history(
-                        server.name.clone(),
-                        server.endpoint.ip.clone(),
-                        server.game_port as u16,
-                    );
-                    Ok(())
-                })
-                .await;
+                // A port outside 1..=65535 cannot be joined again: not recorded.
+                if let Ok(port) = u16::try_from(server.game_port)
+                    && port != 0
+                {
+                    let state = app.state::<SharedState>();
+                    let _ = mutate_profile(&state, |s| {
+                        s.ctl.profile_mut().add_history(
+                            server.name.clone(),
+                            server.endpoint.ip.clone(),
+                            port,
+                        );
+                        Ok(())
+                    })
+                    .await;
+                }
                 let _ = LaunchDone(server.name).emit(&app);
             }
             Err(e) => {

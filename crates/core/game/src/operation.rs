@@ -117,7 +117,7 @@ pub fn spawn_mod_operation(
                             installed_ids.push(*mod_id);
                         }
                         Err(e) => {
-                            failed.push((*mod_id, format!("{}", e)));
+                            failed.push((*mod_id, format!("{e}")));
                         }
                     }
                 }
@@ -234,7 +234,7 @@ pub fn spawn_mod_operation(
                             installed_new.push(*mod_id);
                         }
                         Err(e) => {
-                            failed.push((*mod_id, format!("{}", e)));
+                            failed.push((*mod_id, format!("{e}")));
                         }
                     }
                 }

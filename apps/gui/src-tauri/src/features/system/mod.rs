@@ -20,7 +20,7 @@ pub struct SystemSpecsDto {
 pub(crate) async fn get_system_specs() -> Result<SystemSpecsDto, String> {
     // Logical cores: cheap and reliable via std, no sysinfo refresh needed.
     let logical_cores = std::thread::available_parallelism()
-        .map(|n| n.get())
+        .map(std::num::NonZero::get)
         .unwrap_or(1) as u32;
 
     // Physical cores is a static query; memory needs a (fast) memory refresh.

@@ -88,7 +88,7 @@ fn library_with_dayz(steamapps: &std::path::Path) -> Option<PathBuf> {
 fn steamapps_has_dayz(steamapps: &std::path::Path) -> bool {
     steamapps.join("common").join("DayZ").is_dir()
         || steamapps
-            .join(format!("appmanifest_{}.acf", DAYZ_GAME_ID))
+            .join(format!("appmanifest_{DAYZ_GAME_ID}.acf"))
             .is_file()
 }
 

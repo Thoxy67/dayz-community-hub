@@ -82,7 +82,7 @@ impl Server {
 
     /// The query address, "ip:port".
     pub fn query_addr(&self) -> String {
-        format!("{}:{}", self.endpoint.ip, self.endpoint.port as u16)
+        format!("{}:{}", self.endpoint.ip, self.endpoint.port)
     }
 }
 

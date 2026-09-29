@@ -112,7 +112,7 @@ fn is_newer(candidate: &str, current: &str) -> bool {
             Some((c, _)) => (c, true),
             None => (v, false),
         };
-        let mut it = core.split('.').map(|p| p.parse::<u64>());
+        let mut it = core.split('.').map(str::parse::<u64>);
         let parts = [
             it.next()?.ok()?,
             it.next().unwrap_or(Ok(0)).ok()?,

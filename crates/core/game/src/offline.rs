@@ -77,10 +77,7 @@ impl OfflineMode {
             tag_name: String,
         }
 
-        let url = format!(
-            "https://api.github.com/repos/{}/releases/latest",
-            COMMUNITY_OFFLINE_REPO
-        );
+        let url = format!("https://api.github.com/repos/{COMMUNITY_OFFLINE_REPO}/releases/latest");
 
         let resp = self
             .client
@@ -103,7 +100,7 @@ impl OfflineMode {
             }
         }
         let release: Release = resp.json::<Release>().await.map_err(|e| {
-            dz_common::Error::Other(format!("Failed to parse GitHub release info: {}", e))
+            dz_common::Error::Other(format!("Failed to parse GitHub release info: {e}"))
         })?;
 
         Ok(release.tag_name)
@@ -126,15 +123,9 @@ impl OfflineMode {
         // the redirect automatically, but we also need to ensure the response
         // is actually a gzip stream before handing it to flate2.
         let tarball_url = if tag.is_empty() {
-            format!(
-                "https://api.github.com/repos/{}/tarball",
-                COMMUNITY_OFFLINE_REPO
-            )
+            format!("https://api.github.com/repos/{COMMUNITY_OFFLINE_REPO}/tarball")
         } else {
-            format!(
-                "https://api.github.com/repos/{}/tarball/{}",
-                COMMUNITY_OFFLINE_REPO, tag
-            )
+            format!("https://api.github.com/repos/{COMMUNITY_OFFLINE_REPO}/tarball/{tag}")
         };
 
         let response = self
@@ -148,8 +139,7 @@ impl OfflineMode {
         let status = response.status();
         if !status.is_success() {
             return Err(dz_common::Error::Other(format!(
-                "GitHub returned HTTP {} for tarball download",
-                status
+                "GitHub returned HTTP {status} for tarball download"
             )));
         }
 
@@ -225,8 +215,7 @@ impl OfflineMode {
                 if entry.header().entry_type().is_dir() {
                     fs::create_dir_all(&full_path).map_err(|e| {
                         dz_common::Error::Other(format!(
-                            "Failed to create directory {:?}: {}",
-                            full_path, e
+                            "Failed to create directory {full_path:?}: {e}"
                         ))
                     })?;
                 } else {
@@ -234,17 +223,16 @@ impl OfflineMode {
                     if let Some(parent) = full_path.parent() {
                         fs::create_dir_all(parent).map_err(|e| {
                             dz_common::Error::Other(format!(
-                                "Failed to create parent dir {:?}: {}",
-                                parent, e
+                                "Failed to create parent dir {parent:?}: {e}"
                             ))
                         })?;
                     }
                     // Write directly from the archive stream — no intermediate buffer.
                     let mut out = std::fs::File::create(&full_path).map_err(|e| {
-                        dz_common::Error::Other(format!("Failed to create {:?}: {}", full_path, e))
+                        dz_common::Error::Other(format!("Failed to create {full_path:?}: {e}"))
                     })?;
                     std::io::copy(&mut entry, &mut out).map_err(|e| {
-                        dz_common::Error::Other(format!("Failed to write {:?}: {}", full_path, e))
+                        dz_common::Error::Other(format!("Failed to write {full_path:?}: {e}"))
                     })?;
                 }
             }
@@ -290,7 +278,7 @@ impl OfflineMode {
                     .unwrap_or_default();
                 if name.starts_with("DayZCommunityOfflineMode.") {
                     fs::remove_dir_all(&path).map_err(|e| {
-                        dz_common::Error::Other(format!("Failed to remove {:?}: {}", path, e))
+                        dz_common::Error::Other(format!("Failed to remove {path:?}: {e}"))
                     })?;
                     removed += 1;
                 }
@@ -315,18 +303,16 @@ impl OfflineMode {
         let mission_path = self.mission_path(mission)?;
         if !mission_path.exists() {
             return Err(dz_common::Error::Other(format!(
-                "Mission not found: {}",
-                mission
+                "Mission not found: {mission}"
             )));
         }
         if !mission_path.is_dir() {
             return Err(dz_common::Error::Other(format!(
-                "Not a directory: {}",
-                mission
+                "Not a directory: {mission}"
             )));
         }
         std::fs::remove_dir_all(&mission_path).map_err(|e| {
-            dz_common::Error::Other(format!("Failed to remove {:?}: {}", mission_path, e))
+            dz_common::Error::Other(format!("Failed to remove {mission_path:?}: {e}"))
         })?;
         Ok(())
     }
@@ -354,8 +340,7 @@ impl OfflineMode {
                     if storage.exists() {
                         fs::remove_dir_all(&storage).map_err(|e| {
                             dz_common::Error::Other(format!(
-                                "Failed to remove saves at {:?}: {}",
-                                storage, e
+                                "Failed to remove saves at {storage:?}: {e}"
                             ))
                         })?;
                         removed += 1;
@@ -375,8 +360,7 @@ impl OfflineMode {
 
         if !config_file.exists() {
             return Err(dz_common::Error::Other(format!(
-                "Mission config not found: {:?}",
-                config_file
+                "Mission config not found: {config_file:?}"
             )));
         }
 
@@ -419,10 +403,10 @@ impl OfflineMode {
         if !mod_ids.is_empty() {
             let mods_str = mod_ids
                 .iter()
-                .map(|id| format!("@{}", id))
+                .map(|id| format!("@{id}"))
                 .collect::<Vec<_>>()
                 .join(";");
-            args.push(format!("-mod={}", mods_str));
+            args.push(format!("-mod={mods_str}"));
         }
 
         args

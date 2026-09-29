@@ -67,7 +67,7 @@ pub(crate) async fn fetch_steam_avatar(
             let bytes = img_resp.bytes().await.http_err("Steam avatar")?;
             use base64::Engine;
             let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-            Some(format!("data:{};base64,{}", content_type, b64))
+            Some(format!("data:{content_type};base64,{b64}"))
         }
     };
 

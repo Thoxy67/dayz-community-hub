@@ -111,14 +111,16 @@ pub(crate) fn store() -> &'static LiveStore {
 
 impl LiveStore {
     pub(crate) fn read(&self) -> RwLockReadGuard<'_, LiveMap> {
-        self.map.read().unwrap_or_else(|e| e.into_inner())
+        self.map
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Record a query's result for `ip:port`.
     pub(crate) fn record(&self, ip: &str, port: i64, live: Live) {
         self.map
             .write()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .put(ip, port, live);
         self.dirty.store(true, Ordering::Release);
     }
@@ -133,7 +135,10 @@ impl LiveStore {
         max_players: u8,
         bots: u8,
     ) {
-        let mut map = self.map.write().unwrap_or_else(|e| e.into_inner());
+        let mut map = self
+            .map
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         match map.get_mut(ip, port) {
             Some(l) => {
                 l.players = Some(players);

@@ -52,7 +52,7 @@ impl SteamCmd {
                 pixel_width: 0,
                 pixel_height: 0,
             })
-            .map_err(|e| format!("Failed to open PTY: {}", e))?;
+            .map_err(|e| format!("Failed to open PTY: {e}"))?;
 
         let mut cmd = CommandBuilder::new(&self.steamcmd_path);
         for arg in args {
@@ -62,18 +62,18 @@ impl SteamCmd {
         let mut child = pty_pair
             .slave
             .spawn_command(cmd)
-            .map_err(|e| format!("Failed to start steamcmd: {}", e))?;
+            .map_err(|e| format!("Failed to start steamcmd: {e}"))?;
         drop(pty_pair.slave);
 
         let mut reader = pty_pair
             .master
             .try_clone_reader()
-            .map_err(|e| format!("Failed to clone PTY reader: {}", e))?;
+            .map_err(|e| format!("Failed to clone PTY reader: {e}"))?;
 
         let writer = pty_pair
             .master
             .take_writer()
-            .map_err(|e| format!("Failed to take PTY writer: {}", e))?;
+            .map_err(|e| format!("Failed to take PTY writer: {e}"))?;
 
         // Wrap the master in an Arc<Mutex<Option<...>>> so the watcher thread
         // can drop it (closing the ConPTY handle) once the child exits, which
@@ -89,7 +89,12 @@ impl SteamCmd {
             let _ = child.wait();
             // Dropping the master closes the ConPTY output pipe, which makes
             // the reader return an error and exit its loop.
-            drop(master_for_watcher.lock().unwrap().take());
+            drop(
+                master_for_watcher
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .take(),
+            );
             let _ = exit_tx.send(());
         });
 

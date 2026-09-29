@@ -34,7 +34,9 @@ fn main() {
         .expect("steamcmd_path")
         .to_string();
     let login = v["steam_login"].as_str().expect("steam_login").to_string();
-    let password = v["steam_password"].as_str().map(|s| s.to_string());
+    let password = v["steam_password"]
+        .as_str()
+        .map(std::string::ToString::to_string);
 
     eprintln!("steamcmd : {steamcmd_path}");
     eprintln!("login    : {login}");

@@ -18,9 +18,9 @@ use crate::features::battlemetrics::BattleMetricsDto;
 pub(crate) type SharedState = Arc<RwLock<AppState>>;
 
 /// Max entries in the A2S cache.
-const A2S_CACHE_SIZE: usize = 200;
+const A2S_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(200).unwrap();
 /// Max entries in the BattleMetrics cache.
-const BM_CACHE_SIZE: usize = 50;
+const BM_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(50).unwrap();
 
 pub struct AppState {
     pub ctl: DayzCtl,
@@ -56,8 +56,8 @@ impl AppState {
             index: ServerIndex::default(),
             cached_avatar: None,
             mod_update_cache: FxHashMap::default(),
-            a2s_cache: LruCache::new(NonZeroUsize::new(A2S_CACHE_SIZE).unwrap()),
-            bm_cache: LruCache::new(NonZeroUsize::new(BM_CACHE_SIZE).unwrap()),
+            a2s_cache: LruCache::new(A2S_CACHE_SIZE),
+            bm_cache: LruCache::new(BM_CACHE_SIZE),
             pty_input_tx: None,
             mod_op_abort: None,
             profile_writer: Arc::default(),

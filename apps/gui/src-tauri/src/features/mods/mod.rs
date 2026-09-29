@@ -95,7 +95,7 @@ pub(crate) async fn check_mod_updates(
     // independent and the shared client pools connections, so for users with
     // several hundred mods this turns N serial round-trips into a few parallel
     // waves instead.
-    let chunks: Vec<Vec<u64>> = mod_ids.chunks(100).map(|c| c.to_vec()).collect();
+    let chunks: Vec<Vec<u64>> = mod_ids.chunks(100).map(<[u64]>::to_vec).collect();
     let chunk_results: Vec<Result<Vec<(u64, i64)>, String>> = futures_util::stream::iter(chunks)
         .map(|chunk| {
             let api_key = api_key.clone();
@@ -110,7 +110,7 @@ pub(crate) async fn check_mod_updates(
                 params.push(("includesummary".to_string(), "0".to_string()));
                 params.push(("includevotes".to_string(), "0".to_string()));
                 for (i, id) in chunk.iter().enumerate() {
-                    params.push((format!("publishedfileids[{}]", i), id.to_string()));
+                    params.push((format!("publishedfileids[{i}]"), id.to_string()));
                 }
 
                 let resp: serde_json::Value = send_ok(
