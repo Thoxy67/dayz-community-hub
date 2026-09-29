@@ -246,6 +246,29 @@ export const events = {
 };
 
 /* Types */
+/**  What DayZ states about itself in A2S_INFO's keywords. */
+export type A2sDayzDto = {
+	battleye: boolean,
+	/**  Third-person view is off. */
+	first_person_only: boolean,
+	/**  A shard of Bohemia's public hive: not a community server, no private hive. */
+	official: boolean,
+	/**  The server keeps its own characters. */
+	private_hive: boolean,
+	whitelisted: boolean,
+	/**  The server needs a DLC map. */
+	dlc: boolean,
+	shard: string | null,
+	/**  Players waiting in the login queue. */
+	login_queue: number | null,
+	/**  How many times faster than real time the day passes. */
+	time_accel: number | null,
+	/**  The same, at night. */
+	night_time_accel: number | null,
+	/**  The in-game clock, `HH:MM`. */
+	game_time: string | null,
+};
+
 export type A2sDetailsDto = {
 	server_name: string,
 	game: string,
@@ -262,8 +285,15 @@ export type A2sDetailsDto = {
 	players_list: A2sPlayerDto[],
 	/**  Mods from the server list; empty for a server that is not listed. */
 	mods: ModDto[],
-	/**  Mod names from the A2S rules (fallback for unlisted servers, no workshop IDs). */
+	/**  Mod names from the A2S rules, in load order. */
 	mods_from_a2s: string[],
+	/**
+	 *  The mods the server announces over A2S, with their Workshop ids: what
+	 *  an unlisted server needs to be joined.
+	 */
+	mods_a2s: ModDto[],
+	/**  The settings from A2S_INFO's keywords; `None` when it sent none. */
+	dayz: A2sDayzDto | null,
 	/**  Server rules/cvars other than the mods. */
 	rules: A2sRuleDto[],
 	/**  The query port that was used. */

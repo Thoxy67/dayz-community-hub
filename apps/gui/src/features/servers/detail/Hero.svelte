@@ -35,6 +35,7 @@
     }
   });
   const version = $derived(m.listed?.version || m.a2s?.version || "");
+  const queue = $derived(m.a2s?.dayz?.login_queue ?? 0);
 </script>
 
 <header class="relative shrink-0 overflow-hidden border-b border-border">
@@ -86,6 +87,8 @@
       {#if m.listed}
         <ServerFlags password={m.listed.password} firstPerson={m.listed.first_person_only} battleye={m.listed.battl_eye} />
         <OsIcon environment={m.listed.environment} class="size-3" />
+      {:else if m.a2s?.dayz}
+        <ServerFlags firstPerson={m.a2s.dayz.first_person_only} battleye={m.a2s.dayz.battleye} />
       {/if}
       {#if country}
         <span class="inline-flex items-center gap-1"><Flag code={country.code} class="size-3.5" />{country.name}</span>
@@ -103,10 +106,13 @@
       <div class="flex min-w-0 flex-col gap-1">
         <span class="label-stencil text-fg-faint">{$c.players.value}</span>
         <PlayersButton ip={m.ip} queryPort={m.queryPort} />
+        {#if queue > 0}
+          <span class="num text-3xs text-warn">{$c.loginQueue.value} · {$c.queueWaiting({ count: queue }).value}</span>
+        {/if}
       </div>
       <div class="flex flex-col gap-1">
         <span class="label-stencil text-fg-faint">{$c.time.value}</span>
-        <TimeOfDay time={m.listed?.time} />
+        <TimeOfDay time={m.a2s?.dayz?.game_time ?? m.listed?.time} />
       </div>
       <div class="flex flex-col gap-1">
         <span class="label-stencil text-fg-faint">{$c.tabMods.value}</span>

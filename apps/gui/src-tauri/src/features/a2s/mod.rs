@@ -1,5 +1,5 @@
-//! A server's live details over A2S: name, map, players online, rules and
-//! the mods it announces.
+//! A server's live details over A2S: name, map, players online, rules, the
+//! settings DayZ states in its keywords and the mods it announces.
 
 use serde::Serialize;
 use std::sync::Arc;
@@ -12,6 +12,8 @@ use crate::state::SharedState;
 
 /// How long a server's details are served from the cache.
 const A2S_CACHE_TTL: Duration = Duration::from_secs(30);
+/// How long one A2S_RULES attempt waits (it is tried twice).
+const RULES_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Serialize, Clone, Debug, specta::Type)]
 pub struct A2sPlayerDto {
@@ -24,6 +26,48 @@ pub struct A2sPlayerDto {
 pub struct A2sRuleDto {
     pub name: String,
     pub value: String,
+}
+
+/// What DayZ states about itself in A2S_INFO's keywords.
+#[derive(Serialize, Clone, Debug, specta::Type)]
+pub struct A2sDayzDto {
+    pub battleye: bool,
+    /// Third-person view is off.
+    pub first_person_only: bool,
+    /// A shard of Bohemia's public hive: not a community server, no private hive.
+    pub official: bool,
+    /// The server keeps its own characters.
+    pub private_hive: bool,
+    pub whitelisted: bool,
+    /// The server needs a DLC map.
+    pub dlc: bool,
+    pub shard: Option<String>,
+    /// Players waiting in the login queue.
+    pub login_queue: Option<u32>,
+    /// How many times faster than real time the day passes.
+    pub time_accel: Option<f32>,
+    /// The same, at night.
+    pub night_time_accel: Option<f32>,
+    /// The in-game clock, `HH:MM`.
+    pub game_time: Option<String>,
+}
+
+impl From<dz_a2s::DayzInfo> for A2sDayzDto {
+    fn from(i: dz_a2s::DayzInfo) -> Self {
+        Self {
+            battleye: i.battleye,
+            first_person_only: i.first_person_only,
+            official: i.official(),
+            private_hive: i.private_hive,
+            whitelisted: i.whitelisted,
+            dlc: i.dlc,
+            shard: i.shard,
+            login_queue: i.login_queue,
+            time_accel: i.time_accel,
+            night_time_accel: i.night_time_accel,
+            game_time: i.game_time,
+        }
+    }
 }
 
 #[derive(Serialize, Clone, Debug, specta::Type)]
@@ -41,8 +85,13 @@ pub struct A2sDetailsDto {
     pub players_list: Vec<A2sPlayerDto>,
     /// Mods from the server list; empty for a server that is not listed.
     pub mods: Vec<ModDto>,
-    /// Mod names from the A2S rules (fallback for unlisted servers, no workshop IDs).
+    /// Mod names from the A2S rules, in load order.
     pub mods_from_a2s: Vec<String>,
+    /// The mods the server announces over A2S, with their Workshop ids: what
+    /// an unlisted server needs to be joined.
+    pub mods_a2s: Vec<ModDto>,
+    /// The settings from A2S_INFO's keywords; `None` when it sent none.
+    pub dayz: Option<A2sDayzDto>,
     /// Server rules/cvars other than the mods.
     pub rules: Vec<A2sRuleDto>,
     /// The query port that was used.
@@ -80,7 +129,7 @@ pub(crate) async fn query_a2s(
     let (info, players, rules) = tokio::join!(
         dz_a2s::query_info(&addr),
         dz_a2s::query_players(&addr),
-        dz_a2s::query_rules(&addr),
+        dz_a2s::query_dayz_rules(&addr, RULES_TIMEOUT),
     );
     let info = info.cmd_err()?;
 
@@ -97,21 +146,32 @@ pub(crate) async fn query_a2s(
         })
         .unwrap_or_default();
 
-    let (mods_from_a2s, rules) = match rules {
-        Ok(rules) => {
-            let mods = dz_a2s::extract_mods_from_rules(&rules);
-            let rules = rules
-                .into_iter()
-                .filter(|r| r.name != "mod" && r.name != "creator_dlc" && !r.name.is_empty())
-                .map(|r| A2sRuleDto {
-                    name: r.name,
-                    value: r.value,
+    let (mods_from_a2s, mods_a2s, rules) = match rules {
+        Ok(r) => (
+            r.mods.iter().map(|m| m.name.clone()).collect(),
+            r.mods
+                .iter()
+                .filter_map(|m| {
+                    Some(ModDto {
+                        name: m.name.clone(),
+                        steam_workshop_id: i64::try_from(m.id?).ok()?,
+                    })
                 })
-                .collect();
-            (mods, rules)
-        }
-        Err(_) => (vec![], vec![]),
+                .collect(),
+            r.rules
+                .into_iter()
+                .filter(|(name, _)| !name.is_empty())
+                .map(|(name, value)| A2sRuleDto { name, value })
+                .collect(),
+        ),
+        Err(_) => (vec![], vec![], vec![]),
     };
+    let dayz = info
+        .extended_server_info
+        .keywords
+        .as_deref()
+        .filter(|k| !k.is_empty())
+        .map(|k| dz_a2s::DayzInfo::parse(k).into());
 
     let game_port = game_port.or_else(|| info.extended_server_info.port.map(i64::from));
     let players = dz_a2s::human_player_count(&info);
@@ -127,6 +187,8 @@ pub(crate) async fn query_a2s(
         players_list,
         mods,
         mods_from_a2s,
+        mods_a2s,
+        dayz,
         rules,
         query_port,
         game_port,

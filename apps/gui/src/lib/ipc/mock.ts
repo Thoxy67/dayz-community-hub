@@ -270,11 +270,32 @@ export function installMock() {
           version: s?.version ?? "",
           players_list: Array.from({ length: Math.min(12, s?.players ?? 0) }, (_, i) => ({ name: `Survivor ${i + 1}`, score: 0, duration: 300 + i * 611 })),
           mods: [],
+          // What DayZ puts in A2S: the plain rules, the mods from the binary
+          // block and the keywords' settings. An unlisted server has only these.
+          mods_from_a2s: s ? [] : ["Community Framework", "VPPAdminTools", "Dabs Framework"],
+          mods_a2s: s
+            ? []
+            : [
+                { name: "Community Framework", steam_workshop_id: 1559212036 },
+                { name: "VPPAdminTools", steam_workshop_id: 1828439124 },
+                { name: "Dabs Framework", steam_workshop_id: 2545327648 },
+              ],
+          dayz: {
+            battleye: true,
+            first_person_only: s?.first_person_only ?? false,
+            official: false,
+            private_hive: true,
+            whitelisted: false,
+            dlc: s?.map === "enoch" || s?.map === "sakhal",
+            shard: "000",
+            login_queue: (s?.players ?? 0) >= (s?.max_players ?? 60) ? 7 : 0,
+            time_accel: 8,
+            night_time_accel: 2,
+            game_time: "14:09",
+          },
           rules: [
-            ["allowedBuild", "0"], ["dedicated", "1"], ["island", s?.map ?? "chernarusplus"], ["language", "65545"],
-            ["platform", "win"], ["requiredBuild", "0"], ["requiredVersion", "128"], ["timeLeft", "15"],
-            ["disable3rdPerson", s?.first_person_only ? "1" : "0"], ["serverTimeAcceleration", "4"],
-            ["serverNightTimeAcceleration", "12"], ["lootHistory", "1"], ["battleye", "1"],
+            ["allowedBuild", "0"], ["clientPort", "0"], ["dedicated", "1"], ["island", s?.map ?? "chernarusplus"],
+            ["language", "65545"], ["platform", "win"], ["requiredBuild", "0"], ["requiredVersion", "129"], ["timeLeft", "15"],
           ].map(([name, value]) => ({ name, value })),
           query_port: s?.query_port ?? 27016,
           game_port: s?.game_port ?? 2302,

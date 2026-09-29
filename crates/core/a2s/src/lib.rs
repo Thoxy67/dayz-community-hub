@@ -1,7 +1,8 @@
 //! A2S (Source query protocol) against DayZ servers: ping, info, players
 //! and rules.
 //!
-//! Every function takes the query address as `"ip:port"`.
+//! Every function takes the query address as `"ip:port"`. A2S_RULES is read
+//! by [`rules`] rather than `async-a2s`, which drops the mods' Workshop ids.
 
 pub mod keywords;
 pub mod rules;
@@ -9,7 +10,7 @@ pub mod rules;
 pub use keywords::DayzInfo;
 pub use rules::{A2sMod, DayzRules, query_dayz_rules};
 
-use async_a2s::{A2SClient, info::Info, players::Player, rules::Rule};
+use async_a2s::{A2SClient, info::Info, players::Player};
 use dz_common::{Error, Result};
 
 use std::time::Duration;
@@ -101,26 +102,6 @@ pub async fn query_players(addr: &str) -> Result<Vec<Player>> {
         .await
         .map_err(|e| Error::A2sQuery(format!("A2S players query failed: {e}")))?;
     Ok(players)
-}
-
-/// A2S_RULES (cvars; DayZ also lists its mods here).
-pub async fn query_rules(addr: &str) -> Result<Vec<Rule>> {
-    let client = new_client().await?;
-    let (rules, _latency) = client
-        .rules(addr, None)
-        .await
-        .map_err(|e| Error::A2sQuery(format!("A2S rules query failed: {e}")))?;
-    Ok(rules)
-}
-
-/// Mod names from an A2S rules response: DayZ servers return Protocol3
-/// decoded entries named "mod" whose value is the mod's name.
-pub fn extract_mods_from_rules(rules: &[Rule]) -> Vec<String> {
-    rules
-        .iter()
-        .filter(|r| r.name == "mod")
-        .map(|r| r.value.clone())
-        .collect()
 }
 
 #[cfg(test)]

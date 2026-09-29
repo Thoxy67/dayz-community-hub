@@ -59,6 +59,38 @@
     } else if (m.a2s?.version) {
       f.push({ label: $c.version.value, value: m.a2s.version, tone: "text-fg-muted" });
     }
+    // What the server states about itself over A2S; the list already says
+    // BattlEye and first person for a listed one.
+    const d = m.a2s?.dayz;
+    if (d) {
+      if (!s) {
+        f.push(
+          { label: $c.battleye.value, value: yesNo(d.battleye), tone: d.battleye ? "text-ok" : "text-fg-muted" },
+          { label: $c.firstPerson.value, value: yesNo(d.first_person_only), tone: d.first_person_only ? "text-warn" : "text-fg-muted" },
+        );
+      }
+      f.push({
+        label: $c.hive.value,
+        value: d.official ? $c.hiveOfficial.value : d.private_hive ? $c.hivePrivate.value : $c.hivePublic.value,
+        tone: d.official ? "text-accent" : "text-fg-muted",
+        title: $c.hiveHint.value,
+      });
+      if (d.login_queue != null) {
+        f.push({
+          label: $c.loginQueue.value,
+          value: d.login_queue > 0 ? $c.queueWaiting({ count: d.login_queue }).value : $c.queueEmpty.value,
+          tone: d.login_queue > 0 ? "text-warn" : "text-fg-muted",
+        });
+      }
+      if (d.time_accel != null) {
+        const x = (v: number) => num(Math.round(v * 10) / 10);
+        f.push({
+          label: $c.dmTimeSpeed.value,
+          value: $c.dmTimeSpeedValue({ day: x(d.time_accel), night: x(d.night_time_accel ?? d.time_accel) }).value,
+        });
+      }
+      if (d.whitelisted) f.push({ label: $c.whitelist.value, value: $c.yes.value, tone: "text-warn" });
+    }
     if (m.count) {
       f.push(
         { label: $c.maxPlayers.value, value: num(m.count.max) },

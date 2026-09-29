@@ -91,7 +91,8 @@ class DirectForm {
   serverMods = $derived.by((): ModDto[] => {
     const list = this.details?.mods.length ? this.details.mods : (this.a2s?.mods ?? []);
     const ids = new Set(list.map((m) => m.steam_workshop_id));
-    return [...list, ...(this.a2s?.mods ?? []).filter((m) => !ids.has(m.steam_workshop_id))];
+    const more = [...(this.a2s?.mods ?? []), ...(this.a2s?.mods_a2s ?? [])];
+    return [...list, ...more.filter((m) => !ids.has(m.steam_workshop_id) && ids.add(m.steam_workshop_id))];
   });
 
   modStatus(id: number): ModStatus {
