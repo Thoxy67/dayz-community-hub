@@ -1,11 +1,11 @@
 /** DayZ Community Offline Mode: its missions, installing it, playing one. */
-import { call } from "./core";
+import { commands, run } from "./core";
 
-export const getOfflineMissions = () => call<string[]>("get_offline_missions");
-export const updateOfflineMode = () => call<void>("update_offline_mode");
-export const removeOfflineMode = () => call<number>("remove_offline_mode");
-export const removeMission = (mission: string) => call<void>("remove_mission", { mission });
-export const clearOfflineSaves = () => call<number>("clear_offline_saves");
-export const launchOfflineMission = (mission: string) => call<void>("launch_offline_mission", { mission });
-export const openMissionDir = (mission: string) => call<void>("open_mission_dir", { mission });
-export const openMissionsDir = () => call<void>("open_missions_dir");
+export const getOfflineMissions = () => run(commands.getOfflineMissions());
+export const updateOfflineMode = () => run(commands.updateOfflineMode());
+export const removeOfflineMode = () => run(commands.removeOfflineMode());
+export const removeMission = (mission: string) => run(commands.removeMission(mission));
+export const clearOfflineSaves = () => run(commands.clearOfflineSaves());
+export const launchOfflineMission = (mission: string) => run(commands.launchOfflineMission(mission));
+export const openMissionDir = (mission: string) => run(commands.openMissionDir(mission));
+export const openMissionsDir = () => run(commands.openMissionsDir());

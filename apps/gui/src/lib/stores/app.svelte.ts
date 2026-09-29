@@ -43,7 +43,11 @@ class App {
    * list loads behind it; a cached list shows immediately and is refreshed
    * in the background.
    */
+  #started = false;
+
   async init() {
+    if (this.#started) return;
+    this.#started = true;
     const [{ servers }, { profile }, { mods }, { connect }, { updater }] = await Promise.all([
       import("./servers.svelte"),
       import("./profile.svelte"),
@@ -58,14 +62,23 @@ class App {
       }
       const result = await initialize();
       this.initialized = true;
-      await Promise.all([profile.load(), servers.loadStats(), servers.loadSteamPlayers(), mods.load()]);
-      void mods.checkUpdates();
+      // The list first: nothing below waits on the network or the disk
+      // before it. The profile is what the rest needs (the rejoin card, the
+      // command line's "reconnect"), so it is the one thing awaited.
+      const list = servers.load().then(() => {
+        void servers.startScan();
+        if (result.from_cache) void servers.refresh(true);
+      });
+      void servers.loadStats();
+      void servers.loadSteamPlayers();
       void updater.check();
+      const prof = profile.load();
+      // The Workshop check needs the Steam API key from the profile.
+      void Promise.all([mods.load(), prof]).then(() => mods.checkUpdates());
+      await prof;
       void profile.loadAvatar();
       connect.flushCli();
-      await servers.load();
-      void servers.startScan();
-      if (result.from_cache) void servers.refresh(true);
+      await list;
     } catch (e) {
       this.initError = errorText(e);
     }

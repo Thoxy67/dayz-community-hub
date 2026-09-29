@@ -1,22 +1,21 @@
 /** What the desktop does for the app: links, files, the clipboard, where the player is. */
-import { call } from "./core";
-
+import { commands, run } from "./core";
 import type { FileFilter, GeoLocation } from "./types";
 
 export type { FileFilter, GeoLocation };
 
 /** Open a web page in the system browser. */
-export const openUrl = (url: string) => call<void>("open_url", { url });
+export const openUrl = (url: string) => run(commands.openUrl(url));
 
 /** A file (or folder, with `directory`) chosen by the player, or null if they cancelled. */
 export const pickFile = (title: string, opts: { directory?: boolean; filters?: FileFilter[] } = {}) =>
-  call<string | null>("pick_file", { title, directory: opts.directory ?? false, filters: opts.filters ?? [] });
+  run(commands.pickFile(title, opts.directory ?? false, opts.filters ?? []));
 
 /** Where to write a file, or null if they cancelled. */
 export const saveFile = (title: string, defaultName: string, filters: FileFilter[] = []) =>
-  call<string | null>("save_file", { title, defaultName, filters });
+  run(commands.saveFile(title, defaultName, filters));
 
-export const copyText = (text: string) => call<void>("copy_text", { text });
+export const copyText = (text: string) => run(commands.copyText(text));
 
 /** The player's approximate position from their IP address. */
-export const geolocateIp = () => call<GeoLocation>("geolocate_ip");
+export const geolocateIp = () => run(commands.geolocateIp());

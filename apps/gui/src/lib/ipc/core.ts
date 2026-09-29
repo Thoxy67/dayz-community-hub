@@ -1,17 +1,20 @@
 /**
- * The one door to the Rust side. Every command goes through `call`, so a
- * failure is always an `Error` whose message is the backend's own words, and
- * a missing Tauri runtime (the page opened in a browser) says so once.
+ * The one door to the Rust side. Every command is the generated
+ * `commands.*` from `bindings.ts` (so a wrong name or argument is a type
+ * error), passed through `run`, so a failure is always an `Error` whose
+ * message is the backend's own words.
  */
-import { invoke, Channel } from "@tauri-apps/api/core";
+import { Channel } from "@tauri-apps/api/core";
 
 export { Channel };
+export { commands, events } from "./bindings";
 
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
-export async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+/** Await a command; whatever it rejects with becomes an `Error`. */
+export async function run<T>(p: Promise<T>): Promise<T> {
   try {
-    return await invoke<T>(cmd, args);
+    return await p;
   } catch (e) {
     throw e instanceof Error ? e : new Error(typeof e === "string" ? e : JSON.stringify(e));
   }

@@ -1,5 +1,4 @@
-/** dayz.com articles. */
-import { call } from "./core";
-import type { ArticleDto } from "./types";
+/** dayz.com articles, and the pictures in them. */
+import { commands, run } from "./core";
 
-export const fetchNews = () => call<ArticleDto[]>("fetch_news");
+export const fetchNews = () => run(commands.fetchNews());

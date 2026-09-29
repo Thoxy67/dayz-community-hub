@@ -11,6 +11,8 @@ import type { ModDto } from "$lib/ipc/types";
 type Entry = { mods: ModDto[] | null; loading: boolean; error: string | null };
 
 const cache = new SvelteMap<string, Entry>();
+/** Servers remembered; past this the oldest are forgotten and fetched again if shown. */
+const MAX = 150;
 const flights = new Map<string, Promise<void>>();
 
 export function serverMods(ip: string, queryPort: number): Entry {
@@ -23,6 +25,10 @@ export function loadServerMods(ip: string, queryPort: number, force = false): Pr
   const inflight = flights.get(key);
   if (inflight) return inflight;
   cache.set(key, { mods: cache.get(key)?.mods ?? null, loading: true, error: null });
+  if (cache.size > MAX) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined && !flights.has(oldest)) cache.delete(oldest);
+  }
   const p = getServerDetails(ip, queryPort)
     .then((full) => void cache.set(key, { mods: full.mods, loading: false, error: null }))
     .catch((e) => void cache.set(key, { mods: null, loading: false, error: errorText(e) }))

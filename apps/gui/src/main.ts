@@ -37,5 +37,10 @@ if (import.meta.env.DEV || import.meta.env.VITE_MOCK === "1") {
   if (!("__TAURI_INTERNALS__" in window)) (await import("$lib/ipc/mock")).installMock();
 }
 
+// The chosen theme is on :root before anything is drawn, so a light theme
+// does not flash the dark defaults of tokens.css first.
+const { theme } = await import("$lib/theme/theme.svelte");
+theme.apply();
+
 const { default: App } = await import("./App.svelte");
 export default mount(App, { target: document.getElementById("app")! });

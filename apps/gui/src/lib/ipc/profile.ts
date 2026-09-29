@@ -1,28 +1,27 @@
 /** The player's profile: identity, Steam, favourites, history, launch options. */
-import { call } from "./core";
-import type { ProfileDto, ProfileSettingsInput } from "./types";
-
-export const getProfile = () => call<ProfileDto>("get_profile");
+import { commands, run } from "./core";
+import type { ProfileSettingsInput } from "./types";
 
 export type ProfileSettings = ProfileSettingsInput;
-export const saveProfileSettings = (settings: ProfileSettings) =>
-  call<void>("save_profile_settings", { settings });
+
+export const getProfile = () => run(commands.getProfile());
+export const saveProfileSettings = (settings: ProfileSettings) => run(commands.saveProfileSettings(settings));
 
 export const addFavorite = (name: string, ip: string, port: number, password: string | null) =>
-  call<void>("add_favorite", { name, ip, port, password });
-export const removeFavorite = (ip: string, port: number) => call<void>("remove_favorite", { ip, port });
-export const removeHistoryEntry = (ip: string, port: number) =>
-  call<void>("remove_history_entry", { ip, port });
-export const clearHistory = () => call<void>("clear_history");
-export const addExcludedIp = (ip: string) => call<void>("add_excluded_ip", { ip });
-export const removeExcludedIp = (ip: string) => call<void>("remove_excluded_ip", { ip });
+  run(commands.addFavorite(name, ip, port, password));
+export const removeFavorite = (ip: string, port: number) => run(commands.removeFavorite(ip, port));
+export const removeHistoryEntry = (ip: string, port: number) => run(commands.removeHistoryEntry(ip, port));
+export const clearHistory = () => run(commands.clearHistory());
+export const addExcludedIp = (ip: string) => run(commands.addExcludedIp(ip));
+export const removeExcludedIp = (ip: string) => run(commands.removeExcludedIp(ip));
 
-export const toggleLaunchOption = (key: string) => call<boolean>("toggle_launch_option", { key });
+export const toggleLaunchOption = (key: string) => run(commands.toggleLaunchOption(key));
 export const setLaunchOptionValue = (key: string, value: string | null) =>
-  call<void>("set_launch_option_value", { key, value });
+  run(commands.setLaunchOptionValue(key, value));
 
 export const exportProfile = (path: string, includeMods: boolean) =>
-  call<void>("export_profile", { path, includeMods });
-export const importProfile = (path: string) => call<void>("import_profile", { path });
-export const resetProfile = () => call<void>("reset_profile");
-export const restartApp = () => call<void>("restart_app");
+  run(commands.exportProfile(path, includeMods));
+/** Replace the profile with a file's; resolves to the profile now in place. */
+export const importProfile = (path: string) => run(commands.importProfile(path));
+export const resetProfile = () => run(commands.resetProfile());
+export const restartApp = () => run(commands.restartApp());

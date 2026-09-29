@@ -8,6 +8,7 @@ import { getServerDetails, queryA2s } from "$lib/ipc/servers";
 import { errorText } from "$lib/ipc/core";
 import { copyText, pickFile, saveFile } from "$lib/ipc/native";
 import { writeDzchFile } from "$lib/ipc/system";
+import { splitHostPort } from "$lib/address";
 import type { A2sDetailsDto, DzchConfig, ModDto, ServerFullDto } from "$lib/ipc/types";
 import { words } from "$lib/i18n";
 import { connect } from "$lib/stores/connect.svelte";
@@ -121,11 +122,10 @@ class DirectForm {
   // ── editing ─────────────────────────────────────────────────────────────
   /** "1.2.3.4:2402" typed or pasted into the address field: split the port off. */
   splitAddress() {
-    const raw = this.address.trim();
-    const i = raw.lastIndexOf(":");
-    if (i !== -1 && /^\d+$/.test(raw.slice(i + 1)) && raw.indexOf(":") === i) {
-      this.address = raw.slice(0, i);
-      this.port = raw.slice(i + 1);
+    const { host, port } = splitHostPort(this.address);
+    if (port !== null) {
+      this.address = host;
+      this.port = String(port);
     }
   }
 
@@ -141,6 +141,7 @@ class DirectForm {
   }
 
   #reset() {
+    this.detailsLoading = false;
     this.a2s = null;
     this.details = null;
     this.error = "";
@@ -160,14 +161,20 @@ class DirectForm {
   }
 
   // ── asking the server ───────────────────────────────────────────────────
+  #queryId = 0;
+
   async query() {
     this.splitAddress();
     if (!this.valid) return;
+    // Only the latest query writes its answer: typing a new address while
+    // one is out must not show the old server's details.
+    const id = ++this.#queryId;
     const ip = this.ip;
     const typed = this.portNum;
-    const listed = this.listed;
     this.#reset();
     this.querying = true;
+    const listed = this.listed ?? (await servers.resolve(ip, typed)) ?? null;
+    if (id !== this.#queryId) return;
 
     // The list's mod roster is fetched alongside the query, so it still shows
     // when the server does not answer.
@@ -180,6 +187,7 @@ class DirectForm {
     const qp = listed?.query_port ?? (parseInt(this.queryPort, 10) || typed);
     try {
       const a2s = await queryA2s(listed?.ip ?? ip, qp, listed?.game_port ?? null);
+      if (id !== this.#queryId) return;
       this.a2s = a2s;
       this.resolvedQueryPort = a2s.query_port;
       this.portKind = typed === a2s.query_port ? "query" : listed || a2s.game_port === typed ? "game" : "unknown";
@@ -193,12 +201,15 @@ class DirectForm {
       void servers.pingOne(listed?.ip ?? ip, a2s.query_port);
       this.queriedAt = Date.now();
     } catch (e) {
+      if (id !== this.#queryId) return;
       this.error = errorText(e);
     } finally {
-      this.querying = false;
+      if (id === this.#queryId) this.querying = false;
     }
 
-    this.details = await details;
+    const found = await details;
+    if (id !== this.#queryId) return;
+    this.details = found;
     this.detailsLoading = false;
     this.#syncServerArgs();
   }

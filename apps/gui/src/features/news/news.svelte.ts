@@ -6,8 +6,9 @@
  */
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { SvelteMap } from "svelte/reactivity";
-import { call, errorText } from "$lib/ipc/core";
+import { errorText } from "$lib/ipc/core";
 import { fetchNews } from "$lib/ipc/news";
+import { fetchImage, resolveCachedImages } from "$lib/ipc/system";
 import type { ArticleDto } from "$lib/ipc/types";
 
 const MAX_CONCURRENT = 6;
@@ -44,7 +45,7 @@ class News {
     const urls = this.articles.map((a) => a.image_url).filter((u): u is string => !!u);
     if (urls.length === 0) return;
     try {
-      const cached = await call<[string, string][]>("resolve_cached_images", { urls });
+      const cached = await resolveCachedImages(urls);
       for (const [url, path] of cached ?? []) if (path) this.images.set(url, convertFileSrc(path));
     } catch {
       // Fetched one by one below.
@@ -59,7 +60,7 @@ class News {
     let p = this.#flight.get(url);
     if (!p) {
       p = this.#slot()
-        .then(() => call<string>("fetch_image", { url }))
+        .then(() => fetchImage(url))
         .then((path) => {
           if (!path) throw new Error("no image");
           const src = convertFileSrc(path);

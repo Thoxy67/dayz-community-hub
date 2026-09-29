@@ -78,13 +78,23 @@ class Wizard {
     }
   }
 
+  #watching = false;
+
   async #watch() {
-    if (this.#unlisten) return;
-    this.#unlisten = await events.steamcmdDetected.listen((e) => this.#apply(e.payload)).catch(() => null);
+    // Set before the await: two detections in a row must not listen twice.
+    if (this.#watching) return;
+    this.#watching = true;
+    const off = await events.steamcmdDetected.listen((e) => this.#apply(e.payload)).catch(() => null);
+    if (!this.#watching) {
+      off?.();
+      return;
+    }
+    this.#unlisten = off;
     void watchSteamcmd().catch(() => {});
   }
 
   stopWatching() {
+    this.#watching = false;
     this.#unlisten?.();
     this.#unlisten = null;
   }

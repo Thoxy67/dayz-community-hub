@@ -4,9 +4,8 @@
  * done through `offline-mode-updated` / `offline-mode-error`), and playing,
  * removing or wiping one.
  */
-import { listen } from "@tauri-apps/api/event";
 import * as ipc from "$lib/ipc/offline";
-import { inTauri, errorText } from "$lib/ipc/core";
+import { events, inTauri, errorText } from "$lib/ipc/core";
 import { words } from "$lib/i18n";
 import { confirm } from "$lib/stores/dialogs.svelte";
 import { say } from "$lib/stores/say";
@@ -79,13 +78,13 @@ class Offline {
   listen() {
     if (this.#listening || !inTauri) return;
     this.#listening = true;
-    void listen("offline-mode-updated", () => {
+    void events.offlineModeUpdated.listen(() => {
       this.installing = false;
       this.#say(words("shell").statusOfflineUpdated, "ok");
       say.ok(words("shell").statusOfflineUpdated);
       void this.load(true);
     });
-    void listen<string>("offline-mode-error", (e) => {
+    void events.offlineModeError.listen((e) => {
       this.installing = false;
       this.#say(words("shell").statusUpdateFailed({ error: e.payload }), "err");
     });

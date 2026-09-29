@@ -6,11 +6,11 @@
  * data (pings, counts) re-asks for the blocks in view and swaps them in place,
  * so nothing flickers while a scan runs.
  */
+import { untrack } from "svelte";
 import { SvelteMap } from "svelte/reactivity";
 import { serversQuery, type ServerQuery, type ServerRow, type ServerStats } from "$lib/ipc/servers";
 import { servers } from "$lib/stores/servers.svelte";
-
-const BLOCK = 100;
+import { BLOCK, blocksFor, isFar } from "./blocks";
 
 class Feed {
   rows = new SvelteMap<number, ServerRow>();
@@ -45,13 +45,30 @@ class Feed {
   /** The rows on screen, `first` to `last` (exclusive): fetch what is missing or stale. */
   show(first: number, last: number) {
     this.#view = [first, last];
-    const from = Math.max(0, Math.floor(first / BLOCK) - 1);
-    const to = Math.floor(Math.max(first, last - 1) / BLOCK) + 1;
-    for (let b = from; b <= to; b++) {
-      if (b * BLOCK >= Math.max(this.total, BLOCK)) break;
+    for (const b of blocksFor(first, last, this.total)) {
       const at = this.#fetched.get(b);
       if (at === undefined || at < servers.generation) void this.#fetch(b);
     }
+    this.#evict();
+  }
+
+  /**
+   * Rows far from the view are let go, so a long scroll does not keep the
+   * whole list in memory; their blocks are asked for again if needed.
+   */
+  #evict() {
+    // Called from the view's effect: reading the map here must not make that
+    // effect depend on every row.
+    untrack(() => {
+      if (this.rows.size <= 12 * BLOCK) return;
+      const [first, last] = this.#view;
+      for (const i of this.rows.keys()) {
+        if (isFar(i, first, last)) {
+          this.rows.delete(i);
+          this.#fetched.delete(Math.floor(i / BLOCK));
+        }
+      }
+    });
   }
 
   /** The backend's data changed: re-ask for what is on screen. */

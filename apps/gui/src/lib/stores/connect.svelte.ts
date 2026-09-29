@@ -10,6 +10,7 @@ import { parseDzchUrl, readDzchFile } from "$lib/ipc/system";
 import type { CliArgs, ModDto } from "$lib/ipc/types";
 import type { ServerRow as ServerDto } from "$lib/ipc/servers";
 import { words } from "$lib/i18n";
+import { DEFAULT_GAME_PORT, splitHostPort } from "$lib/address";
 import { app } from "./app.svelte";
 import { mods } from "./mods.svelte";
 import { profile } from "./profile.svelte";
@@ -184,12 +185,9 @@ class Connect {
     }
     if (args.open) return this.openDzch(args.open);
     if (args.connect) {
-      const raw = args.connect.trim();
-      const i = raw.lastIndexOf(":");
-      const port = i === -1 ? NaN : parseInt(raw.slice(i + 1), 10);
-      const ip = Number.isNaN(port) ? raw : raw.slice(0, i);
+      const { host, port } = splitHostPort(args.connect);
       app.go("connect");
-      return this.direct({ ip, port: Number.isNaN(port) ? 2302 : port });
+      return this.direct({ ip: host, port: port ?? DEFAULT_GAME_PORT });
     }
     if (args.reconnect) {
       if (profile.data?.history?.[0]) return this.rejoin();

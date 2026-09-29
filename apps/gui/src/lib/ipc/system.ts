@@ -1,28 +1,26 @@
-/** The machine, Steam, SteamCMD, the command line, .dzch files, the launcher's own updates. */
-import { call, type Channel } from "./core";
-import type { CliArgs, DzchConfig, SteamcmdStatusDto, SystemSpecsDto, UpdateInfo, DownloadEvent } from "./types";
+/** The machine, Steam, SteamCMD, the command line, .dzch files, images, the launcher's own updates. */
+import { commands, run, type Channel } from "./core";
+import type { DzchConfig, SteamcmdStatusDto, UpdateInfo, DownloadEvent } from "./types";
 
 export type { UpdateInfo, DownloadEvent };
-
 export type SteamcmdStatus = SteamcmdStatusDto;
 
-export const getSystemSpecs = () => call<SystemSpecsDto>("get_system_specs");
-export const fetchSteamAvatar = () => call<string | null>("fetch_steam_avatar");
-export const detectSteamcmd = () => call<SteamcmdStatus>("detect_steamcmd");
-export const watchSteamcmd = () => call<SteamcmdStatus>("watch_steamcmd");
-export const downloadSteamcmdWindows = () => call<string>("download_steamcmd_windows");
+export const getSystemSpecs = () => run(commands.getSystemSpecs());
+export const fetchSteamAvatar = () => run(commands.fetchSteamAvatar());
+export const detectSteamcmd = () => run(commands.detectSteamcmd());
+/** Poll for SteamCMD in the background; its arrival is the `steamcmdDetected` event. */
+export const watchSteamcmd = () => run(commands.watchSteamcmd());
+export const downloadSteamcmdWindows = () => run(commands.downloadSteamcmdWindows());
 
-export const getCliArgs = () => call<CliArgs>("get_cli_args");
-export const readDzchFile = (path: string) => call<DzchConfig>("read_dzch_file", { path });
-export const writeDzchFile = (path: string, config: DzchConfig) =>
-  call<void>("write_dzch_file", { path, config });
-export const parseDzchUrl = (url: string) => call<DzchConfig>("parse_dzch_url", { url });
+export const getCliArgs = () => run(commands.getCliArgs());
+export const readDzchFile = (path: string) => run(commands.readDzchFile(path));
+export const writeDzchFile = (path: string, config: DzchConfig) => run(commands.writeDzchFile(path, config));
+export const parseDzchUrl = (url: string) => run(commands.parseDzchUrl(url));
 
-export const fetchImage = (url: string) => call<string>("fetch_image", { url });
+/** A remote image cached to disk; resolves to its local path. */
+export const fetchImage = (url: string) => run(commands.fetchImage(url));
 /** Local copies of remote images already cached: [url, local path] pairs. */
-export const resolveCachedImages = (urls: string[]) =>
-  call<[string, string][]>("resolve_cached_images", { urls });
+export const resolveCachedImages = (urls: string[]) => run(commands.resolveCachedImages(urls));
 
-
-export const checkForUpdate = () => call<UpdateInfo | null>("check_for_update");
-export const installUpdate = (onEvent: Channel<DownloadEvent>) => call<void>("install_update", { onEvent });
+export const checkForUpdate = (): Promise<UpdateInfo | null> => run(commands.checkForUpdate());
+export const installUpdate = (onEvent: Channel<DownloadEvent>) => run(commands.installUpdate(onEvent));

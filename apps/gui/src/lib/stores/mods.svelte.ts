@@ -12,6 +12,11 @@ import { profile } from "./profile.svelte";
 import { say, errorText } from "./say";
 
 const UPDATES_TTL_MS = 5 * 60 * 1000;
+/**
+ * Lines of SteamCMD output kept for the dialog. A long batch prints tens of
+ * thousands; past this the oldest go, so the window stays responsive.
+ */
+export const LOG_MAX = 5000;
 
 export type ModOpPhase = "shutting_down" | "steam_guard_mobile" | "password_required" | "downloading" | "finished";
 
@@ -55,7 +60,8 @@ const idle = (): ModOp => ({
 });
 
 class Mods {
-  installed = $state<InstalledModDto[]>([]);
+  // Raw: always replaced whole from the backend, never edited in place.
+  installed = $state.raw<InstalledModDto[]>([]);
   loading = $state(false);
   checking = $state(false);
   lastChecked = $state(0);
@@ -65,30 +71,41 @@ class Mods {
   totalSize = $derived(this.installed.reduce((a, m) => a + m.size, 0));
   byId = $derived(new Map(this.installed.map((m) => [m.id, m])));
 
-  async load() {
-    this.loading = true;
-    try {
-      this.installed = await ipc.getInstalledMods();
-    } catch (e) {
-      say.err(words("mods").loadFailed({ error: errorText(e) }));
-    } finally {
-      this.loading = false;
-    }
+  #loading: Promise<void> | null = null;
+  #checking: Promise<void> | null = null;
+
+  /** Read what is on disk. Callers at the same moment share one read. */
+  load(): Promise<void> {
+    return (this.#loading ??= (async () => {
+      this.loading = true;
+      try {
+        this.installed = await ipc.getInstalledMods();
+      } catch (e) {
+        say.err(words("mods").loadFailed({ error: errorText(e) }));
+      } finally {
+        this.loading = false;
+        this.#loading = null;
+      }
+    })());
   }
 
   /** Ask the Workshop which mods are behind. Needs a Steam API key. */
-  async checkUpdates(force = false) {
-    if (!profile.data?.steam_api_key) return;
-    if (!force && Date.now() - this.lastChecked < UPDATES_TTL_MS) return;
-    this.checking = true;
-    try {
-      this.installed = await ipc.checkModUpdates();
-      this.lastChecked = Date.now();
-    } catch (e) {
-      say.err(words("mods").updateCheckFailed({ error: errorText(e) }));
-    } finally {
-      this.checking = false;
-    }
+  checkUpdates(force = false): Promise<void> {
+    if (!profile.data?.steam_api_key) return Promise.resolve();
+    if (this.#checking) return this.#checking;
+    if (!force && Date.now() - this.lastChecked < UPDATES_TTL_MS) return Promise.resolve();
+    return (this.#checking = (async () => {
+      this.checking = true;
+      try {
+        this.installed = await ipc.checkModUpdates();
+        this.lastChecked = Date.now();
+      } catch (e) {
+        say.err(words("mods").updateCheckFailed({ error: errorText(e) }));
+      } finally {
+        this.checking = false;
+        this.#checking = null;
+      }
+    })());
   }
 
   async refresh() {
@@ -140,7 +157,8 @@ class Mods {
     const w = words("mods");
     try {
       const managed = await ipc.toggleModManaged(mod.id);
-      await this.load();
+      // Only the link changed: no need to rescan the disk.
+      this.installed = this.installed.map((m) => (m.id === mod.id ? { ...m, managed } : m));
       say.ok(managed ? w.linked({ name: mod.name }) : w.unlinked({ name: mod.name }));
     } catch (e) {
       say.err(w.toggleFailed({ error: errorText(e) }));
@@ -171,15 +189,37 @@ class Mods {
     ids.length > 0 && this.start("install_manual", { modIds: ids, modNames: ids.map(String) });
 
   /** Run an operation; `onSuccess` fires when every mod came through. */
-  start(opType: ipc.ModOpType, args: Record<string, unknown>, onSuccess?: () => void) {
+  #opId = 0;
+
+  /** True while SteamCMD is working (not merely showing a finished summary). */
+  get busy() {
+    return this.op.active && this.op.phase !== "finished";
+  }
+
+  start(opType: ipc.ModOpType, args: ipc.ModOpArgs, onSuccess?: () => void) {
     const w = words("mods");
+    // One SteamCMD at a time: the backend holds a single PTY. The running
+    // one is brought back to the front instead.
+    if (this.busy) {
+      this.op.minimised = false;
+      return;
+    }
+    const id = ++this.#opId;
     const t0 = Date.now();
     this.op = { ...idle(), active: true, currentName: String(w.preparing), startedAt: t0, itemStartedAt: t0 };
     const ch = new Channel<ModProgressEvent>();
     // The last log entry is a transient "\r" progress line: the next one
     // overwrites it instead of appending, so a download is one live line.
     let lastWasProgress = false;
+    const trim = (op: ModOp) => {
+      if (op.log.length > LOG_MAX) {
+        op.log.splice(0, op.log.length - LOG_MAX);
+        op.logAt.splice(0, op.logAt.length - LOG_MAX);
+      }
+    };
     ch.onmessage = (ev) => {
+      // A message from an operation that was cancelled and replaced.
+      if (id !== this.#opId) return;
       const op = this.op;
       switch (ev.kind) {
         case "shutting_down_steam":
@@ -211,6 +251,7 @@ class Mods {
             // `op` is deep state: push is reactive and does not copy the log.
             op.log.push(ev.log_line);
             op.logAt.push(Date.now() - op.startedAt);
+            trim(op);
             lastWasProgress = false;
           }
           break;
@@ -242,6 +283,7 @@ class Mods {
       }
     };
     ipc.startModOperation(opType, args, ch).catch((e) => {
+      if (id !== this.#opId) return;
       say.err(w.operationFailed({ error: errorText(e) }));
       this.op.active = false;
     });
@@ -265,6 +307,7 @@ class Mods {
   }
 
   async cancel() {
+    this.#opId++;
     await ipc.cancelModOperation().catch(() => {});
     await this.dismiss();
   }

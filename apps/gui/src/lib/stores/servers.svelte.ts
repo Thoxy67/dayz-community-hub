@@ -10,10 +10,9 @@
  * asked for again.
  */
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
-import { listen } from "@tauri-apps/api/event";
 import * as ipc from "$lib/ipc/servers";
 import type { MapCount, ScanProgress, ServerRow } from "$lib/ipc/servers";
-import { Channel, inTauri } from "$lib/ipc/core";
+import { Channel, events, inTauri } from "$lib/ipc/core";
 import type { AppStatsDto, PingResult } from "$lib/ipc/types";
 import { words } from "$lib/i18n";
 import { profile } from "./profile.svelte";
@@ -28,6 +27,11 @@ export type Live = { players: number; max: number; bots: number };
 
 /** Data older than this earns a warning and a refresh button. */
 export const STALE_MS = 10 * 60 * 1000;
+
+/** Rows kept by address; past this the least recently asked-for are let go. */
+const KNOWN_MAX = 6000;
+/** Addresses re-asked for when the backend's data changes: the ones shown lately. */
+const WATCHED_MAX = 400;
 
 class Servers {
   /** How many servers the backend holds. */
@@ -56,6 +60,7 @@ class Servers {
   // ── rows ────────────────────────────────────────────────────────────────
   /** Put rows from a query or a lookup where `find` and the pings see them. */
   remember(rows: readonly ServerRow[]) {
+    if (this.known.size > KNOWN_MAX) this.#prune();
     for (const r of rows) {
       this.known.set(`${r.ip}:${r.query_port}`, r);
       this.known.set(`${r.ip}:${r.game_port}`, r);
@@ -66,9 +71,33 @@ class Servers {
     }
   }
 
+  /**
+   * Let go of the oldest rows nobody has asked for lately, with their pings.
+   * Insertion order is age: a row re-remembered moves to the end.
+   */
+  #prune() {
+    const target = KNOWN_MAX - 1000;
+    for (const k of this.known.keys()) {
+      if (this.known.size <= target) break;
+      if (this.#watched.has(k)) continue;
+      this.known.delete(k);
+      if (this.ping.has(k)) this.ping.delete(k);
+    }
+  }
+
   #wanted = new Set<string>();
+  /** Addresses asked for with `find`, most recent last. */
   #watched = new Set<string>();
   #lookupTimer: ReturnType<typeof setTimeout> | null = null;
+
+  #watch(key: string) {
+    this.#watched.delete(key);
+    this.#watched.add(key);
+    if (this.#watched.size > WATCHED_MAX) {
+      const oldest = this.#watched.values().next().value;
+      if (oldest !== undefined) this.#watched.delete(oldest);
+    }
+  }
 
   /**
    * A server by address, whether `port` is its query or its game port. What
@@ -78,7 +107,7 @@ class Servers {
    */
   find(ip: string, port: number): ServerRow | undefined {
     const key = `${ip}:${port}`;
-    this.#watched.add(key);
+    this.#watch(key);
     const row = this.known.get(key);
     if (!row && !this.#missing.has(key)) this.#want(key);
     return row;
@@ -108,9 +137,12 @@ class Servers {
 
   async #lookup() {
     this.#lookupTimer = null;
+    // Before the list is loaded nothing can be found: keep the wish, `load`
+    // asks again.
+    if (!this.total) return;
     const keys = [...this.#wanted];
     this.#wanted.clear();
-    if (keys.length === 0 || !this.total) return;
+    if (keys.length === 0) return;
     try {
       const rows = await ipc.serversLookup(keys);
       const found: ServerRow[] = [];
@@ -137,31 +169,36 @@ class Servers {
 
   /** After startup: the maps, the backend's change events, the first scan. */
   async load() {
+    const outer = this.loading;
     this.loading = true;
     try {
       this.maps = await ipc.serverMaps();
       this.total = this.maps.reduce((n, m) => n + m.count, 0);
       this.lastRefreshed = Date.now();
       this.generation++;
+      this.#reask();
       if (inTauri && !this.#listening) {
         this.#listening = true;
-        void listen<{ generation: number }>("servers-changed", (e) => this.#changed(e.payload.generation));
+        void events.serversChanged.listen((e) => this.#changed(e.payload.generation));
       }
     } catch (e) {
       say.err(words("servers").loadFailed({ error: errorText(e) }));
     } finally {
-      this.loading = false;
+      // Called from `refresh`, which owns the flag until it is done.
+      this.loading = outer && this.refreshing;
     }
   }
 
   #changed(generation: number) {
     this.generation = Math.max(this.generation + 1, generation);
+    this.#reask();
+  }
+
+  /** Whatever other views show is asked for again, pings and counts included. */
+  #reask() {
     this.#missing.clear();
-    // Whatever other views show is asked for again, pings included.
-    const watched = [...this.#watched].slice(-300);
-    this.#watched = new Set(watched);
-    for (const k of watched) this.#wanted.add(k);
-    if (watched.length) this.#lookupTimer ??= setTimeout(() => void this.#lookup(), 30);
+    for (const k of this.#watched) this.#wanted.add(k);
+    if (this.#wanted.size) this.#lookupTimer ??= setTimeout(() => void this.#lookup(), 30);
   }
 
   /** Fetch a fresh list into the backend. `quiet` for the background refresh after a cached start. */
@@ -208,13 +245,21 @@ class Servers {
 
   // ── pings ───────────────────────────────────────────────────────────────
   /** The backend pings everything in its own order; only progress comes back. */
+  #scanId = 0;
+
   async startScan() {
+    // A new scan aborts the one before in the backend; the old channel may
+    // still deliver a last "not running", which must not hide the new one.
+    const id = ++this.#scanId;
     const ch = new Channel<ScanProgress>();
     ch.onmessage = (p) => {
+      if (id !== this.#scanId) return;
       this.scanPaused = p.paused;
       this.scan = p.running ? { total: p.total, done: p.done } : null;
     };
-    await ipc.startScan(ch).catch(() => (this.scan = null));
+    await ipc.startScan(ch).catch(() => {
+      if (id === this.#scanId) this.scan = null;
+    });
   }
 
   #apply = (results: PingResult[]) => {
@@ -263,6 +308,7 @@ class Servers {
   }
 
   async cancelScan() {
+    this.#scanId++;
     await ipc.cancelPing().catch(() => {});
     this.scan = null;
     this.scanPaused = false;

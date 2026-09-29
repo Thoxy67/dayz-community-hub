@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { listen } from "@tauri-apps/api/event";
+  import { untrack } from "svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { dict } from "$lib/i18n";
   import type { Component } from "svelte";
@@ -10,7 +10,7 @@
   import { Button } from "$lib/components/ui/button";
   import { Spinner } from "$lib/components/ui/spinner";
   import { Topo } from "$lib/components/ui/topo";
-  import { inTauri } from "$lib/ipc/core";
+  import { events, inTauri } from "$lib/ipc/core";
   import { getCliArgs } from "$lib/ipc/system";
   import type { CliArgs } from "$lib/ipc/types";
   import { theme } from "$lib/theme/theme.svelte";
@@ -77,28 +77,42 @@
 
   // ── startup, the backend's events, the window ───────────────────────────
   $effect(() => {
-    void app.init();
+    untrack(() => void app.init());
     if (!inTauri) return;
+    // Listeners are registered asynchronously: one that arrives after the
+    // effect was torn down is removed at once instead of leaking.
+    let disposed = false;
     const off: Array<() => void> = [];
-    const on = <T,>(ev: string, fn: (p: T) => void) =>
-      listen<T>(ev, (e) => fn(e.payload)).then((u) => off.push(u));
+    const keep = (p: Promise<() => void>) =>
+      void p.then((u) => (disposed ? u() : off.push(u))).catch(() => {});
 
-    void on<string>("launch-done", (name) => {
-      say.ok(words("shell").statusLaunched({ name }));
-      void profile.load();
-    });
-    void on<string>("launch-error", (error) => say.err(words("shell").statusLaunchError({ error })));
-    void on<CliArgs>("cli-args", (a) => connect.cli(a));
+    keep(
+      events.launchDone.listen((e) => {
+        say.ok(words("shell").statusLaunched({ name: e.payload }));
+        void profile.load();
+      }),
+    );
+    keep(events.launchError.listen((e) => say.err(words("shell").statusLaunchError({ error: e.payload }))));
+    keep(events.cliArgs.listen((e) => void connect.cli(e.payload)));
     void getCliArgs()
-      .then((a) => {
+      .then((a: CliArgs) => {
         if (a.connect || a.reconnect || a.open) void connect.cli(a);
       })
       .catch(() => {});
 
+    // Whether the window is maximised, asked at most once a frame while it
+    // is being resized.
     const win = getCurrentWindow();
-    const syncMax = () => win.isMaximized().then((m) => (app.maximized = m));
-    void syncMax();
-    void win.onResized(syncMax).then((u) => off.push(u));
+    let raf = 0;
+    const syncMax = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        void win.isMaximized().then((m) => (app.maximized = m));
+      });
+    };
+    syncMax();
+    keep(win.onResized(syncMax));
     const blur = () => app.away();
     const focus = () => void app.back();
     const vis = () => (document.hidden ? blur() : focus());
@@ -109,7 +123,9 @@
     // Mods are checked for updates every half hour while the app is open.
     const tick = setInterval(() => void mods.checkUpdates(true), 30 * 60 * 1000);
     return () => {
+      disposed = true;
       off.forEach((u) => u());
+      if (raf) cancelAnimationFrame(raf);
       window.removeEventListener("blur", blur);
       window.removeEventListener("focus", focus);
       document.removeEventListener("visibilitychange", vis);
