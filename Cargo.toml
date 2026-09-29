@@ -41,7 +41,7 @@ tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time", "
 futures-util = { version = "0.3.34", default-features = false, features = ["alloc"] }
 
 # HTTP
-reqwest = { version = "0.13", default-features = false, features = ["native-tls", "json", "query"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["native-tls", "json", "query"] }
 # Low-level HTTP/1 client used only for the dayz.com news endpoint, which is
 # Cloudflare-gated. Passing it requires mimicking a browser at three layers:
 # a Chrome-like TLS fingerprint (rustls + aws-lc-rs/BoringSSL), an advertised
@@ -59,8 +59,8 @@ tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws-
 webpki-roots = "1.0.9"
 
 # Serialisation
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
 
 # One description of the commands and the DTOs, from which the window's
 # `bindings.ts` is generated. tauri-specta pins specta exactly, so the three
@@ -76,16 +76,16 @@ thiserror = "2.0.21"
 base64 = "0.23.1"
 regex = "1.13.1"
 which = "8.0.6"
-sysinfo = "0.39"
-clap = { version = "4.6", features = ["derive"] }
-rustc-hash = "2.1"
-urlencoding = "2"
+sysinfo = "0.39.6"
+clap = { version = "4.6.7", features = ["derive"] }
+rustc-hash = "2.1.3"
+urlencoding = "2.1.3"
 portable-pty = { version = "0.9.0", default-features = false }
 
 # Compression / archive
-zip = { version = "8.6", default-features = false, features = ["deflate", "deflate64"] }
-flate2 = "1"
-tar = "0.4"
+zip = { version = "8.6.0", default-features = false, features = ["deflate", "deflate64"] }
+flate2 = "1.1.10"
+tar = "0.4.46"
 
 # DayZ A2S queries
 async-a2s = { git = "https://git.thoxy.xyz/thoxy/async-a2s" }

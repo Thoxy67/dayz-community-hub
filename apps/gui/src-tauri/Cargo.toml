@@ -15,7 +15,7 @@ name = "dayz_community_hub_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2.7.0", features = [] }
 
 [dependencies]
 # Workspace shared
@@ -42,13 +42,13 @@ specta-typescript.workspace = true
 tauri-specta.workspace = true
 
 # Tauri + plugins
-tauri = { version = "2.11", features = ["protocol-asset", "native-tls"] }
-tauri-plugin-opener = "2"
-tauri-plugin-dialog = "2"
-tauri-plugin-clipboard-manager = "2.3.2"
-tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
-tauri-plugin-deep-link = "2"
-lru = "0.18"
+tauri = { version = "2.12.0", features = ["protocol-asset", "native-tls"] }
+tauri-plugin-opener = "2.6.0"
+tauri-plugin-dialog = "2.8.0"
+tauri-plugin-clipboard-manager = "2.4.0"
+tauri-plugin-single-instance = { version = "2.5.0", features = ["deep-link"] }
+tauri-plugin-deep-link = "2.5.0"
+lru = "0.18.5"
 rustc-hash.workspace = true
 sysinfo.workspace = true
 
@@ -57,11 +57,9 @@ zstd = { version = "0.14.0", features = ["pkg-config"] }
 
 [target."cfg(windows)".dependencies]
 zstd = "0.14.0"
-tauri-plugin-updater = "2"
-tauri-plugin-process = "2"
+tauri-plugin-updater = "2.13.0"
+tauri-plugin-process = "2.4.0"
 thiserror.workspace = true
 minisign-verify = "0.3.0"
-self-replace = "1"
+self-replace = "1.5.0"
 
-[target."cfg(target_os = \"macos\")".dependencies]
-cocoa = "0.27.0"
