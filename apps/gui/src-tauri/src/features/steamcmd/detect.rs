@@ -6,7 +6,7 @@ use tauri::{AppHandle, State};
 use tauri_specta::Event;
 
 #[cfg(target_os = "windows")]
-use crate::error::{HttpResultExt, ResultExt};
+use crate::error::HttpResultExt;
 use crate::state::SharedState;
 
 #[derive(Serialize, serde::Deserialize, Clone, Debug, specta::Type)]
@@ -213,19 +213,19 @@ pub(crate) async fn download_steamcmd_windows() -> Result<String, String> {
         {
             use std::os::windows::process::CommandExt;
             let steamcmd_steamapps = install_dir.join("steamapps");
-            if !steamcmd_steamapps.exists() {
-                if let Some(steam_root) = dz_steamcmd::find_steam_root() {
-                    let _ = std::process::Command::new("cmd")
-                        .args([
-                            "/c",
-                            "mklink",
-                            "/J",
-                            &steamcmd_steamapps.to_string_lossy().to_string(),
-                            &steam_root.to_string_lossy().to_string(),
-                        ])
-                        .creation_flags(dz_common::CREATE_NO_WINDOW)
-                        .output();
-                }
+            if !steamcmd_steamapps.exists()
+                && let Some(steam_root) = dz_steamcmd::find_steam_root()
+            {
+                let _ = std::process::Command::new("cmd")
+                    .args([
+                        "/c",
+                        "mklink",
+                        "/J",
+                        steamcmd_steamapps.to_string_lossy().as_ref(),
+                        steam_root.to_string_lossy().as_ref(),
+                    ])
+                    .creation_flags(dz_common::CREATE_NO_WINDOW)
+                    .output();
             }
         }
 

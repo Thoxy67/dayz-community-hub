@@ -314,10 +314,8 @@ pub fn remove_all_mod_symlinks(dayz_path: &Path) -> Result<usize> {
         // we never accidentally delete a real directory.
         // remove_dir on a junction removes only the junction point, not its target.
         #[cfg(windows)]
-        if file_name.starts_with('@') && is_junction(&path) {
-            if fs::remove_dir(&path).is_ok() {
-                count += 1;
-            }
+        if file_name.starts_with('@') && is_junction(&path) && fs::remove_dir(&path).is_ok() {
+            count += 1;
         }
     }
     Ok(count)

@@ -102,7 +102,7 @@ async fn fetch_update_info(
     };
 
     let url = update.download_url.to_string();
-    let signature = update.signature.clone();
+    let signature = update.signature;
 
     *pending
         .0
