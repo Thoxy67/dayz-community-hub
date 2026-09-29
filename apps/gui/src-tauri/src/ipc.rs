@@ -80,6 +80,11 @@ pub(crate) fn builder() -> tauri_specta::Builder<tauri::Wry> {
             system::get_system_specs,
             updater::check_for_update,
             updater::install_update,
+            native::open_url,
+            native::copy_text,
+            native::pick_file,
+            native::save_file,
+            native::geolocate_ip,
         ])
         .events(crate::events::collect())
         // Ports, timestamps, sizes and workshop ids are numbers in the window,

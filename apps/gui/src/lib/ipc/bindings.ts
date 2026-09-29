@@ -189,6 +189,19 @@ export const commands = {
 	 *  restart into it.
 	 */
 	installUpdate: (onEvent: Channel<DownloadEvent>) => __TAURI_INVOKE<null>("install_update", { onEvent }),
+	/**  Open a web page in the system browser. */
+	openUrl: (url: string) => __TAURI_INVOKE<null>("open_url", { url }),
+	/**  Copy text to the clipboard. */
+	copyText: (text: string) => __TAURI_INVOKE<null>("copy_text", { text }),
+	/**
+	 *  A file (or a folder, with `directory`) the player chose; null if they
+	 *  cancelled.
+	 */
+	pickFile: (title: string, directory: boolean, filters: FileFilter[]) => __TAURI_INVOKE<string | null>("pick_file", { title, directory, filters }),
+	/**  Where the player wants a file written; null if they cancelled. */
+	saveFile: (title: string, defaultName: string, filters: FileFilter[]) => __TAURI_INVOKE<string | null>("save_file", { title, defaultName, filters }),
+	/**  The player's approximate location, from ip-api.com. */
+	geolocateIp: () => __TAURI_INVOKE<GeoLocation>("geolocate_ip"),
 };
 
 /** Events */
@@ -362,6 +375,21 @@ export type FavoriteDto = {
 	port: number,
 	/**  Saved join password, filled into Direct Connect. */
 	password: string | null,
+};
+
+/**  A file-type filter of a file dialog: a label and its extensions (no dot). */
+export type FileFilter = {
+	name: string,
+	extensions: string[],
+};
+
+/**  Where the player is, approximately, from their IP address. */
+export type GeoLocation = {
+	lat: number | null,
+	lon: number | null,
+	city: string,
+	country: string,
+	country_code: string,
 };
 
 export type HistoryDto = {

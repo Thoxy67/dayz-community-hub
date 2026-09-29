@@ -6,6 +6,7 @@ pub(crate) mod battlemetrics;
 pub(crate) mod dzch_cli;
 pub(crate) mod launch;
 pub(crate) mod mods;
+pub(crate) mod native;
 pub(crate) mod news;
 pub(crate) mod offline;
 pub(crate) mod ping;
