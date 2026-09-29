@@ -12,12 +12,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 pub use dz_common::paths::{default_data_dir, default_profile_path};
 
-const APP_VERSION: &str = "0.1.0";
+const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Most history entries kept; newest first.
 const MAX_HISTORY: usize = 200;
 
+/// Every field has a default, so a profile written by any earlier version,
+/// or edited by hand, still loads: what it lacks comes from [`Profile::default`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Profile {
     pub steam_login: Option<String>,
     /// Steam account password — stored in plaintext so steamcmd can log in
@@ -78,6 +81,12 @@ pub struct Profile {
     pub version: String,
     #[serde(skip)]
     pub path: PathBuf,
+}
+
+impl Default for Profile {
+    fn default() -> Self {
+        Self::default_with_version(APP_VERSION)
+    }
 }
 
 fn default_steamcmd_enabled() -> bool {
@@ -143,7 +152,15 @@ impl Profile {
             return Ok(profile);
         }
         let data = std::fs::read_to_string(path)?;
-        let mut profile: Profile = serde_json::from_str(&data)?;
+        let mut profile = match serde_json::from_str::<Profile>(&data) {
+            Ok(p) => p,
+            Err(e) => {
+                set_aside(path, &e);
+                let p = Self::default();
+                std::fs::write(path, serde_json::to_string_pretty(&p)?)?;
+                p
+            }
+        };
         profile.path = path.to_path_buf();
         Ok(profile)
     }
@@ -158,7 +175,18 @@ impl Profile {
             return Ok(profile);
         }
         let data = tokio::fs::read_to_string(path).await?;
-        let mut profile: Profile = serde_json::from_str(&data)?;
+        let mut profile = match serde_json::from_str::<Profile>(&data) {
+            Ok(p) => p,
+            Err(e) => {
+                set_aside(path, &e);
+                let p = Self {
+                    path: path.to_path_buf(),
+                    ..Self::default()
+                };
+                p.snapshot()?.write().await?;
+                p
+            }
+        };
         profile.path = path.to_path_buf();
         Ok(profile)
     }
@@ -262,6 +290,18 @@ impl Profile {
     }
 }
 
+/// A profile that no longer parses is kept beside the new one as
+/// `profile.json.broken`, so nothing is lost and the app still starts.
+fn set_aside(path: &Path, why: &serde_json::Error) {
+    let broken = path.with_extension("json.broken");
+    let _ = std::fs::rename(path, &broken);
+    eprintln!(
+        "profile at {} could not be read ({why}); kept as {} and started fresh",
+        path.display(),
+        broken.display()
+    );
+}
+
 /// A serialized profile waiting to be written.
 #[derive(Debug)]
 pub struct Snapshot {
@@ -324,5 +364,94 @@ impl Writer {
         snapshot.write().await?;
         *written = snapshot.seq;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_minimal_profile_loads_with_defaults() {
+        let p: Profile = serde_json::from_str("{}").unwrap();
+        assert!(p.favorites.is_empty());
+        assert!(p.steamcmd_enabled);
+        assert_eq!(p.ping_concurrency, 64);
+        assert!(!p.options.window.description.is_empty());
+    }
+
+    #[test]
+    fn an_old_profile_loads() {
+        // The bash-era format: camelCase option keys, values of any JSON type,
+        // history entries with extra fields, no ping settings at all.
+        let json = r#"{
+            "steam_login": "someone",
+            "player": "Survivor",
+            "favorites": [{"name": "A", "ip": "1.2.3.4", "port": 27016}],
+            "history": [{"name": "B", "ip": "5.6.7.8", "port": 2302, "ts": 1700000000, "mods": [1, 2]}],
+            "options": {
+                "maxMem": {"enabled": true, "value": 8192},
+                "doLogs": {"enabled": true, "value": true},
+                "filePathing": {"enabled": false, "value": null}
+            },
+            "version": "0.1.0"
+        }"#;
+        let p: Profile = serde_json::from_str(json).unwrap();
+        assert_eq!(p.steam_login.as_deref(), Some("someone"));
+        assert_eq!(p.favorites[0].port, 27016);
+        assert_eq!(p.history[0].ts, 1_700_000_000);
+        assert!(p.options.max_mem.enabled);
+        assert_eq!(p.options.max_mem.value.as_deref(), Some("8192"));
+        assert_eq!(p.options.do_logs.value.as_deref(), Some("true"));
+        assert!(!p.options.file_patching.enabled);
+        assert_eq!(p.ping_timeout_auto, 2000);
+    }
+
+    #[test]
+    fn a_profile_round_trips() {
+        let mut p = Profile::default();
+        p.add_favorite("A".into(), "1.1.1.1".into(), 27016, Some("pw".into()));
+        p.add_history("B".into(), "2.2.2.2".into(), 2302);
+        p.add_excluded_ip("3.3.3.3".into());
+        p.user_location = Some((2.35, 48.85));
+        let back: Profile = serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+        assert_eq!(back.favorites[0].password.as_deref(), Some("pw"));
+        assert_eq!(back.history[0].ip, "2.2.2.2");
+        assert_eq!(back.excluded_ips, ["3.3.3.3"]);
+        assert_eq!(back.user_location, Some((2.35, 48.85)));
+    }
+
+    #[test]
+    fn history_is_newest_first_and_bounded() {
+        let mut p = Profile::default();
+        for i in 0..(MAX_HISTORY + 10) {
+            p.add_history(
+                format!("s{i}"),
+                format!("10.0.0.{}", i % 250),
+                (2302 + i) as u16,
+            );
+        }
+        p.add_history("again".into(), "10.0.0.5".into(), 2307);
+        assert_eq!(p.history.len(), MAX_HISTORY);
+        assert_eq!(p.history[0].name, "again");
+        assert_eq!(
+            p.history
+                .iter()
+                .filter(|h| h.ip == "10.0.0.5" && h.port == 2307)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_broken_profile_is_set_aside() {
+        let dir = std::env::temp_dir().join(format!("dz-profile-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("profile.json");
+        std::fs::write(&path, "{ not json").unwrap();
+        let p = Profile::load(&path).unwrap();
+        assert!(p.favorites.is_empty());
+        assert!(dir.join("profile.json.broken").exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
