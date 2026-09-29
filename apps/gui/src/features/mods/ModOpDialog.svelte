@@ -281,7 +281,7 @@
                 </div>
                 <p class="m-0 mt-2 text-2xs text-fg-muted">{$c.manualCopied.value}</p>
                 <code
-                  class="mt-1.5 block rounded-sm border border-border bg-plot px-2 py-1.5 font-mono text-2xs text-fg select-all"
+                  class="mt-1.5 block rounded-sm border border-border bg-bg px-2 py-1.5 font-mono text-2xs text-fg select-all"
                   data-selectable>{manualCmd}</code
                 >
                 <ol class="m-0 mt-2 list-decimal space-y-1 pl-4 text-2xs text-fg-muted">

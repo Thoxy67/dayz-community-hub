@@ -3,6 +3,13 @@ import { insert, t, type Dictionary } from "intlayer";
 const content = {
   key: "news",
   content: {
+    openAllOnSite: t({
+      en: "Open every article on dayz.com",
+      fr: "Ouvrir tous les articles sur dayz.com",
+      de: "Alle Artikel auf dayz.com öffnen",
+      es: "Abrir todos los artículos en dayz.com",
+      ru: "Открыть все статьи на dayz.com",
+    }),
     articles: insert(t({ en: "{{count}} articles", fr: "{{count}} articles", de: "{{count}} Artikel", es: "{{count}} artículos", ru: "Статей: {{count}}" })),
     allCategories: t({ en: "All", fr: "Tout", de: "Alle", es: "Todo", ru: "Все" }),
     readTime: insert(t({ en: "{{minutes}} min read", fr: "{{minutes}} min de lecture", de: "{{minutes}} Min. Lesezeit", es: "{{minutes}} min de lectura", ru: "{{minutes}} мин чтения" })),

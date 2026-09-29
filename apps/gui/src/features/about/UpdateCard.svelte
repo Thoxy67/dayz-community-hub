@@ -61,7 +61,7 @@
           </p>
           {#if updater.info.body}
             <pre
-              class="m-0 mt-2 max-h-40 overflow-y-auto rounded-sm border border-border bg-plot p-2 font-mono text-2xs whitespace-pre-wrap text-fg-muted"
+              class="m-0 mt-2 max-h-40 overflow-y-auto rounded-sm border border-border bg-bg p-2 font-mono text-2xs whitespace-pre-wrap text-fg-muted"
               data-selectable>{updater.info.body}</pre>
           {/if}
         </div>

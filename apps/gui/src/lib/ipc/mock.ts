@@ -171,6 +171,9 @@ export function installMock() {
   if (t) localStorage.setItem("dzch.theme", JSON.stringify({ preset: t, custom: null, frame: {} }));
   if (q.get("rail") === "collapsed")
     localStorage.setItem("dzch.prefs", JSON.stringify({ panes: {}, railCollapsed: true, dismissedRejoin: null }));
+  // `?modop=1` starts a pretend SteamCMD operation, to look at its dialog.
+  if (q.get("modop") === "1")
+    setTimeout(async () => (await import("$lib/stores/mods.svelte")).mods.updateStale(), 600);
   const v = q.get("view");
   if (v) queueMicrotask(async () => (await import("$lib/stores/app.svelte")).app.go(v as never, q.get("focus")));
   mockWindows("main");

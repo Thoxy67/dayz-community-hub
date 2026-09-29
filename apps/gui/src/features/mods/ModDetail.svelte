@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { IconButton } from "$lib/components/ui/button";
+  import X from "~icons/lucide/x";
   import { dict } from "$lib/i18n";
   import Puzzle from "~icons/lucide/puzzle";
   import FolderOpen from "~icons/lucide/folder-open";
@@ -18,7 +20,7 @@
   import { review, workshopUrl } from "./review.svelte";
 
   /** Everything known about one installed mod, and what can be done to it. */
-  let { mod }: { mod: InstalledModDto | null } = $props();
+  let { mod, onclose }: { mod: InstalledModDto | null; onclose?: () => void } = $props();
   const m = dict("mods");
 
   const behind = $derived(
@@ -34,7 +36,12 @@
 {:else}
   <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
     <header class="border-b border-border px-pad py-3">
-      <h2 class="m-0 text-base leading-tight font-semibold break-words text-fg" data-selectable>{mod.name}</h2>
+      <div class="flex items-start gap-2">
+        <h2 class="m-0 min-w-0 flex-1 text-base leading-tight font-semibold break-words text-fg" data-selectable>{mod.name}</h2>
+        {#if onclose}
+          <IconButton icon={X} size="icon-xs" label={$m.closeDetail.value} kbd="Esc" onclick={onclose} />
+        {/if}
+      </div>
       <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
         {#if mod.update_available}
           <Tag tone="warn">{$m.updateAvailable.value}{behind > 0 ? ` · ${$m.daysBehind({ days: behind }).value}` : ""}</Tag>

@@ -3,6 +3,7 @@ import { insert, t, type Dictionary } from "intlayer";
 const content = {
   key: "mods",
   content: {
+    closeDetail: t({ en: "Close the details", fr: "Fermer le détail", de: "Details schließen", es: "Cerrar el detalle", ru: "Закрыть подробности" }),
     // ── the new view ──
     title: t({ en: "Mods", fr: "Mods", de: "Mods", es: "Mods", ru: "Моды" }),
     searchPlaceholder: t({ en: "Search name or Workshop ID…", fr: "Rechercher un nom ou un ID Workshop…", de: "Name oder Workshop-ID suchen…", es: "Buscar nombre o ID de Workshop…", ru: "Поиск по имени или ID Workshop…" }),

@@ -147,13 +147,13 @@
         <div class="min-w-0 flex-1">
           <h1 class="m-0 title-display text-3xl leading-none text-fg">DayZ <span class="text-accent">Community Hub</span></h1>
           <p class="m-0 mt-1.5 text-sm text-fg-muted">{$a.heroTagline.value}</p>
-          <p class="m-0 mt-1 flex items-center gap-2 font-mono text-2xs text-fg-faint">
+          <p class="m-0 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-2xs text-fg-faint">
             <span>v{version || "—"}</span><span>·</span><span>{$a.licenseMit.value}</span><span>·</span>
-            <span class="inline-flex items-center gap-1">{$a.madeWith.value} <Heart class="size-3 text-err" /> {$a.by.value} {AUTHOR}</span>
+            <span class="inline-flex items-center gap-1 whitespace-nowrap">{$a.madeWith.value} <Heart class="size-3 text-err" /> {$a.by.value} {AUTHOR}</span>
           </p>
         </div>
-        <div class="grid shrink-0 grid-cols-2 gap-1.5">
-          {#each FEATURES as f (f.title())}
+        <div class="grid shrink-0 grid-cols-2 gap-1.5 max-xl:hidden">
+          {#each FEATURES as f, fi (fi)}
             {@const I = f.icon}
             <span class="flex items-center gap-1.5 rounded-sm border border-border bg-panel/70 px-2 py-1 text-2xs text-fg-muted">
               <I class="size-3.5 {f.tone}" />{f.title()}
@@ -194,7 +194,7 @@
 
         {#snippet sharing()}
           <p class="m-0 mb-2.5 text-xs text-fg-muted">{$a.sharingDesc({ url: "dzch://", file: ".dzch" }).value}</p>
-          <div class="grid gap-1.5 rounded-sm border border-border bg-plot p-2">
+          <div class="grid gap-1.5 rounded-sm border border-border bg-bg p-2">
             {#each [{ label: $a.sharingBasic.value, url: "dzch://1.2.3.4:2302" }, { label: $a.sharingWithMods.value, url: "dzch://1.2.3.4:2302?mods=1559212036,1564026768" }, { label: $a.sharingFull.value, url: "dzch://1.2.3.4:2302?qport=27016&name=My%20Server&password=secret&mods=1559212036" }] as ex (ex.url)}
               <div class="flex items-center gap-2">
                 <span class="w-24 shrink-0 text-2xs text-fg-faint">{ex.label}</span>
@@ -227,15 +227,15 @@
       <div class="flex min-w-0 flex-col gap-4">
         {#snippet keys()}
           <div class="flex flex-col gap-3">
-            {#each SHORTCUTS as g (g.group())}
+            {#each SHORTCUTS as g, gi (gi)}
               <div>
                 <p class="m-0 mb-1 font-mono text-3xs tracking-[0.08em] text-fg-faint uppercase">{g.group()}</p>
                 <ul class="m-0 flex list-none flex-col p-0">
-                  {#each g.rows as r (r.label())}
+                  {#each g.rows as r, ri (ri)}
                     <li class="flex items-center gap-2 border-b border-border/40 py-1 last:border-b-0">
                       <span class="flex-1 text-2xs text-fg-muted">{r.label()}</span>
                       <span class="flex shrink-0 items-center gap-0.5">
-                        {#each r.keys as k, i (i)}{#if i > 0}<span class="text-3xs text-fg-faint">+</span>{/if}<Kbd>{k}</Kbd>{/each}
+                        {#each r.keys as k, i (i)}{#if i > 0}<span class="text-3xs text-fg-faint">{r.keys[0] === "Ctrl" ? "+" : "/"}</span>{/if}<Kbd>{k}</Kbd>{/each}
                       </span>
                     </li>
                   {/each}

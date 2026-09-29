@@ -63,11 +63,15 @@
 </script>
 
 <div class="flex h-full min-h-0">
-  <SectionNav bind:this={nav} title={$s.onThisPage.value} sections={entries} root={scroller} />
+  <!-- The page's own index gives its width back to the fields below 1024 px,
+       where it squeezed them to a dozen characters. -->
+  <div class="flex max-lg:hidden">
+    <SectionNav bind:this={nav} title={$s.onThisPage.value} sections={entries} root={scroller} />
+  </div>
 
   <div class="relative flex min-w-0 flex-1 flex-col">
     <div bind:this={scroller} class="min-h-0 flex-1 overflow-y-auto">
-      <div class="mx-auto flex max-w-4xl flex-col gap-7 px-6 py-5 pb-24">
+      <div class="mx-auto flex max-w-4xl flex-col gap-7 px-6 py-5 pb-24 max-lg:px-4">
         <AccountSection />
         <SteamSection />
         <ApisSection />

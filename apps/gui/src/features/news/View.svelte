@@ -81,10 +81,10 @@
             <RefreshCw class={cn("size-icon-sm", news.loading && "animate-spin")} />
           </button>
         </Tooltip>
-        <Tooltip text="dayz.com" side="bottom">
+        <Tooltip text={$n.openAllOnSite.value} side="bottom">
           <button
             class="grid size-control place-items-center rounded-sm text-fg-faint hover:bg-raised hover:text-fg"
-            aria-label="dayz.com"
+            aria-label={$n.openAllOnSite.value}
             onclick={() => openUrl("https://dayz.com/news")}><ExternalLink class="size-icon-sm" /></button
           >
         </Tooltip>
@@ -136,7 +136,7 @@
             onclick={() => (news.selected = i)}
           >
             {#if on}<span class="absolute inset-y-2 left-0 w-0.5 rounded-full bg-accent"></span>{/if}
-            <div class="grid h-14 w-20 shrink-0 place-items-center overflow-hidden rounded-sm border border-border bg-plot">
+            <div class="grid h-14 w-20 shrink-0 place-items-center overflow-hidden rounded-sm border border-border bg-raised">
               {#if thumb}
                 <img src={thumb} alt="" class="size-full object-cover" loading="lazy" />
               {:else}

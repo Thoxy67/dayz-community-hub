@@ -76,7 +76,7 @@
           {#each DISTROS as d (d.cmd)}
             <li class="flex items-center gap-3 px-3 py-1.5">
               <span class="w-28 shrink-0 text-2xs text-fg-muted">{d.label}</span>
-              <code class="min-w-0 flex-1 truncate rounded-sm bg-plot px-2 py-1 font-mono text-2xs text-fg" data-selectable
+              <code class="min-w-0 flex-1 truncate rounded-sm bg-bg px-2 py-1 font-mono text-2xs text-fg" data-selectable
                 >{d.cmd}</code
               >
               <button
