@@ -37,5 +37,6 @@ pub(crate) fn collect() -> tauri_specta::Events {
         OfflineModeError,
         SteamcmdDetected,
         CliArgs,
+        crate::features::browser::ServersChanged,
     ]
 }

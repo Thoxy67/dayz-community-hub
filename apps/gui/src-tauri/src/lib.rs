@@ -31,6 +31,7 @@ pub fn run(args: CliArgs) {
     tauri::Builder::default()
         .setup(move |app| {
             builder.mount_events(app);
+            features::browser::spawn_change_notifier(app.handle().clone());
             // The one-shot slot the news WebView fallback returns its JSON through.
             app.manage(news::webview::NewsWebviewState::new());
             app.manage(Arc::new(ping::PingState::default()));

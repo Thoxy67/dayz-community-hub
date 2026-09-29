@@ -3,7 +3,7 @@
 
 mod dto;
 
-pub use dto::{AppStatsDto, InitResult, ModDto, ServerDto, ServerSlimList};
+pub use dto::{AppStatsDto, InitResult, ModDto, ServerDto};
 pub(crate) use dto::{mods_to_dto, server_to_dto};
 
 use dz_api::ServerList;
@@ -20,8 +20,10 @@ use crate::state::{AppState, SharedState};
 /// `initialize` so the wizard can show at once.
 #[tauri::command]
 #[specta::specta]
-pub(crate) fn check_first_launch() -> bool {
-    !paths::default_profile_path().exists()
+pub(crate) async fn check_first_launch() -> bool {
+    !tokio::fs::try_exists(paths::default_profile_path())
+        .await
+        .unwrap_or(false)
 }
 
 /// Create the controller and load the server list: from the on-disk cache
@@ -53,7 +55,8 @@ pub(crate) async fn initialize(app: AppHandle) -> Result<InitResult, String> {
 
     let server_count = list.result.len();
     let mut app_state = AppState::new(ctl);
-    app_state.set_servers(list);
+    app_state.set_servers(Arc::clone(&list));
+    crate::features::browser::list_replaced(list);
 
     let state: SharedState = Arc::new(RwLock::new(app_state));
     app.manage(state);
@@ -63,13 +66,6 @@ pub(crate) async fn initialize(app: AppHandle) -> Result<InitResult, String> {
         from_cache,
         is_first_launch,
     })
-}
-
-/// The server list, without mod details.
-#[tauri::command]
-#[specta::specta]
-pub(crate) async fn get_servers(state: State<'_, SharedState>) -> Result<ServerSlimList, String> {
-    Ok(ServerSlimList(Arc::clone(&state.read().await.servers)))
 }
 
 /// One server with its mods, by query port.
@@ -87,17 +83,18 @@ pub(crate) async fn get_server_details(
     Ok(server_to_dto(server))
 }
 
-/// Fetch the list from the API again.
+/// Fetch the list from the API again. Returns how many servers it holds;
+/// the browser re-queries on the `servers-changed` that follows.
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn refresh_servers(
-    state: State<'_, SharedState>,
-) -> Result<ServerSlimList, String> {
+pub(crate) async fn refresh_servers(state: State<'_, SharedState>) -> Result<u32, String> {
     let client = state.read().await.ctl.http_client().clone();
     let list = dedup(dz_api::fetch_servers(&client).await.cmd_err()?);
     save_cache_in_background(Arc::clone(&list));
     state.write().await.set_servers(Arc::clone(&list));
-    Ok(ServerSlimList(list))
+    let count = list.result.len() as u32;
+    crate::features::browser::list_replaced(list);
+    Ok(count)
 }
 
 /// The title bar's counters.

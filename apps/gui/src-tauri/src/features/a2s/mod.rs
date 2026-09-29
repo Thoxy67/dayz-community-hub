@@ -132,6 +132,13 @@ pub(crate) async fn query_a2s(
         game_port,
     });
 
+    crate::features::browser::live::store().record_counts(
+        &ip,
+        query_port,
+        result.players,
+        result.max_players,
+        result.bots,
+    );
     state
         .write()
         .await

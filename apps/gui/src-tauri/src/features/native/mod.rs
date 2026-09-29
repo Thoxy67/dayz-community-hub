@@ -32,14 +32,14 @@ pub struct GeoLocation {
 /// Open a web page in the system browser.
 #[tauri::command]
 #[specta::specta]
-pub(crate) fn open_url(app: AppHandle, url: String) -> Result<(), String> {
+pub(crate) async fn open_url(app: AppHandle, url: String) -> Result<(), String> {
     app.opener().open_url(url, None::<&str>).cmd_err()
 }
 
 /// Copy text to the clipboard.
 #[tauri::command]
 #[specta::specta]
-pub(crate) fn copy_text(app: AppHandle, text: String) -> Result<(), String> {
+pub(crate) async fn copy_text(app: AppHandle, text: String) -> Result<(), String> {
     app.clipboard().write_text(text).cmd_err()
 }
 

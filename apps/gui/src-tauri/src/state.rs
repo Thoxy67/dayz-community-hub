@@ -97,6 +97,8 @@ pub(crate) async fn mutate_profile<T>(
         let snapshot = s.profile_writer.stamp(s.ctl.profile_snapshot().cmd_err()?);
         (out, snapshot, Arc::clone(&s.profile_writer))
     };
+    // Favorites and excluded IPs show in the browser.
+    crate::features::browser::live::store().touch();
     writer.write(snapshot).await.cmd_err()?;
     Ok(out)
 }

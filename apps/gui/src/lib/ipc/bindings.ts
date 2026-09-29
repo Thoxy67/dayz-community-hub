@@ -18,26 +18,40 @@ export const commands = {
 	 *  the API. Called once, when the window mounts.
 	 */
 	initialize: () => __TAURI_INVOKE<InitResult>("initialize"),
-	/**  The server list, without mod details. */
-	getServers: () => __TAURI_INVOKE<ServerSlimDto[]>("get_servers"),
 	/**  One server with its mods, by query port. */
 	getServerDetails: (ip: string, port: number) => __TAURI_INVOKE<ServerDto>("get_server_details", { ip, port }),
-	/**  Fetch the list from the API again. */
-	refreshServers: () => __TAURI_INVOKE<ServerSlimDto[]>("refresh_servers"),
+	/**
+	 *  Fetch the list from the API again. Returns how many servers it holds;
+	 *  the browser re-queries on the `servers-changed` that follows.
+	 */
+	refreshServers: () => __TAURI_INVOKE<number>("refresh_servers"),
 	/**  The title bar's counters. */
 	getAppStats: () => __TAURI_INVOKE<AppStatsDto>("get_app_stats"),
+	/**  A filtered, sorted window of the server list, with totals. */
+	serversQuery: (query: ServerQuery) => __TAURI_INVOKE<ServerPage>("servers_query", { query }),
 	/**
-	 *  Ping every target in list order (the window puts favorites and history
-	 *  first) and stream the results. Aborts the previous background scan.
+	 *  Full rows for "ip:port" keys (query or game port), in the same order;
+	 *  null for a server that is not in the list.
 	 */
-	pingAllBackground: (targets: string[], concurrency: number | null, timeoutMs: number | null, onProgress: Channel<PingResultDto[]>) => __TAURI_INVOKE<null>("ping_all_background", { targets, concurrency, timeoutMs, onProgress }),
-	/**  Ping the rows on screen. Runs beside the background scan, not instead of it. */
+	serversLookup: (keys: string[]) => __TAURI_INVOKE<(ServerRow | null)[]>("servers_lookup", { keys }),
+	/**  Every map in the list, busiest first. */
+	serverMaps: () => __TAURI_INVOKE<MapCount[]>("server_maps"),
+	/**
+	 *  Ping the whole list in the background (replacing a running scan).
+	 *  Progress arrives on `on_progress` at most four times a second; the rows
+	 *  themselves change through `servers-changed`.
+	 */
+	startScan: (onProgress: Channel<ScanProgress>) => __TAURI_INVOKE<null>("start_scan", { onProgress }),
+	/**
+	 *  Ping a small explicit list (favorites, history) and stream the results.
+	 *  Runs beside the whole-list scan, not instead of it.
+	 */
 	pingServers: (targets: string[], concurrency: number | null, timeoutMs: number | null, onProgress: Channel<PingResultDto[]>) => __TAURI_INVOKE<null>("ping_servers", { targets, concurrency, timeoutMs, onProgress }),
-	/**  Cached results for `targets` ("ip:port"); targets never pinged are left out. */
+	/**  Known results for `targets` ("ip:port"); targets never pinged are left out. */
 	getPings: (targets: string[]) => __TAURI_INVOKE<PingResultDto[]>("get_pings", { targets }),
 	/**  Ping one server, with the long manual timeout. Returns the RTT in ms. */
 	pingSingle: (ip: string, port: number, timeoutMs: number | null) => __TAURI_INVOKE<number>("ping_single", { ip, port, timeoutMs }),
-	/**  Stop the background scan and clear the pause. */
+	/**  Stop the whole-list scan and clear the pause. */
 	cancelPing: () => __TAURI_INVOKE<null>("cancel_ping"),
 	/**  Pause or resume scanning. Returns whether it is now paused. */
 	togglePingPause: () => __TAURI_INVOKE<boolean>("toggle_ping_pause"),
@@ -211,6 +225,7 @@ export const events = {
 	launchError: makeEvent<LaunchError>("launch-error"),
 	offlineModeError: makeEvent<OfflineModeError>("offline-mode-error"),
 	offlineModeUpdated: makeEvent<OfflineModeUpdated>("offline-mode-updated"),
+	serversChanged: makeEvent<ServersChanged>("servers-changed"),
 	steamcmdDetected: makeEvent<SteamcmdDetected>("steamcmd-detected"),
 };
 
@@ -437,6 +452,12 @@ export type LaunchOptionDto = {
 	description: string,
 };
 
+/**  A map and how many servers run it. */
+export type MapCount = {
+	map: string,
+	count: number,
+};
+
 export type ModDto = {
 	name: string,
 	steam_workshop_id: number,
@@ -554,6 +575,14 @@ export type ProfileSettingsInput = {
 	pingScanServers: boolean,
 };
 
+/**  How far the scan of the whole list has got. */
+export type ScanProgress = {
+	done: number,
+	total: number,
+	paused: boolean,
+	running: boolean,
+};
+
 /**  A server with its mod list, for the detail panel and the connect flow. */
 export type ServerDto = {
 	game_port: number,
@@ -574,19 +603,46 @@ export type ServerDto = {
 	battl_eye: boolean | null,
 };
 
-/**
- *  A server as the browser's table shows it: no mod list, only its length.
- * 
- *  Never built at run time: [`ServerSlimList`] writes the same JSON straight
- *  from the list. It is what that JSON is described as in `bindings.ts`, and
- *  what the test below holds the two against.
- */
-export type ServerSlimDto = {
+/**  A window of the filtered, sorted list. */
+export type ServerPage = {
+	/**  Servers matching the filters. */
+	total: number,
+	/**  Rows `offset..offset + limit`. */
+	rows: ServerRow[],
+	stats: ServerStats,
+	/**  The data generation these rows reflect. */
+	generation: number,
+};
+
+/**  What the browser shows: filters, sort, and the window of rows wanted. */
+export type ServerQuery = {
+	/**  Case-insensitive, over name, IP and map. */
+	search: string,
+	map: string | null,
+	firstPerson: Tri,
+	password: Tri,
+	battleye: Tri,
+	modded: Tri,
+	hideEmpty: boolean,
+	hideFull: boolean,
+	/**  0 = any. Otherwise timeouts and slower servers go; unpinged ones stay. */
+	maxPing: number,
+	/**  Show servers on excluded IPs too. */
+	showExcluded: boolean,
+	sort: SortCol,
+	asc: boolean,
+	offset: number,
+	limit: number,
+};
+
+/**  One row of the browser: the server with its freshest known state. */
+export type ServerRow = {
 	game_port: number,
 	ip: string,
 	query_port: number,
 	name: string,
 	map: string,
+	/**  Freshest known: the last successful query, else the list. */
 	players: number,
 	max_players: number,
 	environment: string,
@@ -597,7 +653,36 @@ export type ServerSlimDto = {
 	mods_count: number,
 	vac: boolean,
 	battl_eye: boolean | null,
+	bots: number,
+	/**  Null when never pinged. >= 5000 when it timed out. */
+	ping_ms: number | null,
+	ping_failed: boolean,
+	favorite: boolean,
+	excluded: boolean,
+	/**  Full according to the list, but the last query failed. */
+	unverified_full: boolean,
 };
+
+/**  Totals over the filtered servers. */
+export type ServerStats = {
+	shown: number,
+	players: number,
+	full: number,
+	empty: number,
+	modded: number,
+	pinged: number,
+	best_ping: number | null,
+};
+
+/**  The list, or live data, changed: re-query what is on screen. */
+export type ServersChanged = {
+	generation: number,
+};
+
+/**  The column the browser sorts by. */
+export type SortCol = "none" | "ping" | "players" | "name" | "map" | "mods" | 
+/**  In-game time, "HH:MM" as minutes. */
+"time";
 
 /**  steamcmd appeared while `watch_steamcmd` was polling. */
 export type SteamcmdDetected = SteamcmdStatusDto;
@@ -617,6 +702,9 @@ export type SystemSpecsDto = {
 	/**  Total system RAM in megabytes. */
 	total_memory_mb: number,
 };
+
+/**  A three-way filter: everything, only those with the flag, only those without. */
+export type Tri = "all" | "only" | "none";
 
 /**  A newer version than the one running. */
 export type UpdateInfo = {

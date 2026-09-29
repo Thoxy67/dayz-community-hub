@@ -1,35 +1,29 @@
-//! Pinging servers over A2S: the background scan of the whole list, the
-//! visible rows, and a single server on demand.
+//! Pinging servers over A2S: the scan of the whole list (driven by Rust,
+//! reporting only its progress), small explicit lists, and one server.
 //!
-//! Results stream to the window over a `Channel` in batches, and are kept in
-//! a cache of their own so the ~64 concurrent queries never contend with the
-//! commands that need the app state.
+//! Every result lands in the live store (`browser::live`), which the browser
+//! reads; nothing here touches the app state's lock.
 
 use futures_util::{StreamExt, stream};
-use rustc_hash::FxHashMap;
 use serde::Serialize;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::State;
 use tauri::ipc::Channel;
-use tokio::sync::RwLock;
 
-/// Default timeout of the background scan.
-const BACKGROUND_TIMEOUT_MS: u64 = 2_000;
-/// Default timeout for the visible rows.
-const VISIBLE_TIMEOUT_MS: u64 = 5_000;
+use crate::features::browser::live::{self, Live};
+
+/// Default timeout for an explicit list.
+const LIST_TIMEOUT_MS: u64 = 5_000;
 /// Default timeout of a manual ping.
 const MANUAL_TIMEOUT_MS: u64 = 10_000;
-/// Default concurrency of the background scan. A2S queries are RTT bound and
-/// share one multiplexed UDP socket, so more in flight mostly hides latency.
-const BACKGROUND_CONCURRENT: usize = 64;
-/// Default concurrency for the visible rows.
-const VISIBLE_CONCURRENT: usize = 10;
-/// Results per Channel message.
+/// Default concurrency for an explicit list.
+const LIST_CONCURRENT: usize = 10;
+/// Results per Channel message for an explicit list.
 const BATCH_SIZE: usize = 50;
-/// A partial batch is flushed after this long.
-const FLUSH_INTERVAL_MS: u64 = 200;
+/// How often partial batches and scan progress are sent (at most).
+const FLUSH_INTERVAL: Duration = Duration::from_millis(250);
 
 /// One ping, as the window receives it.
 #[derive(Serialize, Clone, Debug, specta::Type)]
@@ -45,86 +39,86 @@ pub struct PingResultDto {
     pub failed: bool,
 }
 
-/// A cached ping.
-#[derive(Clone, Copy, Debug)]
-struct Cached {
-    ms: u32,
-    players: Option<u8>,
-    max_players: Option<u8>,
-    bots: Option<u8>,
-    failed: bool,
-}
-
-impl Cached {
-    fn from_result(r: &dz_common::Result<dz_a2s::Ping>) -> Self {
-        match r {
-            Ok(p) => Self {
-                ms: p.ms,
-                players: Some(p.players),
-                max_players: Some(p.max_players),
-                bots: Some(p.bots),
-                failed: false,
-            },
-            Err(_) => Self {
-                ms: dz_a2s::PING_TIMEOUT_SENTINEL,
-                players: None,
-                max_players: None,
-                bots: None,
-                failed: true,
-            },
-        }
-    }
-
-    fn to_dto(self, ip: String, port: i64) -> PingResultDto {
-        PingResultDto {
-            ip,
-            port,
-            ms: self.ms,
-            players: self.players,
-            max_players: self.max_players,
-            bots: self.bots,
-            failed: self.failed,
-        }
+fn to_dto(l: &Live, ip: String, port: i64) -> PingResultDto {
+    PingResultDto {
+        ip,
+        port,
+        ms: l.ms,
+        players: l.players,
+        max_players: l.max_players,
+        bots: l.bots,
+        failed: l.failed,
     }
 }
 
-/// The ping cache and the scan's controls, managed by the app on its own.
+/// How far the scan of the whole list has got.
+#[derive(Serialize, Clone, Copy, Debug, specta::Type)]
+pub struct ScanProgress {
+    pub done: u32,
+    pub total: u32,
+    pub paused: bool,
+    pub running: bool,
+}
+
+/// The scan's controls, managed by the app on its own.
 #[derive(Default)]
 pub struct PingState {
-    /// "ip:query_port" → last result.
-    cache: RwLock<FxHashMap<String, Cached>>,
     /// Read by every scan loop on every result: an atomic, not a lock.
     paused: AtomicBool,
-    /// The background scan, so a new one (or a refresh) can abort it.
-    background: Mutex<Option<tokio::task::AbortHandle>>,
+    /// The running scan, so a new one (or a refresh) can abort it.
+    background: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
 }
 
 impl PingState {
-    fn abort_background(&self) {
+    pub(crate) fn abort_background(&self) {
         if let Some(handle) = self.background.lock().ok().and_then(|mut h| h.take()) {
             handle.abort();
         }
     }
+
+    pub(crate) fn is_paused(&self) -> bool {
+        self.paused.load(Ordering::Relaxed)
+    }
 }
 
 /// Parse "ip:port".
-fn parse_target(target: &str) -> Option<(&str, i64)> {
+pub(crate) fn parse_target(target: &str) -> Option<(&str, i64)> {
     let (ip, port) = target.rsplit_once(':')?;
     Some((ip, port.parse().ok()?))
 }
 
-/// Ping `targets` with `concurrency` queries in flight and stream the results
-/// over `channel` in batches, writing each to the cache as it lands.
+/// Where a scan's results go besides the live store.
+enum Sink {
+    /// Batches of results, for explicit lists.
+    Batches(Channel<Vec<PingResultDto>>),
+    /// Progress only, for the whole-list scan.
+    Progress(Channel<ScanProgress>),
+}
+
+/// Ping `targets` with `concurrency` queries in flight, recording each result
+/// in the live store as it lands.
 async fn scan(
     targets: Vec<String>,
     concurrency: usize,
     timeout: Duration,
-    channel: Channel<Vec<PingResultDto>>,
+    sink: Sink,
     ping: Arc<PingState>,
 ) {
+    let total = targets.len() as u32;
+    let done = Arc::new(AtomicU32::new(0));
+    let progress = |running: bool| ScanProgress {
+        done: done.load(Ordering::Relaxed),
+        total,
+        paused: ping.is_paused(),
+        running,
+    };
+
     // One client for the whole scan: async-a2s multiplexes replies on its one
     // UDP socket, which saves a socket bind per query.
     let Ok(client) = dz_a2s::new_client().await else {
+        if let Sink::Progress(ch) = &sink {
+            let _ = ch.send(progress(false));
+        }
         return;
     };
     let client = Arc::new(client);
@@ -134,92 +128,91 @@ async fn scan(
             let client = Arc::clone(&client);
             async move {
                 let (ip, port) = parse_target(&target)?;
-                let (ip, port) = (ip.to_owned(), port);
                 let r = tokio::time::timeout(timeout, dz_a2s::ping_using(&client, &target))
                     .await
                     .unwrap_or_else(|_| Err(dz_common::Error::A2sQuery("timeout".into())));
-                Some((target, ip, port, Cached::from_result(&r)))
+                let l = Live::from_result(&r);
+                live::store().record(ip, port, l);
+                Some((ip.to_owned(), port, l))
             }
         })
         .buffer_unordered(concurrency)
         .filter_map(std::future::ready)
         .fuse();
 
-    let mut batch: Vec<PingResultDto> = Vec::with_capacity(BATCH_SIZE);
-    let mut flush = tokio::time::interval(Duration::from_millis(FLUSH_INTERVAL_MS));
+    let mut batch: Vec<PingResultDto> = Vec::new();
+    let mut flush = tokio::time::interval(FLUSH_INTERVAL);
     flush.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let send = |batch: &mut Vec<PingResultDto>| match &sink {
+        Sink::Batches(ch) if !batch.is_empty() => {
+            let _ = ch.send(std::mem::take(batch));
+        }
+        Sink::Progress(ch) => {
+            let _ = ch.send(progress(true));
+        }
+        _ => {}
+    };
 
     loop {
-        while ping.paused.load(Ordering::Relaxed) {
-            tokio::time::sleep(Duration::from_millis(100)).await;
+        if ping.is_paused() {
+            flush.tick().await;
+            send(&mut batch);
+            continue;
         }
         tokio::select! {
             biased;
             next = results.next() => {
-                let Some((key, ip, port, cached)) = next else { break };
-                ping.cache.write().await.insert(key, cached);
-                batch.push(cached.to_dto(ip, port));
-                if batch.len() >= BATCH_SIZE {
-                    let _ = channel.send(std::mem::replace(&mut batch, Vec::with_capacity(BATCH_SIZE)));
-                    tokio::task::yield_now().await;
-                    flush.reset();
+                let Some((ip, port, l)) = next else { break };
+                done.fetch_add(1, Ordering::Relaxed);
+                if let Sink::Batches(_) = &sink {
+                    batch.push(to_dto(&l, ip, port));
+                    if batch.len() >= BATCH_SIZE {
+                        send(&mut batch);
+                    }
                 }
             }
-            _ = flush.tick() => {
-                if !batch.is_empty() {
-                    let _ = channel.send(std::mem::replace(&mut batch, Vec::with_capacity(BATCH_SIZE)));
-                    tokio::task::yield_now().await;
-                }
-            }
+            _ = flush.tick() => send(&mut batch),
         }
     }
-    if !batch.is_empty() {
-        let _ = channel.send(batch);
+    match &sink {
+        Sink::Batches(ch) if !batch.is_empty() => {
+            let _ = ch.send(batch);
+        }
+        Sink::Progress(ch) => {
+            let _ = ch.send(progress(false));
+        }
+        _ => {}
     }
 }
 
-/// Ping every target in list order (the window puts favorites and history
-/// first) and stream the results. Aborts the previous background scan.
-#[tauri::command]
-#[specta::specta]
-pub(crate) async fn ping_all_background(
+/// Start the scan of the whole list, replacing any running one. The order
+/// and settings come from the profile; see `browser::scan_targets`.
+pub(crate) fn start_whole_scan(
+    ping: &Arc<PingState>,
     targets: Vec<String>,
-    concurrency: Option<usize>,
-    timeout_ms: Option<u64>,
-    on_progress: Channel<Vec<PingResultDto>>,
-    ping: State<'_, Arc<PingState>>,
-) -> Result<(), String> {
+    concurrency: usize,
+    timeout: Duration,
+    on_progress: Channel<ScanProgress>,
+) {
     ping.abort_background();
-    if targets.is_empty() {
-        return Ok(());
-    }
-    let concurrency = concurrency.unwrap_or(BACKGROUND_CONCURRENT).clamp(5, 200);
-    let timeout = Duration::from_millis(
-        timeout_ms
-            .unwrap_or(BACKGROUND_TIMEOUT_MS)
-            .clamp(1000, 5000),
-    );
-    let state = Arc::clone(&ping);
+    let state = Arc::clone(ping);
     let handle = tauri::async_runtime::spawn(async move {
         scan(
             targets,
             concurrency,
             timeout,
-            on_progress,
-            Arc::clone(&state),
+            Sink::Progress(on_progress),
+            state,
         )
         .await;
-        if let Ok(mut h) = state.background.lock() {
-            *h = None;
-        }
     });
     if let Ok(mut h) = ping.background.lock() {
-        *h = Some(handle.inner().abort_handle());
+        *h = Some(handle);
     }
-    Ok(())
 }
 
-/// Ping the rows on screen. Runs beside the background scan, not instead of it.
+/// Ping a small explicit list (favorites, history) and stream the results.
+/// Runs beside the whole-list scan, not instead of it.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn ping_servers(
@@ -229,30 +222,32 @@ pub(crate) async fn ping_servers(
     on_progress: Channel<Vec<PingResultDto>>,
     ping: State<'_, Arc<PingState>>,
 ) -> Result<(), String> {
-    if targets.is_empty() || ping.paused.load(Ordering::Relaxed) {
+    if targets.is_empty() || ping.is_paused() {
         return Ok(());
     }
-    let concurrency = concurrency.unwrap_or(VISIBLE_CONCURRENT).clamp(5, 100);
-    let timeout = Duration::from_millis(timeout_ms.unwrap_or(VISIBLE_TIMEOUT_MS).clamp(1000, 5000));
+    let concurrency = concurrency.unwrap_or(LIST_CONCURRENT).clamp(5, 100);
+    let timeout = Duration::from_millis(timeout_ms.unwrap_or(LIST_TIMEOUT_MS).clamp(1000, 5000));
     let state = Arc::clone(&ping);
-    tauri::async_runtime::spawn(scan(targets, concurrency, timeout, on_progress, state));
+    tauri::async_runtime::spawn(scan(
+        targets,
+        concurrency,
+        timeout,
+        Sink::Batches(on_progress),
+        state,
+    ));
     Ok(())
 }
 
-/// Cached results for `targets` ("ip:port"); targets never pinged are left out.
+/// Known results for `targets` ("ip:port"); targets never pinged are left out.
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn get_pings(
-    targets: Vec<String>,
-    ping: State<'_, Arc<PingState>>,
-) -> Result<Vec<PingResultDto>, String> {
-    let cache = ping.cache.read().await;
+pub(crate) async fn get_pings(targets: Vec<String>) -> Result<Vec<PingResultDto>, String> {
+    let map = live::store().read();
     Ok(targets
         .iter()
         .filter_map(|key| {
-            let cached = cache.get(key)?;
             let (ip, port) = parse_target(key)?;
-            Some(cached.to_dto(ip.to_owned(), port))
+            Some(to_dto(map.get(ip, port)?, ip.to_owned(), port))
         })
         .collect())
 }
@@ -264,23 +259,18 @@ pub(crate) async fn ping_single(
     ip: String,
     port: i64,
     timeout_ms: Option<u64>,
-    ping: State<'_, Arc<PingState>>,
 ) -> Result<u32, String> {
     let addr = format!("{ip}:{port}");
     let timeout = Duration::from_millis(timeout_ms.unwrap_or(MANUAL_TIMEOUT_MS));
-    let p = match tokio::time::timeout(timeout, dz_a2s::ping(&addr)).await {
-        Ok(Ok(p)) => p,
-        Ok(Err(e)) => return Err(format!("A2S query failed: {e}")),
-        Err(_) => return Err("Timeout".into()),
+    let r = match tokio::time::timeout(timeout, dz_a2s::ping(&addr)).await {
+        Ok(r) => r,
+        Err(_) => Err(dz_common::Error::A2sQuery("Timeout".into())),
     };
-    ping.cache
-        .write()
-        .await
-        .insert(addr, Cached::from_result(&Ok(p)));
-    Ok(p.ms)
+    live::store().record(&ip, port, Live::from_result(&r));
+    r.map(|p| p.ms).map_err(|e| e.to_string())
 }
 
-/// Stop the background scan and clear the pause.
+/// Stop the whole-list scan and clear the pause.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn cancel_ping(ping: State<'_, Arc<PingState>>) -> Result<(), String> {
