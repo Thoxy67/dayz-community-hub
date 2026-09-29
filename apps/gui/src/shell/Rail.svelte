@@ -46,7 +46,7 @@
 {#snippet entry(p: Place)}
   {@const on = app.view === p.id}
   {@const c = countOf(p.id)}
-  <Tooltip text={collapsed ? $n[p.label].value : ""} kbd={shortcut(p)} class="flex">
+  <Tooltip text={collapsed ? String($n[p.label]) : ""} kbd={shortcut(p)} class="flex">
     <button
       class={cn(
         "group relative flex h-control-lg w-full items-center gap-2.5 rounded-sm text-sm transition-colors",
@@ -54,13 +54,13 @@
         on ? "bg-raised text-fg" : "text-fg-muted hover:bg-raised/60 hover:text-fg",
       )}
       aria-current={on ? "page" : undefined}
-      aria-label={$n[p.label].value}
+      aria-label={String($n[p.label])}
       onclick={() => app.go(p.id)}
     >
       {#if on}<span class="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-accent"></span>{/if}
       <p.icon class={cn("size-icon shrink-0", on ? "text-accent" : "text-fg-faint group-hover:text-fg-muted")} />
       {#if !collapsed}
-        <span class="min-w-0 flex-1 truncate text-left">{$n[p.label].value}</span>
+        <span class="min-w-0 flex-1 truncate text-left">{String($n[p.label])}</span>
         {#if c}<span class={cn("num font-mono text-2xs", c.tone ?? "text-fg-faint")}>{c.value}</span>{/if}
       {:else if c?.tone}
         <span class="absolute top-1.5 right-2 size-1.5 rounded-full bg-warn"></span>
@@ -80,7 +80,7 @@
     {#each GROUPS as g (g.id)}
       <div class="flex flex-col gap-0.5">
         {#if !collapsed}
-          <span class="label-stencil px-2.5 pb-1 text-fg-faint">{$n[g.label].value}</span>
+          <span class="label-stencil px-2.5 pb-1 text-fg-faint">{String($n[g.label])}</span>
         {:else}
           <span class="mx-auto mb-1 h-px w-5 bg-border"></span>
         {/if}

@@ -1,28 +1,10 @@
 /** The player's profile: identity, Steam, favourites, history, launch options. */
 import { call } from "./core";
-import type { ProfileDto } from "./types";
+import type { ProfileDto, ProfileSettingsInput } from "./types";
 
 export const getProfile = () => call<ProfileDto>("get_profile");
 
-export type ProfileSettings = {
-  player: string | null;
-  steamLogin: string | null;
-  steamPassword: string | null;
-  steamRoot: string | null;
-  steamcmdEnabled: boolean;
-  steamcmdPath: string | null;
-  steamApiKey: string | null;
-  steamId: string | null;
-  battlemetricsApiKey: string | null;
-  userLocation: [number, number] | null;
-  pingConcurrency: number;
-  pingTimeoutAuto: number;
-  pingTimeoutManual: number;
-  pingMaxRetries: number;
-  pingScanFavorites: boolean;
-  pingScanHistory: boolean;
-  pingScanServers: boolean;
-};
+export type ProfileSettings = ProfileSettingsInput;
 export const saveProfileSettings = (settings: ProfileSettings) =>
   call<void>("save_profile_settings", { settings });
 

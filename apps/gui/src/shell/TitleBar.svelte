@@ -7,7 +7,7 @@
   import X from "~icons/lucide/x";
   import ServerIcon from "~icons/lucide/server";
   import Users from "~icons/lucide/users";
-  import SteamIcon from "~icons/lucide/gamepad-2";
+  import { SteamIcon } from "$lib/components/ui/brand";
   import Download from "~icons/lucide/download";
   import PackageUp from "~icons/lucide/package-open";
   import TriangleAlert from "~icons/lucide/triangle-alert";
@@ -52,12 +52,14 @@
       DayZ <span class="text-accent">Community Hub</span>
     </span>
     <span class="h-3.5 w-px bg-border-strong"></span>
-    <span class="label-stencil truncate text-fg-muted">{$n[here.label].value}</span>
+    <span class="label-stencil truncate text-fg-muted">{String($n[here.label])}</span>
   </div>
 
   <!-- The live figures, centred on the window, not on the space left over. -->
-  <div class="pointer-events-none absolute inset-y-0 left-1/2 flex -translate-x-1/2 items-center gap-4">
-    {#snippet stat(Icon: typeof ServerIcon, value: string, label: string, tone: string)}
+  <div
+    class="pointer-events-none absolute inset-y-0 left-1/2 flex -translate-x-1/2 items-center gap-4 max-[1180px]:hidden"
+  >
+    {#snippet stat(Icon: import("svelte").Component<{ class?: string }>, value: string, label: string, tone: string)}
       <Tooltip text={label} side="bottom">
         <span class="pointer-events-auto flex items-center gap-1.5">
           <Icon class="size-icon-sm {tone}" />
@@ -77,7 +79,7 @@
         onclick={() => app.go("settings", "steam")}
       >
         <TriangleAlert class="size-icon-sm" />
-        {$s.titlebarSteamcmdMissing.value}
+        <span class="max-xl:hidden">{$s.titlebarSteamcmdMissing.value}</span>
       </button>
     {/if}
 
@@ -88,7 +90,7 @@
           onclick={() => app.go("about", "update")}
         >
           <Download class="size-icon-sm" />
-          {$s.titlebarUpdateAvailable.value}
+          <span class="max-xl:hidden">{$s.titlebarUpdateAvailable.value}</span>
         </button>
       </Tooltip>
     {/if}
@@ -129,7 +131,7 @@
         {#if servers.stats?.player_name}
           <span class="truncate font-medium text-fg">{servers.stats.player_name}</span>
           {#if servers.stats.steam_login}
-            <span class="truncate font-mono text-2xs text-fg-faint">{servers.stats.steam_login}</span>
+            <span class="truncate font-mono text-2xs text-fg-faint max-xl:hidden">{servers.stats.steam_login}</span>
           {/if}
         {:else}
           <span class="italic">{$s.titlebarSetupAccount.value}</span>

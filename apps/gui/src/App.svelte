@@ -90,7 +90,9 @@
     void on<string>("launch-error", (error) => say.err(words("shell").statusLaunchError({ error })));
     void on<CliArgs>("cli-args", (a) => connect.cli(a));
     void getCliArgs()
-      .then((a) => (a.connect || a.reconnect || a.open) && connect.cli(a))
+      .then((a) => {
+        if (a.connect || a.reconnect || a.open) void connect.cli(a);
+      })
       .catch(() => {});
 
     const win = getCurrentWindow();

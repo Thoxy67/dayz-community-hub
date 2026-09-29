@@ -1,8 +1,9 @@
 /** What the desktop does for the app: links, files, the clipboard, where the player is. */
 import { call } from "./core";
 
-export type FileFilter = { name: string; extensions: string[] };
-export type GeoLocation = { lat: number; lon: number; city: string; country: string; country_code: string };
+import type { FileFilter, GeoLocation } from "./types";
+
+export type { FileFilter, GeoLocation };
 
 /** Open a web page in the system browser. */
 export const openUrl = (url: string) => call<void>("open_url", { url });

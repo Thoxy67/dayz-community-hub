@@ -31,13 +31,16 @@
 
 {#if !hidden && last}
   {#if collapsed}
-    <Tooltip text={`${$n.rejoin.value}: ${last.name}`}>
-      <button
-        class="mx-auto grid size-control-lg place-items-center rounded-md border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20"
-        onclick={() => connect.rejoin()}
-        aria-label={$n.rejoin.value}><Play class="size-icon" /></button
-      >
-    </Tooltip>
+    <!-- Same frame as the rail's entries, so the icon lines up with theirs. -->
+    <div class="px-1.5">
+      <Tooltip text={`${$n.rejoin.value}: ${last.name}`} class="flex">
+        <button
+          class="grid h-control-lg w-full place-items-center rounded-sm bg-accent/15 text-accent hover:bg-accent/25"
+          onclick={() => connect.rejoin()}
+          aria-label={$n.rejoin.value}><Play class="size-icon" /></button
+        >
+      </Tooltip>
+    </div>
   {:else}
     <div class="relative mx-2 overflow-hidden rounded-md border border-border bg-panel">
       <div class="flex items-center gap-1.5 border-b border-border/70 px-2 py-1">

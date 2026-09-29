@@ -1,6 +1,6 @@
 /** Installed Workshop mods, and the SteamCMD operations that fetch them. */
 import { call, type Channel } from "./core";
-import type { InstalledModDto, ModProgressEvent } from "./types";
+import type { InstalledModDto, ModOpType, ModProgressEvent } from "./types";
 
 export const getInstalledMods = () => call<InstalledModDto[]>("get_installed_mods");
 export const checkModUpdates = () => call<InstalledModDto[]>("check_mod_updates");
@@ -11,14 +11,7 @@ export const cleanupMods = () => call<string>("cleanup_mods");
 export const openWorkshopDir = () => call<void>("open_workshop_dir");
 export const openModDir = (modId: number) => call<void>("open_mod_dir", { modId });
 
-export type ModOpType =
-  | "update_one"
-  | "update_all"
-  | "update_stale"
-  | "update_selected"
-  | "install_server"
-  | "update_server"
-  | "install_manual";
+export type { ModOpType };
 
 export const startModOperation = (
   opType: ModOpType,

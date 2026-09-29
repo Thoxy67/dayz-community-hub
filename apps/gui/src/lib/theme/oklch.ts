@@ -16,14 +16,14 @@ export function parseOklch(oklchStr: string): OklchColor | null {
   const match = oklchStr.match(/oklch\(\s*([\d.]+)%?\s+([\d.]+)\s+([\d.]+)\s*\)/i);
   if (!match) return null;
 
-  let l = parseFloat(match[1]);
+  let l = parseFloat(match[1]!);
   // If percentage, convert to 0-1
   if (l > 1) l = l / 100;
 
   return {
     l,
-    c: parseFloat(match[2]),
-    h: parseFloat(match[3]),
+    c: parseFloat(match[2]!),
+    h: parseFloat(match[3]!),
   };
 }
 
