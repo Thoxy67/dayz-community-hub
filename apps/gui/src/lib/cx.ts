@@ -20,13 +20,14 @@ const merge = extendTailwindMerge({
         "icon-sm",
         "icon",
         "icon-lg",
+        "pad",
       ],
       radius: ["xs", "sm", "md", "lg", "full"],
       text: ["3xs", "2xs", "xs", "sm", "base", "lg", "xl", "2xl", "3xl"],
       shadow: ["pop", "glow"],
     },
     classGroups: {
-      z: [{ z: ["raised", "popover", "dialog", "toast", "titlebar"] }],
+      z: [{ z: ["raised", "popover", "dialog", "toast", "titlebar", "tip"] }],
     },
   },
 });

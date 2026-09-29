@@ -40,6 +40,8 @@
   --color-border: color-mix(in oklch, var(--t-raised) 72%, var(--t-fg) 12%);
   --color-border-strong: color-mix(in oklch, var(--t-raised) 55%, var(--t-fg) 30%);
   --color-scrim: color-mix(in oklch, var(--t-bg) 55%, transparent);
+  /* The deepest ground: dialog veils, terminal output, the sparkline's well. */
+  --color-plot: color-mix(in oklch, var(--t-bg) 55%, black);
 
   /* ── text ─────────────────────────────────────────────────────────── */
   --color-fg: var(--t-fg);
@@ -106,10 +108,13 @@
   --spacing-icon-sm: 14px;
   --spacing-icon: 16px;
   --spacing-icon-lg: 20px;
+  /* The horizontal air inside a view, a panel, a toolbar. */
+  --spacing-pad: 12px;
 
   /* ── depth ────────────────────────────────────────────────────────── */
   --shadow-pop:
     0 8px 24px -6px rgb(0 0 0 / 0.5), 0 0 0 1px color-mix(in oklch, var(--t-fg) 9%, transparent);
+  --glow-accent-soft: 0 0 8px color-mix(in oklch, var(--t-accent) 28%, transparent);
   --shadow-glow: 0 0 0 1px color-mix(in oklch, var(--t-accent) 45%, transparent),
     0 0 14px -2px color-mix(in oklch, var(--t-accent) 40%, transparent);
 
@@ -167,4 +172,7 @@
 }
 @utility z-titlebar {
   z-index: 70;
+}
+@utility z-tip {
+  z-index: 80;
 }
