@@ -1,7 +1,7 @@
 <script lang="ts">
   import { dict } from "$lib/i18n";
   import ExternalLink from "~icons/lucide/external-link";
-  import TriangleAlert from "~icons/lucide/triangle-alert";
+  import Info from "~icons/lucide/info";
   import Download from "~icons/lucide/download";
   import RefreshCw from "~icons/lucide/refresh-cw";
   import { Dialog } from "$lib/components/ui/dialog";
@@ -65,8 +65,8 @@
         </li>
       {/each}
     </ul>
-    <p class="m-0 mt-2.5 flex items-center gap-1.5 text-2xs text-warn">
-      <TriangleAlert class="size-3.5 shrink-0" />{$m.confirmWarning.value}
+    <p class="m-0 mt-2.5 flex items-center gap-1.5 text-2xs text-fg-faint">
+      <Info class="size-3.5 shrink-0" />{$m.confirmWarning.value}
     </p>
   {/if}
   {#snippet footer()}

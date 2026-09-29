@@ -782,11 +782,11 @@ const content = {
       }),
     ),
     confirmWarning: t({
-      en: "Steam will be closed during this operation",
-      fr: "Steam sera fermé pendant cette opération",
-      de: "Steam wird während dieses Vorgangs geschlossen",
-      es: "Steam se cerrará durante esta operación",
-      ru: "Steam будет закрыт во время этой операции",
+      en: "Steam stays open. Launch the game once the download has finished.",
+      fr: "Steam reste ouvert. Lancez le jeu une fois le téléchargement terminé.",
+      de: "Steam bleibt geöffnet. Starten Sie das Spiel, wenn der Download abgeschlossen ist.",
+      es: "Steam permanece abierto. Inicia el juego cuando termine la descarga.",
+      ru: "Steam остаётся открытым. Запускайте игру после завершения загрузки.",
     }),
     confirmUpdate: insert(
       t({
