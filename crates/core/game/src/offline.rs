@@ -11,6 +11,15 @@ const MISSIONS_DIR: &str = "Missions";
 /// User-Agent required by GitHub API (any non-empty string works).
 const UA: &str = concat!("dayz-community-hub/", env!("CARGO_PKG_VERSION"));
 
+/// A single folder name: no separators, no `..`, nothing absolute.
+pub fn is_mission_name(name: &str) -> bool {
+    !name.is_empty()
+        && name != "."
+        && name != ".."
+        && !name.contains(['/', '\\', ':'])
+        && Path::new(name).components().count() == 1
+}
+
 pub struct OfflineMode {
     dayz_path: PathBuf,
     client: Client,
@@ -291,8 +300,19 @@ impl OfflineMode {
     }
 
     /// Remove a single mission folder from `DayZ/Missions/`.
+    /// A mission's folder, if `mission` names one: a single folder name, never
+    /// a path that could reach outside `Missions/`.
+    pub fn mission_path(&self, mission: &str) -> Result<PathBuf> {
+        if !is_mission_name(mission) {
+            return Err(dz_common::Error::Other(format!(
+                "Not a mission name: {mission}"
+            )));
+        }
+        Ok(self.missions_path().join(mission))
+    }
+
     pub fn remove_mission(&self, mission: &str) -> Result<()> {
-        let mission_path = self.missions_path().join(mission);
+        let mission_path = self.mission_path(mission)?;
         if !mission_path.exists() {
             return Err(dz_common::Error::Other(format!(
                 "Mission not found: {}",
@@ -406,5 +426,23 @@ impl OfflineMode {
         }
 
         args
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mission_names_are_single_folders() {
+        assert!(is_mission_name("DayZCommunityOfflineMode.ChernarusPlus"));
+        assert!(!is_mission_name(".."));
+        assert!(!is_mission_name("../x"));
+        assert!(!is_mission_name("a/b"));
+        assert!(!is_mission_name("a\\b"));
+        assert!(!is_mission_name("C:x"));
+        assert!(!is_mission_name(""));
+        let om = OfflineMode::new("/games/DayZ", Client::new());
+        assert!(om.mission_path("../../etc").is_err());
     }
 }

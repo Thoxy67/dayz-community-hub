@@ -258,47 +258,48 @@ impl DayzCtl {
         )
     }
 
-    /// Join `server` through `steam -applaunch`:
-    /// 1. start Steam if it is not running and wait for it to be ready,
-    /// 2. hand Steam the launch arguments.
-    ///
-    /// Recording the server in the history is the caller's job, on the
-    /// profile it actually keeps.
+    /// Join `server` through `steam -applaunch`. Recording the server in the
+    /// history is the caller's job, on the profile it actually keeps.
     pub async fn launch_game(
         &self,
         server: &Server,
         password: Option<&str>,
         extra_args: &[String],
     ) -> Result<()> {
-        // `start` spawns a process and scans the process table (sysinfo), both
-        // blocking, so run them off the async runtime thread.
-        let already_running = tokio::task::spawn_blocking(SteamClient::start)
-            .await
-            .map_err(|e| Error::Other(format!("steam start task failed: {e}")))??;
+        run_through_steam(self.build_steam_launch_args(server, password, extra_args)).await
+    }
+}
 
-        // A cold-started Steam discards -applaunch until its IPC socket is up
-        // (which is why a second attempt always used to work): wait for the
-        // process, then give it a moment to register the launch handler.
-        if !already_running {
-            for _ in 0..30u8 {
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                let running = tokio::task::spawn_blocking(SteamClient::is_running)
-                    .await
-                    .unwrap_or(false);
-                if running {
-                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                    break;
-                }
+/// Hand Steam a command line (`-applaunch 221100 …`):
+/// 1. start Steam if it is not running and wait for it to be ready,
+/// 2. run it with the arguments.
+pub async fn run_through_steam(args: Vec<String>) -> Result<()> {
+    // `start` spawns a process and scans the process table (sysinfo), both
+    // blocking, so run them off the async runtime thread.
+    let already_running = tokio::task::spawn_blocking(SteamClient::start)
+        .await
+        .map_err(|e| Error::Other(format!("steam start task failed: {e}")))??;
+
+    // A cold-started Steam discards -applaunch until its IPC socket is up
+    // (which is why a second attempt always used to work): wait for the
+    // process, then give it a moment to register the launch handler.
+    if !already_running {
+        for _ in 0..30u8 {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            let running = tokio::task::spawn_blocking(SteamClient::is_running)
+                .await
+                .unwrap_or(false);
+            if running {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                break;
             }
         }
-
-        let args = self.build_steam_launch_args(server, password, extra_args);
-
-        let mut cmd = Command::new(SteamClient::steam_exe_path());
-        cmd.args(&args).stdout(Stdio::null()).stderr(Stdio::null());
-        #[cfg(target_os = "windows")]
-        cmd.creation_flags(dz_common::CREATE_NO_WINDOW);
-        cmd.spawn()?;
-        Ok(())
     }
+
+    let mut cmd = Command::new(SteamClient::steam_exe_path());
+    cmd.args(&args).stdout(Stdio::null()).stderr(Stdio::null());
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(dz_common::CREATE_NO_WINDOW);
+    cmd.spawn()?;
+    Ok(())
 }

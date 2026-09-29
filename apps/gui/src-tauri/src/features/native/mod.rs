@@ -28,11 +28,38 @@ pub struct GeoLocation {
     pub country_code: String,
 }
 
-/// Open a web page in the system browser.
+/// Schemes the window may ask the system to open. A link in a news article
+/// is remote content: `file:` or a custom scheme would hand the OS whatever
+/// it pointed at.
+fn is_openable(url: &str) -> bool {
+    let lower = url.trim_start().to_ascii_lowercase();
+    ["https://", "http://", "steam://", "mailto:"]
+        .iter()
+        .any(|p| lower.starts_with(p))
+}
+
+/// Open a web page (or a steam:// link) in the system's handler.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn open_url(app: AppHandle, url: String) -> Result<(), String> {
+    if !is_openable(&url) {
+        return Err(format!(
+            "Refusing to open {url}: only web and Steam links open"
+        ));
+    }
     app.opener().open_url(url, None::<&str>).cmd_err()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn only_web_and_steam_links_open() {
+        assert!(super::is_openable("https://dayz.com"));
+        assert!(super::is_openable("steam://run/221100"));
+        assert!(!super::is_openable("file:///etc/passwd"));
+        assert!(!super::is_openable("javascript:alert(1)"));
+        assert!(!super::is_openable("C:\\Windows\\calc.exe"));
+    }
 }
 
 /// Copy text to the clipboard.

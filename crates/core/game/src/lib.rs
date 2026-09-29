@@ -9,7 +9,7 @@ pub mod mods;
 pub mod offline;
 pub mod operation;
 
-pub use ctl::DayzCtl;
+pub use ctl::{DayzCtl, run_through_steam};
 pub use dzch::{DzchConfig, DzchMod};
 pub use offline::OfflineMode;
 pub use operation::ModOperation;

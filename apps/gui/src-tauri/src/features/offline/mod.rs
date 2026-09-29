@@ -101,38 +101,28 @@ pub(crate) async fn launch_offline_mission(
     mission: String,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    let (dayz_path, client, player) = {
+    if !dz_game::offline::is_mission_name(&mission) {
+        return Err(format!("Not a mission name: {mission}"));
+    }
+    let (om, player) = {
         let state = state.read().await;
-        let path = state.ctl.dayz_path().cmd_err()?;
-        let client = state.ctl.http_client().clone();
-        let player = state.ctl.profile().player.clone();
-        (path, client, player)
+        (
+            OfflineMode::new(
+                state.ctl.dayz_path().cmd_err()?,
+                state.ctl.http_client().clone(),
+            ),
+            state.ctl.profile().player.clone(),
+        )
     };
-
-    let om = OfflineMode::new(dayz_path, client);
-    let dayz_args = om.build_launch_args(&mission, &[], false);
     let steam_args = dz_game::launch::build_steam_applaunch_args(
         dz_steamcmd::DAYZ_GAME_ID,
-        &dayz_args,
+        &om.build_launch_args(&mission, &[], false),
         player.as_deref(),
     );
-
-    // Starting Steam scans the process table: blocking work.
-    spawn_blocking_mapped(move || -> Result<(), String> {
-        dz_steamcmd::SteamClient::start().map_err(|e| format!("Could not start Steam: {e}"))?;
-        let mut cmd = std::process::Command::new(dz_steamcmd::SteamClient::steam_exe_path());
-        cmd.args(&steam_args)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
-        #[cfg(target_os = "windows")]
-        {
-            use std::os::windows::process::CommandExt;
-            cmd.creation_flags(dz_common::CREATE_NO_WINDOW);
-        }
-        cmd.spawn().cmd_err()?;
-        Ok(())
-    })
-    .await
+    // The same path as joining a server: a cold Steam is waited for.
+    dz_game::run_through_steam(steam_args)
+        .await
+        .map_err(|e| format!("Could not start the mission through Steam: {e}"))
 }
 
 /// Open a specific offline mission's folder in the system file manager.
@@ -143,14 +133,10 @@ pub(crate) async fn open_mission_dir(
     mission: String,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    let path = state
-        .read()
-        .await
-        .ctl
-        .dayz_path()
-        .cmd_err()?
-        .join("Missions")
-        .join(&mission);
+    let path = offline_mode_from_state(state.inner())
+        .await?
+        .mission_path(&mission)
+        .cmd_err()?;
     app.opener()
         .open_path(path.to_string_lossy().as_ref(), None::<&str>)
         .cmd_err()

@@ -78,7 +78,61 @@ pub(crate) async fn export_profile(path: String, include_mods: bool) -> Result<(
     Ok(())
 }
 
-/// Import a profile bundle, overwriting all settings files.
+/// Largest decompressed bundle accepted: settings are kilobytes, so anything
+/// near this is not a profile (or is a decompression bomb).
+const MAX_BUNDLE_BYTES: u64 = 32 * 1024 * 1024;
+
+/// A settings file name a bundle may write: a plain `name.json` in the data
+/// directory, never a path.
+fn is_settings_file_name(name: &str) -> bool {
+    name.ends_with(".json")
+        && name.len() > ".json".len()
+        && !name.starts_with('.')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+        && !name.contains("..")
+        && !EXPORT_EXCLUDE.contains(&name)
+}
+
+/// The files a bundle holds, checked before anything on disk is touched.
+fn bundle_files(raw: &serde_json::Value) -> Result<Vec<(String, String)>, String> {
+    let version = raw["version"].as_u64().unwrap_or(1);
+    let files: Vec<(String, &serde_json::Value)> = match version {
+        1 => {
+            if !raw["profile"].is_object() {
+                return Err("This bundle holds no profile".into());
+            }
+            let mut v = vec![("profile.json".to_string(), &raw["profile"])];
+            if !raw["mods"].is_null() {
+                v.push(("mods.json".to_string(), &raw["mods"]));
+            }
+            v
+        }
+        2 => raw["files"]
+            .as_object()
+            .ok_or("This bundle's file list is missing")?
+            .iter()
+            .map(|(k, v)| (k.clone(), v))
+            .collect(),
+        v => return Err(format!("Unsupported bundle version {v}")),
+    };
+    if !files.iter().any(|(name, _)| name == "profile.json") {
+        return Err("This bundle holds no profile.json".into());
+    }
+    files
+        .into_iter()
+        .map(|(name, value)| {
+            if !is_settings_file_name(&name) {
+                return Err(format!("This bundle names a file it may not write: {name}"));
+            }
+            Ok((name, serde_json::to_string_pretty(value).cmd_err()?))
+        })
+        .collect()
+}
+
+/// Import a profile bundle, replacing the settings files. The bundle is read
+/// and checked in full first, so a bad file leaves the current settings alone.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn import_profile(
@@ -89,20 +143,31 @@ pub(crate) async fn import_profile(
         .await
         .map_err(|e| format!("Cannot read import file: {e}"))?;
 
-    let json_bytes =
-        tokio::task::spawn_blocking(move || zstd::decode_all(std::io::Cursor::new(&compressed)))
-            .await
-            .map_err(|e| format!("decompression task failed: {e}"))?
-            .map_err(|e| format!("zstd decompression failed: {e}"))?;
+    let json_bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
+        use std::io::Read;
+        let decoder = zstd::Decoder::new(std::io::Cursor::new(compressed))
+            .map_err(|e| format!("Not a profile bundle: {e}"))?;
+        let mut out = Vec::new();
+        decoder
+            .take(MAX_BUNDLE_BYTES + 1)
+            .read_to_end(&mut out)
+            .map_err(|e| format!("Not a profile bundle: {e}"))?;
+        if out.len() as u64 > MAX_BUNDLE_BYTES {
+            return Err("This file is too large to be a profile bundle".into());
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(|e| format!("decompression task failed: {e}"))??;
 
     let raw: serde_json::Value =
         serde_json::from_slice(&json_bytes).map_err(|e| format!("Bundle parse error: {e}"))?;
-
-    let version = raw["version"].as_u64().unwrap_or(1) as u8;
+    let files = bundle_files(&raw)?;
 
     let data_dir = paths::default_data_dir();
     tokio::fs::create_dir_all(&data_dir).await.cmd_err()?;
 
+    // Only now: remove the old settings files and write the bundle's.
     {
         let mut rd = tokio::fs::read_dir(&data_dir)
             .await
@@ -118,30 +183,10 @@ pub(crate) async fn import_profile(
             }
         }
     }
-
-    match version {
-        1 => {
-            let profile_str = serde_json::to_string_pretty(&raw["profile"]).cmd_err()?;
-            tokio::fs::write(data_dir.join("profile.json"), &profile_str)
-                .await
-                .map_err(|e| format!("Cannot write profile.json: {e}"))?;
-            if !raw["mods"].is_null() {
-                let mods_str = serde_json::to_string_pretty(&raw["mods"]).cmd_err()?;
-                tokio::fs::write(data_dir.join("mods.json"), &mods_str)
-                    .await
-                    .map_err(|e| format!("Cannot write mods.json: {e}"))?;
-            }
-        }
-        2 => {
-            let files = raw["files"].as_object().ok_or("Bundle files map missing")?;
-            for (filename, value) in files {
-                let content = serde_json::to_string_pretty(value).cmd_err()?;
-                tokio::fs::write(data_dir.join(filename), &content)
-                    .await
-                    .map_err(|e| format!("Cannot write {filename}: {e}"))?;
-            }
-        }
-        v => return Err(format!("Unsupported bundle version {v}")),
+    for (name, content) in &files {
+        tokio::fs::write(data_dir.join(name), content)
+            .await
+            .map_err(|e| format!("Cannot write {name}: {e}"))?;
     }
 
     let profile_path = paths::default_profile_path();
@@ -170,4 +215,36 @@ pub(crate) async fn reset_profile(_state: State<'_, SharedState>) -> Result<(), 
 #[specta::specta]
 pub(crate) fn restart_app(app: tauri::AppHandle) {
     app.restart();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_plain_json_names_may_be_written() {
+        assert!(is_settings_file_name("profile.json"));
+        assert!(is_settings_file_name("mods.json"));
+        assert!(!is_settings_file_name("../profile.json"));
+        assert!(!is_settings_file_name("..\\x.json"));
+        assert!(!is_settings_file_name("/etc/x.json"));
+        assert!(!is_settings_file_name("sub/x.json"));
+        assert!(!is_settings_file_name(".json"));
+        assert!(!is_settings_file_name("x.txt"));
+        assert!(!is_settings_file_name("server_list_cache.json"));
+    }
+
+    #[test]
+    fn bundles_are_checked_before_use() {
+        let ok = serde_json::json!({"version": 2, "files": {"profile.json": {}, "mods.json": []}});
+        assert_eq!(bundle_files(&ok).unwrap().len(), 2);
+        let evil =
+            serde_json::json!({"version": 2, "files": {"profile.json": {}, "../../x.json": {}}});
+        assert!(bundle_files(&evil).is_err());
+        let empty = serde_json::json!({"version": 2, "files": {"mods.json": []}});
+        assert!(bundle_files(&empty).is_err());
+        let v1 = serde_json::json!({"version": 1, "profile": {"player": "x"}});
+        assert_eq!(bundle_files(&v1).unwrap()[0].0, "profile.json");
+        assert!(bundle_files(&serde_json::json!({"version": 9})).is_err());
+    }
 }
