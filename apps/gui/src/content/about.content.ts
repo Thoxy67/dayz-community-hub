@@ -3,6 +3,16 @@ import { insert, t, type Dictionary } from "intlayer";
 const content = {
   key: "about",
   content: {
+    system: t({ en: "This machine", fr: "Cette machine", de: "Dieser Rechner", es: "Este equipo", ru: "Этот компьютер" }),
+    systemCpu: t({ en: "Processor", fr: "Processeur", de: "Prozessor", es: "Procesador", ru: "Процессор" }),
+    systemCores: insert(t({ en: "{{physical}} cores · {{logical}} threads", fr: "{{physical}} cœurs · {{logical}} threads", de: "{{physical}} Kerne · {{logical}} Threads", es: "{{physical}} núcleos · {{logical}} hilos", ru: "{{physical}} ядер · {{logical}} потоков" })),
+    systemMemory: t({ en: "Memory", fr: "Mémoire", de: "Arbeitsspeicher", es: "Memoria", ru: "Память" }),
+    systemHint: t({ en: "Used to suggest -cpuCount, -exThreads and -maxMem in Launch options.", fr: "Sert à proposer -cpuCount, -exThreads et -maxMem dans les options de lancement.", de: "Dient für Vorschläge zu -cpuCount, -exThreads und -maxMem in den Startoptionen.", es: "Sirve para sugerir -cpuCount, -exThreads y -maxMem en las opciones de inicio.", ru: "Используется для подсказок -cpuCount, -exThreads и -maxMem." }),
+    version: t({ en: "Version", fr: "Version", de: "Version", es: "Versión", ru: "Версия" }),
+    checkUpdates: t({ en: "Check for updates", fr: "Rechercher des mises à jour", de: "Nach Updates suchen", es: "Buscar actualizaciones", ru: "Проверить обновления" }),
+    updatesPackageManager: t({ en: "On this system, updates come through your package manager or a new release download.", fr: "Sur ce système, les mises à jour passent par votre gestionnaire de paquets ou le téléchargement d'une nouvelle version.", de: "Auf diesem System kommen Updates über den Paketmanager oder einen neuen Download.", es: "En este sistema, las actualizaciones llegan por tu gestor de paquetes o una nueva descarga.", ru: "В этой системе обновления приходят через менеджер пакетов или новую загрузку." }),
+    licenseMit: t({ en: "MIT licence", fr: "Licence MIT", de: "MIT-Lizenz", es: "Licencia MIT", ru: "Лицензия MIT" }),
+    openSource: t({ en: "Free and open source", fr: "Libre et open source", de: "Frei und quelloffen", es: "Libre y de código abierto", ru: "Свободное ПО с открытым кодом" }),
     heroTagline: t({ en: "Server browser & mod manager for DayZ Standalone", fr: "Navigateur de serveurs et gestionnaire de mods pour DayZ Standalone", de: "Server-Browser & Mod-Manager für DayZ Standalone", es: "Navegador de servidores y gestor de mods para DayZ Standalone", ru: "Браузер серверов и менеджер модов для DayZ Standalone" }),
     sourceRepo: t({ en: "Source repository", fr: "Dépôt source", de: "Quellcode-Repository", es: "Repositorio de código", ru: "Исходный код" }),
     featBrowser: t({ en: "Server Browser", fr: "Navigateur de serveurs", de: "Server-Browser", es: "Navegador de servidores", ru: "Браузер серверов" }),
