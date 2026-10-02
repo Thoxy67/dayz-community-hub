@@ -9,6 +9,7 @@ import { errorText } from "$lib/ipc/core";
 import { copyText, pickFile, saveFile } from "$lib/ipc/native";
 import { writeDzchFile } from "$lib/ipc/system";
 import { splitHostPort } from "$lib/address";
+import { dzchLink } from "$lib/dzch";
 import type { A2sDetailsDto, DzchConfig, ModDto, ServerFullDto } from "$lib/ipc/types";
 import { words } from "$lib/i18n";
 import { connect } from "$lib/stores/connect.svelte";
@@ -324,12 +325,14 @@ class DirectForm {
   /** The same server as a `dzch://` link, which opens this app straight on it. */
   link(): string {
     const c = this.#config();
-    const params: string[] = [];
-    if (c.query_port) params.push(`qport=${c.query_port}`);
-    if (c.name) params.push(`name=${encodeURIComponent(c.name)}`);
-    if (c.password) params.push(`password=${encodeURIComponent(c.password)}`);
-    if (c.mods.length) params.push(`mods=${c.mods.map((m) => m.id).join(",")}`);
-    return `dzch://${c.ip}:${c.port}${params.length ? `?${params.join("&")}` : ""}`;
+    return dzchLink({
+      ip: c.ip,
+      gamePort: c.port,
+      queryPort: c.query_port,
+      name: c.name,
+      password: c.password,
+      modIds: c.mods.map((m) => m.id),
+    });
   }
 
   async copyLink() {

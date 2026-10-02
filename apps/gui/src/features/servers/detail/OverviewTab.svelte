@@ -14,6 +14,7 @@
   import { Spinner } from "$lib/components/ui/spinner";
   import { Facts, Section, type Fact } from "$lib/components/app";
   import { mapName } from "$lib/components/app/map-name";
+  import { dzchLink } from "$lib/dzch";
   import { connect } from "$lib/stores/connect.svelte";
   import { profile } from "$lib/stores/profile.svelte";
   import { distanceKm, duration, num, relative, dateTime } from "$lib/format";
@@ -30,14 +31,15 @@
     v == null ? "—" : v ? $c.yes.value : $c.no.value;
 
   /** The server as a dzch:// link, which opens this app straight on it. */
-  const shareLink = $derived.by(() => {
-    const p: string[] = [];
-    if (m.queryPort !== m.gamePort) p.push(`qport=${m.queryPort}`);
-    if (m.title) p.push(`name=${encodeURIComponent(m.title)}`);
-    const ids = m.modRows.map((r) => r.id);
-    if (ids.length) p.push(`mods=${ids.join(",")}`);
-    return `dzch://${m.address}${p.length ? `?${p.join("&")}` : ""}`;
-  });
+  const shareLink = $derived(
+    dzchLink({
+      ip: m.ip,
+      gamePort: m.gamePort,
+      queryPort: m.queryPort,
+      name: m.title,
+      modIds: m.modRows.map((r) => r.id),
+    }),
+  );
 
   const km = $derived.by(() => {
     const loc = m.bm?.data?.location;
