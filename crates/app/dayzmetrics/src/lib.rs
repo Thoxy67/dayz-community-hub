@@ -1,6 +1,7 @@
 //! Looking a server up on DayZ Metrics (dayzmetrics.com): its rank, uptime,
 //! restart and wipe schedules, whether its population looks fake, and the
-//! last 24 hours of player counts and pings.
+//! last 24 hours of player counts and pings. Once a server's id is known,
+//! [`history`], [`rank_history`] and [`heatmap`] read its longer views.
 //!
 //! The site has no published API; these are the JSON endpoints its own pages
 //! use, read without a key. The app asks only when a server's panel opens and
@@ -46,6 +47,19 @@ struct RawRestart {
     next_restart: Option<String>,
     confidence: Option<String>,
     slots_utc: Vec<String>,
+    coverage: Option<f64>,
+    unscheduled_7d: Option<f64>,
+    restart_loops_7d: Option<f64>,
+    last_unscheduled: Option<String>,
+}
+
+#[derive(Deserialize, Default, Clone)]
+#[serde(default)]
+struct RawWipeEvent {
+    on: Option<String>,
+    source: Option<String>,
+    confidence: Option<f64>,
+    corroborated: bool,
 }
 
 #[derive(Deserialize, Default, Clone)]
@@ -58,6 +72,9 @@ struct RawWipe {
     next_source: Option<String>,
     days_until: Option<f64>,
     period_days: Option<f64>,
+    phase: Option<String>,
+    confidence: Option<f64>,
+    events: Vec<RawWipeEvent>,
 }
 
 #[derive(Deserialize, Default, Clone)]
@@ -106,7 +123,12 @@ struct RawDetail {
     behavior_verdict: Option<String>,
     behavior_score: Option<f64>,
     flagged: bool,
+    flag_reason: Option<String>,
+    suspect: bool,
     mimics_official: bool,
+    description: Option<String>,
+    game_time: Option<String>,
+    game_time_at: Option<String>,
     discord: Option<String>,
     website: Option<String>,
     links: Vec<Value>,
@@ -126,6 +148,14 @@ struct RawPoint {
     ping: Option<f64>,
 }
 
+#[derive(Deserialize, Default, Clone)]
+#[serde(default)]
+struct RawRank {
+    /// "YYYY-MM-DD".
+    t: String,
+    rank: Option<f64>,
+}
+
 // ── what the app gets ────────────────────────────────────────────────────────
 
 /// When the server restarts, as the site has measured it.
@@ -140,6 +170,27 @@ pub struct RestartSchedule {
     pub confidence: Option<String>,
     /// Restart times of day, "HH:MM" UTC.
     pub slots_utc: Vec<String>,
+    /// Share of the expected restarts the site saw happen on time, 0–1.
+    pub coverage: Option<f64>,
+    /// Restarts off the schedule in the last seven days: crashes, mostly.
+    pub unscheduled_7d: Option<f64>,
+    /// Bursts of restarts one after another in the last seven days.
+    pub restart_loops_7d: Option<f64>,
+    /// ISO 8601.
+    pub last_unscheduled: Option<String>,
+}
+
+/// One wipe the site noticed or was told about.
+#[derive(Serialize, Clone, Debug, specta::Type)]
+pub struct WipeEvent {
+    /// "YYYY-MM-DD".
+    pub on: Option<String>,
+    /// "announced" | "surge" | …: how the site knows.
+    pub source: Option<String>,
+    /// 0–1.
+    pub confidence: Option<f64>,
+    /// Seen by more than one signal.
+    pub corroborated: bool,
 }
 
 /// When the server wipes: the last one and the next, each announced or guessed.
@@ -156,6 +207,22 @@ pub struct WipeSchedule {
     pub next_source: Option<String>,
     pub days_until: Option<f64>,
     pub period_days: Option<f64>,
+    /// Where the server is in its wipe cycle: "fresh" | "mid" | "late" | "unknown".
+    pub phase: Option<String>,
+    /// How sure the site is of the cycle, 0–1.
+    pub confidence: Option<f64>,
+    /// Past wipes, newest first as the site sends them.
+    pub events: Vec<WipeEvent>,
+}
+
+/// Average players at one hour of one weekday, over the server's history.
+#[derive(Serialize, Clone, Debug, specta::Type)]
+pub struct HeatCell {
+    /// 0 is Sunday.
+    pub dow: u8,
+    /// UTC.
+    pub hour: u8,
+    pub avg: f64,
 }
 
 /// A link the server lists on its page.
@@ -217,8 +284,17 @@ pub struct ServerMetrics {
     pub behavior_score: Option<f64>,
     /// Reported by players and flagged by the site.
     pub flagged: bool,
+    /// Why the site flagged it, as a sentence.
+    pub flag_reason: Option<String>,
+    /// The site has doubts about the count without calling it fake.
+    pub suspect: bool,
     /// Named to look like an official server without being one.
     pub mimics_official: bool,
+    /// What the server says about itself, when it says anything.
+    pub description: Option<String>,
+    /// The in-game clock ("HH:MM") as it was at `game_time_at` (ISO 8601).
+    pub game_time: Option<String>,
+    pub game_time_at: Option<String>,
     pub discord: Option<String>,
     pub website: Option<String>,
     pub links: Vec<MetricsLink>,
@@ -304,7 +380,9 @@ async fn resolve(
     let page: SearchPage = get(
         client,
         "/servers",
-        &[("q", ip), ("fakes", "show"), ("limit", "50")],
+        // `online=0`: without it the site leaves out servers it has not
+        // heard from lately, which is often the one asked for.
+        &[("q", ip), ("fakes", "show"), ("online", "0"), ("limit", "50")],
     )
     .await?;
     let mut fallback: Option<(Resolved, RawDetail)> = None;
@@ -353,11 +431,74 @@ pub async fn lookup(
     let points: Vec<RawPoint> = get(
         client,
         &format!("/server/{}/timeseries", resolved.id),
-        &[("range", "24h")],
+        &[("range", "1d")],
     )
     .await
     .unwrap_or_default();
     Ok((resolved, build(resolved, raw, &points)))
+}
+
+/// The spans the site keeps player counts and ranks over.
+const HISTORY_RANGES: [&str; 5] = ["1d", "7d", "2w", "1m", "all"];
+const RANK_RANGES: [&str; 4] = ["7d", "1m", "6m", "all"];
+
+fn checked<'a>(range: &'a str, allowed: &[&str]) -> Result<&'a str, String> {
+    allowed
+        .contains(&range)
+        .then_some(range)
+        .ok_or_else(|| format!("Unknown range {range:?}"))
+}
+
+/// Player counts of server `id` over `range` ("1d", "7d", "2w", "1m", "all"):
+/// (unix seconds, players), five minutes apart for a day, coarser beyond.
+pub async fn history(
+    client: &reqwest::Client,
+    id: u64,
+    range: &str,
+) -> Result<Vec<(i64, f64)>, String> {
+    let range = checked(range, &HISTORY_RANGES)?;
+    let points: Vec<RawPoint> =
+        get(client, &format!("/server/{id}/timeseries"), &[("range", range)]).await?;
+    Ok(points
+        .iter()
+        .filter_map(|p| Some((unix_secs(&p.t)?, p.players?)))
+        .collect())
+}
+
+/// The site's rank of server `id`, one a day over `range` ("7d", "1m", "6m",
+/// "all"): ("YYYY-MM-DD", rank), with gaps where it was not ranked.
+pub async fn rank_history(
+    client: &reqwest::Client,
+    id: u64,
+    range: &str,
+) -> Result<Vec<(String, f64)>, String> {
+    let range = checked(range, &RANK_RANGES)?;
+    let points: Vec<RawRank> =
+        get(client, &format!("/server/{id}/rank-history"), &[("range", range)]).await?;
+    Ok(points
+        .into_iter()
+        .filter_map(|p| Some((p.t, p.rank?)))
+        .collect())
+}
+
+/// When server `id` is busiest: average players by weekday and UTC hour.
+pub async fn heatmap(client: &reqwest::Client, id: u64) -> Result<Vec<HeatCell>, String> {
+    #[derive(Deserialize)]
+    struct Raw {
+        dow: u8,
+        hour: u8,
+        avg: Option<f64>,
+    }
+    let cells: Vec<Raw> = get(client, &format!("/server/{id}/heatmap"), &[]).await?;
+    Ok(cells
+        .into_iter()
+        .filter(|c| c.dow < 7 && c.hour < 24)
+        .map(|c| HeatCell {
+            dow: c.dow,
+            hour: c.hour,
+            avg: c.avg.unwrap_or(0.0),
+        })
+        .collect())
 }
 
 // ── shaping ──────────────────────────────────────────────────────────────────
@@ -446,6 +587,10 @@ fn build(resolved: Resolved, d: RawDetail, points: &[RawPoint]) -> ServerMetrics
             next_restart: r.next_restart,
             confidence: r.confidence,
             slots_utc: r.slots_utc,
+            coverage: r.coverage,
+            unscheduled_7d: r.unscheduled_7d,
+            restart_loops_7d: r.restart_loops_7d,
+            last_unscheduled: r.last_unscheduled,
         }),
         wipe: d.wipe.map(|w| WipeSchedule {
             last: w.last,
@@ -455,13 +600,30 @@ fn build(resolved: Resolved, d: RawDetail, points: &[RawPoint]) -> ServerMetrics
             next_source: w.next_source,
             days_until: w.days_until,
             period_days: w.period_days,
+            phase: w.phase,
+            confidence: w.confidence,
+            events: w
+                .events
+                .into_iter()
+                .map(|e| WipeEvent {
+                    on: e.on,
+                    source: e.source,
+                    confidence: e.confidence,
+                    corroborated: e.corroborated,
+                })
+                .collect(),
         }),
         is_fake: d.is_fake,
         fake_reasons: d.fake_reasons.iter().filter_map(text_of).collect(),
         behavior_verdict: d.behavior_verdict,
         behavior_score: d.behavior_score,
         flagged: d.flagged,
+        flag_reason: d.flag_reason.filter(|s| !s.is_empty()),
+        suspect: d.suspect,
         mimics_official: d.mimics_official,
+        description: d.description.filter(|s| !s.trim().is_empty()),
+        game_time: d.game_time,
+        game_time_at: d.game_time_at,
         discord: d.discord.filter(|s| !s.is_empty()),
         website: d.website.filter(|s| !s.is_empty()),
         links: d.links.iter().filter_map(link_of).collect(),
@@ -550,8 +712,42 @@ mod tests {
         let w = m.wipe.expect("wipe schedule");
         assert_eq!(w.next.as_deref(), Some("2026-10-17"));
         assert_eq!(w.next_source.as_deref(), Some("predicted"));
+        assert_eq!(w.phase.as_deref(), Some("mid"));
         assert_eq!(m.player_history.len(), points.len());
         assert_eq!(m.avg_players_7d, Some(49.9));
+    }
+
+    #[test]
+    fn restart_reliability_and_wipe_events_parse() {
+        let d: RawDetail = serde_json::from_str(
+            r#"{"id":1,"ip":"1.2.3.4","flag_reason":"Booster farm","suspect":true,
+                "restart":{"period_hours":4,"coverage":0.98,"unscheduled_7d":2,"restart_loops_7d":0},
+                "wipe":{"phase":"unknown","confidence":0.0,"events":[{"on":"2026-08-26","source":"surge","confidence":0.4,"corroborated":false}]}}"#,
+        )
+        .unwrap();
+        let m = build(
+            Resolved {
+                id: 1,
+                avg_players_7d: None,
+            },
+            d,
+            &[],
+        );
+        assert_eq!(m.flag_reason.as_deref(), Some("Booster farm"));
+        assert!(m.suspect);
+        let r = m.restart.unwrap();
+        assert_eq!(r.unscheduled_7d, Some(2.0));
+        assert_eq!(r.coverage, Some(0.98));
+        let w = m.wipe.unwrap();
+        assert_eq!(w.events.len(), 1);
+        assert_eq!(w.events[0].source.as_deref(), Some("surge"));
+    }
+
+    #[test]
+    fn only_the_sites_ranges_are_asked_for() {
+        assert_eq!(checked("7d", &HISTORY_RANGES), Ok("7d"));
+        assert!(checked("24h", &HISTORY_RANGES).is_err());
+        assert!(checked("1d", &RANK_RANGES).is_err());
     }
 
     #[test]

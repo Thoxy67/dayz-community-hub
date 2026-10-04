@@ -62,6 +62,12 @@ export const commands = {
 	queryA2s: (ip: string, queryPort: number, gamePort: number | null) => __TAURI_INVOKE<A2sDetailsDto>("query_a2s", { ip, queryPort, gamePort }),
 	/**  What DayZ Metrics knows about the server at `ip`, by game or query port. */
 	fetchServerMetrics: (ip: string, gamePort: number, queryPort: number) => __TAURI_INVOKE<ServerMetrics>("fetch_server_metrics", { ip, gamePort, queryPort }),
+	/**  Player counts of the site's server `id` over `range` ("1d", "7d", "2w", "1m", "all"). */
+	fetchMetricsHistory: (id: number, range: string) => __TAURI_INVOKE<([number, number | null])[]>("fetch_metrics_history", { id, range }),
+	/**  The site's daily rank of server `id` over `range` ("7d", "1m", "6m", "all"). */
+	fetchMetricsRankHistory: (id: number, range: string) => __TAURI_INVOKE<([string, number | null])[]>("fetch_metrics_rank_history", { id, range }),
+	/**  Average players of the site's server `id` by weekday and UTC hour. */
+	fetchMetricsHeatmap: (id: number) => __TAURI_INVOKE<HeatCell[]>("fetch_metrics_heatmap", { id }),
 	/**  The current profile. */
 	getProfile: () => __TAURI_INVOKE<ProfileDto>("get_profile"),
 	/**  Save the account and ping settings. */
@@ -479,6 +485,15 @@ export type GeoLocation = {
 	country_code: string,
 };
 
+/**  Average players at one hour of one weekday, over the server's history. */
+export type HeatCell = {
+	/**  0 is Sunday. */
+	dow: number,
+	/**  UTC. */
+	hour: number,
+	avg: number | null,
+};
+
 export type HistoryDto = {
 	name: string,
 	ip: string,
@@ -734,6 +749,14 @@ export type RestartSchedule = {
 	confidence: string | null,
 	/**  Restart times of day, "HH:MM" UTC. */
 	slots_utc: string[],
+	/**  Share of the expected restarts the site saw happen on time, 0–1. */
+	coverage: number | null,
+	/**  Restarts off the schedule in the last seven days: crashes, mostly. */
+	unscheduled_7d: number | null,
+	/**  Bursts of restarts one after another in the last seven days. */
+	restart_loops_7d: number | null,
+	/**  ISO 8601. */
+	last_unscheduled: string | null,
 };
 
 /**  How far the scan of the whole list has got. */
@@ -815,8 +838,17 @@ export type ServerMetrics = {
 	behavior_score: number | null,
 	/**  Reported by players and flagged by the site. */
 	flagged: boolean,
+	/**  Why the site flagged it, as a sentence. */
+	flag_reason: string | null,
+	/**  The site has doubts about the count without calling it fake. */
+	suspect: boolean,
 	/**  Named to look like an official server without being one. */
 	mimics_official: boolean,
+	/**  What the server says about itself, when it says anything. */
+	description: string | null,
+	/**  The in-game clock ("HH:MM") as it was at `game_time_at` (ISO 8601). */
+	game_time: string | null,
+	game_time_at: string | null,
 	discord: string | null,
 	website: string | null,
 	links: MetricsLink[],
@@ -1011,6 +1043,18 @@ export type UpdateSupport = {
 	reason: string | null,
 };
 
+/**  One wipe the site noticed or was told about. */
+export type WipeEvent = {
+	/**  "YYYY-MM-DD". */
+	on: string | null,
+	/**  "announced" | "surge" | …: how the site knows. */
+	source: string | null,
+	/**  0–1. */
+	confidence: number | null,
+	/**  Seen by more than one signal. */
+	corroborated: boolean,
+};
+
 /**  When the server wipes: the last one and the next, each announced or guessed. */
 export type WipeSchedule = {
 	/**  "YYYY-MM-DD". */
@@ -1024,6 +1068,12 @@ export type WipeSchedule = {
 	next_source: string | null,
 	days_until: number | null,
 	period_days: number | null,
+	/**  Where the server is in its wipe cycle: "fresh" | "mid" | "late" | "unknown". */
+	phase: string | null,
+	/**  How sure the site is of the cycle, 0–1. */
+	confidence: number | null,
+	/**  Past wipes, newest first as the site sends them. */
+	events: WipeEvent[],
 };
 
 /**  What the Workshop says about an item. */
