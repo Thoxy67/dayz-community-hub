@@ -323,6 +323,13 @@ const content = {
       }),
     ),
     dmStyle: t({ en: "Style", fr: "Style", de: "Stil", es: "Estilo", ru: "Стиль" }),
+    dmPlaystyle: t({
+      en: "Playstyle",
+      fr: "Type de jeu",
+      de: "Spielweise",
+      es: "Tipo de juego",
+      ru: "Стиль игры",
+    }),
     dmModsSize: t({
       en: "Mods to download",
       fr: "Mods à télécharger",

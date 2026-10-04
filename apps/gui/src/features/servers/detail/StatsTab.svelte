@@ -119,7 +119,7 @@
         tone: "text-mods",
       });
     }
-    if (x.playstyle) f.push({ label: $c.dmStyle.value, value: x.playstyle });
+    if (x.playstyle) f.push({ label: $c.dmPlaystyle.value, value: x.playstyle });
     if (x.mod_total_bytes) f.push({ label: $c.dmModsSize.value, value: bytes(x.mod_total_bytes) });
     if (x.first_seen)
       f.push({
