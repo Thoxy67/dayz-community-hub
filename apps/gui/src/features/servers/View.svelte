@@ -174,6 +174,13 @@
         return void servers.pingOne(s.ip, s.query_port);
       case "d":
         return connect.openInDirect(s.ip, s.game_port, s.query_port);
+      case "l":
+        return void connect.copyLink({
+          ip: s.ip,
+          gamePort: s.game_port,
+          queryPort: s.query_port,
+          name: s.name,
+        });
     }
   }
 

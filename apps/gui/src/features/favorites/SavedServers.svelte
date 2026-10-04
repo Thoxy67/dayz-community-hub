@@ -236,6 +236,13 @@
       r.listed?.query_port,
       r.password ?? undefined,
     );
+  const share = (r: Row) =>
+    void connect.copyLink({
+      ip: r.ip,
+      gamePort: r.listed?.game_port ?? r.port,
+      queryPort: r.listed?.query_port ?? r.port,
+      name: r.name,
+    });
   const toggleFav = (r: Row) => void profile.toggleFavorite(r.name, r.ip, r.port);
 
   // ── a controller: X joins, Y stars (or unstars) the server under the focus ─
@@ -306,6 +313,10 @@
       case "d":
       case "D":
         if (r) direct(r);
+        break;
+      case "l":
+      case "L":
+        if (r) share(r);
         break;
       case "Escape":
         selectedKey = null;

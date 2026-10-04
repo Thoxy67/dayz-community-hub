@@ -11,11 +11,11 @@
  * the server's name keeps its room.
  */
 export const LIST_GRID =
-  "grid items-center gap-x-3 grid-cols-[1.5rem_4.75rem_6.25rem_minmax(0,1fr)_8.5rem_3.25rem_5.5rem] @max-[720px]:grid-cols-[1.5rem_4.75rem_6.25rem_minmax(0,1fr)_3.25rem_5.5rem]";
+  "grid items-center gap-x-3 grid-cols-[1.5rem_4.75rem_6.25rem_minmax(0,1fr)_8.5rem_3.25rem_7rem] @max-[720px]:grid-cols-[1.5rem_4.75rem_6.25rem_minmax(0,1fr)_3.25rem_7rem]";
 
 /** The same, with one more column before the actions (history: when you last played). */
 export const LIST_GRID_EXTRA =
-  "grid items-center gap-x-3 grid-cols-[1.5rem_4.75rem_6.25rem_minmax(0,1fr)_8.5rem_3.25rem_7.5rem_5.5rem] @max-[720px]:grid-cols-[1.5rem_4.75rem_6.25rem_minmax(0,1fr)_3.25rem_7.5rem_5.5rem]";
+  "grid items-center gap-x-3 grid-cols-[1.5rem_4.75rem_6.25rem_minmax(0,1fr)_8.5rem_3.25rem_7.5rem_7rem] @max-[720px]:grid-cols-[1.5rem_4.75rem_6.25rem_minmax(0,1fr)_3.25rem_7.5rem_7rem]";
 
 /** On a cell that gives way when the list is narrow. */
 export const LIST_NARROW_HIDDEN = "@max-[720px]:hidden";

@@ -1,7 +1,10 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import { dict } from "$lib/i18n";
+  import Link from "~icons/lucide/link";
   import { Copy } from "$lib/components/ui/copy";
+  import { IconButton } from "$lib/components/ui/button";
+  import { connect } from "$lib/stores/connect.svelte";
   import { cn } from "$lib/cx";
   import FavoriteButton from "./FavoriteButton.svelte";
   import JoinButton from "./JoinButton.svelte";
@@ -79,7 +82,7 @@
     tag?: Snippet;
     /** The list's own column, before the actions (with `wide`). */
     extra?: Snippet;
-    /** Shown on hover and on the selected row, left of Join. */
+    /** Shown on hover and on the selected row, after "copy the link" and left of Join. */
     actions?: Snippet;
     onselect: () => void;
     onjoin: () => void;
@@ -145,16 +148,24 @@
   {#if wide}<div class="min-w-0">{@render extra?.()}</div>{/if}
 
   <div class="flex items-center justify-end gap-0.5">
-    {#if actions}
-      <div
-        class={cn(
-          "flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100",
-          selected && "opacity-100",
-        )}
-      >
-        {@render actions()}
-      </div>
-    {/if}
+    <div
+      class={cn(
+        "flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100",
+        selected && "opacity-100",
+      )}
+    >
+      <IconButton
+        icon={Link}
+        size="icon-xs"
+        label={$sv.copyLink.value}
+        kbd="L"
+        onclick={(e) => {
+          e.stopPropagation();
+          void connect.copyLink({ ip, gamePort, queryPort, name });
+        }}
+      />
+      {@render actions?.()}
+    </div>
     <JoinButton {ip} port={joinPort ?? queryPort} password={savedPassword} compact />
   </div>
 </div>

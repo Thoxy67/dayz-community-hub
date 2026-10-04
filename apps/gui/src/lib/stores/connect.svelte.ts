@@ -7,10 +7,12 @@
 import { getServerDetails } from "$lib/ipc/servers";
 import { launchDirect, launchServer, setupModSymlinks } from "$lib/ipc/launch";
 import { parseDzchUrl, readDzchFile } from "$lib/ipc/system";
+import { copyText } from "$lib/ipc/native";
 import type { CliArgs, ModDto } from "$lib/ipc/types";
 import type { ServerRow as ServerDto } from "$lib/ipc/servers";
 import { words } from "$lib/i18n";
 import { DEFAULT_GAME_PORT, splitHostPort } from "$lib/address";
+import { dzchLink, type DzchTarget } from "$lib/dzch";
 import { app } from "./app.svelte";
 import { mods } from "./mods.svelte";
 import { profile } from "./profile.svelte";
@@ -217,6 +219,19 @@ class Connect {
     const a = this.#pendingCli;
     this.#pendingCli = null;
     if (a) void this.cli(a);
+  }
+
+  /**
+   * A server as a `dzch://` link on the clipboard, to send to a friend. A
+   * saved password stays out of it: the link may be pasted anywhere.
+   */
+  async copyLink(t: Omit<DzchTarget, "password">) {
+    try {
+      await copyText(dzchLink(t));
+      say.ok(words("connect").linkCopied);
+    } catch (e) {
+      say.err(errorText(e));
+    }
   }
 
   async openDzch(raw: string) {
