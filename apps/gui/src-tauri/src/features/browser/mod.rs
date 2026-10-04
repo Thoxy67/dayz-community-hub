@@ -170,16 +170,17 @@ pub(crate) async fn start_scan(
     state: State<'_, SharedState>,
     ping: State<'_, Arc<PingState>>,
 ) -> Result<(), String> {
-    let (targets, concurrency, timeout) = {
+    let (targets, concurrency, timeout, retries) = {
         let s = state.read().await;
         let p = s.ctl.profile();
         (
             scan_targets(&s),
             (p.ping_concurrency as usize).clamp(5, 200),
             Duration::from_millis(u64::from(p.ping_timeout_auto).clamp(1000, 5000)),
+            p.ping_max_retries.min(5),
         )
     };
-    ping::start_whole_scan(&ping, targets, concurrency, timeout, on_progress);
+    ping::start_whole_scan(&ping, targets, concurrency, timeout, retries, on_progress);
     Ok(())
 }
 

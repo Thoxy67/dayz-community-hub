@@ -96,11 +96,13 @@ enum Sink {
 }
 
 /// Ping `targets` with `concurrency` queries in flight, recording each result
-/// in the live store as it lands.
+/// in the live store as it lands. A server that does not answer is asked
+/// again up to `retries` times: one lost UDP packet should not mark it dead.
 async fn scan(
     targets: Vec<String>,
     concurrency: usize,
     timeout: Duration,
+    retries: u32,
     sink: Sink,
     ping: Arc<PingState>,
 ) {
@@ -128,9 +130,15 @@ async fn scan(
             let client = Arc::clone(&client);
             async move {
                 let (ip, port) = parse_target(&target)?;
-                let r = tokio::time::timeout(timeout, dz_a2s::ping_using(&client, &target))
-                    .await
-                    .unwrap_or_else(|_| Err(dz_common::Error::A2sQuery("timeout".into())));
+                let mut r = Err(dz_common::Error::A2sQuery("timeout".into()));
+                for _ in 0..=retries {
+                    r = tokio::time::timeout(timeout, dz_a2s::ping_using(&client, &target))
+                        .await
+                        .unwrap_or_else(|_| Err(dz_common::Error::A2sQuery("timeout".into())));
+                    if r.is_ok() {
+                        break;
+                    }
+                }
                 let l = Live::from_result(&r);
                 live::store().record(ip, port, l);
                 Some((ip.to_owned(), port, l))
@@ -192,6 +200,7 @@ pub(crate) fn start_whole_scan(
     targets: Vec<String>,
     concurrency: usize,
     timeout: Duration,
+    retries: u32,
     on_progress: Channel<ScanProgress>,
 ) {
     ping.abort_background();
@@ -201,6 +210,7 @@ pub(crate) fn start_whole_scan(
             targets,
             concurrency,
             timeout,
+            retries,
             Sink::Progress(on_progress),
             state,
         )
@@ -232,6 +242,7 @@ pub(crate) async fn ping_servers(
         targets,
         concurrency,
         timeout,
+        0,
         Sink::Batches(on_progress),
         state,
     ));
