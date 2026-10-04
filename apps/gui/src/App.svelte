@@ -29,6 +29,7 @@
   import Rail from "$shell/Rail.svelte";
   import StatusBar from "$shell/StatusBar.svelte";
   import ConfirmHost from "$shell/ConfirmHost.svelte";
+  import PasswordHost from "$shell/PasswordHost.svelte";
   import ConnectDialog from "$shell/ConnectDialog.svelte";
   import PadHints from "$shell/PadHints.svelte";
 
@@ -206,6 +207,7 @@
   </div>
 
   <ConfirmHost />
+  <PasswordHost />
   <ConnectDialog />
   {#if mods.op.active}
     {#await lazyModOp() then M}<M.default />{/await}

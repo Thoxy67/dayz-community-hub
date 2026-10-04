@@ -31,7 +31,7 @@
   aria-label={$c.connect.value}
   onclick={(e: MouseEvent) => {
     e.stopPropagation();
-    void (password ? connect.direct({ ip, port, password }) : connect.address(ip, port));
+    void connect.address(ip, port, password ?? undefined);
   }}
 >
   <Play class="size-icon-sm" />{#if !compact}{$c.connect.value}{/if}

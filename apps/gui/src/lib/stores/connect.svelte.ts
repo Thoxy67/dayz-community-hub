@@ -17,6 +17,7 @@ import { app } from "./app.svelte";
 import { mods } from "./mods.svelte";
 import { profile } from "./profile.svelte";
 import { servers } from "./servers.svelte";
+import { askPassword, confirm } from "./dialogs.svelte";
 import { say, errorText } from "./say";
 
 export type ConnectMod = {
@@ -67,18 +68,54 @@ class Connect {
     return { missing, present };
   }
 
-  async #modsOf(ip: string, queryPort: number, count: number): Promise<ModDto[]> {
+  /** The server's mods; `null` when they could not be read (after asking whether to go on). */
+  async #modsOf(ip: string, queryPort: number, count: number, name: string) {
     if (count <= 0) return [];
     try {
       return (await getServerDetails(ip, queryPort)).mods;
-    } catch {
-      return [];
+    } catch (e) {
+      const w = words("connect");
+      const go = await confirm({
+        title: String(w.modsUnknownTitle),
+        message: String(w.modsUnknownMessage({ name, error: errorText(e) })),
+        confirmLabel: String(w.modsUnknownGo),
+      });
+      return go ? [] : null;
     }
   }
 
+  /**
+   * The password to join with: the one given, else the favourite's, else
+   * asked for. `undefined` for an open server, `null` when the player gives up.
+   */
+  async #passwordFor(
+    name: string,
+    ip: string,
+    ports: number[],
+    known?: string,
+  ): Promise<string | undefined | null> {
+    if (known) return known;
+    const fav = profile.data?.favorites?.find(
+      (f) => f.ip === ip && ports.includes(f.port) && f.password,
+    );
+    if (fav?.password) return fav.password;
+    const a = await askPassword(name);
+    if (!a) return null;
+    if (a.save) void profile.addFavorite(name, ip, ports[0]!, a.password);
+    return a.password;
+  }
+
   /** A server from the list. */
-  async server(s: ServerDto) {
-    const serverMods = await this.#modsOf(s.ip, s.query_port, s.mods_count);
+  async server(s: ServerDto, known?: string) {
+    let password: string | undefined;
+    if (s.password) {
+      const p = await this.#passwordFor(s.name, s.ip, [s.query_port, s.game_port], known);
+      if (p === null) return;
+      password = p;
+    }
+    const serverMods = await this.#modsOf(s.ip, s.query_port, s.mods_count, s.name);
+    if (serverMods === null) return;
+    const launch = () => void this.#launchListed(s, password);
     const { missing, present } = this.#split(serverMods);
     if (missing.length > 0) {
       this.request = {
@@ -86,13 +123,7 @@ class Connect {
         kind: "missing",
         mods: missing,
         go: (fetch) =>
-          fetch
-            ? mods.start(
-                "install_server",
-                { ip: s.ip, port: s.query_port },
-                () => void this.#launchListed(s),
-              )
-            : void this.#launchListed(s),
+          fetch ? mods.start("install_server", { ip: s.ip, port: s.query_port }, launch) : launch(),
       };
     } else if (serverMods.length > 0) {
       this.request = {
@@ -100,46 +131,51 @@ class Connect {
         kind: "update",
         mods: present,
         go: (fetch) =>
-          fetch
-            ? mods.start(
-                "update_server",
-                { ip: s.ip, port: s.query_port },
-                () => void this.#launchListed(s),
-              )
-            : void this.#launchListed(s),
+          fetch ? mods.start("update_server", { ip: s.ip, port: s.query_port }, launch) : launch(),
       };
     } else {
-      await this.#launchListed(s);
+      await this.#launchListed(s, password);
     }
   }
 
   /** An address from a favourite or the history: the list's entry if there is one. */
-  async address(ip: string, port: number) {
+  async address(ip: string, port: number, password?: string) {
     const s = await servers.resolve(ip, port);
-    if (s) await this.server(s);
-    else await this.direct({ ip, port });
+    if (s) await this.server(s, password);
+    else await this.direct({ ip, port, password });
   }
 
   /** Straight to an address (Direct Connect, the command line). */
   async direct(t: Target) {
     const listed = await servers.resolve(t.ip, t.port);
-    const serverMods = listed ? await this.#modsOf(t.ip, listed.query_port, listed.mods_count) : [];
+    const name = listed?.name ?? `${t.ip}:${t.port}`;
+    if (listed?.password) {
+      const p = await this.#passwordFor(
+        name,
+        t.ip,
+        [listed.query_port, listed.game_port],
+        t.password,
+      );
+      if (p === null) return;
+      t = { ...t, password: p };
+    }
+    const serverMods = listed
+      ? await this.#modsOf(t.ip, listed.query_port, listed.mods_count, name)
+      : [];
+    if (serverMods === null) return;
     if (serverMods.length === 0) return this.#launchAddress(t);
     const { missing, present } = this.#split(serverMods);
-    const name = listed?.name ?? `${t.ip}:${t.port}`;
     const ids = (list: { id: number; name: string }[]) => ({
       modIds: list.map((m) => m.id),
       modNames: list.map((m) => m.name),
     });
+    const launch = () => void this.#launchAddress(t);
     if (missing.length > 0) {
       this.request = {
         serverName: name,
         kind: "missing",
         mods: missing,
-        go: (fetch) =>
-          fetch
-            ? mods.start("update_selected", ids(missing), () => void this.#launchAddress(t))
-            : void this.#launchAddress(t),
+        go: (fetch) => (fetch ? mods.start("update_selected", ids(missing), launch) : launch()),
       };
     } else {
       const all = serverMods.map((m) => ({
@@ -150,10 +186,7 @@ class Connect {
         serverName: name,
         kind: "update",
         mods: present,
-        go: (fetch) =>
-          fetch
-            ? mods.start("update_selected", ids(all), () => void this.#launchAddress(t))
-            : void this.#launchAddress(t),
+        go: (fetch) => (fetch ? mods.start("update_selected", ids(all), launch) : launch()),
       };
     }
   }
@@ -165,12 +198,12 @@ class Connect {
     else say.warn(words("shell").noHistory);
   }
 
-  async #launchListed(s: ServerDto) {
+  async #launchListed(s: ServerDto, password?: string) {
     const w = words("connect");
     say.info(w.connectLaunchingServer({ name: s.name }));
     try {
       await setupModSymlinks(s.ip, s.query_port).catch(() => {});
-      await launchServer(s.ip, s.query_port, null);
+      await launchServer(s.ip, s.query_port, password ?? null);
       say.info(w.connectWaitingSteam);
     } catch (e) {
       say.err(w.connectLaunchFailed({ error: errorText(e) }));
