@@ -157,7 +157,8 @@ class ServerData {
   }
 
   /** DayZ Metrics, from the cache while it is fresh unless `force`. */
-  fetchMetrics(ip: string, gamePort: number, queryPort: number, force = false) {
+  /** `name` is how the list calls the server: the site finds it fastest by name. */
+  fetchMetrics(ip: string, gamePort: number, queryPort: number, name: string, force = false) {
     return this.#cached(
       this.#metrics,
       this.#metricsFlight,
@@ -165,7 +166,7 @@ class ServerData {
       METRICS_TTL_MS,
       MAX_METRICS,
       force,
-      () => fetchServerMetrics(ip, gamePort, queryPort),
+      () => fetchServerMetrics(ip, gamePort, queryPort, name),
     );
   }
 

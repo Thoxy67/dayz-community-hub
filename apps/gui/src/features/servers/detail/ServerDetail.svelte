@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { dict } from "$lib/i18n";
   import LayoutDashboard from "~icons/lucide/layout-dashboard";
   import Users from "~icons/lucide/users";
@@ -66,7 +67,9 @@
   // the live query so a quick scroll through a list costs the site nothing.
   $effect(() => {
     const [i, g, q] = [m.ip, m.gamePort, m.queryPort];
-    const t = setTimeout(() => void serverData.fetchMetrics(i, g, q), 250);
+    // Read once, not tracked: the name settling (list, then A2S) is no reason to ask again.
+    const n = untrack(() => m.searchName);
+    const t = setTimeout(() => void serverData.fetchMetrics(i, g, q, n), 250);
     return () => clearTimeout(t);
   });
 

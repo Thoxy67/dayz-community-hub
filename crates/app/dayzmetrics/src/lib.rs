@@ -9,9 +9,10 @@
 //! site no more than a visitor would.
 //!
 //! The server list does not carry addresses, so a server is found by
-//! searching its IP and then reading the candidates' details until one has
-//! the same game or query port; see [`lookup`].
+//! searching its name (or, failing that, its IP) and reading the candidates'
+//! details until one has the same address; see [`lookup`].
 
+use futures_util::stream::{self, StreamExt};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -23,6 +24,8 @@ const API: &str = "https://dayzmetrics.com/api";
 pub const NOT_LISTED: &str = "Not listed on DayZ Metrics";
 /// Candidates read before giving up: an IP rarely hosts more servers.
 const MAX_CANDIDATES: usize = 10;
+/// Candidates' pages read at once: each answers in half a second.
+const CONCURRENT_DETAILS: usize = 4;
 
 // ── what the site sends ──────────────────────────────────────────────────────
 
@@ -368,26 +371,23 @@ fn fit(d: &RawDetail, ip: &str, game_port: u32, query_port: u32) -> u8 {
     }
 }
 
-/// Find the server at `ip` among the site's search results: the candidates'
-/// pages are read one by one (gently), and an exact game-port match stops the
-/// search; a query-port match is kept in case none does.
-async fn resolve(
+/// The best of one search's results for the address: their pages are read a
+/// few at a time; an exact game-port match wins, a query-port match is kept
+/// in case none is.
+async fn best_of(
     client: &reqwest::Client,
+    query: &[(&str, &str)],
     ip: &str,
     game_port: u32,
     query_port: u32,
-) -> Result<(Resolved, RawDetail), String> {
-    let page: SearchPage = get(
-        client,
-        "/servers",
-        // `online=0`: without it the site leaves out servers it has not
-        // heard from lately, which is often the one asked for.
-        &[("q", ip), ("fakes", "show"), ("online", "0"), ("limit", "50")],
-    )
-    .await?;
-    let mut fallback: Option<(Resolved, RawDetail)> = None;
-    for item in page.servers.iter().take(MAX_CANDIDATES) {
-        let d = match detail(client, item.id).await {
+) -> Result<Option<(Resolved, RawDetail)>, String> {
+    let page: SearchPage = get(client, "/servers", query).await?;
+    let mut pages = stream::iter(page.servers.into_iter().take(MAX_CANDIDATES))
+        .map(|item| async move { (item.clone(), detail(client, item.id).await) })
+        .buffer_unordered(CONCURRENT_DETAILS);
+    let mut fallback = None;
+    while let Some((item, d)) = pages.next().await {
+        let d = match d {
             Ok(d) => d,
             // One unreadable candidate does not end the search.
             Err(e) if e == NOT_LISTED => continue,
@@ -398,43 +398,82 @@ async fn resolve(
             avg_players_7d: item.avg_players_7d,
         };
         match fit(&d, ip, game_port, query_port) {
-            2 => return Ok((found, d)),
+            2 => return Ok(Some((found, d))),
             1 if fallback.is_none() => fallback = Some((found, d)),
             _ => {}
         }
     }
-    fallback.ok_or_else(|| NOT_LISTED.to_string())
+    Ok(fallback)
 }
 
-/// Everything the site knows about the server at `ip`. `known` is an earlier
-/// [`Resolved`] for the same address, which skips the search; if the site now
-/// has another server under that id, the search runs again.
+/// Find the server at `ip`. By name first: the site answers that in about a
+/// second, where a search by IP (a substring scan on its side) takes eight or
+/// more. The IP search is the fallback, for a renamed server or one the list
+/// names differently.
+async fn resolve(
+    client: &reqwest::Client,
+    ip: &str,
+    game_port: u32,
+    query_port: u32,
+    name: &str,
+) -> Result<(Resolved, RawDetail), String> {
+    let name = name.trim();
+    if !name.is_empty()
+        && let Some(found) = best_of(
+            client,
+            &[("q", name), ("fakes", "show"), ("limit", "10")],
+            ip,
+            game_port,
+            query_port,
+        )
+        .await?
+    {
+        return Ok(found);
+    }
+    best_of(
+        client,
+        &[("q", ip), ("fakes", "show"), ("limit", "50")],
+        ip,
+        game_port,
+        query_port,
+    )
+    .await?
+    .ok_or_else(|| NOT_LISTED.to_string())
+}
+
+/// Everything the site knows about the server at `ip`, which the server list
+/// calls `name`. `known` is an earlier [`Resolved`] for the same address,
+/// which skips the search; if the site now has another server under that
+/// id, the search runs again.
 pub async fn lookup(
     client: &reqwest::Client,
     ip: &str,
     game_port: u32,
     query_port: u32,
+    name: &str,
     known: Option<Resolved>,
 ) -> Result<(Resolved, ServerMetrics), String> {
-    let known_detail = match known {
-        Some(r) => match detail(client, r.id).await {
-            Ok(d) if fit(&d, ip, game_port, query_port) > 0 => Some((r, d)),
-            Ok(_) | Err(_) => None,
-        },
-        None => None,
-    };
-    let (resolved, raw) = match known_detail {
-        Some(found) => found,
-        None => resolve(client, ip, game_port, query_port).await?,
-    };
     // The history is a nicety: the rest of the page stands without it.
-    let points: Vec<RawPoint> = get(
-        client,
-        &format!("/server/{}/timeseries", resolved.id),
-        &[("range", "1d")],
-    )
-    .await
-    .unwrap_or_default();
+    let series = |id: u64| async move {
+        get::<Vec<RawPoint>>(
+            client,
+            &format!("/server/{id}/timeseries"),
+            &[("range", "1d")],
+        )
+        .await
+        .unwrap_or_default()
+    };
+    // A known id: its page and its day are asked together.
+    if let Some(r) = known {
+        let (d, points) = futures_util::future::join(detail(client, r.id), series(r.id)).await;
+        if let Ok(d) = d
+            && fit(&d, ip, game_port, query_port) > 0
+        {
+            return Ok((r, build(r, d, &points)));
+        }
+    }
+    let (resolved, raw) = resolve(client, ip, game_port, query_port, name).await?;
+    let points = series(resolved.id).await;
     Ok((resolved, build(resolved, raw, &points)))
 }
 
@@ -457,8 +496,12 @@ pub async fn history(
     range: &str,
 ) -> Result<Vec<(i64, f64)>, String> {
     let range = checked(range, &HISTORY_RANGES)?;
-    let points: Vec<RawPoint> =
-        get(client, &format!("/server/{id}/timeseries"), &[("range", range)]).await?;
+    let points: Vec<RawPoint> = get(
+        client,
+        &format!("/server/{id}/timeseries"),
+        &[("range", range)],
+    )
+    .await?;
     Ok(points
         .iter()
         .filter_map(|p| Some((unix_secs(&p.t)?, p.players?)))
@@ -473,8 +516,12 @@ pub async fn rank_history(
     range: &str,
 ) -> Result<Vec<(String, f64)>, String> {
     let range = checked(range, &RANK_RANGES)?;
-    let points: Vec<RawRank> =
-        get(client, &format!("/server/{id}/rank-history"), &[("range", range)]).await?;
+    let points: Vec<RawRank> = get(
+        client,
+        &format!("/server/{id}/rank-history"),
+        &[("range", range)],
+    )
+    .await?;
     Ok(points
         .into_iter()
         .filter_map(|p| Some((p.t, p.rank?)))
@@ -800,7 +847,7 @@ mod tests {
             .timeout(std::time::Duration::from_secs(20))
             .build()
             .unwrap();
-        let (r, m) = lookup(&client, "185.207.214.106", 2302, 2305, None)
+        let (r, m) = lookup(&client, "185.207.214.106", 2302, 2305, "", None)
             .await
             .unwrap();
         println!(

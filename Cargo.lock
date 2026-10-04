@@ -1275,6 +1275,7 @@ dependencies = [
 name = "dz-dayzmetrics"
 version = "0.5.0"
 dependencies = [
+ "futures-util",
  "reqwest",
  "serde",
  "serde_json",

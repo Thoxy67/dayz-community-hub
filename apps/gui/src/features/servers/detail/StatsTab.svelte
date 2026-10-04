@@ -35,7 +35,7 @@
 
   const entry = $derived(m.metricsEntry);
   const x = $derived(entry.data);
-  const refresh = () => serverData.fetchMetrics(m.ip, m.gamePort, m.queryPort, true);
+  const refresh = () => serverData.fetchMetrics(m.ip, m.gamePort, m.queryPort, m.searchName, true);
 
   const uptimeTone = (u: number) => (u >= 90 ? "text-ok" : u >= 70 ? "text-warn" : "text-err");
   const country = $derived.by(() => {

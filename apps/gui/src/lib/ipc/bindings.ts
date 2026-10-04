@@ -60,8 +60,11 @@ export const commands = {
 	togglePingPause: () => __TAURI_INVOKE<boolean>("toggle_ping_pause"),
 	/**  Query a server's live details (cached for 30 s). */
 	queryA2s: (ip: string, queryPort: number, gamePort: number | null) => __TAURI_INVOKE<A2sDetailsDto>("query_a2s", { ip, queryPort, gamePort }),
-	/**  What DayZ Metrics knows about the server at `ip`, by game or query port. */
-	fetchServerMetrics: (ip: string, gamePort: number, queryPort: number) => __TAURI_INVOKE<ServerMetrics>("fetch_server_metrics", { ip, gamePort, queryPort }),
+	/**
+	 *  What DayZ Metrics knows about the server at `ip`, by game or query port.
+	 *  `name`, as the list has it, finds the server quickly on the site.
+	 */
+	fetchServerMetrics: (ip: string, gamePort: number, queryPort: number, name: string) => __TAURI_INVOKE<ServerMetrics>("fetch_server_metrics", { ip, gamePort, queryPort, name }),
 	/**  Player counts of the site's server `id` over `range` ("1d", "7d", "2w", "1m", "all"). */
 	fetchMetricsHistory: (id: number, range: string) => __TAURI_INVOKE<([number, number | null])[]>("fetch_metrics_history", { id, range }),
 	/**  The site's daily rank of server `id` over `range` ("7d", "1m", "6m", "all"). */

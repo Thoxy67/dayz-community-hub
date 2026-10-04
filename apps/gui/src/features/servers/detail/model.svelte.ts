@@ -126,6 +126,10 @@ export function detailModel(src: () => { ip: string; port: number; name: string 
     get population() {
       return population;
     },
+    /** The server's own name, if known (not the address the title falls back to). */
+    get searchName() {
+      return listed?.name || a2s?.server_name || name || "";
+    },
     get country() {
       return country;
     },
