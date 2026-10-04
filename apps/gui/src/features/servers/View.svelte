@@ -24,6 +24,7 @@
   import { compact, num } from "$lib/format";
   import type { ServerRow as Row } from "$lib/ipc/servers";
   import { app } from "$lib/stores/app.svelte";
+  import { dialogs } from "$lib/stores/dialogs.svelte";
   import { keyOf, servers, STALE_MS } from "$lib/stores/servers.svelte";
   import { profile } from "$lib/stores/profile.svelte";
   import { connect } from "$lib/stores/connect.svelte";
@@ -140,6 +141,7 @@
 
   function onkeydown(e: KeyboardEvent) {
     if (app.view !== "servers" || e.ctrlKey || e.altKey || e.metaKey) return;
+    if (dialogs.open || connect.request) return;
     if ((e.target as HTMLElement)?.closest("input, textarea, [contenteditable], [role=dialog]"))
       return;
     switch (e.key) {
@@ -162,6 +164,8 @@
     }
     const s = selected;
     if (!s) return;
+    // Enter on a focused button presses that button, not Join as well.
+    if (e.key === "Enter" && (e.target as HTMLElement)?.closest("button, a, [role=menu]")) return;
     switch (e.key.toLowerCase()) {
       case "enter":
         return void connect.server(s);

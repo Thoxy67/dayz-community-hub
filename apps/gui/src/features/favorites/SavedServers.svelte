@@ -275,7 +275,7 @@
 
   // ── keyboard, only while this view shows and nothing else has the keys ──
   function onkeydown(e: KeyboardEvent) {
-    if (app.view !== view || dialogs.pending || connect.request) return;
+    if (app.view !== view || dialogs.open || connect.request) return;
     if (e.ctrlKey || e.altKey || e.metaKey) return;
     if (
       (e.target as HTMLElement)?.closest(

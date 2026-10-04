@@ -18,6 +18,8 @@
   import { openUrl } from "$lib/ipc/native";
   import { date, relative } from "$lib/format";
   import { cn } from "$lib/cx";
+  import { app } from "$lib/stores/app.svelte";
+  import { dialogs } from "$lib/stores/dialogs.svelte";
   import { news, readMinutes } from "./news.svelte";
 
   const n = dict("news");
@@ -58,8 +60,10 @@
   }
 
   function onkeydown(e: KeyboardEvent) {
-    if ((e.target as HTMLElement).closest("input, textarea")) return;
-    if (lightbox) return;
+    // The view stays mounted once visited: only while it shows.
+    if (app.view !== "news" || dialogs.open || lightbox) return;
+    if (e.ctrlKey || e.altKey || e.metaKey) return;
+    if ((e.target as HTMLElement).closest("input, textarea, [role=dialog]")) return;
     if (e.key === "ArrowDown" || e.key === "j")
       news.selected = Math.min(shown.length - 1, news.selected + 1);
     else if (e.key === "ArrowUp" || e.key === "k") news.selected = Math.max(0, news.selected - 1);
