@@ -16,7 +16,8 @@
   const reasons = $derived(
     [
       ...(x?.fake_reasons ?? []),
-      ...(x?.flagged ? [$c.dmFlagged.value] : []),
+      // The site says why when it can; the bare flag otherwise.
+      ...(x?.flag_reason ? [x.flag_reason] : x?.flagged ? [$c.dmFlagged.value] : []),
       ...(x?.mimics_official ? [$c.dmMimics.value] : []),
     ].filter(Boolean),
   );

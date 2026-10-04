@@ -63,7 +63,8 @@ export function detailModel(src: () => { ip: string; port: number; name: string 
     if (!metrics) return null;
     const v = metrics.behavior_verdict?.toLowerCase() ?? "";
     if (metrics.is_fake || v === "fake") return "fake";
-    if (v.startsWith("susp") || metrics.flagged || metrics.mimics_official) return "suspect";
+    if (v.startsWith("susp") || metrics.suspect || metrics.flagged || metrics.mimics_official)
+      return "suspect";
     return "ok";
   });
   const country = $derived(metrics?.country ?? null);

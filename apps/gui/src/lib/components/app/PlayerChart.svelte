@@ -2,12 +2,23 @@
   import { dict } from "$lib/i18n";
 
   /**
-   * A day of player counts, drawn as an area under a line, with the minimum,
-   * average and peak marked and the value under the pointer read out. Points
-   * are [unix seconds, players].
+   * Player counts over time (a day unless `since` says otherwise), drawn as
+   * an area under a line, with the minimum, average and peak marked and the
+   * value under the pointer read out. Points are [unix seconds, players].
    */
-  let { points, max: capacity = null }: { points: [number, number][]; max?: number | null } =
-    $props();
+  let {
+    points,
+    max: capacity = null,
+    label,
+    since,
+  }: {
+    points: [number, number][];
+    max?: number | null;
+    /** The chart's name; "Player count (24 h)" by default. */
+    label?: string;
+    /** Under the left edge; "24h ago" by default. */
+    since?: string;
+  } = $props();
   const c = dict("detail");
 
   const W = 300;
@@ -49,13 +60,22 @@
     hover = best;
   }
   const hovered = $derived(hover !== null ? sorted[hover] : undefined);
+  // Past a day and a half the hour alone is ambiguous: the day goes with it.
+  const long = $derived(t1 - t0 > 36 * 3600);
   const hhmm = (ts: number) =>
-    new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    long
+      ? new Date(ts * 1000).toLocaleString([], {
+          weekday: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 </script>
 
 <div class="flex flex-col gap-1">
   <div class="flex items-baseline justify-between font-mono text-3xs text-fg-faint">
-    <span>{$c.bmPlayerHistory.value}</span>
+    <span>{label ?? $c.bmPlayerHistory.value}</span>
     {#if hovered}
       <span class="text-fg"><span class="num">{hovered[1]}</span> · {hhmm(hovered[0])}</span>
     {:else}
@@ -73,7 +93,7 @@
     onpointermove={onmove}
     onpointerleave={() => (hover = null)}
     role="img"
-    aria-label={$c.bmPlayerHistory.value}
+    aria-label={label ?? $c.bmPlayerHistory.value}
   >
     <line
       x1="0"
@@ -116,7 +136,7 @@
     {/if}
   </svg>
   <div class="flex justify-between font-mono text-3xs text-fg-faint">
-    <span>{$c.bm24hAgo.value}</span>
+    <span>{since ?? $c.bm24hAgo.value}</span>
     <span>{$c.bmNow.value} · <span class="num text-fg-muted">{stats.now}</span></span>
   </div>
 </div>

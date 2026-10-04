@@ -697,6 +697,33 @@ export function installMock() {
         for (const [when, fn] of steps) setTimeout(fn, when);
         return null;
       }
+      case "fetch_metrics_history": {
+        const span = { "1d": 1, "7d": 7, "2w": 14, "1m": 30 }[a.range as string] ?? 1;
+        const step = span <= 1 ? 300 : span <= 7 ? 1800 : 3600;
+        const n = Math.floor((span * 86400) / step);
+        const now = Math.floor(Date.now() / 1000);
+        return Array.from({ length: n }, (_, i) => {
+          const t = now - (n - 1 - i) * step;
+          const d = new Date(t * 1000);
+          const wave = 0.5 + 0.4 * Math.sin(((d.getUTCHours() - 6) / 24) * Math.PI * 2);
+          const weekend = d.getUTCDay() % 6 === 0 ? 1.15 : 1;
+          return [t, Math.round(60 * wave * weekend)];
+        });
+      }
+      case "fetch_metrics_rank_history": {
+        const today = Date.now();
+        return Array.from({ length: 30 }, (_, i) => [
+          new Date(today - (29 - i) * 86400e3).toISOString().slice(0, 10),
+          40 - Math.round(i * 1.1),
+        ]);
+      }
+      case "fetch_metrics_heatmap":
+        return Array.from({ length: 168 }, (_, i) => {
+          const dow = Math.floor(i / 24);
+          const hour = i % 24;
+          const wave = 0.5 + 0.45 * Math.sin(((hour - 13) / 24) * Math.PI * 2);
+          return { dow, hour, avg: Math.round(70 * wave * (dow % 6 === 0 ? 1.2 : 1)) };
+        });
       case "fetch_server_metrics": {
         const idx = servers.findIndex((x) => x.ip === a.ip);
         const s = servers[Math.max(0, idx)]!;
@@ -744,6 +771,10 @@ export function installMock() {
             next_restart: new Date(Date.now() + 57 * 60e3).toISOString(),
             confidence: "high",
             slots_utc: ["00:00", "03:00", "06:00", "09:00", "12:00", "15:00", "18:00", "21:00"],
+            coverage: 0.96,
+            unscheduled_7d: 2,
+            restart_loops_7d: 0,
+            last_unscheduled: new Date(Date.now() - 3 * 86400e3).toISOString(),
           },
           wipe: {
             last: "2026-09-19",
@@ -753,6 +784,12 @@ export function installMock() {
             next_source: "predicted",
             days_until: 18,
             period_days: 28,
+            phase: "mid",
+            confidence: 0.8,
+            events: [
+              { on: "2026-09-19", source: "announced", confidence: 1, corroborated: true },
+              { on: "2026-08-22", source: "surge", confidence: 0.4, corroborated: false },
+            ],
           },
           is_fake: fake,
           fake_reasons: fake
@@ -761,7 +798,12 @@ export function installMock() {
           behavior_verdict: fake ? "fake" : "real",
           behavior_score: fake ? 0.1 : 0.76,
           flagged: false,
+          flag_reason: null,
+          suspect: false,
           mimics_official: false,
+          description: null,
+          game_time: "14:20",
+          game_time_at: new Date().toISOString(),
           discord: "https://discord.gg/example",
           website: null,
           links: [],

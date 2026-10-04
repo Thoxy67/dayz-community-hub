@@ -5,9 +5,16 @@
  * flight, and the caches are bounded like the backend's own.
  */
 import { SvelteMap } from "svelte/reactivity";
-import { queryA2s, fetchServerMetrics } from "$lib/ipc/servers";
+import {
+  queryA2s,
+  fetchServerMetrics,
+  fetchMetricsHistory,
+  fetchMetricsRankHistory,
+  fetchMetricsHeatmap,
+  type MetricsRange,
+} from "$lib/ipc/servers";
 import { errorText } from "$lib/ipc/core";
-import type { A2sDetailsDto, ServerMetrics } from "$lib/ipc/types";
+import type { A2sDetailsDto, HeatCell, ServerMetrics } from "$lib/ipc/types";
 import { servers } from "./servers.svelte";
 
 type Entry<T> = {
@@ -21,10 +28,13 @@ const A2S_TTL_MS = 30_000;
 const MAX_A2S = 200;
 const METRICS_TTL_MS = 300_000;
 const MAX_METRICS = 100;
+/** The longer views change slowly: a week's history, a month's rank, the busy hours. */
+const LONG_TTL_MS = 900_000;
+const MAX_LONG = 30;
 
 const blank = <T>(): Entry<T> => ({ data: null, loading: false, error: null, fetchedAt: null });
 
-function evict<T>(cache: Map<string, Entry<T>>, max: number) {
+function evict<T, K>(cache: Map<K, Entry<T>>, max: number) {
   if (cache.size <= max) return;
   const oldest = [...cache.entries()]
     .filter(([, e]) => !e.loading)
@@ -38,15 +48,21 @@ class ServerData {
   #a2sFlight = new Map<string, Promise<A2sDetailsDto | null>>();
   #metrics = new SvelteMap<string, Entry<ServerMetrics>>();
   #metricsFlight = new Map<string, Promise<ServerMetrics | null>>();
+  #history = new SvelteMap<string, Entry<[number, number][]>>();
+  #historyFlight = new Map<string, Promise<[number, number][] | null>>();
+  #rank = new SvelteMap<number, Entry<[string, number][]>>();
+  #rankFlight = new Map<number, Promise<[string, number][] | null>>();
+  #heat = new SvelteMap<number, Entry<HeatCell[]>>();
+  #heatFlight = new Map<number, Promise<HeatCell[] | null>>();
 
   /**
    * A cached long-view lookup: the cached value while fresh (unless `force`),
    * one shared flight per key, the error kept beside the last good value.
    */
-  #cached<T>(
-    cache: SvelteMap<string, Entry<T>>,
-    flights: Map<string, Promise<T | null>>,
-    key: string,
+  #cached<T, K extends string | number = string>(
+    cache: SvelteMap<K, Entry<T>>,
+    flights: Map<K, Promise<T | null>>,
+    key: K,
     ttl: number,
     max: number,
     force: boolean,
@@ -150,6 +166,48 @@ class ServerData {
       MAX_METRICS,
       force,
       () => fetchServerMetrics(ip, gamePort, queryPort),
+    );
+  }
+
+  // ── the longer views, by the site's id (from `metrics().data.id`) ────────
+  // Specta writes f64 as `number | null`: points without a value are dropped.
+
+  history(id: number, range: MetricsRange): Entry<[number, number][]> {
+    return this.#history.get(`${id}:${range}`) ?? blank();
+  }
+
+  fetchHistory(id: number, range: MetricsRange) {
+    return this.#cached(
+      this.#history,
+      this.#historyFlight,
+      `${id}:${range}`,
+      LONG_TTL_MS,
+      MAX_LONG,
+      false,
+      async () =>
+        (await fetchMetricsHistory(id, range)).filter(
+          (p): p is [number, number] => p[1] != null,
+        ),
+    );
+  }
+
+  rankHistory(id: number): Entry<[string, number][]> {
+    return this.#rank.get(id) ?? blank();
+  }
+
+  fetchRankHistory(id: number) {
+    return this.#cached(this.#rank, this.#rankFlight, id, LONG_TTL_MS, MAX_LONG, false, async () =>
+      (await fetchMetricsRankHistory(id)).filter((p): p is [string, number] => p[1] != null),
+    );
+  }
+
+  heatmap(id: number): Entry<HeatCell[]> {
+    return this.#heat.get(id) ?? blank();
+  }
+
+  fetchHeatmap(id: number) {
+    return this.#cached(this.#heat, this.#heatFlight, id, LONG_TTL_MS, MAX_LONG, false, () =>
+      fetchMetricsHeatmap(id),
     );
   }
 }

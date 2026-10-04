@@ -9,22 +9,26 @@
   import Info from "~icons/lucide/info";
   import TrendingUp from "~icons/lucide/trending-up";
   import TrendingDown from "~icons/lucide/trending-down";
+  import Flame from "~icons/lucide/flame";
+  import { Segmented } from "$lib/components/ui/segmented";
   import { Spinner } from "$lib/components/ui/spinner";
   import { Tag } from "$lib/components/ui/tag";
   import { Flag } from "$lib/components/ui/flag";
   import { Empty, Facts, PlayerChart, Section, type Fact } from "$lib/components/app";
   import { serverData } from "$lib/stores/server-data.svelte";
   import { openUrl } from "$lib/ipc/native";
+  import type { MetricsRange } from "$lib/ipc/servers";
   import { bytes, date, dateTime, num } from "$lib/format";
   import type { DetailModel } from "./model.svelte";
   import PopulationWarning from "./PopulationWarning.svelte";
   import { untilText } from "./until";
+  import BusyHours from "./BusyHours.svelte";
 
   /**
    * The server's long view, from DayZ Metrics (no key needed): how it ranks,
    * how reliably it is up, how full it gets, when it restarts and wipes,
-   * whether its player count can be trusted, and a day of players drawn
-   * large.
+   * whether its player count can be trusted, its players drawn large over a
+   * day to a month, and the hours of the week it is busiest.
    */
   let { m }: { m: DetailModel } = $props();
   const c = dict("detail");
@@ -46,8 +50,52 @@
     }
   });
   // Specta writes f64 as `number | null` (a NaN serialises to null).
-  const history = $derived(
+  const day = $derived(
     (x?.player_history ?? []).filter((p): p is [number, number] => p[1] != null),
+  );
+
+  // The day comes with the figures; longer spans and the rest are asked by
+  // the site's id once the figures have it, and cached a quarter of an hour.
+  let range = $state<MetricsRange>("1d");
+  const long = $derived(x && range !== "1d" ? serverData.history(x.id, range) : null);
+  const history = $derived(range === "1d" ? day : (long?.data ?? []));
+  const since = $derived(
+    { "1d": undefined, "7d": $c.dm7dAgo.value, "2w": $c.dm2wAgo.value, "1m": $c.dm1mAgo.value }[
+      range
+    ],
+  );
+  $effect(() => {
+    if (x && range !== "1d") void serverData.fetchHistory(x.id, range);
+  });
+  const heat = $derived(x ? serverData.heatmap(x.id).data : null);
+  const ranks = $derived(x ? serverData.rankHistory(x.id).data : null);
+  $effect(() => {
+    if (!x) return;
+    const id = x.id;
+    const t = setTimeout(() => {
+      void serverData.fetchHeatmap(id);
+      void serverData.fetchRankHistory(id);
+    }, 400);
+    return () => clearTimeout(t);
+  });
+  /** Places gained over the month (positive is better: a smaller number). */
+  const rankGain = $derived.by(() => {
+    if (!ranks || ranks.length < 2 || x?.rank_pos == null) return null;
+    return Math.round(ranks[0]![1] - x.rank_pos);
+  });
+  const phase = (p: string | null | undefined) =>
+    p === "fresh"
+      ? $c.dmPhaseFresh.value
+      : p === "mid"
+        ? $c.dmPhaseMid.value
+        : p === "late"
+          ? $c.dmPhaseLate.value
+          : null;
+  const pastWipes = $derived(
+    (x?.wipe?.events ?? [])
+      .filter((e) => e.on)
+      .slice(0, 4)
+      .map((e) => (e.source === "surge" ? `${e.on} (${$c.dmWipeSurge.value})` : e.on!)),
   );
   const nextRestart = $derived(x?.restart?.next_restart ? untilText(x.restart.next_restart) : null);
   const source = (s: string | null | undefined) =>
@@ -140,8 +188,23 @@
       >
         <div class="bg-panel px-2 py-1.5">
           <div class="label-stencil text-fg-faint">{$c.bmRank.value}</div>
-          <div class="title-display num text-xl text-accent">
-            {x.rank_pos != null ? `#${num(x.rank_pos)}` : "—"}
+          <div class="flex items-baseline gap-1.5">
+            <span class="title-display num text-xl text-accent">
+              {x.rank_pos != null ? `#${num(x.rank_pos)}` : "—"}
+            </span>
+            {#if rankGain}
+              {@const up = rankGain > 0}
+              <span
+                class="inline-flex items-center gap-0.5 font-mono text-2xs {up
+                  ? 'text-ok'
+                  : 'text-err'}"
+                title={$c.dmRankTrend.value}
+              >
+                {#if up}<TrendingUp class="size-3" />{:else}<TrendingDown class="size-3" />{/if}{up
+                  ? "+"
+                  : ""}{num(rankGain)}
+              </span>
+            {/if}
           </div>
         </div>
         <div class="bg-panel px-2 py-1.5">
@@ -185,15 +248,43 @@
         </div>
       </div>
 
+      <div class="flex items-center justify-end">
+        <Segmented
+          aria-label={$c.dmRange.value}
+          size="xs"
+          bind:value={range}
+          options={[
+            { value: "1d", label: $c.dmRange1d.value },
+            { value: "7d", label: $c.dmRange7d.value },
+            { value: "2w", label: $c.dmRange2w.value },
+            { value: "1m", label: $c.dmRange1m.value },
+          ]}
+        />
+      </div>
       {#if history.length > 1}
         <!-- Drawn taller than the kit's default: here the chart is the tab's point. -->
         <div class="[&_svg]:h-36">
-          <PlayerChart points={history} max={x.max_players ?? undefined} />
+          <PlayerChart
+            points={history}
+            max={x.max_players ?? undefined}
+            label={range === "1d" ? undefined : $c.dmPlayerCount.value}
+            {since}
+          />
         </div>
+      {:else if long?.loading}
+        <div class="h-36 animate-pulse rounded-sm bg-raised/60"></div>
+      {:else if long?.error}
+        <p class="m-0 text-2xs text-err">{long.error}</p>
       {/if}
     </div>
 
-    {#if x.restart || x.wipe}
+    {#if heat && heat.some((h) => (h.avg ?? 0) > 0)}
+      <Section icon={Flame} title={$c.dmBusyHours.value}>
+        <BusyHours cells={heat} />
+      </Section>
+    {/if}
+
+    {#if x.restart?.next_restart || x.wipe?.next || x.wipe?.last || pastWipes.length}
       <Section icon={CalendarClock} title={$c.dmSchedule.value}>
         <dl
           class="m-0 grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1.5 text-2xs"
@@ -212,6 +303,21 @@
               {#if x.restart.slots_utc.length}
                 <span class="mt-0.5 block font-mono text-3xs text-fg-faint"
                   >{x.restart.slots_utc.join(" · ")} UTC</span
+                >
+              {/if}
+              {#if x.restart.coverage != null}
+                <span class="mt-0.5 block text-3xs text-fg-faint"
+                  >{$c.dmOnSchedule({ pct: Math.round(x.restart.coverage * 100) }).value}</span
+                >
+              {/if}
+              {#if x.restart.unscheduled_7d}
+                <span class="mt-0.5 block text-3xs text-warn"
+                  >{$c.dmUnscheduled({ count: x.restart.unscheduled_7d }).value}</span
+                >
+              {/if}
+              {#if x.restart.restart_loops_7d}
+                <span class="mt-0.5 block text-3xs text-err"
+                  >{$c.dmRestartLoops({ count: x.restart.restart_loops_7d }).value}</span
                 >
               {/if}
             </dd>
@@ -237,7 +343,14 @@
               {#if x.wipe.days_since != null}· {$c.dmDaysAgo({
                   days: Math.round(x.wipe.days_since),
                 }).value}{/if}
+              {#if phase(x.wipe.phase)}
+                <Tag tone={x.wipe.phase === "fresh" ? "ok" : "neutral"}>{phase(x.wipe.phase)}</Tag>
+              {/if}
             </dd>
+          {/if}
+          {#if pastWipes.length && !x.wipe?.last}
+            <dt class="text-fg-faint">{$c.dmPastWipes.value}</dt>
+            <dd class="m-0 font-mono text-3xs text-fg-muted">{pastWipes.join(" · ")}</dd>
           {/if}
         </dl>
       </Section>

@@ -40,6 +40,16 @@ export const queryA2s = (ip: string, queryPort: number, gamePort: number | null)
 /** DayZ Metrics' long view of a server (rank, schedules, fake verdict, 24 h); no key needed. */
 export const fetchServerMetrics = (ip: string, gamePort: number, queryPort: number) =>
   run(commands.fetchServerMetrics(ip, gamePort, queryPort));
+/** Player counts over a span the site keeps, by its id for the server. */
+export const fetchMetricsHistory = (id: number, range: MetricsRange) =>
+  run(commands.fetchMetricsHistory(id, range));
+/** The site's daily rank of a server over the last month. */
+export const fetchMetricsRankHistory = (id: number) =>
+  run(commands.fetchMetricsRankHistory(id, "1m"));
+/** Average players by weekday and UTC hour. */
+export const fetchMetricsHeatmap = (id: number) => run(commands.fetchMetricsHeatmap(id));
+
+export type MetricsRange = "1d" | "7d" | "2w" | "1m";
 
 // ── pings of explicit, small lists ──────────────────────────────────────
 export const pingServers = (
