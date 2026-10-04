@@ -147,10 +147,11 @@
 
   {#if wide}<div class="min-w-0">{@render extra?.()}</div>{/if}
 
-  <div class="flex items-center justify-end gap-0.5">
+  <div class="flex items-center justify-end gap-1.5">
+    <!-- The row's own actions, one framed group of equal buttons, apart from Join. -->
     <div
       class={cn(
-        "flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100",
+        "flex items-center gap-px rounded-sm border border-border bg-panel p-px opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100",
         selected && "opacity-100",
       )}
     >

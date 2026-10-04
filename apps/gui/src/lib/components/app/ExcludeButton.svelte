@@ -1,27 +1,38 @@
 <script lang="ts">
   import { dict } from "$lib/i18n";
   import Ban from "~icons/lucide/ban";
+  import { IconButton } from "$lib/components/ui/button";
   import { cn } from "$lib/cx";
   import { profile } from "$lib/stores/profile.svelte";
 
-  /** Hide every server at this IP from the browser, or bring them back. Shows on row hover. */
-  let { ip, always = false }: { ip: string; always?: boolean } = $props();
+  /**
+   * Hide every server at this IP from the browser, or bring them back: red
+   * while hidden. Shows on row hover unless `always`.
+   */
+  let {
+    ip,
+    always = false,
+    size = "icon-xs",
+    variant = "ghost",
+  }: {
+    ip: string;
+    always?: boolean;
+    size?: "icon" | "icon-xs";
+    variant?: "ghost" | "default";
+  } = $props();
   const c = dict("servers");
   const on = $derived(profile.excludedIps.has(ip));
 </script>
 
-<button
-  class={cn(
-    "grid size-4 place-items-center rounded-xs hover:bg-err/15",
-    on ? "text-err" : "text-fg-faint",
-    !on && !always && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
-  )}
-  title={on ? $c.ipExcludedClick({ ip }).value : $c.excludeIp({ ip }).value}
-  aria-label={on ? $c.ipExcludedClick({ ip }).value : $c.excludeIp({ ip }).value}
+<IconButton
+  icon={Ban}
+  {size}
+  {variant}
+  label={on ? $c.ipExcludedClick({ ip }).value : $c.excludeIp({ ip }).value}
+  iconClass={on ? "text-err" : "hover:text-err"}
+  class={cn(!on && !always && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100")}
   onclick={(e) => {
     e.stopPropagation();
     void (on ? profile.unexcludeIp(ip) : profile.excludeIp(ip));
   }}
->
-  <Ban class="size-3" />
-</button>
+/>

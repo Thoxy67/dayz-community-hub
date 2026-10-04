@@ -38,11 +38,7 @@
     variant="default"
     onclick={() => connect.openInDirect(m.ip, m.gamePort, m.queryPort)}
   />
-  <span
-    class="grid size-control place-items-center rounded-sm border border-border [&>button]:size-full"
-  >
-    <ExcludeButton ip={m.ip} always />
-  </span>
+  <ExcludeButton ip={m.ip} always size="icon" variant="default" />
   <IconButton
     icon={copied ? Check : CopyIcon}
     label={$c.copyIp.value}
