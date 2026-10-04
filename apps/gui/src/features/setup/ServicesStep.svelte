@@ -1,7 +1,6 @@
 <script lang="ts">
   import { dict } from "$lib/i18n";
   import IdCard from "~icons/lucide/id-card";
-  import ChartLine from "~icons/lucide/chart-line";
   import ExternalLink from "~icons/lucide/external-link";
   import { Field } from "$lib/components/ui/field";
   import { Input } from "$lib/components/ui/input";
@@ -42,33 +41,6 @@
         inputmode="numeric"
         placeholder={$w.steamIdPlaceholder.value}
         bind:value={wizard.steamId}
-      />
-    </Field>
-  </SectionCard>
-
-  <SectionCard
-    title={$w.bmTitle.value}
-    description={$w.optionalStep.value}
-    icon={ChartLine}
-    tone="text-ok"
-  >
-    {#snippet actions()}
-      <Button
-        size="xs"
-        variant="ghost"
-        onclick={() => openUrl("https://www.battlemetrics.com/developers")}
-      >
-        <ExternalLink class="size-icon-sm" />{$w.getToken.value}
-      </Button>
-    {/snippet}
-    <p class="m-0 border-b border-border/60 px-3 py-2 text-2xs leading-snug text-fg-muted">
-      {$w.bmDesc.value}
-    </p>
-    <Field label={$w.bmToken.value} for="wiz-bm">
-      <SecretInput
-        id="wiz-bm"
-        placeholder={$w.bmTokenPlaceholder.value}
-        bind:value={wizard.battlemetricsKey}
       />
     </Field>
   </SectionCard>

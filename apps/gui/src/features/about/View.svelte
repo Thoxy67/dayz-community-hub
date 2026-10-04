@@ -68,7 +68,7 @@
   const FEATURES: Feature[] = [
     { icon: ServerIcon, title: () => $a.featBrowser.value, tone: "text-info" },
     { icon: Puzzle, title: () => $a.featMods.value, tone: "text-mods" },
-    { icon: ChartLine, title: () => $a.featBm.value, tone: "text-ok" },
+    { icon: ChartLine, title: () => $a.featStats.value, tone: "text-ok" },
     { icon: Rocket, title: () => $a.featLaunch.value, tone: "text-accent" },
   ];
 

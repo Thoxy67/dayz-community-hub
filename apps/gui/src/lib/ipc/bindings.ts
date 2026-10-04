@@ -60,8 +60,6 @@ export const commands = {
 	togglePingPause: () => __TAURI_INVOKE<boolean>("toggle_ping_pause"),
 	/**  Query a server's live details (cached for 30 s). */
 	queryA2s: (ip: string, queryPort: number, gamePort: number | null) => __TAURI_INVOKE<A2sDetailsDto>("query_a2s", { ip, queryPort, gamePort }),
-	/**  Find a server on BattleMetrics by IP and ports, falling back to its name. */
-	fetchBattlemetricsServer: (ip: string, port: number, queryPort: number, name: string) => __TAURI_INVOKE<BattleMetricsServer>("fetch_battlemetrics_server", { ip, port, queryPort, name }),
 	/**  What DayZ Metrics knows about the server at `ip`, by game or query port. */
 	fetchServerMetrics: (ip: string, gamePort: number, queryPort: number) => __TAURI_INVOKE<ServerMetrics>("fetch_server_metrics", { ip, gamePort, queryPort }),
 	/**  The current profile. */
@@ -379,44 +377,6 @@ export type ArticleDto = {
 	author: string | null,
 };
 
-/**  BattleMetrics server info fetched on demand for the detail panel. */
-export type BattleMetricsServer = {
-	/**  BattleMetrics server ID (used to build the BM page URL). */
-	id: string,
-	/**  Server name from BattleMetrics. */
-	name: string,
-	/**  Global rank (1 = most popular). None if not ranked. */
-	rank: number | null,
-	/**  Server status: "online" | "offline" | "dead" */
-	status: string,
-	/**  ISO 3166-1 alpha-2 country code, e.g. "DE", "US". */
-	country: string | null,
-	/**  Server coordinates (longitude, latitude). None if unavailable. */
-	location: [number | null, number | null] | null,
-	/**  Uptime percentage over the last 30 days (0–100). */
-	uptime: number | null,
-	/**  Whether the server is private (password protected). */
-	private: boolean | null,
-	/**  Whether this is an official server. */
-	official: boolean | null,
-	/**  Whether third-person view is allowed. */
-	third_person: boolean | null,
-	/**  Whether the server is modded. */
-	modded: boolean | null,
-	/**  Query status: "valid", "invalid", etc. */
-	query_status: string | null,
-	/**  Server's Steam ID. */
-	server_steam_id: string | null,
-	/**  When the server was first seen on BattleMetrics (ISO 8601). */
-	created_at: string | null,
-	/**  Player count data points for the last 24 h: (unix_secs, player_count) pairs. */
-	player_history: ([number, number])[],
-	/**  Current player count from BattleMetrics. */
-	players: number | null,
-	/**  Max players from BattleMetrics. */
-	max_players: number | null,
-};
-
 /**  DayZ Community Hub launcher. */
 export type CliArgs = {
 	/**
@@ -716,7 +676,6 @@ export type ProfileDto = {
 	player: string | null,
 	steam_api_key: string | null,
 	steam_id: string | null,
-	battlemetrics_api_key: string | null,
 	/**  The user's location for distances, as (longitude, latitude). */
 	user_location: [number | null, number | null] | null,
 	favorites: FavoriteDto[],
@@ -749,7 +708,6 @@ export type ProfileSettingsInput = {
 	steamcmdPath: string | null,
 	steamApiKey: string | null,
 	steamId: string | null,
-	battlemetricsApiKey: string | null,
 	/**  (longitude, latitude). */
 	userLocation: [number | null, number | null] | null,
 	/**  Clamped to 5-100. */

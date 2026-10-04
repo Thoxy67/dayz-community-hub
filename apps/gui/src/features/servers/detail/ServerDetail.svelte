@@ -69,12 +69,6 @@
     const t = setTimeout(() => void serverData.fetchMetrics(i, g, q), 250);
     return () => clearTimeout(t);
   });
-  $effect(() => {
-    if (!m.bmEnabled) return;
-    const [i, g, q, n] = [m.ip, m.gamePort, m.queryPort, m.title];
-    const t = setTimeout(() => void serverData.fetchBm(i, g, q, n), 300);
-    return () => clearTimeout(t);
-  });
 
   // `focusMods` (the mods count in a row was clicked) opens the Mods tab.
   $effect(() => {

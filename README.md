@@ -33,7 +33,7 @@ A fast, feature-rich DayZ launcher that replaces the official one — browse ser
 - **18,000+ servers** — full public server list with live ping
 - **Filter & search** — by map, mods, 1PP, password, BattleEye
 - **Favorites & history** — star servers and track your sessions
-- **BattleMetrics** — rank, uptime, and 24h player graphs (API key required)
+- **Server stats** — rank, uptime, restarts, wipes and player graphs from DayZ Metrics (no key)
 
 ### Mods
 

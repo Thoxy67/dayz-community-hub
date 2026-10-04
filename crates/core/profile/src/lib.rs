@@ -45,9 +45,6 @@ pub struct Profile {
     /// Steam 64-bit account ID — used with the API key to resolve the avatar.
     #[serde(default)]
     pub steam_id: Option<String>,
-    /// BattleMetrics personal access token — used to fetch server rank, uptime and player history.
-    #[serde(default)]
-    pub battlemetrics_api_key: Option<String>,
     /// Optional explicit path to steamcmd binary (overrides auto-detection).
     #[serde(default)]
     pub steamcmd_path: Option<String>,
@@ -242,7 +239,6 @@ impl Profile {
             player: None,
             steam_api_key: None,
             steam_id: None,
-            battlemetrics_api_key: None,
             favorites: Vec::new(),
             history: Vec::new(),
             excluded_ips: Vec::new(),

@@ -213,11 +213,6 @@
                   ok: !!wizard.steamApiKey.trim(),
                   value: wizard.steamApiKey ? $w.configured.value : $w.notSet.value,
                 },
-                {
-                  label: $w.bmTitle.value,
-                  ok: !!wizard.battlemetricsKey.trim(),
-                  value: wizard.battlemetricsKey ? $w.configured.value : $w.notSet.value,
-                },
                 { label: $w.language.value, ok: true, value: LOCALE_LABELS[getLocale()] },
                 { label: $w.theme.value, ok: true, value: themeName(theme.selected) },
               ]}

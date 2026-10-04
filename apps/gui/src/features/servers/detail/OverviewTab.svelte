@@ -17,7 +17,7 @@
   import { dzchLink } from "$lib/dzch";
   import { connect } from "$lib/stores/connect.svelte";
   import { profile } from "$lib/stores/profile.svelte";
-  import { distanceKm, duration, num, relative, dateTime } from "$lib/format";
+  import { duration, num, relative, dateTime } from "$lib/format";
   import type { DetailModel } from "./model.svelte";
   import type { DetailTab } from "./tab.svelte";
   import PopulationWarning from "./PopulationWarning.svelte";
@@ -40,14 +40,6 @@
       modIds: m.modRows.map((r) => r.id),
     }),
   );
-
-  const km = $derived.by(() => {
-    const loc = m.bm?.data?.location;
-    const me = profile.data?.user_location;
-    if (!loc || loc[0] == null || loc[1] == null || !me || me[0] == null || me[1] == null)
-      return null;
-    return Math.round(distanceKm([me[0], me[1]], [loc[0], loc[1]]));
-  });
 
   const facts = $derived.by((): Fact[] => {
     const s = m.listed;
@@ -133,14 +125,10 @@
       if (m.count.bots > 0)
         f.push({ label: $c.bots.value, value: num(m.count.bots), tone: "text-warn" });
     }
-    if (km !== null)
-      f.push({ label: $c.bmDistance.value, value: $c.distanceKm({ km: num(km) }).value });
-    // Rank and uptime: DayZ Metrics first (no key), BattleMetrics if that is all there is.
     const x = m.metrics;
-    const bm = m.bm?.data;
-    const rank = x?.rank_pos ?? bm?.rank ?? null;
+    const rank = x?.rank_pos ?? null;
     if (rank != null) f.push({ label: $c.rank.value, value: `#${num(rank)}`, tone: "text-accent" });
-    const up = x?.uptime_7d ?? bm?.uptime ?? null;
+    const up = x?.uptime_7d ?? null;
     if (up != null) {
       f.push({
         label: $c.uptime.value,

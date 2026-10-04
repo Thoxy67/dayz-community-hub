@@ -29,7 +29,6 @@ pub struct ProfileSettingsInput {
     pub steamcmd_path: Option<String>,
     pub steam_api_key: Option<String>,
     pub steam_id: Option<String>,
-    pub battlemetrics_api_key: Option<String>,
     /// (longitude, latitude).
     pub user_location: Option<(f64, f64)>,
     /// Clamped to 5-100.
@@ -60,7 +59,6 @@ pub(crate) async fn save_profile_settings(
         steamcmd_path,
         steam_api_key,
         steam_id,
-        battlemetrics_api_key,
         user_location,
         ping_concurrency,
         ping_timeout_auto,
@@ -89,7 +87,6 @@ pub(crate) async fn save_profile_settings(
         profile.steamcmd_path = steamcmd_path;
         profile.steam_api_key = steam_api_key;
         profile.steam_id = steam_id;
-        profile.battlemetrics_api_key = battlemetrics_api_key;
         profile.user_location = user_location;
         profile.ping_concurrency = ping_concurrency.clamp(5, 100);
         profile.ping_timeout_auto = ping_timeout_auto.clamp(1000, 5000);

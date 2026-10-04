@@ -12,7 +12,6 @@ use tokio::sync::RwLock;
 
 use crate::error::ResultExt;
 use crate::features::a2s::A2sDetailsDto;
-use crate::features::battlemetrics::BattleMetricsDto;
 use crate::features::metrics::ServerMetricsDto;
 
 /// Shared state: `.read().await` to look, `.write().await` to change.
@@ -20,8 +19,6 @@ pub(crate) type SharedState = Arc<RwLock<AppState>>;
 
 /// Max entries in the A2S cache.
 const A2S_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(200).unwrap();
-/// Max entries in the BattleMetrics cache.
-const BM_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(50).unwrap();
 /// Max entries in the DayZ Metrics caches (figures, and ids found).
 const DM_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(100).unwrap();
 const DM_IDS_SIZE: NonZeroUsize = NonZeroUsize::new(500).unwrap();
@@ -41,8 +38,6 @@ pub struct AppState {
     /// A2S responses by "ip:query_port". The DTO is behind an `Arc` so a
     /// cache hit is a refcount bump, not a deep clone of players and rules.
     pub a2s_cache: LruCache<String, (Arc<A2sDetailsDto>, Instant)>,
-    /// BattleMetrics responses by "ip:port:query_port".
-    pub bm_cache: LruCache<String, (BattleMetricsDto, Instant)>,
     /// DayZ Metrics figures by "ip:game_port:query_port".
     pub dm_cache: LruCache<String, (ServerMetricsDto, Instant)>,
     /// DayZ Metrics ids found by "ip:game_port:query_port": finding one costs
@@ -66,7 +61,6 @@ impl AppState {
             cached_avatar: None,
             mod_update_cache: FxHashMap::default(),
             a2s_cache: LruCache::new(A2S_CACHE_SIZE),
-            bm_cache: LruCache::new(BM_CACHE_SIZE),
             dm_cache: LruCache::new(DM_CACHE_SIZE),
             dm_ids: LruCache::new(DM_IDS_SIZE),
             pty_input_tx: None,

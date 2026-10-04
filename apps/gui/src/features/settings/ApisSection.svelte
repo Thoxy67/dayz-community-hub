@@ -13,7 +13,6 @@
   const s = dict("settings");
   const a = dict("about");
   const steamReady = $derived(!!form.f.steamApiKey && !!form.f.steamId);
-  const bmReady = $derived(!!form.f.battlemetricsApiKey);
 </script>
 
 {#snippet link(url: string, label: string)}
@@ -48,14 +47,5 @@
       class="flex-1 font-mono"
     />
     {@render link("https://steamid.io", $s.findSteamId.value)}
-  </Field>
-  <div class="flex items-center gap-2 border-y border-border/60 bg-raised/30 px-pad py-1.5">
-    <span class="label-stencil text-fg-muted">{$s.battlemetrics.value}</span>
-    <Tag tone={bmReady ? "ok" : "neutral"}>{bmReady ? "✓" : "—"}</Tag>
-    <span class="ml-auto truncate text-2xs text-fg-faint">{$a.apiBmHint.value}</span>
-  </div>
-  <Field label={$s.apiToken.value} hint={$s.bmHint.value} for="set-bm">
-    <Secret id="set-bm" bind:value={form.f.battlemetricsApiKey} placeholder="eyJ…" />
-    {@render link("https://www.battlemetrics.com/developers", $s.getKey.value)}
   </Field>
 </Section>

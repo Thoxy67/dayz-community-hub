@@ -18,7 +18,7 @@ fn build(b: reqwest::ClientBuilder) -> Client {
     b.build().unwrap_or_else(|_| Client::new())
 }
 
-/// JSON APIs (Steam, the Workshop, BattleMetrics, ip-api): short answers.
+/// JSON APIs (Steam, the Workshop, ip-api): short answers.
 pub(crate) fn api() -> &'static Client {
     static C: OnceLock<Client> = OnceLock::new();
     C.get_or_init(|| {

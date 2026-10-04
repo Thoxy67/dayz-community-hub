@@ -19,7 +19,6 @@ permissions = [
   "allow-cancel-ping",
   "allow-toggle-ping-pause",
   "allow-query-a2s",
-  "allow-fetch-battlemetrics-server",
   "allow-fetch-server-metrics",
   "allow-get-profile",
   "allow-save-profile-settings",

@@ -47,7 +47,6 @@ pub struct ProfileDto {
     pub player: Option<String>,
     pub steam_api_key: Option<String>,
     pub steam_id: Option<String>,
-    pub battlemetrics_api_key: Option<String>,
     /// The user's location for distances, as (longitude, latitude).
     pub user_location: Option<(f64, f64)>,
     pub favorites: Vec<FavoriteDto>,
@@ -83,7 +82,6 @@ pub(crate) fn profile_to_dto(profile: &Profile) -> ProfileDto {
         player: profile.player.clone(),
         steam_api_key: profile.steam_api_key.clone(),
         steam_id: profile.steam_id.clone(),
-        battlemetrics_api_key: profile.battlemetrics_api_key.clone(),
         user_location: profile.user_location,
         favorites: profile
             .favorites

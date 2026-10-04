@@ -313,13 +313,6 @@ const content = {
       es: "Buscar tu ID",
       ru: "Найти ID",
     }),
-    bmHint: t({
-      en: "Only useful with a paid BattleMetrics subscription: its API no longer answers free tokens. Server stats come from DayZ Metrics without any key.",
-      fr: "Utile seulement avec un abonnement BattleMetrics payant : leur API ne répond plus aux jetons gratuits. Les stats des serveurs viennent de DayZ Metrics, sans clé.",
-      de: "Nur mit einem kostenpflichtigen BattleMetrics-Abo nützlich: die API beantwortet keine kostenlosen Tokens mehr. Serverstatistiken kommen ohne Schlüssel von DayZ Metrics.",
-      es: "Solo útil con una suscripción de pago a BattleMetrics: su API ya no responde a tokens gratuitos. Las estadísticas de servidores vienen de DayZ Metrics, sin clave.",
-      ru: "Нужен только при платной подписке BattleMetrics: их API больше не отвечает на бесплатные токены. Статистика серверов берётся с DayZ Metrics без ключа.",
-    }),
     locationDetected: t({
       en: "Detected from your IP address",
       fr: "Détectée depuis votre adresse IP",
@@ -670,27 +663,6 @@ const content = {
       ru: "API ключ",
     }),
     steamId: t({ en: "Steam ID", fr: "Steam ID", de: "Steam-ID", es: "Steam ID", ru: "Steam ID" }),
-    battlemetrics: t({
-      en: "BattleMetrics",
-      fr: "BattleMetrics",
-      de: "BattleMetrics",
-      es: "BattleMetrics",
-      ru: "BattleMetrics",
-    }),
-    battlemetricsDesc: t({
-      en: "optional, paid subscription only",
-      fr: "facultatif, abonnement payant uniquement",
-      de: "optional, nur mit kostenpflichtigem Abo",
-      es: "opcional, solo con suscripción de pago",
-      ru: "необязательно, только платная подписка",
-    }),
-    apiToken: t({
-      en: "API token",
-      fr: "Jeton API",
-      de: "API-Token",
-      es: "Token API",
-      ru: "API токен",
-    }),
     yourLocation: t({
       en: "Your Location",
       fr: "Votre position",

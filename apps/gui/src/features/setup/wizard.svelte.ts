@@ -24,7 +24,6 @@ class Wizard {
   steamcmdPath = $state("");
   steamApiKey = $state("");
   steamId = $state("");
-  battlemetricsKey = $state("");
 
   status = $state<SteamcmdStatusDto | null>(null);
   detecting = $state(false);
@@ -129,7 +128,6 @@ class Wizard {
       steamcmdPath: blank(this.steamcmdPath),
       steamApiKey: blank(this.steamApiKey),
       steamId: blank(this.steamId),
-      battlemetricsApiKey: blank(this.battlemetricsKey),
       userLocation: null,
     });
     this.saving = false;

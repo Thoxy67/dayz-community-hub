@@ -4,7 +4,6 @@
  * the names the interface uses are chosen here.
  */
 import type {
-  BattleMetricsServer,
   PingResultDto,
   ServerDto as ServerFull,
   ServerRow,
@@ -49,6 +48,5 @@ export type {
 export type ServerDto = ServerRow;
 /** A server with its mod list, fetched on demand. */
 export type ServerFullDto = ServerFull;
-export type BattleMetricsDto = BattleMetricsServer;
 export type { ServerMetrics, RestartSchedule, WipeSchedule, MetricsLink } from "./bindings";
 export type PingResult = PingResultDto;

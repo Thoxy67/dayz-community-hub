@@ -12,7 +12,6 @@ type Fields = {
   steamcmdPath: string;
   steamApiKey: string;
   steamId: string;
-  battlemetricsApiKey: string;
   /** [longitude, latitude], as the profile keeps it. */
   userLocation: [number, number] | null;
 };
@@ -33,7 +32,6 @@ function fromProfile(): Fields {
     steamcmdPath: p?.steamcmd_path ?? "",
     steamApiKey: p?.steam_api_key ?? "",
     steamId: p?.steam_id ?? "",
-    battlemetricsApiKey: p?.battlemetrics_api_key ?? "",
     userLocation: toPoint(p?.user_location),
   };
 }
@@ -71,7 +69,6 @@ class AccountForm {
         steamcmdPath: orNull(f.steamcmdPath),
         steamApiKey: orNull(f.steamApiKey),
         steamId: orNull(f.steamId),
-        battlemetricsApiKey: orNull(f.battlemetricsApiKey),
         userLocation: f.userLocation,
         ...overrides,
       });

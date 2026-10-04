@@ -6,6 +6,23 @@ notes; without one, the notes are the commit titles since the last release.
 
 ## Unreleased
 
+- **BattleMetrics is gone.** Its API now needs a paid subscription, so the
+  token field, the setup step and the Stats section are removed; server
+  stats come from DayZ Metrics alone, without a key. The Distance fact,
+  which needed BattleMetrics' coordinates, goes with it.
+- **Share a server.** Every row in the browser, favourites and history has a
+  button (or L) that copies a `dzch://` link to send to a friend. A saved
+  password is never put in the link.
+- **Password servers ask for the password** when joined from the list, from
+  a favourite without one, or with Rejoin, and can save it with the
+  favourite. Before, the game was launched without it and turned away.
+- When a server's mods cannot be read, the launcher asks before joining
+  instead of launching as if none were needed.
+- The ping retries setting now works: a server that does not answer is asked
+  again that many times during the list scan.
+- News no longer takes the arrow keys away from the other views, and Enter
+  on a toolbar button no longer joins the selected server too.
+
 ## 0.5.0 - 2026-09-29
 
 - **Update by hand once.** Releases are now signed with a new key, so 0.4.1

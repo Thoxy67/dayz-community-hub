@@ -18,14 +18,13 @@
   import { bytes, date, dateTime, num } from "$lib/format";
   import type { DetailModel } from "./model.svelte";
   import PopulationWarning from "./PopulationWarning.svelte";
-  import BattleMetricsSection from "./BattleMetricsSection.svelte";
   import { untilText } from "./until";
 
   /**
    * The server's long view, from DayZ Metrics (no key needed): how it ranks,
    * how reliably it is up, how full it gets, when it restarts and wipes,
    * whether its player count can be trusted, and a day of players drawn
-   * large. BattleMetrics follows only for a paid token.
+   * large.
    */
   let { m }: { m: DetailModel } = $props();
   const c = dict("detail");
@@ -300,12 +299,6 @@
           <button class="shrink-0 underline" onclick={refresh}>{$c.retry.value}</button>
         </div>
       {/if}
-    </div>
-  {/if}
-
-  {#if m.bmEnabled}
-    <div class="border-t border-border px-pad py-2.5">
-      <BattleMetricsSection ip={m.ip} port={m.gamePort} queryPort={m.queryPort} name={m.title} />
     </div>
   {/if}
 </div>

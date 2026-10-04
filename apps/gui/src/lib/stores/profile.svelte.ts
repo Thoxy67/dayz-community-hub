@@ -20,7 +20,6 @@ export type AccountSettings = Pick<
   | "steamcmdPath"
   | "steamApiKey"
   | "steamId"
-  | "battlemetricsApiKey"
   | "userLocation"
 >;
 
@@ -91,7 +90,6 @@ class Profile {
       steamcmdPath: p?.steamcmd_path ?? null,
       steamApiKey: p?.steam_api_key ?? null,
       steamId: p?.steam_id ?? null,
-      battlemetricsApiKey: p?.battlemetrics_api_key ?? null,
       userLocation: p?.user_location ?? null,
       pingConcurrency: p?.ping_concurrency ?? 64,
       pingTimeoutAuto: p?.ping_timeout_auto ?? 2000,

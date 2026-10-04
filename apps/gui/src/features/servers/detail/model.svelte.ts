@@ -2,7 +2,7 @@
  * What the panel knows about one server, gathered once from the stores so the
  * tabs read the same values: the listed row (if the public list has it), the
  * live A2S answer, the mods it runs against what is installed, DayZ Metrics'
- * long view (and BattleMetrics' when a paid token is set).
+ * long view.
  * Nothing here computes over more than this one server.
  */
 import { servers, type ServerRow } from "$lib/stores/servers.svelte";
@@ -67,8 +67,6 @@ export function detailModel(src: () => { ip: string; port: number; name: string 
     return "ok";
   });
   const country = $derived(metrics?.country ?? null);
-  const bmEnabled = $derived(!!profile.data?.battlemetrics_api_key);
-  const bm = $derived(bmEnabled ? serverData.bm(ip, gamePort, queryPort) : null);
   const players = $derived(
     [...(a2s?.players_list ?? [])].sort((a, b) => (b.duration ?? 0) - (a.duration ?? 0)),
   );
@@ -128,13 +126,7 @@ export function detailModel(src: () => { ip: string; port: number; name: string 
       return population;
     },
     get country() {
-      return country ?? bm?.data?.country ?? null;
-    },
-    get bmEnabled() {
-      return bmEnabled;
-    },
-    get bm() {
-      return bm;
+      return country;
     },
     get players() {
       return players;

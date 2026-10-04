@@ -1,14 +1,13 @@
 /**
  * Live details about one server, fetched on demand and cached: A2S (who is
  * on, the rules, the mods it reports), DayZ Metrics (rank, schedules, fake
- * verdict, a day of player counts; no key) and BattleMetrics (only with a
- * paid token). Requests for the same server share one flight, and the caches
- * are bounded like the backend's own.
+ * verdict, player counts; no key). Requests for the same server share one
+ * flight, and the caches are bounded like the backend's own.
  */
 import { SvelteMap } from "svelte/reactivity";
-import { queryA2s, fetchBattleMetrics, fetchServerMetrics } from "$lib/ipc/servers";
+import { queryA2s, fetchServerMetrics } from "$lib/ipc/servers";
 import { errorText } from "$lib/ipc/core";
-import type { A2sDetailsDto, BattleMetricsDto, ServerMetrics } from "$lib/ipc/types";
+import type { A2sDetailsDto, ServerMetrics } from "$lib/ipc/types";
 import { servers } from "./servers.svelte";
 
 type Entry<T> = {
@@ -19,9 +18,7 @@ type Entry<T> = {
 };
 
 const A2S_TTL_MS = 30_000;
-const BM_TTL_MS = 300_000;
 const MAX_A2S = 200;
-const MAX_BM = 50;
 const METRICS_TTL_MS = 300_000;
 const MAX_METRICS = 100;
 
@@ -38,9 +35,7 @@ function evict<T>(cache: Map<string, Entry<T>>, max: number) {
 
 class ServerData {
   #a2s = new SvelteMap<string, Entry<A2sDetailsDto>>();
-  #bm = new SvelteMap<string, Entry<BattleMetricsDto>>();
   #a2sFlight = new Map<string, Promise<A2sDetailsDto | null>>();
-  #bmFlight = new Map<string, Promise<BattleMetricsDto | null>>();
   #metrics = new SvelteMap<string, Entry<ServerMetrics>>();
   #metricsFlight = new Map<string, Promise<ServerMetrics | null>>();
 
@@ -139,23 +134,6 @@ class ServerData {
     if (d) return { players: d.players, max: d.max_players, bots: d.bots };
     const sv = servers.find(ip, port);
     return { players: sv?.players ?? 0, max: sv?.max_players ?? 0, bots: sv?.bots ?? 0 };
-  }
-
-  bm(ip: string, port: number, queryPort: number): Entry<BattleMetricsDto> {
-    return this.#bm.get(`${ip}:${port}:${queryPort}`) ?? blank();
-  }
-
-  /** BattleMetrics, from the cache while it is fresh unless `force`. */
-  fetchBm(ip: string, port: number, queryPort: number, name: string, force = false) {
-    return this.#cached(
-      this.#bm,
-      this.#bmFlight,
-      `${ip}:${port}:${queryPort}`,
-      BM_TTL_MS,
-      MAX_BM,
-      force,
-      () => fetchBattleMetrics(ip, port, queryPort, name),
-    );
   }
 
   metrics(ip: string, gamePort: number, queryPort: number): Entry<ServerMetrics> {

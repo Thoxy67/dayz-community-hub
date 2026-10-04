@@ -29,7 +29,6 @@ pub(crate) fn builder() -> tauri_specta::Builder<tauri::Wry> {
             ping::cancel_ping,
             ping::toggle_ping_pause,
             a2s::query_a2s,
-            battlemetrics::fetch_battlemetrics_server,
             metrics::fetch_server_metrics,
             profile::get_profile,
             profile::save_profile_settings,

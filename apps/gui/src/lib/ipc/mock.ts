@@ -154,7 +154,6 @@ const profile = {
   player: "Survivor",
   steam_api_key: "XXXXXXXX",
   steam_id: "76561198000000000",
-  battlemetrics_api_key: "mock",
   user_location: [2.35, 48.85],
   favorites: servers
     .slice(3, 9)
@@ -774,37 +773,6 @@ export function installMock() {
           mod_total_bytes: 5228339261,
           player_history: hist,
           ping_history: hist.map(([t]) => [t, 8]),
-        };
-      }
-      case "fetch_battlemetrics_server": {
-        const x = servers.find((v) => v.ip === a.ip);
-        const max = x?.max_players ?? 60;
-        const now = Math.floor(Date.now() / 1000);
-        // A day in half-hour steps: quiet at dawn, full in the evening.
-        const history = Array.from({ length: 48 }, (_, i) => {
-          const t = now - (47 - i) * 1800;
-          const h = new Date(t * 1000).getHours() + new Date(t * 1000).getMinutes() / 60;
-          const curve = 0.5 + 0.45 * Math.sin(((h - 13) / 24) * 2 * Math.PI);
-          return [t, Math.max(0, Math.min(max, Math.round(max * curve + ((i * 7) % 5) - 2)))];
-        });
-        return {
-          id: String(10_000_000 + servers.indexOf(x!)),
-          name: x?.name ?? "?",
-          rank: 40 + (servers.indexOf(x!) % 900),
-          status: "online",
-          country: ["DE", "FR", "GB", "US", "PL", "RU", "NL"][servers.indexOf(x!) % 7],
-          location: [8.68, 50.11],
-          uptime: 97.4,
-          private: x?.password ?? false,
-          official: false,
-          third_person: !(x?.first_person_only ?? false),
-          modded: (x?.mods_count ?? 0) > 0,
-          query_status: "valid",
-          server_steam_id: "90202066736795652",
-          created_at: "2023-03-14T10:00:00Z",
-          player_history: history,
-          players: x?.players ?? 0,
-          max_players: max,
         };
       }
       case "toggle_ping_pause":

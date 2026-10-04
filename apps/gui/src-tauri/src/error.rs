@@ -27,7 +27,7 @@ where
 }
 
 /// An HTTP failure as a message, without the request's URL: URLs carry API
-/// keys (Steam, BattleMetrics) that must not reach a toast or a log.
+/// keys (Steam) that must not reach a toast or a log.
 pub(crate) trait HttpResultExt<T> {
     fn http_err(self, what: &str) -> Result<T, String>;
 }
