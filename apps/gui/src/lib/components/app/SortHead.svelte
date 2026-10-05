@@ -22,18 +22,21 @@
   } = $props();
 </script>
 
-<button
-  class={cn(
-    "flex items-center gap-1 justify-self-start uppercase hover:text-fg",
-    active && "text-accent",
-    klass,
-  )}
-  title={title || undefined}
+<!-- The sort order belongs to the column, not to the button that changes it:
+     `aria-sort` is not allowed on a button. -->
+<div
+  role="columnheader"
   aria-sort={active ? (asc ? "ascending" : "descending") : "none"}
-  {onclick}
+  class={cn("justify-self-start", klass)}
 >
-  {label}
-  {#if !active}<ArrowUpDown class="size-3 opacity-40" />{:else if asc}<ArrowUp
-      class="size-3"
-    />{:else}<ArrowDown class="size-3" />{/if}
-</button>
+  <button
+    class={cn("flex items-center gap-1 uppercase hover:text-fg", active && "text-accent")}
+    title={title || undefined}
+    {onclick}
+  >
+    {label}
+    {#if !active}<ArrowUpDown class="size-3 opacity-40" />{:else if asc}<ArrowUp
+        class="size-3"
+      />{:else}<ArrowDown class="size-3" />{/if}
+  </button>
+</div>

@@ -27,7 +27,7 @@
 </script>
 
 <script lang="ts">
-  import type { Component, Snippet } from "svelte";
+  import { untrack, type Component, type Snippet } from "svelte";
   import { dict } from "$lib/i18n";
   import PlugZap from "~icons/lucide/plug-zap";
   import Trash from "~icons/lucide/trash-2";
@@ -114,8 +114,10 @@
   type SortCol = "name" | "players" | "ping" | "map" | "recent";
   let query = $state("");
   let listedOnly = $state(false);
-  let sortCol = $state<SortCol>(kind === "history" ? "recent" : "name");
-  let sortAsc = $state(kind !== "history");
+  // A list is one kind for its whole life: its first sort follows it.
+  const isHistory = untrack(() => kind === "history");
+  let sortCol = $state<SortCol>(isHistory ? "recent" : "name");
+  let sortAsc = $state(!isHistory);
 
   function sortBy(col: SortCol) {
     if (sortCol === col) sortAsc = !sortAsc;
