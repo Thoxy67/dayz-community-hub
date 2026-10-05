@@ -356,7 +356,12 @@ function accept() {
   if (el.hasAttribute("data-pad-index")) {
     const t =
       el.querySelector<HTMLElement>("[data-pad-accept], [role=row]") ?? el.firstElementChild;
-    (t instanceof HTMLElement ? t : el).click();
+    const row = t instanceof HTMLElement ? t : el;
+    // A on the row already selected does what a double-click does: in the
+    // server lists, join. The first A selects, the second joins.
+    if (row.getAttribute("aria-selected") === "true")
+      row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    else row.click();
   } else el.click();
   // Selecting a row can redraw its list elsewhere (the details pane opening
   // beside it): the focus then goes back to the same row.
@@ -465,8 +470,26 @@ function mainScroller(root: Element): HTMLElement | null {
   return bestEl;
 }
 
+/**
+ * The button that confirms the open dialog: one marked `data-pad-confirm`,
+ * else the last one in its footer (dialogs put the safe button first and
+ * the one that acts last). `null` outside a dialog or when it is disabled.
+ */
+export function dialogConfirm(): HTMLElement | null {
+  const root = scope();
+  if (root.id === "app") return null;
+  const marked = root.querySelector<HTMLElement>("[data-pad-confirm]");
+  const last = [...root.querySelectorAll<HTMLElement>("footer button")].filter(visible).at(-1);
+  const el = marked ?? last ?? null;
+  return el && !el.matches(":disabled, [aria-disabled=true]") ? el : null;
+}
+
 function command(button: PadButtonCommand) {
-  if (scope().id !== "app") return;
+  if (scope().id !== "app") {
+    // In a dialog X confirms it, wherever the focus is.
+    if (button === "primary") dialogConfirm()?.click();
+    return;
+  }
   const c = registry.get(app.view, button);
   if (c) return c.run();
   if (button === "menu") return void switchTo("settings");

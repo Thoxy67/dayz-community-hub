@@ -103,6 +103,13 @@ const content = {
       es: "El teclado en pantalla de Steam se abre en los campos de texto",
       ru: "Экранная клавиатура Steam открывается в текстовых полях",
     }),
+    confirm: t({
+      en: "Confirm",
+      fr: "Confirmer",
+      de: "Bestätigen",
+      es: "Confirmar",
+      ru: "Подтвердить",
+    }),
     details: t({
       en: "Details",
       fr: "Détails",

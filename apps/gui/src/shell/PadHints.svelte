@@ -3,6 +3,7 @@
   import { dict } from "$lib/i18n";
   import { PadGlyph, type PadButton } from "$lib/components/app";
   import { registry } from "$lib/gamepad/actions.svelte";
+  import { dialogConfirm } from "$lib/gamepad/nav";
   import { pad } from "$lib/gamepad/state.svelte";
   import { app } from "$lib/stores/app.svelte";
 
@@ -24,6 +25,26 @@
       return { b, label: c?.label() ?? null };
     })),
   );
+  // A dialog is open: X confirms it, and the view's own X and Y do not apply.
+  // Asked again when a dialog's portal comes or goes on the body (a dialog's
+  // focus trap keeps focus events from reaching the document), and once it
+  // is drawn, since at mount it may not count as visible yet.
+  let moved = $state(0);
+  $effect(() => {
+    const bump = () => {
+      moved++;
+      requestAnimationFrame(() => moved++);
+      setTimeout(() => moved++, 300);
+    };
+    const watch = new MutationObserver(bump);
+    watch.observe(document.body, { childList: true });
+    document.addEventListener("focusin", bump, true);
+    return () => {
+      watch.disconnect();
+      document.removeEventListener("focusin", bump, true);
+    };
+  });
+  const confirming = $derived((void pad.focused, void moved, dialogConfirm() !== null));
   const label = (b: "menu" | "view", fallback: string) =>
     own.find((o) => o.b === b)?.label ?? fallback;
 </script>
@@ -43,9 +64,13 @@
 >
   {@render hint(["a"], typing ? $p.type.value : $p.select.value)}
   {@render hint(["b"], $p.back.value)}
-  {#each own as o (o.b)}
-    {#if (o.b === "x" || o.b === "y") && o.label}{@render hint([o.b], o.label)}{/if}
-  {/each}
+  {#if confirming}
+    {@render hint(["x"], $p.confirm.value)}
+  {:else}
+    {#each own as o (o.b)}
+      {#if (o.b === "x" || o.b === "y") && o.label}{@render hint([o.b], o.label)}{/if}
+    {/each}
+  {/if}
   {@render hint(["lb", "rb"], $p.views.value)}
   {@render hint(["lt", "rt"], $p.page.value)}
   {@render hint(["menu"], label("menu", $p.settings.value))}

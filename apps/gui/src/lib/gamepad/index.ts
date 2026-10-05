@@ -11,7 +11,7 @@ import { pad } from "./state.svelte";
 export { pad } from "./state.svelte";
 export { padActions, type PadCommand, type PadCommands } from "./actions.svelte";
 export { padList, indexOf, type PadList } from "./list";
-export { handle } from "./nav";
+export { handle, dialogConfirm } from "./nav";
 
 /** Start listening to the pads. Returns the teardown. */
 export function start(views: readonly ViewId[]): () => void {
