@@ -13,6 +13,21 @@
   import { compact } from "$lib/format";
   import { GROUPS, PLACES, type Place } from "./nav";
   import RejoinCard from "./RejoinCard.svelte";
+  import Skull from "~icons/lucide/square-x";
+  import { game } from "$lib/stores/game.svelte";
+  import { pad } from "$lib/gamepad";
+  import { confirm } from "$lib/stores/dialogs.svelte";
+
+  /** Close a running DayZ, after asking: it is closed as a crash would close it. */
+  async function closeGame() {
+    const ok = await confirm({
+      title: $n.killGameTitle.value,
+      message: $n.killGameMessage.value,
+      confirmLabel: $n.killGame.value,
+      danger: true,
+    });
+    if (ok) await game.close();
+  }
 
   const n = dict("nav");
   const collapsed = $derived(prefs.railCollapsed);
@@ -96,6 +111,36 @@
         {#each PLACES.filter((p) => p.group === g.id) as p (p.id)}{@render entry(p)}{/each}
       </div>
     {/each}
+
+    <!-- The game is open: a way to close it, under the views. Not with a
+         controller, where Steam's own overlay quits the game. -->
+    {#if game.running && pad.mode !== "gamepad"}
+      <div
+        class={cn(
+          "flex flex-col gap-1 rounded-sm border border-err/30 bg-err/8",
+          collapsed ? "items-center p-1" : "px-2.5 py-2",
+        )}
+      >
+        {#if !collapsed}
+          <span class="flex items-center gap-1.5 text-2xs text-fg-muted">
+            <span class="size-1.5 animate-pulse rounded-full bg-ok"></span>{$n.gameRunning.value}
+          </span>
+        {/if}
+        <Tooltip text={collapsed ? $n.killGame.value : ""} class="flex">
+          <button
+            class={cn(
+              "flex h-control items-center justify-center gap-1.5 rounded-sm text-xs text-err hover:bg-err/15 disabled:opacity-50",
+              collapsed ? "w-full" : "w-full border border-err/40",
+            )}
+            disabled={game.closing}
+            aria-label={$n.killGame.value}
+            onclick={closeGame}
+          >
+            <Skull class="size-icon-sm" />{#if !collapsed}{$n.killGame.value}{/if}
+          </button>
+        </Tooltip>
+      </div>
+    {/if}
   </div>
 
   <div class="relative flex flex-col gap-2 border-t border-border pt-2 pb-1.5">

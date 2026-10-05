@@ -142,6 +142,7 @@ class Offline {
     say.info(w.statusLaunching({ mission: describe(id).map }));
     try {
       await ipc.launchOfflineMission(id);
+      void import("$lib/stores/game.svelte").then(({ game }) => game.launched());
     } catch (e) {
       say.err(w.statusLaunchFailed({ error: errorText(e) }));
     }

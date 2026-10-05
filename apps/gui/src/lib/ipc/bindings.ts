@@ -138,6 +138,10 @@ export const commands = {
 	/**  Flip a launch option. Returns whether it is now enabled. */
 	toggleLaunchOption: (key: string) => __TAURI_INVOKE<boolean>("toggle_launch_option", { key }),
 	steamLaunchInfo: () => __TAURI_INVOKE<SteamLaunchInfoDto>("steam_launch_info"),
+	/**  DayZ is running (started from here or not). */
+	gameRunning: () => __TAURI_INVOKE<boolean>("game_running"),
+	/**  Close DayZ. Returns how many of its processes were stopped. */
+	killGame: () => __TAURI_INVOKE<number>("kill_game"),
 	/**  Set a launch option's value; a value also enables it. */
 	setLaunchOptionValue: (key: string, value: string | null) => __TAURI_INVOKE<null>("set_launch_option_value", { key, value }),
 	/**

@@ -19,6 +19,7 @@
   import { servers } from "$lib/stores/servers.svelte";
   import { mods } from "$lib/stores/mods.svelte";
   import { profile } from "$lib/stores/profile.svelte";
+  import { game } from "$lib/stores/game.svelte";
   import { connect } from "$lib/stores/connect.svelte";
   import { say } from "$lib/stores/say";
   import { prefs } from "$lib/stores/prefs.svelte";
@@ -114,6 +115,7 @@
   // ── startup, the backend's events, the window ───────────────────────────
   $effect(() => {
     untrack(() => void app.init());
+    game.init();
     if (!inTauri) return;
     // Listeners are registered asynchronously: one that arrives after the
     // effect was torn down is removed at once instead of leaking.
@@ -125,6 +127,7 @@
     keep(
       events.launchDone.listen((e) => {
         say.ok(words("shell").statusLaunched({ name: e.payload }));
+        game.launched();
         void profile.load();
       }),
     );

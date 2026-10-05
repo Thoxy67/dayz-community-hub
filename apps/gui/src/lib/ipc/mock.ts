@@ -483,6 +483,10 @@ export function installMock() {
         };
       case "detect_steamcmd":
         return { found: true, path: "/usr/bin/steamcmd", platform: "linux" };
+      case "game_running":
+        return new URLSearchParams(location.search).get("game") === "1";
+      case "kill_game":
+        return 2;
       case "steam_launch_info":
         return {
           linux: true,

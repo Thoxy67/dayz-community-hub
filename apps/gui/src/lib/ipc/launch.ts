@@ -13,3 +13,7 @@ export const launchDirect = (
 ) => run(commands.launchDirect(ip, gamePort, password, extraArgs));
 /** How DayZ gets started: the launcher's command, and what Steam adds (Proton, its launch options). */
 export const steamLaunchInfo = () => run(commands.steamLaunchInfo());
+/** DayZ is running, started from here or not. */
+export const gameRunning = () => run(commands.gameRunning());
+/** Close DayZ: how many of its processes were stopped. */
+export const killGame = () => run(commands.killGame());

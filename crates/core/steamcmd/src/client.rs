@@ -194,3 +194,90 @@ pub fn appimage_env() -> &'static [&'static str] {
     }
     &[]
 }
+
+/// The game's own processes, beside the Steam client that starts them: the
+/// BattlEye launcher and the game itself, on Windows or under Proton (whose
+/// Windows processes the host sees by their .exe names).
+pub struct DayzGame;
+
+impl DayzGame {
+    /// Process names that are DayZ, compared without case.
+    const NAMES: &'static [&'static str] = &[
+        "dayz_x64.exe",
+        "dayz_be.exe",
+        "dayz.exe",
+        "dayzdiag_x64.exe",
+    ];
+
+    fn is_dayz(name: &std::ffi::OsStr) -> bool {
+        let name = name.to_string_lossy();
+        Self::NAMES.iter().any(|n| name.eq_ignore_ascii_case(n))
+    }
+
+    fn processes() -> sysinfo::System {
+        use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
+        let mut system = System::new();
+        // Names only: see `SteamClient::is_running`.
+        system.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing(),
+        );
+        system
+    }
+
+    /// DayZ is running. Blocking (a scan of the process table).
+    pub fn is_running() -> bool {
+        Self::processes()
+            .processes()
+            .values()
+            .any(|p| Self::is_dayz(p.name()))
+    }
+
+    /// Close DayZ: asked to quit first where the system allows it, then
+    /// killed if it is still there a moment later. Returns how many processes
+    /// were stopped. Blocking.
+    pub fn kill() -> usize {
+        let system = Self::processes();
+        let targets: Vec<_> = system
+            .processes()
+            .iter()
+            .filter(|(_, p)| Self::is_dayz(p.name()))
+            .map(|(pid, _)| *pid)
+            .collect();
+        if targets.is_empty() {
+            return 0;
+        }
+        // SIGTERM on Unix lets Wine and the game close cleanly; Windows has
+        // no such request, so `kill_with` returns None and it is killed below.
+        for pid in &targets {
+            if let Some(p) = system.process(*pid) {
+                let _ = p.kill_with(sysinfo::Signal::Term);
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        let system = Self::processes();
+        for pid in &targets {
+            if let Some(p) = system.process(*pid)
+                && Self::is_dayz(p.name())
+            {
+                p.kill();
+            }
+        }
+        targets.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DayzGame;
+    use std::ffi::OsStr;
+
+    #[test]
+    fn only_the_games_processes_count() {
+        assert!(DayzGame::is_dayz(OsStr::new("DayZ_x64.exe")));
+        assert!(DayzGame::is_dayz(OsStr::new("DAYZ_BE.EXE")));
+        assert!(!DayzGame::is_dayz(OsStr::new("dayz-community-hub")));
+        assert!(!DayzGame::is_dayz(OsStr::new("DayZServer_x64.exe")));
+    }
+}

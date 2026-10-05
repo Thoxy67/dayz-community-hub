@@ -216,3 +216,21 @@ pub(crate) async fn steam_launch_info(
     .await
     .map_err(|e| format!("Task join error: {e}"))
 }
+
+/// DayZ is running (started from here or not).
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn game_running() -> Result<bool, String> {
+    tokio::task::spawn_blocking(dz_steamcmd::DayzGame::is_running)
+        .await
+        .map_err(|e| format!("Task join error: {e}"))
+}
+
+/// Close DayZ. Returns how many of its processes were stopped.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn kill_game() -> Result<u32, String> {
+    tokio::task::spawn_blocking(|| dz_steamcmd::DayzGame::kill() as u32)
+        .await
+        .map_err(|e| format!("Task join error: {e}"))
+}
