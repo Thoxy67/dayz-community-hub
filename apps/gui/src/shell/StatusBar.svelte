@@ -11,6 +11,18 @@
   import HardDriveDownload from "~icons/lucide/hard-drive-download";
   import Puzzle from "~icons/lucide/puzzle";
   import Download from "~icons/lucide/download";
+  import Check from "~icons/lucide/check";
+  import Settings from "~icons/lucide/settings";
+  import ChevronUp from "~icons/lucide/chevron-up";
+  import { DropdownMenu as Menu } from "bits-ui";
+  import {
+    DropdownMenuContent,
+    DropdownMenuGroup,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+  } from "$lib/components/ui/dropdown-menu";
+  import type { ModDownloaderDto } from "$lib/ipc/types";
   import { Tooltip } from "$lib/components/ui/tooltip";
   import { inTauri } from "$lib/ipc/core";
   import { app } from "$lib/stores/app.svelte";
@@ -28,6 +40,11 @@
    * colour, and a click goes where that state is dealt with.
    */
   const n = dict("nav");
+  const st = dict("settings");
+  const downloaders = $derived<{ value: ModDownloaderDto; label: string; hint: string }[]>([
+    { value: "steamcmd", label: "SteamCMD", hint: $n.sbSteamcmdHint.value },
+    { value: "steamworks", label: $st.downloaderSteam.value, hint: $n.sbSteamHint.value },
+  ]);
   let version = $state("");
   if (inTauri)
     getVersion()
@@ -135,19 +152,53 @@
       </button>
     </Tooltip>
   {:else}
-    <button
-      class={cn(btn, !hasSteamcmd && !profile.viaSteam && "text-warn")}
-      onclick={() => app.go("settings", "steam")}
-    >
-      <Terminal class="size-3" />
-      <span
-        >{profile.viaSteam
-          ? $n.sbSteamworks.value
-          : hasSteamcmd
-            ? $n.sbSteamcmdReady.value
-            : $n.sbSteamcmdMissing.value}</span
-      >
-    </button>
+    <!-- What downloads mods, switched right here; the details stay in Settings. -->
+    <Menu.Root>
+      <Tooltip text={$n.sbDownloader.value} side="top" class="flex">
+        <Menu.Trigger class={cn(btn, !hasSteamcmd && !profile.viaSteam && "text-warn")}>
+          <Terminal class="size-3" />
+          <span
+            >{profile.viaSteam
+              ? $n.sbSteamworks.value
+              : hasSteamcmd
+                ? $n.sbSteamcmdReady.value
+                : $n.sbSteamcmdMissing.value}</span
+          >
+          <ChevronUp class="size-3 opacity-60" />
+        </Menu.Trigger>
+      </Tooltip>
+      <DropdownMenuContent side="top" align="start" class="min-w-60">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>{$n.sbDownloader.value}</DropdownMenuLabel>
+          {#each downloaders as o (o.value)}
+            {@const on = (profile.data?.mod_downloader ?? "steamcmd") === o.value}
+            <DropdownMenuItem
+              disabled={mods.busy && !on}
+              class="h-auto py-1"
+              onselect={() => {
+                if (!on) void profile.setModDownloader(o.value);
+              }}
+            >
+              <span class="flex items-center gap-2">
+                <span class="grid size-3.5 place-items-center text-accent"
+                  >{#if on}<Check class="size-3" />{/if}</span
+                >
+                <span class="flex min-w-0 flex-col">
+                  <span class={cn(on ? "text-fg" : "text-fg-muted")}>{o.label}</span>
+                  <span class="truncate text-3xs text-fg-faint"
+                    >{mods.busy && !on ? $n.sbDownloaderBusy.value : o.hint}</span
+                  >
+                </span>
+              </span>
+            </DropdownMenuItem>
+          {/each}
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem icon={Settings} onselect={() => app.go("settings", "steam")}>
+          {$n.sbSteamSettings.value}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </Menu.Root>
   {/if}
 
   <!-- Mods: out of date ones lead to the mods view. -->
