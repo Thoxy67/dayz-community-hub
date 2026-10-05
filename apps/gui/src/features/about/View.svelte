@@ -509,16 +509,20 @@
         {:else if guide === "offline"}
           {@render steps([$a.offStep1.value, $a.offStep2.value, $a.offStep3.value])}
         {:else if guide === "share"}
-          <div class="grid gap-4 lg:grid-cols-2">
+          <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <div>
               <p class="m-0 mb-2.5 text-xs text-fg-muted">
                 {$a.sharingDesc({ url: "dzch://", file: ".dzch" }).value}
               </p>
               <div class="grid gap-1.5 rounded-sm border border-border bg-bg p-2">
                 {#each [{ label: $a.sharingBasic.value, url: "dzch://1.2.3.4:2302" }, { label: $a.sharingWithMods.value, url: "dzch://1.2.3.4:2302?mods=1559212036,1564026768" }, { label: $a.sharingFull.value, url: "dzch://1.2.3.4:2302?qport=27016&name=My%20Server&password=secret&mods=1559212036" }] as ex (ex.url)}
-                  <div class="flex items-center gap-2">
+                  <div class="flex items-start gap-2">
                     <span class="w-24 shrink-0 text-2xs text-fg-faint">{ex.label}</span>
-                    <Copy text={ex.url} class="min-w-0 text-fg-muted" />
+                    <!-- Wrapped, not cut: the end of a long link is the part worth reading. -->
+                    <Copy
+                      text={ex.url}
+                      class="min-w-0 flex-1 text-left text-fg-muted [&>span]:break-all [&>span]:whitespace-normal"
+                    />
                   </div>
                 {/each}
               </div>
@@ -547,7 +551,7 @@
             </div>
           </div>
         {:else}
-          <div class="grid gap-4 lg:grid-cols-2">
+          <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <div>
               <p class="m-0 mb-1.5 text-xs font-medium text-fg">{$a.tipAuthTitle.value}</p>
               {@render steps([
