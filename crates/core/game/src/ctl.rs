@@ -47,13 +47,16 @@ fn normalize_steamapps(p: PathBuf) -> PathBuf {
 }
 
 /// The Steam client's `steamapps` directory that holds DayZ: the profile's,
-/// or the one found on this machine.
+/// or the one found on this machine. A saved folder that is not there (a
+/// drive unplugged, a profile imported from the other OS) does not stop the
+/// search.
 fn resolve_steam_root(profile: &Profile) -> PathBuf {
     profile
         .steam_root
         .as_ref()
         .filter(|s| !s.is_empty())
         .map(PathBuf::from)
+        .filter(|p| p.is_dir())
         .map(normalize_steamapps)
         .or_else(find_steam_root)
         .unwrap_or_else(default_steamapps_fallback)

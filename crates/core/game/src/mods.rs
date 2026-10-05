@@ -330,7 +330,16 @@ pub fn create_mod_symlink(source: &Path, dayz_path: &Path, mod_id: u64) -> Resul
 
     // Remove existing link/file if it exists
     if target.symlink_metadata().is_ok() {
-        if target.is_symlink() || target.is_file() {
+        // A junction (or a directory symlink) is a directory to Windows:
+        // `remove_file` (DeleteFileW) refuses it, so re-linking a mod to its
+        // other copy failed. `remove_dir` removes the link, never the mod.
+        #[cfg(windows)]
+        let reparse = is_junction(&target);
+        #[cfg(not(windows))]
+        let reparse = false;
+        if reparse {
+            fs::remove_dir(&target)?;
+        } else if target.is_symlink() || target.is_file() {
             fs::remove_file(&target)?;
         } else if target.is_dir() {
             // Use remove_dir (not remove_dir_all) so we never delete mod content.

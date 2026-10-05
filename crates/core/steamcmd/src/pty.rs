@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 use crate::SteamCmd;
 
 /// Bundle of handles handed back from `spawn_pty_streamed`:
-/// (no-op child wrapper, stdout chunk receiver, PTY writer for stdin).
+/// (child handle that can kill steamcmd, stdout chunk receiver, PTY writer for stdin).
 pub(crate) type PtyStreamHandles = (
     Box<dyn portable_pty::Child + Send + Sync>,
     mpsc::UnboundedReceiver<String>,
@@ -87,10 +87,16 @@ impl SteamCmd {
         let master_for_watcher = Arc::clone(&master_holder);
 
         // Watcher thread: wait for the child to exit, then drop the master.
-        // `child` is moved here; the caller receives a dummy handle below.
+        // `child` is moved here; the caller receives a handle that can still
+        // kill it (a cancelled operation must stop steamcmd, not leave it
+        // downloading or waiting at a prompt).
+        let killer = child.clone_killer();
+        let exited = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let exited_for_watcher = Arc::clone(&exited);
         let (exit_tx, exit_rx) = std::sync::mpsc::channel::<()>();
         std::thread::spawn(move || {
             let _ = child.wait();
+            exited_for_watcher.store(true, std::sync::atomic::Ordering::SeqCst);
             // Dropping the master closes the ConPTY output pipe, which makes
             // the reader return an error and exit its loop.
             drop(
@@ -125,30 +131,55 @@ impl SteamCmd {
             let _ = exit_rx.recv();
         });
 
-        // Return a no-op child since the real child is owned by the watcher thread.
-        Ok((Box::new(NoopChild), chunk_rx, writer))
+        Ok((Box::new(PtyChild { killer, exited }), chunk_rx, writer))
     }
 }
 
-/// A no-op `portable_pty::Child` returned by `spawn_pty_streamed`.
-///
-/// The real child process is owned by the watcher thread inside
-/// `spawn_pty_streamed`, which calls `child.wait()` and then drops the PTY
-/// master to unblock the reader. Callers receive this stub so they can still
-/// call `.kill()` (no-op) and `.wait()` (no-op — the watcher already waited).
-#[derive(Debug)]
-pub(crate) struct NoopChild;
+/// The handle `spawn_pty_streamed` returns. The real child is owned by the
+/// watcher thread, which waits on it and then drops the PTY master to unblock
+/// the reader; this keeps a killer for it. `kill()` stops steamcmd, and so
+/// does dropping the handle while steamcmd still runs: an aborted operation
+/// (Cancel) drops it. `wait()` returns at once: the watcher does the waiting.
+pub(crate) struct PtyChild {
+    killer: Box<dyn portable_pty::ChildKiller + Send + Sync>,
+    exited: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
 
-impl portable_pty::ChildKiller for NoopChild {
+impl PtyChild {
+    fn running(&self) -> bool {
+        !self.exited.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl std::fmt::Debug for PtyChild {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PtyChild").field("running", &self.running()).finish()
+    }
+}
+
+impl Drop for PtyChild {
+    fn drop(&mut self) {
+        if self.running() {
+            let _ = self.killer.kill();
+        }
+    }
+}
+
+impl portable_pty::ChildKiller for PtyChild {
     fn kill(&mut self) -> std::io::Result<()> {
-        Ok(())
+        // Never signal a pid that has exited: it may belong to someone else now.
+        if self.running() {
+            self.killer.kill()
+        } else {
+            Ok(())
+        }
     }
     fn clone_killer(&self) -> Box<dyn portable_pty::ChildKiller + Send + Sync> {
-        Box::new(NoopChild)
+        self.killer.clone_killer()
     }
 }
 
-impl portable_pty::Child for NoopChild {
+impl portable_pty::Child for PtyChild {
     fn try_wait(&mut self) -> std::io::Result<Option<portable_pty::ExitStatus>> {
         Ok(Some(portable_pty::ExitStatus::with_exit_code(0)))
     }

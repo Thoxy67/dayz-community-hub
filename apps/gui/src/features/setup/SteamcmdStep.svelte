@@ -120,7 +120,7 @@
               .steamcmdInstallAuto.value}{/if}
         </Button>
         <p class="m-0 mt-1.5 text-3xs text-fg-faint">
-          {$w.steamcmdInstallHint.value} %LOCALAPPDATA%\dayz-community-hub\steamcmd
+          {$w.steamcmdInstallHint.value} %APPDATA%\dayz-community-hub\steamcmd
         </p>
         {#if wizard.downloadError}
           <p class="m-0 mt-2 font-mono text-2xs text-err" data-selectable>{wizard.downloadError}</p>

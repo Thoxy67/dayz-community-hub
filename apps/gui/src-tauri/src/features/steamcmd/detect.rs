@@ -50,21 +50,16 @@ fn detect_steamcmd_sync(explicit_path: &Option<String>) -> SteamcmdStatusDto {
         };
     }
 
-    #[cfg(target_os = "windows")]
-    {
-        if let Some(appdata) = std::env::var_os("APPDATA") {
-            let candidate = std::path::PathBuf::from(appdata)
-                .join("dayz-community-hub")
-                .join("steamcmd")
-                .join("steamcmd.exe");
-            if candidate.exists() {
-                return SteamcmdStatusDto {
-                    found: true,
-                    path: Some(candidate.to_string_lossy().to_string()),
-                    platform: platform.into(),
-                };
-            }
-        }
+    // The controller's own search: Valve's tarball in ~/.steam/steamcmd,
+    // Debian's /usr/games (often off a desktop session's PATH), Snap,
+    // Flatpak, C:\SteamCMD, the copy this app downloads… so the setup and
+    // Settings find what the controller would use.
+    if let Some(found) = dz_steamcmd::find_steamcmd() {
+        return SteamcmdStatusDto {
+            found: true,
+            path: Some(found.to_string_lossy().to_string()),
+            platform: platform.into(),
+        };
     }
 
     SteamcmdStatusDto {
@@ -191,7 +186,11 @@ pub(crate) async fn download_steamcmd_windows() -> Result<String, String> {
                 let mut file = archive
                     .by_index(i)
                     .map_err(|e| format!("ZIP entry error: {e}"))?;
-                let out_path = install_dir_clone.join(file.name());
+                // Only names that stay inside the install folder.
+                let Some(name) = file.enclosed_name() else {
+                    continue;
+                };
+                let out_path = install_dir_clone.join(name);
                 if file.is_dir() {
                     std::fs::create_dir_all(&out_path).map_err(|e| format!("mkdir failed: {e}"))?;
                 } else {

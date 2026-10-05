@@ -344,7 +344,10 @@ impl SteamCmd {
                         // Write the password followed by Enter to the PTY.
                         use std::io::Write;
                         let _ = pty_writer.write_all(password.as_bytes());
-                        let _ = pty_writer.write_all(b"\n");
+                        // Enter is CR to a console: ConPTY turns LF into
+                        // Ctrl+J, which never ends the password read. A Unix
+                        // PTY maps CR to LF, so CR works on both.
+                        let _ = pty_writer.write_all(b"\r");
                         let _ = pty_writer.flush();
                         buf.clear();
                     }

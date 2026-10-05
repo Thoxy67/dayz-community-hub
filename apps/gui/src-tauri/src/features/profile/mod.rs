@@ -82,9 +82,9 @@ pub(crate) async fn save_profile_settings(
             profile.steam_password = None;
         }
         profile.steam_login = steam_login;
-        profile.steam_root = steam_root;
+        profile.steam_root = clean_path(steam_root);
         profile.steamcmd_enabled = steamcmd_enabled;
-        profile.steamcmd_path = steamcmd_path;
+        profile.steamcmd_path = clean_path(steamcmd_path);
         profile.steam_api_key = steam_api_key;
         profile.steam_id = steam_id;
         profile.user_location = user_location;
@@ -185,4 +185,60 @@ pub(crate) async fn remove_excluded_ip(
         Ok(())
     })
     .await
+}
+
+/// A path as people paste it, made usable: surrounding spaces and the quotes
+/// Windows' "Copy as path" adds go, and on Linux a leading `~` is the home
+/// folder. Empty is no path.
+fn clean_path(p: Option<String>) -> Option<String> {
+    let p = p?;
+    let mut s = p.trim();
+    for q in ['"', '\''] {
+        if s.len() >= 2 && s.starts_with(q) && s.ends_with(q) {
+            s = s[1..s.len() - 1].trim();
+        }
+    }
+    if s.is_empty() {
+        return None;
+    }
+    #[cfg(unix)]
+    if (s == "~" || s.starts_with("~/"))
+        && let Some(home) = std::env::var_os("HOME")
+    {
+        return Some(format!("{}{}", home.to_string_lossy(), &s[1..]));
+    }
+    Some(s.to_string())
+}
+
+#[cfg(test)]
+mod clean_path_tests {
+    use super::clean_path;
+
+    #[test]
+    fn pasted_paths_are_tidied() {
+        assert_eq!(clean_path(None), None);
+        assert_eq!(clean_path(Some("  ".into())), None);
+        assert_eq!(
+            clean_path(Some("\"D:\\SteamLibrary\" ".into())).as_deref(),
+            Some("D:\\SteamLibrary")
+        );
+        assert_eq!(
+            clean_path(Some("'/mnt/games'".into())).as_deref(),
+            Some("/mnt/games")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_leading_tilde_is_home() {
+        let home = std::env::var("HOME").unwrap();
+        assert_eq!(
+            clean_path(Some("~/SteamLibrary".into())),
+            Some(format!("{home}/SteamLibrary"))
+        );
+        assert_eq!(
+            clean_path(Some("~user/x".into())).as_deref(),
+            Some("~user/x")
+        );
+    }
 }
