@@ -173,6 +173,90 @@ pub fn detect_dayz(explicit: Option<&Path>) -> DayzInstall {
     }
 }
 
+/// What the Steam client itself adds when it starts DayZ.
+#[derive(Debug, Clone, Default)]
+pub struct SteamGameConfig {
+    /// The game's launch options in Steam (Properties → Launch options),
+    /// where `%command%` stands for the game.
+    pub launch_options: Option<String>,
+    /// The compatibility tool DayZ runs under on Linux ("proton_9",
+    /// "proton_experimental", "GE-Proton9-20"…): the game's own choice, else
+    /// the one Steam uses for every game.
+    pub compat_tool: Option<String>,
+    /// The compatibility tool is Steam's default, not one set for DayZ.
+    pub compat_tool_default: bool,
+}
+
+/// Read DayZ's launch options and compatibility tool from the Steam client's
+/// configuration. Launch options are per Steam account: the account whose
+/// `localconfig.vdf` changed last is taken as the one in use. Blocking.
+pub fn dayz_steam_config() -> SteamGameConfig {
+    let Some(steam) = default_steamapps_candidates()
+        .into_iter()
+        .find(|c| c.is_dir())
+        .and_then(|sa| sa.parent().map(Path::to_path_buf))
+    else {
+        return SteamGameConfig::default();
+    };
+    let id = DAYZ_GAME_ID.to_string();
+    let read = |p: &Path| {
+        std::fs::read_to_string(p)
+            .ok()
+            .map(|t| crate::vdf::parse(&t))
+    };
+
+    let (compat_tool, compat_tool_default) = read(&steam.join("config").join("config.vdf"))
+        .map(|v| {
+            let map = [
+                "InstallConfigStore",
+                "Software",
+                "Valve",
+                "Steam",
+                "CompatToolMapping",
+            ];
+            let tool = |app: &str| {
+                let mut path = map.to_vec();
+                path.extend([app, "name"]);
+                v.str(&path).filter(|s| !s.is_empty()).map(str::to_string)
+            };
+            match tool(&id) {
+                Some(t) => (Some(t), false),
+                // "0" is the tool Steam Play uses for every other game.
+                None => (tool("0"), true),
+            }
+        })
+        .unwrap_or((None, false));
+
+    let launch_options = std::fs::read_dir(steam.join("userdata"))
+        .ok()
+        .into_iter()
+        .flat_map(|d| d.flatten())
+        .map(|user| user.path().join("config").join("localconfig.vdf"))
+        .filter_map(|p| Some((std::fs::metadata(&p).ok()?.modified().ok()?, p)))
+        .max_by_key(|(at, _)| *at)
+        .and_then(|(_, p)| read(&p))
+        .and_then(|v| {
+            v.str(&[
+                "UserLocalConfigStore",
+                "Software",
+                "Valve",
+                "Steam",
+                "apps",
+                &id,
+                "LaunchOptions",
+            ])
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+        });
+
+    SteamGameConfig {
+        launch_options,
+        compat_tool,
+        compat_tool_default,
+    }
+}
+
 /// Default `steamapps` directory candidates for the current platform, in
 /// priority order. These are the *default* install locations; secondary
 /// libraries are discovered from `libraryfolders.vdf` (see [`library_with_dayz`]).

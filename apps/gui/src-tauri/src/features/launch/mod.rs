@@ -145,3 +145,74 @@ fn spawn_launch(
         }
     });
 }
+
+/// How DayZ gets started, for the launch options page: what the launcher
+/// runs, and what the Steam client adds of its own.
+#[derive(serde::Serialize, Clone, Debug, specta::Type)]
+pub struct SteamLaunchInfoDto {
+    /// Built for Linux: DayZ (a Windows game) runs under Proton there.
+    pub linux: bool,
+    /// The program the launcher runs, with its own first arguments
+    /// (`["/usr/bin/steam"]`, `["flatpak", "run", "com.valvesoftware.Steam"]`);
+    /// empty when Steam is not found.
+    pub launcher: Vec<String>,
+    /// The arguments every launch starts with (`-applaunch 221100 …`), before
+    /// the server and the options.
+    pub applaunch: Vec<String>,
+    /// DayZ's launch options in Steam's own properties, with `%command%`.
+    pub launch_options: Option<String>,
+    /// The Proton (or other) tool DayZ runs under on Linux.
+    pub compat_tool: Option<String>,
+    /// That tool is Steam's default rather than one chosen for DayZ.
+    pub compat_tool_default: bool,
+    /// DayZ's Proton prefix (`steamapps/compatdata/221100`), when it exists:
+    /// its Windows drive, documents and saves.
+    pub prefix: Option<String>,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn steam_launch_info(
+    state: State<'_, SharedState>,
+) -> Result<SteamLaunchInfoDto, String> {
+    let (player, dayz) = {
+        let s = state.read().await;
+        (s.ctl.profile().player.clone(), s.ctl.dayz_path().ok())
+    };
+    tokio::task::spawn_blocking(move || {
+        // <steamapps>/common/DayZ → <steamapps>/compatdata/221100
+        let prefix = dayz
+            .as_deref()
+            .and_then(|d| {
+                d.parent()?
+                    .parent()
+                    .map(|sa| sa.join("compatdata").join("221100"))
+            })
+            .filter(|p| p.is_dir())
+            .map(|p| p.to_string_lossy().into_owned());
+        let launcher = dz_steamcmd::SteamClient::launcher()
+            .map(|(program, pre)| {
+                std::iter::once(program.to_string_lossy().into_owned())
+                    .chain(pre)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let applaunch = dz_game::launch::build_steam_applaunch_args(
+            dz_steamcmd::DAYZ_GAME_ID,
+            &[],
+            player.as_deref(),
+        );
+        let steam = dz_steamcmd::dayz_steam_config();
+        SteamLaunchInfoDto {
+            linux: cfg!(target_os = "linux"),
+            launcher,
+            applaunch,
+            launch_options: steam.launch_options,
+            compat_tool: steam.compat_tool,
+            compat_tool_default: steam.compat_tool_default,
+            prefix,
+        }
+    })
+    .await
+    .map_err(|e| format!("Task join error: {e}"))
+}

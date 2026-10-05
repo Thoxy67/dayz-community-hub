@@ -55,6 +55,7 @@ pub(crate) fn builder() -> tauri_specta::Builder<tauri::Wry> {
             mods::open_mod_dir,
             mods::setup_mod_symlinks,
             launch::toggle_launch_option,
+            launch::steam_launch_info,
             launch::set_launch_option_value,
             launch::launch_server,
             launch::launch_direct,

@@ -12,6 +12,9 @@
   import { Button } from "$lib/components/ui/button";
   import { Spinner } from "$lib/components/ui/spinner";
   import { getSystemSpecs } from "$lib/ipc/system";
+  import { steamLaunchInfo } from "$lib/ipc/launch";
+  import type { SteamLaunchInfoDto } from "$lib/ipc/bindings";
+  import LinuxLaunch from "./LinuxLaunch.svelte";
   import type { LaunchOptionDto, SystemSpecsDto } from "$lib/ipc/types";
   import { profile } from "$lib/stores/profile.svelte";
   import { cn } from "$lib/cx";
@@ -30,6 +33,12 @@
     .then((s) => (specs = s))
     .catch(() => {})
     .finally(() => (specsLoading = false));
+
+  // How DayZ really starts on Linux (Proton, Steam's own options): asked once.
+  let launchInfo = $state<SteamLaunchInfoDto | null>(null);
+  steamLaunchInfo()
+    .then((i) => (launchInfo = i))
+    .catch(() => {});
 
   const recs = $derived(specs ? recommend(specs) : []);
   const recValue = $derived(new Map(recs.filter((r) => r.value).map((r) => [r.key, r.value!])));
@@ -210,5 +219,9 @@
       hint={$o.commandLineHint.value}
       copyLabel={$o.copyCommand.value}
     />
+
+    {#if launchInfo?.linux}
+      <LinuxLaunch info={launchInfo} flags={command} />
+    {/if}
   </aside>
 </div>

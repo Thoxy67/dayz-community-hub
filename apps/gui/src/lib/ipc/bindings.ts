@@ -137,6 +137,7 @@ export const commands = {
 	setupModSymlinks: (ip: string, port: number) => __TAURI_INVOKE<null>("setup_mod_symlinks", { ip, port }),
 	/**  Flip a launch option. Returns whether it is now enabled. */
 	toggleLaunchOption: (key: string) => __TAURI_INVOKE<boolean>("toggle_launch_option", { key }),
+	steamLaunchInfo: () => __TAURI_INVOKE<SteamLaunchInfoDto>("steam_launch_info"),
 	/**  Set a launch option's value; a value also enables it. */
 	setLaunchOptionValue: (key: string, value: string | null) => __TAURI_INVOKE<null>("set_launch_option_value", { key, value }),
 	/**
@@ -978,6 +979,37 @@ export type ServersChanged = {
 export type SortCol = "none" | "ping" | "players" | "name" | "map" | "mods" | 
 /**  In-game time, "HH:MM" as minutes. */
 "time";
+
+/**
+ *  How DayZ gets started, for the launch options page: what the launcher
+ *  runs, and what the Steam client adds of its own.
+ */
+export type SteamLaunchInfoDto = {
+	/**  Built for Linux: DayZ (a Windows game) runs under Proton there. */
+	linux: boolean,
+	/**
+	 *  The program the launcher runs, with its own first arguments
+	 *  (`["/usr/bin/steam"]`, `["flatpak", "run", "com.valvesoftware.Steam"]`);
+	 *  empty when Steam is not found.
+	 */
+	launcher: string[],
+	/**
+	 *  The arguments every launch starts with (`-applaunch 221100 …`), before
+	 *  the server and the options.
+	 */
+	applaunch: string[],
+	/**  DayZ's launch options in Steam's own properties, with `%command%`. */
+	launch_options: string | null,
+	/**  The Proton (or other) tool DayZ runs under on Linux. */
+	compat_tool: string | null,
+	/**  That tool is Steam's default rather than one chosen for DayZ. */
+	compat_tool_default: boolean,
+	/**
+	 *  DayZ's Proton prefix (`steamapps/compatdata/221100`), when it exists:
+	 *  its Windows drive, documents and saves.
+	 */
+	prefix: string | null,
+};
 
 /**  One Workshop item the Steam account is subscribed to, as Steam has it. */
 export type SteamSubscriptionDto = {

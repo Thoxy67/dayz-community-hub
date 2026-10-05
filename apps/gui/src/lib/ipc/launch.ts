@@ -11,3 +11,5 @@ export const launchDirect = (
   password: string | null,
   extraArgs: string[] | null,
 ) => run(commands.launchDirect(ip, gamePort, password, extraArgs));
+/** How DayZ gets started: the launcher's command, and what Steam adds (Proton, its launch options). */
+export const steamLaunchInfo = () => run(commands.steamLaunchInfo());

@@ -483,6 +483,17 @@ export function installMock() {
         };
       case "detect_steamcmd":
         return { found: true, path: "/usr/bin/steamcmd", platform: "linux" };
+      case "steam_launch_info":
+        return {
+          linux: true,
+          launcher: ["/usr/bin/steam"],
+          applaunch: ["-applaunch", "221100", "-malloc=system", "-name=Survivor"],
+          launch_options:
+            "PROTON_USE_NTSYNC=1 PROTON_ENABLE_WAYLAND=1 RADV_PERFTEST=gpl,nggc,sam mangohud game-performance %command% -nolauncher",
+          compat_tool: "proton-cachyos-native",
+          compat_tool_default: false,
+          prefix: "/mnt/ssd2/SteamLibrary/steamapps/compatdata/221100",
+        };
       case "detect_dayz":
         return {
           steamapps: a.path || "/mnt/ssd2/SteamLibrary/steamapps",

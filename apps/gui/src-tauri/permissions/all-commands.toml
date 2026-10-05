@@ -45,6 +45,7 @@ permissions = [
   "allow-open-mod-dir",
   "allow-setup-mod-symlinks",
   "allow-toggle-launch-option",
+  "allow-steam-launch-info",
   "allow-set-launch-option-value",
   "allow-launch-server",
   "allow-launch-direct",
