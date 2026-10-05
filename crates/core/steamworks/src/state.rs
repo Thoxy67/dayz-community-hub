@@ -4,7 +4,8 @@
 use std::fmt;
 
 /// `EItemState` flags (isteamugc.h).
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct ItemState(pub u32);
 
 impl ItemState {

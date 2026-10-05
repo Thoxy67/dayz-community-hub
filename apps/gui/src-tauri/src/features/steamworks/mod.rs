@@ -67,11 +67,11 @@ pub struct SteamworksStatusDto {
 #[specta::specta]
 pub(crate) async fn steamworks_status() -> Result<SteamworksStatusDto, String> {
     spawn_blocking_mapped(|| {
-        let loaded = dz_steamworks::available();
+        let (loaded, steam_running) = dz_steamworks::status();
         Ok::<_, String>(SteamworksStatusDto {
             library: loaded.is_ok(),
             error: loaded.err(),
-            steam_running: dz_steamworks::steam_running(),
+            steam_running,
         })
     })
     .await
@@ -160,12 +160,12 @@ pub(crate) async fn steam_subscriptions(ids: Vec<u64>) -> Result<SteamSubscripti
         {
             return Ok(dto);
         }
-        let known: std::collections::HashSet<u64> = DETAILS
+        let known: Vec<u64> = DETAILS
             .lock()
             .ok()
             .and_then(|d| d.as_ref().map(|d| d.keys().copied().collect()))
             .unwrap_or_default();
-        let dto = match dz_steamworks::subscriptions(&ids, &|id| known.contains(&id)) {
+        let dto = match dz_steamworks::subscriptions(&ids, &known) {
             Ok((items, found)) => {
                 let details = DETAILS
                     .lock()

@@ -4,6 +4,8 @@
 use clap::Parser;
 
 fn main() {
+    // Started by the launcher to talk to Steam: does that, exits.
+    dz_steamworks::serve_if_worker();
     #[cfg(all(windows, not(debug_assertions)))]
     fatal_error_box::install();
     let args = dayz_community_hub_lib::CliArgs::parse();

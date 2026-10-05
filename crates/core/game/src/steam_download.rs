@@ -2,9 +2,9 @@
 //! as the same progress a SteamCMD session sends, so the window shows both
 //! alike.
 //!
-//! The Steamworks session runs on a thread of its own (the API is not
-//! thread-safe) and ends with the download: Steam then stops showing DayZ
-//! as running. Dropping the future (the operation cancelled) stops it.
+//! The Steamworks session runs in a child process (dz-steamworks' worker),
+//! watched from a thread of its own, and ends with the download: the
+//! process exits and Steam stops showing DayZ as running. Dropping the future (the operation cancelled) stops it.
 
 use std::path::PathBuf;
 use std::sync::Arc;

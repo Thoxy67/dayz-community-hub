@@ -333,12 +333,16 @@ impl DayzCtl {
 /// 1. start Steam if it is not running and wait for it to be ready,
 /// 2. run it with the arguments.
 pub async fn run_through_steam(args: Vec<String>) -> Result<()> {
-    // Connected to Steam as DayZ, the launcher is DayZ as far as Steam is
-    // concerned: the game would not start, or would start beside it.
-    if dz_steamworks::session_open() {
-        return Err(Error::Other(
-            "Mods are downloading through Steam. Wait until it finishes, then launch DayZ.".into(),
-        ));
+    // A Steamworks session still open is DayZ as far as Steam is concerned:
+    // the game would not start. End it (its process) first.
+    let closed = tokio::task::spawn_blocking(|| {
+        dz_steamworks::close_session(std::time::Duration::from_secs(3))
+    })
+    .await
+    .unwrap_or(false);
+    if closed {
+        // Give Steam a moment to see that "DayZ" went away.
+        tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
     }
     // `start` spawns a process and scans the process table (sysinfo), both
     // blocking, so run them off the async runtime thread.

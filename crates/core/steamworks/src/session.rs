@@ -2,6 +2,10 @@
 //! subscribe to the items and have Steam download them, report progress,
 //! disconnect.
 //!
+//! These run in the worker process ([`crate::worker`]): Steam shows DayZ
+//! running until the process that connected exits, whatever
+//! `SteamAPI_Shutdown` says, so the launcher never connects itself.
+//!
 //! The API is not thread-safe: a session lives on the thread that calls
 //! [`download`] from start to end. Callbacks are dispatched by hand
 //! (`SteamAPI_ManualDispatch_*`, the loop `SteamAPI_RunCallbacks` would
@@ -14,6 +18,8 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
+
+use serde::{Deserialize, Serialize};
 
 use crate::DAYZ_APP_ID;
 use crate::api::{self, Api, ApiCall, CallbackMsg, Iface, Pipe};
@@ -32,7 +38,7 @@ const LOGON_WAIT: Duration = Duration::from_secs(10);
 
 /// What a download reports while it runs. `index` is the item's place in
 /// the list given to [`download`].
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Event {
     /// A line for the log.
     Log(String),
@@ -66,13 +72,6 @@ pub type Unsubscribed = (u64, Result<bool, String>);
 
 /// One session at a time in the process.
 static ONE_SESSION: Mutex<()> = Mutex::new(());
-/// Set while a session is connected to Steam (Steam shows DayZ running).
-static OPEN: AtomicBool = AtomicBool::new(false);
-
-/// A session is connected to Steam right now: DayZ must not be launched.
-pub fn session_open() -> bool {
-    OPEN.load(Ordering::SeqCst)
-}
 
 /// Have the running Steam client download `ids` into the user's library,
 /// subscribing the account to each. Blocks until every item is installed,
@@ -81,7 +80,7 @@ pub fn session_open() -> bool {
 ///
 /// `Err` when no session could be opened (library, Steam not running, not
 /// logged in): a sentence for the user.
-pub fn download(
+pub(crate) fn download(
     ids: &[u64],
     cancel: &AtomicBool,
     on: &mut dyn FnMut(Event),
@@ -108,7 +107,7 @@ pub fn download(
 /// Connect to Steam as DayZ and disconnect at once: whether downloads
 /// through Steam would work now. The error is the sentence [`download`]
 /// would fail with.
-pub fn check() -> Result<(), String> {
+pub(crate) fn check() -> Result<(), String> {
     let (_one, api) = begin()?;
     let session = Session::open(api)?;
     session.wait_logged_on()?;
@@ -125,7 +124,7 @@ pub fn check() -> Result<(), String> {
 /// unsubscribed, `Ok(false)` when it was not subscribed, or why not.
 ///
 /// `Err` when no session could be opened, as for [`download`].
-pub fn unsubscribe(ids: &[u64]) -> Result<Vec<Unsubscribed>, String> {
+pub(crate) fn unsubscribe(ids: &[u64]) -> Result<Vec<Unsubscribed>, String> {
     let (_one, api) = begin()?;
     // SAFETY (all calls into `api` below): as in `download`.
     let session = Session::open(api)?;
@@ -184,7 +183,7 @@ pub fn unsubscribe(ids: &[u64]) -> Result<Vec<Unsubscribed>, String> {
 }
 
 /// A Workshop item the account is subscribed to, as Steam has it now.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Subscribed {
     pub id: u64,
     pub state: ItemState,
@@ -194,7 +193,7 @@ pub struct Subscribed {
 
 /// What the Workshop says about an item: its title and the items it
 /// requires ("Required items" on its page; Steam calls them children).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Details {
     pub id: u64,
     pub title: String,
@@ -214,12 +213,12 @@ const DETAILS_DEPTH: usize = 3;
 /// ones too), with what Steam is doing with each, and the Workshop's details
 /// (title, required items) of the subscribed items, of `also` (the mods on
 /// disk), and of what they require, followed a few levels down, except the
-/// ids `known` says are already known. A short session: Steam shows DayZ running for a moment.
+/// ids in `known`. A short session: Steam shows DayZ running for a moment.
 ///
 /// `Err` when no session could be opened, as for [`download`].
-pub fn subscriptions(
+pub(crate) fn subscriptions(
     also: &[u64],
-    known: &dyn Fn(u64) -> bool,
+    known: &[u64],
 ) -> Result<(Vec<Subscribed>, Vec<Details>), String> {
     let (_one, api) = begin()?;
     // SAFETY (all calls into `api` below): as in `download`.
@@ -255,7 +254,7 @@ pub fn subscriptions(
     for _ in 0..DETAILS_DEPTH {
         let want: Vec<u64> = next
             .into_iter()
-            .filter(|&id| !known(id) && asked.insert(id))
+            .filter(|&id| !known.contains(&id) && asked.insert(id))
             .collect();
         if want.is_empty() {
             break;
@@ -419,7 +418,6 @@ impl Session {
                 ),
             });
         }
-        OPEN.store(true, Ordering::SeqCst);
         // Callbacks are read by hand: declared after init, before any is read.
         let pipe = unsafe {
             (api.dispatch_init)();
@@ -487,9 +485,8 @@ impl Session {
 
 impl Drop for Session {
     fn drop(&mut self) {
-        // Steam stops showing DayZ as running; DayZ can be launched again.
+        // Steam keeps showing DayZ running until this process exits.
         unsafe { (self.api.shutdown)() };
-        OPEN.store(false, Ordering::SeqCst);
         set_app_id(false);
     }
 }

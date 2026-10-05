@@ -13,6 +13,8 @@ workspace = true
 [dependencies]
 dz-common.workspace = true
 libloading.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [build-dependencies]
 # Never linked: it only puts Valve's redistributable library on disk, where
