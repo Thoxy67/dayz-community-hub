@@ -476,6 +476,12 @@ export function installMock() {
         };
       case "detect_steamcmd":
         return { found: true, path: "/usr/bin/steamcmd", platform: "linux" };
+      case "detect_dayz":
+        return {
+          steamapps: a.path || "/mnt/ssd2/SteamLibrary/steamapps",
+          dayz_dir: `${a.path || "/mnt/ssd2/SteamLibrary/steamapps"}/common/DayZ`,
+          workshop_mods: 37,
+        };
       case "set_mod_downloader":
         profile.mod_downloader = a.downloader as typeof profile.mod_downloader;
         return null;

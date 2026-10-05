@@ -13,6 +13,7 @@
   import TriangleAlert from "~icons/lucide/triangle-alert";
   import Languages from "~icons/lucide/languages";
   import Palette from "~icons/lucide/palette";
+  import Heart from "~icons/lucide/heart";
   import { Button } from "$lib/components/ui/button";
   import { Spinner } from "$lib/components/ui/spinner";
   import { Topo } from "$lib/components/ui/topo";
@@ -22,16 +23,20 @@
   import { LOCALE_LABELS, getLocale } from "$lib/i18n";
   import { theme } from "$lib/theme/theme.svelte";
   import { profile } from "$lib/stores/profile.svelte";
+  import { servers } from "$lib/stores/servers.svelte";
+  import { num } from "$lib/format";
   import { cn } from "$lib/cx";
   import { STEPS, wizard, type Step } from "./wizard.svelte";
-  import SteamcmdStep from "./SteamcmdStep.svelte";
+  import GameStep from "./GameStep.svelte";
+  import DownloadsStep from "./DownloadsStep.svelte";
   import AccountStep from "./AccountStep.svelte";
   import ServicesStep from "./ServicesStep.svelte";
 
   /**
-   * The first thing a new player sees: six steps down the left, the one in
-   * hand on the right, and a way out at every step. Everything asked here
-   * can be changed later in Settings.
+   * The first thing a new player sees: the steps down the left, the one in
+   * hand on the right, and a way out at every step. The language comes
+   * first, so the rest reads in it; the server list loads behind all of it.
+   * Everything asked here can be changed later in Settings.
    */
   const w = dict("setup");
   const nav = dict("nav");
@@ -46,7 +51,8 @@
 
   const TITLE: Record<Step, () => string> = {
     welcome: () => $w.welcomeTitle.value,
-    steamcmd: () => $w.steamcmdTitle.value,
+    game: () => $w.gameTitle.value,
+    downloads: () => $w.downloadsTitle.value,
     account: () => $w.configTitle.value,
     services: () => $w.stepServices.value,
     appearance: () => $w.appearanceTitle.value,
@@ -54,15 +60,17 @@
   };
   const DESC: Record<Step, () => string> = {
     welcome: () => $w.welcomeSubtitle.value,
-    steamcmd: () => $w.steamcmdDesc.value,
-    account: () => $w.accountDesc.value,
+    game: () => $w.gameDesc.value,
+    downloads: () => $w.downloadsDesc.value,
+    account: () => (wizard.viaSteam ? $w.accountDescSteam.value : $w.accountDesc.value),
     services: () => $w.servicesDesc.value,
     appearance: () => $w.appearanceDesc.value,
-    done: () => $w.doneDesc({ button: $w.launch.value }).value,
+    done: () => $w.doneDesc({ button: $w.goServers.value }).value,
   };
   const LABEL: Record<Step, () => string> = {
     welcome: () => $w.stepWelcome.value,
-    steamcmd: () => $w.stepSteamcmd.value,
+    game: () => $w.stepGame.value,
+    downloads: () => $w.stepDownloads.value,
     account: () => $w.stepAccount.value,
     services: () => $w.stepServices.value,
     appearance: () => $w.stepAppearance.value,
@@ -74,7 +82,7 @@
   function onkeydown(e: KeyboardEvent) {
     if (e.key !== "Enter" || (e.target as HTMLElement).closest("button, textarea")) return;
     e.preventDefault();
-    if (wizard.step === "done") void wizard.finish();
+    if (wizard.step === "done") void wizard.finish("servers");
     else wizard.next();
   }
 </script>
@@ -173,36 +181,53 @@
                   </li>
                 {/each}
               </ul>
+              <SectionCard title={$w.language.value} icon={Languages} padded class="mt-3">
+                <LanguagePicker aria-label={$w.language.value} />
+              </SectionCard>
               <p class="m-0 mt-4 text-2xs text-fg-faint">{$w.welcomeHint.value}</p>
-            {:else if wizard.step === "steamcmd"}
-              <SteamcmdStep />
+            {:else if wizard.step === "game"}
+              <GameStep />
+            {:else if wizard.step === "downloads"}
+              <DownloadsStep />
             {:else if wizard.step === "account"}
               <AccountStep />
             {:else if wizard.step === "services"}
               <ServicesStep />
             {:else if wizard.step === "appearance"}
-              <div class="space-y-3">
-                <SectionCard title={$w.language.value} icon={Languages} padded>
-                  <LanguagePicker aria-label={$w.language.value} />
-                </SectionCard>
-                <SectionCard title={$w.theme.value} icon={Palette} padded>
-                  <ThemeSwatches systemLabel={$w.followSystem.value} columns={5} />
-                </SectionCard>
-              </div>
+              <SectionCard title={$w.theme.value} icon={Palette} padded>
+                <ThemeSwatches systemLabel={$w.followSystem.value} columns={5} />
+              </SectionCard>
             {:else}
               {@const rows = [
                 {
-                  label: $w.stepSteamcmd.value,
-                  ok: wizard.found,
-                  value: wizard.steamcmdPath || wizard.status?.path || $w.missing.value,
-                  warn: !wizard.found,
+                  label: "DayZ",
+                  ok: !!wizard.game?.dayz_dir,
+                  value: wizard.game?.dayz_dir || $w.gameNotFound.value,
+                  warn: !wizard.game?.dayz_dir,
                 },
-                {
-                  label: $w.username.value,
-                  ok: !!wizard.steamLogin.trim(),
-                  value: wizard.steamLogin || $w.missing.value,
-                  warn: !wizard.steamLogin.trim(),
-                },
+                wizard.viaSteam
+                  ? {
+                      label: $w.stepDownloads.value,
+                      ok: !!wizard.steam?.steam_running,
+                      value: $w.dlSteam.value,
+                      warn: !wizard.steam?.steam_running,
+                    }
+                  : {
+                      label: $w.stepDownloads.value,
+                      ok: wizard.found,
+                      value: `SteamCMD · ${wizard.steamcmdPath || wizard.status?.path || $w.missing.value}`,
+                      warn: !wizard.found,
+                    },
+                ...(wizard.needsLogin
+                  ? [
+                      {
+                        label: $w.username.value,
+                        ok: !!wizard.steamLogin.trim(),
+                        value: wizard.steamLogin || $w.missing.value,
+                        warn: !wizard.steamLogin.trim(),
+                      },
+                    ]
+                  : []),
                 {
                   label: $w.ingameName.value,
                   ok: !!wizard.player.trim(),
@@ -216,6 +241,20 @@
                 { label: $w.language.value, ok: true, value: LOCALE_LABELS[getLocale()] },
                 { label: $w.theme.value, ok: true, value: themeName(theme.selected) },
               ]}
+              <!-- What loaded while the steps were filled in, and where to go first. -->
+              <div
+                class="mb-3 flex items-center gap-3 rounded-md border border-border bg-panel px-3 py-2.5"
+              >
+                {#if servers.total > 0}
+                  <ServerIcon class="size-icon-lg shrink-0 text-ok" />
+                  <span class="text-sm font-semibold text-fg"
+                    >{$w.readyServers({ count: num(servers.total) }).value}</span
+                  >
+                {:else}
+                  <Spinner class="size-icon-lg text-accent" />
+                  <span class="text-xs text-fg-muted">{$w.readyLoading.value}</span>
+                {/if}
+              </div>
               <SectionCard title={$w.summary.value} icon={CircleCheck} tone="text-ok">
                 <dl class="m-0 divide-y divide-border/50">
                   {#each rows as r (r.label)}
@@ -258,9 +297,25 @@
         >{wizard.index + 1} / {STEPS.length}</span
       >
       {#if wizard.step === "done"}
-        <Button variant="play" size="lg" disabled={wizard.saving} onclick={() => wizard.finish()}>
+        <Button variant="ghost" disabled={wizard.saving} onclick={() => wizard.finish("mods")}
+          ><Puzzle class="size-icon-sm" />{$w.goMods.value}</Button
+        >
+        {#if (profile.data?.favorites?.length ?? 0) > 0}
+          <Button
+            variant="ghost"
+            disabled={wizard.saving}
+            onclick={() => wizard.finish("favorites")}
+            ><Heart class="size-icon-sm" />{$w.goFavorites.value}</Button
+          >
+        {/if}
+        <Button
+          variant="play"
+          size="lg"
+          disabled={wizard.saving}
+          onclick={() => wizard.finish("servers")}
+        >
           {#if wizard.saving}<Spinner class="size-icon-sm text-accent-fg" />{$w.saving
-              .value}{:else}<Play class="size-icon-sm" />{$w.launch.value}{/if}
+              .value}{:else}<Play class="size-icon-sm" />{$w.goServers.value}{/if}
         </Button>
       {:else}
         <Button

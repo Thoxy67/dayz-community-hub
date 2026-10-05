@@ -12,28 +12,36 @@
 </script>
 
 <div class="space-y-3">
-  <SectionCard title={$w.steamcmdLogin.value} icon={KeyRound}>
-    <Field label={$w.username.value} for="wiz-login">
-      <Input
-        id="wiz-login"
-        class="flex-1 [&>input]:font-mono"
-        autocomplete="username"
-        placeholder={$w.steamUsernamePlaceholder.value}
-        bind:value={wizard.steamLogin}
-      />
-    </Field>
-    {#if wizard.steamLogin.trim()}
-      <p
-        class="m-0 flex items-start gap-2 border-t border-border/60 px-3 py-2 text-2xs text-fg-muted"
-      >
-        <ShieldCheck class="mt-px size-icon-sm shrink-0 text-ok" />{$w.loginOnce.value}
-      </p>
-    {:else}
-      <p class="m-0 border-t border-border/60 px-3 py-2 text-2xs text-fg-faint">
-        {$w.steamRequired.value}
-      </p>
-    {/if}
-  </SectionCard>
+  {#if !wizard.needsLogin}
+    <p
+      class="m-0 flex items-start gap-2 rounded-md border border-ok/30 bg-ok/8 px-3 py-2 text-2xs text-fg-muted"
+    >
+      <ShieldCheck class="mt-px size-icon-sm shrink-0 text-ok" />{$w.loginNotNeeded.value}
+    </p>
+  {:else}
+    <SectionCard title={$w.steamcmdLogin.value} icon={KeyRound}>
+      <Field label={$w.username.value} for="wiz-login">
+        <Input
+          id="wiz-login"
+          class="flex-1 [&>input]:font-mono"
+          autocomplete="username"
+          placeholder={$w.steamUsernamePlaceholder.value}
+          bind:value={wizard.steamLogin}
+        />
+      </Field>
+      {#if wizard.steamLogin.trim()}
+        <p
+          class="m-0 flex items-start gap-2 border-t border-border/60 px-3 py-2 text-2xs text-fg-muted"
+        >
+          <ShieldCheck class="mt-px size-icon-sm shrink-0 text-ok" />{$w.loginOnce.value}
+        </p>
+      {:else}
+        <p class="m-0 border-t border-border/60 px-3 py-2 text-2xs text-fg-faint">
+          {$w.steamRequired.value}
+        </p>
+      {/if}
+    </SectionCard>
+  {/if}
 
   <SectionCard title={$w.ingameName.value} icon={Gamepad}>
     <Field label={$w.ingameName.value} hint={$w.ingameHint({ flag: "-name" }).value} for="wiz-name">

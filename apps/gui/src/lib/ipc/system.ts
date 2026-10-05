@@ -9,6 +9,8 @@ export type SteamcmdStatus = SteamcmdStatusDto;
 export const getSystemSpecs = () => run(commands.getSystemSpecs());
 export const fetchSteamAvatar = () => run(commands.fetchSteamAvatar());
 export const detectSteamcmd = () => run(commands.detectSteamcmd());
+/** Where DayZ is: in `path` (a Steam library) or, with `null`, wherever Steam is. */
+export const detectDayz = (path: string | null) => run(commands.detectDayz(path));
 /** Poll for SteamCMD in the background; its arrival is the `steamcmdDetected` event. */
 export const watchSteamcmd = () => run(commands.watchSteamcmd());
 export const downloadSteamcmdWindows = () => run(commands.downloadSteamcmdWindows());

@@ -144,19 +144,5 @@
         onpick={(p) => wizard.chose(p)}
       />
     </Field>
-    <Field
-      label={$w.steamRoot.value}
-      hint={win
-        ? $w.windowsPathHint({ path: "C:\\Program Files (x86)\\Steam" }).value
-        : $w.linuxPathHint({ path: "~/.steam/steam" }).value}
-      stacked
-    >
-      <PathInput
-        bind:value={wizard.steamRoot}
-        placeholder={$w.autoDetect.value}
-        directory
-        title={$w.selectSteamRoot.value}
-      />
-    </Field>
   </SectionCard>
 </div>
