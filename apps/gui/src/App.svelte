@@ -73,7 +73,23 @@
   });
 
   // ── keyboard ────────────────────────────────────────────────────────────
+  /**
+   * What a browser would do with a key, which an app must not: reload (F5,
+   * Ctrl+R in a text field, which WebView2 honours and which threw away a
+   * running download's state), print, find, view source, caret browsing,
+   * history back and forward. Kept in development, where reloading helps.
+   */
+  function browserKey(e: KeyboardEvent): boolean {
+    if (import.meta.env.DEV) return false;
+    const k = e.key.toLowerCase();
+    if (k === "f5" || k === "f3" || k === "f7" || k === "browserback" || k === "browserforward")
+      return true;
+    if (e.altKey && (k === "arrowleft" || k === "arrowright")) return true;
+    return (e.ctrlKey || e.metaKey) && ["r", "p", "f", "g", "j", "s", "o"].includes(k);
+  }
+
   function onkeydown(e: KeyboardEvent) {
+    if (browserKey(e)) e.preventDefault();
     if (!e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
     const typing = (e.target as HTMLElement)?.closest("input, textarea, [contenteditable]");
     const n = parseInt(e.key, 10);
@@ -158,7 +174,17 @@
   });
 </script>
 
-<svelte:window {onkeydown} />
+<svelte:window
+  {onkeydown}
+  oncontextmenu={(e) => {
+    // The webview's own menu (Back, Reload, Print, Inspect) is a browser's,
+    // not this app's; text fields and selectable text keep theirs (copy, paste).
+    if (import.meta.env.DEV) return;
+    const t = e.target as HTMLElement | null;
+    if (t?.closest("input, textarea, [contenteditable], [data-selectable]")) return;
+    e.preventDefault();
+  }}
+/>
 
 <TooltipProvider>
   <div
