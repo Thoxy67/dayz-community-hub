@@ -503,6 +503,13 @@ export type GeoLocation = {
 	country_code: string,
 };
 
+/**  One graphics card. */
+export type GpuDto = {
+	name: string,
+	/**  Dedicated video memory in megabytes, when the driver says. */
+	vram_mb: number | null,
+};
+
 /**  Average players at one hour of one weekday, over the server's history. */
 export type HeatCell = {
 	/**  0 is Sunday. */
@@ -1036,6 +1043,12 @@ export type SystemSpecsDto = {
 	physical_cores: number,
 	/**  Total system RAM in megabytes. */
 	total_memory_mb: number,
+	/**  The processor's name ("AMD Ryzen 9 3950X 16-Core Processor"). */
+	cpu_name: string | null,
+	/**  The system and its version ("Windows 11 Pro 23H2", "CachyOS Linux"). */
+	os: string | null,
+	/**  The graphics cards, the most video memory first. */
+	gpus: GpuDto[],
 };
 
 /**  A three-way filter: everything, only those with the flag, only those without. */

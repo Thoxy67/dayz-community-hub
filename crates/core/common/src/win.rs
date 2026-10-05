@@ -17,8 +17,11 @@ type HKey = isize;
 
 /// `HKEY_CURRENT_USER`: `(HKEY)(ULONG_PTR)(LONG)0x80000001`, sign-extended.
 pub const HKEY_CURRENT_USER: HKey = 0x8000_0001_u32 as i32 as isize;
+/// `HKEY_LOCAL_MACHINE`, likewise.
+pub const HKEY_LOCAL_MACHINE: HKey = 0x8000_0002_u32 as i32 as isize;
 
 const RRF_RT_REG_SZ: u32 = 0x0000_0002;
+const RRF_RT_ANY: u32 = 0x0000_FFFF;
 const REG_SZ: u32 = 1;
 const SHCNE_ASSOCCHANGED: i32 = 0x0800_0000;
 const ERROR_SUCCESS: i32 = 0;
@@ -119,6 +122,32 @@ pub fn reg_string(root: HKey, subkey: &str, value: &str) -> io::Result<Option<St
             2 => return Ok(None),
             code => return Err(io::Error::from_raw_os_error(code)),
         }
+    }
+}
+
+/// A number stored as `REG_QWORD`, `REG_DWORD` or a little-endian
+/// `REG_BINARY` of up to eight bytes, as drivers write sizes.
+/// `Ok(None)` when the key or the value does not exist.
+pub fn reg_u64(root: HKey, subkey: &str, value: &str) -> io::Result<Option<u64>> {
+    let (subkey, value) = (wide(subkey), wide(value));
+    let mut buf = [0u8; 8];
+    let mut size = buf.len() as u32;
+    // SAFETY: both names are NUL-terminated, `buf` holds `size` bytes.
+    let status = unsafe {
+        RegGetValueW(
+            root,
+            subkey.as_ptr(),
+            value.as_ptr(),
+            RRF_RT_ANY,
+            std::ptr::null_mut(),
+            buf.as_mut_ptr().cast(),
+            &mut size,
+        )
+    };
+    match status {
+        ERROR_SUCCESS => Ok(Some(u64::from_le_bytes(buf))),
+        2 => Ok(None),
+        code => Err(io::Error::from_raw_os_error(code)),
     }
 }
 
