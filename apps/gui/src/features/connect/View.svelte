@@ -28,9 +28,25 @@
   import ServerDetail from "$features/servers/detail/ServerDetail.svelte";
   import LaunchArgs from "./LaunchArgs.svelte";
   import RecentList from "./RecentList.svelte";
+  import { padActions } from "$lib/gamepad";
 
   const c = dict("connect");
   const common = dict("common");
+  const p = dict("pad");
+
+  // A controller: X asks the server, Y joins it.
+  padActions("connect", {
+    primary: {
+      label: () => $p.query.value,
+      when: () => direct.valid && !direct.querying,
+      run: () => void direct.query(),
+    },
+    secondary: {
+      label: () => $p.join.value,
+      when: () => direct.valid && !!profile.data,
+      run: () => direct.join(),
+    },
+  });
 
   // Arriving from elsewhere ("open in Direct Connect", a .dzch): fill and ask.
   $effect(() => {

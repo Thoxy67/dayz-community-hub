@@ -675,7 +675,15 @@ export type PadAction = "up" | "down" | "left" | "right" |
 /**  LT, L2. */
 "pageUp" | 
 /**  RT, R2. */
-"pageDown";
+"pageDown" | 
+/**  The right stick pushed up: scroll what is being read. */
+"scrollUp" | 
+/**  The right stick pushed down. */
+"scrollDown" | 
+/**  The left stick pressed in (L3). */
+"leftStick" | 
+/**  The right stick pressed in (R3). */
+"rightStick";
 
 /**  A connected pad. */
 export type PadInfo = {

@@ -1,8 +1,9 @@
 /**
- * What X, Y, Menu and View do, which depends on the view. A view registers
- * its own with `padActions(view, {...})` during its initialisation (removed
- * when it is destroyed); what it does not register falls back to the app's:
- * Menu opens the settings, View goes to the search field.
+ * What X, Y, Menu, View and the stick clicks do, which depends on the view.
+ * A view registers its own with `padActions(view, {...})` during its
+ * initialisation (removed when it is destroyed); what it does not register
+ * falls back to the app's: Menu opens the settings, View goes to the search
+ * field, L3 rejoins the last server.
  *
  * `when` says whether an action applies now (Y "favourite" needs a server
  * under the focus); the hint bar shows only those that do. It may read
@@ -18,7 +19,10 @@ export type PadCommand = {
   when?: () => boolean;
 };
 
-export type PadCommands = Partial<Record<"primary" | "secondary" | "menu" | "view", PadCommand>>;
+export type PadButtonCommand =
+  "primary" | "secondary" | "menu" | "view" | "leftStick" | "rightStick";
+
+export type PadCommands = Partial<Record<PadButtonCommand, PadCommand>>;
 
 class Registry {
   // Raw and replaced whole: the commands are kept as given (a deep proxy

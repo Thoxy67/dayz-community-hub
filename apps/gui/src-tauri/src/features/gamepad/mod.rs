@@ -102,6 +102,8 @@ fn btn(b: Button) -> Option<Btn> {
         Button::DPadDown => Btn::DDown,
         Button::DPadLeft => Btn::DLeft,
         Button::DPadRight => Btn::DRight,
+        Button::LeftThumb => Btn::L3,
+        Button::RightThumb => Btn::R3,
         _ => return None,
     })
 }
@@ -199,6 +201,16 @@ fn run(app: AppHandle) {
                         .unwrap_or_default();
                     let st = states.entry(ev.id).or_default();
                     let fired = st.stick(x, y, now);
+                    if fired.is_some() && echo(ev.id) {
+                        st.release_all();
+                        None
+                    } else {
+                        fired
+                    }
+                }
+                EventType::AxisChanged(Axis::RightStickY, y, _) => {
+                    let st = states.entry(ev.id).or_default();
+                    let fired = st.right_stick(y, now);
                     if fired.is_some() && echo(ev.id) {
                         st.release_all();
                         None

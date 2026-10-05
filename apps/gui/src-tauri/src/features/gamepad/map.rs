@@ -34,6 +34,14 @@ pub enum PadAction {
     PageUp,
     /// RT, R2.
     PageDown,
+    /// The right stick pushed up: scroll what is being read.
+    ScrollUp,
+    /// The right stick pushed down.
+    ScrollDown,
+    /// The left stick pressed in (L3).
+    LeftStick,
+    /// The right stick pressed in (R3).
+    RightStick,
 }
 
 impl PadAction {
@@ -42,7 +50,14 @@ impl PadAction {
     fn repeats(self) -> bool {
         matches!(
             self,
-            Self::Up | Self::Down | Self::Left | Self::Right | Self::PageUp | Self::PageDown
+            Self::Up
+                | Self::Down
+                | Self::Left
+                | Self::Right
+                | Self::PageUp
+                | Self::PageDown
+                | Self::ScrollUp
+                | Self::ScrollDown
         )
     }
 }
@@ -64,6 +79,8 @@ pub enum Btn {
     DDown,
     DLeft,
     DRight,
+    L3,
+    R3,
 }
 
 impl Btn {
@@ -83,6 +100,8 @@ impl Btn {
             Self::DDown => PadAction::Down,
             Self::DLeft => PadAction::Left,
             Self::DRight => PadAction::Right,
+            Self::L3 => PadAction::LeftStick,
+            Self::R3 => PadAction::RightStick,
         }
     }
 }
@@ -106,6 +125,8 @@ pub struct PadState {
     held: Option<(PadAction, Instant)>,
     /// The direction the stick points, if it is pushed far enough.
     stick: Option<PadAction>,
+    /// The right stick, up or down only: it scrolls.
+    scroll: Option<PadAction>,
     /// Buttons of repeating actions still down, most recent last, so letting
     /// go of one hands the repeat back to the other.
     down: Vec<PadAction>,
@@ -158,6 +179,35 @@ impl PadState {
         match dir {
             Some(a) => {
                 self.down.retain(|x| *x != a);
+                self.down.push(a);
+                self.held = Some((a, now + REPEAT_DELAY));
+                Some((a, false))
+            }
+            None => {
+                self.rehold(now);
+                None
+            }
+        }
+    }
+
+    /// The right stick moved; `y` is up. Only its vertical reach counts.
+    pub fn right_stick(&mut self, y: f32, now: Instant) -> Option<Fired> {
+        let reach = y.abs();
+        let dir = if reach < STICK_OFF || (self.scroll.is_none() && reach < STICK_ON) {
+            None
+        } else if y > 0.0 {
+            Some(PadAction::ScrollUp)
+        } else {
+            Some(PadAction::ScrollDown)
+        };
+        if dir == self.scroll {
+            return None;
+        }
+        if let Some(a) = std::mem::replace(&mut self.scroll, dir) {
+            self.down.retain(|x| *x != a);
+        }
+        match dir {
+            Some(a) => {
                 self.down.push(a);
                 self.held = Some((a, now + REPEAT_DELAY));
                 Some((a, false))
@@ -311,6 +361,32 @@ mod tests {
             p.button(Btn::Lb, true, now),
             Some((PadAction::PrevTab, false))
         );
+    }
+
+    #[test]
+    fn the_right_stick_scrolls_and_repeats() {
+        let mut s = PadState::default();
+        let t = t0();
+        assert_eq!(s.right_stick(0.2, t), None);
+        assert_eq!(s.right_stick(-0.9, t), Some((PadAction::ScrollDown, false)));
+        assert_eq!(
+            s.tick(t + REPEAT_DELAY),
+            Some((PadAction::ScrollDown, true))
+        );
+        assert_eq!(s.right_stick(0.0, t + REPEAT_DELAY), None);
+        assert_eq!(s.deadline(), None);
+    }
+
+    #[test]
+    fn stick_clicks_fire_once() {
+        let mut s = PadState::default();
+        let t = t0();
+        assert_eq!(
+            s.button(Btn::R3, true, t),
+            Some((PadAction::RightStick, false))
+        );
+        assert_eq!(s.button(Btn::R3, false, t), None);
+        assert_eq!(s.deadline(), None);
     }
 
     #[test]

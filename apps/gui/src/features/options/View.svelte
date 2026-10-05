@@ -15,6 +15,7 @@
   import { steamLaunchInfo } from "$lib/ipc/launch";
   import type { SteamLaunchInfoDto } from "$lib/ipc/bindings";
   import LinuxLaunch from "./LinuxLaunch.svelte";
+  import { padActions } from "$lib/gamepad";
   import type { LaunchOptionDto, SystemSpecsDto } from "$lib/ipc/types";
   import { profile } from "$lib/stores/profile.svelte";
   import { cn } from "$lib/cx";
@@ -54,6 +55,20 @@
         return !!x && x.enabled && (r.value === undefined || x.value === r.value);
       }),
   );
+
+  // A controller: X applies the recommendations, Y shows only active options.
+  const p = dict("pad");
+  padActions("options", {
+    primary: {
+      label: () => $p.applyRecommended.value,
+      when: () => recs.length > 0 && !recsApplied,
+      run: () => void applyRecommended(),
+    },
+    secondary: {
+      label: () => $p.activeOnly.value,
+      run: () => (activeOnly = !activeOnly),
+    },
+  });
 
   async function applyRecommended() {
     for (const r of recs) {

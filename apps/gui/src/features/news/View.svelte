@@ -20,6 +20,7 @@
   import { cn } from "$lib/cx";
   import { app } from "$lib/stores/app.svelte";
   import { dialogs } from "$lib/stores/dialogs.svelte";
+  import { padActions } from "$lib/gamepad";
   import { news, readMinutes } from "./news.svelte";
 
   const n = dict("news");
@@ -33,6 +34,18 @@
     category ? news.articles.filter((a) => a.category === category) : news.articles,
   );
   const article = $derived(shown[news.selected] ?? shown[0] ?? null);
+
+  // A controller: X opens the article on dayz.com.
+  const p = dict("pad");
+  padActions("news", {
+    primary: {
+      label: () => $p.openArticle.value,
+      when: () => !!article?.url,
+      run: () => {
+        if (article?.url) void openUrl(article.url);
+      },
+    },
+  });
 
   // The hero picture, once cached; asking for it fills the cache.
   const hero = $derived(article?.image_url ? (news.images.get(article.image_url) ?? null) : null);
@@ -193,7 +206,7 @@
   </aside>
 
   <!-- The article being read. -->
-  <div bind:this={reader} class="relative min-w-0 flex-1 overflow-y-auto">
+  <div bind:this={reader} class="relative min-w-0 flex-1 overflow-y-auto" data-pad-scroll>
     {#if news.error && news.articles.length === 0}
       <Empty icon={CloudOff} title={$n.loadFailedTitle.value}>
         {$n.loadFailedHint.value}

@@ -208,6 +208,10 @@
         if (r) void profile.toggleFavorite(r.name, r.ip, r.query_port);
       },
     },
+    rightStick: {
+      label: () => $p.details.value,
+      run: () => (showDetail = !showDetail),
+    },
   });
 
   // ── the list's age ──────────────────────────────────────────────────────

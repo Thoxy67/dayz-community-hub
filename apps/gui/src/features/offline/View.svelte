@@ -21,9 +21,11 @@
   import { openUrl } from "$lib/ipc/native";
   import { cn } from "$lib/cx";
   import { offline, type Mission, type Tone } from "./offline.svelte";
+  import { pad, padActions } from "$lib/gamepad";
 
   const REPO_URL = "https://github.com/Arkensor/DayZCommunityOfflineMode";
   const o = dict("offline");
+  const p = dict("pad");
 
   offline.listen();
   $effect(() => {
@@ -34,6 +36,28 @@
   const mapCount = $derived(new Set(list.map((m) => m.mapKey)).size);
   const installed = $derived(list.length > 0);
   const busy = $derived(offline.loading || offline.installing);
+
+  // A controller: X launches the mission under the focus, Y installs or
+  // updates the offline mode.
+  function padMission(): string | null {
+    void pad.focused;
+    return pad.focused?.closest<HTMLElement>("[data-mission]")?.dataset.mission ?? null;
+  }
+  padActions("offline", {
+    primary: {
+      label: () => $p.launch.value,
+      when: () => padMission() !== null,
+      run: () => {
+        const id = padMission();
+        if (id) offline.launch(id);
+      },
+    },
+    secondary: {
+      label: () => $p.installMode.value,
+      when: () => !busy,
+      run: () => offline.update(),
+    },
+  });
 
   const kindLabel = (m: Mission) =>
     ({
@@ -126,6 +150,7 @@
       <ul class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(16rem,1fr))] gap-2.5 p-0">
         {#each list as m (m.id)}
           <li
+            data-mission={m.id}
             class="group relative flex flex-col overflow-hidden rounded-md border border-border bg-bg transition-colors hover:border-border-strong"
             ondblclick={() => offline.launch(m.id)}
           >

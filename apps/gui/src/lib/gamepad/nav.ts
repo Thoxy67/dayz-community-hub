@@ -19,7 +19,7 @@ import { tick } from "svelte";
 import type { PadAction } from "$lib/ipc/gamepad";
 import { openUrl } from "$lib/ipc/native";
 import { app, type ViewId } from "$lib/stores/app.svelte";
-import { registry } from "./actions.svelte";
+import { registry, type PadButtonCommand } from "./actions.svelte";
 import { indexOf, listOf, rememberRow, rememberedRow, rowEl } from "./list";
 import { cost, type Box, type Dir } from "./spatial";
 import { pad } from "./state.svelte";
@@ -465,11 +465,16 @@ function mainScroller(root: Element): HTMLElement | null {
   return bestEl;
 }
 
-function command(button: "primary" | "secondary" | "menu" | "view") {
+function command(button: PadButtonCommand) {
   if (scope().id !== "app") return;
   const c = registry.get(app.view, button);
   if (c) return c.run();
   if (button === "menu") return void switchTo("settings");
+  if (button === "leftStick") {
+    // Rejoin the last server, from anywhere: the Rejoin card's button.
+    void import("$lib/stores/connect.svelte").then(({ connect }) => connect.rejoin());
+    return;
+  }
   if (button === "view") {
     const field = viewRoot()?.querySelector<HTMLElement>("[data-pad-search]");
     if (field && visible(field)) focus(field);
@@ -481,6 +486,25 @@ async function switchTo(view: ViewId) {
   const at = views.indexOf(app.view);
   if (i >= 0 && at >= 0) await switchView(i - at);
   else app.go(view);
+}
+
+/**
+ * What the right stick scrolls: what is being read (a pane marked
+ * `data-pad-scroll`: a server's details, an article), else the scroller
+ * around the focus, else the view's main one.
+ */
+function scrollTarget(): HTMLElement | null {
+  const root = viewRoot();
+  if (!root) return null;
+  const marked = [...root.querySelectorAll<HTMLElement>("[data-pad-scroll]")].find(
+    (el) => visible(el) && scrollable(el),
+  );
+  return marked ?? scrollerOf(pad.focused) ?? mainScroller(root);
+}
+
+function scroll(dir: 1 | -1) {
+  if (scope().id !== "app") return;
+  scrollTarget()?.scrollBy({ top: dir * 140 });
 }
 
 /** One action from a pad. */
@@ -505,10 +529,16 @@ export function handle(action: PadAction, _repeat: boolean) {
       return page(-1);
     case "pageDown":
       return page(1);
+    case "scrollUp":
+      return scroll(-1);
+    case "scrollDown":
+      return scroll(1);
     case "primary":
     case "secondary":
     case "menu":
     case "view":
+    case "leftStick":
+    case "rightStick":
       return command(action);
   }
 }

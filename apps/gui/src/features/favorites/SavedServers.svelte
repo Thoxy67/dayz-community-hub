@@ -273,6 +273,10 @@
         if (r) toggleFav(r);
       },
     },
+    rightStick: {
+      label: () => $p.details.value,
+      run: () => (showDetail = !showDetail),
+    },
   });
 
   // ── keyboard, only while this view shows and nothing else has the keys ──

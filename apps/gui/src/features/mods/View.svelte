@@ -55,6 +55,7 @@
   import InstallDialog from "./InstallDialog.svelte";
   import SourceTag from "./SourceTag.svelte";
   import { review, workshopUrl } from "./review.svelte";
+  import { pad, padActions } from "$lib/gamepad";
 
   /**
    * Installed Workshop mods. The header says how many there are, what they
@@ -214,6 +215,36 @@
     }
   }
 
+  // ── a controller: X updates (the ticked mods, the one under the focus, or
+  //    every stale one), Y ticks the one under the focus ─────────────────────
+  const p = dict("pad");
+  /** The mod row a pad is on, else the one opened in the details. */
+  function padMod(): number | null {
+    void pad.focused;
+    const id = pad.focused?.closest<HTMLElement>("[data-mod-id]")?.dataset.modId;
+    return id ? Number(id) : focusId;
+  }
+  padActions("mods", {
+    primary: {
+      label: () => $p.update.value,
+      when: () => ticked.size > 0 || padMod() !== null || mods.stale.length > 0,
+      run: () => {
+        const id = padMod();
+        if (ticked.size > 0) review.updateSelected([...ticked]);
+        else if (id !== null && mods.byId.has(id)) review.updateSelected([id]);
+        else mods.updateStale();
+      },
+    },
+    secondary: {
+      label: () => $p.tickMod.value,
+      when: () => padMod() !== null,
+      run: () => {
+        const id = padMod();
+        if (id !== null) tick(id, !ticked.has(id));
+      },
+    },
+  });
+
   let installOpen = $state(false);
   /**
    * tick · mod · state · in game · size · your version · actions. The list
@@ -291,6 +322,7 @@
             <div
               role="row"
               tabindex="-1"
+              data-mod-id={r.id}
               class={cn(
                 `group ${COLS} h-full border-b border-border/40 px-pad text-xs`,
                 x && "cursor-pointer",

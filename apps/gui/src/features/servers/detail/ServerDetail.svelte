@@ -140,6 +140,7 @@
 
   <div
     class="flex min-h-0 flex-1 flex-col overflow-y-auto"
+    data-pad-scroll
     id="server-detail-panel-{detailTab.current}"
     role="tabpanel"
     aria-labelledby="server-detail-tab-{detailTab.current}"

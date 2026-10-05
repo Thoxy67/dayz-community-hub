@@ -42,3 +42,6 @@
     <dd class="m-0 text-xs text-fg-muted">{l.text}</dd>
   {/each}
 </dl>
+{#if !only}
+  <p class="m-0 mt-2 text-2xs leading-snug text-fg-faint">{$p.legendSticks.value}</p>
+{/if}
