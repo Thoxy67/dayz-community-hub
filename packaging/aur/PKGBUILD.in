@@ -57,6 +57,11 @@ build() {
     cd "$pkgname/apps/gui"
     export CARGO_HOME="$srcdir/cargo-home"
     export CARGO_TARGET_DIR="$srcdir/$pkgname/target"
+    # aws-lc-sys compiles its jitter entropy source at -O0, which it requires
+    # (#error otherwise), but makepkg's CFLAGS (-O2, or -O3 on CachyOS) come
+    # after its own flags and win. That source is an extra one on top of the
+    # system's getrandom, which stays: leave it out.
+    export AWS_LC_SYS_NO_JITTER_ENTROPY=1
     # No updater artefacts and no bundles: pacman owns this installation, and
     # the in-app updater only ever replaces an AppImage.
     bun run tauri build --no-bundle
