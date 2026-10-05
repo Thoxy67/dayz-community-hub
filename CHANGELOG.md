@@ -6,6 +6,8 @@ notes; without one, the notes are the commit titles since the last release.
 
 ## Unreleased
 
+## 0.5.1 - 2026-10-05
+
 - **Share a server with a friend.** Every row in the browser, favourites and
   history has a button (or L) that copies a `dzch://` link. A saved password
   is never put in it.
