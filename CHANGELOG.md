@@ -6,22 +6,52 @@ notes; without one, the notes are the commit titles since the last release.
 
 ## Unreleased
 
-- **BattleMetrics is gone.** Its API now needs a paid subscription, so the
-  token field, the setup step and the Stats section are removed; server
-  stats come from DayZ Metrics alone, without a key. The Distance fact,
-  which needed BattleMetrics' coordinates, goes with it.
-- **Share a server.** Every row in the browser, favourites and history has a
-  button (or L) that copies a `dzch://` link to send to a friend. A saved
-  password is never put in the link.
-- **Password servers ask for the password** when joined from the list, from
-  a favourite without one, or with Rejoin, and can save it with the
-  favourite. Before, the game was launched without it and turned away.
-- When a server's mods cannot be read, the launcher asks before joining
-  instead of launching as if none were needed.
-- The ping retries setting now works: a server that does not answer is asked
-  again that many times during the list scan.
-- News no longer takes the arrow keys away from the other views, and Enter
-  on a toolbar button no longer joins the selected server too.
+- **Share a server with a friend.** Every row in the browser, favourites and
+  history has a button (or L) that copies a `dzch://` link. A saved password
+  is never put in it.
+- **Password servers ask for the password** when joined from the list, from a
+  favourite without one, or with Rejoin, and can save it with the favourite.
+  Before, the game was launched without it and turned away.
+- **BattleMetrics is gone**: its API now needs a paid subscription. Server
+  stats come from DayZ Metrics alone, without a key, and show much more: a
+  month of players, the busiest hours of the week in your own time, the rank
+  trend, how reliably the server restarts on time, and its wipe phase. Looking
+  a server up there takes about a second instead of ten or more. The Distance
+  fact, which needed BattleMetrics' coordinates, goes with it.
+- **Close a hung game.** While DayZ runs, the side rail offers to close it,
+  under Proton too.
+- **A new setup.** The language comes first; the launcher finds DayZ in any
+  Steam library on any drive (or takes the one you pick); mods can download
+  through the Steam client, in which case no SteamCMD and no Steam login are
+  needed; the last page says how many servers are ready.
+- **Switch the mod downloader from the status bar**: SteamCMD or the Steam
+  client, one click away.
+- **Linux: see how DayZ really starts.** The launch options page shows the
+  exact command, the Proton build, its prefix and the launch options you set
+  in Steam, taken apart.
+- **Controllers.** X and Y do something in every view, X confirms a dialog, a
+  second A on a server joins it, the right stick scrolls, L3 rejoins the last
+  server and R3 opens a server's details.
+- **The About page** shows your system, processor, memory and graphics card
+  (with its VRAM) with a button to copy them for a bug report, where the data
+  comes from, the keyboard and controller shortcuts, and a tabbed guide.
+- **Direct Connect** fits the form and the recent servers on one screen; a
+  server row's actions sit in one framed group apart from Join.
+- **Windows and Linux fixes:**
+  - Steam is found wherever it is installed, Flatpak and Debian's
+    /usr/games included; a Flatpak Steam used never to start.
+  - On Windows the SteamCMD password and Steam Guard code are submitted (they
+    were typed but never sent), re-linking a mod works, and `dzch://` links
+    and `.dzch` files open with the portable zip too.
+  - Cancel stops SteamCMD instead of leaving it running.
+  - The setup finds SteamCMD where the launcher does, pasted paths are
+    cleaned of quotes and spaces, and a missing Steam folder no longer stops
+    detection.
+  - F5 and the browser's right-click menu no longer reload or act in the app.
+  - Linux no longer prints a GTK warning at start.
+- When a server's mods cannot be read, the launcher asks before joining; the
+  ping retries setting now works; News no longer takes the arrow keys from
+  the other views; the Stats tab no longer crashes on some servers.
 
 ## 0.5.0 - 2026-09-29
 
