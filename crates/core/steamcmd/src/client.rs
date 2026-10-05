@@ -196,8 +196,10 @@ pub fn appimage_env() -> &'static [&'static str] {
 }
 
 /// The game's own processes, beside the Steam client that starts them: the
-/// BattlEye launcher and the game itself, on Windows or under Proton (whose
-/// Windows processes the host sees by their .exe names).
+/// launcher Steam starts, the BattlEye one and the game itself. On Windows
+/// their names say so. Under Proton they do not: the game shows as
+/// `enfMain` (the engine's main thread), and only the program at the head of
+/// its command line (`S:\common\DayZ\DayZ_x64.exe`) gives it away.
 pub struct DayzGame;
 
 impl DayzGame {
@@ -206,6 +208,7 @@ impl DayzGame {
         "dayz_x64.exe",
         "dayz_be.exe",
         "dayz.exe",
+        "dayzlauncher.exe",
         "dayzdiag_x64.exe",
     ];
 
@@ -214,24 +217,33 @@ impl DayzGame {
         Self::NAMES.iter().any(|n| name.eq_ignore_ascii_case(n))
     }
 
+    /// The process is DayZ: by its name, or by the program its command line
+    /// starts with (a Windows path under Proton, a Unix one otherwise).
+    fn is_game(p: &sysinfo::Process) -> bool {
+        Self::is_dayz(p.name())
+            || p.cmd().first().is_some_and(|first| {
+                let first = first.to_string_lossy();
+                let base = first.rsplit(['/', '\\']).next().unwrap_or(&first);
+                Self::is_dayz(std::ffi::OsStr::new(base))
+            })
+    }
+
     fn processes() -> sysinfo::System {
         use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
         let mut system = System::new();
-        // Names only: see `SteamClient::is_running`.
-        system.refresh_processes_specifics(
-            ProcessesToUpdate::All,
-            true,
-            ProcessRefreshKind::nothing(),
-        );
+        // Names only on Windows, where they suffice (and reading command
+        // lines opens every process: see `SteamClient::is_running`). On Unix
+        // the command lines too, for Proton's games.
+        let kind = ProcessRefreshKind::nothing();
+        #[cfg(not(windows))]
+        let kind = kind.with_cmd(sysinfo::UpdateKind::OnlyIfNotSet);
+        system.refresh_processes_specifics(ProcessesToUpdate::All, true, kind);
         system
     }
 
     /// DayZ is running. Blocking (a scan of the process table).
     pub fn is_running() -> bool {
-        Self::processes()
-            .processes()
-            .values()
-            .any(|p| Self::is_dayz(p.name()))
+        Self::processes().processes().values().any(Self::is_game)
     }
 
     /// Close DayZ: asked to quit first where the system allows it, then
@@ -242,7 +254,7 @@ impl DayzGame {
         let targets: Vec<_> = system
             .processes()
             .iter()
-            .filter(|(_, p)| Self::is_dayz(p.name()))
+            .filter(|(_, p)| Self::is_game(p))
             .map(|(pid, _)| *pid)
             .collect();
         if targets.is_empty() {
@@ -259,7 +271,7 @@ impl DayzGame {
         let system = Self::processes();
         for pid in &targets {
             if let Some(p) = system.process(*pid)
-                && Self::is_dayz(p.name())
+                && Self::is_game(p)
             {
                 p.kill();
             }
@@ -272,6 +284,13 @@ impl DayzGame {
 mod tests {
     use super::DayzGame;
     use std::ffi::OsStr;
+
+    /// By hand, with DayZ running: `cargo test -p dz-steamcmd -- --ignored running`.
+    #[test]
+    #[ignore = "reads this machine's processes"]
+    fn running_here() {
+        println!("running: {}", DayzGame::is_running());
+    }
 
     #[test]
     fn only_the_games_processes_count() {
