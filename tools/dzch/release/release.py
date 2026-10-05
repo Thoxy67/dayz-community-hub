@@ -78,12 +78,10 @@ CHANGELOG = os.path.join(REPO, "CHANGELOG.md")
 DOTENV = os.path.join(GUI, ".env")
 DIST = str(paths.DIST)
 
-# The Linux build names its target triple (so it can go through zig, see
-# scripts/cargo-zigbuild.sh), which moves cargo's output, bundles included,
-# under target/<triple>/.
-LINUX_TARGET = "x86_64-unknown-linux-gnu"
+# The AppImage is built in an Ubuntu 22.04 container (scripts/appimage.sh),
+# into its own target directory.
 WINDOWS_TARGET = "x86_64-pc-windows-msvc"
-LINUX_BUNDLE = os.path.join(REPO, "target", LINUX_TARGET, "release", "bundle")
+LINUX_BUNDLE = os.path.join(REPO, "target", "appimage", "release", "bundle")
 WINDOWS_EXE = os.path.join(
     REPO, "target", WINDOWS_TARGET, "release", "dayz-community-hub.exe"
 )
@@ -374,7 +372,7 @@ def plan(version: str, tag: str, notes: str, pre: bool, skip_github: bool) -> st
     lines = [
         f"version      {version}{' (preview: nothing in the repository changes)' if pre else ''}",
         f"stage        {os.path.join(DIST, 'v' + version)}",
-        "build        Linux AppImage (zig runner, signed by tauri)",
+        "build        Linux AppImage (Ubuntu 22.04 container, signed by tauri)",
         "             Windows exe (cargo-xwin), zipped and signed",
         "files        " + "\n             ".join(names.values()),
     ]
@@ -711,22 +709,17 @@ def tauri(*args: str, env: dict) -> None:
 
 
 def build_linux(version: str, secrets: Secrets, config: dict, stage: str) -> None:
-    """The AppImage (signed by tauri: createUpdaterArtifacts), linked through
-    zig against a glibc floor (scripts/cargo-zigbuild.sh falls back to plain
-    cargo when zig is missing, and honours ZIG=0)."""
+    """The AppImage (signed by tauri: createUpdaterArtifacts), built in an
+    Ubuntu 22.04 container so it and every library it carries need glibc 2.35
+    at most, not this machine's (scripts/appimage.sh)."""
     print(f"== building Linux {version}")
-    env = dict(secrets.signing_env(), NO_STRIP="true")
-    tauri(
-        "build",
-        "--runner",
-        os.path.join(REPO, "scripts", "cargo-zigbuild.sh"),
-        "--target",
-        LINUX_TARGET,
-        "--bundles",
-        "appimage",
+    sh(
+        os.path.join(REPO, "scripts", "appimage.sh"),
         "--config",
         json.dumps(config),
-        env=env,
+        cwd=REPO,
+        env=secrets.signing_env(),
+        capture=False,
     )
     names = asset_names(version)
 

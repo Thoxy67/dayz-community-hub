@@ -18,8 +18,10 @@
 
 DZCH := uv run --project tools dzch
 CHECK_TARGET := $(CURDIR)/target/check
-# The Linux release build goes through zig for a glibc 2.35 floor (see
+# `make build` links through zig for a glibc 2.35 floor (see
 # scripts/cargo-zigbuild.sh and docs/build.md); ZIG=0 builds with plain cargo.
+# The AppImage is built in an Ubuntu 22.04 container instead (scripts/appimage.sh):
+# it carries libraries, and those must be old too.
 ZIG ?= 1
 LINUX_BUILD := ZIG=$(ZIG) NO_STRIP=true bun run tauri build \
                --runner $(CURDIR)/scripts/cargo-zigbuild.sh --target x86_64-unknown-linux-gnu
@@ -49,7 +51,7 @@ windows:
 	  rm -f $(CURDIR)/var/dist/dayz-community-hub-x86_64-windows.zip && \
 	  zip -9 $(CURDIR)/var/dist/dayz-community-hub-x86_64-windows.zip dayz-community-hub.exe
 build:      ; cd apps/gui && $(LINUX_BUILD)
-appimage:   ; cd apps/gui && $(LINUX_BUILD) --bundles appimage
+appimage:   ; scripts/appimage.sh
 RELEASE_FLAGS = $(if $(VERSION),--version $(VERSION),) $(if $(DRY),--dry-run,) $(if $(SKIP_GITHUB),--skip-github,)
 publish:    ; $(DZCH) release $(RELEASE_FLAGS)
 prerelease: ; $(DZCH) release --pre $(RELEASE_FLAGS)

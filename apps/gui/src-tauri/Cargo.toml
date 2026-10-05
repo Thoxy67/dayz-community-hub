@@ -63,6 +63,13 @@ sysinfo.workspace = true
 [target."cfg(not(windows))".dependencies]
 zstd = { version = "0.14.0", features = ["pkg-config"] }
 
+# native-tls is OpenSSL on Linux. Built from source and linked statically, so
+# the release build links it through zig against the glibc floor; Arch's
+# libssl.so asks for this machine's glibc and zig refuses to link it
+# (scripts/cargo-zigbuild.sh, docs/build.md). Not a direct use: the feature.
+[target."cfg(target_os = \"linux\")".dependencies]
+openssl = { version = "0.10.81", features = ["vendored"] }
+
 [target."cfg(windows)".dependencies]
 zstd = "0.14.0"
 tauri-plugin-process = "2.4.0"

@@ -34,9 +34,10 @@ var/                 what builds leave behind (git-ignored): var/dist/
 - uv for everything under `tools/`: `tools/pyproject.toml` and `tools/uv.lock`
   are the one Python project, and every `make` target that needs it runs it as
   `uv run --project tools ...`. Nothing here touches the system Python.
-- For releases only: `zig` and `cargo install cargo-zigbuild` (Linux glibc
-  floor), `cargo install cargo-xwin` and `rustup target add
-x86_64-pc-windows-msvc` (Windows), `zip`.
+- For releases only: `podman` (the AppImage is built in a container, see
+  below), `cargo install cargo-xwin` and `rustup target add
+  x86_64-pc-windows-msvc` (Windows), `zip`. `zig` and `cargo install
+  cargo-zigbuild` for `make build` (Linux glibc floor).
 
 ## Every day
 
@@ -157,7 +158,7 @@ then `~/.config/dayz-community-hub/`):
 otherwise the next patch) and writes it to `Cargo.toml`, `tauri.conf.json` and
 `apps/gui/package.json`; writes the notes into `CHANGELOG.md`; builds
 
-- Linux: `tauri build --bundles appimage,deb,rpm` through the zig runner (the
+- Linux: `tauri build --bundles appimage` in the Ubuntu 22.04 container (the
   same build as `make appimage`, see below), `NO_STRIP` and
   `createUpdaterArtifacts`, which signs the AppImage;
 - Windows: `tauri build --runner cargo-xwin --no-bundle`, then zips
@@ -190,11 +191,36 @@ stable releases are never removed.
 `--dry-run` (`uv run --project tools dzch release --dry-run`) says which
 version would go out and with which notes, and changes nothing.
 
+## The AppImage (container)
+
+An AppImage carries the libraries it was built against: webkit2gtk, gtk, glib
+and some 200 more. Each asks for the glibc of the system that built it, and
+the host's own glibc must be at least that. Built on this machine (Arch), the
+v0.5.0 AppImage needed **glibc 2.44** and so ran on a current Arch only.
+
+`make appimage` and `make publish` therefore build it in an **Ubuntu 22.04**
+container (`packaging/appimage/Containerfile`, run by `scripts/appimage.sh`):
+glibc 2.35, the oldest mainstream release that ships webkit2gtk-4.1, which
+Tauri 2 needs. The AppImage runs on any distribution with glibc 2.35 or newer
+(Ubuntu 22.04+, Debian 12+, Fedora 36+, Mint 21+, Arch, a current SteamOS…).
+
+- **Needs** `podman` (`CONTAINER_ENGINE=docker` for docker). The first run
+  builds the image (tagged with the Containerfile's hash, so editing it
+  rebuilds it) and installs the toolchain `rust-toolchain.toml` names into a
+  volume; later runs reuse both, plus the cargo registry and linuxdeploy
+  (volumes `dzch-appimage-*`; `podman volume rm` them to start clean).
+- The repository is mounted at `/src`, `apps/gui/node_modules` included, so
+  `bun install` on the host first. Cargo writes to `target/appimage/`, the
+  AppImage lands in `target/appimage/release/bundle/appimage/`.
+- **Check an AppImage:** `./x.AppImage --appimage-extract`, then
+  `for f in squashfs-root/usr/bin/* $(find squashfs-root -name '*.so*' -type f); do objdump -T $f | grep -o 'GLIBC_[0-9.]*'; done | sort -Vu | tail -1`
+  must print `GLIBC_2.35` or lower.
+
 ## glibc floor (zig)
 
 A binary linked on this machine (Arch) asks for the newest glibc symbol
-versions the host has and refuses to start on anything older. `make build`,
-`make appimage` and `make publish` therefore link the app with
+versions the host has and refuses to start on anything older. `make build`
+therefore links the app with
 [`cargo-zigbuild`](https://github.com/rust-cross/cargo-zigbuild) against zig's
 glibc stubs at **2.35** (Ubuntu 22.04, the oldest mainstream release that ships
 webkit2gtk-4.1, which Tauri 2 needs anyway).
@@ -209,15 +235,18 @@ command to `cargo zigbuild`. The output lands in
 
 - **Needs** `zig` and `cargo-zigbuild`. Without either, the script says so in
   one line and runs plain cargo with the same arguments.
-- **Force plain cargo:** `make build ZIG=0` (or `ZIG=0 make publish`). Try this
-  first if a zig build fails to link: the news fetcher's TLS stack builds
-  `aws-lc-sys` (C code), which is the most likely part to disagree with zig.
+- **Force plain cargo:** `make build ZIG=0`. The binary then needs this
+  machine's glibc: fine for a local build, never for one handed to others.
+- **No system library that needs a newer glibc.** zig refuses to link one
+  (`referenced by /usr/lib/libssl.so (disallowed by
+  --no-allow-shlib-undefined)`). That is why OpenSSL, which native-tls uses on
+  Linux, is `vendored` in `apps/gui/src-tauri/Cargo.toml`: built from source
+  by zig and linked statically.
 - **Check a binary's floor:**
   `objdump -T target/x86_64-unknown-linux-gnu/release/dayz-community-hub | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1`
   must print `GLIBC_2.35` or lower.
-- It covers the binary (and so the `.deb`/`.rpm`, which use the target
-  system's libraries), not the libraries linuxdeploy copies into the AppImage
-  from this machine.
+- It covers the binary only, not libraries bundled next to it: that is why
+  the AppImage is built in the container instead.
 
 ## Windows
 
