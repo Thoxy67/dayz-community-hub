@@ -362,8 +362,15 @@ pub async fn run_through_steam(args: Vec<String>) -> Result<()> {
         }
     }
 
-    let mut cmd = Command::new(SteamClient::steam_exe_path());
-    cmd.args(&args).stdout(Stdio::null()).stderr(Stdio::null());
+    let (program, pre) = SteamClient::launcher().ok_or_else(SteamClient::not_found)?;
+    let mut cmd = Command::new(program);
+    cmd.args(&pre)
+        .args(&args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    for v in dz_steamcmd::appimage_env() {
+        cmd.env_remove(v);
+    }
     #[cfg(target_os = "windows")]
     cmd.creation_flags(dz_common::CREATE_NO_WINDOW);
     cmd.spawn()?;

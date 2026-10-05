@@ -59,9 +59,12 @@ fn other_drive_libraries() -> Vec<PathBuf> {
 
 #[cfg(target_os = "windows")]
 fn drive_roots() -> Vec<PathBuf> {
-    // A to B are floppies by convention: asking them can stall.
+    // A to B are floppies by convention: asking them can stall. Network
+    // drives are left out for the same reason (a disconnected share).
     ('C'..='Z')
-        .map(|l| PathBuf::from(format!("{l}:\\")))
+        .map(|l| format!("{l}:\\"))
+        .filter(|root| dz_common::win::is_local_drive(root))
+        .map(PathBuf::from)
         .filter(|p| p.is_dir())
         .collect()
 }
@@ -74,12 +77,54 @@ fn drive_roots() -> Vec<PathBuf> {
         bases.push(PathBuf::from("/media").join(&user));
         bases.push(PathBuf::from("/run/media").join(&user));
     }
+    // Listing a folder does not touch what is mounted in it, but a stat
+    // does: a network mount (a stale NFS or sshfs one above all) can hang
+    // it, so those are left out before anything asks them.
+    let remote = remote_mounts();
     bases
         .iter()
         .filter_map(|b| std::fs::read_dir(b).ok())
         .flat_map(|entries| entries.flatten())
         .map(|e| e.path())
+        .filter(|p| !remote.iter().any(|m| p.starts_with(m)))
         .filter(|p| p.is_dir())
+        .collect()
+}
+
+/// Mount points of network and FUSE-over-network file systems, from
+/// `/proc/self/mounts`.
+#[cfg(not(target_os = "windows"))]
+fn remote_mounts() -> Vec<PathBuf> {
+    const REMOTE: &[&str] = &[
+        "nfs",
+        "nfs4",
+        "cifs",
+        "smb3",
+        "smbfs",
+        "sshfs",
+        "fuse.sshfs",
+        "fuse.rclone",
+        "davfs",
+        "fuse.davfs2",
+        "afs",
+        "ceph",
+        "glusterfs",
+        "fuse.glusterfs",
+        "9p",
+    ];
+    let Ok(mounts) = std::fs::read_to_string("/proc/self/mounts") else {
+        return Vec::new();
+    };
+    mounts
+        .lines()
+        .filter_map(|line| {
+            let mut f = line.split_whitespace();
+            let (_, at, kind) = (f.next()?, f.next()?, f.next()?);
+            // Spaces in mount points are written as \040.
+            REMOTE
+                .contains(&kind)
+                .then(|| PathBuf::from(at.replace("\\040", " ")))
+        })
         .collect()
 }
 

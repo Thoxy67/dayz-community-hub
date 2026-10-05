@@ -24,43 +24,74 @@ impl SteamClient {
         }
     }
 
-    /// Resolve the full path to the Steam client executable to spawn.
+    /// How to run the Steam client: the program, and the arguments that come
+    /// before Steam's own. `None` when Steam is nowhere to be found.
     ///
     /// On Windows `steam.exe` lives at `<SteamPath>\steam.exe` (from the
-    /// registry) and is *not* on `PATH`, so spawning the bare name fails with
-    /// "program not found". We therefore resolve the real install location.
-    /// On Linux/macOS `steam` is a launcher script that is reliably on `PATH`,
-    /// so the bare name is correct.
-    pub fn steam_exe_path() -> PathBuf {
+    /// registry) and is *not* on `PATH`. On Linux `steam` is on `PATH` for
+    /// most installs, but not for Debian's `/usr/games` in some desktop
+    /// sessions, and not at all for Flatpak Steam, which runs through
+    /// `flatpak run com.valvesoftware.Steam`.
+    pub fn launcher() -> Option<(PathBuf, Vec<String>)> {
         #[cfg(target_os = "windows")]
         {
             // PATH first (rare, but honour it if a user added Steam there).
             if let Ok(p) = which::which("steam.exe") {
-                return p;
+                return Some((p, Vec::new()));
             }
             // Registry is the reliable source for non-default install drives.
             if let Some(steam_path) = query_steam_registry_path() {
                 let candidate = PathBuf::from(&steam_path).join("steam.exe");
                 if candidate.exists() {
-                    return candidate;
+                    return Some((candidate, Vec::new()));
                 }
             }
-            for base in &[
+            [
                 "C:\\Program Files (x86)\\Steam\\steam.exe",
                 "C:\\Program Files\\Steam\\steam.exe",
-            ] {
-                let candidate = PathBuf::from(base);
-                if candidate.exists() {
-                    return candidate;
-                }
-            }
-            // Last resort: bare name so the resulting error is still meaningful.
-            PathBuf::from("steam.exe")
+            ]
+            .iter()
+            .map(PathBuf::from)
+            .find(|p| p.exists())
+            .map(|p| (p, Vec::new()))
         }
         #[cfg(not(target_os = "windows"))]
         {
-            PathBuf::from("steam")
+            if let Ok(p) = which::which("steam") {
+                return Some((p, Vec::new()));
+            }
+            for p in [
+                "/usr/games/steam",
+                "/usr/bin/steam",
+                "/usr/local/bin/steam",
+                "/snap/bin/steam",
+                "/var/lib/snapd/snap/bin/steam",
+            ] {
+                let p = PathBuf::from(p);
+                if p.is_file() {
+                    return Some((p, Vec::new()));
+                }
+            }
+            let flatpak_data = std::env::var_os("HOME")
+                .map(|h| PathBuf::from(h).join(".var/app/com.valvesoftware.Steam"));
+            if flatpak_data.is_some_and(|d| d.is_dir())
+                && let Ok(flatpak) = which::which("flatpak")
+            {
+                return Some((
+                    flatpak,
+                    vec!["run".into(), "com.valvesoftware.Steam".into()],
+                ));
+            }
+            None
         }
+    }
+
+    /// The error for a machine without a Steam client the launcher can find.
+    pub fn not_found() -> dz_common::Error {
+        dz_common::Error::Other(
+            "Steam was not found. Install the Steam client (or start it once), then try again."
+                .into(),
+        )
     }
 
     /// Check if the Steam client is currently running.
@@ -96,12 +127,14 @@ impl SteamClient {
             return Ok(true);
         }
 
+        let (program, pre) = Self::launcher().ok_or_else(Self::not_found)?;
         #[cfg(target_os = "windows")]
         {
             use std::os::windows::process::CommandExt;
             // On Windows spawn steam.exe directly; no nohup equivalent needed
             // because detached processes persist after the parent exits.
-            std::process::Command::new(Self::steam_exe_path())
+            std::process::Command::new(program)
+                .args(&pre)
                 .arg("-nofriendsui")
                 .arg("-silent")
                 .stdout(Stdio::null())
@@ -112,15 +145,52 @@ impl SteamClient {
         #[cfg(not(target_os = "windows"))]
         {
             // On Linux/macOS use nohup so Steam keeps running if the spawner exits.
-            std::process::Command::new("nohup")
-                .arg(Self::steam_exe_path())
+            let mut cmd = std::process::Command::new("nohup");
+            cmd.arg(program)
+                .args(&pre)
                 .arg("-nofriendsui")
                 .arg("-silent")
                 .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()?;
+                .stderr(Stdio::null());
+            for v in appimage_env() {
+                cmd.env_remove(v);
+            }
+            cmd.spawn()?;
         }
 
         Ok(false)
     }
+}
+
+/// Variables an AppImage's AppRun sets for the launcher itself. Steam, or a
+/// file manager, started from the launcher must not inherit them: they point
+/// into the AppImage's mount, which goes away when the launcher closes, and
+/// load the AppImage's GTK modules into programs built against the system's.
+/// Empty outside an AppImage.
+pub fn appimage_env() -> &'static [&'static str] {
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("APPIMAGE").is_some() {
+        return &[
+            "APPDIR",
+            "APPIMAGE",
+            "ARGV0",
+            "OWD",
+            "LD_LIBRARY_PATH",
+            "GDK_BACKEND",
+            "GDK_PIXBUF_MODULE_FILE",
+            "GDK_PIXBUF_MODULEDIR",
+            "GIO_MODULE_DIR",
+            "GIO_EXTRA_MODULES",
+            "GSETTINGS_SCHEMA_DIR",
+            "GTK_PATH",
+            "GTK_EXE_PREFIX",
+            "GTK_DATA_PREFIX",
+            "GTK_IM_MODULE_FILE",
+            "PYTHONHOME",
+            "PYTHONPATH",
+            "PERLLIB",
+            "QT_PLUGIN_PATH",
+        ];
+    }
+    &[]
 }

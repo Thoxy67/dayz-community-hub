@@ -54,13 +54,16 @@ pub fn run(args: CliArgs) {
                     .allow_directory(&images_dir, false);
             }
 
-            // Register dzch:// at runtime on Linux (and Windows debug builds),
-            // so it works outside an installed package.
-            #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
+            // Register dzch:// (and on Windows .dzch files) at every start:
+            // the AppImage and the Windows portable zip have no installer to
+            // do it, and a moved executable needs it pointed at its new place.
+            #[cfg(any(target_os = "linux", windows))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 let _ = app.deep_link().register_all();
             }
+            #[cfg(windows)]
+            features::dzch_cli::register_file_type();
 
             // A dzch:// link follows the same path as --open.
             {
@@ -77,14 +80,45 @@ pub fn run(args: CliArgs) {
                 });
             }
 
+            // Linux creates the window hidden (tauri.conf.json): tao gives an
+            // undecorated Wayland window its empty titlebar after showing it
+            // otherwise, which GTK warns about and redraws the window for.
+            // Shown here, once it is set up. Windows' config shows it at once.
+            #[cfg(target_os = "linux")]
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.show();
+            }
+
             Ok(())
         })
         // Single instance: a second launch hands its arguments to this one
         // (as a "cli-args" event) and exits.
         .plugin(
             tauri_plugin_single_instance::Builder::new()
-                .callback(|app, argv, _cwd| {
-                    let args = CliArgs::try_parse_from(&argv).unwrap_or_else(|_| CliArgs::none());
+                .callback(|app, argv, cwd| {
+                    let mut args =
+                        CliArgs::try_parse_from(&argv).unwrap_or_else(|_| CliArgs::none());
+                    // A dzch:// link has already been passed on by the
+                    // deep-link plugin (single-instance's `deep-link`
+                    // feature): emitting it again joined the server twice.
+                    if args
+                        .open
+                        .as_deref()
+                        .is_some_and(|o| o.starts_with("dzch://"))
+                    {
+                        args.open = None;
+                    }
+                    // A file named relative to where the second launch ran.
+                    if let Some(open) = &args.open
+                        && std::path::Path::new(open).is_relative()
+                    {
+                        args.open = Some(
+                            std::path::Path::new(&cwd)
+                                .join(open)
+                                .to_string_lossy()
+                                .into(),
+                        );
+                    }
                     if let Some(win) = app.get_webview_window("main") {
                         let _ = win.show();
                         let _ = win.set_focus();

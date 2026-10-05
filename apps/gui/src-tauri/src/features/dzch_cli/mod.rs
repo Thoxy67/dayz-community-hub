@@ -77,3 +77,46 @@ pub(crate) async fn write_dzch_file(path: String, config: DzchConfig) -> Result<
 pub(crate) fn parse_dzch_url(url: String) -> Result<DzchConfig, String> {
     DzchConfig::from_url(&url).cmd_err()
 }
+
+/// Windows: make `.dzch` files open in this executable, for the current user.
+/// Installers do this; the portable zip has none, and a moved folder needs it
+/// again, so it is checked at every start and written only when it differs.
+#[cfg(windows)]
+pub(crate) fn register_file_type() {
+    use dz_common::win::{HKEY_CURRENT_USER, associations_changed, reg_set_string, reg_string};
+    const PROG_ID: &str = "DayZCommunityHub.dzch";
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let exe = exe.to_string_lossy();
+    let command = format!("\"{exe}\" \"%1\"");
+    let classes = "Software\\Classes";
+    let open_key = format!("{classes}\\{PROG_ID}\\shell\\open\\command");
+    let current = reg_string(HKEY_CURRENT_USER, &open_key, "").ok().flatten();
+    let points_here = reg_string(HKEY_CURRENT_USER, &format!("{classes}\\.dzch"), "")
+        .ok()
+        .flatten()
+        .is_some_and(|p| p == PROG_ID);
+    if points_here && current.as_deref() == Some(command.as_str()) {
+        return;
+    }
+    let writes = [
+        (format!("{classes}\\.dzch"), PROG_ID.to_string()),
+        (
+            format!("{classes}\\{PROG_ID}"),
+            "DayZ Community Hub server".to_string(),
+        ),
+        (
+            format!("{classes}\\{PROG_ID}\\DefaultIcon"),
+            format!("\"{exe}\",0"),
+        ),
+        (open_key, command),
+    ];
+    for (key, data) in writes {
+        if let Err(e) = reg_set_string(HKEY_CURRENT_USER, &key, None, &data) {
+            eprintln!("registering .dzch: {e}");
+            return;
+        }
+    }
+    associations_changed();
+}

@@ -9,7 +9,7 @@ mod output;
 mod progress;
 mod pty;
 
-pub use client::SteamClient;
+pub use client::{SteamClient, appimage_env};
 pub use cmd::SteamCmd;
 pub use detect::{DayzInstall, detect_dayz, find_steam_root, find_steamcmd, steam_workshop_dirs};
 pub use progress::{ModProgress, ProgressTx, PtyInputRx, PtyInputTx};

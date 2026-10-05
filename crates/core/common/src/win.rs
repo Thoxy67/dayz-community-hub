@@ -1,6 +1,6 @@
 //! The few Win32 calls the app makes itself, declared by hand rather than
-//! through a bindings crate: reading a registry string, making an NTFS
-//! junction, and riding out the short locks antivirus scanners take on a
+//! through a bindings crate: reading and writing a registry string, making an
+//! NTFS junction, and riding out the short locks antivirus scanners take on a
 //! freshly written file.
 //!
 //! Each replaces a helper process (`reg query`, `cmd /c mklink /J`) that cost
@@ -19,6 +19,8 @@ type HKey = isize;
 pub const HKEY_CURRENT_USER: HKey = 0x8000_0001_u32 as i32 as isize;
 
 const RRF_RT_REG_SZ: u32 = 0x0000_0002;
+const REG_SZ: u32 = 1;
+const SHCNE_ASSOCCHANGED: i32 = 0x0800_0000;
 const ERROR_SUCCESS: i32 = 0;
 const ERROR_MORE_DATA: i32 = 234;
 
@@ -42,6 +44,19 @@ unsafe extern "system" {
         data: *mut c_void,
         size: *mut u32,
     ) -> i32;
+    fn RegSetKeyValueW(
+        hkey: HKey,
+        subkey: *const u16,
+        value: *const u16,
+        kind: u32,
+        data: *const c_void,
+        size: u32,
+    ) -> i32;
+}
+
+#[link(name = "shell32")]
+unsafe extern "system" {
+    fn SHChangeNotify(event: i32, flags: u32, item1: *const c_void, item2: *const c_void);
 }
 
 #[link(name = "kernel32")]
@@ -66,6 +81,7 @@ unsafe extern "system" {
         overlapped: *mut c_void,
     ) -> i32;
     fn CloseHandle(handle: Handle) -> i32;
+    fn GetDriveTypeW(root: *const u16) -> u32;
 }
 
 fn wide(s: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
@@ -104,6 +120,50 @@ pub fn reg_string(root: HKey, subkey: &str, value: &str) -> io::Result<Option<St
             code => return Err(io::Error::from_raw_os_error(code)),
         }
     }
+}
+
+/// Set the `REG_SZ` value `value` (the key's default when `None`) under
+/// `root\subkey`, making the key if it is missing.
+pub fn reg_set_string(root: HKey, subkey: &str, value: Option<&str>, data: &str) -> io::Result<()> {
+    let subkey = wide(subkey);
+    let value = value.map(wide);
+    let data = wide(data);
+    // SAFETY: the names and the data are NUL-terminated; `size` counts the
+    // data's bytes, terminator included, as REG_SZ wants.
+    let status = unsafe {
+        RegSetKeyValueW(
+            root,
+            subkey.as_ptr(),
+            value.as_ref().map_or(std::ptr::null(), |v| v.as_ptr()),
+            REG_SZ,
+            data.as_ptr().cast(),
+            (data.len() * 2) as u32,
+        )
+    };
+    if status == ERROR_SUCCESS {
+        Ok(())
+    } else {
+        Err(io::Error::from_raw_os_error(status))
+    }
+}
+
+/// A drive a scan may touch: a local disk or a removable one. A network
+/// drive (mapped share, possibly disconnected) or a missing letter is not:
+/// asking a dead share can stall for a long time. `root` is like `"D:\\"`.
+pub fn is_local_drive(root: &str) -> bool {
+    const DRIVE_REMOVABLE: u32 = 2;
+    const DRIVE_FIXED: u32 = 3;
+    let root = wide(root);
+    // SAFETY: `root` is NUL-terminated.
+    let kind = unsafe { GetDriveTypeW(root.as_ptr()) };
+    kind == DRIVE_FIXED || kind == DRIVE_REMOVABLE
+}
+
+/// Tell Explorer that file associations changed, so a new one shows at once.
+pub fn associations_changed() {
+    // SAFETY: SHCNF_IDLIST (0) with no items is the documented form for
+    // SHCNE_ASSOCCHANGED.
+    unsafe { SHChangeNotify(SHCNE_ASSOCCHANGED, 0, std::ptr::null(), std::ptr::null()) };
 }
 
 /// Make `link` (which must not exist) an NTFS junction to the directory
