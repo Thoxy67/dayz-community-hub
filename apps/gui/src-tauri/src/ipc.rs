@@ -64,6 +64,7 @@ pub(crate) fn builder() -> tauri_specta::Builder<tauri::Wry> {
             steamcmd::steamcmd_dirs,
             steamcmd::open_steamcmd_dir,
             steamcmd::detect::detect_steamcmd,
+            steamcmd::detect::detect_dayz,
             steamcmd::detect::watch_steamcmd,
             steamcmd::detect::download_steamcmd_windows,
             steamworks::set_mod_downloader,

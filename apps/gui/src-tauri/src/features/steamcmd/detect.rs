@@ -217,3 +217,41 @@ pub(crate) async fn download_steamcmd_windows() -> Result<String, String> {
         Ok(exe_path.to_string_lossy().to_string())
     }
 }
+
+/// Where DayZ is on this machine, for the setup to show and correct.
+#[derive(Serialize, Clone, Debug, specta::Type)]
+pub struct DayzDetectDto {
+    /// The `steamapps` folder in use (the library holding DayZ, if one does).
+    pub steamapps: Option<String>,
+    /// The game's folder, when it is installed there.
+    pub dayz_dir: Option<String>,
+    /// Mods the Steam client has already downloaded, across its libraries.
+    pub workshop_mods: u32,
+}
+
+/// Look for DayZ in `path` (a Steam library or its `steamapps`, as picked by
+/// the player) or, without one, wherever Steam is installed.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn detect_dayz(path: Option<String>) -> Result<DayzDetectDto, String> {
+    tokio::task::spawn_blocking(move || {
+        let explicit = path
+            .filter(|p| !p.trim().is_empty())
+            .map(std::path::PathBuf::from);
+        let found = dz_steamcmd::detect_dayz(explicit.as_deref());
+        let workshop_mods = found
+            .workshop_dirs
+            .iter()
+            .filter_map(|d| std::fs::read_dir(d).ok())
+            .flat_map(|entries| entries.flatten())
+            .filter(|e| e.path().is_dir())
+            .count() as u32;
+        DayzDetectDto {
+            steamapps: found.steamapps.map(|p| p.to_string_lossy().into_owned()),
+            dayz_dir: found.dayz.map(|p| p.to_string_lossy().into_owned()),
+            workshop_mods,
+        }
+    })
+    .await
+    .map_err(|e| format!("Task join error: {e}"))
+}

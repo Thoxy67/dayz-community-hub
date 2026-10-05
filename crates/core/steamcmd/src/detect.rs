@@ -16,8 +16,116 @@ pub fn find_steam_root() -> Option<PathBuf> {
             return Some(dayz_steamapps);
         }
     }
+    // A library Steam does not list (a reinstalled Steam, a drive plugged
+    // back in, a Steam installed off the default path): look where libraries
+    // usually sit on every other drive.
+    if let Some(found) = other_drive_libraries()
+        .iter()
+        .find_map(|sa| library_with_dayz(sa))
+    {
+        return Some(found);
+    }
     // Otherwise fall back to the first existing default steamapps directory.
     candidates.into_iter().find(|c| c.is_dir())
+}
+
+/// Folders a Steam library is commonly made in, relative to a drive's root.
+const LIBRARY_NAMES: &[&str] = &[
+    "SteamLibrary",
+    "Steam",
+    "steam",
+    "Games/SteamLibrary",
+    "Games/Steam",
+    "games/SteamLibrary",
+    "games/steam",
+    "Program Files (x86)/Steam",
+    "Program Files/Steam",
+];
+
+/// `steamapps` folders at the usual places on every drive but the system's
+/// defaults: drive letters on Windows, mount points on Linux. Only existing
+/// folders are returned; a missing drive costs one failed stat.
+fn other_drive_libraries() -> Vec<PathBuf> {
+    drive_roots()
+        .into_iter()
+        .flat_map(|root| {
+            let mut v = vec![root.join("steamapps")];
+            v.extend(LIBRARY_NAMES.iter().map(|n| root.join(n).join("steamapps")));
+            v
+        })
+        .filter(|sa| sa.is_dir())
+        .collect()
+}
+
+#[cfg(target_os = "windows")]
+fn drive_roots() -> Vec<PathBuf> {
+    // A to B are floppies by convention: asking them can stall.
+    ('C'..='Z')
+        .map(|l| PathBuf::from(format!("{l}:\\")))
+        .filter(|p| p.is_dir())
+        .collect()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn drive_roots() -> Vec<PathBuf> {
+    let user = std::env::var("USER").unwrap_or_default();
+    let mut bases = vec![PathBuf::from("/mnt"), PathBuf::from("/media")];
+    if !user.is_empty() {
+        bases.push(PathBuf::from("/media").join(&user));
+        bases.push(PathBuf::from("/run/media").join(&user));
+    }
+    bases
+        .iter()
+        .filter_map(|b| std::fs::read_dir(b).ok())
+        .flat_map(|entries| entries.flatten())
+        .map(|e| e.path())
+        .filter(|p| p.is_dir())
+        .collect()
+}
+
+/// Where DayZ is on this machine, as the setup shows it.
+#[derive(Debug, Clone, Default)]
+pub struct DayzInstall {
+    /// The `steamapps` directory of the library that holds DayZ, or of the
+    /// default Steam install when no library does.
+    pub steamapps: Option<PathBuf>,
+    /// `<steamapps>/common/DayZ`, when it is there.
+    pub dayz: Option<PathBuf>,
+    /// Every Steam library's DayZ workshop folder that exists.
+    pub workshop_dirs: Vec<PathBuf>,
+}
+
+/// Find DayZ: in `explicit` (a library or its `steamapps`, as a player would
+/// pick it) and the libraries it lists, else wherever Steam is installed.
+/// Touches the filesystem (and on Windows the registry): blocking.
+pub fn detect_dayz(explicit: Option<&Path>) -> DayzInstall {
+    let steamapps = match explicit {
+        Some(p) => {
+            let sa = if p.file_name().is_some_and(|n| n == "steamapps")
+                || !p.join("steamapps").is_dir()
+            {
+                p.to_path_buf()
+            } else {
+                p.join("steamapps")
+            };
+            Some(library_with_dayz(&sa).unwrap_or(sa))
+        }
+        None => find_steam_root(),
+    };
+    let dayz = steamapps
+        .as_ref()
+        .map(|sa| sa.join("common").join("DayZ"))
+        .filter(|d| d.is_dir());
+    let workshop_dirs = steamapps
+        .as_ref()
+        .filter(|sa| sa.is_dir())
+        .map(|sa| steam_workshop_dirs(sa))
+        .unwrap_or_default();
+    DayzInstall {
+        steamapps,
+        dayz,
+        workshop_dirs,
+    }
 }
 
 /// Default `steamapps` directory candidates for the current platform, in
@@ -243,5 +351,54 @@ pub fn find_steamcmd() -> Option<PathBuf> {
             }
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A fresh directory under the system temp dir, removed by the caller.
+    fn scratch(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("dz-detect-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn a_picked_library_finds_dayz_and_its_mods() {
+        let lib = scratch("lib");
+        std::fs::create_dir_all(lib.join("steamapps/common/DayZ")).unwrap();
+        std::fs::create_dir_all(lib.join("steamapps/workshop/content/221100/1559212036")).unwrap();
+        // Picked as the library folder, not its steamapps: both are accepted.
+        let found = detect_dayz(Some(&lib));
+        assert_eq!(
+            found.steamapps.as_deref(),
+            Some(lib.join("steamapps").as_path())
+        );
+        assert_eq!(
+            found.dayz.as_deref(),
+            Some(lib.join("steamapps/common/DayZ").as_path())
+        );
+        assert!(
+            found
+                .workshop_dirs
+                .contains(&lib.join("steamapps/workshop/content/221100"))
+        );
+        std::fs::remove_dir_all(&lib).unwrap();
+    }
+
+    #[test]
+    fn a_library_without_dayz_says_so() {
+        let lib = scratch("empty");
+        std::fs::create_dir_all(lib.join("steamapps")).unwrap();
+        let found = detect_dayz(Some(&lib.join("steamapps")));
+        assert_eq!(
+            found.steamapps.as_deref(),
+            Some(lib.join("steamapps").as_path())
+        );
+        assert!(found.dayz.is_none());
+        std::fs::remove_dir_all(&lib).unwrap();
     }
 }

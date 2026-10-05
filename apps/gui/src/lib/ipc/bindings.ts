@@ -164,6 +164,11 @@ export const commands = {
 	openSteamcmdDir: () => __TAURI_INVOKE<null>("open_steamcmd_dir"),
 	detectSteamcmd: () => __TAURI_INVOKE<SteamcmdStatusDto>("detect_steamcmd"),
 	/**
+	 *  Look for DayZ in `path` (a Steam library or its `steamapps`, as picked by
+	 *  the player) or, without one, wherever Steam is installed.
+	 */
+	detectDayz: (path: string | null) => __TAURI_INVOKE<DayzDetectDto>("detect_dayz", { path }),
+	/**
 	 *  Start a background task that polls for steamcmd every 3 seconds.
 	 *  Each tick re-reads `steamcmd_path` from the live profile, so a user
 	 *  editing the path during the wizard takes effect immediately rather than
@@ -402,6 +407,16 @@ export type CliArgs = {
 	 *  if the user agrees).
 	 */
 	open: string | null,
+};
+
+/**  Where DayZ is on this machine, for the setup to show and correct. */
+export type DayzDetectDto = {
+	/**  The `steamapps` folder in use (the library holding DayZ, if one does). */
+	steamapps: string | null,
+	/**  The game's folder, when it is installed there. */
+	dayz_dir: string | null,
+	/**  Mods the Steam client has already downloaded, across its libraries. */
+	workshop_mods: number,
 };
 
 /**

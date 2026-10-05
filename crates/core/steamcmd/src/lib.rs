@@ -11,7 +11,7 @@ mod pty;
 
 pub use client::SteamClient;
 pub use cmd::SteamCmd;
-pub use detect::{find_steam_root, find_steamcmd, steam_workshop_dirs};
+pub use detect::{DayzInstall, detect_dayz, find_steam_root, find_steamcmd, steam_workshop_dirs};
 pub use progress::{ModProgress, ProgressTx, PtyInputRx, PtyInputTx};
 
 /// DayZ's Steam app id.

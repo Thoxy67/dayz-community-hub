@@ -54,6 +54,7 @@ permissions = [
   "allow-steamcmd-dirs",
   "allow-open-steamcmd-dir",
   "allow-detect-steamcmd",
+  "allow-detect-dayz",
   "allow-watch-steamcmd",
   "allow-download-steamcmd-windows",
   "allow-set-mod-downloader",
