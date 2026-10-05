@@ -112,33 +112,37 @@
       </div>
     {/each}
 
-    <!-- The game is open: a way to close it, under the views. Not with a
+    <!-- The game is open: a way to close it, at the foot of the views. Not with a
          controller, where Steam's own overlay quits the game. -->
     {#if game.running && pad.mode !== "gamepad"}
-      <div
-        class={cn(
-          "flex flex-col gap-1 rounded-sm border border-err/30 bg-err/8",
-          collapsed ? "items-center p-1" : "px-2.5 py-2",
-        )}
-      >
-        {#if !collapsed}
-          <span class="flex items-center gap-1.5 text-2xs text-fg-muted">
-            <span class="size-1.5 animate-pulse rounded-full bg-ok"></span>{$n.gameRunning.value}
-          </span>
+      <!-- Pushed to the bottom of the views, just above the separator. -->
+      <div class="mt-auto">
+        {#if collapsed}
+          <!-- Narrow: the whole frame is the button. -->
+          <Tooltip text={$n.killGame.value} class="flex">
+            <button
+              class="flex h-control-lg w-full items-center justify-center rounded-sm border border-err/30 bg-err/8 text-err hover:border-err/50 hover:bg-err/15 disabled:opacity-50"
+              disabled={game.closing}
+              aria-label={$n.killGame.value}
+              onclick={closeGame}
+            >
+              <Skull class="size-icon" />
+            </button>
+          </Tooltip>
+        {:else}
+          <div class="flex flex-col gap-1 rounded-sm border border-err/30 bg-err/8 px-2.5 py-2">
+            <span class="flex items-center gap-1.5 text-2xs text-fg-muted">
+              <span class="size-1.5 animate-pulse rounded-full bg-ok"></span>{$n.gameRunning.value}
+            </span>
+            <button
+              class="flex h-control w-full items-center justify-center gap-1.5 rounded-sm border border-err/40 text-xs text-err hover:bg-err/15 disabled:opacity-50"
+              disabled={game.closing}
+              onclick={closeGame}
+            >
+              <Skull class="size-icon-sm" />{$n.killGame.value}
+            </button>
+          </div>
         {/if}
-        <Tooltip text={collapsed ? $n.killGame.value : ""} class="flex">
-          <button
-            class={cn(
-              "flex h-control items-center justify-center gap-1.5 rounded-sm text-xs text-err hover:bg-err/15 disabled:opacity-50",
-              collapsed ? "w-full" : "w-full border border-err/40",
-            )}
-            disabled={game.closing}
-            aria-label={$n.killGame.value}
-            onclick={closeGame}
-          >
-            <Skull class="size-icon-sm" />{#if !collapsed}{$n.killGame.value}{/if}
-          </button>
-        </Tooltip>
       </div>
     {/if}
   </div>
