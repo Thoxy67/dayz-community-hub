@@ -93,6 +93,15 @@ const content = {
       es: "Unirse de todos modos",
       ru: "Всё равно войти",
     }),
+    portsSummary: insert(
+      t({
+        en: "Ports: {{ports}}",
+        fr: "Ports : {{ports}}",
+        de: "Ports: {{ports}}",
+        es: "Puertos: {{ports}}",
+        ru: "Порты: {{ports}}",
+      }),
+    ),
     optional: t({
       en: "optional",
       fr: "optionnel",

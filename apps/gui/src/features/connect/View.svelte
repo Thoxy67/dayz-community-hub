@@ -18,7 +18,7 @@
   import { Input } from "$lib/components/ui/input";
   import { Panel } from "$lib/components/ui/panel";
   import { Spinner } from "$lib/components/ui/spinner";
-  import { Kbd } from "$lib/components/ui/kbd";
+  import { Disclosure } from "$lib/components/ui/disclosure";
   import { connect } from "$lib/stores/connect.svelte";
   import { profile } from "$lib/stores/profile.svelte";
   import { servers } from "$lib/stores/servers.svelte";
@@ -42,6 +42,17 @@
 
   let showPassword = $state(false);
   let touched = $state(false);
+  // The ports rarely need a hand: shut unless one is wrong.
+  let portsOpen = $state(false);
+  $effect(() => {
+    if (direct.portError) portsOpen = true;
+  });
+  let argsOpen = $state(false);
+  const portsLabel = $derived(
+    $c.portsSummary({
+      ports: direct.queryPort ? `${direct.port} / ${direct.queryPort}` : String(direct.port || "—"),
+    }).value,
+  );
 
   const isFav = $derived(direct.valid && !!direct.favorite);
   const pingKey = $derived(
@@ -119,68 +130,51 @@
 </PageHeader>
 
 <div class="grid min-h-0 flex-1 grid-cols-[25rem_minmax(0,1fr)] gap-px bg-border">
-  <!-- The form, what to add to the launch, and where to start from. -->
-  <div class="flex min-h-0 flex-col gap-px overflow-y-auto bg-border">
+  <!-- The form, then where to start from; what to add to the launch stays folded. -->
+  <div class="flex min-h-0 flex-col gap-px bg-border">
     <Panel title={$c.connection.value} scroll={false}>
+      {#snippet toolbar()}
+        <IconButton
+          icon={Star}
+          size="icon-xs"
+          label={isFav ? $c.alreadyFavorite.value : $c.addFavorite.value}
+          active={isFav}
+          disabled={!direct.valid}
+          onclick={() => direct.favoriteIt()}
+        />
+        <IconButton
+          icon={Eraser}
+          size="icon-xs"
+          label={$common.clear.value}
+          disabled={!direct.address}
+          onclick={() => direct.clear()}
+        />
+      {/snippet}
       <form
         class="flex flex-col gap-2.5 p-3"
+        title={$c.intro.value}
         onsubmit={(e) => {
           e.preventDefault();
           touched = true;
           void direct.query();
         }}
       >
-        <p class="m-0 text-2xs leading-snug text-fg-muted">{$c.intro.value}</p>
-
         <label class="flex flex-col gap-1">
           <span class="text-2xs font-medium text-fg">{$c.ipHostname.value}</span>
           <Input
             bind:value={direct.address}
             placeholder={$c.ipPlaceholder.value}
+            title={$c.addressHint.value}
             class={cn("font-mono", touched && direct.addressError && "[&_input]:border-err/60")}
             autocomplete="off"
             spellcheck={false}
             onblur={() => direct.splitAddress()}
             {onkeydown}
           />
-          <span
-            class={cn("text-3xs", touched && direct.addressError ? "text-err" : "text-fg-faint")}
-          >
-            {touched && direct.addressError ? $c.addressMissing.value : $c.addressHint.value}
-          </span>
+          {#if touched && direct.addressError}
+            <span class="text-3xs text-err">{$c.addressMissing.value}</span>
+          {/if}
         </label>
-
-        <div class="grid grid-cols-2 gap-2">
-          <label class="flex flex-col gap-1">
-            <span class="text-2xs font-medium text-fg"
-              >{$c.port.value} <span class="text-fg-faint">{$c.portGame.value}</span></span
-            >
-            <Input
-              bind:value={direct.port}
-              type="number"
-              min="1"
-              max="65535"
-              class={cn(direct.portError && "[&_input]:border-err/60")}
-              {onkeydown}
-            />
-          </label>
-          <label class="flex flex-col gap-1">
-            <span class="text-2xs font-medium text-fg">{$c.queryPortOptional.value}</span>
-            <Input
-              bind:value={direct.queryPort}
-              type="number"
-              min="1"
-              max="65535"
-              placeholder="27016"
-              {onkeydown}
-            />
-          </label>
-        </div>
-        {#if direct.portError}
-          <span class="-mt-1.5 text-3xs text-err">{$c.portInvalid.value}</span>
-        {:else}
-          <span class="-mt-1.5 text-3xs text-fg-faint">{$c.queryPortHint.value}</span>
-        {/if}
 
         <label class="flex flex-col gap-1">
           <span class="text-2xs font-medium text-fg"
@@ -209,53 +203,81 @@
           {/if}
         </label>
 
+        <Disclosure label={portsLabel} bind:open={portsOpen} class="-mx-3 -my-1">
+          <div class="flex flex-col gap-1 px-3 pt-1 pb-1.5">
+            <div class="grid grid-cols-2 gap-2">
+              <label class="flex flex-col gap-1">
+                <span class="text-2xs font-medium text-fg"
+                  >{$c.port.value} <span class="text-fg-faint">{$c.portGame.value}</span></span
+                >
+                <Input
+                  bind:value={direct.port}
+                  type="number"
+                  min="1"
+                  max="65535"
+                  class={cn(direct.portError && "[&_input]:border-err/60")}
+                  {onkeydown}
+                />
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="text-2xs font-medium text-fg">{$c.queryPortOptional.value}</span>
+                <Input
+                  bind:value={direct.queryPort}
+                  type="number"
+                  min="1"
+                  max="65535"
+                  placeholder="27016"
+                  {onkeydown}
+                />
+              </label>
+            </div>
+            <span class={cn("text-3xs", direct.portError ? "text-err" : "text-fg-faint")}>
+              {direct.portError ? $c.portInvalid.value : $c.queryPortHint.value}
+            </span>
+          </div>
+        </Disclosure>
+
         <div class="flex gap-1.5">
-          <Button type="submit" disabled={direct.querying || !direct.valid} class="flex-1">
+          <Button
+            type="submit"
+            size="lg"
+            disabled={direct.querying || !direct.valid}
+            class="flex-1"
+            title={$c.query.value}
+          >
             {#if direct.querying}<Spinner class="size-icon-sm" />{$c.querying.value}{:else}<Search
                 class="size-icon-sm"
               />{$c.query.value}{/if}
           </Button>
-          <IconButton
-            icon={Star}
-            label={isFav ? $c.alreadyFavorite.value : $c.addFavorite.value}
-            active={isFav}
-            disabled={!direct.valid}
-            onclick={() => direct.favoriteIt()}
-          />
-          <IconButton
-            icon={Eraser}
-            label={$common.clear.value}
-            disabled={!direct.address}
-            onclick={() => direct.clear()}
-          />
+          <Button
+            variant="play"
+            size="lg"
+            class="flex-[1.4]"
+            disabled={!direct.valid || !profile.data}
+            title={$c.enterToConnect.value}
+            onclick={() => {
+              touched = true;
+              direct.join();
+            }}
+          >
+            <Play class="size-icon" />{$c.connect.value}
+          </Button>
         </div>
-        <Button
-          variant="play"
-          size="lg"
-          disabled={!direct.valid || !profile.data}
-          onclick={() => {
-            touched = true;
-            direct.join();
-          }}
-        >
-          <Play class="size-icon" />{$c.connect.value}
-        </Button>
-        <span class="flex items-center justify-center gap-1.5 text-3xs text-fg-faint"
-          ><Kbd>Enter</Kbd>{$c.enterToConnect.value}</span
-        >
       </form>
     </Panel>
 
-    <Panel title={$c.extraMods.value} scroll={false}>
-      {#snippet toolbar()}
-        <span class="font-mono text-3xs text-fg-faint"
-          >{$c.argsCount({ count: direct.launchArgs.length }).value}</span
-        >
-      {/snippet}
-      <LaunchArgs />
-    </Panel>
+    <section class="shrink-0 bg-panel">
+      <Disclosure
+        label={`${$c.extraMods.value} · ${$c.argsCount({ count: direct.launchArgs.length }).value}`}
+        bind:open={argsOpen}
+      >
+        <div class="max-h-[45vh] overflow-y-auto border-t border-border">
+          <LaunchArgs />
+        </div>
+      </Disclosure>
+    </section>
 
-    <Panel title={$c.recent.value} scroll={false} class="flex-1">
+    <Panel title={$c.recent.value} class="flex-1">
       <RecentList />
     </Panel>
   </div>
