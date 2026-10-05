@@ -464,7 +464,14 @@ export function installMock() {
           steam_ui: false,
         };
       case "get_system_specs":
-        return { logical_cores: 16, physical_cores: 8, total_memory_mb: 32768 };
+        return {
+          logical_cores: 16,
+          physical_cores: 8,
+          total_memory_mb: 32768,
+          cpu_name: "AMD Ryzen 7 5800X3D 8-Core Processor",
+          os: "Linux 24.04 Ubuntu",
+          gpus: [{ name: "NVIDIA GeForce RTX 4070", vram_mb: 12282 }],
+        };
       case "get_cli_args":
         return { connect: null, reconnect: false, open: null };
       case "check_for_update":

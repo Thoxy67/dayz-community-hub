@@ -5,7 +5,7 @@
   import { Field } from "$lib/components/ui/field";
   import { Segmented } from "$lib/components/ui/segmented";
   import { Tag } from "$lib/components/ui/tag";
-  import { PadGlyph, SettingsSection as Section, type PadButton } from "$lib/components/app";
+  import { PadLegend, SettingsSection as Section } from "$lib/components/app";
   import { pad } from "$lib/gamepad";
   import { prefs, type PadMode } from "$lib/stores/prefs.svelte";
 
@@ -25,16 +25,6 @@
     { value: "1.15", label: "115 %" },
     { value: "1.3", label: "130 %" },
   ] as const;
-
-  const legend = $derived<{ buttons: PadButton[] | "dpad"; text: string }[]>([
-    { buttons: "dpad", text: $p.legendMove.value },
-    { buttons: ["a"], text: $p.legendSelect.value },
-    { buttons: ["b"], text: $p.legendBack.value },
-    { buttons: ["x", "y"], text: $p.legendXY.value },
-    { buttons: ["lb", "rb"], text: $p.legendTabs.value },
-    { buttons: ["lt", "rt"], text: $p.legendPage.value },
-    { buttons: ["menu", "view"], text: $p.legendMenu.value },
-  ]);
 </script>
 
 <Section id="controller" title={$p.section.value} description={$p.sectionHint.value} icon={Gamepad}>
@@ -80,20 +70,6 @@
     </div>
   </Field>
   <Field label={$p.legend.value} stacked>
-    <dl class="m-0 grid w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5">
-      {#each legend as l (l.text)}
-        <dt class="flex items-center gap-1">
-          {#if l.buttons === "dpad"}
-            <span
-              class="inline-grid h-4.5 min-w-6 place-items-center rounded-sm border border-border-strong bg-raised px-1 font-mono text-3xs font-bold text-fg-muted"
-              aria-hidden="true">✚</span
-            >
-          {:else}
-            {#each l.buttons as b (b)}<PadGlyph button={b} kind={pad.kind} />{/each}
-          {/if}
-        </dt>
-        <dd class="m-0 text-xs text-fg-muted">{l.text}</dd>
-      {/each}
-    </dl>
+    <PadLegend />
   </Field>
 </Section>

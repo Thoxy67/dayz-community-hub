@@ -19,11 +19,27 @@
   import ListChecks from "~icons/lucide/list-checks";
   import Layers from "~icons/lucide/layers";
   import Heart from "~icons/lucide/heart";
+  import Monitor from "~icons/lucide/monitor";
+  import Gpu from "~icons/lucide/gpu";
+  import ClipboardCopy from "~icons/lucide/clipboard-copy";
+  import Database from "~icons/lucide/database";
+  import Radar from "~icons/lucide/radar";
+  import WifiOff from "~icons/lucide/wifi-off";
+  import Newspaper from "~icons/lucide/newspaper";
+  import Gamepad from "~icons/lucide/gamepad-2";
+  import ExternalLink from "~icons/lucide/external-link";
+  import Star from "~icons/lucide/star";
+  import { Segmented } from "$lib/components/ui/segmented";
+  import { TabStrip } from "$lib/components/ui/tabs";
+  import { PadLegend } from "$lib/components/app";
+  import { pad } from "$lib/gamepad";
+  import { profile } from "$lib/stores/profile.svelte";
+  import { say } from "$lib/stores/say";
   import { Kbd } from "$lib/components/ui/kbd";
   import { Copy } from "$lib/components/ui/copy";
   import { Topo } from "$lib/components/ui/topo";
   import { inTauri } from "$lib/ipc/core";
-  import { openUrl } from "$lib/ipc/native";
+  import { copyText, openUrl } from "$lib/ipc/native";
   import { getSystemSpecs } from "$lib/ipc/system";
   import type { SystemSpecsDto } from "$lib/ipc/types";
   import { app } from "$lib/stores/app.svelte";
@@ -33,10 +49,12 @@
   import { AUTHOR, ISSUES_URL, LICENSE_URL, RELEASES_URL, REPO_URL, WIKI_URL } from "./links";
 
   /**
-   * What this launcher is, how to use it, and whether it is current: the
-   * version and its update, the ways in, the keys, the machine it runs on.
+   * What this launcher is and whether it is current, the machine it runs on
+   * (and a copy of it for a bug report), where its data comes from, the keys
+   * and the controller's buttons, then the guide, one subject at a time.
    */
   const a = dict("about");
+  const p = dict("pad");
 
   let version = $state("");
   let specs = $state<SystemSpecsDto | null>(null);
@@ -70,6 +88,9 @@
     { icon: Puzzle, title: () => $a.featMods.value, tone: "text-mods" },
     { icon: ChartLine, title: () => $a.featStats.value, tone: "text-ok" },
     { icon: Rocket, title: () => $a.featLaunch.value, tone: "text-accent" },
+    { icon: WifiOff, title: () => $a.featOffline.value, tone: "text-warn" },
+    { icon: Share, title: () => $a.featShare.value, tone: "text-info" },
+    { icon: Gamepad, title: () => $a.featController.value, tone: "text-fg-muted" },
   ];
 
   const LINKS = [
@@ -100,18 +121,102 @@
         { keys: ["I"], label: () => $a.shortcutInfo.value },
         { keys: ["P"], label: () => $a.shortcutPing.value },
         { keys: ["D"], label: () => $a.shortcutDirect.value },
+        { keys: ["L"], label: () => $a.shortcutLink.value },
+        { keys: ["Del"], label: () => $a.shortcutRemove.value },
         { keys: ["Esc"], label: () => $a.shortcutClose.value },
       ],
     },
     {
       group: () => $a.shortcutsMods.value,
       rows: [
+        { keys: ["↑", "↓"], label: () => $a.shortcutNav.value },
         { keys: ["Space"], label: () => $a.shortcutSpace.value },
         { keys: ["M"], label: () => $a.shortcutManaged.value },
-        { keys: ["Dbl-click"], label: () => $a.shortcutOpenfolder.value },
+        { keys: ["U"], label: () => $a.shortcutModUpdate.value },
+        { keys: ["Del"], label: () => $a.shortcutModDelete.value },
       ],
     },
+    {
+      group: () => $a.shortcutsNews.value,
+      rows: [{ keys: ["↑", "↓", "J", "K"], label: () => $a.shortcutArticle.value }],
+    },
   ];
+
+  type Source = {
+    icon: Component<{ class?: string }>;
+    title: () => string;
+    desc: () => string;
+    url?: string;
+  };
+  const SOURCES: Source[] = [
+    {
+      icon: ServerIcon,
+      title: () => $a.srcServers.value,
+      desc: () => $a.srcServersDesc.value,
+      url: "https://dayzsalauncher.com",
+    },
+    {
+      icon: Star,
+      title: () => $a.srcOfficial.value,
+      desc: () => $a.srcOfficialDesc.value,
+      url: "https://store.steampowered.com/app/221100",
+    },
+    {
+      icon: Radar,
+      title: () => $a.srcLive.value,
+      desc: () => $a.srcLiveDesc.value,
+    },
+    {
+      icon: ChartLine,
+      title: () => $a.srcStats.value,
+      desc: () => $a.srcStatsDesc.value,
+      url: "https://dayzmetrics.com",
+    },
+    {
+      icon: Puzzle,
+      title: () => $a.srcMods.value,
+      desc: () => $a.srcModsDesc.value,
+      url: "https://steamcommunity.com/app/221100/workshop/",
+    },
+    {
+      icon: WifiOff,
+      title: () => $a.srcOffline.value,
+      desc: () => $a.srcOfflineDesc.value,
+      url: "https://github.com/Arkensor/DayZCommunityOfflineMode",
+    },
+    {
+      icon: Newspaper,
+      title: () => $a.srcNews.value,
+      desc: () => $a.srcNewsDesc.value,
+      url: "https://dayz.com/news",
+    },
+  ];
+
+  // The keys, or the controller's buttons when a controller drives.
+  let input = $state<"keyboard" | "gamepad">(pad.mode === "gamepad" ? "gamepad" : "keyboard");
+
+  type GuideTab = "start" | "mods" | "share" | "offline" | "tips";
+  let guide = $state<GuideTab>("start");
+
+  const gb = (mb: number) => `${num(Math.round(mb / 1024))} GB`;
+
+  /** The machine and the app, as a bug report wants them. */
+  async function copyInfo() {
+    const lines = [
+      `DayZ Community Hub v${version || "?"}`,
+      specs?.os ? `OS: ${specs.os}` : null,
+      specs
+        ? `CPU: ${specs.cpu_name ?? "?"} (${specs.physical_cores}c/${specs.logical_cores}t)`
+        : null,
+      specs ? `RAM: ${gb(specs.total_memory_mb)}` : null,
+      ...(specs?.gpus ?? []).map(
+        (g) => `GPU: ${g.name}${g.vram_mb != null ? ` (${gb(g.vram_mb)})` : ""}`,
+      ),
+      `Mods: ${profile.viaSteam ? "Steam client" : "SteamCMD"}`,
+    ].filter(Boolean);
+    await copyText(lines.join("\n"));
+    say.ok($a.infoCopied.value);
+  }
 
   const STACK = [
     { name: "Tauri", url: "https://tauri.app" },
@@ -170,7 +275,7 @@
             >
           </p>
         </div>
-        <div class="grid shrink-0 grid-cols-2 gap-1.5 max-xl:hidden">
+        <div class="flex max-w-md shrink flex-wrap justify-end gap-1.5 max-xl:hidden">
           {#each FEATURES as f, fi (fi)}
             {@const I = f.icon}
             <span
@@ -195,77 +300,125 @@
 
     <UpdateCard {version} {highlight} />
 
-    <div class="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
-      <div class="flex min-w-0 flex-col gap-4">
-        {#snippet quick()}
-          {@render steps([
-            `${$a.qsStep1Title.value} — ${$a.qsStep1Body.value}`,
-            `${$a.qsStep2Title.value} — ${$a.qsStep2Body.value}`,
-            `${$a.qsStep3Title.value} — ${$a.qsStep3Body.value}`,
-          ])}
-        {/snippet}
-        {@render card($a.quickstart.value, ListChecks, quick)}
-
-        {#snippet modflow()}
-          <p class="m-0 mb-2 text-xs text-fg-muted">
-            <span class="font-medium text-fg">{$a.steamcmdWhat.value}</span>
-            {$a.steamcmdDesc({ notFound: $a.steamcmdNotFound.value }).value}
-          </p>
-          {@render steps([$a.modStep1.value, $a.modStep2.value, $a.modStep3.value])}
-        {/snippet}
-        {@render card($a.modWorkflow.value, Puzzle, modflow)}
-
-        {#snippet sharing()}
-          <p class="m-0 mb-2.5 text-xs text-fg-muted">
-            {$a.sharingDesc({ url: "dzch://", file: ".dzch" }).value}
-          </p>
-          <div class="grid gap-1.5 rounded-sm border border-border bg-bg p-2">
-            {#each [{ label: $a.sharingBasic.value, url: "dzch://1.2.3.4:2302" }, { label: $a.sharingWithMods.value, url: "dzch://1.2.3.4:2302?mods=1559212036,1564026768" }, { label: $a.sharingFull.value, url: "dzch://1.2.3.4:2302?qport=27016&name=My%20Server&password=secret&mods=1559212036" }] as ex (ex.url)}
-              <div class="flex items-center gap-2">
-                <span class="w-24 shrink-0 text-2xs text-fg-faint">{ex.label}</span>
-                <Copy text={ex.url} class="min-w-0 text-fg-muted" />
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <!-- The machine, and a copy of it for a bug report. -->
+      {#snippet machine()}
+        {#if specs}
+          <dl class="m-0 flex flex-col gap-2 text-xs">
+            {#if specs.os}
+              <div class="flex items-start gap-2">
+                <dt class="flex w-24 shrink-0 items-center gap-1.5 text-fg-faint">
+                  <Monitor class="size-3.5" />{$a.systemOs.value}
+                </dt>
+                <dd class="m-0 min-w-0 text-fg" data-selectable>{specs.os}</dd>
               </div>
-            {/each}
-          </div>
-          <dl class="m-0 mt-2 grid grid-cols-[5.5rem_1fr] gap-x-3 gap-y-1 text-2xs">
-            <dt class="font-mono text-accent">qport</dt>
-            <dd class="m-0 text-fg-muted">{$a.sharingParamQport.value}</dd>
-            <dt class="font-mono text-accent">name</dt>
-            <dd class="m-0 text-fg-muted">{$a.sharingParamName.value}</dd>
-            <dt class="font-mono text-accent">password</dt>
-            <dd class="m-0 text-fg-muted">{$a.sharingParamPassword.value}</dd>
-            <dt class="font-mono text-accent">mods</dt>
-            <dd class="m-0 text-fg-muted">{$a.sharingParamMods.value}</dd>
+            {/if}
+            <div class="flex items-start gap-2">
+              <dt class="flex w-24 shrink-0 items-center gap-1.5 text-fg-faint">
+                <Cpu class="size-3.5" />{$a.systemCpu.value}
+              </dt>
+              <dd class="m-0 min-w-0" data-selectable>
+                {#if specs.cpu_name}<span class="block text-fg">{specs.cpu_name}</span>{/if}
+                <span class="block font-mono text-2xs text-fg-muted">
+                  {$a.systemCores({
+                    physical: specs.physical_cores,
+                    logical: specs.logical_cores,
+                  }).value}
+                </span>
+              </dd>
+            </div>
+            <div class="flex items-start gap-2">
+              <dt class="flex w-24 shrink-0 items-center gap-1.5 text-fg-faint">
+                <MemoryStick class="size-3.5" />{$a.systemMemory.value}
+              </dt>
+              <dd class="m-0 font-mono text-fg">{gb(specs.total_memory_mb)}</dd>
+            </div>
+            <div class="flex items-start gap-2">
+              <dt class="flex w-24 shrink-0 items-center gap-1.5 text-fg-faint">
+                <Gpu class="size-3.5" />{$a.systemGpu.value}
+              </dt>
+              <dd class="m-0 flex min-w-0 flex-col gap-1" data-selectable>
+                {#each specs.gpus as g, gi (gi)}
+                  <span>
+                    <span class="block text-fg">{g.name}</span>
+                    {#if g.vram_mb != null}
+                      <span class="block font-mono text-2xs text-fg-muted"
+                        >{gb(g.vram_mb)} VRAM</span
+                      >
+                    {/if}
+                  </span>
+                {:else}
+                  <span class="text-fg-faint">{$a.systemNoGpu.value}</span>
+                {/each}
+              </dd>
+            </div>
           </dl>
-          <p class="m-0 mt-3 mb-1.5 text-2xs font-medium text-fg">{$a.sharingFiles.value}</p>
-          <p class="m-0 mb-2 text-2xs text-fg-muted">
-            {$a.sharingFilesDesc({ button: $a.sharingFilesButton.value }).value}
-          </p>
-          <p class="m-0 mb-1.5 text-2xs font-medium text-fg">{$a.sharingFromDc.value}</p>
-          {@render steps([
-            $a.sharingDcStep1.value,
-            $a.sharingDcStep2.value,
-            $a.sharingDcStep3.value,
-          ])}
-        {/snippet}
-        {@render card($a.sharing.value, Share, sharing)}
+          <div class="mt-3 flex items-center gap-2 border-t border-border/50 pt-2.5">
+            <button
+              type="button"
+              class="inline-flex h-control-sm items-center gap-1.5 rounded-sm border border-border bg-panel px-2 text-2xs text-fg-muted hover:border-border-strong hover:text-fg"
+              onclick={copyInfo}
+            >
+              <ClipboardCopy class="size-3.5" />{$a.copyInfo.value}
+            </button>
+          </div>
+          <p class="m-0 mt-2 text-2xs text-fg-faint">{$a.systemHint.value}</p>
+        {:else}
+          <div class="flex flex-col gap-2">
+            <div class="h-4 animate-pulse rounded-xs bg-raised/60"></div>
+            <div class="h-4 animate-pulse rounded-xs bg-raised/60"></div>
+            <div class="h-4 animate-pulse rounded-xs bg-raised/60"></div>
+          </div>
+        {/if}
+      {/snippet}
+      {@render card($a.system.value, Cpu, machine)}
 
-        {#snippet tips()}
-          <p class="m-0 mb-1.5 text-xs font-medium text-fg">{$a.tipAuthTitle.value}</p>
-          {@render steps([
-            $a.tipAuthStep1.value,
-            $a.tipAuthStep2.value,
-            $a.tipAuthStep3.value,
-            $a.tipAuthStep4.value,
-          ])}
-          <p class="m-0 mt-3 mb-1 text-xs font-medium text-fg">{$a.tipPerfTitle.value}</p>
-          <p class="m-0 text-xs text-fg-muted">{$a.tipPerfDesc.value}</p>
-        {/snippet}
-        {@render card($a.tips.value, Lightbulb, tips)}
-      </div>
+      <!-- Who the app asks, so a player knows what it relies on. -->
+      {#snippet sources()}
+        <ul class="m-0 flex list-none flex-col gap-0.5 p-0">
+          {#each SOURCES as src (src.title())}
+            {@const I = src.icon}
+            <li>
+              <svelte:element
+                this={src.url ? "button" : "div"}
+                type={src.url ? "button" : undefined}
+                class="group flex w-full items-start gap-2.5 rounded-sm px-1.5 py-1.5 text-left {src.url
+                  ? 'hover:bg-raised/50'
+                  : ''}"
+                onclick={src.url ? () => openUrl(src.url!) : undefined}
+                role={src.url ? undefined : "group"}
+              >
+                <I class="mt-0.5 size-3.5 shrink-0 text-accent" />
+                <span class="min-w-0 flex-1">
+                  <span class="block text-xs text-fg">{src.title()}</span>
+                  <span class="block text-2xs leading-snug text-fg-faint">{src.desc()}</span>
+                </span>
+                {#if src.url}
+                  <ExternalLink
+                    class="mt-0.5 size-3 shrink-0 text-fg-faint opacity-0 group-hover:opacity-100"
+                  />
+                {/if}
+              </svelte:element>
+            </li>
+          {/each}
+        </ul>
+      {/snippet}
+      {@render card($a.dataSources.value, Database, sources)}
 
-      <div class="flex min-w-0 flex-col gap-4">
-        {#snippet keys()}
+      <!-- The keys, or the controller's buttons. -->
+      {#snippet keys()}
+        <Segmented
+          bind:value={input}
+          size="xs"
+          fill
+          aria-label={$a.shortcuts.value}
+          options={[
+            { value: "keyboard", label: $a.keyboard.value, icon: Keyboard },
+            { value: "gamepad", label: $a.gamepad.value, icon: Gamepad },
+          ]}
+          class="mb-3"
+        />
+        {#if input === "keyboard"}
           <div class="flex flex-col gap-3">
             {#each SHORTCUTS as g, gi (gi)}
               <div>
@@ -289,49 +442,143 @@
               </div>
             {/each}
           </div>
-        {/snippet}
-        {@render card($a.shortcuts.value, Keyboard, keys)}
-
-        {#snippet machine()}
-          {#if specs}
-            <dl class="m-0 grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1.5 text-xs">
-              <dt class="flex items-center gap-1.5 text-fg-faint">
-                <Cpu class="size-3.5" />{$a.systemCpu.value}
-              </dt>
-              <dd class="m-0 text-right font-mono text-fg">
-                {$a.systemCores({ physical: specs.physical_cores, logical: specs.logical_cores })
-                  .value}
-              </dd>
-              <dt class="flex items-center gap-1.5 text-fg-faint">
-                <MemoryStick class="size-3.5" />{$a.systemMemory.value}
-              </dt>
-              <dd class="m-0 text-right font-mono text-fg">
-                {num(Math.round(specs.total_memory_mb / 1024))} GB
-              </dd>
-            </dl>
-            <p class="m-0 mt-2 text-2xs text-fg-faint">{$a.systemHint.value}</p>
-          {:else}
-            <p class="m-0 text-2xs text-fg-faint">—</p>
-          {/if}
-        {/snippet}
-        {@render card($a.system.value, Cpu, machine)}
-
-        {#snippet stack()}
-          <div class="flex flex-wrap gap-1.5">
-            {#each STACK as t (t.name)}
-              <button
-                type="button"
-                class="rounded-sm border border-border bg-panel/70 px-2 py-1 font-mono text-2xs text-fg-muted hover:border-border-strong hover:text-fg"
-                onclick={() => openUrl(t.url)}>{t.name}</button
-              >
-            {/each}
-          </div>
-          <p class="m-0 mt-2 text-2xs text-fg-faint">
-            {$a.openSource.value} · {$a.licenseMit.value} · {$a.forgejo.value}
+        {:else}
+          <PadLegend />
+          <p class="m-0 mt-3 mb-1 font-mono text-3xs tracking-[0.08em] text-fg-faint uppercase">
+            {$a.padInServers.value}
           </p>
-        {/snippet}
-        {@render card($a.builtWith.value, Layers, stack)}
-      </div>
+          <PadLegend
+            only
+            extra={[
+              { buttons: ["x"], text: $p.refresh.value },
+              { buttons: ["y"], text: $p.favorite.value },
+            ]}
+          />
+          <p class="m-0 mt-3 mb-1 font-mono text-3xs tracking-[0.08em] text-fg-faint uppercase">
+            {$a.padInSaved.value}
+          </p>
+          <PadLegend
+            only
+            extra={[
+              { buttons: ["x"], text: $p.join.value },
+              { buttons: ["y"], text: $p.favorite.value },
+            ]}
+          />
+          {#if pad.pads[0]}
+            <p class="m-0 mt-3 flex items-center gap-1.5 text-2xs text-fg-faint">
+              <Gamepad class="size-3.5 shrink-0" /><span class="truncate">{pad.pads[0].name}</span>
+            </p>
+          {/if}
+        {/if}
+      {/snippet}
+      {@render card($a.shortcuts.value, Keyboard, keys)}
     </div>
+
+    <!-- The guide: one subject at a time instead of a wall of text. -->
+    <section class="overflow-hidden rounded-md border border-border bg-bg/60">
+      <div class="flex items-center gap-2 border-b border-border/60 px-pad pt-1">
+        <BookOpen class="size-icon-sm shrink-0 text-accent" />
+        <span class="mr-2 label-stencil text-fg-muted">{$a.guide.value}</span>
+        <TabStrip
+          bind:value={guide}
+          size="xs"
+          aria-label={$a.guide.value}
+          tabs={[
+            { id: "start", label: $a.quickstart.value, icon: ListChecks },
+            { id: "mods", label: $a.modWorkflow.value, icon: Puzzle },
+            { id: "share", label: $a.sharing.value, icon: Share },
+            { id: "offline", label: $a.srcOffline.value, icon: WifiOff },
+            { id: "tips", label: $a.tips.value, icon: Lightbulb },
+          ]}
+        />
+      </div>
+      <div class="px-pad py-3">
+        {#if guide === "start"}
+          {@render steps([
+            `${$a.qsStep1Title.value} — ${$a.qsStep1Body.value}`,
+            `${$a.qsStep2Title.value} — ${$a.qsStep2Body.value}`,
+            `${$a.qsStep3Title.value} — ${$a.qsStep3Body.value}`,
+          ])}
+        {:else if guide === "mods"}
+          <p class="m-0 mb-2 text-xs text-fg-muted">
+            <span class="font-medium text-fg">{$a.steamcmdWhat.value}</span>
+            {$a.steamcmdDesc({ notFound: $a.steamcmdNotFound.value }).value}
+          </p>
+          {@render steps([$a.modStep1.value, $a.modStep2.value, $a.modStep3.value])}
+          <p class="m-0 mt-3 text-2xs text-fg-faint">{$a.modDownloaderTip.value}</p>
+        {:else if guide === "offline"}
+          {@render steps([$a.offStep1.value, $a.offStep2.value, $a.offStep3.value])}
+        {:else if guide === "share"}
+          <div class="grid gap-4 lg:grid-cols-2">
+            <div>
+              <p class="m-0 mb-2.5 text-xs text-fg-muted">
+                {$a.sharingDesc({ url: "dzch://", file: ".dzch" }).value}
+              </p>
+              <div class="grid gap-1.5 rounded-sm border border-border bg-bg p-2">
+                {#each [{ label: $a.sharingBasic.value, url: "dzch://1.2.3.4:2302" }, { label: $a.sharingWithMods.value, url: "dzch://1.2.3.4:2302?mods=1559212036,1564026768" }, { label: $a.sharingFull.value, url: "dzch://1.2.3.4:2302?qport=27016&name=My%20Server&password=secret&mods=1559212036" }] as ex (ex.url)}
+                  <div class="flex items-center gap-2">
+                    <span class="w-24 shrink-0 text-2xs text-fg-faint">{ex.label}</span>
+                    <Copy text={ex.url} class="min-w-0 text-fg-muted" />
+                  </div>
+                {/each}
+              </div>
+              <dl class="m-0 mt-2 grid grid-cols-[5.5rem_1fr] gap-x-3 gap-y-1 text-2xs">
+                <dt class="font-mono text-accent">qport</dt>
+                <dd class="m-0 text-fg-muted">{$a.sharingParamQport.value}</dd>
+                <dt class="font-mono text-accent">name</dt>
+                <dd class="m-0 text-fg-muted">{$a.sharingParamName.value}</dd>
+                <dt class="font-mono text-accent">password</dt>
+                <dd class="m-0 text-fg-muted">{$a.sharingParamPassword.value}</dd>
+                <dt class="font-mono text-accent">mods</dt>
+                <dd class="m-0 text-fg-muted">{$a.sharingParamMods.value}</dd>
+              </dl>
+            </div>
+            <div>
+              <p class="m-0 mb-1.5 text-2xs font-medium text-fg">{$a.sharingFiles.value}</p>
+              <p class="m-0 mb-3 text-2xs text-fg-muted">
+                {$a.sharingFilesDesc({ button: $a.sharingFilesButton.value }).value}
+              </p>
+              <p class="m-0 mb-1.5 text-2xs font-medium text-fg">{$a.sharingFromDc.value}</p>
+              {@render steps([
+                $a.sharingDcStep1.value,
+                $a.sharingDcStep2.value,
+                $a.sharingDcStep3.value,
+              ])}
+            </div>
+          </div>
+        {:else}
+          <div class="grid gap-4 lg:grid-cols-2">
+            <div>
+              <p class="m-0 mb-1.5 text-xs font-medium text-fg">{$a.tipAuthTitle.value}</p>
+              {@render steps([
+                $a.tipAuthStep1.value,
+                $a.tipAuthStep2.value,
+                $a.tipAuthStep3.value,
+                $a.tipAuthStep4.value,
+              ])}
+            </div>
+            <div>
+              <p class="m-0 mb-1 text-xs font-medium text-fg">{$a.tipPerfTitle.value}</p>
+              <p class="m-0 text-xs text-fg-muted">{$a.tipPerfDesc.value}</p>
+            </div>
+          </div>
+        {/if}
+      </div>
+    </section>
+
+    <!-- What it is built with, quietly at the end. -->
+    <footer class="flex flex-wrap items-center gap-1.5 pb-2 text-2xs text-fg-faint">
+      <Layers class="size-3.5 text-accent" />
+      <span class="mr-1">{$a.builtWith.value}</span>
+      {#each STACK as t (t.name)}
+        <button
+          type="button"
+          class="rounded-sm border border-border bg-panel/70 px-1.5 py-0.5 font-mono text-3xs text-fg-muted hover:border-border-strong hover:text-fg"
+          onclick={() => openUrl(t.url)}>{t.name}</button
+        >
+      {/each}
+      <span class="ml-auto">{$a.openSource.value} · {$a.licenseMit.value} · {$a.forgejo.value}</span
+      >
+    </footer>
   </div>
 </div>
