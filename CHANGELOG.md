@@ -6,7 +6,7 @@ notes; without one, the notes are the commit titles since the last release.
 
 ## Unreleased
 
-## 0.5.2
+## 0.5.2 - 2026-10-06
 
 - **DayZ no longer shows as running after opening Mods.** The launcher
   talked to Steam as DayZ and Steam kept the game "running" until the
