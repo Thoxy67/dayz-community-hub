@@ -170,9 +170,11 @@
     {/if}
   </div>
 
-  <!-- What the machine suggests, and what DayZ will be told. -->
+  <!-- What the machine suggests, and what DayZ will be told. The cards keep
+       their height (they clip their corners, which lets a flex column squash
+       them): the column scrolls instead of cutting the command line. -->
   <aside
-    class="flex w-80 shrink-0 flex-col gap-3 overflow-y-auto border-l border-border bg-bg/40 p-3"
+    class="flex w-80 shrink-0 flex-col gap-3 overflow-y-auto border-l border-border bg-bg/40 p-3 [&>*]:shrink-0"
   >
     <SectionCard title={$o.hardware.value} icon={Cpu}>
       {#if specsLoading}
