@@ -395,6 +395,9 @@ export function installMock() {
         return profile;
       case "get_installed_mods":
       case "check_mod_updates":
+        // `?slowmods=1`: the disk read takes a minute, so the list's loading shape can be seen.
+        if (q.get("slowmods") === "1")
+          return new Promise((done) => setTimeout(() => done(mods), 60_000));
         return mods;
       case "mods_usage":
         // The first mods run by two favourites and a played server; a few by history only.

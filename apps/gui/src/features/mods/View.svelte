@@ -467,8 +467,34 @@
 {#snippet listPane()}
   <div class="@container flex min-h-0 flex-1 flex-col">
     {#if !mods.loaded && mods.installed.length === 0}
-      <div class="grid flex-1 place-items-center">
-        <Spinner class="size-6" label={$m.loading.value} />
+      <!-- The list's shape while the disk is read: the header and grey rows,
+           so nothing jumps when the mods arrive. -->
+      <div class="flex min-h-0 flex-1 flex-col overflow-hidden" aria-busy="true">
+        <span class="sr-only">{$m.loading.value}</span>
+        <TableHead grid="{COLS} !px-pad">
+          <span></span>
+          <span class="label-stencil text-fg-faint">{$m.colName.value}</span>
+          <span class="label-stencil text-fg-faint">{$m.colStatus.value}</span>
+        </TableHead>
+        {#each { length: 10 } as _, i (i)}
+          <div class="{COLS} h-12 shrink-0 border-b border-border/40 px-pad" aria-hidden="true">
+            <span class="size-3.5 rounded-xs bg-raised"></span>
+            <span class="flex flex-col gap-1.5">
+              <span
+                class="h-2.5 animate-pulse rounded-full bg-raised"
+                style:width="{40 + ((i * 37) % 45)}%"
+              ></span>
+              <span class="h-2 w-24 animate-pulse rounded-full bg-raised/70"></span>
+            </span>
+            <span class="h-4 w-20 animate-pulse rounded-xs bg-raised"></span>
+            <span class={cn("h-2 w-12 animate-pulse rounded-full bg-raised/70", HIDE_IN_GAME)}
+            ></span>
+            <span class="h-2 w-10 animate-pulse justify-self-end rounded-full bg-raised/70"></span>
+            <span class={cn("h-2 w-16 animate-pulse rounded-full bg-raised/70", HIDE_VERSION)}
+            ></span>
+            <span></span>
+          </div>
+        {/each}
       </div>
     {:else if all.length === 0}
       <Empty icon={Puzzle} title={$m.noMods.value}>
