@@ -184,7 +184,14 @@
             />
             {@render actions?.()}
           </div>
-          <JoinButton {ip} port={joinPort ?? queryPort} password={savedPassword} compact />
+          <JoinButton
+            {ip}
+            port={joinPort ?? queryPort}
+            password={savedPassword}
+            compact
+            quiet
+            lit={selected}
+          />
         </div>
       </div>
     {/snippet}
