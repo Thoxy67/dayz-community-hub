@@ -228,6 +228,8 @@ mod tests {
     fn only_plain_json_names_may_be_written() {
         assert!(is_settings_file_name("profile.json"));
         assert!(is_settings_file_name("mods.json"));
+        // The play history travels with the profile.
+        assert!(is_settings_file_name(dz_profile::SESSIONS_FILE));
         assert!(!is_settings_file_name("../profile.json"));
         assert!(!is_settings_file_name("..\\x.json"));
         assert!(!is_settings_file_name("/etc/x.json"));

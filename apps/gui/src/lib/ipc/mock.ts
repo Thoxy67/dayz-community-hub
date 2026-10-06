@@ -225,6 +225,109 @@ const articles = Array.from({ length: 8 }, (_, i) => ({
   author: "Bohemia Interactive",
 }));
 
+// Play sessions over the past year, for the stats view: a few servers played
+// often in the evening, an offline map now and then, one running now.
+const playLog = (() => {
+  const now = Math.floor(Date.now() / 1000);
+  const places = [
+    ...servers.slice(10, 16).map((x) => ({
+      kind: "server" as const,
+      name: x.name,
+      ip: x.ip as string | null,
+      port: x.game_port as number | null,
+      map: x.map as string | null,
+    })),
+    {
+      kind: "offline" as const,
+      name: "DayZCommunityOfflineMode.Enoch",
+      ip: null,
+      port: null,
+      map: "enoch",
+    },
+  ];
+  const out = [];
+  let t = now - 330 * 86_400;
+  let i = 0;
+  while (t < now - 2 * 3600) {
+    const p = places[[0, 0, 0, 1, 1, 2, 3, 4, 5, 6][Math.floor(rnd() * 10)]!]!;
+    const day = t - (t % 86_400);
+    const start = day + (17 + Math.floor(rnd() * 6)) * 3600 + Math.floor(rnd() * 3600);
+    const secs = 1200 + Math.floor(rnd() * 3 * 3600);
+    if (start + secs < now) {
+      const measured = i++ > 6;
+      out.push({
+        ...p,
+        start,
+        end: measured ? start + secs : start,
+        secs: measured ? secs : 0,
+        open: false,
+        measured,
+      });
+    }
+    t += Math.floor((rnd() < 0.3 ? 0.5 : 1 + rnd() * 3) * 86_400);
+  }
+  const p = places[0]!;
+  out.push({ ...p, start: now - 4400, end: now, secs: 4400, open: true, measured: true });
+  return out;
+})();
+
+/** What `play_stats` works out, done here just enough for screenshots. */
+function mockPlayStats(range: string) {
+  const now = Math.floor(Date.now() / 1000);
+  const since = { week: 7, month: 30, year: 365 }[range];
+  const list = playLog.filter((x) => since == null || x.start >= now - since * 86_400 || x.open);
+  const off = -new Date().getTimezoneOffset() * 60;
+  const total = list.reduce((n, x) => n + x.secs, 0);
+  const measured = list.filter((x) => x.measured);
+  const byPlace = new Map<string, any>();
+  const byMap = new Map<string, any>();
+  const days = new Map<number, number>();
+  const week = Array.from({ length: 7 }, () => Array<number>(24).fill(0));
+  for (const x of list) {
+    const k = x.ip ? `${x.ip}:${x.port}` : x.name;
+    const e = byPlace.get(k) ?? {
+      ...x,
+      secs: 0,
+      sessions: 0,
+      unmeasured: 0,
+      first: x.start,
+      last: x.start,
+    };
+    e.secs += x.secs;
+    e.sessions++;
+    e.unmeasured += x.measured ? 0 : 1;
+    e.last = Math.max(e.last, x.start);
+    byPlace.set(k, e);
+    if (x.map) {
+      const m = byMap.get(x.map) ?? { map: x.map, secs: 0, sessions: 0 };
+      m.secs += x.secs;
+      m.sessions++;
+      byMap.set(x.map, m);
+    }
+    const local = x.start + off;
+    const day = Math.floor(local / 86_400);
+    days.set(day, (days.get(day) ?? 0) + x.secs);
+    week[(day + 3) % 7]![Math.floor((local % 86_400) / 3600)]! += x.secs;
+  }
+  const open = playLog.find((x) => x.open);
+  return {
+    total_secs: total,
+    sessions: list.length,
+    places: byPlace.size,
+    average_secs: measured.length ? Math.floor(total / measured.length) : 0,
+    longest: [...measured].sort((a, b) => b.secs - a.secs)[0] ?? null,
+    days_played: days.size,
+    streak: 3,
+    best_streak: 9,
+    first: playLog[0]?.start ?? null,
+    current: open ?? null,
+    places_played: [...byPlace.values()].sort((a, b) => b.secs - a.secs),
+    maps: [...byMap.values()].sort((a, b) => b.secs - a.secs),
+    days: [...days].sort((a, b) => a[0] - b[0]).map(([day, secs]) => ({ day, secs })),
+    week_hours: week,
+  };
+}
+
 type Ch<T> = { onmessage: (m: T) => void };
 
 type Server = (typeof servers)[number];
@@ -457,6 +560,18 @@ export function installMock() {
           ].filter((d) => d.id !== 0),
         };
       }
+      case "play_stats":
+        return mockPlayStats(a.range as string);
+      case "play_sessions": {
+        const q = String(a.search ?? "").toLowerCase();
+        const hits = [...playLog]
+          .reverse()
+          .filter((x) => !q || x.name.toLowerCase().includes(q) || (x.map ?? "").includes(q));
+        const off = Number(a.offset ?? 0);
+        return { total: hits.length, rows: hits.slice(off, off + Number(a.limit ?? 100)) };
+      }
+      case "delete_session":
+        return true;
       case "fetch_news":
         return articles;
       case "offline_saves":

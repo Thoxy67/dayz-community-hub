@@ -14,6 +14,7 @@ import IconOffline from "~icons/game-icons/camping-tent";
 import IconMods from "~icons/lucide/puzzle";
 import IconOptions from "~icons/lucide/sliders-horizontal";
 import IconNews from "~icons/lucide/newspaper";
+import IconStats from "~icons/lucide/chart-no-axes-column";
 import IconSettings from "~icons/lucide/settings";
 import IconAbout from "~icons/lucide/info";
 
@@ -84,6 +85,13 @@ export const PLACES: readonly Place[] = [
     label: "news",
     icon: IconNews,
     load: () => import("$features/news/View.svelte"),
+  },
+  {
+    id: "stats",
+    group: "intel",
+    label: "stats",
+    icon: IconStats,
+    load: () => import("$features/stats/View.svelte"),
   },
   {
     id: "settings",

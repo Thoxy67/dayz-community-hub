@@ -14,6 +14,7 @@ export type ViewId =
   | "mods"
   | "options"
   | "news"
+  | "stats"
   | "settings"
   | "about";
 

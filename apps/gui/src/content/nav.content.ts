@@ -157,6 +157,13 @@ const content = {
       ru: "Избранное",
     }),
     history: t({ en: "History", fr: "Historique", de: "Verlauf", es: "Historial", ru: "История" }),
+    stats: t({
+      en: "Statistics",
+      fr: "Statistiques",
+      de: "Statistik",
+      es: "Estadísticas",
+      ru: "Статистика",
+    }),
     connect: t({
       en: "Direct connect",
       fr: "Connexion directe",

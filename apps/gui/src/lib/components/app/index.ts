@@ -40,4 +40,5 @@ export { LIST_GRID, LIST_GRID_EXTRA, LIST_NARROW_HIDDEN, LIST_ROW_PX } from "./s
 export { default as PadGlyph, type PadButton } from "./PadGlyph.svelte";
 export { default as PadLegend } from "./PadLegend.svelte";
 export { default as ShortcutList } from "./ShortcutList.svelte";
+export { default as WeekHeat } from "./WeekHeat.svelte";
 export { default as ShortcutsButton } from "./ShortcutsButton.svelte";
