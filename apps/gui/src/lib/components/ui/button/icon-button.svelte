@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Component } from "svelte";
   import { Tooltip } from "$lib/components/ui/tooltip";
+  import { cn } from "$lib/cx";
   import Button from "./button.svelte";
 
   /**
@@ -21,6 +22,7 @@
     active = false,
     disabled = false,
     iconClass = "",
+    hoverTone,
     class: klass = "",
     onclick,
   }: {
@@ -34,6 +36,12 @@
     active?: boolean;
     disabled?: boolean;
     iconClass?: string;
+    /**
+     * The colour the whole button takes under the pointer, for one that
+     * removes or hides something. On the button, not the icon: a hover
+     * class on the icon only lit when the pointer was on the glyph itself.
+     */
+    hoverTone?: "danger";
     class?: string;
     onclick?: (e: MouseEvent) => void;
   } = $props();
@@ -42,7 +50,15 @@
 </script>
 
 <Tooltip text={label} {kbd} {side}>
-  <Button {variant} {size} {active} {disabled} {onclick} class={klass} aria-label={label}>
+  <Button
+    {variant}
+    {size}
+    {active}
+    {disabled}
+    {onclick}
+    class={cn(hoverTone === "danger" && "hover:bg-err/10 hover:text-err", klass)}
+    aria-label={label}
+  >
     <Icon class="{size === 'icon' ? 'size-icon' : 'size-icon-sm'} {iconClass}" />
   </Button>
 </Tooltip>

@@ -29,7 +29,8 @@
   {size}
   {variant}
   label={on ? $c.ipExcludedClick({ ip }).value : $c.excludeIp({ ip }).value}
-  iconClass={on ? "text-err" : "hover:text-err"}
+  iconClass={on ? "text-err" : ""}
+  hoverTone="danger"
   class={cn(!on && !always && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100")}
   onclick={(e) => {
     e.stopPropagation();

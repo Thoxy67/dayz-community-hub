@@ -464,7 +464,7 @@
         icon={Trash}
         size="icon-xs"
         label={kind === "history" ? $h.remove.value : $sv.removeFavorite.value}
-        iconClass="hover:text-err"
+        hoverTone="danger"
         onclick={(e) => {
           e.stopPropagation();
           onremove(r);
