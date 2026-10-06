@@ -50,6 +50,7 @@
     TableHead,
     MasterDetail,
   } from "$lib/components/app";
+  import { ContextMenuItem } from "$lib/components/ui/context-menu";
   import ServerDetail from "$features/servers/detail/ServerDetail.svelte";
   import { app, type ViewId } from "$lib/stores/app.svelte";
   import { servers, keyOf } from "$lib/stores/servers.svelte";
@@ -465,6 +466,13 @@
           onremove(r);
         }}
       />
+    {/snippet}
+    {#snippet menu()}
+      {#if kind === "history"}
+        <ContextMenuItem icon={Trash} tone="danger" kbd="Del" onselect={() => onremove(r)}>
+          {$h.remove.value}
+        </ContextMenuItem>
+      {/if}
     {/snippet}
   </ServerListRow>
 {/snippet}

@@ -104,6 +104,29 @@ const content = {
       es: "Abrir en Conexión directa",
       ru: "Открыть в прямом подключении",
     }),
+    pingNow: t({
+      en: "Ping this server",
+      fr: "Pinger ce serveur",
+      de: "Diesen Server anpingen",
+      es: "Hacer ping a este servidor",
+      ru: "Пинговать сервер",
+    }),
+    copyLinkShort: t({
+      en: "Copy dzch:// link",
+      fr: "Copier le lien dzch://",
+      de: "dzch://-Link kopieren",
+      es: "Copiar enlace dzch://",
+      ru: "Скопировать ссылку dzch://",
+    }),
+    includeIp: insert(
+      t({
+        en: "Stop excluding {{ip}}",
+        fr: "Ne plus exclure {{ip}}",
+        de: "{{ip}} nicht mehr ausschließen",
+        es: "Dejar de excluir {{ip}}",
+        ru: "Больше не исключать {{ip}}",
+      }),
+    ),
     copyLink: t({
       en: "Copy a dzch:// link to send to a friend",
       fr: "Copier un lien dzch:// à envoyer à un ami",

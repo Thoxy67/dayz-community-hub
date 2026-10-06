@@ -1,10 +1,12 @@
 <script lang="ts">
   import type { Component, Snippet } from "svelte";
   import { ContextMenu } from "bits-ui";
+  import { Kbd } from "$lib/components/ui/kbd";
   import { cn } from "$lib/cx";
 
   let {
     icon,
+    kbd = "",
     disabled = false,
     tone = "neutral",
     onselect,
@@ -12,6 +14,7 @@
     children,
   }: {
     icon?: Component<{ class?: string }>;
+    kbd?: string;
     disabled?: boolean;
     tone?: "neutral" | "danger";
     onselect?: () => void;
@@ -35,4 +38,5 @@
     <Icon class="size-icon shrink-0" />
   {/if}
   <span class="min-w-0 flex-1 truncate">{@render children()}</span>
+  {#if kbd}<Kbd>{kbd}</Kbd>{/if}
 </ContextMenu.Item>
