@@ -143,7 +143,12 @@
       <div class="flex flex-col gap-1">
         <span class="label-stencil text-fg-faint">{$c.tabMods.value}</span>
         {#if m.listed}
-          <ModsCount count={m.listed.mods_count} onclick={onmods} />
+          <ModsCount
+            count={m.listed.mods_count}
+            missing={m.listed.mods_missing}
+            stale={m.listed.mods_stale}
+            onclick={onmods}
+          />
         {:else}
           <span class="font-mono text-2xs text-fg-muted">{m.modsCount || "—"}</span>
         {/if}

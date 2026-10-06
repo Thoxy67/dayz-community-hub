@@ -36,6 +36,8 @@
     version = null,
     environment = null,
     modsCount = 0,
+    modsMissing = null,
+    modsStale = 0,
     password = false,
     firstPerson = false,
     battleye = null,
@@ -67,6 +69,10 @@
     version?: string | null;
     environment?: string | null;
     modsCount?: number;
+    /** Of its mods, how many you have not installed; null when not known. */
+    modsMissing?: number | null;
+    /** Of its mods you have, how many are behind. */
+    modsStale?: number;
     password?: boolean;
     firstPerson?: boolean;
     battleye?: boolean | null;
@@ -154,7 +160,7 @@
           {/if}
         </div>
 
-        <ModsCount count={modsCount} onclick={onmods} />
+        <ModsCount count={modsCount} missing={modsMissing} stale={modsStale} onclick={onmods} />
 
         {#if wide}<div class="min-w-0">{@render extra?.()}</div>{/if}
 

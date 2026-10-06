@@ -423,6 +423,8 @@
     version={s?.version}
     environment={s?.environment}
     modsCount={s?.mods_count ?? 0}
+    modsMissing={s?.mods_missing}
+    modsStale={s?.mods_stale}
     password={s?.password}
     firstPerson={s?.first_person_only}
     battleye={s?.battl_eye}

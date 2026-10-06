@@ -239,6 +239,9 @@ const toRow = (x: Server) => {
     favorite: profile.favorites.some((f) => f.ip === x.ip && f.port === x.query_port),
     excluded: profile.excluded_ips.includes(x.ip),
     unverified_full: false,
+    // A pretend disk: a third of modded servers ready, the rest missing or behind a few.
+    mods_missing: x.mods_count === 0 ? 0 : [0, 0, 3, 1, x.mods_count][x.ip.charCodeAt(x.ip.length - 1) % 5]!,
+    mods_stale: x.mods_count === 0 ? 0 : [0, 2, 0, 1, 0][(x.ip.length + x.query_port) % 5]!,
   };
 };
 

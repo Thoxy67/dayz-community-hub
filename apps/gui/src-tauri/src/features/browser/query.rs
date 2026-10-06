@@ -4,7 +4,7 @@
 //! generation), so scrolling only builds `limit` rows.
 
 use dz_api::{Server, ServerList};
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::sync::{Arc, Mutex};
@@ -88,6 +88,11 @@ pub struct ServerRow {
     pub first_person_only: bool,
     pub time: String,
     pub mods_count: usize,
+    /// Of the server's mods, how many are not on disk; null while the mods
+    /// on disk are not known yet.
+    pub mods_missing: Option<u32>,
+    /// Of the server's mods on disk, how many have an update waiting.
+    pub mods_stale: u32,
     pub vac: bool,
     pub battl_eye: Option<bool>,
     pub bots: u32,
@@ -134,6 +139,9 @@ pub(crate) struct ProfileView {
     pub excluded: FxHashSet<String>,
     /// "ip:port" of each favorite.
     pub favorites: FxHashSet<String>,
+    /// Workshop id of each mod on disk → an update is waiting for it; `None`
+    /// while the disk has not been read.
+    pub mods: Option<FxHashMap<u64, bool>>,
 }
 
 impl ProfileView {
@@ -367,6 +375,18 @@ pub(crate) fn row(s: &Server, live: &LiveMap, profile: &ProfileView) -> ServerRo
         first_person_only: s.first_person_only,
         time: s.time.clone(),
         mods_count: s.mods.len(),
+        mods_missing: profile.mods.as_ref().map(|have| {
+            s.mods
+                .iter()
+                .filter(|m| !have.contains_key(&(m.steam_workshop_id as u64)))
+                .count() as u32
+        }),
+        mods_stale: profile.mods.as_ref().map_or(0, |have| {
+            s.mods
+                .iter()
+                .filter(|m| have.get(&(m.steam_workshop_id as u64)) == Some(&true))
+                .count() as u32
+        }),
         vac: s.vac,
         battl_eye: s.battl_eye,
         bots: v.ok_live().and_then(|l| l.bots).map_or(0, u32::from),
@@ -470,6 +490,7 @@ mod tests {
         ProfileView {
             excluded: FxHashSet::default(),
             favorites: FxHashSet::default(),
+            mods: None,
         }
     }
 
@@ -585,6 +606,7 @@ mod more_tests {
         let profile = ProfileView {
             excluded: FxHashSet::default(),
             favorites: FxHashSet::default(),
+            mods: None,
         };
         let (order, stats) = compute(&list(), &live, &profile, &q);
         assert_eq!(order, [0, 2], "the 400 ms one goes, the unpinged one stays");
@@ -597,6 +619,7 @@ mod more_tests {
         let profile = ProfileView {
             excluded: ["2.2.2.2".to_string()].into_iter().collect(),
             favorites: ["3.3.3.3:2".to_string()].into_iter().collect(),
+            mods: None,
         };
         let mut q = query();
         let (order, _) = compute(&list(), &live, &profile, &q);
@@ -615,6 +638,7 @@ mod more_tests {
         let profile = ProfileView {
             excluded: FxHashSet::default(),
             favorites: FxHashSet::default(),
+            mods: None,
         };
         let mut q = query();
         q.modded = Tri::Only;
@@ -631,6 +655,7 @@ mod more_tests {
         let profile = ProfileView {
             excluded: FxHashSet::default(),
             favorites: FxHashSet::default(),
+            mods: None,
         };
         let mut l = list();
         l.result[0].official = true;
@@ -655,6 +680,7 @@ mod more_tests {
         let profile = ProfileView {
             excluded: FxHashSet::default(),
             favorites: FxHashSet::default(),
+            mods: None,
         };
         let list = Arc::new(list());
         let mut q = query();
@@ -666,5 +692,23 @@ mod more_tests {
         assert_eq!(page.rows[0].ip, "2.2.2.2");
         q.offset = 99;
         assert!(run(list, &profile, &q, 1_000_000).rows.is_empty());
+    }
+
+    #[test]
+    fn rows_say_which_of_a_servers_mods_are_missing_or_behind() {
+        let live = LiveMap::default();
+        // The server runs mods 0, 1, 2: 0 is current, 1 is behind, 2 is not on disk.
+        let s = server("1.1.1.1", 2, 5, 3);
+        let mut profile = ProfileView {
+            excluded: FxHashSet::default(),
+            favorites: FxHashSet::default(),
+            mods: None,
+        };
+        let r = row(&s, &live, &profile);
+        assert_eq!((r.mods_missing, r.mods_stale), (None, 0), "disk not read yet");
+
+        profile.mods = Some([(0, false), (1, true)].into_iter().collect());
+        let r = row(&s, &live, &profile);
+        assert_eq!((r.mods_missing, r.mods_stale), (Some(1), 1));
     }
 }

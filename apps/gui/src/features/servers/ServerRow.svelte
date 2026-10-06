@@ -36,6 +36,8 @@
   version={server.version}
   environment={server.environment}
   modsCount={server.mods_count}
+  modsMissing={server.mods_missing}
+  modsStale={server.mods_stale}
   password={server.password}
   firstPerson={server.first_person_only}
   battleye={server.battl_eye}

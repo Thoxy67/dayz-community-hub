@@ -55,6 +55,14 @@ fn profile_view(s: &AppState) -> query::ProfileView {
             .iter()
             .map(|f| format!("{}:{}", f.ip, f.port))
             .collect(),
+        mods: s.mods_on_disk.as_ref().map(|disk| {
+            disk.iter()
+                .map(|(&id, &local)| {
+                    let stale = s.mod_update_cache.get(&id).is_some_and(|&r| r > local);
+                    (id, stale)
+                })
+                .collect()
+        }),
     }
 }
 

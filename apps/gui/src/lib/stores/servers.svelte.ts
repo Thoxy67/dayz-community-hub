@@ -191,6 +191,11 @@ class Servers {
     }
   }
 
+  /** Something the rows show changed here (the mods on disk): ask again. */
+  touch() {
+    this.#changed(this.generation + 1);
+  }
+
   #changed(generation: number) {
     this.generation = Math.max(this.generation + 1, generation);
     this.#reask();

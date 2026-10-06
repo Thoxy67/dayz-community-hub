@@ -637,6 +637,33 @@ const content = {
       ru: "Только от первого лица",
     }),
     battleye: t({ en: "BattlEye", fr: "BattlEye", de: "BattlEye", es: "BattlEye", ru: "BattlEye" }),
+    modsAllReady: insert(
+      t({
+        en: "Its {{count}} mods are installed and current: joins at once",
+        fr: "Ses {{count}} mods sont installés et à jour : connexion immédiate",
+        de: "Seine {{count}} Mods sind installiert und aktuell: sofort beitreten",
+        es: "Sus {{count}} mods están instalados y al día: entra al instante",
+        ru: "Все {{count}} модов установлены и актуальны: вход сразу",
+      }),
+    ),
+    modsMissingTip: insert(
+      t({
+        en: "{{missing}} of its {{count}} mods are not installed: downloaded when you join",
+        fr: "{{missing}} de ses {{count}} mods ne sont pas installés : téléchargés en rejoignant",
+        de: "{{missing}} seiner {{count}} Mods fehlen: werden beim Beitreten geladen",
+        es: "{{missing}} de sus {{count}} mods no están instalados: se descargan al entrar",
+        ru: "{{missing}} из {{count}} модов не установлены: скачаются при входе",
+      }),
+    ),
+    modsStaleTip: insert(
+      t({
+        en: "{{stale}} of your copies need an update",
+        fr: "{{stale}} de vos copies doivent être mises à jour",
+        de: "{{stale}} deiner Kopien brauchen ein Update",
+        es: "{{stale}} de tus copias necesitan actualizarse",
+        ru: "{{stale}} ваших копий нужно обновить",
+      }),
+    ),
     showMods: t({
       en: "Show mod list",
       fr: "Afficher la liste des mods",

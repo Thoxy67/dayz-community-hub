@@ -11,6 +11,7 @@ import { words } from "$lib/i18n";
 import { bytes } from "$lib/format";
 import { confirm } from "./dialogs.svelte";
 import { profile } from "./profile.svelte";
+import { servers } from "./servers.svelte";
 import { say, errorText } from "./say";
 
 const UPDATES_TTL_MS = 5 * 60 * 1000;
@@ -124,6 +125,8 @@ class Mods {
       this.loading = true;
       try {
         this.installed = await ipc.getInstalledMods();
+        // The browser's rows say whether a server's mods are ready.
+        servers.touch();
       } catch (e) {
         say.err(words("mods").loadFailed({ error: errorText(e) }));
       } finally {
@@ -143,6 +146,7 @@ class Mods {
       this.checking = true;
       try {
         this.installed = await ipc.checkModUpdates();
+        servers.touch();
         this.lastChecked = Date.now();
       } catch (e) {
         say.err(words("mods").updateCheckFailed({ error: errorText(e) }));

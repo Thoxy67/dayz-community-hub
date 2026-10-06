@@ -954,6 +954,13 @@ export type ServerRow = {
 	first_person_only: boolean,
 	time: string,
 	mods_count: number,
+	/**
+	 *  Of the server's mods, how many are not on disk; null while the mods
+	 *  on disk are not known yet.
+	 */
+	mods_missing: number | null,
+	/**  Of the server's mods on disk, how many have an update waiting. */
+	mods_stale: number,
 	vac: boolean,
 	battl_eye: boolean | null,
 	bots: number,

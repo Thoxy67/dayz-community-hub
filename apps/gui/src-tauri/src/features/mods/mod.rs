@@ -69,6 +69,11 @@ fn installed_mod_to_dto(m: &InstalledMod, update_cache: &FxHashMap<u64, i64>) ->
     }
 }
 
+/// Each mod's id and `local_updated`, for [`crate::state::AppState::mods_on_disk`].
+fn on_disk(mods: &[InstalledMod]) -> FxHashMap<u64, i64> {
+    mods.iter().map(|m| (m.id, m.local_updated)).collect()
+}
+
 /// Get installed mods. Uses spawn_blocking for filesystem scan.
 /// Enriches each mod with `remote_updated` / `update_available` from the in-memory cache.
 #[tauri::command]
@@ -82,6 +87,7 @@ pub(crate) async fn get_installed_mods(
     };
 
     let mods = spawn_blocking_mapped(move || ctl_clone.get_installed_mods()).await?;
+    state.write().await.mods_on_disk = Some(on_disk(&mods));
 
     Ok(mods
         .iter()
@@ -109,6 +115,7 @@ pub(crate) async fn check_mod_updates(
         .unwrap_or_default();
 
     if installed_mods.is_empty() {
+        state.write().await.mods_on_disk = Some(FxHashMap::default());
         return Ok(vec![]);
     }
 
@@ -181,7 +188,11 @@ pub(crate) async fn check_mod_updates(
         .iter()
         .map(|m| installed_mod_to_dto(m, &remote_map))
         .collect();
-    state.write().await.mod_update_cache = remote_map;
+    {
+        let mut s = state.write().await;
+        s.mod_update_cache = remote_map;
+        s.mods_on_disk = Some(on_disk(&installed_mods));
+    }
     Ok(dtos)
 }
 

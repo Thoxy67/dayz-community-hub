@@ -35,6 +35,10 @@ pub struct AppState {
     pub cached_avatar: Option<String>,
     /// mod id → remote `time_updated` from the Steam Workshop API.
     pub mod_update_cache: FxHashMap<u64, i64>,
+    /// mod id → `local_updated` of each mod on disk, as last read; `None`
+    /// until the disk is read. The browser tells from it whether a
+    /// server's mods are ready.
+    pub mods_on_disk: Option<FxHashMap<u64, i64>>,
     /// A2S responses by "ip:query_port". The DTO is behind an `Arc` so a
     /// cache hit is a refcount bump, not a deep clone of players and rules.
     pub a2s_cache: LruCache<String, (Arc<A2sDetailsDto>, Instant)>,
@@ -60,6 +64,7 @@ impl AppState {
             index: ServerIndex::default(),
             cached_avatar: None,
             mod_update_cache: FxHashMap::default(),
+            mods_on_disk: None,
             a2s_cache: LruCache::new(A2S_CACHE_SIZE),
             dm_cache: LruCache::new(DM_CACHE_SIZE),
             dm_ids: LruCache::new(DM_IDS_SIZE),
