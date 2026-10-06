@@ -10,6 +10,17 @@ notes; without one, the notes are the commit titles since the last release.
   talked to Steam as DayZ and Steam kept the game "running" until the
   launcher closed, so DayZ would not start. Every call to Steam now runs in a
   short-lived process of its own, and launching the game ends one still open.
+- **A Statistics page.** The launcher now notes every time DayZ runs: on
+  which server or offline map, from when to when (a game started outside
+  the launcher counts too). The page shows your time played, sessions,
+  average and longest session and streak of days, for 7 days, 30 days, a
+  year or all time; a calendar of your days, year by year; the servers and
+  maps you play most; the hours of the week you play; and the full history
+  of sessions, searchable. Every chart has tooltips, works with the arrow
+  keys, and a click on a day, a server or a map lists its sessions. Your
+  past joins are carried over (without their length, which was never
+  measured). The history travels with the profile export and comes back
+  with an import.
 - **Ctrl+K finds anything**: a page, an action (refresh, rejoin, update or
   check the mods), a favourite, an installed mod or any server, and Enter
   does it. A Search button in the title bar opens it too.
