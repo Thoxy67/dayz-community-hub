@@ -41,4 +41,5 @@ export { default as PadGlyph, type PadButton } from "./PadGlyph.svelte";
 export { default as PadLegend } from "./PadLegend.svelte";
 export { default as ShortcutList } from "./ShortcutList.svelte";
 export { default as WeekHeat } from "./WeekHeat.svelte";
+export { default as ChartTip } from "./ChartTip.svelte";
 export { default as ShortcutsButton } from "./ShortcutsButton.svelte";

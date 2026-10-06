@@ -97,6 +97,8 @@ pub struct DayStatDto {
     /// Days since 1970-01-01 in the player's time.
     pub day: i64,
     pub secs: i64,
+    /// Sessions that started that day.
+    pub sessions: u32,
 }
 
 /// Everything the stats view shows.
@@ -110,7 +112,7 @@ pub struct PlayStatsDto {
     pub average_secs: i64,
     pub longest: Option<SessionDto>,
     pub days_played: u32,
-    /// Days in a row with play, ending today (or yesterday).
+    /// Days in a row with play, ending today (or yesterday), over all time.
     pub streak: u32,
     pub best_streak: u32,
     /// The first session ever (whatever the range), Unix seconds.
@@ -120,7 +122,7 @@ pub struct PlayStatsDto {
     /// Most played first.
     pub places_played: Vec<PlaceStatDto>,
     pub maps: Vec<MapStatDto>,
-    /// Days with play, oldest first.
+    /// Days with play, oldest first, over all time (whatever the range).
     pub days: Vec<DayStatDto>,
     /// Seconds by weekday (0 = Monday) and hour, in the player's time.
     pub week_hours: Vec<Vec<i64>>,
@@ -233,33 +235,31 @@ pub fn stats(log: &[Session], now: i64, range: StatsRange, utc_offset: i64) -> P
     let mut maps: Vec<MapStatDto> = maps.into_values().collect();
     maps.sort_by(|a, b| b.secs.cmp(&a.secs).then(b.sessions.cmp(&a.sessions)));
 
-    // Per day and per hour of the week, a session split at each local hour.
-    let mut days: BTreeMap<i64, i64> = BTreeMap::new();
+    // Per hour of the week and days played, over the range.
     let mut week_hours = vec![vec![0i64; 24]; 7];
     let mut played_days: HashSet<i64> = HashSet::new();
     for s in &in_range {
-        let start = s.start + utc_offset;
-        played_days.insert(start.div_euclid(DAY));
-        if s.secs == 0 {
-            continue;
-        }
-        let end = start + s.secs;
-        let mut t = start;
-        while t < end {
-            let slot_end = (t.div_euclid(HOUR) + 1) * HOUR;
-            let piece = slot_end.min(end) - t;
-            let day = t.div_euclid(DAY);
-            *days.entry(day).or_default() += piece;
+        played_days.insert((s.start + utc_offset).div_euclid(DAY));
+        split(s, utc_offset, |day, weekday, hour, piece| {
             played_days.insert(day);
-            // 1970-01-01 was a Thursday: Monday is 0.
-            let weekday = (day + 3).rem_euclid(7) as usize;
-            let hour = (t.rem_euclid(DAY) / HOUR) as usize;
             week_hours[weekday][hour] += piece;
-            t += piece;
-        }
+        });
     }
 
-    let (streak, best_streak) = streaks(&played_days, (now + utc_offset).div_euclid(DAY));
+    // Per day over all time: the calendar moves from year to year, and a
+    // streak is a streak whatever the range.
+    let mut days: BTreeMap<i64, (i64, u32)> = BTreeMap::new();
+    let mut all_days: HashSet<i64> = HashSet::new();
+    for s in log.iter().map(|s| dto(s, now)) {
+        let first_day = (s.start + utc_offset).div_euclid(DAY);
+        all_days.insert(first_day);
+        days.entry(first_day).or_default().1 += 1;
+        split(&s, utc_offset, |day, _, _, piece| {
+            all_days.insert(day);
+            days.entry(day).or_default().0 += piece;
+        });
+    }
+    let (streak, best_streak) = streaks(&all_days, (now + utc_offset).div_euclid(DAY));
 
     PlayStatsDto {
         total_secs,
@@ -276,9 +276,31 @@ pub fn stats(log: &[Session], now: i64, range: StatsRange, utc_offset: i64) -> P
         maps,
         days: days
             .into_iter()
-            .map(|(day, secs)| DayStatDto { day, secs })
+            .map(|(day, (secs, sessions))| DayStatDto {
+                day,
+                secs,
+                sessions,
+            })
             .collect(),
         week_hours,
+    }
+}
+
+/// Cut a measured session at each hour of the player's time: `f` gets the
+/// day (since 1970-01-01), weekday (0 = Monday), hour and seconds of each
+/// piece.
+fn split(s: &SessionDto, utc_offset: i64, mut f: impl FnMut(i64, usize, usize, i64)) {
+    let start = s.start + utc_offset;
+    let end = start + s.secs;
+    let mut t = start;
+    while t < end {
+        let piece = ((t.div_euclid(HOUR) + 1) * HOUR).min(end) - t;
+        let day = t.div_euclid(DAY);
+        // 1970-01-01 was a Thursday: Monday is 0.
+        let weekday = (day + 3).rem_euclid(7) as usize;
+        let hour = (t.rem_euclid(DAY) / HOUR) as usize;
+        f(day, weekday, hour, piece);
+        t += piece;
     }
 }
 
@@ -387,6 +409,7 @@ mod tests {
         let now = MONDAY + 3 * DAY + HOUR;
         let st = stats(&log, now, StatsRange::Week, 0);
         assert_eq!(st.sessions, 1, "the old join is out of the week");
+        assert_eq!(st.days.len(), 2, "the calendar keeps every day");
         assert_eq!(
             st.current.as_ref().unwrap().secs,
             HOUR,

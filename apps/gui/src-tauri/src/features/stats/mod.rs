@@ -72,12 +72,15 @@ pub struct SessionsPage {
     pub rows: Vec<SessionDto>,
 }
 
-/// Every session matching `search` (name, address, map), newest first,
-/// `limit` of them from `offset`.
+/// Every session matching `search` (name, address, map) that started in
+/// `from..to` (Unix seconds, either open), newest first, `limit` of them
+/// from `offset`.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn play_sessions(
     search: String,
+    from: Option<i64>,
+    to: Option<i64>,
     offset: u32,
     limit: u32,
 ) -> Result<SessionsPage, String> {
@@ -88,6 +91,7 @@ pub(crate) async fn play_sessions(
             .sessions
             .iter()
             .rev()
+            .filter(|s| from.is_none_or(|t| s.start >= t) && to.is_none_or(|t| s.start < t))
             .filter(|s| {
                 needle.is_empty()
                     || s.name.to_lowercase().contains(&needle)

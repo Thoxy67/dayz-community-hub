@@ -229,10 +229,11 @@ export const commands = {
 	 */
 	playStats: (range: StatsRange, utcOffsetMin: number) => __TAURI_INVOKE<PlayStatsDto>("play_stats", { range, utcOffsetMin }),
 	/**
-	 *  Every session matching `search` (name, address, map), newest first,
-	 *  `limit` of them from `offset`.
+	 *  Every session matching `search` (name, address, map) that started in
+	 *  `from..to` (Unix seconds, either open), newest first, `limit` of them
+	 *  from `offset`.
 	 */
-	playSessions: (search: string, offset: number, limit: number) => __TAURI_INVOKE<SessionsPage>("play_sessions", { search, offset, limit }),
+	playSessions: (search: string, from: number | null, to: number | null, offset: number, limit: number) => __TAURI_INVOKE<SessionsPage>("play_sessions", { search, from, to, offset, limit }),
 	/**  Forget one session (not the one running). True when it was found. */
 	deleteSession: (start: number, name: string) => __TAURI_INVOKE<boolean>("delete_session", { start, name }),
 	/**  Open the missions directory in the file manager. */
@@ -442,6 +443,8 @@ export type DayStatDto = {
 	/**  Days since 1970-01-01 in the player's time. */
 	day: number,
 	secs: number,
+	/**  Sessions that started that day. */
+	sessions: number,
 };
 
 /**  Where DayZ is on this machine, for the setup to show and correct. */
@@ -800,7 +803,7 @@ export type PlayStatsDto = {
 	average_secs: number,
 	longest: SessionDto | null,
 	days_played: number,
-	/**  Days in a row with play, ending today (or yesterday). */
+	/**  Days in a row with play, ending today (or yesterday), over all time. */
 	streak: number,
 	best_streak: number,
 	/**  The first session ever (whatever the range), Unix seconds. */
@@ -810,7 +813,7 @@ export type PlayStatsDto = {
 	/**  Most played first. */
 	places_played: PlaceStatDto[],
 	maps: MapStatDto[],
-	/**  Days with play, oldest first. */
+	/**  Days with play, oldest first, over all time (whatever the range). */
 	days: DayStatDto[],
 	/**  Seconds by weekday (0 = Monday) and hour, in the player's time. */
 	week_hours: number[][],

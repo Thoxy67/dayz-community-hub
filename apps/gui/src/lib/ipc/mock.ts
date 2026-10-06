@@ -323,7 +323,18 @@ function mockPlayStats(range: string) {
     current: open ?? null,
     places_played: [...byPlace.values()].sort((a, b) => b.secs - a.secs),
     maps: [...byMap.values()].sort((a, b) => b.secs - a.secs),
-    days: [...days].sort((a, b) => a[0] - b[0]).map(([day, secs]) => ({ day, secs })),
+    // Every day, whatever the range, as the backend does.
+    days: (() => {
+      const all = new Map<number, { secs: number; sessions: number }>();
+      for (const x of playLog) {
+        const day = Math.floor((x.start + off) / 86_400);
+        const e = all.get(day) ?? { secs: 0, sessions: 0 };
+        e.secs += x.secs;
+        e.sessions++;
+        all.set(day, e);
+      }
+      return [...all].sort((a, b) => a[0] - b[0]).map(([day, e]) => ({ day, ...e }));
+    })(),
     week_hours: week,
   };
 }
@@ -564,8 +575,11 @@ export function installMock() {
         return mockPlayStats(a.range as string);
       case "play_sessions": {
         const q = String(a.search ?? "").toLowerCase();
+        const from = a.from as number | null;
+        const to = a.to as number | null;
         const hits = [...playLog]
           .reverse()
+          .filter((x) => (from == null || x.start >= from) && (to == null || x.start < to))
           .filter((x) => !q || x.name.toLowerCase().includes(q) || (x.map ?? "").includes(q));
         const off = Number(a.offset ?? 0);
         return { total: hits.length, rows: hits.slice(off, off + Number(a.limit ?? 100)) };

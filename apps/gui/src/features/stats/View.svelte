@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { dict } from "$lib/i18n";
+  import { dict, getLocale } from "$lib/i18n";
   import ChartColumn from "~icons/lucide/chart-no-axes-column";
   import CalendarDays from "~icons/lucide/calendar-days";
   import MapPin from "~icons/lucide/map-pin";
@@ -11,11 +11,13 @@
   import Play from "~icons/lucide/play";
   import Trash from "~icons/lucide/trash-2";
   import Radio from "~icons/lucide/radio";
+  import X from "~icons/lucide/x";
   import {
     Empty,
     Figure,
     JoinButton,
     PageHeader,
+    ChartTip,
     Section,
     WeekHeat,
     mapName,
@@ -26,8 +28,8 @@
   import { Spinner } from "$lib/components/ui/spinner";
   import { Tag } from "$lib/components/ui/tag";
   import { cn } from "$lib/cx";
-  import { dateTime, duration, relative } from "$lib/format";
-  import type { PlaceStatDto, SessionDto, StatsRange } from "$lib/ipc/types";
+  import { date, dateTime, duration, relative } from "$lib/format";
+  import type { MapStatDto, PlaceStatDto, SessionDto, StatsRange } from "$lib/ipc/types";
   import { app } from "$lib/stores/app.svelte";
   import { profile } from "$lib/stores/profile.svelte";
   import { describe, offline } from "$features/offline/offline.svelte";
@@ -88,6 +90,50 @@
   const maps = $derived(play.data?.maps ?? []);
   const topMap = $derived(Math.max(1, ...maps.map((m) => m.secs)));
   const empty = $derived(play.data !== null && (play.data.first ?? null) === null);
+
+  // ── drilling down: a day, a server or a map narrows the history ────────
+  let historyEl: HTMLElement | undefined = $state();
+  const reveal = () => historyEl?.scrollIntoView({ behavior: "smooth", block: "start" });
+  function pickDay(day: number) {
+    play.setDay(day);
+    reveal();
+  }
+  function pickText(text: string) {
+    play.pickSearch(text);
+    reveal();
+  }
+  const dayFmt = $derived(
+    new Intl.DateTimeFormat(getLocale(), { dateStyle: "long", timeZone: "UTC" }),
+  );
+
+  // ── the tooltip of a server or map row, under the pointer or the focus ─
+  type RowTip =
+    | { kind: "place"; p: PlaceStatDto; rect: DOMRect }
+    | { kind: "map"; m: MapStatDto; rect: DOMRect };
+  let rowTip = $state<RowTip | null>(null);
+  const share = (secs: number) =>
+    play.data?.total_secs ? `${Math.round((secs / play.data.total_secs) * 100)} %` : "—";
+  /** What a hovered or focused row does: the tooltip, a click, Enter. */
+  function rowEvents(show: (rect: DOMRect) => RowTip, pick: () => void) {
+    return {
+      role: "button",
+      tabindex: 0,
+      onpointerenter: (e: PointerEvent) =>
+        (rowTip = show((e.currentTarget as HTMLElement).getBoundingClientRect())),
+      onpointerleave: () => (rowTip = null),
+      onfocus: (e: FocusEvent) =>
+        (rowTip = show((e.currentTarget as HTMLElement).getBoundingClientRect())),
+      onblur: () => (rowTip = null),
+      onclick: pick,
+      onkeydown: (e: KeyboardEvent) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          pick();
+        }
+      },
+    };
+  }
 </script>
 
 {#snippet kindTag(p: { kind: string })}
@@ -186,7 +232,10 @@
       {@const d = play.data}
       <div class="flex flex-col gap-px bg-border">
         <Section title={$s.sectionActivity.value} icon={CalendarDays} class="bg-panel">
-          <div class="max-w-[64rem]"><Calendar days={d.days} /></div>
+          <div class="max-w-[64rem]">
+            <Calendar days={d.days} first={d.first} onpick={pickDay} />
+          </div>
+          <p class="m-0 mt-2 text-3xs text-fg-faint">{$s.pickHint.value}</p>
         </Section>
 
         <div class="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] gap-px max-[1100px]:grid-cols-1">
@@ -197,7 +246,11 @@
               <ol class="m-0 flex list-none flex-col p-0">
                 {#each shownPlaces as p, i (`${p.kind}:${p.ip}:${p.port}:${p.name}`)}
                   <li
-                    class="group grid grid-cols-[1.5rem_minmax(0,1fr)_minmax(6rem,14rem)_5rem_2rem] items-center gap-x-3 border-b border-border/40 py-1.5 last:border-b-0"
+                    {...rowEvents(
+                      (rect) => ({ kind: "place", p, rect }),
+                      () => pickText(p.name),
+                    )}
+                    class="group grid cursor-pointer grid-cols-[1.5rem_minmax(0,1fr)_minmax(6rem,14rem)_5rem_2rem] items-center gap-x-3 rounded-xs border-b border-border/40 px-1 py-1.5 outline-none last:border-b-0 hover:bg-raised/50 focus-visible:bg-raised/50 focus-visible:ring-2 focus-visible:ring-accent/60"
                   >
                     <span class="num text-right font-mono text-2xs text-fg-faint">{i + 1}</span>
                     <span class="flex min-w-0 flex-col gap-0.5">
@@ -255,7 +308,13 @@
               {:else}
                 <ul class="m-0 flex list-none flex-col gap-1.5 p-0">
                   {#each maps as m (m.map)}
-                    <li class="grid grid-cols-[7rem_minmax(0,1fr)_4.5rem] items-center gap-2">
+                    <li
+                      {...rowEvents(
+                        (rect) => ({ kind: "map", m, rect }),
+                        () => pickText(m.map),
+                      )}
+                      class="grid cursor-pointer grid-cols-[7rem_minmax(0,1fr)_4.5rem] items-center gap-2 rounded-xs px-1 py-0.5 outline-none hover:bg-raised/50 focus-visible:bg-raised/50 focus-visible:ring-2 focus-visible:ring-accent/60"
+                    >
                       <span class="truncate text-xs text-map">{mapName(m.map)}</span>
                       {@render bar(m.secs, topMap)}
                       <span class="num text-right font-mono text-2xs text-fg"
@@ -269,18 +328,41 @@
           </div>
         </div>
 
-        <Section title={$s.sectionHistory.value} icon={History} class="bg-panel">
+        <Section
+          title={$s.sectionHistory.value}
+          icon={History}
+          class="scroll-mt-2 bg-panel"
+          bind:el={historyEl}
+        >
           {#snippet actions()}
             <span class="num font-mono text-2xs text-fg-faint"
               >{$s.historyCount({ shown: play.rows.length, total: play.total }).value}</span
             >
           {/snippet}
-          <Input
-            type="search"
-            class="mb-2 max-w-96"
-            placeholder={$s.historySearch.value}
-            bind:value={() => play.search, (v) => play.setSearch(String(v ?? ""))}
-          />
+          <div class="mb-2 flex flex-wrap items-center gap-2">
+            <Input
+              type="search"
+              class="w-96 max-w-full"
+              placeholder={$s.historySearch.value}
+              bind:value={() => play.search, (v) => play.setSearch(String(v ?? ""))}
+            />
+            {#if play.day !== null}
+              <span
+                class="inline-flex h-control-sm items-center gap-1 rounded-sm border border-accent/35 bg-accent/8 pr-0.5 pl-2 text-2xs text-fg"
+              >
+                {$s.filterDay({ date: dayFmt.format(new Date(play.day * 86_400_000)) }).value}
+                <button
+                  type="button"
+                  class="grid size-4 place-items-center rounded-xs text-fg-faint hover:bg-accent/15 hover:text-fg"
+                  title={$s.filterRemove.value}
+                  aria-label={$s.filterRemove.value}
+                  onclick={() => play.setDay(null)}
+                >
+                  <X class="size-3" />
+                </button>
+              </span>
+            {/if}
+          </div>
           <ul class="m-0 flex list-none flex-col p-0">
             {#each play.rows as r (`${r.start}:${r.name}`)}
               <li
@@ -334,3 +416,33 @@
     {/if}
   </div>
 </div>
+
+<ChartTip anchor={rowTip?.rect ?? null}>
+  {#if rowTip?.kind === "place"}
+    {@const p = rowTip.p}
+    <span class="font-semibold">{nameOf(p)}</span>
+    <span class="flex flex-wrap gap-x-2">
+      <span class="num font-mono text-accent">{p.secs ? duration(p.secs) : "—"}</span>
+      <span class="text-fg-muted">{$s.tipShare({ share: share(p.secs) }).value}</span>
+    </span>
+    <span class="text-fg-muted">
+      {p.sessions === 1 ? $s.placeSessionsOne.value : $s.placeSessions({ count: p.sessions }).value}
+      {#if p.secs && p.sessions > p.unmeasured}
+        · {$s.tipPerSession({ duration: duration(p.secs / (p.sessions - p.unmeasured)) }).value}
+      {/if}
+    </span>
+    <span class="text-fg-faint">{$s.tipSince({ date: date(p.first * 1000) }).value}</span>
+  {:else if rowTip?.kind === "map"}
+    {@const m = rowTip.m}
+    <span class="font-semibold text-map">{mapName(m.map)}</span>
+    <span class="flex flex-wrap gap-x-2">
+      <span class="num font-mono text-accent">{m.secs ? duration(m.secs) : "—"}</span>
+      <span class="text-fg-muted">{$s.tipShare({ share: share(m.secs) }).value}</span>
+    </span>
+    <span class="text-fg-muted"
+      >{m.sessions === 1
+        ? $s.placeSessionsOne.value
+        : $s.placeSessions({ count: m.sessions }).value}</span
+    >
+  {/if}
+</ChartTip>

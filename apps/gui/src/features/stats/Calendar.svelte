@@ -1,5 +1,10 @@
 <script lang="ts">
   import { dict, getLocale } from "$lib/i18n";
+  import ChevronLeft from "~icons/lucide/chevron-left";
+  import ChevronRight from "~icons/lucide/chevron-right";
+  import { ChartTip } from "$lib/components/app";
+  import { IconButton } from "$lib/components/ui/button";
+  import { cn } from "$lib/cx";
   import { duration } from "$lib/format";
   import type { DayStatDto } from "$lib/ipc/types";
 
@@ -7,15 +12,33 @@
    * A year of days, a column per week (Monday on top), each day as dark as
    * the time played on it, in four steps of one hue. Days are numbered from
    * 1970-01-01 in the player's own time, as the backend counts them.
+   *
+   * The pointer or the keyboard (focus it; ←/→ a week, ↑/↓ a day) picks a
+   * day and shows what was played; a click or Enter hands it to `onpick`.
+   * ‹ › move the year shown, back to the first session.
    */
-  let { days }: { days: readonly DayStatDto[] } = $props();
+  let {
+    days,
+    first,
+    onpick,
+  }: {
+    days: readonly DayStatDto[];
+    /** The first session, Unix seconds: how far back the year can go. */
+    first: number | null;
+    onpick: (day: number) => void;
+  } = $props();
   const s = dict("stats");
+  const cm = dict("common");
 
   const WEEKS = 53;
-  const byDay = $derived(new Map(days.map((d) => [d.day, d.secs])));
-  const today = Math.floor((Date.now() / 1000 - new Date().getTimezoneOffset() * 60) / 86_400);
+  const byDay = $derived(new Map(days.map((d) => [d.day, d])));
+  const offset = -new Date().getTimezoneOffset() * 60;
+  const today = Math.floor((Date.now() / 1000 + offset) / 86_400);
+  const firstDay = $derived(first == null ? today : Math.floor((first + offset) / 86_400));
+  /** The last day shown: today, or a year back per ‹. */
+  let end = $state(today);
   // The Monday that starts the first column (1970-01-01 was a Thursday).
-  const first = today - ((today + 3) % 7) - (WEEKS - 1) * 7;
+  const start = $derived(end - ((end + 3) % 7) - (WEEKS - 1) * 7);
 
   /** The thresholds between the four steps: quartiles of the days played. */
   const steps = $derived.by(() => {
@@ -30,9 +53,9 @@
 
   const fmt = $derived(
     new Intl.DateTimeFormat(getLocale(), {
-      weekday: "short",
+      weekday: "long",
       day: "numeric",
-      month: "short",
+      month: "long",
       year: "numeric",
       timeZone: "UTC",
     }),
@@ -40,15 +63,89 @@
   const monthFmt = $derived(
     new Intl.DateTimeFormat(getLocale(), { month: "short", timeZone: "UTC" }),
   );
+  const spanFmt = $derived(
+    new Intl.DateTimeFormat(getLocale(), { month: "short", year: "numeric", timeZone: "UTC" }),
+  );
   const dateOf = (day: number) => new Date(day * 86_400_000);
   /** A month's name over the column where it starts. */
   const monthLabel = (week: number) => {
-    const d = dateOf(first + week * 7);
+    const d = dateOf(start + week * 7);
     return d.getUTCDate() <= 7 ? monthFmt.format(d) : "";
   };
+
+  // ── the day picked by the pointer or the keyboard ──────────────────────
+  let active = $state<number | null>(null);
+  let anchor = $state<DOMRect | null>(null);
+  let grid: HTMLDivElement | undefined = $state();
+
+  function pick(day: number) {
+    active = day;
+    queueMicrotask(() => {
+      anchor =
+        grid?.querySelector<HTMLElement>(`[data-day="${day}"]`)?.getBoundingClientRect() ?? null;
+    });
+  }
+  function clear() {
+    active = null;
+    anchor = null;
+  }
+  function shift(by: number) {
+    end = Math.min(today, Math.max(firstDay + WEEKS * 7 - 7, end + by));
+    clear();
+  }
+
+  function onkeydown(e: KeyboardEvent) {
+    const moves: Record<string, number> = {
+      ArrowLeft: -7,
+      ArrowRight: 7,
+      ArrowUp: -1,
+      ArrowDown: 1,
+    };
+    if (e.key === "Enter" && active !== null) {
+      e.preventDefault();
+      onpick(active);
+      return;
+    }
+    const m = moves[e.key];
+    if (m === undefined) return;
+    e.preventDefault();
+    const next = Math.min(today, (active ?? today) + m);
+    // Off the edge: the year moves with it.
+    if (next < start) end = Math.max(end - WEEKS * 7 + 7, next + (WEEKS - 1) * 7);
+    pick(next);
+  }
+
+  const tip = $derived.by(() => {
+    if (active === null) return null;
+    const d = byDay.get(active);
+    return {
+      date: fmt.format(dateOf(active)),
+      time: d?.secs ? duration(d.secs) : "—",
+      sessions: d?.sessions ?? 0,
+    };
+  });
 </script>
 
 <div class="flex flex-col gap-1.5">
+  <div class="flex items-center gap-1">
+    <IconButton
+      icon={ChevronLeft}
+      size="icon-xs"
+      label={$s.prevYear.value}
+      disabled={start <= firstDay}
+      onclick={() => shift(-WEEKS * 7 + 7)}
+    />
+    <span class="min-w-32 text-center font-mono text-2xs text-fg-muted">
+      {spanFmt.format(dateOf(start))} – {spanFmt.format(dateOf(end))}
+    </span>
+    <IconButton
+      icon={ChevronRight}
+      size="icon-xs"
+      label={$s.nextYear.value}
+      disabled={end >= today}
+      onclick={() => shift(WEEKS * 7 - 7)}
+    />
+  </div>
   <div class="grid grid-cols-[repeat(53,minmax(0,1fr))] gap-[3px]">
     {#each { length: WEEKS } as _, w (w)}
       <span
@@ -57,23 +154,35 @@
       >
     {/each}
   </div>
+  <!-- The keyboard lives on the grid (arrows, Enter), which announces the
+       picked cell; the cells only answer the pointer. -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
   <div
-    class="grid grid-flow-col grid-cols-[repeat(53,minmax(0,1fr))] grid-rows-7 gap-[3px]"
-    role="img"
-    aria-label={$s.activityHint.value}
+    bind:this={grid}
+    class="grid grid-flow-col grid-cols-[repeat(53,minmax(0,1fr))] grid-rows-7 gap-[3px] rounded-xs outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-panel"
+    role="application"
+    tabindex="0"
+    aria-label={`${$s.activityHint.value} ${$cm.chartKeys.value}`}
+    aria-roledescription="calendar heatmap"
+    {onkeydown}
+    onfocus={() => active === null && pick(Math.min(today, end))}
+    onblur={clear}
+    onpointerleave={clear}
   >
     {#each { length: WEEKS * 7 } as _, i (i)}
-      {@const day = first + i}
-      {@const secs = byDay.get(day) ?? 0}
+      {@const day = start + i}
+      {@const secs = byDay.get(day)?.secs ?? 0}
       {#if day <= today}
+        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
         <div
-          class="relative aspect-square rounded-[2px] bg-raised {day === today
-            ? 'ring-1 ring-fg'
-            : ''}"
-          title={$s.activityCell({
-            date: fmt.format(dateOf(day)),
-            duration: secs > 0 ? duration(secs) : "—",
-          }).value}
+          data-day={day}
+          class={cn(
+            "relative aspect-square cursor-pointer rounded-[2px] bg-raised",
+            day === today && "ring-1 ring-fg",
+            active === day && "z-10 ring-2 ring-fg",
+          )}
+          onpointerenter={() => pick(day)}
+          onclick={() => onpick(day)}
         >
           <div
             class="absolute inset-0 rounded-[2px] bg-accent"
@@ -97,4 +206,21 @@
       {$s.legendMore.value}
     </span>
   </div>
+  <span class="sr-only" aria-live="polite">{tip ? `${tip.date}, ${tip.time}` : ""}</span>
 </div>
+
+<ChartTip {anchor}>
+  {#if tip}
+    <span class="font-semibold first-letter:uppercase">{tip.date}</span>
+    <span class="flex gap-2">
+      <span class="num font-mono text-accent">{tip.time}</span>
+      {#if tip.sessions}
+        <span class="text-fg-muted"
+          >{tip.sessions === 1
+            ? $s.placeSessionsOne.value
+            : $s.placeSessions({ count: tip.sessions }).value}</span
+        >
+      {/if}
+    </span>
+  {/if}
+</ChartTip>

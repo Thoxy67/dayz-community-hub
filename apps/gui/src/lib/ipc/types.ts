@@ -25,6 +25,7 @@ export type {
   HistoryDto,
   MissionSaveDto,
   DayStatDto,
+  MapStatDto,
   PlaceStatDto,
   PlayStatsDto,
   SessionDto,

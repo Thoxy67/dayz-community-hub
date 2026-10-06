@@ -5,6 +5,13 @@ const content = {
   key: "common",
   content: {
     close: t({ en: "Close", fr: "Fermer", de: "Schließen", es: "Cerrar", ru: "Закрыть" }),
+    chartKeys: t({
+      en: "Arrow keys move from cell to cell.",
+      fr: "Les flèches passent d'une case à l'autre.",
+      de: "Die Pfeiltasten wechseln von Feld zu Feld.",
+      es: "Las flechas pasan de una casilla a otra.",
+      ru: "Стрелки переходят между ячейками.",
+    }),
     cancel: t({ en: "Cancel", fr: "Annuler", de: "Abbrechen", es: "Cancelar", ru: "Отмена" }),
     confirm: t({
       en: "Confirm",

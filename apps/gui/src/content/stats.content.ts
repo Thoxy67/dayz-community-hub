@@ -102,6 +102,70 @@ const content = {
     ),
     legendLess: t({ en: "Less", fr: "Moins", de: "Weniger", es: "Menos", ru: "Меньше" }),
     legendMore: t({ en: "More", fr: "Plus", de: "Mehr", es: "Más", ru: "Больше" }),
+    prevYear: t({
+      en: "The year before",
+      fr: "L'année d'avant",
+      de: "Das Jahr davor",
+      es: "El año anterior",
+      ru: "Год назад",
+    }),
+    nextYear: t({
+      en: "The year after",
+      fr: "L'année d'après",
+      de: "Das Jahr danach",
+      es: "El año siguiente",
+      ru: "Год вперёд",
+    }),
+    pickHint: t({
+      en: "Click a day, a server or a map (or press Enter on it) to list its sessions below.",
+      fr: "Cliquez sur un jour, un serveur ou une carte (ou Entrée dessus) pour lister ses sessions plus bas.",
+      de: "Klicke auf einen Tag, Server oder eine Karte (oder Enter), um ihre Sitzungen unten zu sehen.",
+      es: "Haz clic en un día, servidor o mapa (o Intro) para ver sus sesiones abajo.",
+      ru: "Нажмите на день, сервер или карту (или Enter), чтобы увидеть их сессии ниже.",
+    }),
+    tipShare: insert(
+      t({
+        en: "{{share}} of your time",
+        fr: "{{share}} de votre temps",
+        de: "{{share}} deiner Zeit",
+        es: "{{share}} de tu tiempo",
+        ru: "{{share}} вашего времени",
+      }),
+    ),
+    tipPerSession: insert(
+      t({
+        en: "~{{duration}} per session",
+        fr: "~{{duration}} par session",
+        de: "~{{duration}} pro Sitzung",
+        es: "~{{duration}} por sesión",
+        ru: "~{{duration}} за сессию",
+      }),
+    ),
+    tipSince: insert(
+      t({
+        en: "first played {{date}}",
+        fr: "première partie le {{date}}",
+        de: "zuerst gespielt am {{date}}",
+        es: "primera partida el {{date}}",
+        ru: "впервые {{date}}",
+      }),
+    ),
+    filterDay: insert(
+      t({
+        en: "Day: {{date}}",
+        fr: "Jour : {{date}}",
+        de: "Tag: {{date}}",
+        es: "Día: {{date}}",
+        ru: "День: {{date}}",
+      }),
+    ),
+    filterRemove: t({
+      en: "Remove this filter",
+      fr: "Retirer ce filtre",
+      de: "Diesen Filter entfernen",
+      es: "Quitar este filtro",
+      ru: "Убрать фильтр",
+    }),
     sectionPlaces: t({
       en: "Where you play",
       fr: "Où vous jouez",

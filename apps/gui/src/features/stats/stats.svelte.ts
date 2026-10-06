@@ -18,6 +18,8 @@ class Stats {
   error = $state<string | null>(null);
 
   search = $state("");
+  /** The day the history is narrowed to (days since 1970-01-01, local), if any. */
+  day = $state<number | null>(null);
   rows = $state.raw<SessionDto[]>([]);
   total = $state(0);
 
@@ -54,7 +56,16 @@ class Stats {
   /** The first page again (`more` false), or the next one. */
   async loadHistory(more: boolean) {
     try {
-      const page = await ipc.playSessions(this.search, more ? this.rows.length : 0, PAGE);
+      // The day, from local midnight to the next, in Unix seconds.
+      const from =
+        this.day === null ? null : this.day * 86_400 + new Date().getTimezoneOffset() * 60;
+      const page = await ipc.playSessions(
+        this.search,
+        from,
+        from === null ? null : from + 86_400,
+        more ? this.rows.length : 0,
+        PAGE,
+      );
       this.rows = more ? [...this.rows, ...page.rows] : page.rows;
       this.total = page.total;
     } catch (e) {
@@ -66,6 +77,19 @@ class Stats {
     this.search = v;
     clearTimeout(this.#searchTimer);
     this.#searchTimer = setTimeout(() => void this.loadHistory(false), 200);
+  }
+
+  /** Narrow the history to one day (`null`: every day). */
+  setDay(day: number | null) {
+    this.day = day;
+    void this.loadHistory(false);
+  }
+
+  /** Narrow the history to what matches `text` at once (a server, a map). */
+  pickSearch(text: string) {
+    clearTimeout(this.#searchTimer);
+    this.search = text;
+    void this.loadHistory(false);
   }
 
   get nextPage() {
