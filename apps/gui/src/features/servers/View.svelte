@@ -386,17 +386,41 @@
   <PageHeader title={$n.servers.value}>
     {#snippet stats()}
       <Figure label={$c.statShown.value} value={num(feed.total)} />
-      <Figure label={$c.statPlayers.value} value={compact(fig?.players)} tone="text-ok" />
+      <Figure
+        label={$c.statPlayers.value}
+        value={compact(fig?.players)}
+        tone="text-ok"
+        title={$c.figSortPlayers.value}
+        active={filters.sort === "players" && !filters.asc}
+        onclick={() => {
+          filters.sort = "players";
+          filters.asc = false;
+        }}
+      />
       <Figure
         label={$c.statFull.value}
         value={num(fig?.full)}
         tone={fig?.full ? "text-err" : "text-fg-muted"}
+        title={filters.hideFull ? $c.figShowFull.value : $c.figHideFull.value}
+        active={filters.hideFull}
+        onclick={() => (filters.hideFull = !filters.hideFull)}
       />
-      <Figure secondary label={$c.statEmpty.value} value={num(fig?.empty)} tone="text-fg-muted" />
+      <Figure
+        secondary
+        label={$c.statEmpty.value}
+        value={num(fig?.empty)}
+        tone="text-fg-muted"
+        title={filters.hideEmpty ? $c.figShowEmpty.value : $c.figHideEmpty.value}
+        active={filters.hideEmpty}
+        onclick={() => (filters.hideEmpty = !filters.hideEmpty)}
+      />
       <Figure
         label={$c.statModded.value}
         value={fig && fig.shown ? `${Math.round((fig.modded / fig.shown) * 100)}%` : "—"}
         tone="text-mods"
+        title={filters.modded === "only" ? $c.figAllMods.value : $c.filterModsTitleAll.value}
+        active={filters.modded === "only"}
+        onclick={() => (filters.modded = filters.modded === "only" ? "all" : "only")}
       />
       <Figure secondary label={$c.statPinged.value} value={num(fig?.pinged)} tone="text-fg-muted" />
       <Figure
@@ -404,6 +428,12 @@
         label={$c.statBestPing.value}
         value={fig?.best_ping != null ? `${fig.best_ping} ms` : "—"}
         tone="text-ok"
+        title={$c.figSortPing.value}
+        active={filters.sort === "ping" && filters.asc}
+        onclick={() => {
+          filters.sort = "ping";
+          filters.asc = true;
+        }}
       />
     {/snippet}
     {#snippet actions()}
