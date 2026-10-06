@@ -38,6 +38,7 @@ pub(crate) fn collect() -> tauri_specta::Events {
         SteamcmdDetected,
         CliArgs,
         crate::features::browser::ServersChanged,
+        crate::features::stats::PlaySessionsChanged,
         crate::features::gamepad::GamepadInput,
         crate::features::gamepad::GamepadPads,
     ]

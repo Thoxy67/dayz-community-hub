@@ -14,6 +14,7 @@ pub(crate) mod offline;
 pub(crate) mod ping;
 pub(crate) mod profile;
 pub(crate) mod servers;
+pub(crate) mod stats;
 pub(crate) mod steam;
 pub(crate) mod steamcmd;
 pub(crate) mod steamworks;

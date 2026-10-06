@@ -2,8 +2,10 @@
 //! and ping preferences, persisted as `profile.json` in the data directory.
 
 mod launch_options;
+mod sessions;
 
 pub use launch_options::{LaunchOption, LaunchOptions};
+pub use sessions::{PlayLog, SESSIONS_FILE, Session, SessionKind};
 
 use dz_common::Result;
 use serde::{Deserialize, Serialize};

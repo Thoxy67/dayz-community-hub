@@ -223,6 +223,18 @@ export const commands = {
 	offlineSaves: () => __TAURI_INVOKE<MissionSaveDto[]>("offline_saves"),
 	/**  Delete one mission's save; true when it had one. */
 	clearMissionSave: (mission: string) => __TAURI_INVOKE<boolean>("clear_mission_save", { mission }),
+	/**
+	 *  The figures over `range`. `utc_offset_min` is the player's offset from
+	 *  UTC in minutes, east positive (minus JavaScript's `getTimezoneOffset`).
+	 */
+	playStats: (range: StatsRange, utcOffsetMin: number) => __TAURI_INVOKE<PlayStatsDto>("play_stats", { range, utcOffsetMin }),
+	/**
+	 *  Every session matching `search` (name, address, map), newest first,
+	 *  `limit` of them from `offset`.
+	 */
+	playSessions: (search: string, offset: number, limit: number) => __TAURI_INVOKE<SessionsPage>("play_sessions", { search, offset, limit }),
+	/**  Forget one session (not the one running). True when it was found. */
+	deleteSession: (start: number, name: string) => __TAURI_INVOKE<boolean>("delete_session", { start, name }),
 	/**  Open the missions directory in the file manager. */
 	openMissionsDir: () => __TAURI_INVOKE<null>("open_missions_dir"),
 	/**  Open a specific offline mission's folder in the system file manager. */
@@ -311,6 +323,7 @@ export const events = {
 	launchError: makeEvent<LaunchError>("launch-error"),
 	offlineModeError: makeEvent<OfflineModeError>("offline-mode-error"),
 	offlineModeUpdated: makeEvent<OfflineModeUpdated>("offline-mode-updated"),
+	playSessionsChanged: makeEvent<PlaySessionsChanged>("play-sessions-changed"),
 	serversChanged: makeEvent<ServersChanged>("servers-changed"),
 	steamcmdDetected: makeEvent<SteamcmdDetected>("steamcmd-detected"),
 };
@@ -422,6 +435,13 @@ export type CliArgs = {
 	 *  if the user agrees).
 	 */
 	open: string | null,
+};
+
+/**  Time played on one day. */
+export type DayStatDto = {
+	/**  Days since 1970-01-01 in the player's time. */
+	day: number,
+	secs: number,
 };
 
 /**  Where DayZ is on this machine, for the setup to show and correct. */
@@ -596,6 +616,13 @@ export type MapCount = {
 	count: number,
 };
 
+/**  Time spent on one map. */
+export type MapStatDto = {
+	map: string,
+	secs: number,
+	sessions: number,
+};
+
 /**  A link the server lists on its page. */
 export type MetricsLink = {
 	label: string,
@@ -739,6 +766,54 @@ export type PingResultDto = {
 	bots: number | null,
 	/**  True when the query failed (timeout or error). */
 	failed: boolean,
+};
+
+/**  Time spent on one server or offline mission. */
+export type PlaceStatDto = {
+	kind: PlayKind,
+	name: string,
+	ip: string | null,
+	port: number | null,
+	/**  The map played most there. */
+	map: string | null,
+	secs: number,
+	sessions: number,
+	/**  Sessions of unknown length among them (from the old history). */
+	unmeasured: number,
+	first: number,
+	last: number,
+};
+
+/**  What a session was played on, for the window. */
+export type PlayKind = "server" | "offline" | "unknown";
+
+/**  The sessions changed (one started, ended, ran on, or was deleted). */
+export type PlaySessionsChanged = null;
+
+/**  Everything the stats view shows. */
+export type PlayStatsDto = {
+	total_secs: number,
+	sessions: number,
+	/**  Distinct servers and missions. */
+	places: number,
+	/**  Over measured sessions only. */
+	average_secs: number,
+	longest: SessionDto | null,
+	days_played: number,
+	/**  Days in a row with play, ending today (or yesterday). */
+	streak: number,
+	best_streak: number,
+	/**  The first session ever (whatever the range), Unix seconds. */
+	first: number | null,
+	/**  The session running now. */
+	current: SessionDto | null,
+	/**  Most played first. */
+	places_played: PlaceStatDto[],
+	maps: MapStatDto[],
+	/**  Days with play, oldest first. */
+	days: DayStatDto[],
+	/**  Seconds by weekday (0 = Monday) and hour, in the player's time. */
+	week_hours: number[][],
 };
 
 export type ProfileDto = {
@@ -1024,10 +1099,36 @@ export type ServersChanged = {
 	generation: number,
 };
 
+/**  One session, for the window. */
+export type SessionDto = {
+	kind: PlayKind,
+	name: string,
+	ip: string | null,
+	port: number | null,
+	map: string | null,
+	/**  Unix seconds. */
+	start: number,
+	end: number,
+	/**  How long it lasted (so far, when open); 0 when not measured. */
+	secs: number,
+	open: boolean,
+	measured: boolean,
+};
+
+/**  A page of the sessions, newest first. */
+export type SessionsPage = {
+	/**  Sessions matching the search. */
+	total: number,
+	rows: SessionDto[],
+};
+
 /**  The column the browser sorts by. */
 export type SortCol = "none" | "ping" | "players" | "name" | "map" | "mods" | 
 /**  In-game time, "HH:MM" as minutes. */
 "time";
+
+/**  How far back the figures look. */
+export type StatsRange = "week" | "month" | "year" | "all";
 
 /**
  *  How DayZ gets started, for the launch options page: what the launcher

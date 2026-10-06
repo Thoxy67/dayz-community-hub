@@ -192,6 +192,8 @@ pub(crate) async fn import_profile(
     let profile_path = paths::default_profile_path();
     let mut state = state.write().await;
     state.ctl.reload_profile(&profile_path).cmd_err()?;
+    // The bundle's sessions.json replaced the play log on disk.
+    crate::features::stats::open(&state.ctl.profile().history);
     state.ctl.rebuild_steamcmd();
     state.cached_avatar = None;
     Ok(profile_to_dto(state.ctl.profile()))

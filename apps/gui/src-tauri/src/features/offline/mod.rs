@@ -165,7 +165,18 @@ pub(crate) async fn launch_offline_mission(
     // The same path as joining a server: a cold Steam is waited for.
     dz_game::run_through_steam(steam_args)
         .await
-        .map_err(|e| format!("Could not start the mission through Steam: {e}"))
+        .map_err(|e| format!("Could not start the mission through Steam: {e}"))?;
+    // The game that appears next plays this mission, for the play stats.
+    // `DayZCommunityOfflineMode.Enoch`: the map is the part after the dot.
+    let map = mission.rsplit('.').next().map(str::to_lowercase);
+    crate::features::stats::tracker::expect(crate::features::stats::tracker::Expected {
+        kind: dz_profile::SessionKind::Offline,
+        name: mission,
+        ip: None,
+        port: None,
+        map,
+    });
+    Ok(())
 }
 
 /// Open a specific offline mission's folder in the system file manager.

@@ -137,6 +137,16 @@ fn spawn_launch(
                     })
                     .await;
                 }
+                // The game that appears next is this server, for the play stats.
+                crate::features::stats::tracker::expect(
+                    crate::features::stats::tracker::Expected {
+                        kind: dz_profile::SessionKind::Server,
+                        name: server.name.clone(),
+                        ip: Some(server.endpoint.ip.clone()),
+                        port: u16::try_from(server.game_port).ok().filter(|p| *p != 0),
+                        map: (!server.map.is_empty()).then(|| server.map.clone()),
+                    },
+                );
                 let _ = LaunchDone(server.name).emit(&app);
             }
             Err(e) => {

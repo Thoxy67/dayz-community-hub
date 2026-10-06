@@ -44,6 +44,7 @@ pub(crate) async fn initialize(app: AppHandle) -> Result<InitResult, String> {
         dz_api::load_server_list_cache(&cache_path)
     );
     let ctl = ctl.map_err(|e| format!("Could not load the profile: {e}"))?;
+    crate::features::stats::open(&ctl.profile().history);
 
     // The cache holds the official servers merged last time; a cold start
     // fetches both lists at once.
