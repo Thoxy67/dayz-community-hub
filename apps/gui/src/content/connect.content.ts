@@ -723,6 +723,22 @@ const content = {
       ru: "Ссылка скопирована",
     }),
     share: t({ en: "Share", fr: "Partager", de: "Teilen", es: "Compartir", ru: "Поделиться" }),
+    startFrom: t({
+      en: "Type an address on the left, paste one anywhere in the window, or start from a server you know.",
+      fr: "Tapez une adresse à gauche, collez-en une n'importe où dans la fenêtre, ou partez d'un serveur connu.",
+      de: "Gib links eine Adresse ein, füge eine irgendwo im Fenster ein, oder starte mit einem bekannten Server.",
+      es: "Escribe una dirección a la izquierda, pega una en cualquier parte de la ventana o parte de un servidor conocido.",
+      ru: "Введите адрес слева, вставьте его в любом месте окна или начните с известного сервера.",
+    }),
+    pastedAddress: insert(
+      t({
+        en: "Pasted {{address}}: opened in Direct Connect",
+        fr: "{{address}} collée : ouverte dans Connexion directe",
+        de: "{{address}} eingefügt: in Direktverbindung geöffnet",
+        es: "{{address}} pegada: abierta en Conexión directa",
+        ru: "Вставлен {{address}}: открыт в прямом подключении",
+      }),
+    ),
     recent: t({
       en: "Recent servers",
       fr: "Serveurs récents",

@@ -12,7 +12,7 @@
   import Link from "~icons/lucide/link";
   import Eraser from "~icons/lucide/eraser";
   import KeyRound from "~icons/lucide/key-round";
-  import { PageHeader, Figure, Empty } from "$lib/components/app";
+  import { PageHeader, Figure } from "$lib/components/app";
   import { Alert } from "$lib/components/ui/alert";
   import { Button, IconButton } from "$lib/components/ui/button";
   import { Input } from "$lib/components/ui/input";
@@ -293,9 +293,15 @@
       </Disclosure>
     </section>
 
-    <Panel title={$c.recent.value} class="flex-1">
-      <RecentList />
-    </Panel>
+    <!-- Once a server is shown on the right, the recent ones fold into a
+         list here; before, they fill the right as cards. -->
+    {#if detailTarget || direct.querying || direct.error}
+      <Panel title={$c.recent.value} class="flex-1">
+        <RecentList />
+      </Panel>
+    {:else}
+      <div class="flex-1 bg-panel"></div>
+    {/if}
   </div>
 
   <!-- What the server says: the same detail column as the server list. -->
@@ -316,7 +322,16 @@
         <Spinner class="text-accent" />{$c.queryingServer.value}
       </div>
     {:else if !direct.error}
-      <Empty icon={PlugZap} title={$c.noServer.value}>{$c.noServerHint.value}</Empty>
+      <div class="min-h-0 flex-1 overflow-y-auto p-pad">
+        <div class="mb-3 flex items-start gap-2.5">
+          <PlugZap class="mt-0.5 size-icon shrink-0 text-accent" />
+          <div class="min-w-0">
+            <h2 class="m-0 text-sm font-semibold text-fg">{$c.recent.value}</h2>
+            <p class="m-0 mt-0.5 text-2xs text-fg-muted">{$c.startFrom.value}</p>
+          </div>
+        </div>
+        <RecentList wide />
+      </div>
     {/if}
   </div>
 </div>

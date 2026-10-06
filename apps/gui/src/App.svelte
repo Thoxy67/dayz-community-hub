@@ -200,6 +200,24 @@
 
 <svelte:window
   {onkeydown}
+  onpaste={(e) => {
+    // An address or a dzch:// link pasted outside a text field opens it in
+    // Direct Connect: copied from Discord, a website, a friend.
+    if ((e.target as HTMLElement)?.closest("input, textarea, [contenteditable]")) return;
+    const text = e.clipboardData?.getData("text")?.trim() ?? "";
+    if (text.startsWith("dzch://")) {
+      e.preventDefault();
+      void connect.openDzch(text);
+      return;
+    }
+    const m = /^(\d{1,3}(?:\.\d{1,3}){3}|[a-z0-9-]+(?:\.[a-z0-9-]+)+):(\d{2,5})$/i.exec(text);
+    const port = m ? Number(m[2]) : 0;
+    if (m && port > 0 && port < 65536) {
+      e.preventDefault();
+      connect.openInDirect(m[1]!, port);
+      say.info(words("connect").pastedAddress({ address: text }));
+    }
+  }}
   oncontextmenu={(e) => {
     // The webview's own menu (Back, Reload, Print, Inspect) is a browser's,
     // not this app's; text fields and selectable text keep theirs (copy, paste).
