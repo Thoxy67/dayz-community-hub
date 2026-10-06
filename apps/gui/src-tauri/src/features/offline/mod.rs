@@ -68,6 +68,49 @@ pub(crate) async fn clear_offline_saves(state: State<'_, SharedState>) -> Result
     spawn_blocking_mapped(move || om.clear_offline_saves()).await
 }
 
+/// One mission's save: its size and when it was last written (Unix
+/// seconds), that is when the mission was last played.
+#[derive(serde::Serialize, Clone, Debug, specta::Type)]
+pub struct MissionSaveDto {
+    pub mission: String,
+    pub bytes: u64,
+    pub written: Option<i64>,
+}
+
+/// The save of each mission that has one.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn offline_saves(
+    state: State<'_, SharedState>,
+) -> Result<Vec<MissionSaveDto>, String> {
+    let om = offline_mode_from_state(state.inner()).await?;
+    spawn_blocking_mapped(move || {
+        let mut out = Vec::new();
+        for mission in om.get_available_missions()? {
+            if let Some(save) = om.mission_save(&mission)? {
+                out.push(MissionSaveDto {
+                    mission,
+                    bytes: save.bytes,
+                    written: save.written,
+                });
+            }
+        }
+        Ok::<_, dz_common::Error>(out)
+    })
+    .await
+}
+
+/// Delete one mission's save; true when it had one.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn clear_mission_save(
+    mission: String,
+    state: State<'_, SharedState>,
+) -> Result<bool, String> {
+    let om = offline_mode_from_state(state.inner()).await?;
+    spawn_blocking_mapped(move || om.clear_mission_save(&mission)).await
+}
+
 /// Remove a single mission.
 #[tauri::command]
 #[specta::specta]

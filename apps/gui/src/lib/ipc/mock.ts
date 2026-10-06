@@ -459,6 +459,21 @@ export function installMock() {
       }
       case "fetch_news":
         return articles;
+      case "offline_saves":
+        return [
+          {
+            mission: "DayZCommunityOfflineMode.ChernarusPlus",
+            bytes: 18_400_000,
+            written: Math.floor(Date.now() / 1000) - 2 * 86_400,
+          },
+          {
+            mission: "DayZCommunityOfflineMode.Sakhal",
+            bytes: 4_100_000,
+            written: Math.floor(Date.now() / 1000) - 3600,
+          },
+        ];
+      case "clear_mission_save":
+        return true;
       case "get_offline_missions":
         return [
           "DayZCommunityOfflineMode.ChernarusPlus",

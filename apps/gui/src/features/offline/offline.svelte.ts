@@ -9,6 +9,7 @@ import { events, inTauri, errorText } from "$lib/ipc/core";
 import { words } from "$lib/i18n";
 import { confirm } from "$lib/stores/dialogs.svelte";
 import { say } from "$lib/stores/say";
+import type { MissionSaveDto } from "$lib/ipc/types";
 
 export type Tone = "neutral" | "ok" | "warn" | "err";
 
@@ -67,6 +68,8 @@ export function describe(id: string): Mission {
 
 class Offline {
   missions = $state<string[]>([]);
+  /** Each mission's save, by folder name: absent when it has none. */
+  saves = $state.raw(new Map<string, MissionSaveDto>());
   loading = $state(false);
   /** An install or update is running in the background. */
   installing = $state(false);
@@ -103,6 +106,7 @@ class Offline {
     this.loading = true;
     try {
       this.missions = await ipc.getOfflineMissions();
+      void this.loadSaves();
       if (!keepStatus) {
         const count = this.missions.length;
         if (count === 0) this.#say(w.statusNoMissions, "warn");
@@ -200,6 +204,36 @@ class Offline {
     }
   }
 
+  /** Only an extra: the cards stand without it. */
+  async loadSaves() {
+    try {
+      this.saves = new Map((await ipc.offlineSaves()).map((s) => [s.mission, s]));
+    } catch {
+      this.saves = new Map();
+    }
+  }
+
+  async clearSave(id: string) {
+    const w = words("offline");
+    const map = describe(id).map;
+    const ok = await confirm({
+      title: String(w.dialogClearOneTitle({ map })),
+      message: String(w.dialogClearOneMessage({ map })),
+      confirmLabel: String(w.clearSave),
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await ipc.clearMissionSave(id);
+      const next = new Map(this.saves);
+      next.delete(id);
+      this.saves = next;
+      this.#say(w.statusClearedOne({ map }), "ok");
+    } catch (e) {
+      this.#say(w.statusClearFailed({ error: errorText(e) }), "err");
+    }
+  }
+
   async clearSaves() {
     const w = words("offline");
     const ok = await confirm({
@@ -211,6 +245,7 @@ class Offline {
     if (!ok) return;
     try {
       const n = await ipc.clearOfflineSaves();
+      this.saves = new Map();
       this.#say(
         n > 0
           ? n === 1

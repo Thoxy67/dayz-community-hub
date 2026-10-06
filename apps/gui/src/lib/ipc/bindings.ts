@@ -219,6 +219,10 @@ export const commands = {
 	removeMission: (mission: string) => __TAURI_INVOKE<null>("remove_mission", { mission }),
 	/**  Delete storage_-1/ save directories inside each offline mission folder. */
 	clearOfflineSaves: () => __TAURI_INVOKE<number>("clear_offline_saves"),
+	/**  The save of each mission that has one. */
+	offlineSaves: () => __TAURI_INVOKE<MissionSaveDto[]>("offline_saves"),
+	/**  Delete one mission's save; true when it had one. */
+	clearMissionSave: (mission: string) => __TAURI_INVOKE<boolean>("clear_mission_save", { mission }),
 	/**  Open the missions directory in the file manager. */
 	openMissionsDir: () => __TAURI_INVOKE<null>("open_missions_dir"),
 	/**  Open a specific offline mission's folder in the system file manager. */
@@ -596,6 +600,16 @@ export type MapCount = {
 export type MetricsLink = {
 	label: string,
 	url: string,
+};
+
+/**
+ *  One mission's save: its size and when it was last written (Unix
+ *  seconds), that is when the mission was last played.
+ */
+export type MissionSaveDto = {
+	mission: string,
+	bytes: number,
+	written: number | null,
 };
 
 /**  What downloads mods. */

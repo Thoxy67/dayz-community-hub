@@ -83,6 +83,63 @@ const content = {
       es: "Eliminar datos de guardado storage_-1/ dentro de cada carpeta de misión (botín, estado del jugador, estado del mundo). Las misiones se conservan.",
       ru: "Удалить сохранения storage_-1/ в каждой папке миссии (лут, состояние игрока, состояние мира). Миссии сохраняются.",
     }),
+    save: t({
+      en: "Save",
+      fr: "Sauvegarde",
+      de: "Spielstand",
+      es: "Partida",
+      ru: "Сохранение",
+    }),
+    noSave: t({
+      en: "None yet",
+      fr: "Aucune pour l'instant",
+      de: "Noch keiner",
+      es: "Ninguna todavía",
+      ru: "Пока нет",
+    }),
+    saveLine: insert(
+      t({
+        en: "{{size}} · played {{when}}",
+        fr: "{{size}} · jouée {{when}}",
+        de: "{{size}} · gespielt {{when}}",
+        es: "{{size}} · jugada {{when}}",
+        ru: "{{size}} · игра {{when}}",
+      }),
+    ),
+    clearSave: t({
+      en: "Clear this map's save",
+      fr: "Effacer la sauvegarde de cette carte",
+      de: "Spielstand dieser Karte löschen",
+      es: "Borrar la partida de este mapa",
+      ru: "Удалить сохранение этой карты",
+    }),
+    dialogClearOneTitle: insert(
+      t({
+        en: "Clear the {{map}} save?",
+        fr: "Effacer la sauvegarde de {{map}} ?",
+        de: "Spielstand von {{map}} löschen?",
+        es: "¿Borrar la partida de {{map}}?",
+        ru: "Удалить сохранение {{map}}?",
+      }),
+    ),
+    dialogClearOneMessage: insert(
+      t({
+        en: "Your character, the loot and the world of {{map}} start over. The mission stays installed.",
+        fr: "Votre personnage, le butin et le monde de {{map}} repartent de zéro. La mission reste installée.",
+        de: "Dein Charakter, die Beute und die Welt von {{map}} beginnen von vorn. Die Mission bleibt installiert.",
+        es: "Tu personaje, el botín y el mundo de {{map}} empiezan de cero. La misión sigue instalada.",
+        ru: "Персонаж, добыча и мир {{map}} начнутся заново. Миссия останется установленной.",
+      }),
+    ),
+    statusClearedOne: insert(
+      t({
+        en: "{{map}}: save cleared",
+        fr: "{{map}} : sauvegarde effacée",
+        de: "{{map}}: Spielstand gelöscht",
+        es: "{{map}}: partida borrada",
+        ru: "{{map}}: сохранение удалено",
+      }),
+    ),
     clearSaves: t({
       en: "Clear saves",
       fr: "Effacer les sauvegardes",

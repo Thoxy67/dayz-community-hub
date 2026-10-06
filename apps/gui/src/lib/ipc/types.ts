@@ -23,6 +23,7 @@ export type {
   FileFilter,
   GeoLocation,
   HistoryDto,
+  MissionSaveDto,
   InitResult,
   InstalledModDto,
   ModUsageDto,

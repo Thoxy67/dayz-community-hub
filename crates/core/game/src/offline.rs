@@ -11,6 +11,14 @@ const MISSIONS_DIR: &str = "Missions";
 /// User-Agent required by GitHub API (any non-empty string works).
 const UA: &str = concat!("dayz-community-hub/", env!("CARGO_PKG_VERSION"));
 
+/// A mission's save: what it weighs, and when it was last written (Unix
+/// seconds), which is when the mission was last played.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MissionSave {
+    pub bytes: u64,
+    pub written: Option<i64>,
+}
+
 /// A single folder name: no separators, no `..`, nothing absolute.
 pub fn is_mission_name(name: &str) -> bool {
     !name.is_empty()
@@ -299,6 +307,47 @@ impl OfflineMode {
         Ok(self.missions_path().join(mission))
     }
 
+    /// The save of one mission (`storage_-1/`): its size and when it was
+    /// last written, which is when the mission was last played. `None`
+    /// when it has none.
+    pub fn mission_save(&self, mission: &str) -> Result<Option<MissionSave>> {
+        let storage = self.mission_path(mission)?.join("storage_-1");
+        if !storage.is_dir() {
+            return Ok(None);
+        }
+        let mut save = MissionSave::default();
+        let mut stack = vec![storage];
+        while let Some(dir) = stack.pop() {
+            for entry in fs::read_dir(&dir)?.flatten() {
+                let Ok(meta) = entry.metadata() else { continue };
+                if meta.is_dir() {
+                    stack.push(entry.path());
+                    continue;
+                }
+                save.bytes += meta.len();
+                let written = meta
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs() as i64);
+                save.written = save.written.max(written);
+            }
+        }
+        Ok(Some(save))
+    }
+
+    /// Delete one mission's save (`storage_-1/`). True when there was one.
+    pub fn clear_mission_save(&self, mission: &str) -> Result<bool> {
+        let storage = self.mission_path(mission)?.join("storage_-1");
+        if !storage.exists() {
+            return Ok(false);
+        }
+        fs::remove_dir_all(&storage).map_err(|e| {
+            dz_common::Error::Other(format!("Failed to remove saves at {storage:?}: {e}"))
+        })?;
+        Ok(true)
+    }
+
     pub fn remove_mission(&self, mission: &str) -> Result<()> {
         let mission_path = self.mission_path(mission)?;
         if !mission_path.exists() {
@@ -428,5 +477,26 @@ mod tests {
         assert!(!is_mission_name(""));
         let om = OfflineMode::new("/games/DayZ", Client::new());
         assert!(om.mission_path("../../etc").is_err());
+    }
+
+    #[test]
+    fn one_missions_save_is_measured_and_cleared() {
+        let root = std::env::temp_dir().join(format!("dzch-offline-{}", std::process::id()));
+        let mission = "DayZCommunityOfflineMode.Enoch";
+        let storage = root.join("Missions").join(mission).join("storage_-1");
+        fs::create_dir_all(storage.join("data")).unwrap();
+        fs::write(storage.join("players.db"), [0u8; 100]).unwrap();
+        fs::write(storage.join("data").join("events.bin"), [0u8; 23]).unwrap();
+        let om = OfflineMode::new(&root, Client::new());
+
+        let save = om.mission_save(mission).unwrap().expect("a save");
+        assert_eq!(save.bytes, 123);
+        assert!(save.written.is_some());
+
+        assert!(om.clear_mission_save(mission).unwrap());
+        assert_eq!(om.mission_save(mission).unwrap(), None);
+        assert!(!om.clear_mission_save(mission).unwrap());
+        assert!(om.mission_save("../x").is_err());
+        let _ = fs::remove_dir_all(&root);
     }
 }

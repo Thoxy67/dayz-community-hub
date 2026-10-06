@@ -80,6 +80,8 @@ pub(crate) fn builder() -> tauri_specta::Builder<tauri::Wry> {
             offline::remove_offline_mode,
             offline::remove_mission,
             offline::clear_offline_saves,
+            offline::offline_saves,
+            offline::clear_mission_save,
             offline::open_missions_dir,
             offline::open_mission_dir,
             offline::launch_offline_mission,

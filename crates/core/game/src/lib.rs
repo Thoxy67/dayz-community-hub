@@ -12,5 +12,5 @@ pub mod steam_download;
 
 pub use ctl::{DayzCtl, run_through_steam};
 pub use dzch::{DzchConfig, DzchMod};
-pub use offline::OfflineMode;
+pub use offline::{MissionSave, OfflineMode};
 pub use operation::{Downloader, ModOperation};

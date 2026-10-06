@@ -20,6 +20,7 @@
   import { Topo } from "$lib/components/ui/topo";
   import { openUrl } from "$lib/ipc/native";
   import { cn } from "$lib/cx";
+  import { bytes, relative } from "$lib/format";
   import { offline, type Mission, type Tone } from "./offline.svelte";
   import { pad, padActions } from "$lib/gamepad";
 
@@ -149,6 +150,7 @@
       <p class="m-0 mb-2 label-stencil text-fg-faint">{$o.doubleclickHint.value}</p>
       <ul class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(16rem,1fr))] gap-2.5 p-0">
         {#each list as m (m.id)}
+          {@const save = offline.saves.get(m.id)}
           <li
             data-mission={m.id}
             class="group relative flex flex-col overflow-hidden rounded-md border border-border bg-bg transition-colors hover:border-border-strong"
@@ -169,6 +171,17 @@
               </dd>
               <dt class="text-fg-faint">{$o.mode.value}</dt>
               <dd class="m-0 text-fg-muted">{kindLabel(m)}</dd>
+              <dt class="text-fg-faint">{$o.save.value}</dt>
+              <dd class="m-0 truncate text-fg-muted">
+                {#if save}
+                  {$o.saveLine({
+                    size: bytes(save.bytes),
+                    when: save.written ? relative(save.written) : "—",
+                  }).value}
+                {:else}
+                  <span class="text-fg-faint">{$o.noSave.value}</span>
+                {/if}
+              </dd>
               <dt class="text-fg-faint">{$o.folder.value}</dt>
               <dd class="m-0 truncate font-mono text-fg-muted" title={m.id} data-selectable>
                 {m.id}
@@ -182,6 +195,12 @@
                 icon={FolderOpen}
                 label={$o.openFolder.value}
                 onclick={() => offline.openDir(m.id)}
+              />
+              <IconButton
+                icon={Eraser}
+                label={$o.clearSave.value}
+                disabled={busy || !save}
+                onclick={() => offline.clearSave(m.id)}
               />
               <IconButton
                 icon={Trash}
