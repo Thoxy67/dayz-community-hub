@@ -17,6 +17,7 @@
     LIST_ROW_PX as ROW_PX,
     MasterDetail,
     PageHeader,
+    ShortcutsButton,
     SortHead,
     TableHead,
   } from "$lib/components/app";
@@ -437,7 +438,7 @@
       />
     {/snippet}
     {#snippet actions()}
-      <span class="mr-2 hidden font-mono text-3xs text-fg-faint 2xl:inline">{$c.keys.value}</span>
+      <ShortcutsButton />
       <IconButton
         icon={PanelRight}
         label={$c.toggleDetails.value}

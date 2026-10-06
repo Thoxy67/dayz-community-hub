@@ -34,6 +34,7 @@
   import PasswordHost from "$shell/PasswordHost.svelte";
   import ConnectDialog from "$shell/ConnectDialog.svelte";
   import CommandPalette from "$shell/CommandPalette.svelte";
+  import ShortcutsDialog from "$shell/ShortcutsDialog.svelte";
   import PadHints from "$shell/PadHints.svelte";
 
   initI18n();
@@ -96,6 +97,19 @@
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k") {
       e.preventDefault();
       dialogs.palette = !dialogs.palette;
+      return;
+    }
+    // `?` (Shift+/ or its own key): the sheet of shortcuts, when not typing.
+    if (
+      e.key === "?" &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      !dialogs.open &&
+      !(e.target as HTMLElement)?.closest("input, textarea, [contenteditable]")
+    ) {
+      e.preventDefault();
+      dialogs.shortcuts = true;
       return;
     }
     if (!e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
@@ -246,6 +260,7 @@
   <PasswordHost />
   <ConnectDialog />
   <CommandPalette />
+  <ShortcutsDialog />
   {#if mods.op.active}
     {#await lazyModOp() then M}<M.default />{/await}
   {/if}

@@ -246,13 +246,6 @@ const content = {
       es: "Selecciona un servidor para ver quién juega, sus mods y sus reglas",
       ru: "Выберите сервер, чтобы увидеть игроков, моды и правила",
     }),
-    keysHint: t({
-      en: "↑↓ select · Enter join · F favourite · I details · P ping · D direct · L link · Del remove",
-      fr: "↑↓ sélection · Entrée rejoindre · F favori · I détails · P ping · D directe · L lien · Suppr retirer",
-      de: "↑↓ Auswahl · Enter beitreten · F Favorit · I Details · P Ping · D direkt · L Link · Entf entfernen",
-      es: "↑↓ elegir · Intro unirse · F favorito · I detalles · P ping · D directa · L enlace · Supr quitar",
-      ru: "↑↓ выбор · Enter войти · F избранное · I детали · P пинг · D прямое · L ссылка · Del удалить",
-    }),
     address: t({ en: "Address", fr: "Adresse", de: "Adresse", es: "Dirección", ru: "Адрес" }),
     detailsTitle: t({
       en: "Show the details (I)",

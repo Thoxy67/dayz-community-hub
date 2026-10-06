@@ -46,6 +46,7 @@
     LIST_NARROW_HIDDEN,
     LIST_ROW_PX,
     ServerListRow,
+    ShortcutsButton,
     SortHead,
     TableHead,
     MasterDetail,
@@ -360,7 +361,8 @@
   <span class="num font-mono text-2xs text-fg-faint"
     >{shown.length}<span class="opacity-60">/{rows.length}</span></span
   >
-  <span class="ml-auto hidden text-3xs text-fg-faint lg:inline">{$f.keysHint.value}</span>
+  <span class="ml-auto"></span>
+  <ShortcutsButton />
   <IconButton
     icon={PanelRight}
     label={$f.detailsTitle.value}

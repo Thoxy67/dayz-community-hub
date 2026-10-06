@@ -134,13 +134,6 @@ const content = {
       es: "Copiar un enlace dzch:// para enviar a un amigo",
       ru: "Скопировать ссылку dzch:// для друга",
     }),
-    keys: t({
-      en: "↑↓ select · Enter join · F favourite · I details · P ping · D direct · L link",
-      fr: "↑↓ sélection · Entrée rejoindre · F favori · I détails · P ping · D directe · L lien",
-      de: "↑↓ wählen · Enter beitreten · F Favorit · I Details · P Ping · D direkt · L Link",
-      es: "↑↓ elegir · Intro unirse · F favorito · I detalles · P ping · D directa · L enlace",
-      ru: "↑↓ выбор · Enter войти · F избранное · I детали · P пинг · D прямое · L ссылка",
-    }),
     lastPlayed: t({
       en: "Last played",
       fr: "Dernière partie",
