@@ -6,6 +6,8 @@ notes; without one, the notes are the commit titles since the last release.
 
 ## Unreleased
 
+## 0.5.2
+
 - **DayZ no longer shows as running after opening Mods.** The launcher
   talked to Steam as DayZ and Steam kept the game "running" until the
   launcher closed, so DayZ would not start. Every call to Steam now runs in a
@@ -20,7 +22,8 @@ notes; without one, the notes are the commit titles since the last release.
   keys, and a click on a day, a server or a map lists its sessions. Your
   past joins are carried over (without their length, which was never
   measured). The history travels with the profile export and comes back
-  with an import.
+  with an import. The page sits under Intel and takes Ctrl+9, which
+  Settings had.
 - **Ctrl+K finds anything**: a page, an action (refresh, rejoin, update or
   check the mods), a favourite, an installed mod or any server, and Enter
   does it. A Search button in the title bar opens it too.
@@ -51,6 +54,7 @@ notes; without one, the notes are the commit titles since the last release.
   (the status bar and the side rail say them); the launch options' command
   line is no longer cut off; the exclude and remove buttons turn red
   anywhere under the pointer, not only on their icon.
+- **AUR:** the package is built with makepkg's optimisation flags.
 
 ## 0.5.1 - 2026-10-05
 
