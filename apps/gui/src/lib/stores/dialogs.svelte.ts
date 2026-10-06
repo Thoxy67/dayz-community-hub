@@ -21,6 +21,10 @@ type PendingPassword = { server: string; resolve: (a: PasswordAnswer | null) => 
 class Dialogs {
   pending = $state<Pending | null>(null);
   password = $state<PendingPassword | null>(null);
+  /** The command palette (Ctrl+K). */
+  palette = $state(false);
+  /** The sheet of keyboard shortcuts (?). */
+  shortcuts = $state(false);
 
   confirm(req: ConfirmRequest): Promise<boolean> {
     // A second question replaces the first, which is answered "no".
@@ -48,7 +52,7 @@ class Dialogs {
 
   /** Something is being asked: keyboard shortcuts behind it stay quiet. */
   get open() {
-    return this.pending !== null || this.password !== null;
+    return this.pending !== null || this.password !== null || this.palette || this.shortcuts;
   }
 }
 

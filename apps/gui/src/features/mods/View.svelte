@@ -102,6 +102,15 @@
   let col = $state<Col>("status");
   let asc = $state(true);
 
+  // The command palette shows a mod: `search:<name>` fills the search.
+  $effect(() => {
+    if (app.view === "mods" && app.focus?.startsWith("search:")) {
+      query = app.focus.slice("search:".length);
+      filter = "all";
+      app.focus = null;
+    }
+  });
+
   const unmanaged = $derived(mods.installed.filter((x) => !x.managed).length);
 
   /**

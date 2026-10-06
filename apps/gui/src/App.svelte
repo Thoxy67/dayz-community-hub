@@ -22,6 +22,7 @@
   import { game } from "$lib/stores/game.svelte";
   import { connect } from "$lib/stores/connect.svelte";
   import { say } from "$lib/stores/say";
+  import { dialogs } from "$lib/stores/dialogs.svelte";
   import { prefs } from "$lib/stores/prefs.svelte";
   import { pad, start as startPad } from "$lib/gamepad";
   import { words } from "$lib/i18n";
@@ -32,6 +33,7 @@
   import ConfirmHost from "$shell/ConfirmHost.svelte";
   import PasswordHost from "$shell/PasswordHost.svelte";
   import ConnectDialog from "$shell/ConnectDialog.svelte";
+  import CommandPalette from "$shell/CommandPalette.svelte";
   import PadHints from "$shell/PadHints.svelte";
 
   initI18n();
@@ -91,6 +93,11 @@
 
   function onkeydown(e: KeyboardEvent) {
     if (browserKey(e)) e.preventDefault();
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      dialogs.palette = !dialogs.palette;
+      return;
+    }
     if (!e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
     const typing = (e.target as HTMLElement)?.closest("input, textarea, [contenteditable]");
     const n = parseInt(e.key, 10);
@@ -238,6 +245,7 @@
   <ConfirmHost />
   <PasswordHost />
   <ConnectDialog />
+  <CommandPalette />
   {#if mods.op.active}
     {#await lazyModOp() then M}<M.default />{/await}
   {/if}
