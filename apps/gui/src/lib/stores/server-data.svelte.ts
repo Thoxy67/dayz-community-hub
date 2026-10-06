@@ -186,9 +186,7 @@ class ServerData {
       MAX_LONG,
       false,
       async () =>
-        (await fetchMetricsHistory(id, range)).filter(
-          (p): p is [number, number] => p[1] != null,
-        ),
+        (await fetchMetricsHistory(id, range)).filter((p): p is [number, number] => p[1] != null),
     );
   }
 

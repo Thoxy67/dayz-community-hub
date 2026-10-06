@@ -3,11 +3,7 @@
  * from `bindings.ts`, generated from the Rust types by `make bindings`; only
  * the names the interface uses are chosen here.
  */
-import type {
-  PingResultDto,
-  ServerDto as ServerFull,
-  ServerRow,
-} from "./bindings";
+import type { PingResultDto, ServerDto as ServerFull, ServerRow } from "./bindings";
 
 export type {
   A2sDetailsDto,

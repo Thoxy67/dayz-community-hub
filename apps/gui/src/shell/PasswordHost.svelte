@@ -37,11 +37,7 @@
       {$c.passwordAskMessage({ name: p?.server ?? "" }).value}
     </p>
     <div class="flex items-center gap-1">
-      <SecretInput
-        bind:value
-        placeholder={$c.password.value}
-        autocomplete="current-password"
-      />
+      <SecretInput bind:value placeholder={$c.password.value} autocomplete="current-password" />
     </div>
     <label class="flex cursor-pointer items-center gap-2 text-xs text-fg-muted">
       <Checkbox bind:checked={save} aria-label={$c.passwordAskSave.value} />

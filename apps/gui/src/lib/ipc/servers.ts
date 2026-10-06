@@ -36,14 +36,9 @@ export const fetchSteamPlayerCount = () => run(commands.fetchSteamPlayerCount())
 export const queryA2s = (ip: string, queryPort: number, gamePort: number | null) =>
   run(commands.queryA2s(ip, queryPort, gamePort));
 
-
 /** DayZ Metrics' long view of a server (rank, schedules, fake verdict, 24 h); no key needed. */
-export const fetchServerMetrics = (
-  ip: string,
-  gamePort: number,
-  queryPort: number,
-  name: string,
-) => run(commands.fetchServerMetrics(ip, gamePort, queryPort, name));
+export const fetchServerMetrics = (ip: string, gamePort: number, queryPort: number, name: string) =>
+  run(commands.fetchServerMetrics(ip, gamePort, queryPort, name));
 /** Player counts over a span the site keeps, by its id for the server. */
 export const fetchMetricsHistory = (id: number, range: MetricsRange) =>
   run(commands.fetchMetricsHistory(id, range));

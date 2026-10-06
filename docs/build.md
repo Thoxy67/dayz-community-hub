@@ -36,8 +36,8 @@ var/                 what builds leave behind (git-ignored): var/dist/
   `uv run --project tools ...`. Nothing here touches the system Python.
 - For releases only: `podman` (the AppImage is built in a container, see
   below), `cargo install cargo-xwin` and `rustup target add
-  x86_64-pc-windows-msvc` (Windows), `zip`. `zig` and `cargo install
-  cargo-zigbuild` for `make build` (Linux glibc floor).
+x86_64-pc-windows-msvc` (Windows), `zip`. `zig` and `cargo install
+cargo-zigbuild` for `make build` (Linux glibc floor).
 
 ## Every day
 
@@ -239,7 +239,7 @@ command to `cargo zigbuild`. The output lands in
   machine's glibc: fine for a local build, never for one handed to others.
 - **No system library that needs a newer glibc.** zig refuses to link one
   (`referenced by /usr/lib/libssl.so (disallowed by
-  --no-allow-shlib-undefined)`). That is why OpenSSL, which native-tls uses on
+--no-allow-shlib-undefined)`). That is why OpenSSL, which native-tls uses on
   Linux, is `vendored` in `apps/gui/src-tauri/Cargo.toml`: built from source
   by zig and linked statically.
 - **Check a binary's floor:**
