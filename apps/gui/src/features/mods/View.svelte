@@ -17,6 +17,7 @@
   import X from "~icons/lucide/x";
   import ExternalLink from "~icons/lucide/external-link";
   import SearchX from "~icons/lucide/search-x";
+  import ChevronDown from "~icons/lucide/chevron-down";
   import {
     PageHeader,
     Figure,
@@ -161,6 +162,48 @@
     });
   });
 
+  // ── groups: sorted by status, the list reads as sections that fold ─────
+  type Group = { group: number; label: string; count: number; size: number };
+  type Item = Row | Group;
+  const isGroup = (x: Item): x is Group => "group" in x;
+  let folded = $state(new Set<number>());
+  const groupLabel = (st: number) =>
+    ({
+      [-1]: $m.groupSteam.value,
+      0: $m.groupUpdates.value,
+      1: $m.detailsUnknown.value,
+      2: $m.detailsUpToDate.value,
+    })[st] ?? "";
+  /** What the list shows: the rows, under a heading per status when sorted by it. */
+  const items = $derived.by((): Item[] => {
+    if (col !== "status") return rows;
+    const out: Item[] = [];
+    let cur: number | null = null;
+    for (const r of rows) {
+      const st = status(r);
+      if (st !== cur) {
+        cur = st;
+        const members = rows.filter((x) => status(x) === st);
+        out.push({
+          group: st,
+          label: groupLabel(st),
+          count: members.length,
+          size: members.reduce((a, x) => a + x.size, 0),
+        });
+      }
+      if (!folded.has(st)) out.push(r);
+    }
+    return out;
+  });
+  /** The rows the keyboard walks: those not folded away. */
+  const visible = $derived(items.filter((x): x is Row => !isGroup(x)));
+  function fold(st: number) {
+    const next = new Set(folded);
+    if (next.has(st)) next.delete(st);
+    else next.add(st);
+    folded = next;
+  }
+
   function sortBy(c: Col) {
     if (col === c) asc = !asc;
     else {
@@ -204,12 +247,13 @@
   function onkeydown(e: KeyboardEvent) {
     if (app.view !== "mods" || e.ctrlKey || e.metaKey || e.altKey) return;
     if ((e.target as HTMLElement)?.closest("input, textarea, [role=dialog], [role=menu]")) return;
-    const i = rows.findIndex((x) => x.id === focusId);
+    const i = visible.findIndex((x) => x.id === focusId);
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
-      const next = Math.min(rows.length - 1, Math.max(0, i + (e.key === "ArrowDown" ? 1 : -1)));
-      focusId = rows[next]?.id ?? null;
-      list?.scrollToIndex(next);
+      const next = Math.min(visible.length - 1, Math.max(0, i + (e.key === "ArrowDown" ? 1 : -1)));
+      const r = visible[next];
+      focusId = r?.id ?? null;
+      if (r) list?.scrollToIndex(items.indexOf(r));
     } else if (e.key === " " && focused) {
       e.preventDefault();
       tick(focused.id, !ticked.has(focused.id));
@@ -281,6 +325,121 @@
   <SortHead {label} active={col === c} {asc} class={klass} onclick={() => sortBy(c)} />
 {/snippet}
 
+{#snippet modRow(r: Row)}
+  {@const x = r.mod}
+  {@const on = focusId === r.id}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div
+    role="row"
+    tabindex="-1"
+    data-mod-id={r.id}
+    class={cn(
+      `group ${COLS} h-full border-b border-border/40 px-pad text-xs`,
+      x && "cursor-pointer",
+      on ? "bg-accent/10" : ticked.has(r.id) ? "bg-raised/50" : "hover:bg-raised/40",
+    )}
+    onclick={() => x && (focusId = r.id)}
+  >
+    {#if x}
+      <Checkbox checked={ticked.has(r.id)} onchange={(v) => tick(r.id, v)} aria-label={r.name} />
+    {:else}<span></span>{/if}
+    <div class="flex min-w-0 flex-col gap-0.5">
+      <span class={cn("truncate font-medium", x ? "text-fg" : "text-fg-muted")}>{r.name}</span>
+      {#if x}
+        <SourceTag mod={x} line />
+      {:else}
+        <span class="flex min-w-0 items-center gap-1 text-2xs text-fg-muted">
+          <SteamIcon class="size-2.5 shrink-0" /><span class="truncate"
+            >{$m.whereSubscribed.value}</span
+          >
+        </span>
+      {/if}
+    </div>
+    <ModState id={r.id} mod={x} behind />
+    {#if x}
+      <span
+        class={cn(
+          "flex min-w-0 items-center gap-1",
+          HIDE_IN_GAME,
+          x.managed ? "text-fg-muted" : "text-fg-faint",
+        )}
+        title={x.managed ? $m.inGameLinkedTitle.value : $m.inGameNotLinkedTitle.value}
+      >
+        {#if x.managed}<Link class="size-3 shrink-0" />{:else}<Unlink
+            class="size-3 shrink-0"
+          />{/if}
+        <span class="truncate">{x.managed ? $m.inGameLinked.value : $m.inGameNotLinked.value}</span>
+      </span>
+      <span class="num text-right font-mono text-2xs text-fg-muted">{x.size_human}</span>
+      <span
+        class={cn("truncate font-mono text-2xs text-fg-muted", HIDE_VERSION)}
+        title={x.remote_updated
+          ? `${$m.workshopCopy.value}: ${date(x.remote_updated * 1000)}`
+          : undefined}>{date(x.local_updated * 1000)}</span
+      >
+    {:else}
+      <span class={HIDE_IN_GAME}></span>
+      <span class="num text-right font-mono text-2xs text-fg-faint"
+        >{r.size > 0 ? bytes(r.size) : "—"}</span
+      >
+      <span class={HIDE_VERSION}></span>
+    {/if}
+    <span class="flex items-center justify-end gap-0.5">
+      {#if x}
+        {@const s = mods.steamById.get(r.id)}
+        {#if x.update_available && !mods.opState(r.id) && !(s?.downloading || s?.pending)}
+          <IconButton
+            size="icon-xs"
+            icon={RefreshCw}
+            label={$m.update.value}
+            kbd="U"
+            variant="accent"
+            onclick={(e) => {
+              e.stopPropagation();
+              review.updateSelected([r.id]);
+            }}
+          />
+        {/if}
+        <ModMenu mod={x} />
+      {:else}
+        <IconButton
+          size="icon-xs"
+          icon={ExternalLink}
+          label={$m.openWorkshop.value}
+          onclick={() => openUrl(workshopUrl(r.id))}
+        />
+      {/if}
+    </span>
+  </div>
+{/snippet}
+
+{#snippet groupHead(g: Group)}
+  <button
+    type="button"
+    class="flex h-full w-full items-end gap-2 border-b border-border bg-bg/50 px-pad pb-1.5 text-left hover:bg-raised/40"
+    aria-expanded={!folded.has(g.group)}
+    title={$m.groupCollapse.value}
+    onclick={() => fold(g.group)}
+  >
+    <ChevronDown
+      class={cn(
+        "mb-px size-3.5 text-fg-faint transition-transform",
+        folded.has(g.group) && "-rotate-90",
+      )}
+    />
+    <span
+      class={cn(
+        "label-stencil",
+        g.group === 0 ? "text-warn" : g.group === -1 ? "text-accent" : "text-fg-muted",
+      )}>{g.label}</span
+    >
+    <span class="num font-mono text-2xs text-fg-faint">{g.count}</span>
+    {#if g.size > 0}
+      <span class="ml-auto num font-mono text-2xs text-fg-faint">{bytes(g.size)}</span>
+    {/if}
+  </button>
+{/snippet}
+
 {#snippet listPane()}
   <div class="@container flex min-h-0 flex-1 flex-col">
     {#if !mods.loaded && mods.installed.length === 0}
@@ -303,9 +462,9 @@
         <VirtualList
           bind:this={list}
           class="absolute inset-0"
-          items={rows}
+          {items}
           rowHeight={48}
-          key={(x) => x.id}
+          key={(x) => (isGroup(x) ? `g${x.group}` : x.id)}
           aria-label={$m.title.value}
         >
           {#snippet header()}
@@ -324,100 +483,12 @@
               <span></span>
             </TableHead>
           {/snippet}
-          {#snippet row(r: Row)}
-            {@const x = r.mod}
-            {@const on = focusId === r.id}
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <div
-              role="row"
-              tabindex="-1"
-              data-mod-id={r.id}
-              class={cn(
-                `group ${COLS} h-full border-b border-border/40 px-pad text-xs`,
-                x && "cursor-pointer",
-                on ? "bg-accent/10" : ticked.has(r.id) ? "bg-raised/50" : "hover:bg-raised/40",
-              )}
-              onclick={() => x && (focusId = r.id)}
-            >
-              {#if x}
-                <Checkbox
-                  checked={ticked.has(r.id)}
-                  onchange={(v) => tick(r.id, v)}
-                  aria-label={r.name}
-                />
-              {:else}<span></span>{/if}
-              <div class="flex min-w-0 flex-col gap-0.5">
-                <span class={cn("truncate font-medium", x ? "text-fg" : "text-fg-muted")}
-                  >{r.name}</span
-                >
-                {#if x}
-                  <SourceTag mod={x} line />
-                {:else}
-                  <span class="flex min-w-0 items-center gap-1 text-2xs text-fg-muted">
-                    <SteamIcon class="size-2.5 shrink-0" /><span class="truncate"
-                      >{$m.whereSubscribed.value}</span
-                    >
-                  </span>
-                {/if}
-              </div>
-              <ModState id={r.id} mod={x} behind />
-              {#if x}
-                <span
-                  class={cn(
-                    "flex min-w-0 items-center gap-1",
-                    HIDE_IN_GAME,
-                    x.managed ? "text-fg-muted" : "text-fg-faint",
-                  )}
-                  title={x.managed ? $m.inGameLinkedTitle.value : $m.inGameNotLinkedTitle.value}
-                >
-                  {#if x.managed}<Link class="size-3 shrink-0" />{:else}<Unlink
-                      class="size-3 shrink-0"
-                    />{/if}
-                  <span class="truncate"
-                    >{x.managed ? $m.inGameLinked.value : $m.inGameNotLinked.value}</span
-                  >
-                </span>
-                <span class="num text-right font-mono text-2xs text-fg-muted">{x.size_human}</span>
-                <span
-                  class={cn("truncate font-mono text-2xs text-fg-muted", HIDE_VERSION)}
-                  title={x.remote_updated
-                    ? `${$m.workshopCopy.value}: ${date(x.remote_updated * 1000)}`
-                    : undefined}>{date(x.local_updated * 1000)}</span
-                >
-              {:else}
-                <span class={HIDE_IN_GAME}></span>
-                <span class="num text-right font-mono text-2xs text-fg-faint"
-                  >{r.size > 0 ? bytes(r.size) : "—"}</span
-                >
-                <span class={HIDE_VERSION}></span>
-              {/if}
-              <span class="flex items-center justify-end gap-0.5">
-                {#if x}
-                  {@const s = mods.steamById.get(r.id)}
-                  {#if x.update_available && !mods.opState(r.id) && !(s?.downloading || s?.pending)}
-                    <IconButton
-                      size="icon-xs"
-                      icon={RefreshCw}
-                      label={$m.update.value}
-                      kbd="U"
-                      variant="accent"
-                      onclick={(e) => {
-                        e.stopPropagation();
-                        review.updateSelected([r.id]);
-                      }}
-                    />
-                  {/if}
-                  <ModMenu mod={x} />
-                {:else}
-                  <IconButton
-                    size="icon-xs"
-                    icon={ExternalLink}
-                    label={$m.openWorkshop.value}
-                    onclick={() => openUrl(workshopUrl(r.id))}
-                  />
-                {/if}
-              </span>
-            </div>
+          {#snippet row(it: Item)}
+            {#if isGroup(it)}
+              {@render groupHead(it)}
+            {:else}
+              {@render modRow(it)}
+            {/if}
           {/snippet}
           {#snippet empty()}
             <Empty icon={SearchX} title={$m.noMatch.value}>

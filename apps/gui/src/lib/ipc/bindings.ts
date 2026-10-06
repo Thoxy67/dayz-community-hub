@@ -108,6 +108,12 @@ export const commands = {
 	 */
 	checkModUpdates: () => __TAURI_INVOKE<InstalledModDto[]>("check_mod_updates"),
 	/**
+	 *  For each mod run by a favourite or a server in the history, which ones,
+	 *  from the server list's mod lists. A server not in the list counts for
+	 *  nothing: its mods are not known.
+	 */
+	modsUsage: () => __TAURI_INVOKE<ModUsageDto[]>("mods_usage"),
+	/**
 	 *  Delete a mod by ID: the launcher's copy and its link, and the Steam
 	 *  account's subscription to it (Steam then removes its own copy). Returns
 	 *  true when a copy in a Steam library remains: Steam was not running, or
@@ -648,6 +654,16 @@ export type ModProgressKind =
 
 /**  Whose folder a mod is in. */
 export type ModSourceDto = "launcher" | "steam";
+
+/**
+ *  Which saved servers run a mod: the favourites, and the servers played
+ *  recently (history), by name.
+ */
+export type ModUsageDto = {
+	id: number,
+	favorites: string[],
+	history: string[],
+};
 
 /**  The offline mode download failed; carries the error. */
 export type OfflineModeError = string;

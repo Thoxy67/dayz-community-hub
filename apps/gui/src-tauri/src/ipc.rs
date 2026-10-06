@@ -47,6 +47,7 @@ pub(crate) fn builder() -> tauri_specta::Builder<tauri::Wry> {
             profile::io::restart_app,
             mods::get_installed_mods,
             mods::check_mod_updates,
+            mods::mods_usage,
             mods::delete_mod,
             mods::delete_mods_bulk,
             mods::toggle_mod_managed,

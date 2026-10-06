@@ -25,6 +25,7 @@ export type {
   HistoryDto,
   InitResult,
   InstalledModDto,
+  ModUsageDto,
   LaunchOptionDto,
   ModDto,
   ModDownloaderDto,

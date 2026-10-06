@@ -21,6 +21,19 @@
 
   const item = $derived(mods.steamById.get(mod.id));
   const where = $derived(whereOf(mod, item, !!mods.steam?.available));
+  /** The favourites and played servers that run it. */
+  const used = $derived(mods.usage.get(mod.id));
+  const usedLine = $derived(
+    used?.favorites.length
+      ? used.favorites.length === 1
+        ? $m.usedByFavOne.value
+        : $m.usedByFav({ count: used.favorites.length }).value
+      : used?.history.length
+        ? used.history.length === 1
+          ? $m.playedOnOne.value
+          : $m.playedOn({ count: used.history.length }).value
+        : "",
+  );
   /** The mods that require this one. */
   const parents = $derived(mods.requiredBy.get(mod.id) ?? []);
   const label = $derived(
@@ -34,7 +47,8 @@
       (line && parents.length > 0
         ? ` · ${$m.requiredByLine({ name: mods.nameOf(parents[0]!) }).value}` +
           (parents.length > 1 ? ` +${parents.length - 1}` : "")
-        : ""),
+        : "") +
+      (line && usedLine ? ` · ${usedLine}` : ""),
   );
   const title = $derived(
     [
@@ -45,6 +59,9 @@
         steam: $m.sourceSteamHint.value,
       }[where],
       mod.other_copy ? $m.otherCopy.value : "",
+      used && (used.favorites.length || used.history.length)
+        ? $m.usedByTitle({ names: [...used.favorites, ...used.history].join(", ") }).value
+        : "",
     ]
       .filter(Boolean)
       .join("\n"),

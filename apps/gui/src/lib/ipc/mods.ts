@@ -6,6 +6,8 @@ export type { ModOpType };
 
 export const getInstalledMods = () => run(commands.getInstalledMods());
 export const checkModUpdates = () => run(commands.checkModUpdates());
+/** Which favourites and recently played servers run each mod. */
+export const modsUsage = () => run(commands.modsUsage());
 export const deleteMod = (modId: number) => run(commands.deleteMod(modId));
 export const deleteModsBulk = (modIds: number[]) => run(commands.deleteModsBulk(modIds));
 export const toggleModManaged = (modId: number) => run(commands.toggleModManaged(modId));

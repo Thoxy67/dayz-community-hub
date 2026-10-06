@@ -1206,6 +1206,84 @@ const content = {
       es: "Suscrito en Steam",
       ru: "Подписка в Steam",
     }),
+    usedByFavOne: t({
+      en: "in 1 favourite",
+      fr: "dans 1 favori",
+      de: "in 1 Favorit",
+      es: "en 1 favorito",
+      ru: "в 1 избранном",
+    }),
+    usedByFav: insert(
+      t({
+        en: "in {{count}} favourites",
+        fr: "dans {{count}} favoris",
+        de: "in {{count}} Favoriten",
+        es: "en {{count}} favoritos",
+        ru: "в {{count}} избранных",
+      }),
+    ),
+    playedOnOne: t({
+      en: "played on 1 server",
+      fr: "joué sur 1 serveur",
+      de: "auf 1 Server gespielt",
+      es: "jugado en 1 servidor",
+      ru: "играли на 1 сервере",
+    }),
+    playedOn: insert(
+      t({
+        en: "played on {{count}} servers",
+        fr: "joué sur {{count}} serveurs",
+        de: "auf {{count}} Servern gespielt",
+        es: "jugado en {{count}} servidores",
+        ru: "играли на {{count}} серверах",
+      }),
+    ),
+    usedByTitle: insert(
+      t({
+        en: "Run by: {{names}}",
+        fr: "Utilisé par : {{names}}",
+        de: "Genutzt von: {{names}}",
+        es: "Usado por: {{names}}",
+        ru: "Используют: {{names}}",
+      }),
+    ),
+    yourServers: t({
+      en: "Your servers",
+      fr: "Vos serveurs",
+      de: "Deine Server",
+      es: "Tus servidores",
+      ru: "Ваши серверы",
+    }),
+    unusedHint: insert(
+      t({
+        en: "None of your favourites or recent servers runs it: deleting it frees {{size}}.",
+        fr: "Aucun de vos favoris ni serveurs récents ne l'utilise : le supprimer libère {{size}}.",
+        de: "Keiner deiner Favoriten oder letzten Server nutzt ihn: Löschen gibt {{size}} frei.",
+        es: "Ninguno de tus favoritos ni servidores recientes lo usa: borrarlo libera {{size}}.",
+        ru: "Ни один из избранных или недавних серверов его не использует: удаление освободит {{size}}.",
+      }),
+    ),
+    groupSteam: t({
+      en: "Coming through Steam",
+      fr: "En cours chez Steam",
+      de: "Kommt über Steam",
+      es: "Llegando por Steam",
+      ru: "Загружаются через Steam",
+    }),
+    groupUpdates: t({
+      en: "Updates waiting",
+      fr: "Mises à jour en attente",
+      de: "Updates ausstehend",
+      es: "Actualizaciones pendientes",
+      ru: "Ожидают обновления",
+    }),
+    groupCollapse: t({
+      en: "Fold or unfold this group",
+      fr: "Replier ou déplier ce groupe",
+      de: "Diese Gruppe ein- oder ausklappen",
+      es: "Plegar o desplegar este grupo",
+      ru: "Свернуть или развернуть группу",
+    }),
     requiredByLine: insert(
       t({
         en: "required by {{name}}",

@@ -11,6 +11,7 @@
   import Gamepad from "~icons/lucide/gamepad-2";
   import Hash from "~icons/lucide/hash";
   import Network from "~icons/lucide/network";
+  import Star from "~icons/lucide/star";
   import { Button, IconButton } from "$lib/components/ui/button";
   import { Copy } from "$lib/components/ui/copy";
   import { Meter } from "$lib/components/ui/meter";
@@ -33,6 +34,7 @@
   let { mod, onclose }: { mod: InstalledModDto; onclose?: () => void } = $props();
   const m = dict("mods");
 
+  const used = $derived(mods.usage.get(mod.id));
   const share = $derived(mods.totalSize > 0 ? mod.size / mods.totalSize : 0);
   const item = $derived(mods.steamById.get(mod.id));
   const where = $derived(whereOf(mod, item, !!mods.steam?.available));
@@ -184,6 +186,29 @@
         {/if}
       </Section>
     {/if}
+
+    <Section title={$m.yourServers.value} icon={Star}>
+      {#if used && (used.favorites.length > 0 || used.history.length > 0)}
+        <ul class="m-0 flex list-none flex-col gap-0.5 p-0">
+          {#each used.favorites as name (name)}
+            <li class="flex items-center gap-2 text-xs">
+              <Star class="size-3 shrink-0 fill-warn text-warn" />
+              <span class="min-w-0 flex-1 truncate text-fg">{name}</span>
+            </li>
+          {/each}
+          {#each used.history.filter((n) => !used.favorites.includes(n)) as name (name)}
+            <li class="flex items-center gap-2 text-xs">
+              <History class="size-3 shrink-0 text-fg-faint" />
+              <span class="min-w-0 flex-1 truncate text-fg-muted">{name}</span>
+            </li>
+          {/each}
+        </ul>
+      {:else}
+        <p class="m-0 text-2xs leading-snug text-fg-faint">
+          {$m.unusedHint({ size: mod.size_human }).value}
+        </p>
+      {/if}
+    </Section>
 
     <Section title={$m.colInGame.value} icon={Gamepad}>
       <label class="flex cursor-pointer items-center justify-between gap-2">

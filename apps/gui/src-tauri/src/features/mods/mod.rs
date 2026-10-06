@@ -69,6 +69,50 @@ fn installed_mod_to_dto(m: &InstalledMod, update_cache: &FxHashMap<u64, i64>) ->
     }
 }
 
+/// Which saved servers run a mod: the favourites, and the servers played
+/// recently (history), by name.
+#[derive(Serialize, Clone, Debug, specta::Type)]
+pub struct ModUsageDto {
+    pub id: u64,
+    pub favorites: Vec<String>,
+    pub history: Vec<String>,
+}
+
+/// For each mod run by a favourite or a server in the history, which ones,
+/// from the server list's mod lists. A server not in the list counts for
+/// nothing: its mods are not known.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn mods_usage(state: State<'_, SharedState>) -> Result<Vec<ModUsageDto>, String> {
+    let s = state.read().await;
+    let p = s.ctl.profile();
+    let mut by: FxHashMap<u64, ModUsageDto> = FxHashMap::default();
+    let mut add = |ip: &str, port: u16, name: &str, favorite: bool| {
+        let Some(srv) = s.find_flexible(ip, i64::from(port)) else {
+            return;
+        };
+        for m in &srv.mods {
+            let id = m.steam_workshop_id as u64;
+            let u = by.entry(id).or_insert_with(|| ModUsageDto {
+                id,
+                favorites: Vec::new(),
+                history: Vec::new(),
+            });
+            let list = if favorite { &mut u.favorites } else { &mut u.history };
+            if !list.iter().any(|n| n == name) {
+                list.push(name.to_string());
+            }
+        }
+    };
+    for f in &p.favorites {
+        add(&f.ip, f.port, &f.name, true);
+    }
+    for h in &p.history {
+        add(&h.ip, h.port, &h.name, false);
+    }
+    Ok(by.into_values().collect())
+}
+
 /// Each mod's id and `local_updated`, for [`crate::state::AppState::mods_on_disk`].
 fn on_disk(mods: &[InstalledMod]) -> FxHashMap<u64, i64> {
     mods.iter().map(|m| (m.id, m.local_updated)).collect()

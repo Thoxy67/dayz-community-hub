@@ -240,7 +240,8 @@ const toRow = (x: Server) => {
     excluded: profile.excluded_ips.includes(x.ip),
     unverified_full: false,
     // A pretend disk: a third of modded servers ready, the rest missing or behind a few.
-    mods_missing: x.mods_count === 0 ? 0 : [0, 0, 3, 1, x.mods_count][x.ip.charCodeAt(x.ip.length - 1) % 5]!,
+    mods_missing:
+      x.mods_count === 0 ? 0 : [0, 0, 3, 1, x.mods_count][x.ip.charCodeAt(x.ip.length - 1) % 5]!,
     mods_stale: x.mods_count === 0 ? 0 : [0, 2, 0, 1, 0][(x.ip.length + x.query_port) % 5]!,
   };
 };
@@ -395,6 +396,13 @@ export function installMock() {
       case "get_installed_mods":
       case "check_mod_updates":
         return mods;
+      case "mods_usage":
+        // The first mods run by two favourites and a played server; a few by history only.
+        return mods.slice(0, 14).map((m, i) => ({
+          id: m.id,
+          favorites: i < 6 ? profile.favorites.slice(0, 1 + (i % 3)).map((f) => f.name) : [],
+          history: i % 2 === 0 ? [profile.history[0]?.name ?? "4170"] : [],
+        }));
       case "steam_subscriptions": {
         // Most Steam-library mods subscribed (one not), one downloading, one
         // waiting, a launcher mod also subscribed, and two subscriptions not

@@ -6,7 +6,12 @@
  */
 import * as ipc from "$lib/ipc/mods";
 import { Channel } from "$lib/ipc/core";
-import type { InstalledModDto, ModProgressEvent, SteamSubscriptionsDto } from "$lib/ipc/types";
+import type {
+  InstalledModDto,
+  ModProgressEvent,
+  ModUsageDto,
+  SteamSubscriptionsDto,
+} from "$lib/ipc/types";
 import { words } from "$lib/i18n";
 import { bytes } from "$lib/format";
 import { confirm } from "./dialogs.svelte";
@@ -111,6 +116,9 @@ class Mods {
   /** Steam has downloads under way: its view is worth asking for again. */
   steamBusy = $derived(this.steamActive.length > 0);
 
+  /** Which favourites and played servers run each mod, by id. */
+  usage = $state.raw(new Map<number, ModUsageDto>());
+
   stale = $derived(this.installed.filter((m) => m.update_available));
   totalSize = $derived(this.installed.reduce((a, m) => a + m.size, 0));
   byId = $derived(new Map(this.installed.map((m) => [m.id, m])));
@@ -127,6 +135,11 @@ class Mods {
         this.installed = await ipc.getInstalledMods();
         // The browser's rows say whether a server's mods are ready.
         servers.touch();
+        // Only an extra: the list stands without it.
+        void ipc
+          .modsUsage()
+          .then((u) => (this.usage = new Map(u.map((x) => [x.id, x]))))
+          .catch(() => {});
       } catch (e) {
         say.err(words("mods").loadFailed({ error: errorText(e) }));
       } finally {
