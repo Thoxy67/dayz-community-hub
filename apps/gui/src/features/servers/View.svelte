@@ -34,6 +34,7 @@
   import { feed } from "./feed.svelte";
   import ServerRow from "./ServerRow.svelte";
   import Toolbar from "./Toolbar.svelte";
+  import ActiveFilters from "./ActiveFilters.svelte";
 
   const c = dict("servers");
   const n = dict("nav");
@@ -424,6 +425,7 @@
       </Button>
     {/snippet}
     <Toolbar shown={feed.total} />
+    <ActiveFilters />
   </PageHeader>
 
   {#if staleMinutes > 0 && !servers.loading}

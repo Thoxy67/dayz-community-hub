@@ -537,6 +537,51 @@ const content = {
       es: "Ningún servidor coincide con tu búsqueda",
       ru: "Нет серверов, соответствующих поиску",
     }),
+    filterYes: insert(
+      t({
+        en: "{{label}}: yes",
+        fr: "{{label}} : oui",
+        de: "{{label}}: ja",
+        es: "{{label}}: sí",
+        ru: "{{label}}: да",
+      }),
+    ),
+    filterNo: insert(
+      t({
+        en: "{{label}}: no",
+        fr: "{{label}} : non",
+        de: "{{label}}: nein",
+        es: "{{label}}: no",
+        ru: "{{label}}: нет",
+      }),
+    ),
+    filterValue: insert(
+      t({
+        en: "{{label}}: {{value}}",
+        fr: "{{label}} : {{value}}",
+        de: "{{label}}: {{value}}",
+        es: "{{label}}: {{value}}",
+        ru: "{{label}}: {{value}}",
+      }),
+    ),
+    filterSearch: insert(
+      t({
+        en: "Search: “{{query}}”",
+        fr: "Recherche : « {{query}} »",
+        de: "Suche: „{{query}}“",
+        es: "Búsqueda: «{{query}}»",
+        ru: "Поиск: «{{query}}»",
+      }),
+    ),
+    filterRemove: insert(
+      t({
+        en: "Remove the filter {{label}}",
+        fr: "Retirer le filtre {{label}}",
+        de: "Filter {{label}} entfernen",
+        es: "Quitar el filtro {{label}}",
+        ru: "Убрать фильтр {{label}}",
+      }),
+    ),
     clearFilters: t({
       en: "Clear filters",
       fr: "Effacer les filtres",

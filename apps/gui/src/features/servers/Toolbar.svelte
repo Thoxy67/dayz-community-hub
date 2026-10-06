@@ -7,13 +7,11 @@
   import SlidersHorizontal from "~icons/lucide/sliders-horizontal";
   import Eye from "~icons/lucide/eye";
   import EyeOff from "~icons/lucide/eye-off";
-  import FilterX from "~icons/lucide/filter-x";
   import { Input } from "$lib/components/ui/input";
   import { Select } from "$lib/components/ui/select";
   import { Popover } from "$lib/components/ui/popover";
   import { Switch } from "$lib/components/ui/switch";
   import { Segmented } from "$lib/components/ui/segmented";
-  import { Button } from "$lib/components/ui/button";
   import { cn } from "$lib/cx";
   import { profile } from "$lib/stores/profile.svelte";
   import { servers } from "$lib/stores/servers.svelte";
@@ -24,7 +22,8 @@
    * One line of filters. What is asked for most (search, the three-way
    * flags, the map) is on the line; the rest (ping ceiling, empty and full
    * servers, excluded addresses) is behind "More filters", whose badge says
-   * how many of those are on. The line never wraps, whatever the width.
+   * how many of those are on. The line never wraps, whatever the width;
+   * the filters in force are spelled out below it (ActiveFilters).
    */
   let { shown }: { shown: number } = $props();
   const c = dict("servers");
@@ -145,18 +144,6 @@
       {/if}
     </div>
   </Popover>
-
-  {#if filters.active}
-    <Button
-      variant="ghost"
-      size="icon"
-      title={$c.clearFilters.value}
-      aria-label={$c.clearFilters.value}
-      onclick={() => filters.clear()}
-    >
-      <FilterX class="size-icon-sm" />
-    </Button>
-  {/if}
 
   <span class="ml-auto shrink-0 pl-1 font-mono text-2xs whitespace-nowrap text-fg-faint">
     <span class="num text-fg">{shown.toLocaleString()}</span> / {servers.total.toLocaleString()}
