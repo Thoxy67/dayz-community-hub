@@ -32,6 +32,11 @@
   import { Segmented } from "$lib/components/ui/segmented";
   import { Checkbox } from "$lib/components/ui/checkbox";
   import { VirtualList } from "$lib/components/ui/virtual-list";
+  import {
+    ContextMenu,
+    ContextMenuContent,
+    ContextMenuTrigger,
+  } from "$lib/components/ui/context-menu";
   import { Alert } from "$lib/components/ui/alert";
   import { Spinner } from "$lib/components/ui/spinner";
   import { Tooltip } from "$lib/components/ui/tooltip";
@@ -52,6 +57,7 @@
   import ModDetail from "./ModDetail.svelte";
   import ModState from "./ModState.svelte";
   import ModMenu from "./ModMenu.svelte";
+  import ModMenuItems from "./ModMenuItems.svelte";
   import ReviewDialog from "./ReviewDialog.svelte";
   import InstallDialog from "./InstallDialog.svelte";
   import SourceTag from "./SourceTag.svelte";
@@ -326,10 +332,27 @@
 {/snippet}
 
 {#snippet modRow(r: Row)}
+  {#if r.mod}
+    {@const x = r.mod}
+    <ContextMenu>
+      <ContextMenuTrigger>
+        {#snippet child({ props })}{@render rowLine(r, props)}{/snippet}
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ModMenuItems mod={x} context />
+      </ContextMenuContent>
+    </ContextMenu>
+  {:else}
+    {@render rowLine(r, {})}
+  {/if}
+{/snippet}
+
+{#snippet rowLine(r: Row, props: Record<string, unknown>)}
   {@const x = r.mod}
   {@const on = focusId === r.id}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
+    {...props}
     role="row"
     tabindex="-1"
     data-mod-id={r.id}
@@ -337,6 +360,7 @@
       `group ${COLS} h-full border-b border-border/40 px-pad text-xs`,
       x && "cursor-pointer",
       on ? "bg-accent/10" : ticked.has(r.id) ? "bg-raised/50" : "hover:bg-raised/40",
+      "data-[state=open]:bg-raised/70",
     )}
     onclick={() => x && (focusId = r.id)}
   >
