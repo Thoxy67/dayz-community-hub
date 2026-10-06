@@ -8,17 +8,16 @@
   import ServerIcon from "~icons/lucide/server";
   import Users from "~icons/lucide/users";
   import { SteamIcon } from "$lib/components/ui/brand";
-  import Download from "~icons/lucide/download";
-  import PackageUp from "~icons/lucide/package-open";
+  import Search from "~icons/lucide/search";
   import TriangleAlert from "~icons/lucide/triangle-alert";
   import UserRound from "~icons/lucide/user-round";
   import { Tooltip } from "$lib/components/ui/tooltip";
+  import { Kbd } from "$lib/components/ui/kbd";
   import { inTauri } from "$lib/ipc/core";
   import { app } from "$lib/stores/app.svelte";
   import { servers } from "$lib/stores/servers.svelte";
   import { profile } from "$lib/stores/profile.svelte";
-  import { mods } from "$lib/stores/mods.svelte";
-  import { updater } from "$lib/stores/updater.svelte";
+  import { dialogs } from "$lib/stores/dialogs.svelte";
   import { num } from "$lib/format";
   import { placeOf } from "./nav";
   import LanguageMenu from "./LanguageMenu.svelte";
@@ -29,7 +28,6 @@
   const win = inTauri ? getCurrentWindow() : null;
 
   const here = $derived(placeOf(app.view));
-  const staleCount = $derived(mods.stale.length);
 
   /** Drag from anything that is not a control; double-click toggles maximise. */
   function onmousedown(e: MouseEvent) {
@@ -107,38 +105,19 @@
       </button>
     {/if}
 
-    {#if updater.state === "available"}
-      <Tooltip text={$s.titlebarUpdateAvailableTitle.value} side="bottom">
-        <button
-          class="flex items-center gap-1.5 px-2.5 text-2xs font-semibold text-ok hover:bg-ok/10"
-          onclick={() => app.go("about", "update")}
-        >
-          <Download class="size-icon-sm" />
-          <span class="max-xl:hidden">{$s.titlebarUpdateAvailable.value}</span>
-        </button>
-      </Tooltip>
-    {/if}
-
-    {#if staleCount > 0}
-      <Tooltip
-        text={staleCount === 1
-          ? $s.titlebarUpdateModsTitleOne({ count: staleCount }).value
-          : $s.titlebarUpdateModsTitle({ count: staleCount }).value}
-        side="bottom"
+    <!-- Ctrl+K, where it can be found: the palette that finds anything.
+         The launcher's update and the mods behind are not repeated here:
+         the status bar and the rail already say so. -->
+    <Tooltip text={$s.paletteOpen.value} side="bottom">
+      <button
+        class="my-1.5 mr-2 flex items-center gap-2 rounded-sm border border-border bg-panel/60 pr-1 pl-2 text-2xs text-fg-faint hover:border-border-strong hover:text-fg-muted"
+        onclick={() => (dialogs.palette = true)}
       >
-        <button
-          class="flex items-center gap-1.5 px-2.5 text-2xs font-semibold text-warn hover:bg-warn/10"
-          onclick={() => {
-            app.go("mods");
-            mods.updateStale();
-          }}
-        >
-          <PackageUp class="size-icon-sm" />
-          <span class="num font-mono">{staleCount}</span>
-        </button>
-      </Tooltip>
-    {/if}
-
+        <Search class="size-icon-sm" />
+        <span class="max-lg:hidden">{$s.paletteSearch.value}…</span>
+        <Kbd>Ctrl K</Kbd>
+      </button>
+    </Tooltip>
     <span class="my-2 w-px bg-border"></span>
 
     <!-- The player: avatar, name, Steam login. Opens the account settings. -->

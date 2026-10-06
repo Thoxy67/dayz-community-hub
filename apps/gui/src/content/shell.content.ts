@@ -114,56 +114,6 @@ const content = {
       es: "↑↓ elegir · Intro abrir · Esc cerrar",
       ru: "↑↓ выбор · Enter открыть · Esc закрыть",
     }),
-    titlebarUpdateAvailable: t({
-      en: "Update available",
-      fr: "Mise à jour disponible",
-      de: "Update verfügbar",
-      es: "Actualización disponible",
-      ru: "Доступно обновление",
-    }),
-    titlebarUpdateAvailableTitle: t({
-      en: "Launcher update available — click to view",
-      fr: "Mise à jour du lanceur disponible — cliquez pour voir",
-      de: "Launcher-Update verfügbar — klicken zum Anzeigen",
-      es: "Actualización del launcher disponible — haz clic para ver",
-      ru: "Доступно обновление лаунчера — нажмите для просмотра",
-    }),
-    titlebarUpdateMods: insert(
-      t({
-        en: "Update {{count}} mods",
-        fr: "Mettre à jour {{count}} mods",
-        de: "{{count}} Mods aktualisieren",
-        es: "Actualizar {{count}} mods",
-        ru: "Обновить {{count}} модов",
-      }),
-    ),
-    titlebarUpdateModsOne: insert(
-      t({
-        en: "Update {{count}} mod",
-        fr: "Mettre à jour {{count}} mod",
-        de: "{{count}} Mod aktualisieren",
-        es: "Actualizar {{count}} mod",
-        ru: "Обновить {{count}} мод",
-      }),
-    ),
-    titlebarUpdateModsTitle: insert(
-      t({
-        en: "Update {{count}} mods — click to open Mods tab and start update",
-        fr: "Mettre à jour {{count}} mods — cliquez pour ouvrir l'onglet Mods",
-        de: "{{count}} Mods aktualisieren — klicken um Mods-Tab zu öffnen und Update zu starten",
-        es: "Actualizar {{count}} mods — haz clic para abrir la pestaña Mods e iniciar la actualización",
-        ru: "Обновить {{count}} модов — нажмите, чтобы открыть вкладку Моды и начать обновление",
-      }),
-    ),
-    titlebarUpdateModsTitleOne: insert(
-      t({
-        en: "Update {{count}} mod — click to open Mods tab and start update",
-        fr: "Mettre à jour {{count}} mod — cliquez pour ouvrir l'onglet Mods",
-        de: "{{count}} Mod aktualisieren — klicken um Mods-Tab zu öffnen und Update zu starten",
-        es: "Actualizar {{count}} mod — haz clic para abrir la pestaña Mods e iniciar la actualización",
-        ru: "Обновить {{count}} мод — нажмите, чтобы открыть вкладку Моды и начать обновление",
-      }),
-    ),
     tabServers: t({ en: "Servers", fr: "Serveurs", de: "Server", es: "Servidores", ru: "Серверы" }),
     tabFavorites: t({
       en: "Favorites",
