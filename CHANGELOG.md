@@ -6,6 +6,41 @@ notes; without one, the notes are the commit titles since the last release.
 
 ## Unreleased
 
+- **DayZ no longer shows as running after opening Mods.** The launcher
+  talked to Steam as DayZ and Steam kept the game "running" until the
+  launcher closed, so DayZ would not start. Every call to Steam now runs in a
+  short-lived process of its own, and launching the game ends one still open.
+- **Ctrl+K finds anything**: a page, an action (refresh, rejoin, update or
+  check the mods), a favourite, an installed mod or any server, and Enter
+  does it. A Search button in the title bar opens it too.
+- **Right-click a server** in the browser, favourites or history for every
+  action on it: join, details, favourite, ping, copy the address or a
+  `dzch://` link, Direct Connect, exclude the IP. **Right-click a mod** for
+  its own (update, repair, link, folders, Workshop, delete).
+- **Know before joining whether your mods are ready.** A server's mod count
+  is green when you have them all up to date, orange with ↑n when n of yours
+  are behind, red with −n when n are missing.
+- **The server browser reads faster.** Join buttons are an outline until the
+  row is hovered or chosen; the filters in force are spelled out under the
+  toolbar, each with its ✕; the header figures are shortcuts (Players and
+  Best ping sort, Full and Empty hide those servers, Modded keeps only
+  modded ones).
+- **? shows every keyboard shortcut**, instead of the cramped line of keys
+  in the lists.
+- **Mods** sorted by status fold into groups (coming through Steam, updates
+  waiting, not checked, up to date), each line says how many of your
+  favourites run the mod, and its details list them, or say that none does
+  and what deleting it frees. The list keeps its shape while it loads.
+- **Direct Connect starts from your servers**, shown as cards until one is
+  queried, and an `IP:port` or a `dzch://` link pasted anywhere in the window
+  opens there.
+- **Offline maps** say what their save weighs and when they were last
+  played, and one map's save can be cleared without the others.
+- The title bar no longer repeats the launcher update and the mods behind
+  (the status bar and the side rail say them); the launch options' command
+  line is no longer cut off; the exclude and remove buttons turn red
+  anywhere under the pointer, not only on their icon.
+
 ## 0.5.1 - 2026-10-05
 
 - **Share a server with a friend.** Every row in the browser, favourites and
