@@ -98,7 +98,11 @@ pub(crate) async fn mods_usage(state: State<'_, SharedState>) -> Result<Vec<ModU
                 favorites: Vec::new(),
                 history: Vec::new(),
             });
-            let list = if favorite { &mut u.favorites } else { &mut u.history };
+            let list = if favorite {
+                &mut u.favorites
+            } else {
+                &mut u.history
+            };
             if !list.iter().any(|n| n == name) {
                 list.push(name.to_string());
             }

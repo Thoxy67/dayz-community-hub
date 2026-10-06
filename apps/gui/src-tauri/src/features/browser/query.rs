@@ -705,7 +705,11 @@ mod more_tests {
             mods: None,
         };
         let r = row(&s, &live, &profile);
-        assert_eq!((r.mods_missing, r.mods_stale), (None, 0), "disk not read yet");
+        assert_eq!(
+            (r.mods_missing, r.mods_stale),
+            (None, 0),
+            "disk not read yet"
+        );
 
         profile.mods = Some([(0, false), (1, true)].into_iter().collect());
         let r = row(&s, &live, &profile);
