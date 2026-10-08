@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
+use crate::friends::{self, Friend};
 use crate::servers::{self, Filters, ListEvent};
 use crate::session::{self, Details, Event, ItemResult, Subscribed, Unsubscribed};
 
@@ -45,6 +46,7 @@ enum Request {
     ListServers {
         partitions: Vec<Filters>,
     },
+    Friends,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -61,6 +63,7 @@ enum Reply {
     Unsubscribe(Result<Vec<Unsubscribed>, String>),
     Subscriptions(Result<(Vec<Subscribed>, Vec<Details>), String>),
     ListServers(Result<usize, String>),
+    Friends(Result<Vec<Friend>, String>),
 }
 
 /// What a worker reports before its outcome.
@@ -136,6 +139,8 @@ fn run(
     // Only a worker that connects is one Steam sees as DayZ.
     let connects = !matches!(request, Request::Status);
     let listing = matches!(request, Request::ListServers { .. });
+    // Asked again soon if Steam is busy: it does not stop a listing.
+    let background = listing || matches!(request, Request::Friends);
     let _one = if connects {
         Some(match ONE.try_lock() {
             Ok(guard) => guard,
@@ -145,12 +150,12 @@ fn run(
                 // now, and hands back what it has.
                 let current = CURRENT.lock().ok().and_then(|c| c.clone());
                 match current {
-                    Some(w) if w.listing && !listing => {
+                    Some(w) if w.listing && !background => {
                         w.cancel();
                         ONE.lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner)
                     }
-                    _ if listing => {
+                    _ if background => {
                         return Err("Steam is busy with another session.".into());
                     }
                     _ => {
@@ -349,6 +354,14 @@ pub fn list_servers(
     }
 }
 
+/// [`friends::friends`], in a worker.
+pub fn friends() -> Result<Vec<Friend>, String> {
+    match run(&Request::Friends, None, &mut |_| {})? {
+        Reply::Friends(r) => r,
+        _ => Err(MIXED_UP.into()),
+    }
+}
+
 // ── the worker's side ───────────────────────────────────────────────────
 
 /// When this process was started as a worker, serve its request and exit;
@@ -400,6 +413,7 @@ fn serve() -> i32 {
         Request::Subscriptions { also, known } => {
             Reply::Subscriptions(session::subscriptions(&also, &known))
         }
+        Request::Friends => Reply::Friends(friends::friends()),
         Request::ListServers { partitions } => {
             Reply::ListServers(servers::list(&partitions, cancel, &mut |l| {
                 send(&Reply::Listing(l));

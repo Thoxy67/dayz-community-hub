@@ -2,7 +2,8 @@
 //!
 //! Names and signatures follow `steam_api_flat.h`, `steam_api.h` and
 //! `steam_api_internal.h` of the SDK steamworks-sys 0.13.0 bundles
-//! (ISteamUGC v021, ISteamUser v023, ISteamMatchmakingServers v002). Every function is `extern "C"`
+//! (ISteamUGC v021, ISteamUser v023, ISteamMatchmakingServers v002,
+//! ISteamFriends v018). Every function is `extern "C"`
 //! (`S_CALLTYPE` is `__cdecl`, the only convention on x86_64). A C++ `bool`
 //! is one byte, as Rust's is.
 
@@ -86,6 +87,12 @@ pub(crate) struct Api {
     pub cancel_query: unsafe extern "C" fn(Iface, ListRequest),
     pub is_refreshing: unsafe extern "C" fn(Iface, ListRequest) -> bool,
     pub server_count: unsafe extern "C" fn(Iface, ListRequest) -> i32,
+    pub friends: unsafe extern "C" fn() -> Iface,
+    pub friend_count: unsafe extern "C" fn(Iface, i32) -> i32,
+    pub friend_by_index: unsafe extern "C" fn(Iface, i32, i32) -> u64,
+    pub friend_state: unsafe extern "C" fn(Iface, u64) -> i32,
+    pub friend_name: unsafe extern "C" fn(Iface, u64) -> *const c_char,
+    pub friend_game: unsafe extern "C" fn(Iface, u64, *mut u8) -> bool,
 }
 
 // SAFETY: the struct holds only function pointers and the library handle;
@@ -153,6 +160,12 @@ fn load() -> Result<Api, String> {
         cancel_query: sym!("SteamAPI_ISteamMatchmakingServers_CancelQuery"),
         is_refreshing: sym!("SteamAPI_ISteamMatchmakingServers_IsRefreshing"),
         server_count: sym!("SteamAPI_ISteamMatchmakingServers_GetServerCount"),
+        friends: sym!("SteamAPI_SteamFriends_v018"),
+        friend_count: sym!("SteamAPI_ISteamFriends_GetFriendCount"),
+        friend_by_index: sym!("SteamAPI_ISteamFriends_GetFriendByIndex"),
+        friend_state: sym!("SteamAPI_ISteamFriends_GetFriendPersonaState"),
+        friend_name: sym!("SteamAPI_ISteamFriends_GetFriendPersonaName"),
+        friend_game: sym!("SteamAPI_ISteamFriends_GetFriendGamePlayed"),
         _lib: lib,
     })
 }

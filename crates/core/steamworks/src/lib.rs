@@ -15,12 +15,14 @@
 //! [`serve_if_worker`] first thing.
 
 mod api;
+mod friends;
 mod redist;
 mod servers;
 mod session;
 mod state;
 mod worker;
 
+pub use friends::{Friend, FriendGame, FriendServer};
 pub use servers::{
     Answer, COLLAPSE, Filters, ListEvent, Listing, MasterEntry, STEAM_LIST_CAP, empty_of,
     partitions,
@@ -28,8 +30,8 @@ pub use servers::{
 pub use session::{Details, Event, ItemResult, Subscribed, Unsubscribed};
 pub use state::{ItemState, percent, result_text};
 pub use worker::{
-    WORKER_ARG, check, close_session, download, list_servers, serve_if_worker, session_open,
-    status, steam_running, subscriptions, unsubscribe,
+    WORKER_ARG, check, close_session, download, friends, list_servers, serve_if_worker,
+    session_open, status, steam_running, subscriptions, unsubscribe,
 };
 
 /// DayZ's Steam app id, the game a session connects as.
