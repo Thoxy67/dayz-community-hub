@@ -118,6 +118,36 @@ pub fn dedup_servers(mut servers: Vec<Server>) -> Vec<Server> {
     servers
 }
 
+/// The servers that claim the same address to join (ip, game port) under
+/// different query ports: one server listed twice (one entry stale), or one
+/// stating a wrong game port. Each group is `(ip, query port)`s, in list
+/// order. Servers on one address with the same name but their own game
+/// ports are not here: they are separate servers (hosts give many
+/// customers the same default name).
+pub fn join_conflicts(servers: &[Server]) -> Vec<Vec<(String, i64)>> {
+    let mut by_join: rustc_hash::FxHashMap<(&str, i64), Vec<usize>> =
+        rustc_hash::FxHashMap::default();
+    for (i, s) in servers.iter().enumerate() {
+        if s.game_port > 0 {
+            by_join
+                .entry((s.endpoint.ip.as_str(), s.game_port))
+                .or_default()
+                .push(i);
+        }
+    }
+    let mut groups: Vec<Vec<(String, i64)>> = by_join
+        .into_values()
+        .filter(|g| g.len() > 1)
+        .map(|g| {
+            g.into_iter()
+                .map(|i| (servers[i].endpoint.ip.clone(), servers[i].endpoint.port))
+                .collect()
+        })
+        .collect();
+    groups.sort();
+    groups
+}
+
 /// Response from the Steam GetNumberOfCurrentPlayers endpoint.
 #[derive(Debug, Deserialize)]
 struct SteamPlayerCountResponse {
@@ -230,6 +260,23 @@ mod tests {
             name: name.into(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn servers_claiming_one_join_address_are_grouped() {
+        let list = vec![
+            server("1.1.1.1", 27019, 2502, "panc"),
+            server("1.1.1.1", 2505, 2502, "panc"),
+            server("1.1.1.1", 27020, 2602, "panc"),
+            server("2.2.2.2", 27016, 2302, "a"),
+        ];
+        assert_eq!(
+            join_conflicts(&list),
+            vec![vec![
+                ("1.1.1.1".to_string(), 27019),
+                ("1.1.1.1".to_string(), 2505)
+            ]]
+        );
     }
 
     #[test]
