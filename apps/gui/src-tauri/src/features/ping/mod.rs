@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::State;
 use tauri::ipc::Channel;
+use tokio::sync::mpsc;
 
 use crate::features::browser::live::{self, Live};
 
@@ -67,12 +68,24 @@ pub struct PingState {
     paused: AtomicBool,
     /// The running scan, so a new one (or a refresh) can abort it.
     background: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
+    /// The running whole-list scan's queue, which servers added to the list
+    /// meanwhile join ([`enqueue`]).
+    queue: Mutex<Option<Queue>>,
+}
+
+struct Queue {
+    tx: mpsc::UnboundedSender<String>,
+    /// Targets sent so far: the scan is over when it has done as many.
+    total: Arc<AtomicU32>,
 }
 
 impl PingState {
     pub(crate) fn abort_background(&self) {
         if let Some(handle) = self.background.lock().ok().and_then(|mut h| h.take()) {
             handle.abort();
+        }
+        if let Ok(mut q) = self.queue.lock() {
+            *q = None;
         }
     }
 
@@ -93,11 +106,14 @@ enum Sink {
     Batches(Channel<Vec<PingResultDto>>),
     /// Progress only, for the whole-list scan.
     Progress(Channel<ScanProgress>),
+    /// Nothing: a scan the window did not ask for.
+    Silent,
 }
 
 /// Ping `targets` with `concurrency` queries in flight, recording each result
 /// in the live store as it lands. A server that does not answer is asked
 /// again up to `retries` times: one lost UDP packet should not mark it dead.
+/// A `whole` scan takes more targets while it runs ([`enqueue`]).
 async fn scan(
     targets: Vec<String>,
     concurrency: usize,
@@ -105,14 +121,45 @@ async fn scan(
     retries: u32,
     sink: Sink,
     ping: Arc<PingState>,
+    whole: bool,
 ) {
-    let total = targets.len() as u32;
+    let (tx, rx) = mpsc::unbounded_channel::<String>();
+    let total = Arc::new(AtomicU32::new(0));
+    for t in targets {
+        if tx.send(t).is_ok() {
+            total.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    if whole && let Ok(mut q) = ping.queue.lock() {
+        *q = Some(Queue {
+            tx,
+            total: Arc::clone(&total),
+        });
+    } else {
+        // Nothing more will come: the stream ends once these are done.
+        drop(tx);
+    }
     let done = Arc::new(AtomicU32::new(0));
     let progress = |running: bool| ScanProgress {
         done: done.load(Ordering::Relaxed),
-        total,
+        total: total.load(Ordering::Relaxed),
         paused: ping.is_paused(),
         running,
+    };
+    // A whole scan is over when it has done every target it was sent; the
+    // queue then closes, under its lock so nothing is sent into it after.
+    let finished = || {
+        if !whole || done.load(Ordering::Relaxed) < total.load(Ordering::Relaxed) {
+            return false;
+        }
+        let Ok(mut q) = ping.queue.lock() else {
+            return true;
+        };
+        if done.load(Ordering::Relaxed) < total.load(Ordering::Relaxed) {
+            return false;
+        }
+        *q = None;
+        true
     };
 
     // One client for the whole scan: async-a2s multiplexes replies on its one
@@ -125,7 +172,10 @@ async fn scan(
     };
     let client = Arc::new(client);
 
-    let mut results = stream::iter(targets)
+    let targets = Box::pin(stream::unfold(rx, |mut rx| async move {
+        rx.recv().await.map(|t| (t, rx))
+    }));
+    let mut results = targets
         .map(|target| {
             let client = Arc::clone(&client);
             async move {
@@ -162,6 +212,9 @@ async fn scan(
     };
 
     loop {
+        if finished() {
+            break;
+        }
         if ping.is_paused() {
             flush.tick().await;
             send(&mut batch);
@@ -213,6 +266,55 @@ pub(crate) fn start_whole_scan(
             retries,
             Sink::Progress(on_progress),
             state,
+            true,
+        )
+        .await;
+    });
+    if let Ok(mut h) = ping.background.lock() {
+        *h = Some(handle);
+    }
+}
+
+/// Have `targets` pinged with the whole-list scan: into its queue when one
+/// runs, else in a scan of their own (which the window does not follow;
+/// its rows change through `servers-changed`).
+pub(crate) fn enqueue(
+    ping: &Arc<PingState>,
+    targets: Vec<String>,
+    concurrency: usize,
+    timeout: Duration,
+    retries: u32,
+) {
+    if targets.is_empty() {
+        return;
+    }
+    if let Ok(mut q) = ping.queue.lock()
+        && let Some(queue) = q.as_ref()
+    {
+        let mut sent = true;
+        for t in &targets {
+            if queue.tx.send(t.clone()).is_err() {
+                sent = false;
+                break;
+            }
+            queue.total.fetch_add(1, Ordering::Relaxed);
+        }
+        if sent {
+            return;
+        }
+        // The scan was stopped without closing its queue.
+        *q = None;
+    }
+    let state = Arc::clone(ping);
+    let handle = tauri::async_runtime::spawn(async move {
+        scan(
+            targets,
+            concurrency,
+            timeout,
+            retries,
+            Sink::Silent,
+            state,
+            true,
         )
         .await;
     });
@@ -245,6 +347,7 @@ pub(crate) async fn ping_servers(
         0,
         Sink::Batches(on_progress),
         state,
+        false,
     ));
     Ok(())
 }

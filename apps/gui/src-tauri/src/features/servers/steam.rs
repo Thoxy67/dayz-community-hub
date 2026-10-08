@@ -3,10 +3,11 @@
 //!
 //! The master is reached the best way at hand, the other as its fallback:
 //!
-//! - **Web API** (a key in the profile): about two seconds a request, many at
-//!   once, no Steam session. A request that hits the 10 000 cap is split by
-//!   the first letters of the names (`dz_api::WebPartition`), which brings
-//!   back the honest servers farms crowd out.
+//! - **Web API** (a key in the profile): about two seconds a request, a few
+//!   at once, no Steam session. A request that hits the 10 000 cap is split
+//!   by how the names it answered start, whatever the script, plus the rest
+//!   (`dz_api::WebPartition`), which brings back the honest servers farms
+//!   crowd out. Its silent rationing (an empty answer) is waited out.
 //! - **Steam client** (Steamworks): addresses in about a second, but about
 //!   one request a minute once past a short burst, so only the most useful
 //!   (servers with players, then the busiest maps); each runs in its own
@@ -15,7 +16,8 @@
 //!
 //! Both give addresses only: each new one is queried here (A2S_INFO, and
 //! A2S_RULES for its mods), many at once, and lands in the list as soon as
-//! it answers. Farms (many empty servers on one address) are left out
+//! it answers, joining the ping scan's queue (the burst of queries would
+//! skew a round trip measured here). Farms (many empty servers on one address) are left out
 //! before anything is asked of them.
 //!
 //! What Steam added is kept apart from the launcher list it is merged into
@@ -51,8 +53,15 @@ const INFO_TIMEOUT: Duration = Duration::from_millis(1500);
 const RULES_TIMEOUT: Duration = Duration::from_secs(2);
 /// How often what answered is put in the list.
 const PUBLISH_EVERY: Duration = Duration::from_millis(700);
-/// Web API requests in flight at once.
-const WEB_CONCURRENCY: usize = 6;
+/// Web API requests in flight at once, and the pause between two starts.
+const WEB_CONCURRENCY: usize = 4;
+const WEB_SPACING: Duration = Duration::from_millis(250);
+/// The Web API withholds answers past a burst (an empty `200`): the first
+/// pause, doubled each time it is still withholding, up to the last.
+const WEB_THROTTLE_FIRST: Duration = Duration::from_secs(15);
+const WEB_THROTTLE_MAX: Duration = Duration::from_secs(120);
+/// Pauses in a row after which the listing gives up.
+const WEB_THROTTLE_GIVE_UP: u32 = 8;
 /// Maps asked for one by one through the Web API: every map the list has
 /// at least this many servers on, at most [`WEB_MAX_MAPS`].
 const WEB_MIN_SERVERS: usize = 2;
@@ -252,13 +261,21 @@ async fn run(app: &AppHandle) {
     let Some(state) = app.try_state::<SharedState>().map(|s| Arc::clone(&s)) else {
         return;
     };
-    let (enabled, maps, known) = {
+    let (enabled, maps, known, ping_settings) = {
         let s = state.read().await;
         let known: FxHashSet<(String, i64)> = s.servers.result.iter().map(key).collect();
+        let p = s.ctl.profile();
         (
-            s.ctl.profile().steam_server_list,
+            p.steam_server_list,
             maps_by_size(&s.servers),
             known,
+            // As the window's scan asks (browser::start_scan); `None` when
+            // the profile does not scan the list.
+            p.ping_scan_servers.then(|| PingSettings {
+                concurrency: (p.ping_concurrency as usize).clamp(5, 200),
+                timeout: Duration::from_millis(u64::from(p.ping_timeout_auto).clamp(1000, 5000)),
+                retries: p.ping_max_retries.min(5),
+            }),
         )
     };
     if !enabled {
@@ -319,10 +336,10 @@ async fn run(app: &AppHandle) {
                 Some(row) => fresh.push(row),
                 None => break,
             },
-            _ = tick.tick() => publish(&state, std::mem::take(&mut fresh)).await,
+            _ = tick.tick() => publish(app, &state, std::mem::take(&mut fresh), ping_settings).await,
         }
     }
-    publish(&state, fresh).await;
+    publish(app, &state, fresh, ping_settings).await;
     let outcome = lister.await.unwrap_or_else(|e| Err(e.to_string()));
 
     let list = Arc::clone(&state.read().await.servers);
@@ -345,23 +362,42 @@ async fn run(app: &AppHandle) {
     });
 }
 
-/// Put `rows` in the list the app shows.
-async fn publish(state: &SharedState, rows: Vec<SteamListed>) {
+/// How the profile has the list pinged.
+#[derive(Clone, Copy)]
+struct PingSettings {
+    concurrency: usize,
+    timeout: Duration,
+    retries: u32,
+}
+
+/// Put `rows` in the list the app shows, and in the ping scan's queue.
+async fn publish(
+    app: &AppHandle,
+    state: &SharedState,
+    rows: Vec<SteamListed>,
+    ping: Option<PingSettings>,
+) {
     if rows.is_empty() {
         return;
     }
-    let before = {
+    let added: Vec<String> = {
         let mut f = found();
-        let before = f.rows.len();
+        let mut added = Vec::new();
         for r in rows {
             if f.keys.insert((r.ip.clone(), r.query_port)) {
+                added.push(format!("{}:{}", r.ip, r.query_port));
                 f.rows.push(r);
             }
         }
-        f.rows.len() - before
+        added
     };
-    sources::update(|s| s.steam.added += before as u32);
+    sources::update(|s| s.steam.added += added.len() as u32);
     show(state).await;
+    if let Some(p) = ping
+        && let Some(scan) = app.try_state::<Arc<crate::features::ping::PingState>>()
+    {
+        crate::features::ping::enqueue(&scan, added, p.concurrency, p.timeout, p.retries);
+    }
 }
 
 /// The maps of `list`, the one with the most servers first.
@@ -447,8 +483,28 @@ async fn list_web(
     sources::update(|s| s.steam.requests_total = queue.len() as u32);
     let mut running = FuturesUnordered::new();
     let mut answered_once = false;
+    // While the master withholds answers: until when, how long the next
+    // pause is, and how many there have been in a row.
+    let mut paused_until: Option<Instant> = None;
+    let mut backoff = WEB_THROTTLE_FIRST;
+    let mut pauses = 0;
     loop {
-        while running.len() < WEB_CONCURRENCY
+        if CANCEL.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        if let Some(until) = paused_until {
+            if Instant::now() < until {
+                if running.is_empty() {
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    continue;
+                }
+            } else {
+                paused_until = None;
+                sources::update(|s| s.steam.waiting_until = None);
+            }
+        }
+        while paused_until.is_none()
+            && running.len() < WEB_CONCURRENCY
             && let Some(part) = queue.pop_front()
         {
             sources::update(|s| s.steam.current = Some(part.label()));
@@ -460,19 +516,40 @@ async fn list_web(
                 }
                 (part, r)
             });
-        }
-        if CANCEL.load(Ordering::SeqCst) {
-            return Ok(());
+            tokio::time::sleep(WEB_SPACING).await;
         }
         let Some((part, result)) = running.next().await else {
-            break;
+            if queue.is_empty() {
+                break;
+            }
+            continue;
         };
-        sources::update(|s| s.steam.requests_done += 1);
         match result {
+            // Nothing: matched nothing, or withheld. Asking for one server
+            // with players tells which.
+            Ok(rows) if rows.is_empty() && dz_api::web_throttled(http, key).await => {
+                queue.push_front(part);
+                // Its fellows in flight withheld too: one pause for all.
+                if paused_until.is_some() {
+                    continue;
+                }
+                pauses += 1;
+                if pauses > WEB_THROTTLE_GIVE_UP {
+                    return Err("Steam kept withholding the server list".into());
+                }
+                let until = Instant::now() + backoff;
+                let shown = sources::now() + backoff.as_secs() as i64;
+                sources::update(|s| s.steam.waiting_until = Some(shown));
+                paused_until = Some(until);
+                backoff = (backoff * 2).min(WEB_THROTTLE_MAX);
+            }
             Ok(rows) => {
                 answered_once = true;
+                pauses = 0;
+                backoff = WEB_THROTTLE_FIRST;
+                sources::update(|s| s.steam.requests_done += 1);
                 if rows.len() >= dz_api::WEB_LIST_CAP {
-                    let more = part.split();
+                    let more = part.split(rows.iter().map(|r| r.name.as_str()));
                     sources::update(|s| s.steam.requests_total += more.len() as u32);
                     queue.extend(more);
                 }
@@ -489,7 +566,10 @@ async fn list_web(
                 );
             }
             Err(e) if !answered_once => return Err(e),
-            Err(e) => eprintln!("steam servers: {}: {e}", part.label()),
+            Err(e) => {
+                sources::update(|s| s.steam.requests_done += 1);
+                eprintln!("steam servers: {}: {e}", part.label());
+            }
         }
     }
     Ok(())
@@ -587,24 +667,11 @@ async fn query(client: Arc<dz_a2s::Client>, c: Candidate) -> Option<SteamListed>
     sources::update(|s| s.steam.queried += 1);
     let port = i64::from(c.query_port);
     let addr = format!("{}:{port}", c.ip);
-    let (info, latency) = client.info(addr.as_str(), None).await.ok()?;
+    let (info, _) = client.info(addr.as_str(), None).await.ok()?;
     sources::update(|s| s.steam.answered += 1);
     let players = dz_a2s::human_player_count(&info);
-    live::store().record(
-        &c.ip,
-        port,
-        Live {
-            ms: Some(
-                u32::try_from(latency.as_millis())
-                    .unwrap_or(u32::MAX)
-                    .max(1),
-            ),
-            players: Some(players),
-            max_players: Some(info.max_players),
-            bots: Some(info.bots),
-            failed: false,
-        },
-    );
+    // Its counts now; its ping from the scan, once it is in the list.
+    live::store().record_counts(&c.ip, port, players, info.max_players, info.bots);
     let ext = &info.extended_server_info;
     let tags = ext.keywords.clone().unwrap_or_default();
     let modded = tags.split(',').any(|t| t.trim() == "mod");
