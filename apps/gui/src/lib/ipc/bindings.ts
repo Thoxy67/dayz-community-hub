@@ -1284,6 +1284,11 @@ export type SteamStatus = {
 	/**  Requests to the master answered, and planned so far (splits add some). */
 	requests_done: number,
 	requests_total: number,
+	/**
+	 *  Web API requests the Steam client answered while the Web API was
+	 *  rationing.
+	 */
+	client_assists: number,
 	/**  What is being asked now. */
 	current: string | null,
 	/**  The master refused; asked again at this time (Unix seconds). */

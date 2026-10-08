@@ -149,6 +149,9 @@
           <p class="m-0 mb-1 text-fg-faint">{$w.steamHint.value}</p>
           {#if steam.note}<p class="m-0 mb-1 text-warn" data-selectable>{steam.note}</p>{/if}
           {@render line($w.requestsLabel.value, `${steam.requests_done}/${steam.requests_total}`)}
+          {#if steam.client_assists}
+            {@render line($w.clientAssists.value, num(steam.client_assists), "text-fg-muted")}
+          {/if}
           {#if steam.current && steam.phase === "running"}
             {@render line($w.now.value, steam.current, "text-fg-muted")}
           {/if}

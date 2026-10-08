@@ -102,6 +102,13 @@ const content = {
       es: "Peticiones a Steam",
       ru: "Запросы к Steam",
     }),
+    clientAssists: t({
+      en: "Of those, by the Steam client during pauses",
+      fr: "Dont via le client Steam pendant les pauses",
+      de: "Davon über den Steam-Client während Pausen",
+      es: "De ellas, por el cliente de Steam en las pausas",
+      ru: "Из них через клиент Steam во время пауз",
+    }),
     waiting: insert(
       t({
         en: "Steam is rationing requests: next in {{secs}} s",

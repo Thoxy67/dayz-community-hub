@@ -372,6 +372,7 @@ function mockSources() {
       note: null,
       requests_done: 37,
       requests_total: 112,
+      client_assists: 3,
       current: "empty · map chernarusplus · d*",
       waiting_until: null,
       listed: 41230,

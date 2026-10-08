@@ -55,6 +55,9 @@ pub struct SteamStatus {
     /// Requests to the master answered, and planned so far (splits add some).
     pub requests_done: u32,
     pub requests_total: u32,
+    /// Web API requests the Steam client answered while the Web API was
+    /// rationing.
+    pub client_assists: u32,
     /// What is being asked now.
     pub current: Option<String>,
     /// The master refused; asked again at this time (Unix seconds).

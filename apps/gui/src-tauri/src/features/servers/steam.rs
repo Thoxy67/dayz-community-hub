@@ -7,7 +7,8 @@
 //!   at once, no Steam session. A request that hits the 10 000 cap is split
 //!   by how the names it answered start, whatever the script, plus the rest
 //!   (`dz_api::WebPartition`), which brings back the honest servers farms
-//!   crowd out. Its silent rationing (an empty answer) is waited out.
+//!   crowd out. Its silent rationing (an empty answer) is waited out, the
+//!   Steam client taking the next requests meanwhile until it refuses too.
 //! - **Steam client** (Steamworks): addresses in about a second, but about
 //!   one request a minute once past a short burst, so only the most useful
 //!   (servers with players, then the busiest maps); each runs in its own
@@ -598,6 +599,10 @@ async fn list_web(
     let mut paused_until: Option<Instant> = None;
     let mut backoff = WEB_THROTTLE_FIRST;
     let mut pauses = 0;
+    // Whether the Steam client can stand in during a pause: at all (it
+    // runs), and in this pause (it has not refused yet).
+    let mut client_usable = true;
+    let mut client_helps = false;
     loop {
         if CANCEL.load(Ordering::SeqCst) {
             return Ok(());
@@ -605,6 +610,36 @@ async fn list_web(
         if let Some(until) = paused_until {
             if Instant::now() < until {
                 if running.is_empty() {
+                    // The Steam client has its own allowance: it takes the
+                    // next requests until it refuses too.
+                    if client_helps && let Some(part) = queue.pop_front() {
+                        let asked = part.clone();
+                        let outcome =
+                            tauri::async_runtime::spawn_blocking(move || client_try(&asked))
+                                .await
+                                .unwrap_or(ClientTry::Refused);
+                        match outcome {
+                            ClientTry::Rows(rows) => {
+                                sources::update(|s| {
+                                    s.steam.requests_done += 1;
+                                    s.steam.client_assists += 1;
+                                });
+                                hand_on(rows, tx);
+                            }
+                            // Splitting needs the names, which the Web API gives.
+                            ClientTry::Capped => queue.push_front(part),
+                            ClientTry::Refused => {
+                                queue.push_front(part);
+                                client_helps = false;
+                            }
+                            ClientTry::Unavailable => {
+                                queue.push_front(part);
+                                client_usable = false;
+                                client_helps = false;
+                            }
+                        }
+                        continue;
+                    }
                     tokio::time::sleep(Duration::from_millis(200)).await;
                     continue;
                 }
@@ -652,6 +687,7 @@ async fn list_web(
                 sources::update(|s| s.steam.waiting_until = Some(shown));
                 paused_until = Some(until);
                 backoff = (backoff * 2).min(WEB_THROTTLE_MAX);
+                client_helps = client_usable;
             }
             Ok(rows) => {
                 answered_once = true;
@@ -683,6 +719,41 @@ async fn list_web(
         }
     }
     Ok(())
+}
+
+/// What the Steam client answered for a Web API request.
+enum ClientTry {
+    Rows(Vec<Candidate>),
+    /// At the cap: the Web API asks it again, to split it by names.
+    Capped,
+    /// Nothing: rationing, or nothing matched (the Web API asks again).
+    Refused,
+    /// Steam not running, or no session.
+    Unavailable,
+}
+
+/// One Web API request through the Steam client, in a short session.
+/// Blocking.
+fn client_try(part: &WebPartition) -> ClientTry {
+    let mut rows = Vec::new();
+    let mut listing = None;
+    let outcome = dz_steamworks::list_servers(&[part.pairs()], &CANCEL, &mut |ev| match ev {
+        ListEvent::Found { servers, .. } => {
+            rows.extend(servers.into_iter().map(|s| Candidate {
+                ip: s.ip.to_string(),
+                query_port: s.query_port,
+                game_port: s.game_port,
+                empty: part.empty,
+            }));
+        }
+        ListEvent::Done(l) => listing = Some(l),
+    });
+    match (outcome, listing) {
+        (Err(_), _) => ClientTry::Unavailable,
+        (Ok(_), Some(l)) if l.capped => ClientTry::Capped,
+        (Ok(_), Some(l)) if l.listed > 0 => ClientTry::Rows(rows),
+        _ => ClientTry::Refused,
+    }
 }
 
 /// Through the Steam client, one short session per partition, waiting out
