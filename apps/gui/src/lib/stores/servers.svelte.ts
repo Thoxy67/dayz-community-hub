@@ -187,6 +187,9 @@ class Servers {
         void events.pingScanProgress.listen((e) => {
           if (!this.#ownScan) this.#showScan(e.payload);
         });
+        // The list grows and shrinks after loading (Steam's servers, kept
+        // ones checked, duplicates combed): the counts follow it.
+        void events.sourcesChanged.listen((e) => this.#followTotal(e.payload.total));
       }
     } catch (e) {
       say.err(words("servers").loadFailed({ error: errorText(e) }));
@@ -194,6 +197,24 @@ class Servers {
       // Called from `refresh`, which owns the flag until it is done.
       this.loading = outer && this.refreshing;
     }
+  }
+
+  #countsTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** The list holds `total` servers now: show it, and fetch the maps and
+   * figures that depend on it again, at most every two seconds. */
+  #followTotal(total: number) {
+    if (total === this.total || this.refreshing) return;
+    this.total = total;
+    this.#countsTimer ??= setTimeout(async () => {
+      this.#countsTimer = null;
+      try {
+        this.maps = await ipc.serverMaps();
+      } catch {
+        // The next change asks again.
+      }
+      void this.loadStats();
+    }, 2000);
   }
 
   /** Something the rows show changed here (the mods on disk): ask again. */
