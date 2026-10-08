@@ -161,6 +161,7 @@
           {@render line($w.queried.value, num(steam.queried))}
           {@render line($w.answered.value, num(steam.answered))}
           {@render line($w.noMods.value, num(steam.no_mods), "text-fg-faint")}
+          {@render line($w.fakes.value, num(steam.fakes), "text-fg-faint")}
           {@render line($w.added.value, `+${num(steam.added)}`, "text-ok")}
           {#if took != null}{@render line($w.elapsed.value, secs(took))}{/if}
         {/if}
@@ -180,6 +181,7 @@
           {@render line($w.checked.value, `${num(s.kept.checked)}/${num(s.kept.total)}`)}
           {@render line($w.alive.value, num(s.kept.alive), "text-ok")}
           {@render line($w.removed.value, num(s.kept.removed), "text-err")}
+          {@render line($w.fakes.value, num(s.kept.fakes), "text-err")}
         {/if}
       </Popover>
     </span>

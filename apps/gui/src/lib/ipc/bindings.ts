@@ -684,6 +684,8 @@ export type KeptStatus = {
 	alive: number,
 	/**  Did not answer: removed. */
 	removed: number,
+	/**  Answered reporting bots, a farm's fake count: removed. */
+	fakes: number,
 };
 
 /**  A launch reached Steam; carries the server's name. */
@@ -1304,6 +1306,8 @@ export type SteamStatus = {
 	answered: number,
 	/**  Modded servers whose mods could not be read: left out. */
 	no_mods: number,
+	/**  Answered reporting bots, a farm's fake count: left out. */
+	fakes: number,
 	/**  Added to the list. */
 	added: number,
 	started: number | null,

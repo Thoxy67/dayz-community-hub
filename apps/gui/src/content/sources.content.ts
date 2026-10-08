@@ -160,6 +160,13 @@ const content = {
       es: "Con mods ilegibles (descartados)",
       ru: "С модами, моды не читаются (отброшены)",
     }),
+    fakes: t({
+      en: "Fakes reporting bots (left out)",
+      fr: "Faux, déclarent des bots (écartés)",
+      de: "Fakes mit Bots (verworfen)",
+      es: "Falsos que declaran bots (descartados)",
+      ru: "Фейки с ботами (отброшены)",
+    }),
     added: t({ en: "Added", fr: "Ajoutés", de: "Hinzugefügt", es: "Añadidos", ru: "Добавлено" }),
     checked: t({
       en: "Checked",

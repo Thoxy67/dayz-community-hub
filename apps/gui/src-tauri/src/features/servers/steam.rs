@@ -18,8 +18,10 @@
 //! Both give addresses only: each new one is queried here (A2S_INFO, and
 //! A2S_RULES for its mods), many at once, and lands in the list as soon as
 //! it answers, joining the ping scan's queue (the burst of queries would
-//! skew a round trip measured here). Farms (many empty servers on one address) are left out
-//! before anything is asked of them.
+//! skew a round trip measured here). Farms are left out: many empty servers
+//! on one address before anything is asked of them, and any server
+//! reporting bots (DayZ has none: farm emulators pad their count with them)
+//! once it answers. Kept servers reporting bots leave too.
 //!
 //! What Steam added is kept apart from the launcher list it is merged into
 //! ([`compose`]), so a refresh of that list keeps it, and so farms found
@@ -314,22 +316,26 @@ pub(crate) fn check_kept(app: AppHandle) {
                 async move {
                     let addr = format!("{ip}:{port}");
                     let mut alive = false;
+                    let mut fake = false;
                     for _ in 0..KEPT_TRIES {
                         if let Ok(p) = dz_a2s::ping_using(&client, &addr).await {
                             live::store().record(&ip, port, Live::from_result(&Ok(p)));
                             alive = true;
+                            fake = p.bots > 0;
                             break;
                         }
                     }
                     sources::update(|s| {
                         s.kept.checked += 1;
-                        if alive {
+                        if fake {
+                            s.kept.fakes += 1;
+                        } else if alive {
                             s.kept.alive += 1;
                         } else {
                             s.kept.removed += 1;
                         }
                     });
-                    (!alive).then_some((ip, port))
+                    (!alive || fake).then_some((ip, port))
                 }
             })
             .buffer_unordered(CONCURRENCY)
@@ -850,6 +856,14 @@ async fn query(client: Arc<dz_a2s::Client>, c: Candidate) -> Option<SteamListed>
     let addr = format!("{}:{port}", c.ip);
     let (info, _) = client.info(addr.as_str(), None).await.ok()?;
     sources::update(|s| s.steam.answered += 1);
+    // DayZ has no bots: a server reporting some is a farm's emulator
+    // padding its count. Measured on 2026-10-08: of 388 dayzsalauncher.com
+    // servers that answered, none reported a bot; of 388 only Steam
+    // listed, 324 reported as many bots as players.
+    if info.bots > 0 {
+        sources::update(|s| s.steam.fakes += 1);
+        return None;
+    }
     let players = dz_a2s::human_player_count(&info);
     // Its counts now; its ping from the scan, once it is in the list.
     live::store().record_counts(&c.ip, port, players, info.max_players, info.bots);

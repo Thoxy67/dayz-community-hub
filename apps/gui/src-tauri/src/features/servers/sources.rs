@@ -73,6 +73,8 @@ pub struct SteamStatus {
     pub answered: u32,
     /// Modded servers whose mods could not be read: left out.
     pub no_mods: u32,
+    /// Answered reporting bots, a farm's fake count: left out.
+    pub fakes: u32,
     /// Added to the list.
     pub added: u32,
     pub started: Option<i64>,
@@ -89,6 +91,8 @@ pub struct KeptStatus {
     pub alive: u32,
     /// Did not answer: removed.
     pub removed: u32,
+    /// Answered reporting bots, a farm's fake count: removed.
+    pub fakes: u32,
 }
 
 /// Everything above, and what the list holds now.
