@@ -12,12 +12,17 @@
 //! What Steam added is kept apart from the launcher list it is merged into
 //! ([`compose`]), so a refresh of that list keeps it, and so farms found
 //! late still leave the list (`dz_api::FarmCounter`).
+//!
+//! A server the list had and a refresh no longer lists is kept too: it may
+//! be delisted and still running. It leaves only once it does not answer
+//! ([`check_kept`]). The cache holds the whole list, so this holds across
+//! restarts as well.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
-use dz_api::{FarmCounter, Mod, ServerList, SteamListed};
+use dz_api::{FarmCounter, Mod, Server, ServerList, SteamListed};
 use dz_steamworks::{Answer, Filters, ListEvent, MasterEntry};
 use futures_util::{StreamExt, stream};
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -43,6 +48,8 @@ const RETRIES: usize = 2;
 const MAX_MAPS: usize = 8;
 /// A listing is not started again sooner than this.
 const MIN_INTERVAL: Duration = Duration::from_secs(10 * 60);
+/// Times a kept server is asked before it is taken for gone.
+const KEPT_TRIES: usize = 2;
 
 #[derive(Default)]
 struct Found {
@@ -52,6 +59,9 @@ struct Found {
     rows: Vec<SteamListed>,
     keys: FxHashSet<(String, i64)>,
     farms: FarmCounter,
+    /// Servers an earlier list had that the current one lacks, kept while
+    /// they answer.
+    kept: Vec<Server>,
     /// When the last listing started.
     last: Option<Instant>,
 }
@@ -66,6 +76,10 @@ fn found() -> std::sync::MutexGuard<'static, Found> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+fn key(s: &Server) -> (String, i64) {
+    (s.endpoint.ip.clone(), s.endpoint.port)
+}
+
 /// `base`, the launcher list, with what Steam found merged in. Keeps
 /// `base` for the merges to come.
 pub(crate) fn with_steam(base: Arc<ServerList>) -> Arc<ServerList> {
@@ -73,9 +87,29 @@ pub(crate) fn with_steam(base: Arc<ServerList>) -> Arc<ServerList> {
     compose()
 }
 
+/// [`with_steam`] for a refresh: the servers of `previous` that the new
+/// list lacks are kept, until [`check_kept`] finds them gone.
+pub(crate) fn refreshed(previous: &ServerList, base: Arc<ServerList>) -> Arc<ServerList> {
+    {
+        let mut f = found();
+        let mut known: FxHashSet<(String, i64)> = base.result.iter().map(key).collect();
+        known.extend(f.keys.iter().cloned());
+        f.kept.retain(|s| known.insert(key(s)));
+        let more: Vec<Server> = previous
+            .result
+            .iter()
+            .filter(|s| known.insert(key(s)))
+            .cloned()
+            .collect();
+        f.kept.extend(more);
+        f.base = base;
+    }
+    compose()
+}
+
 fn compose() -> Arc<ServerList> {
     let f = found();
-    if f.rows.is_empty() {
+    if f.rows.is_empty() && f.kept.is_empty() {
         return Arc::clone(&f.base);
     }
     let mut list = ServerList {
@@ -83,7 +117,60 @@ fn compose() -> Arc<ServerList> {
         result: f.base.result.clone(),
     };
     dz_api::merge_steam(&mut list.result, &f.rows, &f.farms);
+    if !f.kept.is_empty() {
+        let mut have: FxHashSet<(String, i64)> = list.result.iter().map(key).collect();
+        list.result
+            .extend(f.kept.iter().filter(|s| have.insert(key(s))).cloned());
+    }
     Arc::new(list)
+}
+
+/// Ask every kept server whether it still runs, and drop those that do not
+/// answer (twice). The ones that answer stay, their pings recorded.
+pub(crate) fn check_kept(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let kept: Vec<(String, i64)> = found().kept.iter().map(key).collect();
+        if kept.is_empty() {
+            return;
+        }
+        let Some(state) = app.try_state::<SharedState>().map(|s| Arc::clone(&s)) else {
+            return;
+        };
+        let Ok(client) = dz_a2s::client_with_timeout(INFO_TIMEOUT).await else {
+            return;
+        };
+        let client = Arc::new(client);
+        let total = kept.len();
+        let gone: FxHashSet<(String, i64)> = stream::iter(kept)
+            .map(|(ip, port)| {
+                let client = Arc::clone(&client);
+                async move {
+                    let addr = format!("{ip}:{port}");
+                    for _ in 0..KEPT_TRIES {
+                        if let Ok(p) = dz_a2s::ping_using(&client, &addr).await {
+                            live::store().record(&ip, port, Live::from_result(&Ok(p)));
+                            return None;
+                        }
+                    }
+                    Some((ip, port))
+                }
+            })
+            .buffer_unordered(CONCURRENCY)
+            .filter_map(std::future::ready)
+            .collect()
+            .await;
+        if !gone.is_empty() {
+            found().kept.retain(|s| !gone.contains(&key(s)));
+            let list = compose();
+            state.write().await.set_servers(Arc::clone(&list));
+            super::save_cache_in_background(Arc::clone(&list));
+            crate::features::browser::list_replaced(list);
+        }
+        eprintln!(
+            "kept servers: {} of {total} still answer",
+            total - gone.len()
+        );
+    });
 }
 
 /// Stop the listing running, if any.

@@ -111,7 +111,8 @@ pub(crate) async fn get_server_details(
 }
 
 /// Fetch the list from the API again. Returns how many servers it holds;
-/// the browser re-queries on the `servers-changed` that follows. Then
+/// the browser re-queries on the `servers-changed` that follows. Servers
+/// the list had and no longer lists stay, unless they do not answer. Then
 /// Steam's servers are listed in the background (at most every few
 /// minutes) and added as they answer.
 #[tauri::command]
@@ -131,11 +132,18 @@ pub(crate) async fn refresh_servers(
         dz_api::fetch_servers(&client),
         fetch_official(&client, key.as_deref())
     );
-    let list = steam::with_steam(dedup(with_official(community.cmd_err()?, official)));
+    let fresh = dedup(with_official(community.cmd_err()?, official));
+    let list = {
+        let mut s = state.write().await;
+        // What the list had and no longer lists stays while it answers.
+        let list = steam::refreshed(&s.servers, fresh);
+        s.set_servers(Arc::clone(&list));
+        list
+    };
     save_cache_in_background(Arc::clone(&list));
-    state.write().await.set_servers(Arc::clone(&list));
     let count = list.result.len() as u32;
     crate::features::browser::list_replaced(list);
+    steam::check_kept(app.clone());
     steam::start(app);
     Ok(count)
 }
