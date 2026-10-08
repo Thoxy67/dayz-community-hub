@@ -34,6 +34,7 @@
   import { filters, type SortCol } from "./filters.svelte";
   import { feed } from "./feed.svelte";
   import ServerRow from "./ServerRow.svelte";
+  import SourcesBar from "./SourcesBar.svelte";
   import Toolbar from "./Toolbar.svelte";
   import ActiveFilters from "./ActiveFilters.svelte";
 
@@ -458,6 +459,7 @@
     <Toolbar shown={feed.total} />
     <ActiveFilters />
   </PageHeader>
+  <SourcesBar />
 
   {#if staleMinutes > 0 && !servers.loading}
     <div

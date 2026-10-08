@@ -17,6 +17,7 @@ import {
   detectDayz,
   detectSteamcmd,
   downloadSteamcmdWindows,
+  steamMe,
   watchSteamcmd,
 } from "$lib/ipc/system";
 import { steamworksStatus } from "$lib/ipc/mods";
@@ -79,8 +80,27 @@ class Wizard {
     return this.step !== "account" || !this.needsLogin || this.steamLogin.trim().length > 0;
   }
 
+  /** The Steam id and name came from the running Steam client. */
+  fromSteam = $state(false);
+  #askedSteam = false;
+
+  /** Fill in what the running Steam client knows, once, where nothing was typed. */
+  async askSteam() {
+    if (this.#askedSteam) return;
+    this.#askedSteam = true;
+    try {
+      const me = await steamMe();
+      if (!this.player.trim() && me.name) this.player = me.name;
+      if (!this.steamId.trim()) this.steamId = me.steam_id;
+      this.fromSteam = true;
+    } catch {
+      // Steam is not running: the fields stay for the player to fill.
+    }
+  }
+
   go(step: Step) {
     this.step = step;
+    if (step === "account" || step === "services") void this.askSteam();
     if (step === "game" && !this.game) void this.findGame();
     if (step === "downloads") this.#prepareDownloads();
   }

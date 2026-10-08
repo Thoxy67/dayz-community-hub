@@ -77,6 +77,7 @@ impl AppState {
     /// Replace the server list and rebuild its index in one step.
     pub fn set_servers(&mut self, servers: Arc<ServerList>) {
         self.index = ServerIndex::build(&servers.result);
+        crate::features::servers::sources::counted(&servers);
         self.servers = servers;
     }
 

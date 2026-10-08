@@ -575,6 +575,13 @@ const content = {
       es: "Nombre en el juego",
       ru: "Имя в игре",
     }),
+    filledFromSteam: t({
+      en: "Filled in from your running Steam client, with your Steam id. Change it if you play under another name.",
+      fr: "Rempli depuis ton client Steam ouvert, avec ton identifiant Steam. Change-le si tu joues sous un autre nom.",
+      de: "Aus deinem laufenden Steam-Client übernommen, samt Steam-ID. Ändere ihn, wenn du unter einem anderen Namen spielst.",
+      es: "Rellenado desde tu cliente de Steam abierto, con tu id de Steam. Cámbialo si juegas con otro nombre.",
+      ru: "Заполнено из запущенного клиента Steam вместе со Steam ID. Измените, если играете под другим именем.",
+    }),
     ingamePlaceholder: t({
       en: "e.g. Survivor",
       fr: "ex. Survivor",

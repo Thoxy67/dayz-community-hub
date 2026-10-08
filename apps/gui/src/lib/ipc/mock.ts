@@ -362,6 +362,34 @@ const toRow = (x: Server) => {
 };
 
 // What the backend does for real in `servers_query`, done here just enough for screenshots.
+/** A listing half way through, through the Web API. */
+function mockSources() {
+  return {
+    dzsa: { phase: "done", count: 10005, error: null, at: now - 40 },
+    steam: {
+      phase: "running",
+      via: "web_api",
+      note: null,
+      requests_done: 37,
+      requests_total: 112,
+      current: "empty · map chernarusplus · d*",
+      waiting_until: null,
+      listed: 41230,
+      farms: 31884,
+      known: 6210,
+      queried: 3136,
+      answered: 2871,
+      no_mods: 94,
+      added: 2690,
+      started: now - 34,
+      finished: null,
+    },
+    kept: { phase: "done", total: 412, checked: 412, alive: 394, removed: 18 },
+    total: 19107,
+    official: 1180,
+  };
+}
+
 function queryServers(q: Record<string, unknown>) {
   const tri = (f: unknown, v: boolean) => f === "all" || (f === "only" ? v : !v);
   const search = String(q.search ?? "").toLowerCase();
@@ -663,6 +691,10 @@ export function installMock() {
           dayz_dir: `${a.path || "/mnt/ssd2/SteamLibrary/steamapps"}/common/DayZ`,
           workshop_mods: 37,
         };
+      case "steam_me":
+        return { steam_id: "76561198000000000", name: "Survivor", avatar: null };
+      case "sources_status":
+        return mockSources();
       case "steam_friends": {
         const at = (i: number) => servers[i * 7 + 3]!;
         const friend = (

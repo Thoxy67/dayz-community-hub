@@ -36,6 +36,14 @@ export const commands = {
 	 *  it off stops a listing under way; turning it on lists them now.
 	 */
 	setSteamServerList: (enabled: boolean) => __TAURI_INVOKE<null>("set_steam_server_list", { enabled }),
+	/**  The sources as they stand. */
+	sourcesStatus: () => __TAURI_INVOKE<SourcesChanged>("sources_status"),
+	/**
+	 *  The account of the running Steam client, for the setup wizard and the
+	 *  settings to fill in the Steam id and the name. Steam shows DayZ running
+	 *  for a moment.
+	 */
+	steamMe: () => __TAURI_INVOKE<SteamMeDto>("steam_me"),
 	/**  The account's friends and what they are doing. */
 	steamFriends: () => __TAURI_INVOKE<FriendsDto>("steam_friends"),
 	/**  The title bar's counters. */
@@ -113,8 +121,9 @@ export const commands = {
 	 */
 	getInstalledMods: () => __TAURI_INVOKE<InstalledModDto[]>("get_installed_mods"),
 	/**
-	 *  Fetch `time_updated` for all installed mods from the Steam Workshop API and
-	 *  cache the results. Returns the enriched mod list (same as `get_installed_mods`).
+	 *  Fetch `time_updated` for all installed mods (from the Workshop's Web API
+	 *  with a key, else or failing that from the Steam client) and cache the
+	 *  results. Returns the enriched mod list (same as `get_installed_mods`).
 	 */
 	checkModUpdates: () => __TAURI_INVOKE<InstalledModDto[]>("check_mod_updates"),
 	/**
@@ -272,7 +281,10 @@ export const commands = {
 	 *  for every URL that is already cached on disk — no network requests.
 	 */
 	resolveCachedImages: (urls: string[]) => __TAURI_INVOKE<([string, string])[]>("resolve_cached_images", { urls }),
-	/**  Fetch the Steam avatar for the configured account and cache it as a data: URI. */
+	/**
+	 *  The account's Steam avatar as a `data:` URI, cached: from the Web API
+	 *  when a key is set, else (or when that fails) from the Steam client.
+	 */
 	fetchSteamAvatar: () => __TAURI_INVOKE<string | null>("fetch_steam_avatar"),
 	/**  Fetch Steam player count for DayZ. */
 	fetchSteamPlayerCount: () => __TAURI_INVOKE<number>("fetch_steam_player_count"),
@@ -336,6 +348,7 @@ export const events = {
 	offlineModeUpdated: makeEvent<OfflineModeUpdated>("offline-mode-updated"),
 	playSessionsChanged: makeEvent<PlaySessionsChanged>("play-sessions-changed"),
 	serversChanged: makeEvent<ServersChanged>("servers-changed"),
+	sourcesChanged: makeEvent<SourcesChanged>("sources-changed"),
 	steamcmdDetected: makeEvent<SteamcmdDetected>("steamcmd-detected"),
 };
 
@@ -506,6 +519,15 @@ export type DzchMod = {
 	name?: string,
 };
 
+export type DzsaStatus = {
+	phase: Phase,
+	/**  Servers in its last list. */
+	count: number,
+	error: string | null,
+	/**  When its list was fetched, Unix seconds. */
+	at: number | null,
+};
+
 export type FavoriteDto = {
 	name: string,
 	ip: string,
@@ -651,6 +673,17 @@ export type InstalledModDto = {
 	remote_updated: number | null,
 	/**  True when `remote_updated > local_updated`. */
 	update_available: boolean,
+};
+
+export type KeptStatus = {
+	phase: Phase,
+	/**  Servers earlier lists had that the current one lacks. */
+	total: number,
+	checked: number,
+	/**  Still answering, so kept. */
+	alive: number,
+	/**  Did not answer: removed. */
+	removed: number,
 };
 
 /**  A launch reached Steam; carries the server's name. */
@@ -810,6 +843,10 @@ export type PadInfo = {
 
 /**  What kind of pad, for the glyphs the window draws. */
 export type PadKind = "xbox" | "playStation" | "nintendo" | "steamDeck" | "generic";
+
+export type Phase = "idle" | "running" | "done" | "failed" | 
+/**  Turned off, or nothing to reach it with. */
+"off";
 
 /**  One ping, as the window receives it. */
 export type PingResultDto = {
@@ -1185,6 +1222,16 @@ export type SortCol = "none" | "ping" | "players" | "name" | "map" | "mods" |
 /**  In-game time, "HH:MM" as minutes. */
 "time";
 
+/**  Everything above, and what the list holds now. */
+export type SourcesChanged = {
+	dzsa: DzsaStatus,
+	steam: SteamStatus,
+	kept: KeptStatus,
+	/**  Servers in the list, and of those official ones. */
+	total: number,
+	official: number,
+};
+
 /**  How far back the figures look. */
 export type StatsRange = "week" | "month" | "year" | "all";
 
@@ -1219,6 +1266,43 @@ export type SteamLaunchInfoDto = {
 	prefix: string | null,
 };
 
+/**  Who is logged in to the running Steam client. */
+export type SteamMeDto = {
+	steam_id: string,
+	/**  Their Steam name, a good default for the in-game name. */
+	name: string,
+	avatar: string | null,
+};
+
+export type SteamStatus = {
+	phase: Phase,
+	via: SteamVia | null,
+	/**  Why the other way, or none, was used: a sentence. */
+	note: string | null,
+	/**  Requests to the master answered, and planned so far (splits add some). */
+	requests_done: number,
+	requests_total: number,
+	/**  What is being asked now. */
+	current: string | null,
+	/**  The master refused; asked again at this time (Unix seconds). */
+	waiting_until: number | null,
+	/**  Addresses the master listed. */
+	listed: number,
+	/**  Of those, on farm addresses: left out. */
+	farms: number,
+	/**  Of those, already in the list. */
+	known: number,
+	/**  Queried (A2S), and of those answered. */
+	queried: number,
+	answered: number,
+	/**  Modded servers whose mods could not be read: left out. */
+	no_mods: number,
+	/**  Added to the list. */
+	added: number,
+	started: number | null,
+	finished: number | null,
+};
+
 /**  One Workshop item the Steam account is subscribed to, as Steam has it. */
 export type SteamSubscriptionDto = {
 	id: number,
@@ -1244,6 +1328,9 @@ export type SteamSubscriptionsDto = {
 	 */
 	details: WorkshopItemDto[],
 };
+
+/**  How Steam's master is reached. */
+export type SteamVia = "web_api" | "steam_client";
 
 /**  steamcmd appeared while `watch_steamcmd` was polling. */
 export type SteamcmdDetected = SteamcmdStatusDto;

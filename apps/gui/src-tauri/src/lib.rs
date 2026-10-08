@@ -34,6 +34,7 @@ pub fn run(args: CliArgs) {
         .setup(move |app| {
             builder.mount_events(app);
             features::browser::spawn_change_notifier(app.handle().clone());
+            features::servers::sources::spawn_notifier(app.handle().clone());
             features::gamepad::spawn(app.handle().clone());
             features::stats::tracker::spawn(app.handle().clone());
             // The one-shot slot the news WebView fallback returns its JSON through.

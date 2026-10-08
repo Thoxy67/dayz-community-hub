@@ -2,6 +2,7 @@
 //! the counters the title bar shows.
 
 mod dto;
+pub(crate) mod sources;
 mod steam;
 
 pub use dto::{AppStatsDto, InitResult, ModDto, ServerDto};
@@ -55,10 +56,12 @@ pub(crate) async fn initialize(app: AppHandle) -> Result<InitResult, String> {
         }
         _ => {
             let key = ctl.profile().steam_api_key.clone();
+            dzsa_starts();
             let (community, official) = tokio::join!(
                 dz_api::fetch_servers(ctl.http_client()),
                 fetch_official(ctl.http_client(), key.as_deref())
             );
+            dzsa_done(&community);
             match community {
                 Ok(list) => {
                     let list = steam::with_steam(dedup(with_official(list, official)));
@@ -128,10 +131,12 @@ pub(crate) async fn refresh_servers(
             s.ctl.profile().steam_api_key.clone(),
         )
     };
+    dzsa_starts();
     let (community, official) = tokio::join!(
         dz_api::fetch_servers(&client),
         fetch_official(&client, key.as_deref())
     );
+    dzsa_done(&community);
     let fresh = dedup(with_official(community.cmd_err()?, official));
     let list = {
         let mut s = state.write().await;
@@ -197,6 +202,27 @@ async fn fetch_official(client: &reqwest::Client, key: Option<&str>) -> Vec<dz_a
             eprintln!("official servers: {e}");
             Vec::new()
         })
+}
+
+fn dzsa_starts() {
+    sources::update(|s| {
+        s.dzsa.phase = sources::Phase::Running;
+        s.dzsa.error = None;
+    });
+}
+
+fn dzsa_done(r: &dz_common::Result<ServerList>) {
+    sources::update(|s| match r {
+        Ok(list) => {
+            s.dzsa.phase = sources::Phase::Done;
+            s.dzsa.count = list.result.len() as u32;
+            s.dzsa.at = Some(sources::now());
+        }
+        Err(e) => {
+            s.dzsa.phase = sources::Phase::Failed;
+            s.dzsa.error = Some(e.to_string());
+        }
+    });
 }
 
 fn with_official(mut list: ServerList, official: Vec<dz_api::Server>) -> ServerList {

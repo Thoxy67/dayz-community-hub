@@ -306,6 +306,20 @@ const content = {
       es: "Obtener una clave",
       ru: "Получить ключ",
     }),
+    detectSteamId: t({
+      en: "From Steam",
+      fr: "Depuis Steam",
+      de: "Aus Steam",
+      es: "Desde Steam",
+      ru: "Из Steam",
+    }),
+    detectSteamIdTitle: t({
+      en: "Read it from the running Steam client",
+      fr: "Le lire dans le client Steam ouvert",
+      de: "Aus dem laufenden Steam-Client lesen",
+      es: "Leerlo del cliente de Steam abierto",
+      ru: "Взять из запущенного клиента Steam",
+    }),
     findSteamId: t({
       en: "Find your ID",
       fr: "Trouver votre ID",

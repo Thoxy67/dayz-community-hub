@@ -1,32 +1,62 @@
-//! The Steam account's avatar and the number of players in DayZ.
+//! The Steam account's avatar and the number of players in DayZ, and how
+//! the app reaches Steam ([`access`]).
 
 use tauri::State;
 
 use crate::error::{HttpResultExt, ResultExt, send_ok};
 use crate::state::SharedState;
 
-/// Fetch the Steam avatar for the configured account and cache it as a data: URI.
+pub(crate) mod access;
+
+/// Who is logged in to the running Steam client.
+#[derive(serde::Serialize, Clone, Debug, specta::Type)]
+pub struct SteamMeDto {
+    pub steam_id: String,
+    /// Their Steam name, a good default for the in-game name.
+    pub name: String,
+    pub avatar: Option<String>,
+}
+
+/// The account of the running Steam client, for the setup wizard and the
+/// settings to fill in the Steam id and the name. Steam shows DayZ running
+/// for a moment.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn steam_me() -> Result<SteamMeDto, String> {
+    let me = access::me().await?;
+    Ok(SteamMeDto {
+        steam_id: me.steam_id.to_string(),
+        name: me.name,
+        avatar: me
+            .avatar
+            .and_then(|(w, h, rgba)| access::rgba_data_uri(w, h, &rgba)),
+    })
+}
+
+/// The account's Steam avatar as a `data:` URI, cached: from the Web API
+/// when a key is set, else (or when that fails) from the Steam client.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn fetch_steam_avatar(
     state: State<'_, SharedState>,
 ) -> Result<Option<String>, String> {
-    let (api_key, steam_id) = {
-        let s = state.read().await;
-        (
-            s.ctl.profile().steam_api_key.clone(),
-            s.ctl.profile().steam_id.clone(),
-        )
-    };
+    let web = access::web(&state).await;
+    let mut uri = None;
+    if let (Some(key), Some(id)) = (&web.key, &web.steam_id) {
+        uri = web_avatar(key, id).await.ok().flatten();
+    }
+    if uri.is_none() {
+        uri = access::me().await.ok().and_then(|m| {
+            let (w, h, rgba) = m.avatar?;
+            access::rgba_data_uri(w, h, &rgba)
+        });
+    }
+    state.write().await.cached_avatar = uri.clone();
+    Ok(uri)
+}
 
-    let (api_key, steam_id) = match (api_key, steam_id) {
-        (Some(k), Some(id)) if !k.is_empty() && !id.is_empty() => (k, id),
-        _ => {
-            state.write().await.cached_avatar = None;
-            return Ok(None);
-        }
-    };
-
+/// The avatar through GetPlayerSummaries, fetched and inlined.
+async fn web_avatar(api_key: &str, steam_id: &str) -> Result<Option<String>, String> {
     let client = crate::net::api();
 
     // The key goes as a query parameter, never formatted into a string that
@@ -34,7 +64,7 @@ pub(crate) async fn fetch_steam_avatar(
     let resp: serde_json::Value = send_ok(
         client
             .get("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/")
-            .query(&[("key", api_key.as_str()), ("steamids", steam_id.as_str())]),
+            .query(&[("key", api_key), ("steamids", steam_id)]),
     )
     .await
     .http_err("Steam profile")?
@@ -42,37 +72,31 @@ pub(crate) async fn fetch_steam_avatar(
     .await
     .http_err("Steam profile")?;
 
-    let avatar_img_url = resp["response"]["players"]
+    let Some(img_url) = resp["response"]["players"]
         .as_array()
         .and_then(|arr| arr.first())
         .and_then(|p| p["avatarmedium"].as_str())
-        .map(|s: &str| s.to_string());
-
-    let data_uri = match avatar_img_url {
-        None => None,
-        Some(img_url) => {
-            let img_resp = send_ok(client.get(&img_url))
-                .await
-                .http_err("Steam avatar")?;
-            let content_type = img_resp
-                .headers()
-                .get(reqwest::header::CONTENT_TYPE)
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("image/jpeg")
-                .split(';')
-                .next()
-                .unwrap_or("image/jpeg")
-                .trim()
-                .to_string();
-            let bytes = img_resp.bytes().await.http_err("Steam avatar")?;
-            use base64::Engine;
-            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-            Some(format!("data:{content_type};base64,{b64}"))
-        }
+        .map(str::to_string)
+    else {
+        return Ok(None);
     };
-
-    state.write().await.cached_avatar = data_uri.clone();
-    Ok(data_uri)
+    let img_resp = send_ok(client.get(&img_url))
+        .await
+        .http_err("Steam avatar")?;
+    let content_type = img_resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/jpeg")
+        .split(';')
+        .next()
+        .unwrap_or("image/jpeg")
+        .trim()
+        .to_string();
+    let bytes = img_resp.bytes().await.http_err("Steam avatar")?;
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(Some(format!("data:{content_type};base64,{b64}")))
 }
 
 /// Fetch Steam player count for DayZ.

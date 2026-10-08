@@ -6,6 +6,11 @@
   import { Input } from "$lib/components/ui/input";
   import { Tag } from "$lib/components/ui/tag";
   import { openUrl } from "$lib/ipc/native";
+  import { steamMe } from "$lib/ipc/system";
+  import { errorText } from "$lib/ipc/core";
+  import { say } from "$lib/stores/say";
+  import { Button } from "$lib/components/ui/button";
+  import ScanSearch from "~icons/lucide/scan-search";
   import { SettingsSection as Section } from "$lib/components/app";
   import { SecretInput as Secret } from "$lib/components/app";
   import { form } from "./account-form.svelte";
@@ -13,6 +18,19 @@
   const s = dict("settings");
   const a = dict("about");
   const steamReady = $derived(!!form.f.steamApiKey && !!form.f.steamId);
+
+  let detecting = $state(false);
+  /** The Steam id of the account logged in to the running Steam client. */
+  async function detectId() {
+    detecting = true;
+    try {
+      form.f.steamId = (await steamMe()).steam_id;
+    } catch (e) {
+      say.err(errorText(e));
+    } finally {
+      detecting = false;
+    }
+  }
 </script>
 
 {#snippet link(url: string, label: string)}
@@ -46,6 +64,15 @@
       spellcheck={false}
       class="flex-1 font-mono"
     />
+    <Button
+      variant="ghost"
+      size="xs"
+      onclick={detectId}
+      disabled={detecting}
+      title={$s.detectSteamIdTitle.value}
+    >
+      <ScanSearch class="size-3" />{$s.detectSteamId.value}
+    </Button>
     {@render link("https://steamid.io", $s.findSteamId.value)}
   </Field>
 </Section>

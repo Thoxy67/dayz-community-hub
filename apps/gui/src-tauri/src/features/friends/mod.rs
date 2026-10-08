@@ -96,20 +96,10 @@ pub struct FriendsDto {
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn steam_friends(state: State<'_, SharedState>) -> Result<FriendsDto, String> {
-    let (key, id) = {
-        let s = state.read().await;
-        let p = s.ctl.profile();
-        let clean = |v: &Option<String>| {
-            v.as_deref()
-                .map(str::trim)
-                .filter(|v| !v.is_empty())
-                .map(str::to_owned)
-        };
-        (clean(&p.steam_api_key), clean(&p.steam_id))
-    };
+    let web = crate::features::steam::access::web(&state).await;
     let mut web_error = None;
-    if let (Some(key), Some(id)) = (key, id) {
-        match from_web(&key, &id).await {
+    if let (Some(key), Some(id)) = (&web.key, &web.steam_id) {
+        match from_web(key, id).await {
             Ok(friends) => return Ok(finish(&state, friends, FriendsSource::WebApi).await),
             Err(e) => web_error = Some(e),
         }

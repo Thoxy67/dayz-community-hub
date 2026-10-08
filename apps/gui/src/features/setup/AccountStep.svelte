@@ -3,6 +3,7 @@
   import Gamepad from "~icons/lucide/gamepad-2";
   import KeyRound from "~icons/lucide/key-round";
   import ShieldCheck from "~icons/lucide/shield-check";
+  import CircleCheck from "~icons/lucide/circle-check";
   import { Field } from "$lib/components/ui/field";
   import { Input } from "$lib/components/ui/input";
   import SectionCard from "$lib/components/app/SectionCard.svelte";
@@ -53,5 +54,12 @@
         bind:value={wizard.player}
       />
     </Field>
+    {#if wizard.fromSteam}
+      <p
+        class="m-0 flex items-start gap-2 border-t border-border/60 px-3 py-2 text-2xs text-fg-muted"
+      >
+        <CircleCheck class="mt-px size-icon-sm shrink-0 text-ok" />{$w.filledFromSteam.value}
+      </p>
+    {/if}
   </SectionCard>
 </div>
