@@ -382,6 +382,7 @@ function mockSources() {
       answered: 2871,
       no_mods: 94,
       fakes: 2210,
+      retried: 265,
       added: 2690,
       started: now - 34,
       finished: null,

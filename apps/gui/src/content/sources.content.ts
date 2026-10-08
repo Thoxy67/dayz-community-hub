@@ -139,6 +139,13 @@ const content = {
       es: "Ya en la lista",
       ru: "Уже в списке",
     }),
+    retried: t({
+      en: "Asked again, patiently",
+      fr: "Réinterrogés, plus patiemment",
+      de: "Erneut gefragt, geduldiger",
+      es: "Consultados de nuevo, con paciencia",
+      ru: "Опрошены повторно, терпеливее",
+    }),
     queried: t({
       en: "Queried",
       fr: "Interrogés",

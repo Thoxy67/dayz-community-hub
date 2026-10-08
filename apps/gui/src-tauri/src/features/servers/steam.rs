@@ -53,7 +53,15 @@ use crate::features::browser::live::{self, Live};
 use crate::state::SharedState;
 
 /// A2S queries in flight at once.
-const CONCURRENCY: usize = 256;
+const CONCURRENCY: usize = 128;
+/// The second pass, for what did not answer the first: slower, more patient.
+/// UDP drops replies under a burst, and a server missed is otherwise
+/// "found" again by the next listing.
+const SLOW_CONCURRENCY: usize = 64;
+const SLOW_TIMEOUT: Duration = Duration::from_secs(3);
+/// How often the list is written to the cache while a listing adds to it,
+/// so closing the launcher midway loses little.
+const SAVE_EVERY: Duration = Duration::from_secs(30);
 /// How long a server has to answer A2S_INFO.
 const INFO_TIMEOUT: Duration = Duration::from_millis(1500);
 /// How long a modded server has to answer A2S_RULES.
@@ -306,43 +314,17 @@ pub(crate) fn check_kept(app: AppHandle) {
         let Some(state) = app.try_state::<SharedState>().map(|s| Arc::clone(&s)) else {
             return;
         };
-        let Ok(client) = dz_a2s::client_with_timeout(INFO_TIMEOUT).await else {
+        let (Ok(fast), Ok(slow)) = (
+            dz_a2s::client_with_timeout(INFO_TIMEOUT).await,
+            dz_a2s::client_with_timeout(SLOW_TIMEOUT).await,
+        ) else {
             return;
         };
-        let client = Arc::new(client);
-        let gone: FxHashSet<(String, i64)> = stream::iter(kept)
-            .map(|(ip, port)| {
-                let client = Arc::clone(&client);
-                async move {
-                    let addr = format!("{ip}:{port}");
-                    let mut alive = false;
-                    let mut fake = false;
-                    for _ in 0..KEPT_TRIES {
-                        if let Ok(p) = dz_a2s::ping_using(&client, &addr).await {
-                            live::store().record(&ip, port, Live::from_result(&Ok(p)));
-                            alive = true;
-                            fake = p.bots > 0;
-                            break;
-                        }
-                    }
-                    sources::update(|s| {
-                        s.kept.checked += 1;
-                        if fake {
-                            s.kept.fakes += 1;
-                        } else if alive {
-                            s.kept.alive += 1;
-                        } else {
-                            s.kept.removed += 1;
-                        }
-                    });
-                    (!alive || fake).then_some((ip, port))
-                }
-            })
-            .buffer_unordered(CONCURRENCY)
-            .filter_map(std::future::ready)
-            .collect()
-            .await;
+        // Silent ones are asked again, slowly, before they are taken for gone.
+        let silent = kept_pass(&fast, kept, CONCURRENCY, false).await;
+        let gone = kept_pass(&slow, silent, SLOW_CONCURRENCY, true).await;
         if !gone.is_empty() {
+            let gone: FxHashSet<(String, i64)> = gone.into_iter().collect();
             found().kept.retain(|s| !gone.contains(&key(s)));
             let list = show(&app, &state).await;
             super::save_cache_in_background(Arc::clone(&list));
@@ -350,6 +332,48 @@ pub(crate) fn check_kept(app: AppHandle) {
         }
         sources::update(|s| s.kept.phase = Phase::Done);
     });
+}
+
+/// Ping `addrs`; returns those to drop: on the `last` pass the silent and
+/// the fakes, before it the fakes and those to ask again (the silent).
+async fn kept_pass(
+    client: &dz_a2s::Client,
+    addrs: Vec<Addr>,
+    concurrency: usize,
+    last: bool,
+) -> Vec<Addr> {
+    stream::iter(addrs)
+        .map(|(ip, port)| async move {
+            let addr = format!("{ip}:{port}");
+            let mut alive = false;
+            let mut fake = false;
+            for _ in 0..KEPT_TRIES {
+                if let Ok(p) = dz_a2s::ping_using(client, &addr).await {
+                    live::store().record(&ip, port, Live::from_result(&Ok(p)));
+                    alive = true;
+                    fake = p.bots > 0;
+                    break;
+                }
+            }
+            if !alive && !last {
+                return Some((ip, port));
+            }
+            sources::update(|s| {
+                s.kept.checked += 1;
+                if fake {
+                    s.kept.fakes += 1;
+                } else if alive {
+                    s.kept.alive += 1;
+                } else {
+                    s.kept.removed += 1;
+                }
+            });
+            (!alive || fake).then_some((ip, port))
+        })
+        .buffer_unordered(concurrency)
+        .filter_map(std::future::ready)
+        .collect()
+        .await
 }
 
 // ── the listing ─────────────────────────────────────────────────────────
@@ -438,26 +462,28 @@ async fn run(app: &AppHandle) {
                 }
                 std::future::ready(fresh.then_some(c))
             })
-            .map(|c| query(Arc::clone(&client), c))
+            .map(|c| query(Arc::clone(&client), c, false))
             .buffer_unordered(CONCURRENCY)
-            .filter_map(std::future::ready)
             .fuse(),
     );
-
-    let mut fresh: Vec<SteamListed> = Vec::new();
-    let mut tick = tokio::time::interval(PUBLISH_EVERY);
-    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    loop {
-        tokio::select! {
-            next = answers.next() => match next {
-                Some(row) => fresh.push(row),
-                None => break,
-            },
-            _ = tick.tick() => publish(app, &state, std::mem::take(&mut fresh), ping_settings).await,
-        }
-    }
-    publish(app, &state, fresh, ping_settings).await;
+    let silent = take_answers(app, &state, &mut answers, ping_settings).await;
     let outcome = lister.await.unwrap_or_else(|e| Err(e.to_string()));
+
+    // What did not answer, once more, patiently.
+    if !silent.is_empty()
+        && !CANCEL.load(Ordering::SeqCst)
+        && let Ok(slow) = dz_a2s::client_with_timeout(SLOW_TIMEOUT).await
+    {
+        let slow = Arc::new(slow);
+        sources::update(|s| s.steam.retried += silent.len() as u32);
+        let mut again = Box::pin(
+            stream::iter(silent)
+                .map(|c| query(Arc::clone(&slow), c, true))
+                .buffer_unordered(SLOW_CONCURRENCY)
+                .fuse(),
+        );
+        take_answers(app, &state, &mut again, ping_settings).await;
+    }
 
     let list = Arc::clone(&state.read().await.servers);
     super::save_cache_in_background(Arc::clone(&list));
@@ -487,7 +513,37 @@ struct PingSettings {
     retries: u32,
 }
 
-/// Put `rows` in the list the app shows, and in the ping scan's queue.
+/// Put the servers `answers` yields in the list as they come; returns the
+/// candidates that did not answer.
+async fn take_answers(
+    app: &AppHandle,
+    state: &SharedState,
+    answers: &mut (impl Unpin + futures_util::stream::FusedStream<Item = Outcome>),
+    ping: Option<PingSettings>,
+) -> Vec<Candidate> {
+    let mut fresh: Vec<SteamListed> = Vec::new();
+    let mut silent = Vec::new();
+    let mut tick = tokio::time::interval(PUBLISH_EVERY);
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        tokio::select! {
+            next = answers.next() => match next {
+                Some(Outcome::Row(row)) => fresh.push(row),
+                Some(Outcome::Silent(c)) => silent.push(c),
+                Some(Outcome::Rejected) => {}
+                None => break,
+            },
+            _ = tick.tick() => publish(app, state, std::mem::take(&mut fresh), ping).await,
+        }
+    }
+    publish(app, state, fresh, ping).await;
+    silent
+}
+
+static LAST_SAVE: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// Put `rows` in the list the app shows, and in the ping scan's queue. The
+/// cache is written every [`SAVE_EVERY`] meanwhile.
 async fn publish(
     app: &AppHandle,
     state: &SharedState,
@@ -509,7 +565,17 @@ async fn publish(
         added
     };
     sources::update(|s| s.steam.added += added.len() as u32);
-    show(app, state).await;
+    let list = show(app, state).await;
+    let due = LAST_SAVE.lock().is_ok_and(|mut last| {
+        let due = last.is_none_or(|t| t.elapsed() >= SAVE_EVERY);
+        if due {
+            *last = Some(Instant::now());
+        }
+        due
+    });
+    if due {
+        super::save_cache_in_background(list);
+    }
     if let Some(p) = ping
         && let Some(scan) = app.try_state::<Arc<crate::features::ping::PingState>>()
     {
@@ -847,14 +913,32 @@ fn wait(d: Duration) -> bool {
 
 // ── the servers themselves ──────────────────────────────────────────────
 
-/// A2S_INFO, and A2S_RULES for a modded server's mods. `None` when it does
-/// not answer, or is modded and its mods cannot be read (it could not be
-/// joined with them).
-async fn query(client: Arc<dz_a2s::Client>, c: Candidate) -> Option<SteamListed> {
-    sources::update(|s| s.steam.queried += 1);
+/// What asking a candidate gave.
+enum Outcome {
+    Row(SteamListed),
+    /// No answer: asked again in the second pass.
+    Silent(Candidate),
+    /// A fake, or modded with mods that cannot be read.
+    Rejected,
+}
+
+/// A2S_INFO, and A2S_RULES for a modded server's mods. A server that does
+/// not answer is silent (asked again unless this is the `last` pass); a
+/// fake, or a modded one whose mods cannot be read (it could not be joined
+/// with them) on the last pass, is rejected.
+async fn query(client: Arc<dz_a2s::Client>, c: Candidate, last: bool) -> Outcome {
+    if !last {
+        sources::update(|s| s.steam.queried += 1);
+    }
     let port = i64::from(c.query_port);
     let addr = format!("{}:{port}", c.ip);
-    let (info, _) = client.info(addr.as_str(), None).await.ok()?;
+    let Ok((info, _)) = client.info(addr.as_str(), None).await else {
+        return if last {
+            Outcome::Rejected
+        } else {
+            Outcome::Silent(c)
+        };
+    };
     sources::update(|s| s.steam.answered += 1);
     // DayZ has no bots: a server reporting some is a farm's emulator
     // padding its count. Measured on 2026-10-08: of 388 dayzsalauncher.com
@@ -862,7 +946,7 @@ async fn query(client: Arc<dz_a2s::Client>, c: Candidate) -> Option<SteamListed>
     // listed, 324 reported as many bots as players.
     if info.bots > 0 {
         sources::update(|s| s.steam.fakes += 1);
-        return None;
+        return Outcome::Rejected;
     }
     let players = dz_a2s::human_player_count(&info);
     // Its counts now; its ping from the scan, once it is in the list.
@@ -886,14 +970,17 @@ async fn query(client: Arc<dz_a2s::Client>, c: Candidate) -> Option<SteamListed>
             })
             .unwrap_or_default();
         if mods.is_empty() {
+            if !last {
+                return Outcome::Silent(c);
+            }
             sources::update(|s| s.steam.no_mods += 1);
-            return None;
+            return Outcome::Rejected;
         }
         mods
     } else {
         Vec::new()
     };
-    Some(SteamListed {
+    Outcome::Row(SteamListed {
         query_port: port,
         game_port: ext.port.map_or(i64::from(c.game_port), i64::from),
         name: info.name.trim().to_owned(),

@@ -68,6 +68,8 @@ pub struct SteamStatus {
     pub farms: u32,
     /// Of those, already in the list.
     pub known: u32,
+    /// Asked again, patiently, after not answering the first time.
+    pub retried: u32,
     /// Queried (A2S), and of those answered.
     pub queried: u32,
     pub answered: u32,

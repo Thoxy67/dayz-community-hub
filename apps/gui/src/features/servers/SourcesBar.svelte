@@ -160,6 +160,7 @@
           {@render line($w.known.value, num(steam.known), "text-fg-faint")}
           {@render line($w.queried.value, num(steam.queried))}
           {@render line($w.answered.value, num(steam.answered))}
+          {@render line($w.retried.value, num(steam.retried), "text-fg-muted")}
           {@render line($w.noMods.value, num(steam.no_mods), "text-fg-faint")}
           {@render line($w.fakes.value, num(steam.fakes), "text-fg-faint")}
           {@render line($w.added.value, `+${num(steam.added)}`, "text-ok")}

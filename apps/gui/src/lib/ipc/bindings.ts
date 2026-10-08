@@ -1301,6 +1301,8 @@ export type SteamStatus = {
 	farms: number,
 	/**  Of those, already in the list. */
 	known: number,
+	/**  Asked again, patiently, after not answering the first time. */
+	retried: number,
 	/**  Queried (A2S), and of those answered. */
 	queried: number,
 	answered: number,
