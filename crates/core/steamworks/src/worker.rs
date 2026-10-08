@@ -135,6 +135,27 @@ pub fn close_session(grace: Duration) -> bool {
     true
 }
 
+/// How long a background request waits for the session in use.
+const BUSY_WAIT: Duration = Duration::from_secs(10);
+
+/// The session, once the one in use ends (a listing's partition takes a few
+/// seconds), or an error after [`BUSY_WAIT`] (a download).
+fn wait_for_session() -> Result<std::sync::MutexGuard<'static, ()>, String> {
+    let deadline = Instant::now() + BUSY_WAIT;
+    loop {
+        match ONE.try_lock() {
+            Ok(guard) => return Ok(guard),
+            Err(std::sync::TryLockError::Poisoned(p)) => return Ok(p.into_inner()),
+            Err(std::sync::TryLockError::WouldBlock) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(std::sync::TryLockError::WouldBlock) => {
+                return Err("Steam is busy with another session.".into());
+            }
+        }
+    }
+}
+
 /// Run `request` in a worker, handing its events to `on`, and return its
 /// outcome. Setting `cancel` asks the worker to stop.
 fn run(
@@ -146,7 +167,11 @@ fn run(
     let connects = !matches!(request, Request::Status);
     let listing = matches!(request, Request::ListServers { .. });
     // Asked again soon if Steam is busy: it does not stop a listing.
-    let background = listing || matches!(request, Request::Friends | Request::Me);
+    let background = listing
+        || matches!(
+            request,
+            Request::Friends | Request::Me | Request::Details { .. }
+        );
     let _one = if connects {
         Some(match ONE.try_lock() {
             Ok(guard) => guard,
@@ -161,9 +186,7 @@ fn run(
                         ONE.lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner)
                     }
-                    _ if background => {
-                        return Err("Steam is busy with another session.".into());
-                    }
+                    _ if background => wait_for_session()?,
                     _ => {
                         return Err("Another download through Steam is already running.".into());
                     }

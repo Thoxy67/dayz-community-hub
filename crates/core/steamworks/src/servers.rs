@@ -11,8 +11,8 @@
 //! (most of them farms: fake servers by the thousand on one address), so a
 //! listing is a sequence of *partitions*, filter sets whose answers the
 //! caller merges: the servers Steam knows have players first, then the
-//! empty ones map by map. A map partition Steam truncates is asked again
-//! with one server per address, which no farm can fill.
+//! empty ones map by map. (`collapse_addr_hash`, "one server per address",
+//! was tried for the maps farms fill: the master answers it with 3 servers.)
 //!
 //! `RequestInternetServerList` reports through a C++ object implementing
 //! `ISteamMatchmakingServerListResponse`: one is laid out by hand (a vtable
@@ -40,8 +40,6 @@ pub type Filters = Vec<(String, String)>;
 
 /// Steam's ceiling for one request: an answer this long was truncated.
 pub const STEAM_LIST_CAP: usize = 10_000;
-/// Steam's "one server per address" filter.
-pub const COLLAPSE: &str = "collapse_addr_hash";
 
 /// How often Steam is polled while a request runs.
 const TICK: Duration = Duration::from_millis(100);
@@ -120,14 +118,10 @@ fn flag(key: &str) -> (String, String) {
 
 /// The partitions of a full listing, the most useful first: the master
 /// answers a short burst, then about one request a minute, so the order
-/// is what a cut-short listing still has. Servers with players, then one
-/// empty server per address on any map, then empty servers on each of
-/// `maps` (the busiest first, as the caller orders them).
+/// is what a cut-short listing still has. Servers with players, then empty
+/// servers on each of `maps` (the busiest first, as the caller orders them).
 pub fn partitions(maps: &[String]) -> Vec<Filters> {
-    let mut parts = vec![
-        vec![flag("hasplayers")],
-        vec![flag("noplayers"), flag(COLLAPSE)],
-    ];
+    let mut parts = vec![vec![flag("hasplayers")]];
     parts.extend(
         maps.iter()
             .map(|m| vec![flag("noplayers"), ("map".to_owned(), m.clone())]),
@@ -135,19 +129,7 @@ pub fn partitions(maps: &[String]) -> Vec<Filters> {
     parts
 }
 
-/// The request to send after `listing` when Steam truncated a map: the same
-/// filters, one server per address.
-fn follow_up(listing: &Listing) -> Option<Filters> {
-    let has = |k: &str| listing.filters.iter().any(|(key, _)| key == k);
-    (listing.capped && has("map") && !has(COLLAPSE)).then(|| {
-        let mut f = listing.filters.clone();
-        f.push(flag(COLLAPSE));
-        f
-    })
-}
-
-/// List DayZ's servers, one request per partition (and a follow-up for each
-/// truncated map), handing the addresses to `on` as the master gives them
+/// List DayZ's servers, one request per partition, handing the addresses to `on` as the master gives them
 /// and each partition's outcome when it ends. Returns how many requests
 /// were answered. Connects to Steam as DayZ for that time (seconds).
 ///
@@ -165,15 +147,12 @@ pub(crate) fn list(
     if mms.is_null() {
         return Err("This Steam client does not offer the server list interface. Update Steam and try again.".into());
     }
-    let mut queue: std::collections::VecDeque<Filters> = partitions.iter().cloned().collect();
     let (mut answered, mut empty_in_a_row) = (0, 0);
-    let mut first = true;
-    while let Some(filters) = queue.pop_front() {
-        if !first && !pause(PARTITION_GAP, cancel) {
+    for (i, filters) in partitions.iter().enumerate() {
+        if i > 0 && !pause(PARTITION_GAP, cancel) {
             break;
         }
-        first = false;
-        let listing = request(&session, mms, filters, cancel, on);
+        let listing = request(&session, mms, filters.clone(), cancel, on);
         match listing.answer {
             Answer::Cancelled => break,
             Answer::Listed => {
@@ -181,9 +160,6 @@ pub(crate) fn list(
                 empty_in_a_row = 0;
             }
             Answer::NoServers | Answer::TimedOut => empty_in_a_row += 1,
-        }
-        if let Some(next) = follow_up(&listing) {
-            queue.push_front(next);
         }
         on(ListEvent::Done(listing));
         if empty_in_a_row >= MAX_EMPTY_IN_A_ROW {
@@ -407,29 +383,12 @@ mod tests {
     fn a_full_listing_asks_for_populated_servers_first() {
         let p = partitions(&["enoch".into()]);
         assert_eq!(p[0], vec![flag("hasplayers")]);
-        assert_eq!(p[1], vec![flag("noplayers"), flag(COLLAPSE)]);
         assert_eq!(
-            p[2],
+            p[1],
             vec![flag("noplayers"), ("map".into(), "enoch".into())]
         );
-    }
-
-    #[test]
-    fn a_truncated_map_is_asked_again_one_server_per_address() {
-        let mut l = Listing {
-            filters: vec![flag("noplayers"), ("map".into(), "enoch".into())],
-            answer: Answer::Listed,
-            listed: STEAM_LIST_CAP,
-            capped: true,
-        };
-        let next = follow_up(&l).unwrap();
-        assert!(next.contains(&flag(COLLAPSE)));
-        assert_eq!(empty_of(&l.filters), Some(true));
-        l.filters = next;
-        assert!(follow_up(&l).is_none(), "asked collapsed once only");
-        l.filters = vec![flag("hasplayers")];
-        assert!(follow_up(&l).is_none(), "only map partitions get one");
-        assert_eq!(empty_of(&l.filters), Some(false));
+        assert_eq!(empty_of(&p[0]), Some(false));
+        assert_eq!(empty_of(&p[1]), Some(true));
     }
 
     #[test]

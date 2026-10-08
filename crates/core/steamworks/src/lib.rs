@@ -24,8 +24,7 @@ mod worker;
 
 pub use friends::{Friend, FriendGame, FriendServer};
 pub use servers::{
-    Answer, COLLAPSE, Filters, ListEvent, Listing, MasterEntry, STEAM_LIST_CAP, empty_of,
-    partitions,
+    Answer, Filters, ListEvent, Listing, MasterEntry, STEAM_LIST_CAP, empty_of, partitions,
 };
 pub use session::{Details, Event, ItemResult, Me, Subscribed, Unsubscribed};
 pub use state::{ItemState, percent, result_text};
