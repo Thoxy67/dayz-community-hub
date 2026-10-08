@@ -25,7 +25,8 @@ export const commands = {
 	getServerDetails: (ip: string, port: number) => __TAURI_INVOKE<ServerDto>("get_server_details", { ip, port }),
 	/**
 	 *  Fetch the list from the API again. Returns how many servers it holds;
-	 *  the browser re-queries on the `servers-changed` that follows. Then
+	 *  the browser re-queries on the `servers-changed` that follows. Servers
+	 *  the list had and no longer lists stay, unless they do not answer. Then
 	 *  Steam's servers are listed in the background (at most every few
 	 *  minutes) and added as they answer.
 	 */
@@ -35,6 +36,8 @@ export const commands = {
 	 *  it off stops a listing under way; turning it on lists them now.
 	 */
 	setSteamServerList: (enabled: boolean) => __TAURI_INVOKE<null>("set_steam_server_list", { enabled }),
+	/**  The account's friends and what they are doing. */
+	steamFriends: () => __TAURI_INVOKE<FriendsDto>("steam_friends"),
 	/**  The title bar's counters. */
 	getAppStats: () => __TAURI_INVOKE<AppStatsDto>("get_app_stats"),
 	/**  A filtered, sorted window of the server list, with totals. */
@@ -516,6 +519,49 @@ export type FileFilter = {
 	name: string,
 	extensions: string[],
 };
+
+export type FriendDto = {
+	steam_id: string,
+	name: string,
+	status: FriendStatus,
+	/**  Steam's avatar picture (from the Web API only). */
+	avatar: string | null,
+	/**  The game they are in. */
+	game: string | null,
+	in_dayz: boolean,
+	server: FriendServerDto | null,
+	/**  When they were last online, Unix seconds (from the Web API only). */
+	last_online: number | null,
+};
+
+/**  The server a friend is on. */
+export type FriendServerDto = {
+	ip: string,
+	/**
+	 *  The port to join with: the listed server's query port when it is in
+	 *  the list, else the game port Steam gave.
+	 */
+	port: number,
+	/**  From the server list, when the server is in it. */
+	name: string | null,
+	map: string | null,
+	players: number | null,
+	max_players: number | null,
+};
+
+/**  What a friend is doing. */
+export type FriendStatus = "offline" | "online" | "busy" | "away" | "snooze";
+
+export type FriendsDto = {
+	source: FriendsSource | null,
+	/**  Why there are none, when there are none: a sentence. */
+	error: string | null,
+	/**  In DayZ first, then in another game, online, offline; by name within. */
+	friends: FriendDto[],
+};
+
+/**  Where the friends came from. */
+export type FriendsSource = "web_api" | "steam_client";
 
 /**  A pad asked the window to do something. */
 export type GamepadInput = {

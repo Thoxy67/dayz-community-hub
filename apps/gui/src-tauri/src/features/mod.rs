@@ -4,6 +4,7 @@
 pub(crate) mod a2s;
 pub(crate) mod browser;
 pub(crate) mod dzch_cli;
+pub(crate) mod friends;
 pub(crate) mod gamepad;
 pub(crate) mod launch;
 pub(crate) mod metrics;

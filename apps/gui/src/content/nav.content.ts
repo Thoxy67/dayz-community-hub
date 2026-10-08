@@ -157,6 +157,7 @@ const content = {
       ru: "Избранное",
     }),
     history: t({ en: "History", fr: "Historique", de: "Verlauf", es: "Historial", ru: "История" }),
+    friends: t({ en: "Friends", fr: "Amis", de: "Freunde", es: "Amigos", ru: "Друзья" }),
     stats: t({
       en: "Statistics",
       fr: "Statistiques",

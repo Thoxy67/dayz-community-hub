@@ -9,6 +9,7 @@ export type ViewId =
   | "servers"
   | "favorites"
   | "history"
+  | "friends"
   | "connect"
   | "offline"
   | "mods"

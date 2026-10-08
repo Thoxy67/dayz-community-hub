@@ -9,6 +9,7 @@ import type { ViewId } from "$lib/stores/app.svelte";
 import IconServers from "~icons/lucide/server";
 import IconFavorites from "~icons/lucide/star";
 import IconHistory from "~icons/lucide/history";
+import IconFriends from "~icons/lucide/users";
 import IconConnect from "~icons/lucide/plug-zap";
 import IconOffline from "~icons/game-icons/camping-tent";
 import IconMods from "~icons/lucide/puzzle";
@@ -50,6 +51,13 @@ export const PLACES: readonly Place[] = [
     label: "history",
     icon: IconHistory,
     load: () => import("$features/history/View.svelte"),
+  },
+  {
+    id: "friends",
+    group: "play",
+    label: "friends",
+    icon: IconFriends,
+    load: () => import("$features/friends/View.svelte"),
   },
   {
     id: "connect",

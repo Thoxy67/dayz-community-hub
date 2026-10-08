@@ -663,6 +663,49 @@ export function installMock() {
           dayz_dir: `${a.path || "/mnt/ssd2/SteamLibrary/steamapps"}/common/DayZ`,
           workshop_mods: 37,
         };
+      case "steam_friends": {
+        const at = (i: number) => servers[i * 7 + 3]!;
+        const friend = (
+          i: number,
+          name: string,
+          status: string,
+          game: string | null,
+          server: number | null,
+        ) => ({
+          steam_id: `765611980000001${i}`,
+          name,
+          status,
+          avatar: null,
+          game,
+          in_dayz: game === "DayZ",
+          server:
+            server == null
+              ? null
+              : {
+                  ip: at(server).ip,
+                  port: at(server).query_port,
+                  name: at(server).name,
+                  map: at(server).map,
+                  players: at(server).players,
+                  max_players: at(server).max_players,
+                },
+          last_online: status === "offline" ? now - (i + 1) * 5400 : null,
+        });
+        return {
+          source: "web_api",
+          error: null,
+          friends: [
+            friend(0, "Kozak", "online", "DayZ", 1),
+            friend(1, "nightwolf", "online", "DayZ", 2),
+            friend(2, "Bambi Hunter", "away", "DayZ", null),
+            friend(3, "Mira", "online", "Counter-Strike 2", null),
+            friend(4, "Tobi", "busy", null, null),
+            friend(5, "ZedSlayer", "online", null, null),
+            friend(6, "Old Gus", "offline", null, null),
+            friend(7, "Lena", "offline", null, null),
+          ],
+        };
+      }
       case "set_steam_server_list":
         profile.steam_server_list = a.enabled as boolean;
         return null;
