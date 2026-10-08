@@ -335,6 +335,27 @@ const content = {
       ru: "Широта от −90 до 90, долгота от −180 до 180.",
     }),
     apply: t({ en: "Apply", fr: "Appliquer", de: "Übernehmen", es: "Aplicar", ru: "Применить" }),
+    steamServerList: t({
+      en: "Steam's server list",
+      fr: "Liste des serveurs de Steam",
+      de: "Serverliste von Steam",
+      es: "Lista de servidores de Steam",
+      ru: "Список серверов Steam",
+    }),
+    steamServerListHint: t({
+      en: "Adds the servers Steam lists that the public list lacks, as they answer. Steam shows DayZ running for a few seconds each time it is asked.",
+      fr: "Ajoute les serveurs que Steam connaît et que la liste publique n'a pas, dès qu'ils répondent. Steam affiche DayZ lancé quelques secondes à chaque demande.",
+      de: "Fügt die Server hinzu, die Steam kennt und die öffentliche Liste nicht, sobald sie antworten. Steam zeigt DayZ bei jeder Abfrage einige Sekunden als laufend an.",
+      es: "Añade los servidores que Steam conoce y la lista pública no, en cuanto responden. Steam muestra DayZ en ejecución unos segundos cada vez.",
+      ru: "Добавляет серверы, которые знает Steam, но нет в общем списке, по мере ответа. Steam на несколько секунд показывает DayZ запущенной при каждом запросе.",
+    }),
+    steamServerListSwitch: t({
+      en: "Add Steam's servers",
+      fr: "Ajouter les serveurs de Steam",
+      de: "Server von Steam hinzufügen",
+      es: "Añadir servidores de Steam",
+      ru: "Добавлять серверы Steam",
+    }),
     pingIntro: t({
       en: "How the app measures the line to each server. Changes apply to the next scan.",
       fr: "Comment l'application mesure la ligne vers chaque serveur. Appliqué au prochain balayage.",

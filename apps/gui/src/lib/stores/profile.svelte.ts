@@ -8,6 +8,7 @@ import { fetchSteamAvatar } from "$lib/ipc/system";
 import { pickFile, saveFile } from "$lib/ipc/native";
 import type { FavoriteDto, HistoryDto, ModDownloaderDto, ProfileDto } from "$lib/ipc/types";
 import { setModDownloader } from "$lib/ipc/mods";
+import { setSteamServerList } from "$lib/ipc/servers";
 import { words } from "$lib/i18n";
 import { confirm } from "./dialogs.svelte";
 import { say, errorText } from "./say";
@@ -143,6 +144,16 @@ class Profile {
         if (this.data) this.data.mod_downloader = downloader;
       },
       () => setModDownloader(downloader),
+    );
+  }
+
+  /** Steam's own server list is added to the launcher's. */
+  async setSteamServerList(enabled: boolean) {
+    await this.#write(
+      () => {
+        if (this.data) this.data.steam_server_list = enabled;
+      },
+      () => setSteamServerList(enabled),
     );
   }
 

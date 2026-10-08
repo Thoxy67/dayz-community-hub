@@ -18,6 +18,7 @@ pub(crate) fn builder() -> tauri_specta::Builder<tauri::Wry> {
             servers::initialize,
             servers::get_server_details,
             servers::refresh_servers,
+            servers::set_steam_server_list,
             servers::get_app_stats,
             browser::servers_query,
             browser::servers_lookup,

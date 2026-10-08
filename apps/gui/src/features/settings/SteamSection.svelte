@@ -16,6 +16,7 @@
   import { Spinner } from "$lib/components/ui/spinner";
   import { Copy } from "$lib/components/ui/copy";
   import { Segmented } from "$lib/components/ui/segmented";
+  import { Switch } from "$lib/components/ui/switch";
   import {
     detectSteamcmd,
     downloadSteamcmdWindows,
@@ -171,6 +172,16 @@
       </div>
     {/if}
   </div>
+
+  <Field label={$s.steamServerList.value} hint={$s.steamServerListHint.value}>
+    <Switch
+      bind:checked={
+        () => profile.data?.steam_server_list ?? true, (c) => void profile.setSteamServerList(c)
+      }
+      label={$s.steamServerListSwitch.value}
+      class="flex-1 rounded-sm border border-border"
+    />
+  </Field>
 
   <Field label={$s.username.value} hint={$s.usernameHint.value} for="set-login">
     <Input

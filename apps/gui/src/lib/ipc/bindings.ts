@@ -25,9 +25,16 @@ export const commands = {
 	getServerDetails: (ip: string, port: number) => __TAURI_INVOKE<ServerDto>("get_server_details", { ip, port }),
 	/**
 	 *  Fetch the list from the API again. Returns how many servers it holds;
-	 *  the browser re-queries on the `servers-changed` that follows.
+	 *  the browser re-queries on the `servers-changed` that follows. Then
+	 *  Steam's servers are listed in the background (at most every few
+	 *  minutes) and added as they answer.
 	 */
 	refreshServers: () => __TAURI_INVOKE<number>("refresh_servers"),
+	/**
+	 *  Whether the servers Steam's master lists are added to the list. Turning
+	 *  it off stops a listing under way; turning it on lists them now.
+	 */
+	setSteamServerList: (enabled: boolean) => __TAURI_INVOKE<null>("set_steam_server_list", { enabled }),
 	/**  The title bar's counters. */
 	getAppStats: () => __TAURI_INVOKE<AppStatsDto>("get_app_stats"),
 	/**  A filtered, sorted window of the server list, with totals. */
@@ -832,6 +839,8 @@ export type ProfileDto = {
 	steamcmd_enabled: boolean,
 	/**  What downloads mods: SteamCMD or the Steam client. */
 	mod_downloader: ModDownloaderDto,
+	/**  Steam's own server list is added to the launcher's. */
+	steam_server_list: boolean,
 	/**  Explicit path to the steamcmd binary (overrides auto-detection). */
 	steamcmd_path: string | null,
 	player: string | null,

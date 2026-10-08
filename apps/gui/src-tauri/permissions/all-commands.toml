@@ -8,6 +8,7 @@ permissions = [
   "allow-initialize",
   "allow-get-server-details",
   "allow-refresh-servers",
+  "allow-set-steam-server-list",
   "allow-get-app-stats",
   "allow-servers-query",
   "allow-servers-lookup",

@@ -2,6 +2,7 @@
 //! the counters the title bar shows.
 
 mod dto;
+mod steam;
 
 pub use dto::{AppStatsDto, InitResult, ModDto, ServerDto};
 pub(crate) use dto::{mods_to_dto, server_to_dto};
@@ -49,7 +50,9 @@ pub(crate) async fn initialize(app: AppHandle) -> Result<InitResult, String> {
     // The cache holds the official servers merged last time; a cold start
     // fetches both lists at once.
     let (list, from_cache, list_error) = match cache {
-        Some(cache) if !cache.list.result.is_empty() => (dedup(cache.list), true, None),
+        Some(cache) if !cache.list.result.is_empty() => {
+            (steam::with_steam(dedup(cache.list)), true, None)
+        }
         _ => {
             let key = ctl.profile().steam_api_key.clone();
             let (community, official) = tokio::join!(
@@ -58,7 +61,7 @@ pub(crate) async fn initialize(app: AppHandle) -> Result<InitResult, String> {
             );
             match community {
                 Ok(list) => {
-                    let list = dedup(with_official(list, official));
+                    let list = steam::with_steam(dedup(with_official(list, official)));
                     save_cache_in_background(Arc::clone(&list));
                     (list, false, None)
                 }
@@ -78,6 +81,11 @@ pub(crate) async fn initialize(app: AppHandle) -> Result<InitResult, String> {
         }
     }
     crate::features::browser::list_replaced(list);
+    // A cached start refreshes in the background, which starts it too; a
+    // cold one does not.
+    if !from_cache {
+        steam::start(app);
+    }
 
     Ok(InitResult {
         server_count,
@@ -103,10 +111,15 @@ pub(crate) async fn get_server_details(
 }
 
 /// Fetch the list from the API again. Returns how many servers it holds;
-/// the browser re-queries on the `servers-changed` that follows.
+/// the browser re-queries on the `servers-changed` that follows. Then
+/// Steam's servers are listed in the background (at most every few
+/// minutes) and added as they answer.
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn refresh_servers(state: State<'_, SharedState>) -> Result<u32, String> {
+pub(crate) async fn refresh_servers(
+    app: AppHandle,
+    state: State<'_, SharedState>,
+) -> Result<u32, String> {
     let (client, key) = {
         let s = state.read().await;
         (
@@ -118,12 +131,35 @@ pub(crate) async fn refresh_servers(state: State<'_, SharedState>) -> Result<u32
         dz_api::fetch_servers(&client),
         fetch_official(&client, key.as_deref())
     );
-    let list = dedup(with_official(community.cmd_err()?, official));
+    let list = steam::with_steam(dedup(with_official(community.cmd_err()?, official)));
     save_cache_in_background(Arc::clone(&list));
     state.write().await.set_servers(Arc::clone(&list));
     let count = list.result.len() as u32;
     crate::features::browser::list_replaced(list);
+    steam::start(app);
     Ok(count)
+}
+
+/// Whether the servers Steam's master lists are added to the list. Turning
+/// it off stops a listing under way; turning it on lists them now.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn set_steam_server_list(
+    enabled: bool,
+    app: AppHandle,
+    state: State<'_, SharedState>,
+) -> Result<(), String> {
+    crate::state::mutate_profile(&state, |s| {
+        s.ctl.profile_mut().steam_server_list = enabled;
+        Ok(())
+    })
+    .await?;
+    if enabled {
+        steam::start(app);
+    } else {
+        steam::stop();
+    }
+    Ok(())
 }
 
 /// The title bar's counters.
@@ -166,7 +202,7 @@ fn dedup(mut list: ServerList) -> Arc<ServerList> {
 }
 
 /// Write the cache without making the caller wait for a multi-MB write.
-fn save_cache_in_background(list: Arc<ServerList>) {
+pub(super) fn save_cache_in_background(list: Arc<ServerList>) {
     tauri::async_runtime::spawn(async move {
         dz_api::save_server_list_cache(&paths::server_list_cache_path(), list).await;
     });

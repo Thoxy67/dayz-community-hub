@@ -9,6 +9,8 @@ export const checkFirstLaunch = () => run(commands.checkFirstLaunch());
 export const initialize = () => run(commands.initialize());
 /** Fetch a fresh list into the backend; the UI only learns how many. */
 export const refreshServers = () => run(commands.refreshServers());
+/** Add the servers Steam's master lists; turning it on lists them now. */
+export const setSteamServerList = (enabled: boolean) => run(commands.setSteamServerList(enabled));
 
 // ── the list, filtered, sorted and paged by the backend ─────────────────
 export type {

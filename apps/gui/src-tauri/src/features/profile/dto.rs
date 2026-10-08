@@ -42,6 +42,8 @@ pub struct ProfileDto {
     pub steamcmd_enabled: bool,
     /// What downloads mods: SteamCMD or the Steam client.
     pub mod_downloader: ModDownloaderDto,
+    /// Steam's own server list is added to the launcher's.
+    pub steam_server_list: bool,
     /// Explicit path to the steamcmd binary (overrides auto-detection).
     pub steamcmd_path: Option<String>,
     pub player: Option<String>,
@@ -78,6 +80,7 @@ pub(crate) fn profile_to_dto(profile: &Profile) -> ProfileDto {
         steam_root: profile.steam_root.clone(),
         steamcmd_enabled: profile.steamcmd_enabled,
         mod_downloader: profile.mod_downloader.into(),
+        steam_server_list: profile.steam_server_list,
         steamcmd_path: profile.steamcmd_path.clone(),
         player: profile.player.clone(),
         steam_api_key: profile.steam_api_key.clone(),

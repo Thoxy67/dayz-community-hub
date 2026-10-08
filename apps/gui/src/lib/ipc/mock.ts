@@ -151,6 +151,7 @@ const profile = {
       ? "steamworks"
       : "steamcmd",
   steamcmd_path: null,
+  steam_server_list: true,
   player: "Survivor",
   steam_api_key: "XXXXXXXX",
   steam_id: "76561198000000000",
@@ -662,6 +663,9 @@ export function installMock() {
           dayz_dir: `${a.path || "/mnt/ssd2/SteamLibrary/steamapps"}/common/DayZ`,
           workshop_mods: 37,
         };
+      case "set_steam_server_list":
+        profile.steam_server_list = a.enabled as boolean;
+        return null;
       case "set_mod_downloader":
         profile.mod_downloader = a.downloader as typeof profile.mod_downloader;
         return null;
