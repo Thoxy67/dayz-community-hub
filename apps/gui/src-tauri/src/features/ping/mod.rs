@@ -5,12 +5,13 @@
 //! reads; nothing here touches the app state's lock.
 
 use futures_util::{StreamExt, stream};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tauri::State;
 use tauri::ipc::Channel;
+use tauri::{AppHandle, State};
+use tauri_specta::Event;
 use tokio::sync::mpsc;
 
 use crate::features::browser::live::{self, Live};
@@ -53,13 +54,18 @@ fn to_dto(l: &Live, ip: String, port: i64) -> PingResultDto {
 }
 
 /// How far the scan of the whole list has got.
-#[derive(Serialize, Clone, Copy, Debug, specta::Type)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, specta::Type)]
 pub struct ScanProgress {
     pub done: u32,
     pub total: u32,
     pub paused: bool,
     pub running: bool,
 }
+
+/// The progress of a whole-list scan the window did not start (servers
+/// added to the list after its own scan ended), for the status bar.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, specta::Type, Event)]
+pub struct PingScanProgress(pub ScanProgress);
 
 /// The scan's controls, managed by the app on its own.
 #[derive(Default)]
@@ -106,8 +112,8 @@ enum Sink {
     Batches(Channel<Vec<PingResultDto>>),
     /// Progress only, for the whole-list scan.
     Progress(Channel<ScanProgress>),
-    /// Nothing: a scan the window did not ask for.
-    Silent,
+    /// `ping-scan-progress` events: a scan the window did not ask for.
+    Event(AppHandle),
 }
 
 /// Ping `targets` with `concurrency` queries in flight, recording each result
@@ -208,6 +214,9 @@ async fn scan(
         Sink::Progress(ch) => {
             let _ = ch.send(progress(true));
         }
+        Sink::Event(app) => {
+            let _ = PingScanProgress(progress(true)).emit(app);
+        }
         _ => {}
     };
 
@@ -241,6 +250,9 @@ async fn scan(
         }
         Sink::Progress(ch) => {
             let _ = ch.send(progress(false));
+        }
+        Sink::Event(app) => {
+            let _ = PingScanProgress(progress(false)).emit(app);
         }
         _ => {}
     }
@@ -276,9 +288,10 @@ pub(crate) fn start_whole_scan(
 }
 
 /// Have `targets` pinged with the whole-list scan: into its queue when one
-/// runs, else in a scan of their own (which the window does not follow;
-/// its rows change through `servers-changed`).
+/// runs (its progress grows), else in a scan of their own, whose progress
+/// the status bar hears as `ping-scan-progress`.
 pub(crate) fn enqueue(
+    app: &AppHandle,
     ping: &Arc<PingState>,
     targets: Vec<String>,
     concurrency: usize,
@@ -306,13 +319,14 @@ pub(crate) fn enqueue(
         *q = None;
     }
     let state = Arc::clone(ping);
+    let app = app.clone();
     let handle = tauri::async_runtime::spawn(async move {
         scan(
             targets,
             concurrency,
             timeout,
             retries,
-            Sink::Silent,
+            Sink::Event(app),
             state,
             true,
         )

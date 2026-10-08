@@ -182,6 +182,11 @@ class Servers {
       if (inTauri && !this.#listening) {
         this.#listening = true;
         void events.serversChanged.listen((e) => this.#changed(e.payload.generation));
+        // Servers added after this window's scan ended are pinged by one
+        // the backend starts: shown the same way.
+        void events.pingScanProgress.listen((e) => {
+          if (!this.#ownScan) this.#showScan(e.payload);
+        });
       }
     } catch (e) {
       say.err(words("servers").loadFailed({ error: errorText(e) }));
@@ -254,20 +259,31 @@ class Servers {
   // ── pings ───────────────────────────────────────────────────────────────
   /** The backend pings everything in its own order; only progress comes back. */
   #scanId = 0;
+  /** A scan this window started is running: its channel has the say. */
+  #ownScan = false;
 
   async startScan() {
     // A new scan aborts the one before in the backend; the old channel may
     // still deliver a last "not running", which must not hide the new one.
     const id = ++this.#scanId;
+    this.#ownScan = true;
     const ch = new Channel<ScanProgress>();
     ch.onmessage = (p) => {
       if (id !== this.#scanId) return;
-      this.scanPaused = p.paused;
-      this.scan = p.running ? { total: p.total, done: p.done } : null;
+      this.#ownScan = p.running;
+      this.#showScan(p);
     };
     await ipc.startScan(ch).catch(() => {
-      if (id === this.#scanId) this.scan = null;
+      if (id === this.#scanId) {
+        this.#ownScan = false;
+        this.scan = null;
+      }
     });
+  }
+
+  #showScan(p: ScanProgress) {
+    this.scanPaused = p.paused;
+    this.scan = p.running ? { total: p.total, done: p.done } : null;
   }
 
   #apply = (results: PingResult[]) => {

@@ -579,7 +579,7 @@ async fn publish(
     if let Some(p) = ping
         && let Some(scan) = app.try_state::<Arc<crate::features::ping::PingState>>()
     {
-        crate::features::ping::enqueue(&scan, added, p.concurrency, p.timeout, p.retries);
+        crate::features::ping::enqueue(app, &scan, added, p.concurrency, p.timeout, p.retries);
     }
 }
 

@@ -346,6 +346,7 @@ export const events = {
 	launchError: makeEvent<LaunchError>("launch-error"),
 	offlineModeError: makeEvent<OfflineModeError>("offline-mode-error"),
 	offlineModeUpdated: makeEvent<OfflineModeUpdated>("offline-mode-updated"),
+	pingScanProgress: makeEvent<PingScanProgress>("ping-scan-progress"),
 	playSessionsChanged: makeEvent<PlaySessionsChanged>("play-sessions-changed"),
 	serversChanged: makeEvent<ServersChanged>("servers-changed"),
 	sourcesChanged: makeEvent<SourcesChanged>("sources-changed"),
@@ -862,6 +863,12 @@ export type PingResultDto = {
 	/**  True when the query failed (timeout or error). */
 	failed: boolean,
 };
+
+/**
+ *  The progress of a whole-list scan the window did not start (servers
+ *  added to the list after its own scan ended), for the status bar.
+ */
+export type PingScanProgress = ScanProgress;
 
 /**  Time spent on one server or offline mission. */
 export type PlaceStatDto = {
