@@ -3,7 +3,7 @@
 //! Names and signatures follow `steam_api_flat.h`, `steam_api.h` and
 //! `steam_api_internal.h` of the SDK steamworks-sys 0.13.0 bundles
 //! (ISteamUGC v021, ISteamUser v023, ISteamMatchmakingServers v002,
-//! ISteamFriends v018). Every function is `extern "C"`
+//! ISteamFriends v018, ISteamUtils v010). Every function is `extern "C"`
 //! (`S_CALLTYPE` is `__cdecl`, the only convention on x86_64). A C++ `bool`
 //! is one byte, as Rust's is.
 
@@ -93,6 +93,12 @@ pub(crate) struct Api {
     pub friend_state: unsafe extern "C" fn(Iface, u64) -> i32,
     pub friend_name: unsafe extern "C" fn(Iface, u64) -> *const c_char,
     pub friend_game: unsafe extern "C" fn(Iface, u64, *mut u8) -> bool,
+    pub steam_id: unsafe extern "C" fn(Iface) -> u64,
+    pub persona_name: unsafe extern "C" fn(Iface) -> *const c_char,
+    pub medium_avatar: unsafe extern "C" fn(Iface, u64) -> i32,
+    pub utils: unsafe extern "C" fn() -> Iface,
+    pub image_size: unsafe extern "C" fn(Iface, i32, *mut u32, *mut u32) -> bool,
+    pub image_rgba: unsafe extern "C" fn(Iface, i32, *mut u8, i32) -> bool,
 }
 
 // SAFETY: the struct holds only function pointers and the library handle;
@@ -166,6 +172,12 @@ fn load() -> Result<Api, String> {
         friend_state: sym!("SteamAPI_ISteamFriends_GetFriendPersonaState"),
         friend_name: sym!("SteamAPI_ISteamFriends_GetFriendPersonaName"),
         friend_game: sym!("SteamAPI_ISteamFriends_GetFriendGamePlayed"),
+        steam_id: sym!("SteamAPI_ISteamUser_GetSteamID"),
+        persona_name: sym!("SteamAPI_ISteamFriends_GetPersonaName"),
+        medium_avatar: sym!("SteamAPI_ISteamFriends_GetMediumFriendAvatar"),
+        utils: sym!("SteamAPI_SteamUtils_v010"),
+        image_size: sym!("SteamAPI_ISteamUtils_GetImageSize"),
+        image_rgba: sym!("SteamAPI_ISteamUtils_GetImageRGBA"),
         _lib: lib,
     })
 }

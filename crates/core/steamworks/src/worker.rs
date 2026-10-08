@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::friends::{self, Friend};
 use crate::servers::{self, Filters, ListEvent};
-use crate::session::{self, Details, Event, ItemResult, Subscribed, Unsubscribed};
+use crate::session::{self, Details, Event, ItemResult, Me, Subscribed, Unsubscribed};
 
 /// The first argument that makes the launcher's executable a worker.
 pub const WORKER_ARG: &str = "--steamworks-worker";
@@ -47,6 +47,10 @@ enum Request {
         partitions: Vec<Filters>,
     },
     Friends,
+    Me,
+    Details {
+        ids: Vec<u64>,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -64,6 +68,8 @@ enum Reply {
     Subscriptions(Result<(Vec<Subscribed>, Vec<Details>), String>),
     ListServers(Result<usize, String>),
     Friends(Result<Vec<Friend>, String>),
+    Me(Result<Me, String>),
+    Details(Result<Vec<Details>, String>),
 }
 
 /// What a worker reports before its outcome.
@@ -140,7 +146,7 @@ fn run(
     let connects = !matches!(request, Request::Status);
     let listing = matches!(request, Request::ListServers { .. });
     // Asked again soon if Steam is busy: it does not stop a listing.
-    let background = listing || matches!(request, Request::Friends);
+    let background = listing || matches!(request, Request::Friends | Request::Me);
     let _one = if connects {
         Some(match ONE.try_lock() {
             Ok(guard) => guard,
@@ -362,6 +368,22 @@ pub fn friends() -> Result<Vec<Friend>, String> {
     }
 }
 
+/// [`session::me`], in a worker.
+pub fn me() -> Result<Me, String> {
+    match run(&Request::Me, None, &mut |_| {})? {
+        Reply::Me(r) => r,
+        _ => Err(MIXED_UP.into()),
+    }
+}
+
+/// [`session::workshop_details`], in a worker.
+pub fn workshop_details(ids: &[u64]) -> Result<Vec<Details>, String> {
+    match run(&Request::Details { ids: ids.to_vec() }, None, &mut |_| {})? {
+        Reply::Details(r) => r,
+        _ => Err(MIXED_UP.into()),
+    }
+}
+
 // ── the worker's side ───────────────────────────────────────────────────
 
 /// When this process was started as a worker, serve its request and exit;
@@ -414,6 +436,8 @@ fn serve() -> i32 {
             Reply::Subscriptions(session::subscriptions(&also, &known))
         }
         Request::Friends => Reply::Friends(friends::friends()),
+        Request::Me => Reply::Me(session::me()),
+        Request::Details { ids } => Reply::Details(session::workshop_details(&ids)),
         Request::ListServers { partitions } => {
             Reply::ListServers(servers::list(&partitions, cancel, &mut |l| {
                 send(&Reply::Listing(l));

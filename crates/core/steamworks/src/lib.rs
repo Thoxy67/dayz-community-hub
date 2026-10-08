@@ -27,11 +27,11 @@ pub use servers::{
     Answer, COLLAPSE, Filters, ListEvent, Listing, MasterEntry, STEAM_LIST_CAP, empty_of,
     partitions,
 };
-pub use session::{Details, Event, ItemResult, Subscribed, Unsubscribed};
+pub use session::{Details, Event, ItemResult, Me, Subscribed, Unsubscribed};
 pub use state::{ItemState, percent, result_text};
 pub use worker::{
-    WORKER_ARG, check, close_session, download, friends, list_servers, serve_if_worker,
-    session_open, status, steam_running, subscriptions, unsubscribe,
+    WORKER_ARG, check, close_session, download, friends, list_servers, me, serve_if_worker,
+    session_open, status, steam_running, subscriptions, unsubscribe, workshop_details,
 };
 
 /// DayZ's Steam app id, the game a session connects as.

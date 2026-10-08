@@ -160,6 +160,16 @@ pub(crate) fn details_head(b: &[u8]) -> Option<(u64, i32, String)> {
 /// pack(4) and on 8-byte ones under Windows' pack(8).
 const NUM_CHILDREN_AT: usize = if cfg!(windows) { 9768 } else { 9760 };
 
+/// Where `m_rtimeUpdated` sits in a `SteamUGCDetails_t`: after the
+/// description and the 64-bit owner (4-byte aligned under pack(4), 8 under
+/// pack(8)) and `m_rtimeCreated`.
+const UPDATED_AT: usize = if cfg!(windows) { 8172 } else { 8168 };
+
+/// When the item was last updated, Unix seconds.
+pub(crate) fn details_updated(b: &[u8]) -> Option<u32> {
+    u32_at(b, UPDATED_AT)
+}
+
 /// How many items a `SteamUGCDetails_t` says the item requires.
 pub(crate) fn details_children(b: &[u8]) -> Option<u32> {
     u32_at(b, NUM_CHILDREN_AT)

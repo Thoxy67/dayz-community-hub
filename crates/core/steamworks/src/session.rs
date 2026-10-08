@@ -198,6 +198,8 @@ pub struct Details {
     pub id: u64,
     pub title: String,
     pub requires: Vec<u64>,
+    /// When it was last updated, Unix seconds.
+    pub updated: u32,
 }
 
 /// How long the Workshop may take to answer a details query.
@@ -333,6 +335,7 @@ impl Session {
                         id,
                         title,
                         requires,
+                        updated: state::details_updated(&buf).unwrap_or(0),
                     });
                 }
             }
@@ -340,6 +343,90 @@ impl Session {
         }
         out
     }
+}
+
+/// The Workshop's details of `ids`, without following their requirements.
+/// A short session: Steam shows DayZ running for a moment.
+///
+/// `Err` when no session could be opened, as for [`download`].
+pub(crate) fn workshop_details(ids: &[u64]) -> Result<Vec<Details>, String> {
+    let (_one, api) = begin()?;
+    // SAFETY: as in `download`.
+    let session = Session::open(api)?;
+    session.wait_logged_on()?;
+    let ugc = unsafe { (api.ugc)() };
+    if ugc.is_null() {
+        return Err(NO_UGC.into());
+    }
+    Ok(session.details(ugc, ids))
+}
+
+/// The account logged in to Steam.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Me {
+    pub steam_id: u64,
+    pub name: String,
+    /// Its medium avatar: width, height, RGBA pixels.
+    pub avatar: Option<(u32, u32, Vec<u8>)>,
+}
+
+/// How long Steam may take to have the avatar at hand.
+const AVATAR_WAIT: Duration = Duration::from_secs(3);
+
+/// Who is logged in to Steam, with their avatar. A short session.
+///
+/// `Err` when no session could be opened, as for [`download`].
+pub(crate) fn me() -> Result<Me, String> {
+    let (_one, api) = begin()?;
+    // SAFETY: as in `download`.
+    let session = Session::open(api)?;
+    session.wait_logged_on()?;
+    let user = unsafe { (api.user)() };
+    let friends = unsafe { (api.friends)() };
+    let utils = unsafe { (api.utils)() };
+    if user.is_null() || friends.is_null() {
+        return Err(
+            "This Steam client does not say who is logged in. Update Steam and try again.".into(),
+        );
+    }
+    let steam_id = unsafe { (api.steam_id)(user) };
+    let name = unsafe { (api.persona_name)(friends) };
+    let name = if name.is_null() {
+        String::new()
+    } else {
+        // SAFETY: a NUL-terminated string Steam keeps until the next call.
+        unsafe { CStr::from_ptr(name) }
+            .to_string_lossy()
+            .into_owned()
+    };
+    // -1: Steam is still fetching it; 0: none.
+    let deadline = Instant::now() + AVATAR_WAIT;
+    let mut image = unsafe { (api.medium_avatar)(friends, steam_id) };
+    while image == -1 && Instant::now() < deadline {
+        session.pump(|_, _| {});
+        std::thread::sleep(TICK);
+        image = unsafe { (api.medium_avatar)(friends, steam_id) };
+    }
+    let avatar = (image > 0 && !utils.is_null())
+        .then(|| {
+            let (mut w, mut h) = (0u32, 0u32);
+            if !unsafe { (api.image_size)(utils, image, &mut w, &mut h) }
+                || w == 0
+                || h > 1024
+                || w > 1024
+            {
+                return None;
+            }
+            let mut rgba = vec![0u8; (w * h * 4) as usize];
+            unsafe { (api.image_rgba)(utils, image, rgba.as_mut_ptr(), rgba.len() as i32) }
+                .then_some((w, h, rgba))
+        })
+        .flatten();
+    Ok(Me {
+        steam_id,
+        name,
+        avatar,
+    })
 }
 
 const NO_UGC: &str = "This Steam client does not offer the Workshop interface the launcher needs. Update Steam and try again.";
