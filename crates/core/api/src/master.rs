@@ -95,6 +95,23 @@ impl WebPartition {
         format!("\\appid\\221100{players}{}{name}", self.extra)
     }
 
+    /// The same request as the Steam client's filters (`dz_steamworks`),
+    /// which take the same keys in order, but `hasplayers` for "not empty".
+    pub fn pairs(&self) -> Vec<(String, String)> {
+        let filter = self.filter();
+        let tokens: Vec<&str> = filter.split('\\').skip(1).collect();
+        tokens
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .filter(|[k, _]| *k != "appid")
+            .map(|[k, v]| match *k {
+                "empty" => ("hasplayers".to_owned(), "1".to_owned()),
+                k => (k.to_owned(), (*v).to_owned()),
+            })
+            .collect()
+    }
+
     /// Short words for the progress line: "empty · map enoch · d*".
     pub fn label(&self) -> String {
         let mut parts = Vec::new();
@@ -315,6 +332,27 @@ mod tests {
         let prefixes: Vec<&str> = again.iter().map(|s| s.prefix.as_str()).collect();
         assert_eq!(prefixes, ["=", "Ё", ""]);
         assert_eq!(again[2].excluded.len(), 5);
+    }
+
+    #[test]
+    fn a_request_reads_as_the_clients_filters() {
+        let p = WebPartition::new(Some(true), "\\nor\\1\\map\\enoch");
+        let rest = &p.split(["Dark"])[1];
+        let pair = |k: &str, v: &str| (k.to_owned(), v.to_owned());
+        assert_eq!(
+            rest.pairs(),
+            [
+                pair("noplayers", "1"),
+                pair("nor", "1"),
+                pair("map", "enoch"),
+                pair("nor", "1"),
+                pair("name_match", "d*"),
+            ]
+        );
+        assert_eq!(
+            WebPartition::new(Some(false), "").pairs(),
+            [pair("hasplayers", "1")]
+        );
     }
 
     #[test]
