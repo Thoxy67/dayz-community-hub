@@ -385,6 +385,7 @@ function mockSources() {
       finished: null,
     },
     kept: { phase: "done", total: 412, checked: 412, alive: 394, removed: 18 },
+    duplicates: 2,
     total: 19107,
     official: 1180,
   };

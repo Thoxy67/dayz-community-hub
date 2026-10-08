@@ -84,6 +84,8 @@ pub(crate) async fn initialize(app: AppHandle) -> Result<InitResult, String> {
         }
     }
     crate::features::browser::list_replaced(list);
+    // The cached list too.
+    steam::comb(app.clone());
     // A cached start refreshes in the background, which starts it too; a
     // cold one does not.
     if !from_cache {
@@ -148,6 +150,7 @@ pub(crate) async fn refresh_servers(
     save_cache_in_background(Arc::clone(&list));
     let count = list.result.len() as u32;
     crate::features::browser::list_replaced(list);
+    steam::comb(app.clone());
     steam::check_kept(app.clone());
     steam::start(app);
     Ok(count)

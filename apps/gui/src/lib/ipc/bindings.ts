@@ -1227,6 +1227,8 @@ export type SourcesChanged = {
 	dzsa: DzsaStatus,
 	steam: SteamStatus,
 	kept: KeptStatus,
+	/**  Entries combed out as duplicates of another (same address to join). */
+	duplicates: number,
 	/**  Servers in the list, and of those official ones. */
 	total: number,
 	official: number,

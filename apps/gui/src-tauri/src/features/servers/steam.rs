@@ -28,6 +28,10 @@
 //! be delisted and still running. It leaves only once it does not answer
 //! ([`check_kept`]). The cache holds the whole list, so this holds across
 //! restarts as well.
+//!
+//! Every list put together is combed for duplicates ([`comb`]): entries
+//! that share an address to join (ip, game port) under different query
+//! ports are asked, and only the one that answers for that game port stays.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
@@ -88,6 +92,10 @@ struct Found {
     /// Servers an earlier list had that the current one lacks, kept while
     /// they answer.
     kept: Vec<Server>,
+    /// Entries combed out as duplicates, by (ip, query port), and the join
+    /// addresses (ip, game port) already combed.
+    dropped: FxHashSet<(String, i64)>,
+    combed: FxHashSet<(String, i64)>,
     /// When the last listing started.
     last: Option<Instant>,
 }
@@ -102,7 +110,10 @@ fn found() -> std::sync::MutexGuard<'static, Found> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-fn key(s: &Server) -> (String, i64) {
+/// An (ip, port) pair.
+type Addr = (String, i64);
+
+fn key(s: &Server) -> Addr {
     (s.endpoint.ip.clone(), s.endpoint.port)
 }
 
@@ -158,7 +169,7 @@ pub(crate) fn refreshed(previous: &ServerList, base: Arc<ServerList>) -> Arc<Ser
 
 fn compose() -> Arc<ServerList> {
     let f = found();
-    if f.rows.is_empty() && f.kept.is_empty() {
+    if f.rows.is_empty() && f.kept.is_empty() && f.dropped.is_empty() {
         return Arc::clone(&f.base);
     }
     let mut list = ServerList {
@@ -171,15 +182,114 @@ fn compose() -> Arc<ServerList> {
         list.result
             .extend(f.kept.iter().filter(|s| have.insert(key(s))).cloned());
     }
+    if !f.dropped.is_empty() {
+        list.result.retain(|s| !f.dropped.contains(&key(s)));
+    }
     Arc::new(list)
 }
 
-/// Put the composed list in the app.
-async fn show(state: &SharedState) -> Arc<ServerList> {
+/// Put the composed list in the app, and comb it.
+async fn show(app: &AppHandle, state: &SharedState) -> Arc<ServerList> {
     let list = compose();
     state.write().await.set_servers(Arc::clone(&list));
     live::store().touch();
+    comb(app.clone());
     list
+}
+
+static COMBING: AtomicBool = AtomicBool::new(false);
+/// The list changed while a comb ran: comb again after it.
+static RECOMB: AtomicBool = AtomicBool::new(false);
+
+/// Comb the list for duplicates in the background: entries that claim the
+/// same address to join under different query ports (`dz_api::join_conflicts`).
+/// Each is asked (A2S_INFO, twice); the first that answers stating that game
+/// port stays, else the first that answers, else all stay (the kept check
+/// deals with servers that do not answer). Each address is combed once.
+pub(crate) fn comb(app: AppHandle) {
+    RECOMB.store(true, Ordering::SeqCst);
+    if COMBING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        while RECOMB.swap(false, Ordering::SeqCst) {
+            comb_once(&app).await;
+        }
+        COMBING.store(false, Ordering::SeqCst);
+    });
+}
+
+async fn comb_once(app: &AppHandle) {
+    let Some(state) = app.try_state::<SharedState>().map(|s| Arc::clone(&s)) else {
+        return;
+    };
+    let list = Arc::clone(&state.read().await.servers);
+    let game_port: FxHashMap<(String, i64), i64> =
+        list.result.iter().map(|s| (key(s), s.game_port)).collect();
+    let groups: Vec<(i64, Vec<(String, i64)>)> = {
+        let f = found();
+        dz_api::join_conflicts(&list.result)
+            .into_iter()
+            .filter_map(|g| {
+                let gp = *game_port.get(&g[0])?;
+                (!f.combed.contains(&(g[0].0.clone(), gp))).then_some((gp, g))
+            })
+            .collect()
+    };
+    if groups.is_empty() {
+        return;
+    }
+    let Ok(client) = dz_a2s::client_with_timeout(INFO_TIMEOUT).await else {
+        return;
+    };
+    let client = Arc::new(client);
+    let verdicts: Vec<(Addr, Vec<Addr>)> = stream::iter(groups)
+        .map(|(gp, group)| {
+            let client = Arc::clone(&client);
+            async move {
+                let ip = group[0].0.clone();
+                let mut stating = None;
+                let mut answering = None;
+                for (ip, qp) in &group {
+                    let addr = format!("{ip}:{qp}");
+                    for _ in 0..KEPT_TRIES {
+                        if let Ok((info, _)) = client.info(addr.as_str(), None).await {
+                            let port = info.extended_server_info.port.map(i64::from);
+                            if stating.is_none() && port.is_none_or(|p| p == gp) {
+                                stating = Some((ip.clone(), *qp));
+                            }
+                            answering.get_or_insert((ip.clone(), *qp));
+                            break;
+                        }
+                    }
+                }
+                let losers = match stating.or(answering) {
+                    Some(keep) => group.into_iter().filter(|k| *k != keep).collect(),
+                    None => Vec::new(),
+                };
+                ((ip, gp), losers)
+            }
+        })
+        .buffer_unordered(CONCURRENCY)
+        .collect()
+        .await;
+    let mut removed = 0;
+    {
+        let mut f = found();
+        for ((ip, gp), losers) in verdicts {
+            f.combed.insert((ip, gp));
+            removed += losers.len();
+            f.dropped.extend(losers);
+        }
+    }
+    sources::update(|s| s.duplicates += removed as u32);
+    if removed > 0 {
+        let list = compose();
+        state.write().await.set_servers(Arc::clone(&list));
+        live::store().touch();
+        super::save_cache_in_background(Arc::clone(&list));
+        crate::features::browser::list_replaced(list);
+    }
 }
 
 /// Ask every kept server whether it still runs, and drop those that do not
@@ -227,7 +337,7 @@ pub(crate) fn check_kept(app: AppHandle) {
             .await;
         if !gone.is_empty() {
             found().kept.retain(|s| !gone.contains(&key(s)));
-            let list = show(&state).await;
+            let list = show(&app, &state).await;
             super::save_cache_in_background(Arc::clone(&list));
             crate::features::browser::list_replaced(list);
         }
@@ -392,7 +502,7 @@ async fn publish(
         added
     };
     sources::update(|s| s.steam.added += added.len() as u32);
-    show(state).await;
+    show(app, state).await;
     if let Some(p) = ping
         && let Some(scan) = app.try_state::<Arc<crate::features::ping::PingState>>()
     {

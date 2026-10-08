@@ -121,6 +121,11 @@
       <span class="text-fg-muted">{$w.inList.value}</span>
       <span class="num font-mono text-fg">{num(s.total)}</span>
       <span class="text-fg-faint">· {$w.official({ count: num(s.official) }).value}</span>
+      {#if s.duplicates}
+        <span class="text-fg-faint" title={$w.duplicatesHint.value}>
+          · {$w.duplicates({ count: num(s.duplicates) }).value}
+        </span>
+      {/if}
       <Popover
         label={$w.title.value}
         triggerClass="flex items-center gap-1 rounded-xs px-1 text-fg-muted hover:bg-raised hover:text-fg"
@@ -155,6 +160,13 @@
           {@render line($w.noMods.value, num(steam.no_mods), "text-fg-faint")}
           {@render line($w.added.value, `+${num(steam.added)}`, "text-ok")}
           {#if took != null}{@render line($w.elapsed.value, secs(took))}{/if}
+        {/if}
+
+        {#if s.duplicates}
+          <p class="m-0 mt-3 text-fg-muted">
+            {$w.duplicates({ count: num(s.duplicates) }).value}
+          </p>
+          <p class="m-0 mb-1 text-fg-faint">{$w.duplicatesHint.value}</p>
         {/if}
 
         {#if s.kept.total > 0}

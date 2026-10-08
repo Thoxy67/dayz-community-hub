@@ -56,6 +56,22 @@ const content = {
       es: "En la lista",
       ru: "В списке",
     }),
+    duplicates: insert(
+      t({
+        en: "{{count}} duplicates removed",
+        fr: "{{count}} doublons retirés",
+        de: "{{count}} Duplikate entfernt",
+        es: "{{count}} duplicados quitados",
+        ru: "дубликатов убрано: {{count}}",
+      }),
+    ),
+    duplicatesHint: t({
+      en: "Entries that lead to the same server (same address to join): each was asked, and only the one answering for that address stays.",
+      fr: "Entrées qui mènent au même serveur (même adresse de connexion) : chacune a été interrogée, seule celle qui répond pour cette adresse reste.",
+      de: "Einträge, die zum selben Server führen (gleiche Verbindungsadresse): jeder wurde abgefragt, nur der für diese Adresse antwortende bleibt.",
+      es: "Entradas que llevan al mismo servidor (misma dirección de conexión): se consultó cada una y solo queda la que responde por esa dirección.",
+      ru: "Записи, ведущие к одному серверу (один адрес подключения): каждая опрошена, остаётся та, что отвечает за этот адрес.",
+    }),
     official: insert(
       t({
         en: "{{count}} official",

@@ -94,6 +94,8 @@ pub struct SourcesChanged {
     pub dzsa: DzsaStatus,
     pub steam: SteamStatus,
     pub kept: KeptStatus,
+    /// Entries combed out as duplicates of another (same address to join).
+    pub duplicates: u32,
     /// Servers in the list, and of those official ones.
     pub total: u32,
     pub official: u32,
