@@ -1,13 +1,16 @@
 //! The public server list (dayzsalauncher.com), the official servers (from
-//! Steam's master server), the on-disk cache, and the Steam player count.
+//! Steam's master server), the servers Steam's client lists, the on-disk
+//! cache, and the Steam player count.
 
 mod index;
 mod official;
+mod steam;
 
 pub use index::ServerIndex;
 pub use official::{
     fetch_official_servers, merge_official, name_looks_official, tags_say_official,
 };
+pub use steam::{FARM_ADDRESS, FarmCounter, SteamListed, merge_steam};
 
 use dz_common::{Error, Result};
 use serde::{Deserialize, Serialize};

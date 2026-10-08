@@ -40,6 +40,11 @@ pub struct Profile {
     /// What downloads mods: SteamCMD (the default) or the Steam client.
     #[serde(default, deserialize_with = "ModDownloader::lenient")]
     pub mod_downloader: ModDownloader,
+    /// Add the servers Steam's master lists (through the Steam client) to
+    /// the launcher list. Steam shows DayZ running for the few seconds the
+    /// addresses take to come.
+    #[serde(default = "default_true")]
+    pub steam_server_list: bool,
     pub player: Option<String>,
     /// Steam Web API key — used to fetch player avatar via GetPlayerSummaries.
     #[serde(default)]
@@ -236,6 +241,7 @@ impl Profile {
             steam_root: None,
             steamcmd_enabled: true,
             mod_downloader: ModDownloader::Steamcmd,
+            steam_server_list: true,
             steamcmd_path: None,
             user_location: None,
             player: None,

@@ -49,11 +49,16 @@ fn duration_to_ms_floor1(d: Duration) -> u32 {
 /// its single UDP socket, so concurrent queries on one client are safe and
 /// save a socket bind each.
 pub async fn new_client() -> Result<A2SClient> {
+    client_with_timeout(Duration::from_secs(5)).await
+}
+
+/// A fresh A2S client whose queries give up after `timeout`.
+pub async fn client_with_timeout(timeout: Duration) -> Result<A2SClient> {
     let mut client = A2SClient::new()
         .await
         .map_err(|e| Error::A2sQuery(format!("Failed to create A2S client: {e}")))?;
     client
-        .set_timeout(Duration::from_secs(5))
+        .set_timeout(timeout)
         .map_err(|e| Error::A2sQuery(format!("Failed to set timeout: {e}")))?;
     Ok(client)
 }

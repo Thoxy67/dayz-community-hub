@@ -82,12 +82,7 @@ impl SteamServer {
         let (ip, port) = self.addr.rsplit_once(':')?;
         let query_port: i64 = port.parse().ok()?;
         let tags: Vec<&str> = self.gametype.split(',').map(str::trim).collect();
-        let time = tags
-            .iter()
-            .rev()
-            .find(|t| t.len() == 5 && t.as_bytes()[2] == b':')
-            .map(|t| (*t).to_string())
-            .unwrap_or_default();
+        let time = crate::steam::game_time(&tags);
         Some(Server {
             game_port: if self.gameport > 0 {
                 self.gameport
