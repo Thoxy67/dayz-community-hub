@@ -51,6 +51,9 @@ const PARTITION_TIMEOUT: Duration = Duration::from_secs(20);
 const PARTITION_GAP: Duration = Duration::from_millis(500);
 /// Stop after this many empty answers in a row: Steam is throttling.
 const MAX_EMPTY_IN_A_ROW: usize = 2;
+/// How long the session stays open after the last request, for the client
+/// to tear its queries down.
+const SETTLE: Duration = Duration::from_millis(800);
 /// Bytes of `gameserveritem_t` read: its `servernetadr_t`.
 const ADDR_LEN: usize = 8;
 
@@ -165,6 +168,15 @@ pub(crate) fn list(
         if empty_in_a_row >= MAX_EMPTY_IN_A_ROW {
             break;
         }
+    }
+    // A released request's HTTP query to the master is torn down by the
+    // client's own thread a moment later; shutting down before that makes
+    // it assert ("IClientHTTP::ReleaseHTTPRequest failed") and send Valve a
+    // crash dump. Let it finish.
+    let settle = Instant::now() + SETTLE;
+    while Instant::now() < settle {
+        session.pump(|_, _| {});
+        std::thread::sleep(TICK);
     }
     Ok(answered)
 }
