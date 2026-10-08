@@ -1,7 +1,8 @@
-//! Workshop downloads through the running Steam client, as the DZSA
-//! launcher does them: the user's account subscribes to each mod, Steam
-//! downloads it into its own library (`steamapps/workshop/content/221100`)
-//! and keeps it updated from then on.
+//! Workshop downloads and DayZ's server list through the running Steam
+//! client. Downloads go as the DZSA launcher does them: the user's account
+//! subscribes to each mod, Steam downloads it into its own library
+//! (`steamapps/workshop/content/221100`) and keeps it updated from then on.
+//! The server list is the one DayZ's own browser gets (see [`servers`]).
 //!
 //! Valve's library (`libsteam_api.so`, `steam_api64.dll`) is not linked: it is
 //! embedded at build time, written to disk and loaded the first time this
@@ -15,15 +16,20 @@
 
 mod api;
 mod redist;
+mod servers;
 mod session;
 mod state;
 mod worker;
 
+pub use servers::{
+    Answer, COLLAPSE, Filters, ListEvent, Listing, MasterEntry, STEAM_LIST_CAP, empty_of,
+    partitions,
+};
 pub use session::{Details, Event, ItemResult, Subscribed, Unsubscribed};
 pub use state::{ItemState, percent, result_text};
 pub use worker::{
-    WORKER_ARG, check, close_session, download, serve_if_worker, session_open, status,
-    steam_running, subscriptions, unsubscribe,
+    WORKER_ARG, check, close_session, download, list_servers, serve_if_worker, session_open,
+    status, steam_running, subscriptions, unsubscribe,
 };
 
 /// DayZ's Steam app id, the game a session connects as.

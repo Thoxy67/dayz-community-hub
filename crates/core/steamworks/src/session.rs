@@ -345,7 +345,7 @@ impl Session {
 const NO_UGC: &str = "This Steam client does not offer the Workshop interface the launcher needs. Update Steam and try again.";
 
 /// Load the library, take the one session, and make sure Steam runs.
-fn begin() -> Result<(std::sync::MutexGuard<'static, ()>, &'static Api), String> {
+pub(crate) fn begin() -> Result<(std::sync::MutexGuard<'static, ()>, &'static Api), String> {
     let api =
         api::get().map_err(|e| format!("The Steamworks library could not be loaded: {e}."))?;
     let one = match ONE_SESSION.try_lock() {
@@ -382,13 +382,13 @@ fn flatpak_note() -> &'static str {
 }
 
 /// A connection to Steam as DayZ, shut down when dropped.
-struct Session {
-    api: &'static Api,
+pub(crate) struct Session {
+    pub(crate) api: &'static Api,
     pipe: Pipe,
 }
 
 impl Session {
-    fn open(api: &'static Api) -> Result<Self, String> {
+    pub(crate) fn open(api: &'static Api) -> Result<Self, String> {
         set_app_id(true);
         let mut msg = [0 as c_char; api::ERR_MSG_LEN];
         let result = unsafe { (api.init_flat)(msg.as_mut_ptr()) };
@@ -428,7 +428,7 @@ impl Session {
 
     /// Steam's own login is what downloads: wait a moment for it to report
     /// in, then give up.
-    fn wait_logged_on(&self) -> Result<(), String> {
+    pub(crate) fn wait_logged_on(&self) -> Result<(), String> {
         let user = unsafe { (self.api.user)() };
         let deadline = Instant::now() + LOGON_WAIT;
         loop {
@@ -447,7 +447,7 @@ impl Session {
     }
 
     /// Run a frame and hand each pending callback (id, bytes) to `f`.
-    fn pump(&self, mut f: impl FnMut(i32, &[u8])) {
+    pub(crate) fn pump(&self, mut f: impl FnMut(i32, &[u8])) {
         let api = self.api;
         unsafe { (api.dispatch_run_frame)(self.pipe) };
         let mut msg = CallbackMsg::default();

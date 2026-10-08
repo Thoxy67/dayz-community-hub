@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
+use crate::servers::{self, Filters, ListEvent};
 use crate::session::{self, Details, Event, ItemResult, Subscribed, Unsubscribed};
 
 /// The first argument that makes the launcher's executable a worker.
@@ -41,11 +42,16 @@ enum Request {
         also: Vec<u64>,
         known: Vec<u64>,
     },
+    ListServers {
+        partitions: Vec<Filters>,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
 enum Reply {
     Event(Event),
+    /// Progress of a listing.
+    Listing(ListEvent),
     Status {
         library: Result<(), String>,
         steam_running: bool,
@@ -54,6 +60,13 @@ enum Reply {
     Download(Result<Vec<ItemResult>, String>),
     Unsubscribe(Result<Vec<Unsubscribed>, String>),
     Subscriptions(Result<(Vec<Subscribed>, Vec<Details>), String>),
+    ListServers(Result<usize, String>),
+}
+
+/// What a worker reports before its outcome.
+enum Update {
+    Event(Event),
+    Listing(ListEvent),
 }
 
 // ── the launcher's side ─────────────────────────────────────────────────
@@ -66,6 +79,8 @@ static CURRENT: Mutex<Option<Arc<Worker>>> = Mutex::new(None);
 struct Worker {
     child: Mutex<Child>,
     stdin: Mutex<Option<ChildStdin>>,
+    /// A server listing, which gives way to anything else that connects.
+    listing: bool,
 }
 
 impl Worker {
@@ -116,16 +131,32 @@ pub fn close_session(grace: Duration) -> bool {
 fn run(
     request: &Request,
     cancel: Option<&AtomicBool>,
-    on: &mut dyn FnMut(Event),
+    on: &mut dyn FnMut(Update),
 ) -> Result<Reply, String> {
     // Only a worker that connects is one Steam sees as DayZ.
     let connects = !matches!(request, Request::Status);
+    let listing = matches!(request, Request::ListServers { .. });
     let _one = if connects {
         Some(match ONE.try_lock() {
             Ok(guard) => guard,
             Err(std::sync::TryLockError::Poisoned(p)) => p.into_inner(),
             Err(std::sync::TryLockError::WouldBlock) => {
-                return Err("Another download through Steam is already running.".into());
+                // A listing in the background stops for the session asked
+                // now, and hands back what it has.
+                let current = CURRENT.lock().ok().and_then(|c| c.clone());
+                match current {
+                    Some(w) if w.listing && !listing => {
+                        w.cancel();
+                        ONE.lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    }
+                    _ if listing => {
+                        return Err("Steam is busy with another session.".into());
+                    }
+                    _ => {
+                        return Err("Another download through Steam is already running.".into());
+                    }
+                }
             }
         })
     } else {
@@ -156,6 +187,7 @@ fn run(
     let worker = Arc::new(Worker {
         child: Mutex::new(child),
         stdin: Mutex::new(stdin),
+        listing,
     });
     if connects && let Ok(mut c) = CURRENT.lock() {
         *c = Some(worker.clone());
@@ -198,7 +230,7 @@ fn run(
 
 /// Read the worker's lines until its outcome: events go to `on`, anything
 /// not meant for the launcher to stderr. `None` when it ended without one.
-fn read_replies(stdout: impl std::io::Read, on: &mut dyn FnMut(Event)) -> Option<Reply> {
+fn read_replies(stdout: impl std::io::Read, on: &mut dyn FnMut(Update)) -> Option<Reply> {
     for line in BufReader::new(stdout).lines() {
         let line = line.ok()?;
         let Some(json) = line.strip_prefix(MARK) else {
@@ -208,7 +240,8 @@ fn read_replies(stdout: impl std::io::Read, on: &mut dyn FnMut(Event)) -> Option
             continue;
         };
         match serde_json::from_str::<Reply>(json) {
-            Ok(Reply::Event(e)) => on(e),
+            Ok(Reply::Event(e)) => on(Update::Event(e)),
+            Ok(Reply::Listing(l)) => on(Update::Listing(l)),
             Ok(outcome) => return Some(outcome),
             Err(e) => eprintln!("[steamworks] unreadable reply ({e}): {json}"),
         }
@@ -243,7 +276,16 @@ pub fn download(
     cancel: &AtomicBool,
     on: &mut dyn FnMut(Event),
 ) -> Result<Vec<ItemResult>, String> {
-    match run(&Request::Download { ids: ids.to_vec() }, Some(cancel), on)? {
+    let mut on = |u| {
+        if let Update::Event(e) = u {
+            on(e);
+        }
+    };
+    match run(
+        &Request::Download { ids: ids.to_vec() },
+        Some(cancel),
+        &mut on,
+    )? {
         Reply::Download(r) => r,
         _ => Err(MIXED_UP.into()),
     }
@@ -280,6 +322,29 @@ pub fn subscriptions(
     };
     match run(&request, None, &mut |_| {})? {
         Reply::Subscriptions(r) => r,
+        _ => Err(MIXED_UP.into()),
+    }
+}
+
+/// [`servers::list`], in a worker: DayZ's servers from Steam's master,
+/// handed to `on` as Steam finds them, and each partition's outcome. Setting `cancel`
+/// stops it, and so does any other Steam session asked for meanwhile (a
+/// download, a launch). Returns how many partitions Steam answered.
+pub fn list_servers(
+    partitions: &[Filters],
+    cancel: &AtomicBool,
+    on: &mut dyn FnMut(ListEvent),
+) -> Result<usize, String> {
+    let request = Request::ListServers {
+        partitions: partitions.to_vec(),
+    };
+    let mut on = |u| {
+        if let Update::Listing(l) = u {
+            on(l);
+        }
+    };
+    match run(&request, Some(cancel), &mut on)? {
+        Reply::ListServers(r) => r,
         _ => Err(MIXED_UP.into()),
     }
 }
@@ -335,6 +400,11 @@ fn serve() -> i32 {
         Request::Subscriptions { also, known } => {
             Reply::Subscriptions(session::subscriptions(&also, &known))
         }
+        Request::ListServers { partitions } => {
+            Reply::ListServers(servers::list(&partitions, cancel, &mut |l| {
+                send(&Reply::Listing(l));
+            }))
+        }
     };
     send(&reply);
     0
@@ -354,7 +424,11 @@ mod tests {
             serde_json::to_string(&done).unwrap(),
         );
         let mut events = Vec::new();
-        let outcome = read_replies(text.as_bytes(), &mut |e| events.push(e));
+        let outcome = read_replies(text.as_bytes(), &mut |u| {
+            if let Update::Event(e) = u {
+                events.push(e);
+            }
+        });
         assert_eq!(events, vec![Event::Log("Connected".into())]);
         assert!(matches!(outcome, Some(Reply::Check(Err(e))) if e == "Steam is not running."));
     }

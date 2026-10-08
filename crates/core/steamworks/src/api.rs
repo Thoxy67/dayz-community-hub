@@ -2,7 +2,7 @@
 //!
 //! Names and signatures follow `steam_api_flat.h`, `steam_api.h` and
 //! `steam_api_internal.h` of the SDK steamworks-sys 0.13.0 bundles
-//! (ISteamUGC v021, ISteamUser v023). Every function is `extern "C"`
+//! (ISteamUGC v021, ISteamUser v023, ISteamMatchmakingServers v002). Every function is `extern "C"`
 //! (`S_CALLTYPE` is `__cdecl`, the only convention on x86_64). A C++ `bool`
 //! is one byte, as Rust's is.
 
@@ -15,6 +15,8 @@ pub(crate) type Pipe = i32;
 pub(crate) type ApiCall = u64;
 /// An `ISteam*` interface pointer.
 pub(crate) type Iface = *mut c_void;
+/// `HServerListRequest`.
+pub(crate) type ListRequest = *mut c_void;
 
 /// `ESteamAPIInitResult`.
 pub(crate) const INIT_OK: i32 = 0;
@@ -76,6 +78,14 @@ pub(crate) struct Api {
     pub download_info: unsafe extern "C" fn(Iface, u64, *mut u64, *mut u64) -> bool,
     pub install_info:
         unsafe extern "C" fn(Iface, u64, *mut u64, *mut c_char, u32, *mut u32) -> bool,
+    pub servers: unsafe extern "C" fn() -> Iface,
+    pub request_internet:
+        unsafe extern "C" fn(Iface, u32, *mut *mut c_void, u32, *mut c_void) -> ListRequest,
+    pub release_request: unsafe extern "C" fn(Iface, ListRequest),
+    pub server_details: unsafe extern "C" fn(Iface, ListRequest, i32) -> *const u8,
+    pub cancel_query: unsafe extern "C" fn(Iface, ListRequest),
+    pub is_refreshing: unsafe extern "C" fn(Iface, ListRequest) -> bool,
+    pub server_count: unsafe extern "C" fn(Iface, ListRequest) -> i32,
 }
 
 // SAFETY: the struct holds only function pointers and the library handle;
@@ -136,6 +146,13 @@ fn load() -> Result<Api, String> {
         item_state: sym!("SteamAPI_ISteamUGC_GetItemState"),
         download_info: sym!("SteamAPI_ISteamUGC_GetItemDownloadInfo"),
         install_info: sym!("SteamAPI_ISteamUGC_GetItemInstallInfo"),
+        servers: sym!("SteamAPI_SteamMatchmakingServers_v002"),
+        request_internet: sym!("SteamAPI_ISteamMatchmakingServers_RequestInternetServerList"),
+        release_request: sym!("SteamAPI_ISteamMatchmakingServers_ReleaseRequest"),
+        server_details: sym!("SteamAPI_ISteamMatchmakingServers_GetServerDetails"),
+        cancel_query: sym!("SteamAPI_ISteamMatchmakingServers_CancelQuery"),
+        is_refreshing: sym!("SteamAPI_ISteamMatchmakingServers_IsRefreshing"),
+        server_count: sym!("SteamAPI_ISteamMatchmakingServers_GetServerCount"),
         _lib: lib,
     })
 }

@@ -1,6 +1,6 @@
 [package]
 name = "dz-steamworks"
-description = "Workshop downloads through the running Steam client (Steamworks ISteamUGC), with Valve's library loaded on demand"
+description = "Workshop downloads and the server list through the running Steam client (Steamworks ISteamUGC, ISteamMatchmakingServers), with Valve's library loaded on demand"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
