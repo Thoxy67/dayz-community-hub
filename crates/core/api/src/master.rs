@@ -3,26 +3,39 @@
 //!
 //! Faster than the Steam client's list and not rationed (about two seconds a
 //! request, many at once), but capped the same, at 10 000 a request. A
-//! request that hits the cap is split by the first letters of the servers'
-//! names (`\name_match\a*`, case-insensitive): farms register thousands of
-//! servers under a few similar names, so the honest servers they crowd out
-//! of a whole map come back letter by letter. Measured on 2026-10-08:
-//! empty modded Chernarus servers, one request, 10 000 rows; split by first
-//! letter, 58 349 rows, 6 696 of them on addresses with fewer than 20.
+//! request that hits the cap is split by how the servers' names start
+//! (`\name_match\a*`): farms register thousands of servers under a few
+//! similar names, so the honest servers they crowd out of a whole map come
+//! back letter by letter. Measured on 2026-10-08: empty modded Chernarus
+//! servers, one request, 10 000 rows; split by first letter, 58 349 rows,
+//! 6 696 of them on addresses with fewer than 20.
+//!
+//! The split takes the characters the capped answer's names actually start
+//! with, whatever the script (Latin, Cyrillic, Chinese, emoji, symbols), and
+//! adds a *rest*: the same request with those starts excluded
+//! (`\nor\N\name_match\a*…`), which holds every name starting otherwise
+//! and is split the same way when it is capped too. Checked live: a request,
+//! its `b*` part and its rest share no server and miss none, two `\nor`
+//! included. `name_match` ignores case for ASCII letters only (`П*` and
+//! `п*` differ), so only those are folded.
+//!
+//! It is rationed all the same, and says so badly: past a burst it answers
+//! every request `200` with no servers, exactly as for a filter that
+//! matches nothing. [`web_throttled`] tells the two apart.
 
 use serde::Deserialize;
 
 /// Steam's ceiling for one request.
 pub const WEB_LIST_CAP: usize = 10_000;
-/// How deep a capped request is split: one letter, then two.
+/// How deep a capped request is split: one character, then two.
 pub const MAX_SPLIT_DEPTH: usize = 2;
+/// Excluded starts past which a rest is not split again.
+const MAX_EXCLUDED: usize = 400;
 
 const LIST_URL: &str = "https://api.steampowered.com/IGameServersService/GetServerList/v1/";
-/// What a name may start with, for the split.
-const NAME_STARTS: &str = "abcdefghijklmnopqrstuvwxyz0123456789[(|#-{<!.@";
 
-/// One request: DayZ, the master's own player count, more filters, and a
-/// name prefix once split.
+/// One request: DayZ, the master's own player count, more filters, and,
+/// once split, how the names start.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WebPartition {
     /// What Steam's master counts: `Some(true)` no player (`\noplayers\1`),
@@ -30,8 +43,26 @@ pub struct WebPartition {
     pub empty: Option<bool>,
     /// More filters, already written (`\map\enoch`).
     pub extra: String,
-    /// The start of the names asked for, once split.
+    /// The start of the names asked for.
     pub prefix: String,
+    /// Starts left out: the parts split off before this rest.
+    pub excluded: Vec<String>,
+}
+
+/// The character as `name_match` compares it: ASCII letters fold.
+fn fold(c: char) -> char {
+    c.to_ascii_lowercase()
+}
+
+/// `name`'s character after `prefix`, if `name` starts with it.
+fn next_char(name: &str, prefix: &str) -> Option<char> {
+    let mut chars = name.chars();
+    for p in prefix.chars() {
+        if fold(chars.next()?) != fold(p) {
+            return None;
+        }
+    }
+    chars.next().map(fold)
 }
 
 impl WebPartition {
@@ -40,6 +71,7 @@ impl WebPartition {
             empty,
             extra: extra.into(),
             prefix: String::new(),
+            excluded: Vec::new(),
         }
     }
 
@@ -50,11 +82,16 @@ impl WebPartition {
             Some(false) => "\\empty\\1",
             None => "",
         };
-        let name = if self.prefix.is_empty() {
-            String::new()
-        } else {
-            format!("\\name_match\\{}*", self.prefix)
-        };
+        let mut name = String::new();
+        if !self.prefix.is_empty() {
+            name.push_str(&format!("\\name_match\\{}*", self.prefix));
+        }
+        if !self.excluded.is_empty() {
+            name.push_str(&format!("\\nor\\{}", self.excluded.len()));
+            for e in &self.excluded {
+                name.push_str(&format!("\\name_match\\{e}*"));
+            }
+        }
         format!("\\appid\\221100{players}{}{name}", self.extra)
     }
 
@@ -71,31 +108,54 @@ impl WebPartition {
         } else if !self.extra.is_empty() {
             parts.push(self.extra.trim_start_matches('\\').replace('\\', " "));
         }
-        if !self.prefix.is_empty() {
-            parts.push(format!("{}*", self.prefix));
+        match (self.prefix.is_empty(), self.excluded.is_empty()) {
+            (true, true) => {}
+            (false, true) => parts.push(format!("{}*", self.prefix)),
+            (true, false) => parts.push("rest".to_owned()),
+            (false, false) => parts.push(format!("{}* rest", self.prefix)),
         }
         parts.join(" · ")
     }
 
-    /// The requests that replace this one when it hit the cap, or none when
-    /// it is split as deep as it goes.
-    pub fn split(&self) -> Vec<WebPartition> {
-        if self.prefix.chars().count() >= MAX_SPLIT_DEPTH {
+    /// The requests that replace this one when it hit the cap, from the
+    /// `names` it answered: one per character those names go on with after
+    /// the prefix, and the rest. None when split as deep as it goes.
+    pub fn split<'a>(&self, names: impl IntoIterator<Item = &'a str>) -> Vec<WebPartition> {
+        if self.prefix.chars().count() >= MAX_SPLIT_DEPTH || self.excluded.len() >= MAX_EXCLUDED {
             return Vec::new();
         }
-        // Past the first letter, punctuation is rare enough to leave out.
-        let starts: Vec<char> = if self.prefix.is_empty() {
-            NAME_STARTS.chars().collect()
-        } else {
-            "abcdefghijklmnopqrstuvwxyz0123456789 ".chars().collect()
-        };
-        starts
-            .into_iter()
-            .map(|c| WebPartition {
-                prefix: format!("{}{c}", self.prefix),
+        let mut starts: Vec<String> = Vec::new();
+        for name in names {
+            let Some(c) = next_char(name, &self.prefix) else {
+                continue;
+            };
+            // The filter's own syntax cannot be asked for: left to the rest.
+            if c == '*' || c == '\\' {
+                continue;
+            }
+            let start = format!("{}{c}", self.prefix);
+            if !self.excluded.contains(&start) && !starts.contains(&start) {
+                starts.push(start);
+            }
+        }
+        if starts.is_empty() {
+            return Vec::new();
+        }
+        let mut parts: Vec<WebPartition> = starts
+            .iter()
+            .map(|start| WebPartition {
+                prefix: start.clone(),
+                excluded: Vec::new(),
                 ..self.clone()
             })
-            .collect()
+            .collect();
+        let mut excluded = self.excluded.clone();
+        excluded.extend(starts);
+        parts.push(WebPartition {
+            excluded,
+            ..self.clone()
+        });
+        parts
     }
 }
 
@@ -121,6 +181,7 @@ pub fn web_partitions(maps: &[String]) -> Vec<WebPartition> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MasterAddr {
     pub ip: String,
+    pub name: String,
     pub query_port: u16,
     pub game_port: u16,
 }
@@ -138,6 +199,8 @@ struct Inner {
 struct Row {
     addr: String,
     #[serde(default)]
+    name: String,
+    #[serde(default)]
     gameport: u16,
 }
 
@@ -152,6 +215,7 @@ fn parse(body: &[u8]) -> Result<Vec<MasterAddr>, String> {
             let query_port: u16 = port.parse().ok().filter(|p| *p != 0)?;
             Some(MasterAddr {
                 ip: ip.to_owned(),
+                name: r.name,
                 query_port,
                 game_port: if r.gameport == 0 {
                     query_port
@@ -169,15 +233,27 @@ pub async fn fetch_web_partition(
     key: &str,
     part: &WebPartition,
 ) -> Result<Vec<MasterAddr>, String> {
-    let filter = part.filter();
+    fetch(client, key, &part.filter(), "20000").await
+}
+
+/// Whether the master is withholding answers: asked for one server with
+/// players, of which there are always thousands, it gives none.
+pub async fn web_throttled(client: &reqwest::Client, key: &str) -> bool {
+    fetch(client, key, r"\appid\221100\empty\1", "1")
+        .await
+        .map_or(true, |rows| rows.is_empty())
+}
+
+async fn fetch(
+    client: &reqwest::Client,
+    key: &str,
+    filter: &str,
+    limit: &str,
+) -> Result<Vec<MasterAddr>, String> {
     let resp = client
         .get(LIST_URL)
         // The key goes as a query parameter, never into an error message.
-        .query(&[
-            ("key", key),
-            ("limit", "20000"),
-            ("filter", filter.as_str()),
-        ])
+        .query(&[("key", key), ("limit", limit), ("filter", filter)])
         .timeout(std::time::Duration::from_secs(30))
         .send()
         .await
@@ -211,19 +287,48 @@ mod tests {
     fn filters_are_written_as_the_master_reads_them() {
         let p = WebPartition::new(Some(true), "\\map\\enoch");
         assert_eq!(p.filter(), "\\appid\\221100\\noplayers\\1\\map\\enoch");
-        let split = p.split();
-        assert_eq!(
-            split[3].filter(),
-            "\\appid\\221100\\noplayers\\1\\map\\enoch\\name_match\\d*"
-        );
-        assert_eq!(split[3].label(), "empty · map enoch · d*");
-        let deeper = split[3].split();
-        assert_eq!(deeper[0].prefix, "da");
-        assert!(deeper[0].split().is_empty(), "two letters deep at most");
         assert_eq!(
             WebPartition::new(Some(false), "").filter(),
             "\\appid\\221100\\empty\\1"
         );
+    }
+
+    #[test]
+    fn a_capped_request_splits_by_the_starts_its_names_have_and_a_rest() {
+        let p = WebPartition::new(Some(true), "\\map\\enoch");
+        let split = p.split(["Dark", "dusk", "Попробуй", "*star", "🔥 Fire"]);
+        let prefixes: Vec<&str> = split.iter().map(|s| s.prefix.as_str()).collect();
+        // ASCII folds; Cyrillic and emoji stay as they are; `*` goes to the rest.
+        assert_eq!(prefixes, ["d", "П", "🔥", ""]);
+        assert_eq!(
+            split[0].filter(),
+            "\\appid\\221100\\noplayers\\1\\map\\enoch\\name_match\\d*"
+        );
+        let rest = &split[3];
+        assert_eq!(
+            rest.filter(),
+            "\\appid\\221100\\noplayers\\1\\map\\enoch\\nor\\3\\name_match\\d*\\name_match\\П*\\name_match\\🔥*"
+        );
+        assert_eq!(rest.label(), "empty · map enoch · rest");
+        // The rest splits again by what it answers, never by what it excludes.
+        let again = rest.split(["dawn", "=FARM=", "Ёлка"]);
+        let prefixes: Vec<&str> = again.iter().map(|s| s.prefix.as_str()).collect();
+        assert_eq!(prefixes, ["=", "Ё", ""]);
+        assert_eq!(again[2].excluded.len(), 5);
+    }
+
+    #[test]
+    fn a_letter_splits_by_the_next_character_then_stops() {
+        let d = WebPartition::new(Some(true), "").split(["Dark"]).remove(0);
+        let split = d.split(["Dark", "DAWN", "Dusk", "Other"]);
+        let prefixes: Vec<&str> = split.iter().map(|s| s.prefix.as_str()).collect();
+        assert_eq!(prefixes, ["da", "du", "d"]);
+        assert_eq!(split[2].label(), "empty · d* rest");
+        assert!(
+            split[0].split(["Dark"]).is_empty(),
+            "two characters deep at most"
+        );
+        assert!(d.split(["Other"]).is_empty(), "nothing to split by");
     }
 
     #[test]

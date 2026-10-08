@@ -10,6 +10,7 @@ mod steam;
 pub use index::ServerIndex;
 pub use master::{
     MAX_SPLIT_DEPTH, MasterAddr, WEB_LIST_CAP, WebPartition, fetch_web_partition, web_partitions,
+    web_throttled,
 };
 pub use official::{
     fetch_official_servers, merge_official, name_looks_official, tags_say_official,
