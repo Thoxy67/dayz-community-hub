@@ -5,15 +5,74 @@
   import { Field } from "$lib/components/ui/field";
   import { Segmented } from "$lib/components/ui/segmented";
   import { Tag } from "$lib/components/ui/tag";
-  import { PadLegend, SettingsSection as Section } from "$lib/components/app";
+  import { PadGlyph, PadLegend, SettingsSection as Section } from "$lib/components/app";
+  import { cn } from "$lib/cx";
   import { pad } from "$lib/gamepad";
+  import type { GlyphChoice } from "$lib/gamepad/state.svelte";
+  import type { PadAction } from "$lib/ipc/gamepad";
+  import type { PadButton } from "$lib/shortcuts/registry";
   import { prefs, type PadMode } from "$lib/stores/prefs.svelte";
 
   /**
    * A controller: when the interface switches to it, how large it is drawn
-   * then, what is connected, and what the buttons do.
+   * then, what is connected, which labels to draw, a live test of the
+   * buttons, and what they do (the shortcut registry's controller list).
    */
   const p = dict("pad");
+
+  const GLYPHS: { value: GlyphChoice; label: string }[] = $derived([
+    { value: "auto", label: $p.modeAuto.value },
+    { value: "xbox", label: "Xbox" },
+    { value: "playStation", label: "PlayStation" },
+    { value: "nintendo", label: "Nintendo" },
+    { value: "steamDeck", label: "Steam Deck" },
+  ]);
+
+  // ── the live test: the button behind the last action lights a moment ──
+  const FROM: Record<PadAction, PadButton> = {
+    up: "dpad",
+    down: "dpad",
+    left: "dpad",
+    right: "dpad",
+    accept: "a",
+    back: "b",
+    primary: "x",
+    secondary: "y",
+    menu: "menu",
+    view: "view",
+    prevTab: "lb",
+    nextTab: "rb",
+    pageUp: "lt",
+    pageDown: "rt",
+    scrollUp: "rs",
+    scrollDown: "rs",
+    leftStick: "l3",
+    rightStick: "r3",
+  };
+  const TEST: PadButton[] = [
+    "dpad",
+    "a",
+    "b",
+    "x",
+    "y",
+    "lb",
+    "rb",
+    "lt",
+    "rt",
+    "menu",
+    "view",
+    "l3",
+    "r3",
+    "rs",
+  ];
+  let lit = $state<PadButton | null>(null);
+  $effect(() => {
+    const last = pad.last;
+    if (!last) return;
+    lit = FROM[last.action];
+    const t = setTimeout(() => (lit = null), 450);
+    return () => clearTimeout(t);
+  });
 
   const MODES = $derived([
     { value: "auto" as PadMode, label: $p.modeAuto.value },
@@ -50,6 +109,14 @@
       aria-label={$p.scale.value}
     />
   </Field>
+  <Field label={$p.glyphs.value} hint={$p.glyphsHint.value}>
+    <Segmented
+      value={pad.glyphs}
+      options={GLYPHS}
+      onchange={(v) => (pad.glyphs = v)}
+      aria-label={$p.glyphs.value}
+    />
+  </Field>
   <Field label={$p.connected.value}>
     <div class="flex min-w-0 flex-col gap-1">
       {#each pad.pads as d, i (i)}
@@ -69,7 +136,21 @@
       {/if}
     </div>
   </Field>
+  <Field label={$p.test.value} hint={$p.testHint.value}>
+    <div class="flex flex-wrap items-center gap-1.5" aria-live="polite">
+      {#each TEST as b (b)}
+        <span
+          class={cn(
+            "rounded-full p-0.5 transition-colors",
+            lit === b ? "bg-accent/40" : "bg-transparent",
+          )}
+        >
+          <PadGlyph button={b} kind={pad.kind} />
+        </span>
+      {/each}
+    </div>
+  </Field>
   <Field label={$p.legend.value} stacked>
-    <PadLegend />
+    <PadLegend class="block columns-2 gap-x-6 space-y-3 max-[900px]:columns-1" />
   </Field>
 </Section>

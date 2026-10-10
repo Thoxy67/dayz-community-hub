@@ -28,7 +28,10 @@
   import { keyOf, servers, STALE_MS } from "$lib/stores/servers.svelte";
   import { profile } from "$lib/stores/profile.svelte";
   import { connect } from "$lib/stores/connect.svelte";
+  import { session } from "$lib/stores/session.svelte";
   import { indexOf, pad, padActions, padList } from "$lib/gamepad";
+  import { idOf, keyText, TYPING } from "$lib/shortcuts/registry";
+  import { copyAddress } from "$lib/shortcuts/server";
   import ServerDetail from "./detail/ServerDetail.svelte";
   import { filters, type SortCol } from "./filters.svelte";
   import { feed } from "./feed.svelte";
@@ -39,7 +42,6 @@
 
   const c = dict("servers");
   const n = dict("nav");
-  const p = dict("pad");
 
   // ── the one long list ───────────────────────────────────────────────────
   // As tall as every matching server; only the rows in view exist, and only
@@ -113,6 +115,50 @@
     if (mods) showDetail = true;
   }
 
+  // ── after a reload: the scroll, the selection, the detail panel ─────────
+  // Kept in the session (lib/stores/session) and put back once the list
+  // they refer to has arrived. Until then the saved values are what is kept,
+  // so a second reload before they apply loses nothing.
+  type Kept = { scroll: number; key: string | null; index: number; detail: boolean };
+  let wantScroll = -1;
+  let wantKey = $state<string | null>(null);
+  let wantIndex = -1;
+  const forget = session.keep<Kept>(
+    "servers.view",
+    () => ({
+      scroll: wantScroll >= 0 ? wantScroll : scrollTop,
+      key: selected ? keyOf(selected) : wantKey,
+      index: selected ? selectedIndex : wantIndex,
+      detail: showDetail,
+    }),
+    (v) => {
+      wantScroll = v.scroll;
+      wantKey = v.key;
+      wantIndex = v.index;
+      showDetail = v.detail;
+    },
+  );
+  $effect(() => forget);
+  $effect(() => {
+    if (wantScroll < 0 || !scroller || feed.loading || feed.total === 0) return;
+    const top = Math.min(wantScroll, feed.total * ROW_PX);
+    wantScroll = -1;
+    scroller.scrollTop = top;
+    scrollTop = scroller.scrollTop;
+  });
+  $effect(() => {
+    const key = wantKey;
+    if (!key || selected || servers.total === 0) return;
+    wantKey = null;
+    const at = key.lastIndexOf(":");
+    void servers.resolve(key.slice(0, at), Number(key.slice(at + 1))).then((r) => {
+      if (r && !selected) {
+        selected = r;
+        selectedIndex = wantIndex;
+      }
+    });
+  });
+
   // Screenshot aid, in mock and dev builds only: `?select=N` selects row N
   // once it has arrived, so a capture can show the detail panel.
   const wantSelect =
@@ -146,46 +192,51 @@
     if (r) selected = r;
   }
 
+  // ── keys (lib/shortcuts/registry.ts, scope "list"), only while this view
+  //    shows and nothing else has them ─────────────────────────────────────
   function onkeydown(e: KeyboardEvent) {
-    if (app.view !== "servers" || e.ctrlKey || e.altKey || e.metaKey) return;
-    if (dialogs.open || connect.request) return;
-    if ((e.target as HTMLElement)?.closest("input, textarea, [contenteditable], [role=dialog]"))
-      return;
-    switch (e.key) {
-      case "ArrowDown":
-        return (e.preventDefault(), move(1));
-      case "ArrowUp":
-        return (e.preventDefault(), move(-1));
-      case "PageDown":
-        return (e.preventDefault(), move(Math.floor(height / ROW_PX)));
-      case "PageUp":
-        return (e.preventDefault(), move(-Math.floor(height / ROW_PX)));
-      case "Home":
-        return (e.preventDefault(), move(-feed.total));
-      case "End":
-        return (e.preventDefault(), move(feed.total));
-      case "Escape":
+    if (app.view !== "servers" || dialogs.open || connect.request) return;
+    if ((e.target as HTMLElement)?.closest(`${TYPING}, [role=dialog]`)) return;
+    const id = idOf(e, "list");
+    if (!id) return;
+    const rows = Math.floor(height / ROW_PX);
+    switch (id) {
+      case "list.move":
+        return (e.preventDefault(), move(e.key === "ArrowDown" ? 1 : -1));
+      case "list.page":
+        return (e.preventDefault(), move(e.key === "PageDown" ? rows : -rows));
+      case "list.edges":
+        return (e.preventDefault(), move(e.key === "End" ? feed.total : -feed.total));
+      case "list.close":
         selected = null;
         selectedIndex = -1;
+        return;
+      case "list.detail":
+        showDetail = !showDetail;
         return;
     }
     const s = selected;
     if (!s) return;
     // Enter on a focused button presses that button, not Join as well.
-    if (e.key === "Enter" && (e.target as HTMLElement)?.closest("button, a, [role=menu]")) return;
-    switch (e.key.toLowerCase()) {
-      case "enter":
+    if (id === "list.join" && (e.target as HTMLElement)?.closest("button, a, [role=menu]")) return;
+    e.preventDefault();
+    act(id, s);
+  }
+
+  /** A list shortcut on a server. */
+  function act(id: string, s: Row) {
+    switch (id) {
+      case "list.join":
         return void connect.server(s);
-      case "f":
+      case "list.fav":
         return void profile.toggleFavorite(s.name, s.ip, s.query_port);
-      case "i":
-        showDetail = !showDetail;
-        return;
-      case "p":
+      case "list.ping":
         return void servers.pingOne(s.ip, s.query_port);
-      case "d":
+      case "list.direct":
         return connect.openInDirect(s.ip, s.game_port, s.query_port);
-      case "l":
+      case "list.copy":
+        return void copyAddress(s.ip, s.game_port);
+      case "list.link":
         return void connect.copyLink({
           ip: s.ip,
           gamePort: s.game_port,
@@ -195,7 +246,8 @@
     }
   }
 
-  // ── a controller: X refreshes, Y stars the server under the focus ───────
+  // ── a controller: X stars and Y pings the server under the focus (Y
+  //    refreshes the list when no server is), R3 the details ─────────────
   /** The row a pad is on, else the selected one. */
   function padRow(): Row | null {
     void pad.focused;
@@ -205,20 +257,18 @@
       selected
     );
   }
+  const onRow = (id: string) => ({
+    when: () => padRow() !== null,
+    run: () => {
+      const r = padRow();
+      if (r) act(id, r);
+    },
+  });
   padActions("servers", {
-    primary: { label: () => $p.refresh.value, run: () => void servers.refresh() },
-    secondary: {
-      label: () => $p.favorite.value,
-      when: () => padRow() !== null,
-      run: () => {
-        const r = padRow();
-        if (r) void profile.toggleFavorite(r.name, r.ip, r.query_port);
-      },
-    },
-    rightStick: {
-      label: () => $p.details.value,
-      run: () => (showDetail = !showDetail),
-    },
+    "list.fav": onRow("list.fav"),
+    "list.ping": onRow("list.ping"),
+    "servers.refresh": { run: () => void servers.refresh() },
+    "list.detail": { run: () => (showDetail = !showDetail) },
   });
 
   // ── the list's age ──────────────────────────────────────────────────────
@@ -443,7 +493,7 @@
       <IconButton
         icon={PanelRight}
         label={$c.toggleDetails.value}
-        kbd="I"
+        kbd={keyText("list.detail")}
         active={showDetail}
         onclick={() => (showDetail = !showDetail)}
       />

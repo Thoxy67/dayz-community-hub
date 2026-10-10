@@ -28,7 +28,6 @@
   const REPO_URL = "https://github.com/Arkensor/DayZCommunityOfflineMode";
   const o = dict("offline");
   const sv = dict("servers");
-  const p = dict("pad");
 
   offline.listen();
   $effect(() => {
@@ -47,16 +46,14 @@
     return pad.focused?.closest<HTMLElement>("[data-mission]")?.dataset.mission ?? null;
   }
   padActions("offline", {
-    primary: {
-      label: () => $p.launch.value,
+    "offline.launch": {
       when: () => padMission() !== null,
       run: () => {
         const id = padMission();
         if (id) offline.launch(id);
       },
     },
-    secondary: {
-      label: () => $p.installMode.value,
+    "offline.install": {
       when: () => !busy,
       run: () => offline.update(),
     },

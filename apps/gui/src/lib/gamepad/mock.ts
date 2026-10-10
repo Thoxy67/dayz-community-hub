@@ -4,7 +4,8 @@
  *
  * - The keyboard stands in for the pad: arrows move, Enter is A, Backspace
  *   is B, X and Y are X and Y, Q/E are LB/RB, Page Up/Down are LT/RT, M is
- *   Menu, V is View. Letters type as usual in a text field.
+ *   Menu, V is View, L and R are the stick clicks. Letters type as usual in
+ *   a text field.
  * - `?padseq=down,down,right,accept` plays those actions once the app has
  *   started, a few hundred milliseconds apart, for a screenshot of where
  *   they lead. Where the focus went after each is written to
@@ -31,6 +32,8 @@ const LETTERS: Record<string, PadAction> = {
   e: "nextTab",
   m: "menu",
   v: "view",
+  l: "leftStick",
+  r: "rightStick",
 };
 
 export function installMockPad(q: URLSearchParams) {

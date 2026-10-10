@@ -16,6 +16,7 @@
   import Skull from "~icons/lucide/square-x";
   import { game } from "$lib/stores/game.svelte";
   import { pad } from "$lib/gamepad";
+  import { viewKey } from "$lib/shortcuts/registry";
   import { confirm } from "$lib/stores/dialogs.svelte";
 
   /** Close a running DayZ, after asking: it is closed as a crash would close it. */
@@ -30,7 +31,10 @@
   }
 
   const n = dict("nav");
-  const collapsed = $derived(prefs.railCollapsed);
+  // A controller on a narrow window (a Steam Deck's 1280 px, drawn larger:
+  // 1113 CSS px at 115 %) gives the rail's width to the list.
+  let width = $state(window.innerWidth);
+  const collapsed = $derived(prefs.railCollapsed || (pad.mode === "gamepad" && width < 1200));
 
   /** The figure beside each place: how many are in there. */
   function countOf(id: ViewId): { value: string; tone?: string } | null {
@@ -90,11 +94,10 @@
     return () => ro.disconnect();
   });
 
-  const shortcut = (p: Place) => {
-    const i = PLACES.indexOf(p);
-    return i < 9 ? `Ctrl+${i + 1}` : "";
-  };
+  const shortcut = (p: Place) => viewKey(p.id) ?? "";
 </script>
+
+<svelte:window bind:innerWidth={width} />
 
 {#snippet entry(p: Place)}
   {@const on = app.view === p.id}

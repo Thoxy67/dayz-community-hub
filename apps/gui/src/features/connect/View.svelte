@@ -32,17 +32,14 @@
 
   const c = dict("connect");
   const common = dict("common");
-  const p = dict("pad");
 
   // A controller: X asks the server, Y joins it.
   padActions("connect", {
-    primary: {
-      label: () => $p.query.value,
+    "connect.query": {
       when: () => direct.valid && !direct.querying,
       run: () => void direct.query(),
     },
-    secondary: {
-      label: () => $p.join.value,
+    "connect.join": {
       when: () => direct.valid && !!profile.data,
       run: () => direct.join(),
     },

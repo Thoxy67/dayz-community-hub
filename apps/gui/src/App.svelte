@@ -16,13 +16,11 @@
   import type { CliArgs } from "$lib/ipc/types";
   import { theme } from "$lib/theme/theme.svelte";
   import { app, type ViewId } from "$lib/stores/app.svelte";
-  import { servers } from "$lib/stores/servers.svelte";
   import { mods } from "$lib/stores/mods.svelte";
   import { profile } from "$lib/stores/profile.svelte";
   import { game } from "$lib/stores/game.svelte";
   import { connect } from "$lib/stores/connect.svelte";
   import { say } from "$lib/stores/say";
-  import { dialogs } from "$lib/stores/dialogs.svelte";
   import { prefs } from "$lib/stores/prefs.svelte";
   import { pad, start as startPad } from "$lib/gamepad";
   import { words } from "$lib/i18n";
@@ -36,6 +34,7 @@
   import CommandPalette from "$shell/CommandPalette.svelte";
   import ShortcutsDialog from "$shell/ShortcutsDialog.svelte";
   import PadHints from "$shell/PadHints.svelte";
+  import { onWindowKey, provideGlobal } from "$shell/keys";
 
   initI18n();
   const s = dict("shell");
@@ -76,62 +75,9 @@
         .catch(() => {});
   });
 
-  // ── keyboard ────────────────────────────────────────────────────────────
-  /**
-   * What a browser would do with a key, which an app must not: reload (F5,
-   * Ctrl+R in a text field, which WebView2 honours and which threw away a
-   * running download's state), print, find, view source, caret browsing,
-   * history back and forward. Kept in development, where reloading helps.
-   */
-  function browserKey(e: KeyboardEvent): boolean {
-    if (import.meta.env.DEV) return false;
-    const k = e.key.toLowerCase();
-    if (k === "f5" || k === "f3" || k === "f7" || k === "browserback" || k === "browserforward")
-      return true;
-    if (e.altKey && (k === "arrowleft" || k === "arrowright")) return true;
-    return (e.ctrlKey || e.metaKey) && ["r", "p", "f", "g", "j", "s", "o"].includes(k);
-  }
-
-  function onkeydown(e: KeyboardEvent) {
-    if (browserKey(e)) e.preventDefault();
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k") {
-      e.preventDefault();
-      dialogs.palette = !dialogs.palette;
-      return;
-    }
-    // `?` (Shift+/ or its own key): the sheet of shortcuts, when not typing.
-    if (
-      e.key === "?" &&
-      !e.ctrlKey &&
-      !e.altKey &&
-      !e.metaKey &&
-      !dialogs.open &&
-      !(e.target as HTMLElement)?.closest("input, textarea, [contenteditable]")
-    ) {
-      e.preventDefault();
-      dialogs.shortcuts = true;
-      return;
-    }
-    if (!e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
-    const typing = (e.target as HTMLElement)?.closest("input, textarea, [contenteditable]");
-    const n = parseInt(e.key, 10);
-    if (n >= 1 && n <= 9 && PLACES[n - 1]) {
-      e.preventDefault();
-      app.go(PLACES[n - 1]!.id);
-    } else if (!typing && e.key === "r") {
-      e.preventDefault();
-      void servers.refresh();
-    } else if (!typing && e.key === "u") {
-      e.preventDefault();
-      if (mods.stale.length > 0) {
-        app.go("mods");
-        mods.updateStale();
-      } else say.ok(words("mods").upToDate);
-    } else if (!typing && e.key === "l") {
-      e.preventDefault();
-      void connect.rejoin();
-    }
-  }
+  // ── keyboard: every shortcut is listed in lib/shortcuts/registry.ts; the
+  // window's own are run by shell/keys.ts ─────────────────────────────────
+  $effect(() => provideGlobal());
 
   // ── startup, the backend's events, the window ───────────────────────────
   $effect(() => {
@@ -205,7 +151,7 @@
 </script>
 
 <svelte:window
-  {onkeydown}
+  onkeydown={onWindowKey}
   onpaste={(e) => {
     // An address or a dzch:// link pasted outside a text field opens it in
     // Direct Connect: copied from Discord, a website, a friend.

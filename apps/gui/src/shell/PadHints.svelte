@@ -5,27 +5,20 @@
   import { registry } from "$lib/gamepad/actions.svelte";
   import { dialogConfirm } from "$lib/gamepad/nav";
   import { pad } from "$lib/gamepad/state.svelte";
+  import { shortcut } from "$lib/shortcuts/registry";
   import { app } from "$lib/stores/app.svelte";
+  import { dialogs } from "$lib/stores/dialogs.svelte";
 
   /**
-   * What each button does here, while a controller drives the window: the
-   * fixed ones (select, back, views, pages) and the view's own (X, Y), which
-   * come and go with what is focused.
+   * What the buttons do on what is focused, while a controller drives the
+   * window: at most five, always in the same order (A, B, X, Y, then Menu,
+   * the bumpers, R3, View as room allows), and only those that apply: X and
+   * Y appear on a row and vanish off it, a dialog shows its own three.
+   * The words are the registry's (`lib/shortcuts/registry.ts`).
    */
   const p = dict("pad");
+  const MAX = 5;
 
-  const typing = $derived(
-    pad.focused?.matches("input:not([type=checkbox],[type=radio],[type=range]), textarea") ?? false,
-  );
-  // Read `pad.focused` so a view's `when` is asked again as the focus moves.
-  const own = $derived(
-    (void pad.focused,
-    (["x", "y", "menu", "view"] as const).map((b) => {
-      const c = registry.get(app.view, b === "x" ? "primary" : b === "y" ? "secondary" : b);
-      return { b, label: c?.label() ?? null };
-    })),
-  );
-  // A dialog is open: X confirms it, and the view's own X and Y do not apply.
   // Asked again when a dialog's portal comes or goes on the body (a dialog's
   // focus trap keeps focus events from reaching the document), and once it
   // is drawn, since at mount it may not count as visible yet.
@@ -44,17 +37,56 @@
       document.removeEventListener("focusin", bump, true);
     };
   });
-  const confirming = $derived((void pad.focused, void moved, dialogConfirm() !== null));
-  const label = (b: "menu" | "view", fallback: string) =>
-    own.find((o) => o.b === b)?.label ?? fallback;
-</script>
 
-{#snippet hint(buttons: PadButton[], text: string)}
-  <span class="flex shrink-0 items-center gap-1">
-    {#each buttons as b (b)}<PadGlyph button={b} kind={pad.kind} />{/each}
-    <span class="text-fg-muted">{text}</span>
-  </span>
-{/snippet}
+  const word = (key: string | undefined) =>
+    key ? String(($p as unknown as Record<string, unknown>)[key] ?? key) : "";
+  const hintOf = (id: string) => word(shortcut(id).hint);
+
+  type Hint = { buttons: PadButton[]; text: string };
+
+  const hints = $derived.by((): Hint[] => {
+    void moved;
+    const el = pad.focused;
+    const typing =
+      el?.matches("input:not([type=checkbox],[type=radio],[type=range]), textarea") ?? false;
+    const out: Hint[] = [];
+    if (dialogs.palette) {
+      out.push({ buttons: ["a"], text: hintOf("palette.run") });
+      out.push({ buttons: ["b"], text: hintOf("palette.close") });
+      out.push({ buttons: ["lb", "rb"], text: hintOf("palette.section") });
+      if (pad.steamUi) out.push({ buttons: ["y"], text: hintOf("palette.keyboard") });
+      return out;
+    }
+    const confirm = dialogConfirm() !== null;
+    const inDialog = !!document.querySelector(
+      "[data-dialog-content][data-state=open],[role=alertdialog]",
+    );
+    const onRow = !!el?.closest("[data-pad-index]");
+    const selected = el?.querySelector("[aria-selected=true]") ?? null;
+    out.push({
+      buttons: ["a"],
+      text: typing ? $p.type.value : onRow && selected ? $p.join.value : $p.select.value,
+    });
+    out.push({
+      buttons: ["b"],
+      text: inDialog ? $p.close.value : typing ? $p.done.value : $p.back.value,
+    });
+    if (inDialog) {
+      if (confirm) out.push({ buttons: ["x"], text: hintOf("dialog.confirm") });
+      return out;
+    }
+    for (const b of ["x", "y"] as const) {
+      const c = registry.get(app.view, b);
+      if (c) out.push({ buttons: [b], text: hintOf(c.id) });
+    }
+    out.push({ buttons: ["menu"], text: hintOf("palette") });
+    out.push({ buttons: ["lb", "rb"], text: hintOf("view.prev") });
+    const r3 = registry.get(app.view, "r3");
+    if (r3) out.push({ buttons: ["r3"], text: hintOf(r3.id) });
+    out.push({ buttons: ["view"], text: hintOf("sheet") });
+    return out.slice(0, MAX);
+  });
+</script>
 
 <div
   class="flex h-7 shrink-0 items-center gap-3.5 overflow-hidden border-t border-border bg-panel px-pad text-2xs"
@@ -62,19 +94,12 @@
   aria-label={$p.hints.value}
   data-pad-skip
 >
-  {@render hint(["a"], typing ? $p.type.value : $p.select.value)}
-  {@render hint(["b"], $p.back.value)}
-  {#if confirming}
-    {@render hint(["x"], $p.confirm.value)}
-  {:else}
-    {#each own as o (o.b)}
-      {#if (o.b === "x" || o.b === "y") && o.label}{@render hint([o.b], o.label)}{/if}
-    {/each}
-  {/if}
-  {@render hint(["lb", "rb"], $p.views.value)}
-  {@render hint(["lt", "rt"], $p.page.value)}
-  {@render hint(["menu"], label("menu", $p.settings.value))}
-  {@render hint(["view"], label("view", $p.search.value))}
+  {#each hints as h (h.buttons.join())}
+    <span class="flex shrink-0 items-center gap-1">
+      {#each h.buttons as b (b)}<PadGlyph button={b} kind={pad.kind} />{/each}
+      <span class="text-fg-muted">{h.text}</span>
+    </span>
+  {/each}
   <span class="flex-1"></span>
   {#if pad.pads[0]}
     <span class="flex min-w-0 items-center gap-1.5 text-fg-faint">

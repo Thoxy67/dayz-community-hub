@@ -64,6 +64,8 @@
   import SourceTag from "./SourceTag.svelte";
   import { review, workshopUrl } from "./review.svelte";
   import { pad, padActions } from "$lib/gamepad";
+  import { idOf, TYPING } from "$lib/shortcuts/registry";
+  import { dialogs } from "$lib/stores/dialogs.svelte";
 
   /**
    * Installed Workshop mods. The header says how many there are, what they
@@ -249,35 +251,36 @@
     for (const x of tickedMods) if (x.managed !== link) await mods.toggleManaged(x);
   }
 
-  // ── keyboard (only while this view is showing) ──────────────────────────
+  // ── keys (lib/shortcuts/registry.ts, scope "mods"), only while this view
+  //    shows and nothing else has them ─────────────────────────────────────
   let list = $state<{ scrollToIndex: (i: number) => void } | null>(null);
+  function show(next: number) {
+    const r = visible[Math.min(visible.length - 1, Math.max(0, next))];
+    focusId = r?.id ?? null;
+    if (r) list?.scrollToIndex(items.indexOf(r));
+  }
   function onkeydown(e: KeyboardEvent) {
-    if (app.view !== "mods" || e.ctrlKey || e.metaKey || e.altKey) return;
-    if ((e.target as HTMLElement)?.closest("input, textarea, [role=dialog], [role=menu]")) return;
+    if (app.view !== "mods" || dialogs.open) return;
+    if ((e.target as HTMLElement)?.closest(`${TYPING}, [role=dialog], [role=menu]`)) return;
+    const id = idOf(e, "mods");
+    if (!id) return;
     const i = visible.findIndex((x) => x.id === focusId);
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      e.preventDefault();
-      const next = Math.min(visible.length - 1, Math.max(0, i + (e.key === "ArrowDown" ? 1 : -1)));
-      const r = visible[next];
-      focusId = r?.id ?? null;
-      if (r) list?.scrollToIndex(items.indexOf(r));
-    } else if (e.key === " " && focused) {
-      e.preventDefault();
-      tick(focused.id, !ticked.has(focused.id));
-    } else if ((e.key === "m" || e.key === "M") && focused) {
-      void mods.toggleManaged(focused);
-    } else if (e.key === "Delete" && focused) {
-      void mods.remove(focused);
-    } else if ((e.key === "u" || e.key === "U") && focused) {
-      review.updateSelected([focused.id]);
-    } else if (e.key === "Escape" && focusId !== null) {
+    if (id === "mods.move") show(i + (e.key === "ArrowDown" ? 1 : -1));
+    else if (id === "mods.edges") show(e.key === "End" ? visible.length - 1 : 0);
+    else if (id === "mods.close") {
+      if (focusId === null) return;
       focusId = null;
-    }
+    } else if (!focused) return;
+    else if (id === "mods.tick") tick(focused.id, !ticked.has(focused.id));
+    else if (id === "mods.managed") void mods.toggleManaged(focused);
+    else if (id === "mods.delete") void mods.remove(focused);
+    else if (id === "mods.update") review.updateSelected([focused.id]);
+    e.preventDefault();
   }
 
-  // ── a controller: X updates (the ticked mods, the one under the focus, or
-  //    every stale one), Y ticks the one under the focus ─────────────────────
-  const p = dict("pad");
+  // ── a controller: X ticks the mod under the focus, Y updates (the ticked
+  //    mods, the one under the focus, or every stale one): the same
+  //    "X marks, Y refreshes" as the server lists ────────────────────────────
   /** The mod row a pad is on, else the one opened in the details. */
   function padMod(): number | null {
     void pad.focused;
@@ -285,22 +288,20 @@
     return id ? Number(id) : focusId;
   }
   padActions("mods", {
-    primary: {
-      label: () => $p.update.value,
+    "mods.tick": {
+      when: () => padMod() !== null,
+      run: () => {
+        const id = padMod();
+        if (id !== null) tick(id, !ticked.has(id));
+      },
+    },
+    "mods.update": {
       when: () => ticked.size > 0 || padMod() !== null || mods.stale.length > 0,
       run: () => {
         const id = padMod();
         if (ticked.size > 0) review.updateSelected([...ticked]);
         else if (id !== null && mods.byId.has(id)) review.updateSelected([id]);
         else mods.updateStale();
-      },
-    },
-    secondary: {
-      label: () => $p.tickMod.value,
-      when: () => padMod() !== null,
-      run: () => {
-        const id = padMod();
-        if (id !== null) tick(id, !ticked.has(id));
       },
     },
   });

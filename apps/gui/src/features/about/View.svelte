@@ -29,9 +29,8 @@
   import Gamepad from "~icons/lucide/gamepad-2";
   import ExternalLink from "~icons/lucide/external-link";
   import Star from "~icons/lucide/star";
-  import { Segmented } from "$lib/components/ui/segmented";
   import { TabStrip } from "$lib/components/ui/tabs";
-  import { PadLegend, ShortcutList } from "$lib/components/app";
+  import { ShortcutList } from "$lib/components/app";
   import { pad } from "$lib/gamepad";
   import { profile } from "$lib/stores/profile.svelte";
   import { say } from "$lib/stores/say";
@@ -53,7 +52,7 @@
    * and the controller's buttons, then the guide, one subject at a time.
    */
   const a = dict("about");
-  const p = dict("pad");
+  const k = dict("keys");
 
   let version = $state("");
   let specs = $state<SystemSpecsDto | null>(null);
@@ -151,7 +150,6 @@
   ];
 
   // The keys, or the controller's buttons when a controller drives.
-  let input = $state<"keyboard" | "gamepad">(pad.mode === "gamepad" ? "gamepad" : "keyboard");
 
   type GuideTab = "start" | "mods" | "share" | "offline" | "tips";
   let guide = $state<GuideTab>("start");
@@ -365,49 +363,14 @@
 
       <!-- The keys, or the controller's buttons. -->
       {#snippet keys()}
-        <Segmented
-          bind:value={input}
-          size="xs"
-          fill
-          aria-label={$a.shortcuts.value}
-          options={[
-            { value: "keyboard", label: $a.keyboard.value, icon: Keyboard },
-            { value: "gamepad", label: $a.gamepad.value, icon: Gamepad },
-          ]}
-          class="mb-3"
-        />
-        {#if input === "keyboard"}
-          <ShortcutList />
-        {:else}
-          <PadLegend />
-          <p class="m-0 mt-3 mb-1 font-mono text-3xs tracking-[0.08em] text-fg-faint uppercase">
-            {$a.padInServers.value}
+        <ShortcutList />
+        {#if pad.pads[0]}
+          <p class="m-0 mt-3 flex items-center gap-1.5 text-2xs text-fg-faint">
+            <Gamepad class="size-3.5 shrink-0" /><span class="truncate">{pad.pads[0].name}</span>
           </p>
-          <PadLegend
-            only
-            extra={[
-              { buttons: ["x"], text: $p.refresh.value },
-              { buttons: ["y"], text: $p.favorite.value },
-            ]}
-          />
-          <p class="m-0 mt-3 mb-1 font-mono text-3xs tracking-[0.08em] text-fg-faint uppercase">
-            {$a.padInSaved.value}
-          </p>
-          <PadLegend
-            only
-            extra={[
-              { buttons: ["x"], text: $p.join.value },
-              { buttons: ["y"], text: $p.favorite.value },
-            ]}
-          />
-          {#if pad.pads[0]}
-            <p class="m-0 mt-3 flex items-center gap-1.5 text-2xs text-fg-faint">
-              <Gamepad class="size-3.5 shrink-0" /><span class="truncate">{pad.pads[0].name}</span>
-            </p>
-          {/if}
         {/if}
       {/snippet}
-      {@render card($a.shortcuts.value, Keyboard, keys)}
+      {@render card($k.title.value, Keyboard, keys)}
     </div>
 
     <!-- The guide: one subject at a time instead of a wall of text. -->

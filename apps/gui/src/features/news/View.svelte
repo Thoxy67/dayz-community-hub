@@ -22,6 +22,7 @@
   import { app } from "$lib/stores/app.svelte";
   import { dialogs } from "$lib/stores/dialogs.svelte";
   import { padActions } from "$lib/gamepad";
+  import { idOf, TYPING } from "$lib/shortcuts/registry";
   import { news, readMinutes } from "./news.svelte";
 
   const n = dict("news");
@@ -37,17 +38,11 @@
   );
   const article = $derived(shown[news.selected] ?? shown[0] ?? null);
 
-  // A controller: X opens the article on dayz.com.
-  const p = dict("pad");
-  padActions("news", {
-    primary: {
-      label: () => $p.openArticle.value,
-      when: () => !!article?.url,
-      run: () => {
-        if (article?.url) void openUrl(article.url);
-      },
-    },
-  });
+  // O, or X on a controller, opens the article on dayz.com.
+  const openArticle = () => {
+    if (article?.url) void openUrl(article.url);
+  };
+  padActions("news", { "news.open": { when: () => !!article?.url, run: openArticle } });
 
   // The hero picture, once cached; asking for it fills the cache.
   const hero = $derived(article?.image_url ? (news.images.get(article.image_url) ?? null) : null);
@@ -78,10 +73,12 @@
     // The view stays mounted once visited: only while it shows.
     if (app.view !== "news" || dialogs.open || lightbox) return;
     if (e.ctrlKey || e.altKey || e.metaKey) return;
-    if ((e.target as HTMLElement).closest("input, textarea, [role=dialog]")) return;
-    if (e.key === "ArrowDown" || e.key === "j")
-      news.selected = Math.min(shown.length - 1, news.selected + 1);
-    else if (e.key === "ArrowUp" || e.key === "k") news.selected = Math.max(0, news.selected - 1);
+    if ((e.target as HTMLElement).closest(`${TYPING}, [role=dialog]`)) return;
+    const id = idOf(e, "news");
+    if (id === "news.move") {
+      const down = e.key === "ArrowDown" || e.key.toLowerCase() === "j";
+      news.selected = Math.min(shown.length - 1, Math.max(0, news.selected + (down ? 1 : -1)));
+    } else if (id === "news.open") openArticle();
     else return;
     e.preventDefault();
   }

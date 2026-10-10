@@ -57,15 +57,12 @@
   );
 
   // A controller: X applies the recommendations, Y shows only active options.
-  const p = dict("pad");
   padActions("options", {
-    primary: {
-      label: () => $p.applyRecommended.value,
+    "options.apply": {
       when: () => recs.length > 0 && !recsApplied,
       run: () => void applyRecommended(),
     },
-    secondary: {
-      label: () => $p.activeOnly.value,
+    "options.active": {
       run: () => (activeOnly = !activeOnly),
     },
   });

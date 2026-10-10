@@ -62,6 +62,8 @@
   import { dateTime, num, relative } from "$lib/format";
   import { cn } from "$lib/cx";
   import { indexOf, pad, padActions } from "$lib/gamepad";
+  import { idOf, keyText, TYPING } from "$lib/shortcuts/registry";
+  import { copyAddress } from "$lib/shortcuts/server";
 
   let {
     kind,
@@ -93,7 +95,6 @@
   const h = dict("history");
   const sv = dict("servers");
   const nav = dict("nav");
-  const p = dict("pad");
 
   // ── rows ────────────────────────────────────────────────────────────────
   type Row = Entry & {
@@ -256,7 +257,8 @@
     });
   const toggleFav = (r: Row) => void profile.toggleFavorite(r.name, r.ip, r.port);
 
-  // ── a controller: X joins, Y stars (or unstars) the server under the focus ─
+  // ── a controller: X stars and Y pings the server under the focus, R3 the
+  //    details (the same buttons as in the server browser) ────────────────
   let listEl: HTMLElement | undefined = $state();
   /** The row a pad is on, else the selected one. */
   function padRow(): Row | null {
@@ -265,79 +267,70 @@
     const i = listEl?.contains(a) ? indexOf(a) : null;
     return (i !== null ? shown[i] : null) ?? selected;
   }
-  padActions(() => view, {
-    primary: {
-      label: () => $p.join.value,
-      when: () => padRow() !== null,
-      run: () => {
-        const r = padRow();
-        if (r) join(r);
-      },
-    },
-    secondary: {
-      label: () => $p.favorite.value,
-      when: () => padRow() !== null,
-      run: () => {
-        const r = padRow();
-        if (r) toggleFav(r);
-      },
-    },
-    rightStick: {
-      label: () => $p.details.value,
-      run: () => (showDetail = !showDetail),
+  const onRow = (id: string) => ({
+    when: () => padRow() !== null,
+    run: () => {
+      const r = padRow();
+      if (r) act(id, r);
     },
   });
+  padActions(() => view, {
+    "list.fav": onRow("list.fav"),
+    "list.ping": onRow("list.ping"),
+    "list.detail": { run: () => (showDetail = !showDetail) },
+  });
 
-  // ── keyboard, only while this view shows and nothing else has the keys ──
+  /** A list shortcut on a row. */
+  function act(id: string, r: Row) {
+    switch (id) {
+      case "list.join":
+        return join(r);
+      case "list.fav":
+        return toggleFav(r);
+      case "list.ping":
+        return ping(r);
+      case "list.direct":
+        return direct(r);
+      case "list.copy":
+        return void copyAddress(r.ip, r.listed?.game_port ?? r.port);
+      case "list.link":
+        return share(r);
+      case "saved.remove":
+        return onremove(r);
+    }
+  }
+
+  // ── keys (lib/shortcuts/registry.ts, scopes "list" and "saved"), only
+  //    while this view shows and nothing else has them ────────────────────
   function onkeydown(e: KeyboardEvent) {
     if (app.view !== view || dialogs.open || connect.request) return;
-    if (e.ctrlKey || e.altKey || e.metaKey) return;
-    if (
-      (e.target as HTMLElement)?.closest(
-        "input, textarea, select, [contenteditable], [role=dialog]",
-      )
-    )
-      return;
+    if ((e.target as HTMLElement)?.closest(`${TYPING}, [role=dialog]`)) return;
+    const id = idOf(e, "list") ?? idOf(e, "saved");
+    if (!id) return;
     const i = selected ? shown.indexOf(selected) : -1;
-    const r = selected;
-    switch (e.key) {
-      case "ArrowDown":
-        select(Math.min(shown.length - 1, i + 1));
+    const page = Math.max(1, Math.floor((listEl?.clientHeight ?? 400) / LIST_ROW_PX) - 2);
+    switch (id) {
+      case "list.move":
+        select(Math.min(shown.length - 1, Math.max(0, i + (e.key === "ArrowDown" ? 1 : -1))));
         break;
-      case "ArrowUp":
-        select(Math.max(0, i - 1));
+      case "list.page":
+        select(Math.min(shown.length - 1, Math.max(0, i + (e.key === "PageDown" ? page : -page))));
         break;
-      case "Enter":
-        if (r) join(r);
+      case "list.edges":
+        select(e.key === "End" ? shown.length - 1 : 0);
         break;
-      case "Delete":
-        if (r) onremove(r);
-        break;
-      case "f":
-      case "F":
-        if (r) toggleFav(r);
-        break;
-      case "i":
-      case "I":
-        showDetail = !showDetail;
-        break;
-      case "p":
-      case "P":
-        if (r) ping(r);
-        break;
-      case "d":
-      case "D":
-        if (r) direct(r);
-        break;
-      case "l":
-      case "L":
-        if (r) share(r);
-        break;
-      case "Escape":
+      case "list.close":
         selectedKey = null;
         break;
+      case "list.detail":
+        showDetail = !showDetail;
+        break;
       default:
-        return;
+        if (!selected) return;
+        // Enter on a focused button presses that button, not Join as well.
+        if (id === "list.join" && (e.target as HTMLElement)?.closest("button, a, [role=menu]"))
+          return;
+        act(id, selected);
     }
     e.preventDefault();
   }
@@ -379,7 +372,7 @@
   <IconButton
     icon={PanelRight}
     label={$sv.toggleDetails.value}
-    kbd="I"
+    kbd={keyText("list.detail")}
     active={showDetail}
     onclick={() => (showDetail = !showDetail)}
   />
@@ -500,7 +493,12 @@
     {/snippet}
     {#snippet menu()}
       {#if kind === "history"}
-        <ContextMenuItem icon={Trash} tone="danger" kbd="Del" onselect={() => onremove(r)}>
+        <ContextMenuItem
+          icon={Trash}
+          tone="danger"
+          kbd={keyText("saved.remove")}
+          onselect={() => onremove(r)}
+        >
           {$h.remove.value}
         </ContextMenuItem>
       {/if}

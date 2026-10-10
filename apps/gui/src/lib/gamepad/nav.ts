@@ -7,10 +7,16 @@
  *   A select's or a menu's popup is driven with its own arrow keys instead.
  * - Accept clicks what is focused (opens a select, toggles a switch); on a
  *   text field in Steam's big-screen interface it also opens Steam's keyboard.
- * - Back closes the topmost popup or dialog, else is Escape for the view
- *   (which clears its selection).
- * - LB/RB go to the previous/next view, LT/RT page through a list or scroll.
- * - X, Y, Menu and View are the view's own (`actions.svelte.ts`).
+ * - Back closes the topmost popup or dialog; on a text field it leaves the
+ *   field for what is below it (the results of a search); else it is Escape
+ *   for the view (which deselects and closes the details).
+ * - LB/RB go to the previous/next view, LT/RT page through a list or scroll
+ *   (Xbox's conventions, which Steam's follow: the bumpers for the top-level
+ *   tabs, the triggers for paging. See `lib/shortcuts/registry.ts`).
+ * - X, Y and the stick clicks are the view's own (`actions.svelte.ts`);
+ *   Menu opens the search palette, View the shortcuts, L3 rejoins.
+ * - A direction held down speeds up in a list: one row at a time, then
+ *   three, then ten.
  *
  * Elements opt out with `data-pad-skip` (and everything inside), in with
  * `data-pad-focus`. Only the active scope is searched, once per press.
@@ -19,7 +25,9 @@ import { tick } from "svelte";
 import type { PadAction } from "$lib/ipc/gamepad";
 import { openUrl } from "$lib/ipc/native";
 import { app, type ViewId } from "$lib/stores/app.svelte";
-import { registry, type PadButtonCommand } from "./actions.svelte";
+import { runShortcut } from "$lib/shortcuts/actions";
+import { SHORTCUTS } from "$lib/shortcuts/registry";
+import { BUTTON, registry, type PadButtonCommand } from "./actions.svelte";
 import { indexOf, listOf, rememberRow, rememberedRow, rowEl } from "./list";
 import { cost, type Box, type Dir } from "./spatial";
 import { pad } from "./state.svelte";
@@ -45,9 +53,12 @@ const FOCUSABLE = [
   "[data-pad-focus]",
 ].join(",");
 
-/** Popups that bits-ui drives with the keyboard: the pad speaks to them in keys. */
+/**
+ * Popups that bits-ui drives with the keyboard, and anything marked
+ * `data-pad-keys` (the search palette): the pad speaks to them in keys.
+ */
 const KEYED =
-  "[data-select-content],[data-menu-content],[data-dropdown-menu-content],[data-context-menu-content]";
+  "[data-select-content],[data-menu-content],[data-dropdown-menu-content],[data-context-menu-content],[data-pad-keys]";
 /** Anything that takes the whole interaction while it is open. */
 const SCOPES = `[data-dialog-content],[data-popover-content],[role=dialog][aria-modal=true],[role=alertdialog],[data-pad-scope],${KEYED}`;
 /** Triggers bits-ui opens from the keyboard (they open on pointerdown, not click). */
@@ -65,8 +76,8 @@ let views: readonly ViewId[] = [];
 /** Events this module made up: they reach the component, not the window's own shortcuts. */
 const synthetic = new WeakSet<Event>();
 
-function key(target: Element, k: string, contained = true) {
-  const opts = { key: k, code: k, bubbles: true, cancelable: true, composed: true };
+function key(target: Element, k: string, contained = true, shiftKey = false) {
+  const opts = { key: k, code: k, shiftKey, bubbles: true, cancelable: true, composed: true };
   const down = new KeyboardEvent("keydown", opts);
   if (contained) synthetic.add(down);
   target.dispatchEvent(down);
@@ -189,7 +200,11 @@ async function goRow(node: Element, api: { reveal: (i: number) => void }, i: num
   }
 }
 
-function move(dir: Dir) {
+/** How many repeats in a row the held direction has fired: a long hold goes faster. */
+let streak = 0;
+const stride = () => (streak > 24 ? 10 : streak > 10 ? 3 : 1);
+
+function move(dir: Dir, start?: HTMLElement) {
   const root = scope();
   if (root.matches(KEYED)) {
     const map = { up: "ArrowUp", down: "ArrowDown", left: "ArrowLeft", right: "ArrowRight" };
@@ -197,7 +212,7 @@ function move(dir: Dir) {
     key(a && a !== document.body ? a : root, map[dir]);
     return;
   }
-  const from = current(root);
+  const from = start ?? current(root);
   if (!from) {
     land(root);
     return;
@@ -212,8 +227,9 @@ function move(dir: Dir) {
   if (list && (dir === "up" || dir === "down")) {
     const at = indexOf(from) ?? rememberedRow(list.node) ?? 0;
     const n = list.api.count();
-    const next = at + (dir === "down" ? 1 : -1);
-    if (next >= 0 && next < n) {
+    const step = (dir === "down" ? 1 : -1) * stride();
+    const next = Math.max(0, Math.min(n - 1, at + step));
+    if (next !== at) {
       void goRow(list.node, list.api, next);
       return;
     }
@@ -385,13 +401,25 @@ function back() {
     key(target, "Escape", root.matches("[data-dialog-content],[data-popover-content]," + KEYED));
     return;
   }
+  // A text field: done typing. The focus goes to what is below it (a
+  // search's results), else stays on the field, where A types again.
+  if (a instanceof HTMLElement && a.matches(TEXT)) {
+    move("down", a);
+    return;
+  }
   // The view's own Escape: the lists clear their selection, the details close.
   key(target, "Escape", false);
   void settle();
 }
 
 async function switchView(delta: number) {
-  if (scope().id !== "app" || views.length === 0) return;
+  const root = scope();
+  // The search palette: its sections, with Tab and Shift+Tab.
+  if (root.matches("[data-pad-keys]")) {
+    const a = document.activeElement;
+    return key(a && a !== document.body ? a : root, "Tab", true, delta < 0);
+  }
+  if (root.id !== "app" || views.length === 0) return;
   const i = views.indexOf(app.view);
   const next = views[(i + delta + views.length) % views.length]!;
   app.go(next);
@@ -485,30 +513,26 @@ export function dialogConfirm(): HTMLElement | null {
 }
 
 function command(button: PadButtonCommand) {
-  if (scope().id !== "app") {
+  const root = scope();
+  const b = BUTTON[button];
+  if (root.matches("[data-pad-keys]")) {
+    // The search palette: Menu closes it again, Y brings Steam's keyboard.
+    if (b === "menu") runShortcut("palette");
+    else if (b === "y" && pad.steamUi) void openUrl("steam://open/keyboard").catch(() => {});
+    return;
+  }
+  if (root.id !== "app") {
     // In a dialog X confirms it, wherever the focus is.
-    if (button === "primary") dialogConfirm()?.click();
+    if (b === "x") dialogConfirm()?.click();
     return;
   }
-  const c = registry.get(app.view, button);
-  if (c) return c.run();
-  if (button === "menu") return void switchTo("settings");
-  if (button === "leftStick") {
-    // Rejoin the last server, from anywhere: the Rejoin card's button.
-    void import("$lib/stores/connect.svelte").then(({ connect }) => connect.rejoin());
-    return;
-  }
-  if (button === "view") {
-    const field = viewRoot()?.querySelector<HTMLElement>("[data-pad-search]");
-    if (field && visible(field)) focus(field);
-  }
-}
-
-async function switchTo(view: ViewId) {
-  const i = views.indexOf(view);
-  const at = views.indexOf(app.view);
-  if (i >= 0 && at >= 0) await switchView(i - at);
-  else app.go(view);
+  const own = registry.get(app.view, b);
+  if (own) return own.command.run();
+  // The app's own: the palette, the shortcuts, rejoining.
+  const global = SHORTCUTS.find(
+    (s) => (s.scope === "global" || s.scope === "views") && s.pad?.includes(b),
+  );
+  if (global) runShortcut(global.id);
 }
 
 /**
@@ -530,10 +554,15 @@ function scroll(dir: 1 | -1) {
   scrollTarget()?.scrollBy({ top: dir * 140 });
 }
 
+let lastAction: PadAction | null = null;
+
 /** One action from a pad. */
-export function handle(action: PadAction, _repeat: boolean) {
+export function handle(action: PadAction, repeat: boolean) {
   if (!pad.enabled) return;
   pad.usedPad();
+  pad.last = { action, at: Date.now() };
+  streak = repeat && action === lastAction ? streak + 1 : 0;
+  lastAction = action;
   switch (action) {
     case "up":
     case "down":
