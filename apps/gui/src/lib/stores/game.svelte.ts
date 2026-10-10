@@ -12,15 +12,22 @@ const EVERY_MS = 5_000;
 class Game {
   running = $state(false);
   closing = $state(false);
+  /** When the game was seen to start after a launch from here (ms); 0 when unknown. */
+  since = $state(0);
   #timer: ReturnType<typeof setTimeout> | undefined;
   #watchUntil = 0;
 
   async #check() {
+    const was = this.running;
     try {
       this.running = await gameRunning();
     } catch {
       this.running = false;
     }
+    // Only a start this window watched for has a known time: a game
+    // already open when the launcher started has none.
+    if (!this.running) this.since = 0;
+    else if (!was && this.#watchUntil > 0) this.since = Date.now();
     // Keep looking while it runs, or while it may still be starting.
     if (this.running || Date.now() < this.#watchUntil) this.#schedule();
   }

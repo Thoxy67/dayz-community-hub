@@ -4,29 +4,6 @@ import { insert, t, type Dictionary } from "intlayer";
 const content = {
   key: "nav",
   content: {
-    sbServers: insert(
-      t({
-        en: "{{count}} servers",
-        fr: "{{count}} serveurs",
-        de: "{{count}} Server",
-        es: "{{count}} servidores",
-        ru: "Серверов: {{count}}",
-      }),
-    ),
-    sbRefreshList: t({
-      en: "Fetch the server list again",
-      fr: "Recharger la liste des serveurs",
-      de: "Serverliste neu laden",
-      es: "Volver a cargar la lista de servidores",
-      ru: "Обновить список серверов",
-    }),
-    sbRefreshing: t({
-      en: "Refreshing the list…",
-      fr: "Actualisation de la liste…",
-      de: "Liste wird aktualisiert…",
-      es: "Actualizando la lista…",
-      ru: "Обновление списка…",
-    }),
     sbListDown: t({
       en: "Server list unavailable",
       fr: "Liste des serveurs indisponible",
@@ -77,20 +54,6 @@ const content = {
       es: "A través del cliente de Steam abierto",
       ru: "Через запущенный клиент Steam",
     }),
-    sbSteamcmdReady: t({
-      en: "SteamCMD ready",
-      fr: "SteamCMD prêt",
-      de: "SteamCMD bereit",
-      es: "SteamCMD listo",
-      ru: "SteamCMD готов",
-    }),
-    sbSteamworks: t({
-      en: "Downloads via Steam",
-      fr: "Téléchargements via Steam",
-      de: "Downloads über Steam",
-      es: "Descargas vía Steam",
-      ru: "Загрузка через Steam",
-    }),
     sbSteamcmdMissing: t({
       en: "SteamCMD not found",
       fr: "SteamCMD introuvable",
@@ -98,24 +61,6 @@ const content = {
       es: "SteamCMD no encontrado",
       ru: "SteamCMD не найден",
     }),
-    sbModsStale: insert(
-      t({
-        en: "{{count}} mods to update",
-        fr: "{{count}} mods à mettre à jour",
-        de: "{{count}} Mods zu aktualisieren",
-        es: "{{count}} mods por actualizar",
-        ru: "Модов к обновлению: {{count}}",
-      }),
-    ),
-    sbModsOk: insert(
-      t({
-        en: "{{count}} mods up to date",
-        fr: "{{count}} mods à jour",
-        de: "{{count}} Mods aktuell",
-        es: "{{count}} mods al día",
-        ru: "Модов актуально: {{count}}",
-      }),
-    ),
     sbModsChecking: t({
       en: "Checking mods…",
       fr: "Vérification des mods…",
@@ -288,31 +233,6 @@ const content = {
       de: "Ping-Scan fortsetzen",
       es: "Reanudar el escaneo de ping",
       ru: "Продолжить пинг",
-    }),
-    modOpRunningSteam: insert(
-      t({
-        en: "Steam: {{current}} of {{total}}",
-        fr: "Steam : {{current}} sur {{total}}",
-        de: "Steam: {{current}} von {{total}}",
-        es: "Steam: {{current}} de {{total}}",
-        ru: "Steam: {{current}} из {{total}}",
-      }),
-    ),
-    modOpRunning: insert(
-      t({
-        en: "SteamCMD: {{current}} of {{total}}",
-        fr: "SteamCMD : {{current}} sur {{total}}",
-        de: "SteamCMD: {{current}} von {{total}}",
-        es: "SteamCMD: {{current}} de {{total}}",
-        ru: "SteamCMD: {{current}} из {{total}}",
-      }),
-    ),
-    showProgress: t({
-      en: "Show the progress",
-      fr: "Afficher la progression",
-      de: "Fortschritt anzeigen",
-      es: "Mostrar el progreso",
-      ru: "Показать прогресс",
     }),
     version: insert(
       t({

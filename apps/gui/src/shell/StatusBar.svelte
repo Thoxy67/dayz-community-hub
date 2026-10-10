@@ -1,256 +1,146 @@
 <script lang="ts">
   import { getVersion } from "@tauri-apps/api/app";
   import { dict } from "$lib/i18n";
-  import Pause from "~icons/lucide/pause";
-  import PlayIcon from "~icons/lucide/play";
-  import RotateCw from "~icons/lucide/rotate-cw";
-  import ServerIcon from "~icons/lucide/server";
-  import CloudOff from "~icons/lucide/cloud-off";
-  import Radar from "~icons/lucide/radar";
-  import Terminal from "~icons/lucide/square-terminal";
-  import HardDriveDownload from "~icons/lucide/hard-drive-download";
-  import Puzzle from "~icons/lucide/puzzle";
   import Download from "~icons/lucide/download";
-  import Check from "~icons/lucide/check";
-  import Settings from "~icons/lucide/settings";
-  import ChevronUp from "~icons/lucide/chevron-up";
-  import { DropdownMenu as Menu } from "bits-ui";
-  import {
-    DropdownMenuContent,
-    DropdownMenuGroup,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-  } from "$lib/components/ui/dropdown-menu";
-  import type { ModDownloaderDto } from "$lib/ipc/types";
-  import { Tooltip } from "$lib/components/ui/tooltip";
+  import RefreshCw from "~icons/lucide/refresh-cw";
+  import MapIcon from "~icons/lucide/map";
+  import Gamepad from "~icons/lucide/gamepad-2";
   import { inTauri } from "$lib/ipc/core";
   import { app } from "$lib/stores/app.svelte";
-  import { servers, STALE_MS } from "$lib/stores/servers.svelte";
-  import { mods } from "$lib/stores/mods.svelte";
   import { updater } from "$lib/stores/updater.svelte";
-  import { profile } from "$lib/stores/profile.svelte";
-  import { num, relative } from "$lib/format";
-  import { rolling } from "$lib/components/app/rolling.svelte";
-  import { cn } from "$lib/cx";
+  import { game } from "$lib/stores/game.svelte";
+  import { sources } from "$lib/stores/sources.svelte";
+  import { offline } from "$features/offline/offline.svelte";
+  import { pad } from "$lib/gamepad/state.svelte";
+  import { duration } from "$lib/format";
+  import Segment, { WORD } from "./status/Segment.svelte";
+  import ListSegment from "./status/ListSegment.svelte";
+  import ScanSegment from "./status/ScanSegment.svelte";
+  import ModSegments from "./status/ModSegments.svelte";
+  import SteamSegment from "./status/SteamSegment.svelte";
 
   /**
-   * What the app knows and is doing in the background, always in the same
-   * place, one segment per concern: the server list, the ping scan, SteamCMD,
-   * the mods, the launcher's own update. Each says its state in a word and a
-   * colour, and a click goes where that state is dealt with.
+   * The window's instrument panel, in two groups. On the left, what is
+   * happening: the server list, the ping scan, the mods' downloads and
+   * their state, the offline mode's install, the launcher's own download;
+   * each segment shows only while it has something to say, except the list.
+   * On the right, the state of things: the game, Steam, an update, the
+   * version. Every segment has the same anatomy (`status/Segment.svelte`);
+   * a narrow bar drops the words, then the least needed segments, by its
+   * own width (container queries), not the window's.
    */
   const n = dict("nav");
-  const st = dict("settings");
-  const downloaders = $derived<{ value: ModDownloaderDto; label: string; hint: string }[]>([
-    { value: "steamcmd", label: "SteamCMD", hint: $n.sbSteamcmdHint.value },
-    { value: "steamworks", label: $st.downloaderSteam.value, hint: $n.sbSteamHint.value },
-  ]);
+  const s = dict("shell");
+  const o = dict("offline");
+
   let version = $state("");
   if (inTauri)
     getVersion()
       .then((v) => (version = v))
       .catch(() => {});
 
-  // The list's age is re-read every 30 s; nothing else changes it.
+  // Ages and the game's time are re-read every 30 s; nothing else moves them.
   let now = $state(Date.now());
   $effect(() => {
     const t = setInterval(() => (now = Date.now()), 30_000);
     return () => clearInterval(t);
   });
-  const stale = $derived(servers.lastRefreshed > 0 && now - servers.lastRefreshed > STALE_MS);
-  const age = $derived(
-    (void now, servers.lastRefreshed > 0 ? relative(Math.floor(servers.lastRefreshed / 1000)) : ""),
-  );
-  const scan = $derived(servers.scan);
-  const pct = $derived(scan && scan.total > 0 ? Math.floor((scan.done / scan.total) * 100) : 0);
-  const op = $derived(mods.op.active && mods.op.phase !== "finished" ? mods.op : null);
-  const opPct = $derived(op && op.total > 0 ? (op.current / op.total) * 100 : 0);
-  const hasSteamcmd = $derived(servers.stats?.has_steamcmd ?? true);
-  /** The list's size, rolling to each new count. */
-  const total = rolling(() => servers.total);
   /** Not while the window opens: a flash says "this just changed". */
   let armed = $state(false);
   $effect(() => {
     const t = setTimeout(() => (armed = true), 1500);
     return () => clearTimeout(t);
   });
-  /** What the mods segment says; a change flashes it once. */
-  const modsKey = $derived(
-    mods.checking ? "checking" : `${mods.stale.length}/${mods.installed.length}`,
-  );
+  // Steam's listing reports through the list's sources.
+  $effect(() => void sources.start());
 
-  const seg = "flex h-full items-center gap-1.5 px-2.5 transition-colors duration-fast";
-  const btn = `${seg} hover:bg-raised hover:text-fg`;
+  const played = $derived(game.since > 0 ? duration((now - game.since) / 1000) : "");
 </script>
-
-<!-- A progress bar: it eases to each new value; with nothing to measure yet
-     (no total), a short band sweeps across instead. -->
-{#snippet bar(value: number, tone: string, unknown = false)}
-  <span class="relative h-1 w-20 overflow-hidden rounded-full bg-raised" aria-hidden="true">
-    {#if unknown}
-      <span class={cn("absolute inset-y-0 left-0 w-1/3 animate-sweep rounded-full", tone)}></span>
-    {:else}
-      <span
-        class={cn(
-          "absolute inset-y-0 left-0 rounded-full transition-[width] duration-base ease-out",
-          tone,
-        )}
-        style="width: {value}%"
-      ></span>
-    {/if}
-  </span>
-{/snippet}
 
 <footer
   data-pad-region
-  class="flex h-7 shrink-0 items-stretch divide-x divide-border border-t border-border bg-bg text-2xs text-fg-faint"
+  aria-label={$s.sbBar.value}
+  class="@container flex h-7 shrink-0 items-center gap-0.5 border-t border-border bg-bg px-1 text-2xs text-fg-faint"
 >
-  <!-- The server list: how many, how fresh; a click fetches it again. -->
-  <Tooltip text={servers.listError ?? $n.sbRefreshList.value} side="top" class="flex">
-    <button
-      class={cn(btn, servers.listError ? "text-err" : stale && "text-warn")}
-      disabled={servers.refreshing}
-      onclick={() => servers.refresh()}
-    >
-      {#if servers.refreshing}
-        <RotateCw class="size-3 animate-spin text-accent" />
-        <span>{$n.sbRefreshing.value}</span>
-      {:else if servers.listError && servers.total === 0}
-        <CloudOff class="size-3" />
-        <span>{$n.sbListDown.value}</span>
-      {:else}
-        <ServerIcon class="size-3" />
-        <!-- Flashes once when the list's size changes. -->
-        {#key servers.total}
-          <span
-            class={cn("num rounded-xs px-0.5 font-mono text-fg-muted", armed && "animate-flash")}
-            >{$n.sbServers({ count: num(total.current) }).value}</span
-          >
-        {/key}
-        {#if age}<span class={cn(!stale && "text-fg-faint")}>· {age}</span>{/if}
-      {/if}
-    </button>
-  </Tooltip>
+  <!-- What is happening. -->
+  <div class="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
+    <ListSegment {now} {armed} />
+    <ScanSegment />
+    <ModSegments {armed} />
+    {#if offline.installing}
+      <Segment
+        icon={MapIcon}
+        tone="info"
+        tip={$s.sbOfflineTip.value}
+        label={$s.sbOfflineTip.value}
+        onclick={() => app.go("offline")}
+        progress={null}
+      >
+        <span class={WORD}>{$s.sbOffline.value}</span>
+        <span>{$o.installing.value}</span>
+      </Segment>
+    {/if}
+    {#if updater.state === "downloading"}
+      {@const v = updater.info?.version ?? ""}
+      <Segment
+        icon={Download}
+        tone="info"
+        tip={$s.sbUpdatingTip({ version: v, percent: updater.percent }).value}
+        label={$s.sbUpdatingTip({ version: v, percent: updater.percent }).value}
+        onclick={() => app.go("about", "update")}
+        progress={updater.total > 0 ? updater.percent : null}
+      >
+        <span class={WORD}>{$s.sbUpdating.value}</span>
+        {#if updater.total > 0}<span class="num font-mono">{updater.percent}%</span>{/if}
+      </Segment>
+    {/if}
+  </div>
 
-  <!-- The ping scan: its progress while it runs, a way to run it again after. -->
-  {#if scan}
-    <span class={cn(seg, "gap-2")}>
-      <Radar class={cn("size-3", servers.scanPaused ? "text-warn" : "animate-pulse text-accent")} />
-      <span class="num font-mono text-fg-muted">
-        {servers.scanPaused
-          ? $n.scanPaused.value
-          : $n.scanning({ done: num(scan.done), total: num(scan.total) }).value}
-      </span>
-      {@render bar(pct, servers.scanPaused ? "bg-warn" : "bg-accent", scan.total === 0)}
-      <span class="num w-8 font-mono">{pct}%</span>
-      <Tooltip text={servers.scanPaused ? $n.resumeScan.value : $n.pauseScan.value} side="top">
-        <button
-          class="grid size-5 place-items-center rounded-xs transition-colors duration-fast hover:bg-raised hover:text-fg"
-          aria-label={servers.scanPaused ? $n.resumeScan.value : $n.pauseScan.value}
-          onclick={() => servers.toggleScanPause()}
-        >
-          {#if servers.scanPaused}<PlayIcon class="size-3" />{:else}<Pause class="size-3" />{/if}
-        </button>
-      </Tooltip>
-    </span>
-  {:else if servers.total > 0}
-    <Tooltip text={$n.sbRescan.value} side="top" class="flex">
-      <button class={btn} onclick={() => servers.startScan()} aria-label={$n.sbRescan.value}>
-        <Radar class="size-3" /><span>{$n.sbPing.value}</span><RotateCw class="size-3 opacity-60" />
-      </button>
-    </Tooltip>
-  {/if}
+  <span class="mx-1 h-3.5 w-px shrink-0 bg-border" aria-hidden="true"></span>
 
-  <!-- A download (SteamCMD or Steam) running in the background comes back from here. -->
-  {#if op}
-    <Tooltip text={$n.showProgress.value} side="top" class="flex min-w-0">
-      <button class={cn(btn, "min-w-0 text-info")} onclick={() => (mods.op.minimised = false)}>
-        <HardDriveDownload class="size-3 shrink-0 animate-pulse" />
-        <span class="num shrink-0 font-mono"
-          >{(op.via === "steamworks" ? $n.modOpRunningSteam : $n.modOpRunning)({
-            current: op.current,
-            total: op.total,
-          }).value}</span
-        >
-        {@render bar(opPct, "bg-info", op.total === 0)}
-        <span class="max-w-48 min-w-0 truncate text-fg-muted">{op.currentName}</span>
-      </button>
-    </Tooltip>
-  {:else}
-    <!-- What downloads mods, switched right here; the details stay in Settings. -->
-    <Menu.Root>
-      <Tooltip text={$n.sbDownloader.value} side="top" class="flex">
-        <Menu.Trigger class={cn(btn, !hasSteamcmd && !profile.viaSteam && "text-warn")}>
-          <Terminal class="size-3" />
-          <span
-            >{profile.viaSteam
-              ? $n.sbSteamworks.value
-              : hasSteamcmd
-                ? $n.sbSteamcmdReady.value
-                : $n.sbSteamcmdMissing.value}</span
-          >
-          <ChevronUp class="size-3 opacity-60" />
-        </Menu.Trigger>
-      </Tooltip>
-      <DropdownMenuContent side="top" align="start" class="min-w-60">
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>{$n.sbDownloader.value}</DropdownMenuLabel>
-          {#each downloaders as o (o.value)}
-            {@const on = (profile.data?.mod_downloader ?? "steamcmd") === o.value}
-            <DropdownMenuItem
-              disabled={mods.busy && !on}
-              class="h-auto py-1"
-              onselect={() => {
-                if (!on) void profile.setModDownloader(o.value);
-              }}
-            >
-              <span class="flex items-center gap-2">
-                <span class="grid size-3.5 place-items-center text-accent"
-                  >{#if on}<Check class="size-3" />{/if}</span
-                >
-                <span class="flex min-w-0 flex-col">
-                  <span class={cn(on ? "text-fg" : "text-fg-muted")}>{o.label}</span>
-                  <span class="truncate text-3xs text-fg-faint"
-                    >{mods.busy && !on ? $n.sbDownloaderBusy.value : o.hint}</span
-                  >
-                </span>
-              </span>
-            </DropdownMenuItem>
-          {/each}
-        </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem icon={Settings} onselect={() => app.go("settings", "steam")}>
-          {$n.sbSteamSettings.value}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </Menu.Root>
-  {/if}
-
-  <!-- Mods: out of date ones lead to the mods view. -->
-  {#if mods.installed.length > 0 || mods.checking}
-    <button class={cn(btn, mods.stale.length > 0 && "text-warn")} onclick={() => app.go("mods")}>
-      <Puzzle class={cn("size-3", mods.checking && "animate-pulse")} />
-      {#key modsKey}
-        <span class={cn("num rounded-xs px-0.5", armed && "animate-flash")}>
-          {#if mods.checking}
-            {$n.sbModsChecking.value}
-          {:else if mods.stale.length > 0}
-            {$n.sbModsStale({ count: mods.stale.length }).value}
-          {:else}
-            {$n.sbModsOk({ count: mods.installed.length }).value}
-          {/if}
-        </span>
-      {/key}
-    </button>
-  {/if}
-
-  <span class="flex-1"></span>
-
-  {#if updater.state === "available" && updater.info}
-    <button class={cn(btn, "font-semibold text-ok")} onclick={() => app.go("about", "update")}>
-      <Download class="size-3" />{$n.sbUpdate({ version: updater.info.version }).value}
-    </button>
-  {/if}
-  <span class={cn(seg, "font-mono")}>{version ? $n.version({ version }).value : ""}</span>
+  <!-- The state of things. -->
+  <div class="flex shrink-0 items-center gap-0.5">
+    {#if game.running}
+      <!-- An indicator only: closing the game is the rail's (at its foot),
+           and with a controller Steam's overlay's. -->
+      <Segment
+        icon={Gamepad}
+        tone="ok"
+        tip={`${played ? $s.sbGameFor({ time: played }).value : $s.sbGameOn.value} ${
+          pad.mode === "gamepad" ? $s.sbGameQuitPad.value : $s.sbGameQuit.value
+        }`}
+      >
+        <span class="size-1.5 animate-pulse rounded-full bg-ok" aria-hidden="true"></span>
+        <span class={WORD}>DayZ</span>
+        {#if played}<span class="num font-mono font-normal text-fg-muted">{played}</span>{/if}
+      </Segment>
+    {/if}
+    <SteamSegment {now} />
+    {#if updater.state === "available" && updater.info}
+      <Segment
+        icon={Download}
+        tone="ok"
+        tip={$s.sbUpdateTip({ version: updater.info.version }).value}
+        label={$s.sbUpdateTip({ version: updater.info.version }).value}
+        onclick={() => app.go("about", "update")}
+      >
+        <span class="num font-mono">{$n.sbUpdate({ version: updater.info.version }).value}</span>
+      </Segment>
+    {:else if updater.state === "done"}
+      <Segment
+        icon={RefreshCw}
+        tone="ok"
+        tip={$s.sbUpdateReadyTip.value}
+        label={$s.sbUpdateReadyTip.value}
+        onclick={() => app.go("about", "update")}
+      >
+        <span class={WORD}>{$s.sbUpdateReady.value}</span>
+      </Segment>
+    {/if}
+    {#if version}
+      <span class="px-2 font-mono text-fg-faint @max-[1000px]:hidden"
+        >{$n.version({ version }).value}</span
+      >
+    {/if}
+  </div>
 </footer>

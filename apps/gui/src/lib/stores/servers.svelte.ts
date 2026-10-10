@@ -53,6 +53,9 @@ class Servers {
   /** Bumped when the backend's data changed: views re-query on it. */
   generation = $state(0);
 
+  /** The backend's last word on the list's refresh (phase, error), for the status bar. */
+  lastRefresh = $state.raw<RefreshState | null>(null);
+
   scan = $state<{ total: number; done: number } | null>(null);
   scanPaused = $state(false);
 
@@ -217,6 +220,7 @@ class Servers {
       ipc.refreshState().catch(() => null),
     ]);
     if (scan) this.#showScan(scan.progress);
+    if (refresh) this.lastRefresh = refresh;
     if (refresh?.loaded_at) this.lastRefreshed = refresh.loaded_at;
     if (refresh?.running) this.#follow(refresh);
     // No scan yet in this process, and no refresh about to start one.
@@ -294,7 +298,9 @@ class Servers {
   #follow(st: RefreshState) {
     // An older refresh's word, or the end of one already handled (its event
     // can arrive before the answer that started it).
-    if (st.id < this.#refreshId || st.id <= this.#endedId) return;
+    if (st.id < this.#refreshId) return;
+    this.lastRefresh = st;
+    if (st.id <= this.#endedId) return;
     this.#refreshId = st.id;
     if (st.running) {
       // Started elsewhere (another window, before a reload): shown, quietly.

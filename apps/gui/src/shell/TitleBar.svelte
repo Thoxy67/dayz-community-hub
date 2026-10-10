@@ -9,7 +9,6 @@
   import Users from "~icons/lucide/users";
   import { SteamIcon } from "$lib/components/ui/brand";
   import Search from "~icons/lucide/search";
-  import TriangleAlert from "~icons/lucide/triangle-alert";
   import UserRound from "~icons/lucide/user-round";
   import { Tooltip } from "$lib/components/ui/tooltip";
   import { Kbd } from "$lib/components/ui/kbd";
@@ -85,17 +84,6 @@
   </div>
 
   <div class="ml-auto flex items-stretch">
-    <!-- Downloading through the Steam client needs no SteamCMD. -->
-    {#if servers.stats && !servers.stats.has_steamcmd && !profile.viaSteam}
-      <button
-        class="flex items-center gap-1.5 px-2.5 text-2xs font-medium text-warn transition-colors duration-fast hover:bg-warn/10"
-        onclick={() => app.go("settings", "steam")}
-      >
-        <TriangleAlert class="size-icon-sm" />
-        <span class="max-xl:hidden">{$s.titlebarSteamcmdMissing.value}</span>
-      </button>
-    {/if}
-
     <!-- Ctrl+K, where it can be found: the palette that finds anything.
          The launcher's update and the mods behind are not repeated here:
          the status bar and the rail already say so. -->
