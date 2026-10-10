@@ -69,7 +69,7 @@
 
 {#if s}
   <div
-    class="flex min-w-0 shrink-0 items-center gap-x-5 gap-y-1 overflow-hidden border-b border-border bg-bg/30 px-pad py-1 text-2xs"
+    class="@container flex min-w-0 shrink-0 items-center gap-x-5 gap-y-1 overflow-hidden border-b border-border bg-bg/30 px-pad py-1 text-2xs"
   >
     <span class="flex shrink-0 items-center gap-2">
       {@render cell($w.dzsa.value, s.dzsa.phase, $w.dzsaHint.value)}
@@ -78,7 +78,9 @@
     </span>
 
     {#if steam}
-      <span class="flex min-w-0 items-center gap-2">
+      <!-- Clipped: its fixed parts used to spill over the cells to its right
+           when the view was narrow. The figures go first, under 900 px. -->
+      <span class="flex min-w-0 items-center gap-2 overflow-hidden">
         {@render cell($w.steam.value, steam.phase, $w.steamHint.value)}
         {#if via}<span class="shrink-0 text-fg-faint">{via}</span>{/if}
         {#if steam.phase === "running" && steam.requests_total > 0}
@@ -98,7 +100,7 @@
         {#if waitLeft != null}
           <span class="truncate text-warn">{$w.waiting({ secs: waitLeft }).value}</span>
         {:else if steam.phase !== "off"}
-          <span class="truncate text-fg-muted">
+          <span class="truncate text-fg-muted @max-[900px]:hidden">
             <span class="num font-mono text-ok">+{num(steam.added)}</span>
             · {num(steam.answered)}/{num(steam.queried)} A2S · {num(steam.listed)}
             {$w.listed.value.toLowerCase()}
@@ -120,9 +122,11 @@
     <span class="ml-auto flex shrink-0 items-center gap-2">
       <span class="text-fg-muted">{$w.inList.value}</span>
       <span class="num font-mono text-fg">{num(s.total)}</span>
-      <span class="text-fg-faint">· {$w.official({ count: num(s.official) }).value}</span>
+      <span class="text-fg-faint @max-[760px]:hidden"
+        >· {$w.official({ count: num(s.official) }).value}</span
+      >
       {#if s.duplicates}
-        <span class="text-fg-faint" title={$w.duplicatesHint.value}>
+        <span class="text-fg-faint @max-[760px]:hidden" title={$w.duplicatesHint.value}>
           · {$w.duplicates({ count: num(s.duplicates) }).value}
         </span>
       {/if}
