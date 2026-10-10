@@ -1,6 +1,7 @@
 //! Mod downloads through steamcmd, and finding steamcmd itself.
 
 pub(crate) mod detect;
+pub(crate) mod op;
 
 use dz_game::ModOperation;
 use dz_game::mods::InstalledMod;
@@ -49,6 +50,9 @@ pub struct ModProgressEvent {
     /// Only on `queued`: the operation's mods with their names; empty on
     /// every other step.
     pub queue: Vec<QueuedModDto>,
+    /// The step's number in its operation, from 1: a window that attached
+    /// (`mod_op_attach`) drops the steps its snapshot already holds.
+    pub seq: u32,
 }
 
 /// A mod an operation will work on, by the name it is best known by: its
@@ -74,6 +78,7 @@ impl ModProgressEvent {
             hint: None,
             log_line: None,
             queue: Vec::new(),
+            seq: 0,
         }
     }
 
@@ -150,7 +155,7 @@ fn mod_progress_to_event(msg: &ModProgress) -> ModProgressEvent {
 }
 
 /// Which mod operation to run.
-#[derive(serde::Deserialize, Clone, Copy, Debug, PartialEq, Eq, specta::Type)]
+#[derive(serde::Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ModOpType {
     /// Install what a listed server needs (`ip`, `port`).
@@ -343,7 +348,9 @@ const PROGRESS_EVERY: Duration = Duration::from_millis(100);
 
 /// Start a mod operation in the background; its progress streams over
 /// `on_progress`, starting with a `queued` step that names every mod it will
-/// work on and ending with a `finished` step.
+/// work on and ending with a `finished` step. The backend keeps the
+/// operation's state meanwhile (`op`), which a reloaded window gets back
+/// with `mod_op_attach`.
 // One parameter per field: Tauri receives a command's arguments as one flat
 // object.
 #[allow(clippy::too_many_arguments)]
@@ -363,7 +370,7 @@ pub(crate) async fn start_mod_operation(
     // One operation at a time: two steamcmd sessions fight over the login,
     // and the first would lose its input channel. Checked first, so a
     // refused start costs no disk scan.
-    let (ctl, update_cache, list) = {
+    let (ctl, update_cache, list, downloads_through_steam) = {
         let s = state.read().await;
         if s.mod_op_abort.is_some() {
             return Err("A mod operation is already running".into());
@@ -372,6 +379,7 @@ pub(crate) async fn start_mod_operation(
             s.ctl.clone_for_task(),
             s.mod_update_cache.clone(),
             Arc::clone(&s.servers),
+            s.ctl.downloads_through_steam(),
         )
     };
     // What is on disk, read once for everything below (which mods are
@@ -451,10 +459,20 @@ pub(crate) async fn start_mod_operation(
         s.pty_input_tx = Some(pty_input_tx);
         s.mod_op_abort = Some(handle.abort_handle());
     }
-    let _ = on_progress.send(ModProgressEvent {
-        queue,
-        ..ModProgressEvent::of(ModProgressKind::Queued)
-    });
+    // A login is always SteamCMD's (see `DayzCtl::start_mod_operation`).
+    let via = if op_type != ModOpType::Login && downloads_through_steam {
+        op::ModOpVia::Steamworks
+    } else {
+        op::ModOpVia::Steamcmd
+    };
+    let id = op::begin(op_type, via, on_progress);
+    op::emit(
+        id,
+        ModProgressEvent {
+            queue,
+            ..ModProgressEvent::of(ModProgressKind::Queued)
+        },
+    );
 
     let state = state.inner().clone();
     tauri::async_runtime::spawn(async move {
@@ -473,7 +491,7 @@ pub(crate) async fn start_mod_operation(
                         Err(_) => {
                             if let Some(evt) = held.take() {
                                 last_progress = Some(Instant::now());
-                                let _ = on_progress.send(evt);
+                                op::emit(id, evt);
                             }
                             continue;
                         }
@@ -491,15 +509,15 @@ pub(crate) async fn start_mod_operation(
                 }
                 held = None;
                 last_progress = Some(Instant::now());
-                let _ = on_progress.send(evt);
+                op::emit(id, evt);
                 continue;
             }
             // Anything else goes after the progress line it followed.
             if let Some(h) = held.take() {
-                let _ = on_progress.send(h);
+                op::emit(id, h);
             }
             let finished = evt.kind == ModProgressKind::Finished;
-            let _ = on_progress.send(evt);
+            op::emit(id, evt);
             if finished {
                 break;
             }
@@ -573,7 +591,7 @@ pub(crate) async fn send_steamcmd_input(
     Ok(())
 }
 
-/// Cancel the running mod operation.
+/// Cancel the running mod operation, and forget it.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn cancel_mod_operation(state: State<'_, SharedState>) -> Result<(), String> {
@@ -582,7 +600,37 @@ pub(crate) async fn cancel_mod_operation(state: State<'_, SharedState>) -> Resul
         abort.abort();
     }
     state.pty_input_tx = None;
+    op::clear();
     Ok(())
+}
+
+/// The mod operation as it stands, running or finished and not dismissed;
+/// null when there is none.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn mod_op_state() -> Option<op::ModOpSnapshot> {
+    op::snapshot()
+}
+
+/// Follow the mod operation from a window that has just (re)loaded: its
+/// steps from now on stream over `on_progress` (the starter's channel died
+/// with its page), and the operation as it stands is returned. Steps
+/// numbered at or below the snapshot's `seq` are already in it. Null, and
+/// nothing streamed, when there is no operation.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn mod_op_attach(
+    on_progress: Channel<ModProgressEvent>,
+) -> Option<op::ModOpSnapshot> {
+    op::attach(on_progress)
+}
+
+/// The finished operation's dialog was closed: forget it. A running one is
+/// kept (cancel it to stop it).
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn mod_op_dismiss() {
+    op::dismiss();
 }
 
 /// Where SteamCMD keeps its things: the launcher's, never the Steam client's.

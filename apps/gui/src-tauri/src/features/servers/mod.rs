@@ -2,6 +2,7 @@
 //! the counters the title bar shows.
 
 mod dto;
+pub(crate) mod refresh;
 pub(crate) mod sources;
 mod steam;
 
@@ -11,9 +12,9 @@ pub(crate) use dto::{mods_to_dto, server_to_dto};
 use dz_api::ServerList;
 use dz_common::paths;
 use dz_game::DayzCtl;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use tauri::{AppHandle, Manager, State};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 use crate::error::ResultExt;
 use crate::state::{AppState, SharedState};
@@ -28,15 +29,44 @@ pub(crate) async fn check_first_launch() -> bool {
         .unwrap_or(false)
 }
 
+/// This process, as a token: its id and when it started. A reload keeps
+/// the process, so it keeps the token; a new launch has another.
+static SESSION: LazyLock<String> =
+    LazyLock::new(|| format!("{}-{}", std::process::id(), crate::features::ping::now_ms()));
+
+/// One `initialize` at a time: a page reloaded during the first one sends
+/// it again (tauri-apps/tauri#14154), and the second must find the first's
+/// state rather than build its own beside it.
+static INIT: Mutex<()> = Mutex::const_new(());
+
 /// Create the controller and load the server list: from the on-disk cache
 /// when there is one (the window refreshes it in the background), else from
 /// the API. The profile and the cache are read at the same time.
 ///
-/// Called when the window mounts, and again when it reloads (the "Retry"
-/// after a failed start): a second call replaces the state in place.
+/// Called when the window mounts. When the window reloads (F5, a crash
+/// recovery, the "Retry" after a failed start) the state already exists: it
+/// is kept as it is, with the work running on it (the scan, a refresh, a mod
+/// download and its SteamCMD input), and `resumed` tells the window so.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn initialize(app: AppHandle) -> Result<InitResult, String> {
+    let _once = INIT.lock().await;
+    if let Some(existing) = app.try_state::<SharedState>() {
+        let s = existing.read().await;
+        let server_count = s.servers.result.len();
+        let r = refresh::snapshot();
+        return Ok(InitResult {
+            server_count,
+            from_cache: r.loaded_at.is_none(),
+            is_first_launch: !tokio::fs::try_exists(paths::default_profile_path())
+                .await
+                .unwrap_or(false),
+            // Only while there is still no list to show.
+            list_error: if server_count == 0 { r.error } else { None },
+            resumed: true,
+            session: SESSION.clone(),
+        });
+    }
     let profile_path = paths::default_profile_path();
     let is_first_launch = !tokio::fs::try_exists(&profile_path).await.unwrap_or(false);
     let cache_path = paths::server_list_cache_path();
@@ -73,16 +103,14 @@ pub(crate) async fn initialize(app: AppHandle) -> Result<InitResult, String> {
         }
     };
 
+    refresh::initialized(match &list_error {
+        Some(e) => Err(e.clone()),
+        None => Ok((!from_cache).then(crate::features::ping::now_ms)),
+    });
     let server_count = list.result.len();
     let mut app_state = AppState::new(ctl);
     app_state.set_servers(Arc::clone(&list));
-
-    match app.try_state::<SharedState>() {
-        Some(existing) => *existing.write().await = app_state,
-        None => {
-            app.manage::<SharedState>(Arc::new(RwLock::new(app_state)));
-        }
-    }
+    app.manage::<SharedState>(Arc::new(RwLock::new(app_state)));
     crate::features::browser::list_replaced(list);
     // The cached list too.
     steam::comb(app.clone());
@@ -97,6 +125,8 @@ pub(crate) async fn initialize(app: AppHandle) -> Result<InitResult, String> {
         from_cache,
         is_first_launch,
         list_error,
+        resumed: false,
+        session: SESSION.clone(),
     })
 }
 
@@ -115,17 +145,12 @@ pub(crate) async fn get_server_details(
     Ok(server_to_dto(server))
 }
 
-/// Fetch the list from the API again. Returns how many servers it holds;
-/// the browser re-queries on the `servers-changed` that follows. Servers
-/// the list had and no longer lists stay, unless they do not answer. Then
-/// Steam's servers are listed in the background (at most every few
-/// minutes) and added as they answer.
-#[tauri::command]
-#[specta::specta]
-pub(crate) async fn refresh_servers(
-    app: AppHandle,
-    state: State<'_, SharedState>,
-) -> Result<u32, String> {
+/// Fetch the list from the API again (a step of `refresh::servers_refresh`).
+/// Returns how many servers it holds; the browser re-queries on the
+/// `servers-changed` that follows. Servers the list had and no longer lists
+/// stay, unless they do not answer. Then Steam's servers are listed in the
+/// background (at most every few minutes) and added as they answer.
+async fn refresh_list(app: AppHandle, state: &SharedState) -> Result<u32, String> {
     let (client, key) = {
         let s = state.read().await;
         (

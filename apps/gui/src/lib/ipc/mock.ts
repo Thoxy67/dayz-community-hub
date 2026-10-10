@@ -4,6 +4,7 @@
  * `main.ts` in development only, and only when the page is not inside Tauri.
  * The data is invented but shaped like the real thing.
  */
+import { emit } from "@tauri-apps/api/event";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 
 const MAPS = [
@@ -445,6 +446,272 @@ function queryServers(q: Record<string, unknown>) {
 }
 const pingOf = (k: string) => 20 + ((k.length * 37 + k.charCodeAt(k.length - 1) * 11) % 260);
 
+/**
+ * A plausible SteamCMD run as timed steps: log in (Steam stays open), then
+ * each mod with live progress lines (rewritten in place), one failure, a
+ * summary. The same arguments give the same steps, so a reload can replay
+ * them (`mod_op_attach`).
+ */
+function modOpSteps(
+  a: Record<string, unknown>,
+  emit: (ev: Record<string, unknown>) => void,
+): Array<[number, () => void]> {
+  // A plausible SteamCMD run: log in (Steam stays open), then each mod
+  // with live progress lines (rewritten in place), one failure, a summary.
+  const ids =
+    (a.modIds as number[] | undefined) ?? mods.filter((m) => m.update_available).map((m) => m.id);
+  const list = ids.length ? ids : mods.slice(0, 3).map((m) => m.id);
+  const ev = (kind: string, extra: Record<string, unknown> = {}) =>
+    emit({
+      kind,
+      current: 0,
+      total: list.length,
+      mod_id: 0,
+      name: "",
+      ok: 0,
+      failed: 0,
+      hint: null,
+      log_line: null,
+      queue: [],
+      ...extra,
+    });
+  const log = (line: string, progress = false) =>
+    ev(progress ? "log_progress" : "log_line", { log_line: line });
+  const steps: Array<[number, () => void]> = [];
+  let t = 0;
+  const at = (dt: number, fn: () => void) => steps.push([(t += dt), fn]);
+  // First, as the backend does: every mod the operation works on, named.
+  const queue =
+    a.opType === "login"
+      ? []
+      : list.map((id) => ({
+          id,
+          name: mods.find((x) => x.id === id)?.name ?? `Workshop ${id}`,
+        }));
+  at(0, () => ev("queued", { queue }));
+  if (profile.mod_downloader === "steamworks" && a.opType !== "login") {
+    // What dz-steamworks reports: subscribe, Steam downloads, installed.
+    at(200, () => log("Connected to Steam as DayZ (app 221100)"));
+    list.forEach((id) => at(40, () => log(`Subscribing to ${id}`)));
+    list.forEach((id) => at(80, () => log(`Subscribed ${id}`)));
+    let ok = 0;
+    list.forEach((id, i) => {
+      const m = mods.find((x) => x.id === id);
+      const name = m?.name ?? `Workshop ${id}`;
+      const total = m?.size ?? 300_000_000;
+      at(120, () => ev("starting", { current: i + 1, name, mod_id: id }));
+      at(10, () => log(`Downloading item ${id} (${name}) through Steam`));
+      at(40, () => log(`${id}: subscribed, needs update, downloading, download pending`));
+      for (let k = 1; k <= 12; k++) {
+        at(90, () => {
+          const done = Math.floor((total * k) / 12);
+          log(
+            `Steam: item ${id} downloading, progress: ${((done / total) * 100).toFixed(2)} (${done} / ${total})`,
+            true,
+          );
+        });
+      }
+      if (i === 1 && list.length > 2) {
+        const error = "Download failed: access denied: the item is private, friends-only or hidden";
+        at(80, () => log(`${id} failed: ${error}`));
+        at(10, () => ev("failed", { current: i + 1, name: `${name} (${error})`, mod_id: id }));
+      } else {
+        ok++;
+        at(60, () => log(`${id}: subscribed, installed`));
+        at(10, () =>
+          log(
+            `Installed ${id} at /home/player/.local/share/Steam/steamapps/workshop/content/221100/${id}`,
+          ),
+        );
+        at(10, () => ev("done", { current: i + 1, name, mod_id: id }));
+      }
+    });
+    const failed = list.length - ok;
+    at(150, () => log("Disconnected from Steam"));
+    at(20, () => ev("finished", { ok, failed }));
+    return steps;
+  }
+  at(300, () =>
+    log(
+      "Redirecting stderr to '/home/player/.local/share/dayz-community-hub/steamcmd-home/.steam/steamcmd/logs/stderr.txt'",
+    ),
+  );
+  at(100, () => log("[  0%] Checking for available updates..."));
+  at(100, () => log("[----] Verifying installation..."));
+  at(100, () => log("Steam Console Client (c) Valve Corporation - version 1726604893"));
+  at(100, () => log("Logging in user 'survivor_42' to Steam Public...OK"));
+  at(80, () => log("Waiting for client config...OK"));
+  at(80, () => log("Waiting for user info...OK"));
+  at(10, () => ev("logged_in"));
+  if (a.opType === "login") {
+    at(200, () => log("Unloading Steam API...OK"));
+    at(50, () => ev("finished", { ok: 1, failed: 0, total: 1 }));
+    return steps;
+  }
+  let ok = 0;
+  list.forEach((id, i) => {
+    const m = mods.find((x) => x.id === id);
+    const name = m?.name ?? `Workshop ${id}`;
+    const total = m?.size ?? 300_000_000;
+    at(120, () => ev("starting", { current: i + 1, name, mod_id: id }));
+    at(60, () => log(`Downloading item ${id} ...`));
+    for (let k = 1; k <= 12; k++) {
+      at(90, () => {
+        const done = Math.floor((total * k) / 12);
+        log(
+          `Update state (0x61) downloading, progress: ${((done / total) * 100).toFixed(2)} (${done} / ${total})`,
+          true,
+        );
+      });
+    }
+    if (i === 1 && list.length > 2) {
+      at(80, () => log(`ERROR! Download item ${id} failed (Failure).`));
+      at(20, () => ev("failed", { current: i + 1, name, mod_id: id }));
+    } else {
+      ok++;
+      at(80, () =>
+        log(
+          `Success. Downloaded item ${id} to "/home/player/.local/share/dayz-community-hub/steamcmd-content/steamapps/workshop/content/221100/${id}" (${total} bytes)`,
+        ),
+      );
+      at(20, () => ev("done", { current: i + 1, name, mod_id: id }));
+    }
+  });
+  const failed = list.length - ok;
+  at(200, () => log("Unloading Steam API...OK"));
+  at(50, () => ev("finished", { ok, failed }));
+  return steps;
+}
+
+/**
+ * What the pretend backend keeps across a reload of the page, as the real
+ * one keeps it in its process: in `sessionStorage`, the only thing a reload
+ * leaves in place here.
+ */
+const mockStore = {
+  get<T>(key: string): T | null {
+    try {
+      return JSON.parse(sessionStorage.getItem(`dzch.mock.${key}`) ?? "null") as T | null;
+    } catch {
+      return null;
+    }
+  },
+  set(key: string, v: unknown) {
+    try {
+      sessionStorage.setItem(`dzch.mock.${key}`, JSON.stringify(v));
+    } catch {
+      // A reload starts over.
+    }
+  },
+};
+
+const OP_KEY = "modop";
+type MockOp = { args: Record<string, unknown>; startedAt: number };
+let opTimers: ReturnType<typeof setTimeout>[] = [];
+
+function stopModOp() {
+  opTimers.forEach(clearTimeout);
+  opTimers = [];
+}
+
+/** Play `op`'s steps on `ch` from `elapsed` ms in: what is past at once, in order. */
+function runModOp(ch: Ch<Record<string, unknown>>, op: MockOp, elapsed: number) {
+  stopModOp();
+  let seq = 0;
+  const steps = modOpSteps(op.args, (ev) => ch.onmessage({ ...ev, seq: ++seq }));
+  for (const [when, fn] of steps) opTimers.push(setTimeout(fn, Math.max(0, when - elapsed)));
+}
+
+/** The whole-list scan and the refresh, timed from when they started. */
+const SCAN_KEY = "scan";
+const REFRESH_KEY = "refresh";
+type MockScan = { id: number; startedAt: number; stopped: boolean };
+type MockRefresh = { id: number; startedAt: number };
+/** How long the pretend scan takes per server, and a refresh. */
+const SCAN_MS_PER_SERVER = 250 / 700;
+const REFRESH_MS = 3000;
+
+function scanProgress(s: MockScan | null) {
+  if (!s) return { id: 0, done: 0, total: 0, paused: false, running: false };
+  const total = servers.length;
+  const done = Math.min(total, Math.floor((Date.now() - s.startedAt) / SCAN_MS_PER_SERVER));
+  return { id: s.id, done, total, paused: false, running: !s.stopped && done < total };
+}
+
+function refreshState() {
+  const r = mockStore.get<MockRefresh>(REFRESH_KEY);
+  if (!r) {
+    return {
+      id: 0,
+      running: false,
+      phase: "idle",
+      started_at: null,
+      finished_at: null,
+      loaded_at: Date.now(),
+      count: servers.length,
+      error: null,
+    };
+  }
+  const end = r.startedAt + REFRESH_MS;
+  const running = Date.now() < end;
+  return {
+    id: r.id,
+    running,
+    phase: running ? "fetching" : "done",
+    started_at: r.startedAt,
+    finished_at: running ? null : end,
+    loaded_at: running ? null : end,
+    count: servers.length,
+    error: null,
+  };
+}
+
+function startMockScan() {
+  const prev = mockStore.get<MockScan>(SCAN_KEY);
+  const s: MockScan = { id: (prev?.id ?? 0) + 1, startedAt: Date.now(), stopped: false };
+  mockStore.set(SCAN_KEY, s);
+  tickBackend();
+  return scanProgress(s);
+}
+
+let ticker: ReturnType<typeof setInterval> | undefined;
+let refreshSeen = 0;
+
+/**
+ * The pretend backend's clock: the scan's progress twice a second, the end
+ * of a refresh (and the scan after it), as events, whether or not the page
+ * that started them is still the one loaded.
+ */
+function tickBackend() {
+  if (ticker) return;
+  ticker = setInterval(() => {
+    const s = mockStore.get<MockScan>(SCAN_KEY);
+    const p = scanProgress(s);
+    const r = mockStore.get<MockRefresh>(REFRESH_KEY);
+    let busy = p.running;
+    if (r && r.id > refreshSeen) {
+      const st = refreshState();
+      if (st.running) busy = true;
+      else {
+        refreshSeen = r.id;
+        void emit("refresh-changed", st);
+        startMockScan();
+        busy = true;
+      }
+    }
+    if (s) void emit("ping-scan-progress", p);
+    // Marked over, unless a refresh's end just started the next one.
+    if (s && !p.running && mockStore.get<MockScan>(SCAN_KEY)?.id === s.id) {
+      s.stopped = true;
+      mockStore.set(SCAN_KEY, s);
+    }
+    if (!busy) {
+      clearInterval(ticker);
+      ticker = undefined;
+    }
+  }, 500);
+}
+
 export function installMock() {
   // `?theme=chernarus` (or any preset id) and `?view=mods` pick what a screenshot shows.
   const q = new URLSearchParams(location.search);
@@ -476,632 +743,573 @@ export function installMock() {
       (await import("$lib/stores/app.svelte")).app.go(v as never, q.get("focus")),
     );
   mockWindows("main");
-  mockIPC((cmd, args) => {
-    const a = (args ?? {}) as Record<string, unknown>;
-    switch (cmd) {
-      case "check_first_launch":
-        // `?wizard=1` opens the first-launch setup.
-        return new URLSearchParams(location.search).get("wizard") === "1";
-      case "initialize":
-        return { server_count: servers.length, from_cache: false, is_first_launch: false };
-      case "get_servers":
-        return servers;
-      case "refresh_servers":
-        return servers.length;
-      case "server_maps": {
-        const m = new Map<string, number>();
-        for (const x of servers) m.set(x.map, (m.get(x.map) ?? 0) + 1);
-        return [...m].sort((a, b) => b[1] - a[1]).map(([map, count]) => ({ map, count }));
-      }
-      case "servers_query":
-        return queryServers(a.query as Record<string, unknown>);
-      case "servers_lookup":
-        return (a.keys as string[]).map((k) => {
-          const [ip, port] = k.split(":");
-          const x = servers.find(
-            (s) => s.ip === ip && (s.query_port === Number(port) || s.game_port === Number(port)),
-          );
-          return x ? toRow(x) : null;
-        });
-      case "start_scan": {
-        const ch = a.onProgress as Ch<unknown>;
-        let done = 0;
-        const step = () => {
-          done = Math.min(servers.length, done + 700);
-          ch.onmessage({
-            done,
-            total: servers.length,
-            paused: false,
-            running: done < servers.length,
-          });
-          if (done < servers.length) setTimeout(step, 250);
-        };
-        setTimeout(step, 100);
-        return null;
-      }
-      case "get_server_details": {
-        const s = servers.find((x) => x.ip === a.ip);
-        return {
-          ...s,
-          mods: mods
-            .slice(0, s?.mods_count ?? 0)
-            .map((m) => ({ name: m.name, steam_workshop_id: m.id })),
-        };
-      }
-      case "get_app_stats":
-        return {
-          server_count: servers.length,
-          total_players: servers.reduce((n, s) => n + s.players, 0),
-          player_name: profile.player,
-          steam_login: profile.steam_login,
-          has_steamcmd: true,
-        };
-      case "fetch_steam_player_count":
-        return 61_204;
-      case "get_profile":
-        return profile;
-      case "get_installed_mods":
-      case "check_mod_updates":
-        // `?slowmods=1`: the disk read takes a minute, so the list's loading shape can be seen.
-        if (q.get("slowmods") === "1")
-          return new Promise((done) => setTimeout(() => done(mods), 60_000));
-        return mods;
-      case "mods_usage":
-        // The first mods run by two favourites and a played server; a few by history only.
-        return mods.slice(0, 14).map((m, i) => ({
-          id: m.id,
-          favorites: i < 6 ? profile.favorites.slice(0, 1 + (i % 3)).map((f) => f.name) : [],
-          history: i % 2 === 0 ? [profile.history[0]?.name ?? "4170"] : [],
-        }));
-      case "steam_subscriptions": {
-        // Most Steam-library mods subscribed (one not), one downloading, one
-        // waiting, a launcher mod also subscribed, and two subscriptions not
-        // on disk yet (one downloading, one waiting).
-        const cycle = (Date.now() % 60_000) / 60_000;
-        const item = (id: number, o: Record<string, unknown> = {}) => ({
-          id,
-          subscribed: true,
-          installed: true,
-          needs_update: false,
-          downloading: false,
-          pending: false,
-          bytes_done: 0,
-          bytes_total: 0,
-          ...o,
-        });
-        const at = (i: number) => mods[i]?.id ?? 0;
-        return {
-          available: true,
-          reason: null,
-          items: [
-            ...[0, 3, 6, 9, 21].map((i) => item(at(i))),
-            item(at(1)),
-            item(at(12), {
-              needs_update: true,
-              downloading: true,
-              bytes_total: 1_400_000_000,
-              bytes_done: Math.floor(1_400_000_000 * cycle),
-            }),
-            item(at(18), { needs_update: true, pending: true }),
-            item(2_900_000_001, {
-              installed: false,
-              needs_update: true,
-              downloading: true,
-              bytes_total: 640_000_000,
-              bytes_done: Math.floor(640_000_000 * cycle),
-            }),
-            item(2_900_000_002, { installed: false, needs_update: true }),
-          ].filter((x) => x.id !== 0),
-          // The first mod (CF-like) required by a few others, one of which
-          // also needs a mod that is not installed.
-          details: [
-            { id: at(0), title: mods[0]?.name ?? "", requires: [] },
-            { id: at(3), title: mods[3]?.name ?? "", requires: [at(0)] },
-            { id: at(6), title: mods[6]?.name ?? "", requires: [at(0), 2_900_000_003] },
-            { id: 2_900_000_001, title: "Incoming Weapons Pack", requires: [at(0)] },
-            { id: 2_900_000_002, title: "Base Building Plus", requires: [] },
-            { id: 2_900_000_003, title: "Missing Library", requires: [] },
-          ].filter((d) => d.id !== 0),
-        };
-      }
-      case "play_stats":
-        return mockPlayStats(a.range as string);
-      case "play_sessions": {
-        const q = String(a.search ?? "").toLowerCase();
-        const from = a.from as number | null;
-        const to = a.to as number | null;
-        const hits = [...playLog]
-          .reverse()
-          .filter((x) => (from == null || x.start >= from) && (to == null || x.start < to))
-          .filter((x) => !q || x.name.toLowerCase().includes(q) || (x.map ?? "").includes(q));
-        const off = Number(a.offset ?? 0);
-        return { total: hits.length, rows: hits.slice(off, off + Number(a.limit ?? 100)) };
-      }
-      case "delete_session":
-        return true;
-      case "fetch_news":
-        return articles;
-      case "offline_saves":
-        return [
-          {
-            mission: "DayZCommunityOfflineMode.ChernarusPlus",
-            bytes: 18_400_000,
-            written: Math.floor(Date.now() / 1000) - 2 * 86_400,
-          },
-          {
-            mission: "DayZCommunityOfflineMode.Sakhal",
-            bytes: 4_100_000,
-            written: Math.floor(Date.now() / 1000) - 3600,
-          },
-        ];
-      case "clear_mission_save":
-        return true;
-      case "get_offline_missions":
-        return [
-          "DayZCommunityOfflineMode.ChernarusPlus",
-          "DayZCommunityOfflineMode.Enoch",
-          "DayZCommunityOfflineMode.Sakhal",
-        ];
-      case "gamepad_status":
-        return {
-          available: true,
-          pads: padKind
-            ? [
-                padKind === "ps"
-                  ? { name: "DualSense Wireless Controller", kind: "playStation" }
-                  : { name: "Xbox Wireless Controller", kind: "xbox" },
-              ]
-            : [],
-          steam_ui: false,
-        };
-      case "get_system_specs":
-        return {
-          logical_cores: 16,
-          physical_cores: 8,
-          total_memory_mb: 32768,
-          cpu_name: "AMD Ryzen 7 5800X3D 8-Core Processor",
-          os: "Linux 24.04 Ubuntu",
-          gpus: [{ name: "NVIDIA GeForce RTX 4070", vram_mb: 12282 }],
-        };
-      case "get_cli_args":
-        return { connect: null, reconnect: false, open: null };
-      case "check_for_update":
-        return {
-          version: "0.5.0",
-          currentVersion: "0.4.1",
-          body: "- New interface",
-          date: new Date().toISOString(),
-        };
-      case "detect_steamcmd":
-        return { found: true, path: "/usr/bin/steamcmd", platform: "linux" };
-      case "game_running":
-        return new URLSearchParams(location.search).get("game") === "1";
-      case "kill_game":
-        return 2;
-      case "steam_launch_info":
-        return {
-          linux: true,
-          launcher: ["/usr/bin/steam"],
-          applaunch: ["-applaunch", "221100", "-malloc=system", "-name=Survivor"],
-          launch_options:
-            "PROTON_USE_NTSYNC=1 PROTON_ENABLE_WAYLAND=1 RADV_PERFTEST=gpl,nggc,sam mangohud game-performance %command% -nolauncher",
-          compat_tool: "proton-cachyos-native",
-          compat_tool_default: false,
-          prefix: "/mnt/ssd2/SteamLibrary/steamapps/compatdata/221100",
-        };
-      case "detect_dayz":
-        return {
-          steamapps: a.path || "/mnt/ssd2/SteamLibrary/steamapps",
-          dayz_dir: `${a.path || "/mnt/ssd2/SteamLibrary/steamapps"}/common/DayZ`,
-          workshop_mods: 37,
-        };
-      case "steam_me":
-        return { steam_id: "76561198000000000", name: "Survivor", avatar: null };
-      case "sources_status":
-        return mockSources();
-      case "steam_friends": {
-        const at = (i: number) => servers[i * 7 + 3]!;
-        const friend = (
-          i: number,
-          name: string,
-          status: string,
-          game: string | null,
-          server: number | null,
-        ) => ({
-          steam_id: `765611980000001${i}`,
-          name,
-          status,
-          avatar: null,
-          game,
-          in_dayz: game === "DayZ",
-          server:
-            server == null
-              ? null
-              : {
-                  ip: at(server).ip,
-                  port: at(server).query_port,
-                  name: at(server).name,
-                  map: at(server).map,
-                  players: at(server).players,
-                  max_players: at(server).max_players,
-                },
-          last_online: status === "offline" ? now - (i + 1) * 5400 : null,
-        });
-        return {
-          source: "web_api",
-          error: null,
-          friends: [
-            friend(0, "Kozak", "online", "DayZ", 1),
-            friend(1, "nightwolf", "online", "DayZ", 2),
-            friend(2, "Bambi Hunter", "away", "DayZ", null),
-            friend(3, "Mira", "online", "Counter-Strike 2", null),
-            friend(4, "Tobi", "busy", null, null),
-            friend(5, "ZedSlayer", "online", null, null),
-            friend(6, "Old Gus", "offline", null, null),
-            friend(7, "Lena", "offline", null, null),
-          ],
-        };
-      }
-      case "set_steam_server_list":
-        profile.steam_server_list = a.enabled as boolean;
-        return null;
-      case "set_mod_downloader":
-        profile.mod_downloader = a.downloader as typeof profile.mod_downloader;
-        return null;
-      case "steamworks_status":
-        return { library: true, error: null, steam_running: true };
-      case "steamworks_check":
-        return null;
-      case "steamcmd_dirs":
-        return {
-          content: "/home/player/.local/share/dayz-community-hub/steamcmd-content",
-          home: "/home/player/.local/share/dayz-community-hub/steamcmd-home",
-        };
-      case "delete_mod":
-        return mods.find((m) => m.id === a.modId)?.source === "steam";
-      case "delete_mods_bulk":
-        return (a.modIds as number[]).filter(
-          (id) => mods.find((m) => m.id === id)?.source === "steam",
-        );
-      case "ping_all_background":
-      case "ping_servers": {
-        const targets = a.targets as string[];
-        const ch = a.onProgress as Ch<unknown[]>;
-        let i = 0;
-        const step = () => {
-          const batch = targets.slice(i, i + 200).map((k) => {
+  // A scan or a refresh the page before a reload started keeps reporting;
+  // a refresh already over is not over again.
+  const r = mockStore.get<MockRefresh>(REFRESH_KEY);
+  if (r && !refreshState().running) refreshSeen = r.id;
+  tickBackend();
+  mockIPC(
+    (cmd, args) => {
+      const a = (args ?? {}) as Record<string, unknown>;
+      switch (cmd) {
+        case "check_first_launch":
+          // `?wizard=1` opens the first-launch setup.
+          return new URLSearchParams(location.search).get("wizard") === "1";
+        case "initialize": {
+          // The pretend process lives as long as the tab's session: a reload
+          // finds it running, as the real backend survives a reload.
+          let token = mockStore.get<string>("session");
+          const resumed = token !== null;
+          if (!token) mockStore.set("session", (token = `mock-${Date.now()}`));
+          return {
+            server_count: servers.length,
+            from_cache: false,
+            is_first_launch: false,
+            list_error: null,
+            resumed,
+            session: token,
+          };
+        }
+        case "get_servers":
+          return servers;
+        case "servers_refresh": {
+          const st = refreshState();
+          if (st.running) return st;
+          const scan = mockStore.get<MockScan>(SCAN_KEY);
+          if (scan) mockStore.set(SCAN_KEY, { ...scan, stopped: true });
+          mockStore.set(REFRESH_KEY, { id: st.id + 1, startedAt: Date.now() });
+          tickBackend();
+          const now = refreshState();
+          void emit("refresh-changed", now);
+          return now;
+        }
+        case "refresh_state":
+          return refreshState();
+        case "ping_scan_state": {
+          const s = mockStore.get<MockScan>(SCAN_KEY);
+          return {
+            progress: scanProgress(s),
+            kind: s ? "whole" : null,
+            started_at: s?.startedAt ?? null,
+            lists_running: 0,
+          };
+        }
+        case "cancel_ping": {
+          const s = mockStore.get<MockScan>(SCAN_KEY);
+          if (s) mockStore.set(SCAN_KEY, { ...s, stopped: true });
+          return null;
+        }
+        case "server_maps": {
+          const m = new Map<string, number>();
+          for (const x of servers) m.set(x.map, (m.get(x.map) ?? 0) + 1);
+          return [...m].sort((a, b) => b[1] - a[1]).map(([map, count]) => ({ map, count }));
+        }
+        case "servers_query":
+          return queryServers(a.query as Record<string, unknown>);
+        case "servers_lookup":
+          return (a.keys as string[]).map((k) => {
             const [ip, port] = k.split(":");
-            const ms = pingOf(k);
-            return { ip, port: Number(port), ms: ms > 270 ? 9999 : ms, failed: ms > 270 };
+            const x = servers.find(
+              (s) => s.ip === ip && (s.query_port === Number(port) || s.game_port === Number(port)),
+            );
+            return x ? toRow(x) : null;
           });
-          i += 200;
-          ch.onmessage(batch);
-          if (i < targets.length) setTimeout(step, 60);
-        };
-        setTimeout(step, 200);
-        return null;
-      }
-      case "ping_single":
-        return pingOf(`${a.ip}:${a.port}`);
-      case "query_a2s": {
-        const s = servers.find((x) => x.ip === a.ip);
-        return {
-          server_name: s?.name ?? "?",
-          game: "DayZ",
-          players: s?.players ?? 0,
-          max_players: s?.max_players ?? 60,
-          bots: 0,
-          map: s?.map ?? "",
-          version: s?.version ?? "",
-          players_list: Array.from({ length: Math.min(12, s?.players ?? 0) }, (_, i) => ({
-            name: `Survivor ${i + 1}`,
-            score: 0,
-            duration: 300 + i * 611,
-          })),
-          mods: [],
-          // What DayZ puts in A2S: the plain rules, the mods from the binary
-          // block and the keywords' settings. An unlisted server has only these.
-          mods_from_a2s: s ? [] : ["Community Framework", "VPPAdminTools", "Dabs Framework"],
-          mods_a2s: s
-            ? []
-            : [
-                { name: "Community Framework", steam_workshop_id: 1559212036 },
-                { name: "VPPAdminTools", steam_workshop_id: 1828439124 },
-                { name: "Dabs Framework", steam_workshop_id: 2545327648 },
-              ],
-          dayz: {
-            battleye: true,
-            first_person_only: s?.first_person_only ?? false,
-            official: false,
-            private_hive: true,
-            whitelisted: false,
-            dlc: s?.map === "enoch" || s?.map === "sakhal",
-            shard: "000",
-            login_queue: (s?.players ?? 0) >= (s?.max_players ?? 60) ? 7 : 0,
-            time_accel: 8,
-            night_time_accel: 2,
-            game_time: "14:09",
-          },
-          rules: [
-            ["allowedBuild", "0"],
-            ["clientPort", "0"],
-            ["dedicated", "1"],
-            ["island", s?.map ?? "chernarusplus"],
-            ["language", "65545"],
-            ["platform", "win"],
-            ["requiredBuild", "0"],
-            ["requiredVersion", "129"],
-            ["timeLeft", "15"],
-          ].map(([name, value]) => ({ name, value })),
-          query_port: s?.query_port ?? 27016,
-          game_port: s?.game_port ?? 2302,
-        };
-      }
-      case "plugin:app|version":
-        return "0.4.1";
-      case "plugin:window|is_maximized":
-        return false;
-      case "start_mod_operation": {
-        // A plausible SteamCMD run: log in (Steam stays open), then each mod
-        // with live progress lines (rewritten in place), one failure, a summary.
-        const ch = a.onProgress as Ch<Record<string, unknown>>;
-        const ids =
-          (a.modIds as number[] | undefined) ??
-          mods.filter((m) => m.update_available).map((m) => m.id);
-        const list = ids.length ? ids : mods.slice(0, 3).map((m) => m.id);
-        const ev = (kind: string, extra: Record<string, unknown> = {}) =>
-          ch.onmessage({
-            kind,
+        case "start_scan":
+          return startMockScan();
+        case "get_server_details": {
+          const s = servers.find((x) => x.ip === a.ip);
+          return {
+            ...s,
+            mods: mods
+              .slice(0, s?.mods_count ?? 0)
+              .map((m) => ({ name: m.name, steam_workshop_id: m.id })),
+          };
+        }
+        case "get_app_stats":
+          return {
+            server_count: servers.length,
+            total_players: servers.reduce((n, s) => n + s.players, 0),
+            player_name: profile.player,
+            steam_login: profile.steam_login,
+            has_steamcmd: true,
+          };
+        case "fetch_steam_player_count":
+          return 61_204;
+        case "get_profile":
+          return profile;
+        case "get_installed_mods":
+        case "check_mod_updates":
+          // `?slowmods=1`: the disk read takes a minute, so the list's loading shape can be seen.
+          if (q.get("slowmods") === "1")
+            return new Promise((done) => setTimeout(() => done(mods), 60_000));
+          return mods;
+        case "mods_usage":
+          // The first mods run by two favourites and a played server; a few by history only.
+          return mods.slice(0, 14).map((m, i) => ({
+            id: m.id,
+            favorites: i < 6 ? profile.favorites.slice(0, 1 + (i % 3)).map((f) => f.name) : [],
+            history: i % 2 === 0 ? [profile.history[0]?.name ?? "4170"] : [],
+          }));
+        case "steam_subscriptions": {
+          // Most Steam-library mods subscribed (one not), one downloading, one
+          // waiting, a launcher mod also subscribed, and two subscriptions not
+          // on disk yet (one downloading, one waiting).
+          const cycle = (Date.now() % 60_000) / 60_000;
+          const item = (id: number, o: Record<string, unknown> = {}) => ({
+            id,
+            subscribed: true,
+            installed: true,
+            needs_update: false,
+            downloading: false,
+            pending: false,
+            bytes_done: 0,
+            bytes_total: 0,
+            ...o,
+          });
+          const at = (i: number) => mods[i]?.id ?? 0;
+          return {
+            available: true,
+            reason: null,
+            items: [
+              ...[0, 3, 6, 9, 21].map((i) => item(at(i))),
+              item(at(1)),
+              item(at(12), {
+                needs_update: true,
+                downloading: true,
+                bytes_total: 1_400_000_000,
+                bytes_done: Math.floor(1_400_000_000 * cycle),
+              }),
+              item(at(18), { needs_update: true, pending: true }),
+              item(2_900_000_001, {
+                installed: false,
+                needs_update: true,
+                downloading: true,
+                bytes_total: 640_000_000,
+                bytes_done: Math.floor(640_000_000 * cycle),
+              }),
+              item(2_900_000_002, { installed: false, needs_update: true }),
+            ].filter((x) => x.id !== 0),
+            // The first mod (CF-like) required by a few others, one of which
+            // also needs a mod that is not installed.
+            details: [
+              { id: at(0), title: mods[0]?.name ?? "", requires: [] },
+              { id: at(3), title: mods[3]?.name ?? "", requires: [at(0)] },
+              { id: at(6), title: mods[6]?.name ?? "", requires: [at(0), 2_900_000_003] },
+              { id: 2_900_000_001, title: "Incoming Weapons Pack", requires: [at(0)] },
+              { id: 2_900_000_002, title: "Base Building Plus", requires: [] },
+              { id: 2_900_000_003, title: "Missing Library", requires: [] },
+            ].filter((d) => d.id !== 0),
+          };
+        }
+        case "play_stats":
+          return mockPlayStats(a.range as string);
+        case "play_sessions": {
+          const q = String(a.search ?? "").toLowerCase();
+          const from = a.from as number | null;
+          const to = a.to as number | null;
+          const hits = [...playLog]
+            .reverse()
+            .filter((x) => (from == null || x.start >= from) && (to == null || x.start < to))
+            .filter((x) => !q || x.name.toLowerCase().includes(q) || (x.map ?? "").includes(q));
+          const off = Number(a.offset ?? 0);
+          return { total: hits.length, rows: hits.slice(off, off + Number(a.limit ?? 100)) };
+        }
+        case "delete_session":
+          return true;
+        case "fetch_news":
+          return articles;
+        case "offline_saves":
+          return [
+            {
+              mission: "DayZCommunityOfflineMode.ChernarusPlus",
+              bytes: 18_400_000,
+              written: Math.floor(Date.now() / 1000) - 2 * 86_400,
+            },
+            {
+              mission: "DayZCommunityOfflineMode.Sakhal",
+              bytes: 4_100_000,
+              written: Math.floor(Date.now() / 1000) - 3600,
+            },
+          ];
+        case "clear_mission_save":
+          return true;
+        case "get_offline_missions":
+          return [
+            "DayZCommunityOfflineMode.ChernarusPlus",
+            "DayZCommunityOfflineMode.Enoch",
+            "DayZCommunityOfflineMode.Sakhal",
+          ];
+        case "gamepad_status":
+          return {
+            available: true,
+            pads: padKind
+              ? [
+                  padKind === "ps"
+                    ? { name: "DualSense Wireless Controller", kind: "playStation" }
+                    : { name: "Xbox Wireless Controller", kind: "xbox" },
+                ]
+              : [],
+            steam_ui: false,
+          };
+        case "get_system_specs":
+          return {
+            logical_cores: 16,
+            physical_cores: 8,
+            total_memory_mb: 32768,
+            cpu_name: "AMD Ryzen 7 5800X3D 8-Core Processor",
+            os: "Linux 24.04 Ubuntu",
+            gpus: [{ name: "NVIDIA GeForce RTX 4070", vram_mb: 12282 }],
+          };
+        case "get_cli_args":
+          return { connect: null, reconnect: false, open: null };
+        case "check_for_update":
+          return {
+            version: "0.5.0",
+            currentVersion: "0.4.1",
+            body: "- New interface",
+            date: new Date().toISOString(),
+          };
+        case "detect_steamcmd":
+          return { found: true, path: "/usr/bin/steamcmd", platform: "linux" };
+        case "game_running":
+          return new URLSearchParams(location.search).get("game") === "1";
+        case "kill_game":
+          return 2;
+        case "steam_launch_info":
+          return {
+            linux: true,
+            launcher: ["/usr/bin/steam"],
+            applaunch: ["-applaunch", "221100", "-malloc=system", "-name=Survivor"],
+            launch_options:
+              "PROTON_USE_NTSYNC=1 PROTON_ENABLE_WAYLAND=1 RADV_PERFTEST=gpl,nggc,sam mangohud game-performance %command% -nolauncher",
+            compat_tool: "proton-cachyos-native",
+            compat_tool_default: false,
+            prefix: "/mnt/ssd2/SteamLibrary/steamapps/compatdata/221100",
+          };
+        case "detect_dayz":
+          return {
+            steamapps: a.path || "/mnt/ssd2/SteamLibrary/steamapps",
+            dayz_dir: `${a.path || "/mnt/ssd2/SteamLibrary/steamapps"}/common/DayZ`,
+            workshop_mods: 37,
+          };
+        case "steam_me":
+          return { steam_id: "76561198000000000", name: "Survivor", avatar: null };
+        case "sources_status":
+          return mockSources();
+        case "steam_friends": {
+          const at = (i: number) => servers[i * 7 + 3]!;
+          const friend = (
+            i: number,
+            name: string,
+            status: string,
+            game: string | null,
+            server: number | null,
+          ) => ({
+            steam_id: `765611980000001${i}`,
+            name,
+            status,
+            avatar: null,
+            game,
+            in_dayz: game === "DayZ",
+            server:
+              server == null
+                ? null
+                : {
+                    ip: at(server).ip,
+                    port: at(server).query_port,
+                    name: at(server).name,
+                    map: at(server).map,
+                    players: at(server).players,
+                    max_players: at(server).max_players,
+                  },
+            last_online: status === "offline" ? now - (i + 1) * 5400 : null,
+          });
+          return {
+            source: "web_api",
+            error: null,
+            friends: [
+              friend(0, "Kozak", "online", "DayZ", 1),
+              friend(1, "nightwolf", "online", "DayZ", 2),
+              friend(2, "Bambi Hunter", "away", "DayZ", null),
+              friend(3, "Mira", "online", "Counter-Strike 2", null),
+              friend(4, "Tobi", "busy", null, null),
+              friend(5, "ZedSlayer", "online", null, null),
+              friend(6, "Old Gus", "offline", null, null),
+              friend(7, "Lena", "offline", null, null),
+            ],
+          };
+        }
+        case "set_steam_server_list":
+          profile.steam_server_list = a.enabled as boolean;
+          return null;
+        case "set_mod_downloader":
+          profile.mod_downloader = a.downloader as typeof profile.mod_downloader;
+          return null;
+        case "steamworks_status":
+          return { library: true, error: null, steam_running: true };
+        case "steamworks_check":
+          return null;
+        case "steamcmd_dirs":
+          return {
+            content: "/home/player/.local/share/dayz-community-hub/steamcmd-content",
+            home: "/home/player/.local/share/dayz-community-hub/steamcmd-home",
+          };
+        case "delete_mod":
+          return mods.find((m) => m.id === a.modId)?.source === "steam";
+        case "delete_mods_bulk":
+          return (a.modIds as number[]).filter(
+            (id) => mods.find((m) => m.id === id)?.source === "steam",
+          );
+        case "ping_all_background":
+        case "ping_servers": {
+          const targets = a.targets as string[];
+          const ch = a.onProgress as Ch<unknown[]>;
+          let i = 0;
+          const step = () => {
+            const batch = targets.slice(i, i + 200).map((k) => {
+              const [ip, port] = k.split(":");
+              const ms = pingOf(k);
+              return { ip, port: Number(port), ms: ms > 270 ? 9999 : ms, failed: ms > 270 };
+            });
+            i += 200;
+            ch.onmessage(batch);
+            if (i < targets.length) setTimeout(step, 60);
+          };
+          setTimeout(step, 200);
+          return null;
+        }
+        case "ping_single":
+          return pingOf(`${a.ip}:${a.port}`);
+        case "query_a2s": {
+          const s = servers.find((x) => x.ip === a.ip);
+          return {
+            server_name: s?.name ?? "?",
+            game: "DayZ",
+            players: s?.players ?? 0,
+            max_players: s?.max_players ?? 60,
+            bots: 0,
+            map: s?.map ?? "",
+            version: s?.version ?? "",
+            players_list: Array.from({ length: Math.min(12, s?.players ?? 0) }, (_, i) => ({
+              name: `Survivor ${i + 1}`,
+              score: 0,
+              duration: 300 + i * 611,
+            })),
+            mods: [],
+            // What DayZ puts in A2S: the plain rules, the mods from the binary
+            // block and the keywords' settings. An unlisted server has only these.
+            mods_from_a2s: s ? [] : ["Community Framework", "VPPAdminTools", "Dabs Framework"],
+            mods_a2s: s
+              ? []
+              : [
+                  { name: "Community Framework", steam_workshop_id: 1559212036 },
+                  { name: "VPPAdminTools", steam_workshop_id: 1828439124 },
+                  { name: "Dabs Framework", steam_workshop_id: 2545327648 },
+                ],
+            dayz: {
+              battleye: true,
+              first_person_only: s?.first_person_only ?? false,
+              official: false,
+              private_hive: true,
+              whitelisted: false,
+              dlc: s?.map === "enoch" || s?.map === "sakhal",
+              shard: "000",
+              login_queue: (s?.players ?? 0) >= (s?.max_players ?? 60) ? 7 : 0,
+              time_accel: 8,
+              night_time_accel: 2,
+              game_time: "14:09",
+            },
+            rules: [
+              ["allowedBuild", "0"],
+              ["clientPort", "0"],
+              ["dedicated", "1"],
+              ["island", s?.map ?? "chernarusplus"],
+              ["language", "65545"],
+              ["platform", "win"],
+              ["requiredBuild", "0"],
+              ["requiredVersion", "129"],
+              ["timeLeft", "15"],
+            ].map(([name, value]) => ({ name, value })),
+            query_port: s?.query_port ?? 27016,
+            game_port: s?.game_port ?? 2302,
+          };
+        }
+        case "plugin:app|version":
+          return "0.4.1";
+        case "plugin:window|is_maximized":
+          return false;
+        case "start_mod_operation": {
+          const op: MockOp = { args: { ...a, onProgress: undefined }, startedAt: Date.now() };
+          mockStore.set(OP_KEY, op);
+          runModOp(a.onProgress as Ch<Record<string, unknown>>, op, 0);
+          return null;
+        }
+        case "mod_op_attach":
+        case "mod_op_state": {
+          // The backend's snapshot, emptied: the steps so far are replayed over
+          // the new channel at once (all numbered above the snapshot's 0).
+          const op = mockStore.get<MockOp>(OP_KEY);
+          if (!op) return null;
+          if (cmd === "mod_op_attach")
+            runModOp(a.onProgress as Ch<Record<string, unknown>>, op, Date.now() - op.startedAt);
+          return {
+            id: 1,
+            seq: 0,
+            kind: op.args.opType,
+            via:
+              profile.mod_downloader === "steamworks" && op.args.opType !== "login"
+                ? "steamworks"
+                : "steamcmd",
+            phase: "downloading",
             current: 0,
-            total: list.length,
-            mod_id: 0,
-            name: "",
+            total: 0,
+            current_id: 0,
+            current_name: "",
+            queue: [],
+            completed: [],
             ok: 0,
             failed: 0,
             hint: null,
-            log_line: null,
-            queue: [],
-            ...extra,
-          });
-        const log = (line: string, progress = false) =>
-          ev(progress ? "log_progress" : "log_line", { log_line: line });
-        const steps: Array<[number, () => void]> = [];
-        let t = 0;
-        const at = (dt: number, fn: () => void) => steps.push([(t += dt), fn]);
-        // First, as the backend does: every mod the operation works on, named.
-        const queue =
-          a.opType === "login"
-            ? []
-            : list.map((id) => ({
-                id,
-                name: mods.find((x) => x.id === id)?.name ?? `Workshop ${id}`,
-              }));
-        at(0, () => ev("queued", { queue }));
-        if (profile.mod_downloader === "steamworks" && a.opType !== "login") {
-          // What dz-steamworks reports: subscribe, Steam downloads, installed.
-          at(200, () => log("Connected to Steam as DayZ (app 221100)"));
-          list.forEach((id) => at(40, () => log(`Subscribing to ${id}`)));
-          list.forEach((id) => at(80, () => log(`Subscribed ${id}`)));
-          let ok = 0;
-          list.forEach((id, i) => {
-            const m = mods.find((x) => x.id === id);
-            const name = m?.name ?? `Workshop ${id}`;
-            const total = m?.size ?? 300_000_000;
-            at(120, () => ev("starting", { current: i + 1, name, mod_id: id }));
-            at(10, () => log(`Downloading item ${id} (${name}) through Steam`));
-            at(40, () => log(`${id}: subscribed, needs update, downloading, download pending`));
-            for (let k = 1; k <= 12; k++) {
-              at(90, () => {
-                const done = Math.floor((total * k) / 12);
-                log(
-                  `Steam: item ${id} downloading, progress: ${((done / total) * 100).toFixed(2)} (${done} / ${total})`,
-                  true,
-                );
-              });
-            }
-            if (i === 1 && list.length > 2) {
-              const error =
-                "Download failed: access denied: the item is private, friends-only or hidden";
-              at(80, () => log(`${id} failed: ${error}`));
-              at(10, () =>
-                ev("failed", { current: i + 1, name: `${name} (${error})`, mod_id: id }),
-              );
-            } else {
-              ok++;
-              at(60, () => log(`${id}: subscribed, installed`));
-              at(10, () =>
-                log(
-                  `Installed ${id} at /home/player/.local/share/Steam/steamapps/workshop/content/221100/${id}`,
-                ),
-              );
-              at(10, () => ev("done", { current: i + 1, name, mod_id: id }));
-            }
-          });
-          const failed = list.length - ok;
-          at(150, () => log("Disconnected from Steam"));
-          at(20, () => ev("finished", { ok, failed }));
-          for (const [when, fn] of steps) setTimeout(fn, when);
-          return null;
+            log: [],
+            log_live: false,
+            started_at: op.startedAt,
+            item_started_ms: 0,
+          };
         }
-        at(300, () =>
-          log(
-            "Redirecting stderr to '/home/player/.local/share/dayz-community-hub/steamcmd-home/.steam/steamcmd/logs/stderr.txt'",
-          ),
-        );
-        at(100, () => log("[  0%] Checking for available updates..."));
-        at(100, () => log("[----] Verifying installation..."));
-        at(100, () => log("Steam Console Client (c) Valve Corporation - version 1726604893"));
-        at(100, () => log("Logging in user 'survivor_42' to Steam Public...OK"));
-        at(80, () => log("Waiting for client config...OK"));
-        at(80, () => log("Waiting for user info...OK"));
-        at(10, () => ev("logged_in"));
-        if (a.opType === "login") {
-          at(200, () => log("Unloading Steam API...OK"));
-          at(50, () => ev("finished", { ok: 1, failed: 0, total: 1 }));
-          for (const [when, fn] of steps) setTimeout(fn, when);
+        case "mod_op_dismiss":
+        case "cancel_mod_operation":
+          stopModOp();
+          mockStore.set(OP_KEY, null);
           return null;
+        case "fetch_metrics_history": {
+          const span = { "1d": 1, "7d": 7, "2w": 14, "1m": 30 }[a.range as string] ?? 1;
+          const step = span <= 1 ? 300 : span <= 7 ? 1800 : 3600;
+          const n = Math.floor((span * 86400) / step);
+          const now = Math.floor(Date.now() / 1000);
+          return Array.from({ length: n }, (_, i) => {
+            const t = now - (n - 1 - i) * step;
+            const d = new Date(t * 1000);
+            const wave = 0.5 + 0.4 * Math.sin(((d.getUTCHours() - 6) / 24) * Math.PI * 2);
+            const weekend = d.getUTCDay() % 6 === 0 ? 1.15 : 1;
+            return [t, Math.round(60 * wave * weekend)];
+          });
         }
-        let ok = 0;
-        list.forEach((id, i) => {
-          const m = mods.find((x) => x.id === id);
-          const name = m?.name ?? `Workshop ${id}`;
-          const total = m?.size ?? 300_000_000;
-          at(120, () => ev("starting", { current: i + 1, name, mod_id: id }));
-          at(60, () => log(`Downloading item ${id} ...`));
-          for (let k = 1; k <= 12; k++) {
-            at(90, () => {
-              const done = Math.floor((total * k) / 12);
-              log(
-                `Update state (0x61) downloading, progress: ${((done / total) * 100).toFixed(2)} (${done} / ${total})`,
-                true,
-              );
-            });
-          }
-          if (i === 1 && list.length > 2) {
-            at(80, () => log(`ERROR! Download item ${id} failed (Failure).`));
-            at(20, () => ev("failed", { current: i + 1, name, mod_id: id }));
-          } else {
-            ok++;
-            at(80, () =>
-              log(
-                `Success. Downloaded item ${id} to "/home/player/.local/share/dayz-community-hub/steamcmd-content/steamapps/workshop/content/221100/${id}" (${total} bytes)`,
-              ),
-            );
-            at(20, () => ev("done", { current: i + 1, name, mod_id: id }));
-          }
-        });
-        const failed = list.length - ok;
-        at(200, () => log("Unloading Steam API...OK"));
-        at(50, () => ev("finished", { ok, failed }));
-        for (const [when, fn] of steps) setTimeout(fn, when);
-        return null;
+        case "fetch_metrics_rank_history": {
+          const today = Date.now();
+          return Array.from({ length: 30 }, (_, i) => [
+            new Date(today - (29 - i) * 86400e3).toISOString().slice(0, 10),
+            40 - Math.round(i * 1.1),
+          ]);
+        }
+        case "fetch_metrics_heatmap":
+          return Array.from({ length: 168 }, (_, i) => {
+            const dow = Math.floor(i / 24);
+            const hour = i % 24;
+            const wave = 0.5 + 0.45 * Math.sin(((hour - 13) / 24) * Math.PI * 2);
+            return { dow, hour, avg: Math.round(70 * wave * (dow % 6 === 0 ? 1.2 : 1)) };
+          });
+        case "fetch_server_metrics": {
+          const idx = servers.findIndex((x) => x.ip === a.ip);
+          const s = servers[Math.max(0, idx)]!;
+          const now = Math.floor(Date.now() / 1000);
+          const fake = idx % 7 === 3;
+          const hist = Array.from({ length: 288 }, (_, i) => {
+            const t = now - (287 - i) * 300;
+            const h = new Date(t * 1000).getUTCHours();
+            const wave = 0.55 + 0.4 * Math.sin(((h - 6) / 24) * Math.PI * 2);
+            return [t, Math.max(0, Math.round(s.max_players * wave * (fake ? 1 : 0.8)))] as [
+              number,
+              number,
+            ];
+          });
+          return {
+            id: 160155 + Math.max(0, idx),
+            url: `https://dayzmetrics.com/server/${160155 + Math.max(0, idx)}`,
+            name: s.name,
+            map: s.map,
+            version: s.version,
+            status: "online",
+            country: ["DE", "FR", "US", "RU", "GB"][Math.max(0, idx) % 5],
+            players: s.players,
+            max_players: s.max_players,
+            queue: 0,
+            rank_pos: 8 + Math.max(0, idx),
+            rank_score: 4.0021,
+            rank_alive: 0.888,
+            rank_demand: 0.17,
+            avg_players_7d: s.max_players * 0.45,
+            peak_7d: s.max_players,
+            uptime_7d: 99.3,
+            wow_pct: fake ? -12 : 8,
+            first_seen: "2026-05-24T07:17:31+00:00",
+            last_seen: new Date().toISOString(),
+            ping_lo: 6,
+            ping_hi: 83,
+            ping_jitter: 7,
+            ping_stability: 0.9,
+            time_accel: 8,
+            night_time_accel: 2,
+            restart: {
+              period_hours: 3,
+              last_restart: new Date(Date.now() - 2 * 3600e3).toISOString(),
+              next_restart: new Date(Date.now() + 57 * 60e3).toISOString(),
+              confidence: "high",
+              slots_utc: ["00:00", "03:00", "06:00", "09:00", "12:00", "15:00", "18:00", "21:00"],
+              coverage: 0.96,
+              unscheduled_7d: 2,
+              restart_loops_7d: 0,
+              last_unscheduled: new Date(Date.now() - 3 * 86400e3).toISOString(),
+            },
+            wipe: {
+              last: "2026-09-19",
+              last_source: "announced",
+              days_since: 10,
+              next: "2026-10-17",
+              next_source: "predicted",
+              days_until: 18,
+              period_days: 28,
+              phase: "mid",
+              confidence: 0.8,
+              events: [
+                { on: "2026-09-19", source: "announced", confidence: 1, corroborated: true },
+                { on: "2026-08-22", source: "surge", confidence: 0.4, corroborated: false },
+              ],
+            },
+            is_fake: fake,
+            fake_reasons: fake
+              ? ["Player count never drops below 90 %", "Same names reappear on every restart"]
+              : [],
+            behavior_verdict: fake ? "fake" : "real",
+            behavior_score: fake ? 0.1 : 0.76,
+            flagged: false,
+            flag_reason: null,
+            suspect: false,
+            mimics_official: false,
+            description: null,
+            game_time: "14:20",
+            game_time_at: new Date().toISOString(),
+            discord: "https://discord.gg/example",
+            website: null,
+            links: [],
+            notices: [],
+            playstyle: null,
+            vanilla_band: "Lightly Modded",
+            vanilla_score: 37.9,
+            mod_count: s.mods_count,
+            mod_total_bytes: 5228339261,
+            player_history: hist,
+            ping_history: hist.map(([t]) => [t, 8]),
+          };
+        }
+        case "toggle_ping_pause":
+          return false;
+        case "fetch_steam_avatar":
+          return null;
+        default:
+          return null;
       }
-      case "fetch_metrics_history": {
-        const span = { "1d": 1, "7d": 7, "2w": 14, "1m": 30 }[a.range as string] ?? 1;
-        const step = span <= 1 ? 300 : span <= 7 ? 1800 : 3600;
-        const n = Math.floor((span * 86400) / step);
-        const now = Math.floor(Date.now() / 1000);
-        return Array.from({ length: n }, (_, i) => {
-          const t = now - (n - 1 - i) * step;
-          const d = new Date(t * 1000);
-          const wave = 0.5 + 0.4 * Math.sin(((d.getUTCHours() - 6) / 24) * Math.PI * 2);
-          const weekend = d.getUTCDay() % 6 === 0 ? 1.15 : 1;
-          return [t, Math.round(60 * wave * weekend)];
-        });
-      }
-      case "fetch_metrics_rank_history": {
-        const today = Date.now();
-        return Array.from({ length: 30 }, (_, i) => [
-          new Date(today - (29 - i) * 86400e3).toISOString().slice(0, 10),
-          40 - Math.round(i * 1.1),
-        ]);
-      }
-      case "fetch_metrics_heatmap":
-        return Array.from({ length: 168 }, (_, i) => {
-          const dow = Math.floor(i / 24);
-          const hour = i % 24;
-          const wave = 0.5 + 0.45 * Math.sin(((hour - 13) / 24) * Math.PI * 2);
-          return { dow, hour, avg: Math.round(70 * wave * (dow % 6 === 0 ? 1.2 : 1)) };
-        });
-      case "fetch_server_metrics": {
-        const idx = servers.findIndex((x) => x.ip === a.ip);
-        const s = servers[Math.max(0, idx)]!;
-        const now = Math.floor(Date.now() / 1000);
-        const fake = idx % 7 === 3;
-        const hist = Array.from({ length: 288 }, (_, i) => {
-          const t = now - (287 - i) * 300;
-          const h = new Date(t * 1000).getUTCHours();
-          const wave = 0.55 + 0.4 * Math.sin(((h - 6) / 24) * Math.PI * 2);
-          return [t, Math.max(0, Math.round(s.max_players * wave * (fake ? 1 : 0.8)))] as [
-            number,
-            number,
-          ];
-        });
-        return {
-          id: 160155 + Math.max(0, idx),
-          url: `https://dayzmetrics.com/server/${160155 + Math.max(0, idx)}`,
-          name: s.name,
-          map: s.map,
-          version: s.version,
-          status: "online",
-          country: ["DE", "FR", "US", "RU", "GB"][Math.max(0, idx) % 5],
-          players: s.players,
-          max_players: s.max_players,
-          queue: 0,
-          rank_pos: 8 + Math.max(0, idx),
-          rank_score: 4.0021,
-          rank_alive: 0.888,
-          rank_demand: 0.17,
-          avg_players_7d: s.max_players * 0.45,
-          peak_7d: s.max_players,
-          uptime_7d: 99.3,
-          wow_pct: fake ? -12 : 8,
-          first_seen: "2026-05-24T07:17:31+00:00",
-          last_seen: new Date().toISOString(),
-          ping_lo: 6,
-          ping_hi: 83,
-          ping_jitter: 7,
-          ping_stability: 0.9,
-          time_accel: 8,
-          night_time_accel: 2,
-          restart: {
-            period_hours: 3,
-            last_restart: new Date(Date.now() - 2 * 3600e3).toISOString(),
-            next_restart: new Date(Date.now() + 57 * 60e3).toISOString(),
-            confidence: "high",
-            slots_utc: ["00:00", "03:00", "06:00", "09:00", "12:00", "15:00", "18:00", "21:00"],
-            coverage: 0.96,
-            unscheduled_7d: 2,
-            restart_loops_7d: 0,
-            last_unscheduled: new Date(Date.now() - 3 * 86400e3).toISOString(),
-          },
-          wipe: {
-            last: "2026-09-19",
-            last_source: "announced",
-            days_since: 10,
-            next: "2026-10-17",
-            next_source: "predicted",
-            days_until: 18,
-            period_days: 28,
-            phase: "mid",
-            confidence: 0.8,
-            events: [
-              { on: "2026-09-19", source: "announced", confidence: 1, corroborated: true },
-              { on: "2026-08-22", source: "surge", confidence: 0.4, corroborated: false },
-            ],
-          },
-          is_fake: fake,
-          fake_reasons: fake
-            ? ["Player count never drops below 90 %", "Same names reappear on every restart"]
-            : [],
-          behavior_verdict: fake ? "fake" : "real",
-          behavior_score: fake ? 0.1 : 0.76,
-          flagged: false,
-          flag_reason: null,
-          suspect: false,
-          mimics_official: false,
-          description: null,
-          game_time: "14:20",
-          game_time_at: new Date().toISOString(),
-          discord: "https://discord.gg/example",
-          website: null,
-          links: [],
-          notices: [],
-          playstyle: null,
-          vanilla_band: "Lightly Modded",
-          vanilla_score: 37.9,
-          mod_count: s.mods_count,
-          mod_total_bytes: 5228339261,
-          player_history: hist,
-          ping_history: hist.map(([t]) => [t, 8]),
-        };
-      }
-      case "toggle_ping_pause":
-        return false;
-      case "fetch_steam_avatar":
-        return null;
-      default:
-        return null;
-    }
-  });
+    },
+    // Events too: the scan and the refresh report through them, as for real.
+    { shouldMockEvents: true },
+  );
 }

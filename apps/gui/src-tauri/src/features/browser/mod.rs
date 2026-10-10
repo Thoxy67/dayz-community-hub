@@ -2,7 +2,8 @@
 //! sorted window of rows and never holds the list itself.
 //!
 //! - `servers_query` pages through the filtered list;
-//! - `start_scan` pings the whole list in the background, reporting progress;
+//! - `start_scan` pings the whole list in the background, reporting progress
+//!   as `ping-scan-progress` events (see `ping`);
 //! - full servers are re-queried after every load, since the list's player
 //!   counts are often stale for them;
 //! - `servers-changed` tells the window, at most twice a second, that what
@@ -19,7 +20,6 @@ use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 use tauri_specta::Event;
 
@@ -169,15 +169,25 @@ fn scan_targets(s: &AppState) -> Vec<String> {
 }
 
 /// Ping the whole list in the background (replacing a running scan).
-/// Progress arrives on `on_progress` at most twice a second; the rows
-/// themselves change through `servers-changed`.
+/// Progress goes out as `ping-scan-progress` at most twice a second, to
+/// whichever window is loaded; the rows themselves change through
+/// `servers-changed`. Returns the new scan's first progress.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn start_scan(
-    on_progress: Channel<ScanProgress>,
+    app: AppHandle,
     state: State<'_, SharedState>,
     ping: State<'_, Arc<PingState>>,
-) -> Result<(), String> {
+) -> Result<ScanProgress, String> {
+    Ok(scan_whole(&app, &state, &ping).await)
+}
+
+/// Start the whole-list scan with the profile's settings.
+pub(crate) async fn scan_whole(
+    app: &AppHandle,
+    state: &SharedState,
+    ping: &Arc<PingState>,
+) -> ScanProgress {
     let (targets, concurrency, timeout, retries) = {
         let s = state.read().await;
         let p = s.ctl.profile();
@@ -188,8 +198,7 @@ pub(crate) async fn start_scan(
             p.ping_max_retries.min(5),
         )
     };
-    ping::start_whole_scan(&ping, targets, concurrency, timeout, retries, on_progress);
-    Ok(())
+    ping::start_whole_scan(app, ping, targets, concurrency, timeout, retries)
 }
 
 /// The running full-server check, so a newer list can replace it.

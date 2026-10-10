@@ -7,7 +7,7 @@ use std::path::Path;
 
 use base64::Engine;
 use serde::Serialize;
-use tauri::{AppHandle, ipc::Channel};
+use tauri::AppHandle;
 use tauri_plugin_updater::Update;
 
 use super::DownloadEvent;
@@ -52,7 +52,7 @@ type Result<T> = std::result::Result<T, UpdateError>;
 pub(super) async fn install(
     app: &AppHandle,
     update: &Update,
-    on_event: Channel<DownloadEvent>,
+    on_event: super::Reporter,
 ) -> Result<()> {
     let url = update.download_url.to_string();
     let signature = &update.signature;

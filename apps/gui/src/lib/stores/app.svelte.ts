@@ -4,6 +4,7 @@
  */
 import { checkFirstLaunch, initialize } from "$lib/ipc/servers";
 import { errorText } from "$lib/ipc/core";
+import { session } from "./session.svelte";
 
 export type ViewId =
   | "servers"
@@ -44,6 +45,11 @@ class App {
    * Startup. The wizard shows at once on a first launch while the server
    * list loads behind it; a cached list shows immediately and is refreshed
    * in the background.
+   *
+   * After a reload the backend is already running (`resumed`): the window
+   * reads what it is doing (the scan, a refresh, a mod operation, an update
+   * download) and shows it, and fires nothing merely because it loaded. What
+   * the window itself held comes back from the session.
    */
   #started = false;
 
@@ -63,21 +69,24 @@ class App {
         this.initialized = true;
       }
       const result = await initialize();
+      session.begin(result.session, result.resumed);
       servers.listError = result.list_error;
       this.initialized = true;
       // The list first: nothing below waits on the network or the disk
       // before it. The profile is what the rest needs (the rejoin card, the
       // command line's "reconnect"), so it is the one thing awaited.
-      const list = servers.load().then(() => {
-        void servers.startScan();
-        if (result.from_cache) void servers.refresh(true);
-      });
+      const list = servers.load().then(() => servers.resume());
       void servers.loadStats();
       void servers.loadSteamPlayers();
-      void updater.check();
+      void updater.resume();
       const prof = profile.load();
-      // The Workshop check needs the Steam API key from the profile.
-      void Promise.all([mods.load(), prof]).then(() => mods.checkUpdates());
+      // The Workshop check needs the Steam API key from the profile. The
+      // backend keeps the last answer, which the disk read shows: a reload
+      // does not ask the Workshop again.
+      void Promise.all([mods.load(), prof]).then(() => {
+        if (!result.resumed) void mods.checkUpdates();
+      });
+      if (result.resumed) void mods.resume();
       await prof;
       void profile.loadAvatar();
       connect.flushCli();
@@ -105,3 +114,10 @@ class App {
 }
 
 export const app = new App();
+
+// The view on screen comes back after a reload.
+session.keep(
+  "app.view",
+  () => app.view,
+  (v) => app.go(v),
+);

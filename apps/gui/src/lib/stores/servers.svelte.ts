@@ -8,10 +8,15 @@
  * card), fetched by address in batches. When the backend says something
  * changed (`servers-changed`, at most twice a second), whatever is shown is
  * asked for again.
+ *
+ * The long work is the backend's too: the ping scan and the list's refresh
+ * run there whether or not a window listens, and report through events. A
+ * window that reloads reads where they stand (`resume`) and starts nothing a
+ * fresh launch would not.
  */
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import * as ipc from "$lib/ipc/servers";
-import type { MapCount, ScanProgress, ServerRow } from "$lib/ipc/servers";
+import type { MapCount, RefreshState, ScanProgress, ServerRow } from "$lib/ipc/servers";
 import { Channel, events, inTauri } from "$lib/ipc/core";
 import type { AppStatsDto, PingResult } from "$lib/ipc/types";
 import { words } from "$lib/i18n";
@@ -169,7 +174,7 @@ class Servers {
   // ── loading ─────────────────────────────────────────────────────────────
   #listening = false;
 
-  /** After startup: the maps, the backend's change events, the first scan. */
+  /** After startup: the maps, and the backend's change events. */
   async load() {
     const outer = this.loading;
     this.loading = true;
@@ -182,11 +187,11 @@ class Servers {
       if (inTauri && !this.#listening) {
         this.#listening = true;
         void events.serversChanged.listen((e) => this.#changed(e.payload.generation));
-        // Servers added after this window's scan ended are pinged by one
-        // the backend starts: shown the same way.
-        void events.pingScanProgress.listen((e) => {
-          if (!this.#ownScan) this.#showScan(e.payload);
-        });
+        // Every whole-list scan reports here, whoever started it: this
+        // window, a refresh, servers added to the list, a window before a
+        // reload.
+        void events.pingScanProgress.listen((e) => this.#showScan(e.payload));
+        void events.refreshChanged.listen((e) => this.#follow(e.payload));
         // The list grows and shrinks after loading (Steam's servers, kept
         // ones checked, duplicates combed): the counts follow it.
         void events.sourcesChanged.listen((e) => this.#followTotal(e.payload.total));
@@ -194,11 +199,31 @@ class Servers {
     } catch (e) {
       say.err(words("servers").loadFailed({ error: errorText(e) }));
     } finally {
-      // Called from `refresh`, which owns the flag until it is done.
+      // Called once a refresh is over, which owns the flag until it is done.
       this.loading = outer && this.refreshing;
     }
   }
 
+  /**
+   * After `load`: show what the backend is doing, and start only what a
+   * fresh launch starts. A window reloaded mid-scan or mid-refresh shows it
+   * and follows it; a list fetched or refreshed in this process is not
+   * fetched again merely because the window loaded (the "stale" bar offers
+   * it once it is old).
+   */
+  async resume() {
+    const [scan, refresh] = await Promise.all([
+      ipc.pingScanState().catch(() => null),
+      ipc.refreshState().catch(() => null),
+    ]);
+    if (scan) this.#showScan(scan.progress);
+    if (refresh?.loaded_at) this.lastRefreshed = refresh.loaded_at;
+    if (refresh?.running) this.#follow(refresh);
+    // No scan yet in this process, and no refresh about to start one.
+    if (!scan?.progress.id && !refresh?.running) void this.startScan();
+    // A list from the disk cache that no refresh has been asked for yet.
+    if (refresh && refresh.loaded_at == null && refresh.started_at == null) void this.refresh(true);
+  }
   #countsTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** The list holds `total` servers now: show it, and fetch the maps and
@@ -234,27 +259,70 @@ class Servers {
     if (this.#wanted.size) this.#lookupTimer ??= setTimeout(() => void this.#lookup(), 30);
   }
 
-  /** Fetch a fresh list into the backend. `quiet` for the background refresh after a cached start. */
+  /** The refresh being followed, and the last one seen to its end. */
+  #refreshId = 0;
+  #endedId = 0;
+  /** The refresh followed was started quietly, or by a window before a reload. */
+  #quiet = true;
+
+  /**
+   * Have the backend fetch a fresh list. It stops the scan, swaps the list
+   * in and scans again on its own; this follows it (`refresh-changed`).
+   * `quiet` for the background refresh after a cached start.
+   */
   async refresh(quiet = false) {
     if (this.refreshing) return;
     this.refreshing = true;
+    this.#quiet = quiet;
     if (!quiet) {
       this.loading = true;
       say.info(words("servers").refreshing);
     }
+    // The backend stops the scan first.
+    this.scan = null;
+    this.scanPaused = false;
     try {
-      await this.cancelScan();
-      const count = await ipc.refreshServers();
-      this.listError = null;
-      this.known.clear();
-      this.ping.clear();
-      await this.load();
-      if (!quiet) say.ok(words("servers").loaded({ count }));
-      void this.loadStats();
-      void this.loadSteamPlayers();
-      void this.startScan();
+      this.#follow(await ipc.serversRefresh());
     } catch (e) {
       if (!quiet) say.err(words("servers").refreshFailed({ error: errorText(e) }));
+      this.loading = false;
+      this.refreshing = false;
+    }
+  }
+
+  /** Where the backend's refresh stands, from its answer or its event. */
+  #follow(st: RefreshState) {
+    // An older refresh's word, or the end of one already handled (its event
+    // can arrive before the answer that started it).
+    if (st.id < this.#refreshId || st.id <= this.#endedId) return;
+    this.#refreshId = st.id;
+    if (st.running) {
+      // Started elsewhere (another window, before a reload): shown, quietly.
+      if (!this.refreshing) {
+        this.refreshing = true;
+        this.#quiet = true;
+        this.scan = null;
+      }
+      return;
+    }
+    this.#endedId = st.id;
+    if (this.refreshing) void this.#ended(st);
+  }
+
+  async #ended(st: RefreshState) {
+    const quiet = this.#quiet;
+    try {
+      if (st.phase === "done") {
+        this.listError = null;
+        this.known.clear();
+        this.ping.clear();
+        await this.load();
+        if (!quiet) say.ok(words("servers").loaded({ count: st.count }));
+        void this.loadStats();
+        void this.loadSteamPlayers();
+      } else if (!quiet) {
+        say.err(words("servers").refreshFailed({ error: st.error ?? "" }));
+      }
     } finally {
       this.loading = false;
       this.refreshing = false;
@@ -278,31 +346,25 @@ class Servers {
   }
 
   // ── pings ───────────────────────────────────────────────────────────────
-  /** The backend pings everything in its own order; only progress comes back. */
+  /**
+   * The newest scan heard of. A replaced scan may still have a word in
+   * flight (a last "running", or "not running" after the new one began):
+   * anything older is ignored.
+   */
   #scanId = 0;
-  /** A scan this window started is running: its channel has the say. */
-  #ownScan = false;
 
+  /** The backend pings everything in its own order; only progress comes back. */
   async startScan() {
-    // A new scan aborts the one before in the backend; the old channel may
-    // still deliver a last "not running", which must not hide the new one.
-    const id = ++this.#scanId;
-    this.#ownScan = true;
-    const ch = new Channel<ScanProgress>();
-    ch.onmessage = (p) => {
-      if (id !== this.#scanId) return;
-      this.#ownScan = p.running;
-      this.#showScan(p);
-    };
-    await ipc.startScan(ch).catch(() => {
-      if (id === this.#scanId) {
-        this.#ownScan = false;
-        this.scan = null;
-      }
-    });
+    try {
+      this.#showScan(await ipc.startScan());
+    } catch {
+      this.scan = null;
+    }
   }
 
   #showScan(p: ScanProgress) {
+    if (p.id < this.#scanId) return;
+    this.#scanId = p.id;
     this.scanPaused = p.paused;
     this.scan = p.running ? { total: p.total, done: p.done } : null;
   }
@@ -358,6 +420,7 @@ class Servers {
   }
 
   async cancelScan() {
+    // Its last words, still in flight, must not bring it back.
     this.#scanId++;
     await ipc.cancelPing().catch(() => {});
     this.scan = null;

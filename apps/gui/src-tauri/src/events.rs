@@ -39,6 +39,7 @@ pub(crate) fn collect() -> tauri_specta::Events {
         CliArgs,
         crate::features::browser::ServersChanged,
         crate::features::servers::sources::SourcesChanged,
+        crate::features::servers::refresh::RefreshChanged,
         crate::features::ping::PingScanProgress,
         crate::features::stats::PlaySessionsChanged,
         crate::features::gamepad::GamepadInput,

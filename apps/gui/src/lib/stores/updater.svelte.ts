@@ -7,6 +7,7 @@
 import {
   checkForUpdate,
   installUpdate,
+  updateDownloadState,
   updateSupport,
   type DownloadEvent,
   type UpdateInfo,
@@ -14,6 +15,9 @@ import {
 } from "$lib/ipc/system";
 import { restartApp } from "$lib/ipc/profile";
 import { Channel, errorText } from "$lib/ipc/core";
+
+/** How often a download in flight is asked about after a reload. */
+const POLL_MS = 250;
 
 export type UpdateState =
   "idle" | "checking" | "up_to_date" | "available" | "downloading" | "done" | "error";
@@ -63,6 +67,46 @@ class Updater {
       await installUpdate(ch);
     } catch (e) {
       this.error = errorText(e);
+      this.state = "error";
+    }
+  }
+
+  /**
+   * At startup. A download the backend runs (the window reloaded during it)
+   * is shown and followed, not started again: its channel died with the old
+   * page, so its progress is asked for until it ends. Otherwise, a check.
+   */
+  async resume() {
+    try {
+      const d = await updateDownloadState();
+      if (d.running || d.done) {
+        // No check meanwhile: on Windows it clears the last update's
+        // leftovers, which a download in flight may be writing.
+        this.#followDownload(d);
+        return;
+      }
+    } catch {
+      // Asked of an older backend, or failed: a plain check.
+    }
+    await this.check();
+  }
+
+  #followDownload(d: Awaited<ReturnType<typeof updateDownloadState>>) {
+    this.received = d.received;
+    this.total = d.total ?? 0;
+    if (d.running) {
+      this.state = "downloading";
+      setTimeout(
+        () =>
+          void updateDownloadState()
+            .then((n) => this.#followDownload(n))
+            .catch(() => {}),
+        POLL_MS,
+      );
+    } else if (d.done) {
+      this.state = "done";
+    } else if (d.error) {
+      this.error = d.error;
       this.state = "error";
     }
   }

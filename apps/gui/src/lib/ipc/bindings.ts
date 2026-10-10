@@ -17,20 +17,23 @@ export const commands = {
 	 *  when there is one (the window refreshes it in the background), else from
 	 *  the API. The profile and the cache are read at the same time.
 	 * 
-	 *  Called when the window mounts, and again when it reloads (the "Retry"
-	 *  after a failed start): a second call replaces the state in place.
+	 *  Called when the window mounts. When the window reloads (F5, a crash
+	 *  recovery, the "Retry" after a failed start) the state already exists: it
+	 *  is kept as it is, with the work running on it (the scan, a refresh, a mod
+	 *  download and its SteamCMD input), and `resumed` tells the window so.
 	 */
 	initialize: () => __TAURI_INVOKE<InitResult>("initialize"),
 	/**  One server with its mods, by query port. */
 	getServerDetails: (ip: string, port: number) => __TAURI_INVOKE<ServerDto>("get_server_details", { ip, port }),
 	/**
-	 *  Fetch the list from the API again. Returns how many servers it holds;
-	 *  the browser re-queries on the `servers-changed` that follows. Servers
-	 *  the list had and no longer lists stay, unless they do not answer. Then
-	 *  Steam's servers are listed in the background (at most every few
-	 *  minutes) and added as they answer.
+	 *  Fetch the list again in the background: the ping scan stops, the list is
+	 *  fetched and swapped in, and the scan starts again over the new one. A
+	 *  call while a refresh runs starts nothing and returns that one. Returns at
+	 *  once; `refresh-changed` says when it is over.
 	 */
-	refreshServers: () => __TAURI_INVOKE<number>("refresh_servers"),
+	serversRefresh: () => __TAURI_INVOKE<RefreshState>("servers_refresh"),
+	/**  The refresh as it stands, for a window that has just loaded. */
+	refreshState: () => __TAURI_INVOKE<RefreshState>("refresh_state"),
 	/**
 	 *  Whether the servers Steam's master lists are added to the list. Turning
 	 *  it off stops a listing under way; turning it on lists them now.
@@ -59,15 +62,23 @@ export const commands = {
 	serverMaps: () => __TAURI_INVOKE<MapCount[]>("server_maps"),
 	/**
 	 *  Ping the whole list in the background (replacing a running scan).
-	 *  Progress arrives on `on_progress` at most twice a second; the rows
-	 *  themselves change through `servers-changed`.
+	 *  Progress goes out as `ping-scan-progress` at most twice a second, to
+	 *  whichever window is loaded; the rows themselves change through
+	 *  `servers-changed`. Returns the new scan's first progress.
 	 */
-	startScan: (onProgress: Channel<ScanProgress>) => __TAURI_INVOKE<null>("start_scan", { onProgress }),
+	startScan: () => __TAURI_INVOKE<ScanProgress>("start_scan"),
 	/**
 	 *  Ping a small explicit list (favorites, history) and stream the results.
-	 *  Runs beside the whole-list scan, not instead of it.
+	 *  Runs beside the whole-list scan, not instead of it. Every result also
+	 *  lands in the live store, so a window that reloads meanwhile loses
+	 *  nothing: it re-queries on the `servers-changed` that follows.
 	 */
 	pingServers: (targets: string[], concurrency: number | null, timeoutMs: number | null, onProgress: Channel<PingResultDto[]>) => __TAURI_INVOKE<null>("ping_servers", { targets, concurrency, timeoutMs, onProgress }),
+	/**
+	 *  The whole-list scan as it stands: what a window shows after it loads,
+	 *  before the next `ping-scan-progress` arrives.
+	 */
+	pingScanState: () => __TAURI_INVOKE<ScanState>("ping_scan_state"),
 	/**  Ping one server, with the long manual timeout. Returns the RTT in ms. */
 	pingSingle: (ip: string, port: number, timeoutMs: number | null) => __TAURI_INVOKE<number>("ping_single", { ip, port, timeoutMs }),
 	/**  Stop the whole-list scan and clear the pause. */
@@ -180,13 +191,97 @@ export const commands = {
 	/**
 	 *  Start a mod operation in the background; its progress streams over
 	 *  `on_progress`, starting with a `queued` step that names every mod it will
-	 *  work on and ending with a `finished` step.
+	 *  work on and ending with a `finished` step. The backend keeps the
+	 *  operation's state meanwhile (`op`), which a reloaded window gets back
+	 *  with `mod_op_attach`.
 	 */
 	startModOperation: (opType: ModOpType, ip: string | null, port: number | null, modId: number | null, modName: string | null, modIds: number[] | null, modNames: string[] | null, onProgress: Channel<ModProgressEvent>) => __TAURI_INVOKE<null>("start_mod_operation", { opType, ip, port, modId, modName, modIds, modNames, onProgress }),
 	/**  Send input (password or Steam Guard code) to the running steamcmd PTY. */
 	sendSteamcmdInput: (input: string) => __TAURI_INVOKE<null>("send_steamcmd_input", { input }),
-	/**  Cancel the running mod operation. */
+	/**  Cancel the running mod operation, and forget it. */
 	cancelModOperation: () => __TAURI_INVOKE<null>("cancel_mod_operation"),
+	/**
+	 *  The mod operation as it stands, running or finished and not dismissed;
+	 *  null when there is none.
+	 */
+	modOpState: () => __TAURI_INVOKE<{
+	/**  Which operation: one more for each started in this process. */
+	id: number,
+	/**  The last step folded in; steps arrive numbered from 1. */
+	seq: number,
+	kind: ModOpType,
+	via: ModOpVia,
+	phase: ModOpPhase,
+	current: number,
+	total: number,
+	current_id: number,
+	current_name: string,
+	/**  Every mod it works on, named (its `queued` step). */
+	queue: QueuedModDto[],
+	completed: CompletedModDto[],
+	ok: number,
+	failed: number,
+	hint: string | null,
+	/**
+	 *  The last lines of output, [`LOG_MAX`] at most (a little more between
+	 *  two cuts).
+	 */
+	log: LogLineDto[],
+	/**
+	 *  The last line is SteamCMD's live progress line, which the next one
+	 *  rewrites.
+	 */
+	log_live: boolean,
+	/**  When it started, Unix ms. */
+	started_at: number,
+	/**  When the mod being worked on started, ms after `started_at`. */
+	item_started_ms: number,
+} | null>("mod_op_state"),
+	/**
+	 *  Follow the mod operation from a window that has just (re)loaded: its
+	 *  steps from now on stream over `on_progress` (the starter's channel died
+	 *  with its page), and the operation as it stands is returned. Steps
+	 *  numbered at or below the snapshot's `seq` are already in it. Null, and
+	 *  nothing streamed, when there is no operation.
+	 */
+	modOpAttach: (onProgress: Channel<ModProgressEvent>) => __TAURI_INVOKE<{
+	/**  Which operation: one more for each started in this process. */
+	id: number,
+	/**  The last step folded in; steps arrive numbered from 1. */
+	seq: number,
+	kind: ModOpType,
+	via: ModOpVia,
+	phase: ModOpPhase,
+	current: number,
+	total: number,
+	current_id: number,
+	current_name: string,
+	/**  Every mod it works on, named (its `queued` step). */
+	queue: QueuedModDto[],
+	completed: CompletedModDto[],
+	ok: number,
+	failed: number,
+	hint: string | null,
+	/**
+	 *  The last lines of output, [`LOG_MAX`] at most (a little more between
+	 *  two cuts).
+	 */
+	log: LogLineDto[],
+	/**
+	 *  The last line is SteamCMD's live progress line, which the next one
+	 *  rewrites.
+	 */
+	log_live: boolean,
+	/**  When it started, Unix ms. */
+	started_at: number,
+	/**  When the mod being worked on started, ms after `started_at`. */
+	item_started_ms: number,
+} | null>("mod_op_attach", { onProgress }),
+	/**
+	 *  The finished operation's dialog was closed: forget it. A running one is
+	 *  kept (cancel it to stop it).
+	 */
+	modOpDismiss: () => __TAURI_INVOKE<void>("mod_op_dismiss"),
 	/**  Where SteamCMD downloads and keeps its login. */
 	steamcmdDirs: () => __TAURI_INVOKE<SteamcmdDirsDto>("steamcmd_dirs"),
 	/**  Open SteamCMD's install directory in the system file manager. */
@@ -287,7 +382,11 @@ export const commands = {
 	fetchSteamAvatar: () => __TAURI_INVOKE<string | null>("fetch_steam_avatar"),
 	/**  Fetch Steam player count for DayZ. */
 	fetchSteamPlayerCount: () => __TAURI_INVOKE<number>("fetch_steam_player_count"),
-	/**  Return the CLI args that were passed when this instance started. */
+	/**
+	 *  Return the CLI args that were passed when this instance started, once:
+	 *  a window that reloads gets none, or `--connect` / `--reconnect` would
+	 *  join the server again on every reload.
+	 */
 	getCliArgs: () => __TAURI_INVOKE<CliArgs>("get_cli_args"),
 	/**  Read a `.dzch` server-connection file and return its contents. */
 	readDzchFile: (path: string) => __TAURI_INVOKE<DzchConfig>("read_dzch_file", { path }),
@@ -317,6 +416,8 @@ export const commands = {
 	 *  with a `Finished` event; the window then calls `restart_app`.
 	 */
 	installUpdate: (onEvent: Channel<DownloadEvent>) => __TAURI_INVOKE<null>("install_update", { onEvent }),
+	/**  The update's download as it stands, for a window that has just loaded. */
+	updateDownloadState: () => __TAURI_INVOKE<DownloadState>("update_download_state"),
 	/**  Whether this copy can update itself. */
 	updateSupport: () => __TAURI_INVOKE<UpdateSupport>("update_support"),
 	/**  Open a web page (or a steam:// link) in the system's handler. */
@@ -347,6 +448,7 @@ export const events = {
 	offlineModeUpdated: makeEvent<OfflineModeUpdated>("offline-mode-updated"),
 	pingScanProgress: makeEvent<PingScanProgress>("ping-scan-progress"),
 	playSessionsChanged: makeEvent<PlaySessionsChanged>("play-sessions-changed"),
+	refreshChanged: makeEvent<RefreshChanged>("refresh-changed"),
 	serversChanged: makeEvent<ServersChanged>("servers-changed"),
 	sourcesChanged: makeEvent<SourcesChanged>("sources-changed"),
 	steamcmdDetected: makeEvent<SteamcmdDetected>("steamcmd-detected"),
@@ -461,6 +563,14 @@ export type CliArgs = {
 	open: string | null,
 };
 
+/**  A mod that came through or failed, and how long it took. */
+export type CompletedModDto = {
+	id: number,
+	name: string,
+	ok: boolean,
+	ms: number,
+};
+
 /**  Time played on one day. */
 export type DayStatDto = {
 	/**  Days since 1970-01-01 in the player's time. */
@@ -491,6 +601,18 @@ export type DownloadEvent = { event: "Started"; data: {
 } } | 
 /**  Downloaded, verified and in place: restart to use it. */
 { event: "Finished" };
+
+/**  A download as it stands. */
+export type DownloadState = {
+	/**  Downloading, verifying or putting the new version in place. */
+	running: boolean,
+	/**  Bytes received, of `total` when the server said. */
+	received: number,
+	total: number | null,
+	/**  In place: restart to use it. */
+	done: boolean,
+	error: string | null,
+};
 
 /**  The `.dzch` server connection config. */
 export type DzchConfig = {
@@ -649,6 +771,17 @@ export type InitResult = {
 	is_first_launch: boolean,
 	/**  Why there is no list: no cache and the API could not be reached. */
 	list_error: string | null,
+	/**
+	 *  This process had already started: the window reloaded (F5, a crash
+	 *  recovery, "Retry") and finds the backend's work as it left it. A
+	 *  resumed window starts nothing merely because it loaded.
+	 */
+	resumed: boolean,
+	/**
+	 *  This process, as a token: what a window saved in `sessionStorage`
+	 *  belongs to it only if it was saved under the same one.
+	 */
+	session: string,
 };
 
 export type InstalledModDto = {
@@ -701,6 +834,12 @@ export type LaunchOptionDto = {
 	description: string,
 };
 
+/**  A line of output, and when it came (ms after the operation started). */
+export type LogLineDto = {
+	at_ms: number,
+	line: string,
+};
+
 /**  A map and how many servers run it. */
 export type MapCount = {
 	map: string,
@@ -742,6 +881,44 @@ export type ModDto = {
 	steam_workshop_id: number,
 };
 
+/**  Where the operation stands, as the dialog shows it. */
+export type ModOpPhase = "downloading" | "steam_guard_mobile" | "password_required" | "finished";
+
+/**  The operation as it stands: everything the progress dialog shows. */
+export type ModOpSnapshot = {
+	/**  Which operation: one more for each started in this process. */
+	id: number,
+	/**  The last step folded in; steps arrive numbered from 1. */
+	seq: number,
+	kind: ModOpType,
+	via: ModOpVia,
+	phase: ModOpPhase,
+	current: number,
+	total: number,
+	current_id: number,
+	current_name: string,
+	/**  Every mod it works on, named (its `queued` step). */
+	queue: QueuedModDto[],
+	completed: CompletedModDto[],
+	ok: number,
+	failed: number,
+	hint: string | null,
+	/**
+	 *  The last lines of output, [`LOG_MAX`] at most (a little more between
+	 *  two cuts).
+	 */
+	log: LogLineDto[],
+	/**
+	 *  The last line is SteamCMD's live progress line, which the next one
+	 *  rewrites.
+	 */
+	log_live: boolean,
+	/**  When it started, Unix ms. */
+	started_at: number,
+	/**  When the mod being worked on started, ms after `started_at`. */
+	item_started_ms: number,
+};
+
 /**  Which mod operation to run. */
 export type ModOpType = 
 /**  Install what a listed server needs (`ip`, `port`). */
@@ -766,6 +943,9 @@ export type ModOpType =
 /**  Log SteamCMD in and quit, so later downloads use its cached login. */
 "login";
 
+/**  What downloads. */
+export type ModOpVia = "steamcmd" | "steamworks";
+
 /**  One step of a mod operation, as the progress dialog receives it. */
 export type ModProgressEvent = {
 	kind: ModProgressKind,
@@ -782,6 +962,11 @@ export type ModProgressEvent = {
 	 *  every other step.
 	 */
 	queue: QueuedModDto[],
+	/**
+	 *  The step's number in its operation, from 1: a window that attached
+	 *  (`mod_op_attach`) drops the steps its snapshot already holds.
+	 */
+	seq: number,
 };
 
 /**  What a [`ModProgressEvent`] reports. */
@@ -874,8 +1059,8 @@ export type PingResultDto = {
 };
 
 /**
- *  The progress of a whole-list scan the window did not start (servers
- *  added to the list after its own scan ended), for the status bar.
+ *  How far the whole-list scan has got, sent at most twice a second while
+ *  it runs and once when it ends. Every window hears it, whoever started it.
  */
 export type PingScanProgress = ScanProgress;
 
@@ -1004,6 +1189,35 @@ export type QueuedModDto = {
 	name: string,
 };
 
+/**  The refresh started, or ended; carries where it stands. */
+export type RefreshChanged = RefreshState;
+
+/**  Where a refresh has got. */
+export type RefreshPhase = 
+/**  None has run in this process. */
+"idle" | 
+/**  Asking the launcher list (and Steam's official servers). */
+"fetching" | "done" | "failed";
+
+/**  The list's refresh as it stands. Times are Unix ms. */
+export type RefreshState = {
+	/**  Which refresh: one more for each started. 0 before the first. */
+	id: number,
+	running: boolean,
+	phase: RefreshPhase,
+	started_at: number | null,
+	finished_at: number | null,
+	/**
+	 *  When the list on hand was fetched from the network, by `initialize`
+	 *  or a refresh; null while it is the on-disk cache's.
+	 */
+	loaded_at: number | null,
+	/**  Servers in the list after the last refresh that worked. */
+	count: number,
+	/**  Why the last fetch failed. */
+	error: string | null,
+};
+
 /**  When the server restarts, as the site has measured it. */
 export type RestartSchedule = {
 	period_hours: number | null,
@@ -1025,12 +1239,42 @@ export type RestartSchedule = {
 	last_unscheduled: string | null,
 };
 
+/**  What started a whole-list scan. */
+export type ScanKind = 
+/**  The whole list (`start_scan`, or the end of a refresh). */
+"whole" | 
+/**  Only servers added to the list after a scan had ended ([`enqueue`]). */
+"added";
+
 /**  How far the scan of the whole list has got. */
 export type ScanProgress = {
+	/**
+	 *  Which scan: each whole-list scan has a new one, so a window can tell
+	 *  a late word from a scan that was replaced. 0 before any scan.
+	 */
+	id: number,
 	done: number,
 	total: number,
 	paused: boolean,
 	running: boolean,
+};
+
+/**  The scan as a window that has just loaded finds it. */
+export type ScanState = {
+	/**
+	 *  The last whole-list scan's progress; `id` 0 when none has run in
+	 *  this process.
+	 */
+	progress: ScanProgress,
+	/**  What started it; null when none has run. */
+	kind: ScanKind | null,
+	/**  When it started, Unix ms; null when none has run. */
+	started_at: number | null,
+	/**
+	 *  Small explicit lists (`ping_servers`) being pinged beside it. Their
+	 *  results land in the live store, so a window re-queries for them.
+	 */
+	lists_running: number,
 };
 
 /**  A server with its mod list, for the detail panel and the connect flow. */

@@ -3,6 +3,12 @@
 //!
 //! Every result lands in the live store (`browser::live`), which the browser
 //! reads; nothing here touches the app state's lock.
+//!
+//! A whole-list scan belongs to the backend, not to the window that asked
+//! for it: its progress goes out as `ping-scan-progress` events to whatever
+//! window listens, and [`ping_scan_state`] tells a window that has just
+//! (re)loaded how far it has got. A `Channel` dies with the page that made
+//! it, so a reload used to leave the scan running unseen.
 
 use futures_util::{StreamExt, stream};
 use serde::{Deserialize, Serialize};
@@ -58,16 +64,75 @@ fn to_dto(l: &Live, ip: String, port: i64) -> PingResultDto {
 /// How far the scan of the whole list has got.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, specta::Type)]
 pub struct ScanProgress {
+    /// Which scan: each whole-list scan has a new one, so a window can tell
+    /// a late word from a scan that was replaced. 0 before any scan.
+    pub id: u32,
     pub done: u32,
     pub total: u32,
     pub paused: bool,
     pub running: bool,
 }
 
-/// The progress of a whole-list scan the window did not start (servers
-/// added to the list after its own scan ended), for the status bar.
+/// How far the whole-list scan has got, sent at most twice a second while
+/// it runs and once when it ends. Every window hears it, whoever started it.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, specta::Type, Event)]
 pub struct PingScanProgress(pub ScanProgress);
+
+/// What started a whole-list scan.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ScanKind {
+    /// The whole list (`start_scan`, or the end of a refresh).
+    Whole,
+    /// Only servers added to the list after a scan had ended ([`enqueue`]).
+    Added,
+}
+
+/// The scan as a window that has just loaded finds it.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, specta::Type)]
+pub struct ScanState {
+    /// The last whole-list scan's progress; `id` 0 when none has run in
+    /// this process.
+    pub progress: ScanProgress,
+    /// What started it; null when none has run.
+    pub kind: Option<ScanKind>,
+    /// When it started, Unix ms; null when none has run.
+    pub started_at: Option<i64>,
+    /// Small explicit lists (`ping_servers`) being pinged beside it. Their
+    /// results land in the live store, so a window re-queries for them.
+    pub lists_running: u32,
+}
+
+/// One whole-list scan's counters, shared by its loop, its queue and
+/// [`ping_scan_state`].
+struct Run {
+    id: u32,
+    kind: ScanKind,
+    started_at: i64,
+    /// Targets sent so far: the scan is over when it has done as many.
+    total: AtomicU32,
+    done: AtomicU32,
+    running: AtomicBool,
+}
+
+impl Run {
+    fn new(id: u32, kind: ScanKind) -> Arc<Self> {
+        Arc::new(Self {
+            id,
+            kind,
+            started_at: now_ms(),
+            total: AtomicU32::new(0),
+            done: AtomicU32::new(0),
+            running: AtomicBool::new(true),
+        })
+    }
+}
+
+pub(crate) fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as i64)
+}
 
 /// The scan's controls, managed by the app on its own.
 #[derive(Default)]
@@ -79,13 +144,18 @@ pub struct PingState {
     /// The running whole-list scan's queue, which servers added to the list
     /// meanwhile join ([`enqueue`]).
     queue: Mutex<Option<Queue>>,
+    /// The last whole-list scan, running or not, for [`ping_scan_state`].
+    last: Mutex<Option<Arc<Run>>>,
+    /// The last scan id handed out.
+    ids: AtomicU32,
+    /// Explicit lists being pinged.
+    lists: Arc<AtomicU32>,
 }
 
 struct Queue {
     /// Targets, with the tries each has had.
     tx: mpsc::UnboundedSender<(String, u32)>,
-    /// Targets sent so far: the scan is over when it has done as many.
-    total: Arc<AtomicU32>,
+    run: Arc<Run>,
 }
 
 impl PingState {
@@ -95,6 +165,53 @@ impl PingState {
         }
         if let Ok(mut q) = self.queue.lock() {
             *q = None;
+        }
+        // An aborted loop never reaches its own end: say it is over here.
+        if let Some(run) = self.last.lock().ok().and_then(|l| l.clone()) {
+            run.running.store(false, Ordering::Relaxed);
+        }
+    }
+
+    /// Stop the whole-list scan and clear the pause: what `cancel_ping` and
+    /// a refresh do.
+    pub(crate) fn stop(&self) {
+        self.abort_background();
+        self.paused.store(false, Ordering::Relaxed);
+    }
+
+    /// A new whole-list scan's counters, remembered as the last one.
+    fn begin(&self, kind: ScanKind) -> Arc<Run> {
+        let run = Run::new(self.ids.fetch_add(1, Ordering::Relaxed) + 1, kind);
+        if let Ok(mut l) = self.last.lock() {
+            *l = Some(Arc::clone(&run));
+        }
+        run
+    }
+
+    /// The scan as it stands.
+    pub(crate) fn state(&self) -> ScanState {
+        let last = self.last.lock().ok().and_then(|l| l.clone());
+        let paused = self.is_paused();
+        let lists_running = self.lists.load(Ordering::Relaxed);
+        match last {
+            Some(run) => ScanState {
+                progress: progress_of(&run, paused, run.running.load(Ordering::Relaxed)),
+                kind: Some(run.kind),
+                started_at: Some(run.started_at),
+                lists_running,
+            },
+            None => ScanState {
+                progress: ScanProgress {
+                    id: 0,
+                    done: 0,
+                    total: 0,
+                    paused,
+                    running: false,
+                },
+                kind: None,
+                started_at: None,
+                lists_running,
+            },
         }
     }
 
@@ -118,13 +235,23 @@ enum Asked {
     Invalid,
 }
 
+fn progress_of(run: &Run, paused: bool, running: bool) -> ScanProgress {
+    ScanProgress {
+        id: run.id,
+        done: run.done.load(Ordering::Relaxed),
+        total: run.total.load(Ordering::Relaxed),
+        paused,
+        running,
+    }
+}
+
 /// Where a scan's results go besides the live store.
 enum Sink {
-    /// Batches of results, for explicit lists.
+    /// Batches of results, for explicit lists. Whatever the channel misses
+    /// (its page reloaded) is in the live store all the same.
     Batches(Channel<Vec<PingResultDto>>),
-    /// Progress only, for the whole-list scan.
-    Progress(Channel<ScanProgress>),
-    /// `ping-scan-progress` events: a scan the window did not ask for.
+    /// `ping-scan-progress` events, for the whole-list scan: they reach
+    /// whichever page is loaded, and outlive any one of them.
     Event(AppHandle),
 }
 
@@ -140,32 +267,34 @@ async fn scan(
     retries: u32,
     sink: Sink,
     ping: Arc<PingState>,
-    whole: bool,
+    run: Arc<Run>,
 ) {
+    let whole = matches!(sink, Sink::Event(_));
     // Each target with the number of tries it has had: one that timed out
     // goes to the back of the queue rather than being asked again at once,
     // so the silent ones are retried in a short pass at the end instead of
     // each holding a slot for `retries + 1` timeouts.
     let (tx, rx) = mpsc::unbounded_channel::<(String, u32)>();
-    let total = Arc::new(AtomicU32::new(0));
     for t in targets {
         if tx.send((t, 0)).is_ok() {
-            total.fetch_add(1, Ordering::Relaxed);
+            run.total.fetch_add(1, Ordering::Relaxed);
         }
     }
     let again = tx.clone();
     if whole && let Ok(mut q) = ping.queue.lock() {
         *q = Some(Queue {
             tx,
-            total: Arc::clone(&total),
+            run: Arc::clone(&run),
         });
     }
-    let done = Arc::new(AtomicU32::new(0));
-    let progress = |running: bool| ScanProgress {
-        done: done.load(Ordering::Relaxed),
-        total: total.load(Ordering::Relaxed),
-        paused: ping.is_paused(),
-        running,
+    let done = &run.done;
+    let total = &run.total;
+    let progress = |running: bool| progress_of(&run, ping.is_paused(), running);
+    let end = || {
+        run.running.store(false, Ordering::Relaxed);
+        if let Sink::Event(app) = &sink {
+            let _ = PingScanProgress(progress(false)).emit(app);
+        }
     };
     // A scan is over when it has done every target it was sent (retries
     // keep the queue open, so it never runs dry by itself). A whole scan's
@@ -193,9 +322,7 @@ async fn scan(
     // (WSAENOBUFS, 10055, learn.microsoft.com "Windows Sockets Error Codes").
     // Its own retries are off: a timeout here is retried by the queue.
     let Ok(mut client) = dz_a2s::client_with_timeout(timeout).await else {
-        if let Sink::Progress(ch) = &sink {
-            let _ = ch.send(progress(false));
-        }
+        end();
         return;
     };
     client.retries(0);
@@ -246,12 +373,6 @@ async fn scan(
             Sink::Batches(ch) if !batch.is_empty() => {
                 let _ = ch.send(std::mem::take(batch));
             }
-            Sink::Progress(ch) => {
-                let p = progress(true);
-                if fresh(p, &mut last_sent) {
-                    let _ = ch.send(p);
-                }
-            }
             Sink::Event(app) => {
                 let p = progress(true);
                 if fresh(p, &mut last_sent) {
@@ -296,47 +417,46 @@ async fn scan(
             _ = flush.tick() => send(&mut batch),
         }
     }
-    match &sink {
-        Sink::Batches(ch) if !batch.is_empty() => {
-            let _ = ch.send(batch);
-        }
-        Sink::Progress(ch) => {
-            let _ = ch.send(progress(false));
-        }
-        Sink::Event(app) => {
-            let _ = PingScanProgress(progress(false)).emit(app);
-        }
-        _ => {}
+    if let Sink::Batches(ch) = &sink
+        && !batch.is_empty()
+    {
+        let _ = ch.send(batch);
     }
+    end();
 }
 
 /// Start the scan of the whole list, replacing any running one. The order
-/// and settings come from the profile; see `browser::scan_targets`.
+/// and settings come from the profile; see `browser::scan_targets`. Returns
+/// its first progress (its `id` is how the window knows its words).
 pub(crate) fn start_whole_scan(
+    app: &AppHandle,
     ping: &Arc<PingState>,
     targets: Vec<String>,
     concurrency: usize,
     timeout: Duration,
     retries: u32,
-    on_progress: Channel<ScanProgress>,
-) {
+) -> ScanProgress {
     ping.abort_background();
+    let run = ping.begin(ScanKind::Whole);
+    let first = progress_of(&run, ping.is_paused(), true);
     let state = Arc::clone(ping);
+    let app = app.clone();
     let handle = tauri::async_runtime::spawn(async move {
         scan(
             targets,
             concurrency,
             timeout,
             retries,
-            Sink::Progress(on_progress),
+            Sink::Event(app),
             state,
-            true,
+            run,
         )
         .await;
     });
     if let Ok(mut h) = ping.background.lock() {
         *h = Some(handle);
     }
+    first
 }
 
 /// Have `targets` pinged with the whole-list scan: into its queue when one
@@ -362,7 +482,7 @@ pub(crate) fn enqueue(
                 sent = false;
                 break;
             }
-            queue.total.fetch_add(1, Ordering::Relaxed);
+            queue.run.total.fetch_add(1, Ordering::Relaxed);
         }
         if sent {
             return;
@@ -370,6 +490,7 @@ pub(crate) fn enqueue(
         // The scan was stopped without closing its queue.
         *q = None;
     }
+    let run = ping.begin(ScanKind::Added);
     let state = Arc::clone(ping);
     let app = app.clone();
     let handle = tauri::async_runtime::spawn(async move {
@@ -380,7 +501,7 @@ pub(crate) fn enqueue(
             retries,
             Sink::Event(app),
             state,
-            true,
+            run,
         )
         .await;
     });
@@ -390,7 +511,9 @@ pub(crate) fn enqueue(
 }
 
 /// Ping a small explicit list (favorites, history) and stream the results.
-/// Runs beside the whole-list scan, not instead of it.
+/// Runs beside the whole-list scan, not instead of it. Every result also
+/// lands in the live store, so a window that reloads meanwhile loses
+/// nothing: it re-queries on the `servers-changed` that follows.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn ping_servers(
@@ -406,16 +529,31 @@ pub(crate) async fn ping_servers(
     let concurrency = concurrency.unwrap_or(LIST_CONCURRENT).clamp(5, 100);
     let timeout = Duration::from_millis(timeout_ms.unwrap_or(LIST_TIMEOUT_MS).clamp(1000, 5000));
     let state = Arc::clone(&ping);
-    tauri::async_runtime::spawn(scan(
-        targets,
-        concurrency,
-        timeout,
-        0,
-        Sink::Batches(on_progress),
-        state,
-        false,
-    ));
+    let lists = Arc::clone(&ping.lists);
+    lists.fetch_add(1, Ordering::Relaxed);
+    tauri::async_runtime::spawn(async move {
+        scan(
+            targets,
+            concurrency,
+            timeout,
+            0,
+            Sink::Batches(on_progress),
+            state,
+            // Counted for itself only: an explicit list is not "the scan".
+            Run::new(0, ScanKind::Whole),
+        )
+        .await;
+        lists.fetch_sub(1, Ordering::Relaxed);
+    });
     Ok(())
+}
+
+/// The whole-list scan as it stands: what a window shows after it loads,
+/// before the next `ping-scan-progress` arrives.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn ping_scan_state(ping: State<'_, Arc<PingState>>) -> Result<ScanState, String> {
+    Ok(ping.state())
 }
 
 /// Ping one server, with the long manual timeout. Returns the RTT in ms.
@@ -440,8 +578,7 @@ pub(crate) async fn ping_single(
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn cancel_ping(ping: State<'_, Arc<PingState>>) -> Result<(), String> {
-    ping.abort_background();
-    ping.paused.store(false, Ordering::Relaxed);
+    ping.stop();
     Ok(())
 }
 
@@ -462,5 +599,37 @@ mod tests {
         assert_eq!(parse_target("::1:27016"), Some(("::1", 27016)));
         assert_eq!(parse_target("nope"), None);
         assert_eq!(parse_target("1.2.3.4:x"), None);
+    }
+
+    #[test]
+    fn the_scan_state_follows_the_last_scan() {
+        let ping = PingState::default();
+        let none = ping.state();
+        assert_eq!(none.progress.id, 0);
+        assert!(!none.progress.running);
+        assert_eq!(none.kind, None);
+
+        let run = ping.begin(ScanKind::Whole);
+        run.total.store(10, Ordering::Relaxed);
+        run.done.store(4, Ordering::Relaxed);
+        let s = ping.state();
+        assert_eq!(s.progress.id, 1);
+        assert_eq!((s.progress.done, s.progress.total), (4, 10));
+        assert!(s.progress.running);
+        assert_eq!(s.kind, Some(ScanKind::Whole));
+        assert!(s.started_at.is_some());
+
+        // Paused shows; stopped keeps the counts but no longer runs.
+        ping.paused.store(true, Ordering::Relaxed);
+        assert!(ping.state().progress.paused);
+        ping.stop();
+        let s = ping.state();
+        assert!(!s.progress.running && !s.progress.paused);
+        assert_eq!(s.progress.done, 4);
+
+        // A later scan has a later id.
+        let next = ping.begin(ScanKind::Added);
+        assert_eq!(next.id, 2);
+        assert_eq!(ping.state().kind, Some(ScanKind::Added));
     }
 }

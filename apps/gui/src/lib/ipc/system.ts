@@ -36,5 +36,7 @@ export const checkForUpdate = (): Promise<UpdateInfo | null> => run(commands.che
 export const updateSupport = (): Promise<UpdateSupport> => run(commands.updateSupport());
 export const installUpdate = (onEvent: Channel<DownloadEvent>) =>
   run(commands.installUpdate(onEvent));
+/** The update's download as the backend has it (its channel dies with a reload). */
+export const updateDownloadState = () => run(commands.updateDownloadState());
 
 export type { UpdateSupport };

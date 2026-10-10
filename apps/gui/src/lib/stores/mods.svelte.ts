@@ -3,9 +3,14 @@
  * operation that may run at a time (install, update, delete), with its live
  * log. SteamCMD or the running Steam client downloads, as the profile says:
  * both report the same steps.
+ *
+ * The backend keeps the operation too (`steamcmd::op`): a window reloaded
+ * while one runs, or before its summary was closed, gets it back with its
+ * queue, results and log (`resume`), and its prompts still reach SteamCMD.
  */
 import * as ipc from "$lib/ipc/mods";
 import { Channel } from "$lib/ipc/core";
+import type { ModOpSnapshot } from "$lib/ipc/mods";
 import type {
   InstalledModDto,
   ModProgressEvent,
@@ -22,7 +27,8 @@ import { say, errorText } from "./say";
 const UPDATES_TTL_MS = 5 * 60 * 1000;
 /**
  * Lines of SteamCMD output kept for the dialog. A long batch prints tens of
- * thousands; past this the oldest go, so the window stays responsive.
+ * thousands; past this the oldest go, so the window stays responsive. The
+ * backend keeps as many for a reload (`steamcmd::op::LOG_MAX`).
  */
 export const LOG_MAX = 5000;
 /** How far past `LOG_MAX` the log grows before it is cut back to it. */
@@ -64,6 +70,29 @@ export type ModOp = {
   /** The dialog is closed while the operation carries on; the status bar shows it. */
   minimised: boolean;
 };
+
+/** The operation as the backend kept it, as this store holds one. */
+const fromSnapshot = (s: ModOpSnapshot): ModOp => ({
+  active: true,
+  kind: s.kind,
+  via: s.via,
+  phase: s.phase,
+  current: s.current,
+  total: s.total,
+  currentName: s.current_name || String(words("mods").preparing),
+  currentId: s.current_id,
+  ids: s.queue.map((q) => q.id),
+  names: new Map(s.queue.map((q) => [q.id, q.name])),
+  completed: s.completed.map((c) => ({ ...c })),
+  ok: s.ok,
+  failed: s.failed,
+  hint: s.hint,
+  log: s.log.map((l) => l.line),
+  logAt: s.log.map((l) => l.at_ms),
+  startedAt: s.started_at,
+  itemStartedAt: s.started_at + s.item_started_ms,
+  minimised: false,
+});
 
 const idle = (): ModOp => ({
   active: false,
@@ -356,9 +385,54 @@ class Mods {
       itemStartedAt: t0,
     };
     const ch = new Channel<ModProgressEvent>();
+    const apply = this.#applier(onSuccess);
+    ch.onmessage = (ev) => {
+      // A message from an operation that was cancelled and replaced.
+      if (id === this.#opId) apply(ev);
+    };
+    ipc.startModOperation(opType, args, ch).catch((e) => {
+      if (id !== this.#opId) return;
+      say.err(w.operationFailed({ error: errorText(e) }));
+      this.op.active = false;
+    });
+  }
+
+  /**
+   * After a reload: follow the operation the backend kept, if any. Its steps
+   * come over a new channel from now on; the ones the snapshot already holds
+   * (numbered up to its `seq`) are dropped, whichever arrives first.
+   */
+  async resume() {
+    const id = ++this.#opId;
+    let snap: ModOpSnapshot | null | undefined;
+    const early: ModProgressEvent[] = [];
+    let apply: ((ev: ModProgressEvent) => void) | null = null;
+    const ch = new Channel<ModProgressEvent>();
+    ch.onmessage = (ev) => {
+      if (id !== this.#opId) return;
+      if (snap === undefined) early.push(ev);
+      else if (snap && apply && ev.seq > snap.seq) apply(ev);
+    };
+    try {
+      snap = await ipc.modOpAttach(ch);
+    } catch {
+      snap = null;
+    }
+    if (!snap || id !== this.#opId) return;
+    this.op = fromSnapshot(snap);
+    apply = this.#applier(undefined, snap.log_live);
+    for (const ev of early) if (ev.seq > snap.seq) apply(ev);
+  }
+
+  /**
+   * What each step does to `this.op`; the backend folds the same steps into
+   * the snapshot a reload gets back (`ModOpSnapshot::apply`).
+   */
+  #applier(onSuccess?: () => void, live = false) {
+    const w = words("mods");
     // The last log entry is a transient "\r" progress line: the next one
     // overwrites it instead of appending, so a download is one live line.
-    let lastWasProgress = false;
+    let lastWasProgress = live;
     // Trimmed in batches: removing the oldest line shifts every line of the
     // (deep, reactive) log, so doing it per line cost thousands of signal
     // writes for each line SteamCMD printed past the cap.
@@ -368,9 +442,7 @@ class Mods {
         op.logAt.splice(0, op.logAt.length - LOG_MAX);
       }
     };
-    ch.onmessage = (ev) => {
-      // A message from an operation that was cancelled and replaced.
-      if (id !== this.#opId) return;
+    return (ev: ModProgressEvent) => {
       const op = this.op;
       switch (ev.kind) {
         case "queued":
@@ -448,16 +520,13 @@ class Mods {
           break;
       }
     };
-    ipc.startModOperation(opType, args, ch).catch((e) => {
-      if (id !== this.#opId) return;
-      say.err(w.operationFailed({ error: errorText(e) }));
-      this.op.active = false;
-    });
   }
 
   /** Close the progress window and re-read what is on disk. */
   async dismiss() {
     this.op.active = false;
+    // The backend kept the summary for a reload: no longer wanted.
+    void ipc.modOpDismiss().catch(() => {});
     if (profile.data?.steam_api_key) await this.checkUpdates(true);
     else await this.load();
     void this.loadSteam();

@@ -14,12 +14,17 @@
 //!
 //! Every path verifies against the one public key, `plugins.updater.pubkey`
 //! in `tauri.conf.json`. After an install the window calls `restart_app`.
+//!
+//! A download in flight is the backend's: its progress is kept here as well
+//! as sent, so a window that reloads meanwhile asks [`update_download_state`]
+//! (its channel died with the page) instead of losing the bar or starting
+//! the download again.
 
 #[cfg(windows)]
 mod windows;
 
 use serde::Serialize;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use tauri::{AppHandle, Manager, ipc::Channel};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
@@ -34,6 +39,55 @@ pub enum DownloadEvent {
     Progress { chunk_length: usize },
     /// Downloaded, verified and in place: restart to use it.
     Finished,
+}
+
+/// A download as it stands.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, specta::Type)]
+pub struct DownloadState {
+    /// Downloading, verifying or putting the new version in place.
+    pub running: bool,
+    /// Bytes received, of `total` when the server said.
+    pub received: u64,
+    pub total: Option<u64>,
+    /// In place: restart to use it.
+    pub done: bool,
+    pub error: Option<String>,
+}
+
+impl DownloadState {
+    fn apply(&mut self, ev: &DownloadEvent) {
+        match ev {
+            DownloadEvent::Started { content_length } => {
+                self.total = *content_length;
+                self.received = 0;
+            }
+            DownloadEvent::Progress { chunk_length } => self.received += *chunk_length as u64,
+            DownloadEvent::Finished => {
+                self.running = false;
+                self.done = true;
+            }
+        }
+    }
+}
+
+static DOWNLOAD: LazyLock<Mutex<DownloadState>> = LazyLock::new(Mutex::default);
+
+fn download() -> std::sync::MutexGuard<'static, DownloadState> {
+    DOWNLOAD
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Where a download's steps go: the state above, then the window's channel
+/// (deaf once its page reloaded; the state is not).
+#[derive(Clone)]
+pub(crate) struct Reporter(Channel<DownloadEvent>);
+
+impl Reporter {
+    pub(crate) fn send(&self, ev: DownloadEvent) -> tauri::Result<()> {
+        download().apply(&ev);
+        self.0.send(ev)
+    }
 }
 
 /// A newer version than the one running.
@@ -170,23 +224,45 @@ pub(crate) async fn install_update(
         .state::<Pending>()
         .get()
         .ok_or("No update to install: check for updates first")?;
+    {
+        let mut d = download();
+        // Sent again by a page reloaded mid-download (tauri-apps/tauri#14154):
+        // one download is enough.
+        if d.running {
+            return Err("The update is already downloading".into());
+        }
+        *d = DownloadState {
+            running: true,
+            ..DownloadState::default()
+        };
+    }
+    let on_event = Reporter(on_event);
 
     #[cfg(windows)]
-    {
-        windows::install(&app, &update, on_event)
-            .await
-            .map_err(|e| e.to_string())
-    }
+    let r = windows::install(&app, &update, on_event)
+        .await
+        .map_err(|e| e.to_string());
     #[cfg(not(windows))]
-    {
-        install_appimage(&update, on_event).await
+    let r = install_appimage(&update, on_event).await;
+    let mut d = download();
+    d.running = false;
+    if let Err(e) = &r {
+        d.error = Some(e.clone());
     }
+    r
+}
+
+/// The update's download as it stands, for a window that has just loaded.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn update_download_state() -> DownloadState {
+    download().clone()
 }
 
 /// The plugin writes the new AppImage over `$APPIMAGE` after checking its
 /// signature against the configured key.
 #[cfg(not(windows))]
-async fn install_appimage(update: &Update, on_event: Channel<DownloadEvent>) -> Result<(), String> {
+async fn install_appimage(update: &Update, on_event: Reporter) -> Result<(), String> {
     let (progress, finished) = (on_event.clone(), on_event.clone());
     let mut started = false;
     let mut pending = 0usize;
@@ -248,6 +324,22 @@ mod tests {
         assert_eq!(s.kind, UpdateKind::Dev);
         assert!(!s.supported);
         assert!(s.reason.is_some());
+    }
+
+    #[test]
+    fn a_download_adds_up_its_chunks() {
+        let mut d = DownloadState {
+            running: true,
+            ..DownloadState::default()
+        };
+        d.apply(&DownloadEvent::Started {
+            content_length: Some(100),
+        });
+        d.apply(&DownloadEvent::Progress { chunk_length: 30 });
+        d.apply(&DownloadEvent::Progress { chunk_length: 70 });
+        assert_eq!((d.received, d.total, d.running), (100, Some(100), true));
+        d.apply(&DownloadEvent::Finished);
+        assert!(d.done && !d.running);
     }
 
     #[test]

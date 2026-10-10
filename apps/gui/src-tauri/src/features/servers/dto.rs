@@ -37,6 +37,13 @@ pub struct InitResult {
     pub is_first_launch: bool,
     /// Why there is no list: no cache and the API could not be reached.
     pub list_error: Option<String>,
+    /// This process had already started: the window reloaded (F5, a crash
+    /// recovery, "Retry") and finds the backend's work as it left it. A
+    /// resumed window starts nothing merely because it loaded.
+    pub resumed: bool,
+    /// This process, as a token: what a window saved in `sessionStorage`
+    /// belongs to it only if it was saved under the same one.
+    pub session: String,
 }
 
 /// The title bar's counters.

@@ -1,8 +1,9 @@
 /** Installed Workshop mods, and the operations that fetch them (SteamCMD or the Steam client). */
 import { commands, run, type Channel } from "./core";
+import type { ModOpSnapshot } from "./bindings";
 import type { ModDownloaderDto, ModOpType, ModProgressEvent } from "./types";
 
-export type { ModOpType };
+export type { ModOpSnapshot, ModOpType };
 
 export const getInstalledMods = () => run(commands.getInstalledMods());
 export const checkModUpdates = () => run(commands.checkModUpdates());
@@ -51,6 +52,14 @@ export const startModOperation = (
   );
 export const sendSteamcmdInput = (input: string) => run(commands.sendSteamcmdInput(input));
 export const cancelModOperation = () => run(commands.cancelModOperation());
+/**
+ * Follow the operation the backend keeps (after a reload): its steps from now
+ * on come over `onProgress`; resolves to the operation as it stands, or null.
+ */
+export const modOpAttach = (onProgress: Channel<ModProgressEvent>): Promise<ModOpSnapshot | null> =>
+  run(commands.modOpAttach(onProgress));
+/** Forget a finished operation: its dialog was closed. */
+export const modOpDismiss = () => run(commands.modOpDismiss());
 
 /** What downloads mods from the next operation on. */
 export const setModDownloader = (downloader: ModDownloaderDto) =>

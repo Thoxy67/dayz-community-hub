@@ -5,6 +5,7 @@ use clap::Parser;
 use dz_game::DzchConfig;
 use serde::Serialize;
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::error::{ResultExt, spawn_blocking_mapped};
 
@@ -50,10 +51,18 @@ impl CliArgs {
     }
 }
 
-/// Return the CLI args that were passed when this instance started.
+/// The arguments were handed to a window already.
+static HANDED: AtomicBool = AtomicBool::new(false);
+
+/// Return the CLI args that were passed when this instance started, once:
+/// a window that reloads gets none, or `--connect` / `--reconnect` would
+/// join the server again on every reload.
 #[tauri::command]
 #[specta::specta]
 pub(crate) fn get_cli_args() -> CliArgs {
+    if HANDED.swap(true, Ordering::SeqCst) {
+        return CliArgs::none();
+    }
     CLI_ARGS.get().cloned().unwrap_or_else(CliArgs::none)
 }
 
