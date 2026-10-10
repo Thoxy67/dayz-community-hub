@@ -22,6 +22,7 @@
   import ThemeSwatches from "$lib/components/app/ThemeSwatches.svelte";
   import { LOCALE_LABELS, getLocale } from "$lib/i18n";
   import { theme } from "$lib/theme/theme.svelte";
+  import { presetName } from "$lib/theme/names";
   import { profile } from "$lib/stores/profile.svelte";
   import { servers } from "$lib/stores/servers.svelte";
   import { num } from "$lib/format";
@@ -45,8 +46,7 @@
   /** The worn preset's own name. */
   function themeName(id: string | null): string {
     if (!id) return $w.followSystem.value;
-    const key = `preset${id.replace(/(^|_)(\w)/g, (_m, _s, c: string) => c.toUpperCase())}`;
-    return ($tt as unknown as Record<string, { value?: string } | undefined>)[key]?.value ?? id;
+    return theme.custom?.name ?? presetName(id, $tt);
   }
 
   const TITLE: Record<Step, () => string> = {

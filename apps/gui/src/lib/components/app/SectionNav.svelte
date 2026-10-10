@@ -25,10 +25,12 @@
 
   let active = $state("");
 
-  export function go(id: string) {
+  /** Scroll to a section: smoothly from a click, at once when arriving from
+      elsewhere (nobody watches a scroll across the whole page). */
+  export function go(id: string, smooth = true) {
     root
       ?.querySelector(`#${CSS.escape(id)}`)
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      ?.scrollIntoView({ behavior: smooth ? "smooth" : "instant", block: "start" });
   }
 
   $effect(() => {

@@ -64,7 +64,9 @@
   /* ── text ─────────────────────────────────────────────────────────── */
   --color-fg: var(--t-fg);
   --color-fg-muted: color-mix(in oklch, var(--t-fg) 68%, var(--t-bg));
-  --color-fg-faint: color-mix(in oklch, var(--t-fg) 46%, var(--t-bg));
+  /* Faint at half way: at 46% most dark presets fell under 3:1 on their
+     panels. `lib/theme/contrast.ts` mirrors both mixes; change them together. */
+  --color-fg-faint: color-mix(in oklch, var(--t-fg) 50%, var(--t-bg));
 
   /* ── meaning ──────────────────────────────────────────────────────── */
   --color-accent: var(--t-accent);

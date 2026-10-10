@@ -59,7 +59,7 @@
     if (app.view === "settings" && app.focus && nav) {
       const id = app.focus;
       app.focus = null;
-      requestAnimationFrame(() => nav?.go(id));
+      requestAnimationFrame(() => nav?.go(id, false));
     }
   });
 

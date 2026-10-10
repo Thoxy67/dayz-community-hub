@@ -3,13 +3,15 @@
   import Monitor from "~icons/lucide/monitor";
   import Check from "~icons/lucide/check";
   import { theme, PRESETS } from "$lib/theme/theme.svelte";
-  import type { Preset } from "$lib/theme/presets";
+  import { presetName } from "$lib/theme/names";
+  import type { Preset, ThemeTokens } from "$lib/theme/presets";
   import { cn } from "$lib/cx";
+  import ThemePreview from "./ThemePreview.svelte";
 
   /**
-   * Every preset as a small card painted in its own colours (ground, panel,
-   * text, accent, status), dark ones first, plus "follow the system".
-   * Choosing one wears it at once.
+   * Every preset as a small window in its own colours, dark ones first, plus
+   * "follow the system" (drawn as its dark and light halves). Choosing one
+   * wears it at once.
    */
   let {
     systemLabel,
@@ -22,61 +24,62 @@
     a.scheme === b.scheme ? 0 : a.scheme === "dark" ? -1 : 1,
   );
   const cols = { 3: "grid-cols-3", 4: "grid-cols-4", 5: "grid-cols-5", 6: "grid-cols-6" } as const;
-
-  function label(id: string): string {
-    const key = `preset${id.replace(/(^|_)(\w)/g, (_m, _s, c: string) => c.toUpperCase())}`;
-    const node = ($t as unknown as Record<string, { value?: string } | undefined>)[key];
-    return node?.value ?? id.replace(/_/g, " ");
-  }
+  const blurb = (p: Preset) =>
+    ($t as unknown as Record<string, { value: string } | undefined>)[p.blurb]?.value ?? "";
+  const sys = $derived({
+    dark: theme.look(theme.pair.dark).tokens,
+    light: theme.look(theme.pair.light).tokens,
+  });
 </script>
 
-{#snippet card(p: Preset)}
-  {@const on = theme.selected === p.id}
+{#snippet card(
+  on: boolean,
+  label: string,
+  onclick: () => void,
+  title: string,
+  tokens: ThemeTokens | null,
+)}
   <button
+    type="button"
     class={cn(
-      "group relative overflow-hidden rounded-md border text-left transition-colors",
+      "flex min-w-0 flex-col gap-1 rounded-md border p-1 text-left transition-colors duration-fast",
       on
-        ? "border-accent shadow-[var(--glow-accent-soft)]"
-        : "border-border hover:border-border-strong",
+        ? "border-accent bg-accent/8 shadow-[var(--glow-accent-soft)]"
+        : "border-border hover:border-border-strong hover:bg-raised/40",
     )}
-    style="background: {p.tokens.bg}"
     aria-pressed={on}
-    onclick={() => theme.use(p.id)}
+    {title}
+    {onclick}
   >
-    <span
-      class="m-1.5 mb-0 flex h-7 flex-col justify-center gap-1 rounded-sm px-1.5"
-      style="background: {p.tokens.panel}"
-    >
-      <span class="h-1 w-3/4 rounded-full" style="background: {p.tokens.fg}; opacity: .8"></span>
-      <span class="flex gap-1">
-        <span class="h-1 w-4 rounded-full" style="background: {p.tokens.accent}"></span>
-        <span class="h-1 w-2 rounded-full" style="background: {p.tokens.ok}"></span>
-        <span class="h-1 w-2 rounded-full" style="background: {p.tokens.err}"></span>
+    {#if tokens}
+      <ThemePreview {tokens} />
+    {:else}
+      <span class="relative block">
+        <span class="grid grid-cols-2 gap-px overflow-hidden rounded-sm">
+          <ThemePreview tokens={sys.dark} class="rounded-none" />
+          <ThemePreview tokens={sys.light} class="rounded-none" />
+        </span>
+        <Monitor
+          class="absolute top-1/2 left-1/2 size-icon -translate-1/2 rounded-xs bg-bg p-0.5 text-fg"
+        />
       </span>
-    </span>
-    <span
-      class="flex items-center gap-1 px-1.5 py-1 text-3xs capitalize"
-      style="color: {p.tokens.fg}"
-    >
-      <span class="truncate">{label(p.id)}</span>
-      {#if on}<Check class="ml-auto size-3 shrink-0" style="color: {p.tokens.accent}" />{/if}
+    {/if}
+    <span class="flex items-center gap-1 px-0.5 text-3xs text-fg-muted">
+      <span class="min-w-0 flex-1 truncate">{label}</span>
+      {#if on}<Check class="size-3 shrink-0 text-accent" />{/if}
     </span>
   </button>
 {/snippet}
 
 <div class={cn("grid gap-1.5", cols[columns], klass)}>
-  <button
-    class={cn(
-      "flex flex-col items-center justify-center gap-1 rounded-md border bg-raised/40 px-2 text-3xs text-fg-muted transition-colors",
-      theme.selected === null
-        ? "border-accent text-fg shadow-[var(--glow-accent-soft)]"
-        : "border-border hover:border-border-strong",
+  {@render card(theme.selected === null, systemLabel, () => theme.use(null), "", null)}
+  {#each ordered as p (p.id)}
+    {@render card(
+      theme.selected === p.id,
+      presetName(p.id, $t),
+      () => theme.use(p.id),
+      blurb(p),
+      p.tokens,
     )}
-    aria-pressed={theme.selected === null}
-    onclick={() => theme.use(null)}
-  >
-    <Monitor class="size-icon" />
-    <span class="text-center leading-tight">{systemLabel}</span>
-  </button>
-  {#each ordered as p (p.id)}{@render card(p)}{/each}
+  {/each}
 </div>

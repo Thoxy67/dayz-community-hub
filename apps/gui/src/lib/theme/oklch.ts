@@ -28,18 +28,15 @@ export function parseOklch(oklchStr: string): OklchColor | null {
 }
 
 /**
- * Convert OKLCH to sRGB
- * Based on https://bottosson.github.io/posts/oklab/
+ * OKLCH to linear-light sRGB, not clipped: a channel outside 0..1 means the
+ * colour is outside sRGB. Based on https://bottosson.github.io/posts/oklab/
  */
-export function oklchToRgb(color: OklchColor): { r: number; g: number; b: number } {
+export function oklchToLinear(color: OklchColor): { r: number; g: number; b: number } {
   const { l, c, h } = color;
-
-  // Convert OKLCH to OKLab
   const hRad = (h * Math.PI) / 180;
   const a = c * Math.cos(hRad);
   const b = c * Math.sin(hRad);
 
-  // OKLab to linear RGB
   const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
   const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
   const s_ = l - 0.0894841775 * a - 1.291485548 * b;
@@ -48,23 +45,32 @@ export function oklchToRgb(color: OklchColor): { r: number; g: number; b: number
   const M = m_ * m_ * m_;
   const S = s_ * s_ * s_;
 
-  let r = +4.0767416621 * L - 3.3077115913 * M + 0.2309699292 * S;
-  let g = -1.2684380046 * L + 2.6097574011 * M - 0.3413193965 * S;
-  let bVal = -0.0041960863 * L - 0.7034186147 * M + 1.707614701 * S;
-
-  // Linear to sRGB gamma correction
-  const gammaCorrect = (x: number) => {
-    if (x >= 0.0031308) {
-      return 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
-    }
-    return 12.92 * x;
+  return {
+    r: +4.0767416621 * L - 3.3077115913 * M + 0.2309699292 * S,
+    g: -1.2684380046 * L + 2.6097574011 * M - 0.3413193965 * S,
+    b: -0.0041960863 * L - 0.7034186147 * M + 1.707614701 * S,
   };
+}
 
-  r = Math.round(Math.max(0, Math.min(1, gammaCorrect(r))) * 255);
-  g = Math.round(Math.max(0, Math.min(1, gammaCorrect(g))) * 255);
-  bVal = Math.round(Math.max(0, Math.min(1, gammaCorrect(bVal))) * 255);
+/** Linear-light channel to the sRGB transfer curve, clipped to 0..1. */
+export function encodeSrgb(x: number): number {
+  const v = x >= 0.0031308 ? 1.055 * Math.pow(x, 1 / 2.4) - 0.055 : 12.92 * x;
+  return Math.max(0, Math.min(1, v));
+}
 
-  return { r, g, b: bVal };
+/** OKLCH to 8-bit sRGB, clipped to the gamut. */
+export function oklchToRgb(color: OklchColor): { r: number; g: number; b: number } {
+  const lin = oklchToLinear(color);
+  return {
+    r: Math.round(encodeSrgb(lin.r) * 255),
+    g: Math.round(encodeSrgb(lin.g) * 255),
+    b: Math.round(encodeSrgb(lin.b) * 255),
+  };
+}
+
+/** OKLCH as the CSS string the theme stores: `oklch(62.5% 0.120 85)`. */
+export function formatOklch(color: OklchColor): string {
+  return `oklch(${(color.l * 100).toFixed(1)}% ${color.c.toFixed(3)} ${Math.round(((color.h % 360) + 360) % 360)})`;
 }
 
 /**
