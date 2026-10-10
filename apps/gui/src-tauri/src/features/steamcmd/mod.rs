@@ -3,8 +3,12 @@
 pub(crate) mod detect;
 
 use dz_game::ModOperation;
+use dz_game::mods::InstalledMod;
 use dz_steamcmd::ModProgress;
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, State, ipc::Channel};
 use tauri_plugin_opener::OpenerExt;
 
@@ -15,6 +19,9 @@ use crate::state::{SharedState, mutate_profile};
 #[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ModProgressKind {
+    /// Sent first, once: every mod the operation will work on, in order,
+    /// named (`queue`). Empty for a login, or when there is nothing to do.
+    Queued,
     /// SteamCMD logged in; its login is cached from now on.
     LoggedIn,
     SteamGuardMobileRequired,
@@ -39,6 +46,18 @@ pub struct ModProgressEvent {
     pub failed: usize,
     pub hint: Option<String>,
     pub log_line: Option<String>,
+    /// Only on `queued`: the operation's mods with their names; empty on
+    /// every other step.
+    pub queue: Vec<QueuedModDto>,
+}
+
+/// A mod an operation will work on, by the name it is best known by: its
+/// files' (meta.cpp), the Workshop's title, a listed server's name for it,
+/// else its id.
+#[derive(Serialize, Clone, Debug, PartialEq, Eq, specta::Type)]
+pub struct QueuedModDto {
+    pub id: u64,
+    pub name: String,
 }
 
 impl ModProgressEvent {
@@ -54,6 +73,7 @@ impl ModProgressEvent {
             failed: 0,
             hint: None,
             log_line: None,
+            queue: Vec::new(),
         }
     }
 
@@ -154,28 +174,176 @@ pub enum ModOpType {
     Login,
 }
 
-/// Pair ids with names, or with the installed mods' names when none are given.
-async fn resolve_names(
+/// Pair ids with names: the given ones, else (none given) the installed
+/// mods', leaving out ids that are not installed.
+fn resolve_names(
     ids: Vec<u64>,
     names: Option<Vec<String>>,
-    state: &SharedState,
-) -> Result<Vec<(u64, String)>, String> {
+    installed: &[InstalledMod],
+) -> Vec<(u64, String)> {
     if let Some(names) = names {
-        return Ok(ids.into_iter().zip(names).collect());
+        return ids.into_iter().zip(names).collect();
     }
-    let ctl = state.read().await.ctl.clone_for_task();
-    let installed = spawn_blocking_mapped(move || ctl.get_installed_mods())
-        .await
-        .unwrap_or_default();
-    Ok(installed
-        .into_iter()
+    installed
+        .iter()
         .filter(|m| ids.contains(&m.id))
-        .map(|m| (m.id, m.name))
-        .collect())
+        .map(|m| (m.id, m.name.clone()))
+        .collect()
 }
 
+/// A name that says nothing: empty, the id itself (the window passes ids as
+/// names for a manual install), or what a `meta.cpp` without one reads as.
+fn unnamed(id: u64, name: &str) -> bool {
+    let name = name.trim();
+    name.is_empty() || name == "Unknown" || name.parse::<u64>().is_ok_and(|n| n == id)
+}
+
+/// Names for the mods of `ids` that have none worth showing: the copy on
+/// disk's, else the Workshop's title (when Steam was asked this run), else
+/// the name a listed server gives it.
+fn names_for(
+    ids: &FxHashSet<u64>,
+    installed: &[InstalledMod],
+    list: &dz_api::ServerList,
+) -> FxHashMap<u64, String> {
+    let mut found: FxHashMap<u64, String> = installed
+        .iter()
+        .filter(|m| ids.contains(&m.id) && !unnamed(m.id, &m.name))
+        .map(|m| (m.id, m.name.clone()))
+        .collect();
+    for &id in ids {
+        if !found.contains_key(&id)
+            && let Some(title) = crate::features::steamworks::workshop_title(id)
+        {
+            found.insert(id, title);
+        }
+    }
+    if found.len() < ids.len() {
+        'list: for s in &list.result {
+            for m in &s.mods {
+                let id = m.steam_workshop_id as u64;
+                if ids.contains(&id) && !unnamed(id, &m.name) && !found.contains_key(&id) {
+                    found.insert(id, m.name.trim().to_owned());
+                    if found.len() == ids.len() {
+                        break 'list;
+                    }
+                }
+            }
+        }
+    }
+    found
+}
+
+/// Give every mod of `op` that has no name worth showing the best one known,
+/// so its progress steps are named too.
+fn name_op(op: &mut ModOperation, installed: &[InstalledMod], list: &dz_api::ServerList) {
+    let mut wanted = FxHashSet::default();
+    let mut want = |id: u64, name: &mut String| {
+        if unnamed(id, name) {
+            wanted.insert(id);
+        }
+    };
+    match op {
+        ModOperation::InstallServer { server } | ModOperation::UpdateServer { server } => {
+            for m in &mut server.mods {
+                want(m.steam_workshop_id as u64, &mut m.name);
+            }
+        }
+        ModOperation::UpdateStale { stale_mods: mods }
+        | ModOperation::UpdateSelected { mods }
+        | ModOperation::InstallManual { mods }
+        | ModOperation::Repair { mods } => {
+            for (id, name) in mods.iter_mut() {
+                want(*id, name);
+            }
+        }
+        ModOperation::UpdateOne { mod_id, name } => want(*mod_id, name),
+        ModOperation::UpdateAll | ModOperation::Login => {}
+    }
+    if wanted.is_empty() {
+        return;
+    }
+    let found = names_for(&wanted, installed, list);
+    let fill = |id: u64, name: &mut String| {
+        if unnamed(id, name) {
+            *name = found.get(&id).cloned().unwrap_or_else(|| id.to_string());
+        }
+    };
+    match op {
+        ModOperation::InstallServer { server } | ModOperation::UpdateServer { server } => {
+            for m in &mut server.mods {
+                fill(m.steam_workshop_id as u64, &mut m.name);
+            }
+        }
+        ModOperation::UpdateStale { stale_mods: mods }
+        | ModOperation::UpdateSelected { mods }
+        | ModOperation::InstallManual { mods }
+        | ModOperation::Repair { mods } => {
+            for (id, name) in mods.iter_mut() {
+                fill(*id, name);
+            }
+        }
+        ModOperation::UpdateOne { mod_id, name } => fill(*mod_id, name),
+        ModOperation::UpdateAll | ModOperation::Login => {}
+    }
+}
+
+/// The mods `op` will download, in the order it will, as `dz_game`'s
+/// operation works them out: a server's or a manual install's only those
+/// not on disk, an update all every installed one.
+fn queue_of(op: &ModOperation, installed: &[InstalledMod]) -> Vec<QueuedModDto> {
+    let on_disk: FxHashSet<u64> = installed.iter().map(|m| m.id).collect();
+    let q = |id: u64, name: &str| QueuedModDto {
+        id,
+        name: if name.trim().is_empty() {
+            id.to_string()
+        } else {
+            name.to_owned()
+        },
+    };
+    match op {
+        ModOperation::InstallServer { server } => {
+            // Its first entry names a mod listed twice, as the operation does.
+            let mut ids: Vec<u64> = server.mod_ids();
+            ids.retain(|id| !on_disk.contains(id));
+            ids.iter()
+                .map(|&id| {
+                    let name = server
+                        .mods
+                        .iter()
+                        .find(|m| m.steam_workshop_id as u64 == id)
+                        .map_or("", |m| m.name.as_str());
+                    q(id, name)
+                })
+                .collect()
+        }
+        ModOperation::UpdateServer { server } => server
+            .mods
+            .iter()
+            .map(|m| q(m.steam_workshop_id as u64, &m.name))
+            .collect(),
+        ModOperation::UpdateAll => installed.iter().map(|m| q(m.id, &m.name)).collect(),
+        ModOperation::UpdateOne { mod_id, name } => vec![q(*mod_id, name)],
+        ModOperation::UpdateStale { stale_mods: mods }
+        | ModOperation::UpdateSelected { mods }
+        | ModOperation::Repair { mods } => mods.iter().map(|(id, n)| q(*id, n)).collect(),
+        ModOperation::InstallManual { mods } => mods
+            .iter()
+            .filter(|(id, _)| !on_disk.contains(id))
+            .map(|(id, n)| q(*id, n))
+            .collect(),
+        ModOperation::Login => Vec::new(),
+    }
+}
+
+/// A `log_progress` line is held back this long after the last one sent:
+/// SteamCMD rewrites its progress line on every read of its output, and the
+/// window only ever shows the latest.
+const PROGRESS_EVERY: Duration = Duration::from_millis(100);
+
 /// Start a mod operation in the background; its progress streams over
-/// `on_progress` and ends with a `finished` step.
+/// `on_progress`, starting with a `queued` step that names every mod it will
+/// work on and ending with a `finished` step.
 // One parameter per field: Tauri receives a command's arguments as one flat
 // object.
 #[allow(clippy::too_many_arguments)]
@@ -192,9 +360,32 @@ pub(crate) async fn start_mod_operation(
     on_progress: Channel<ModProgressEvent>,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    // Anything that walks the workshop directory runs before the write lock,
-    // so other commands are not held up by the scan.
-    let op = match op_type {
+    // One operation at a time: two steamcmd sessions fight over the login,
+    // and the first would lose its input channel. Checked first, so a
+    // refused start costs no disk scan.
+    let (ctl, update_cache, list) = {
+        let s = state.read().await;
+        if s.mod_op_abort.is_some() {
+            return Err("A mod operation is already running".into());
+        }
+        (
+            s.ctl.clone_for_task(),
+            s.mod_update_cache.clone(),
+            Arc::clone(&s.servers),
+        )
+    };
+    // What is on disk, read once for everything below (which mods are
+    // stale or missing, their names), off the runtime and outside the lock.
+    let installed = if op_type == ModOpType::Login {
+        Vec::new()
+    } else {
+        let ctl = ctl.clone_for_task();
+        spawn_blocking_mapped(move || ctl.get_installed_mods())
+            .await
+            .unwrap_or_default()
+    };
+
+    let mut op = match op_type {
         ModOpType::InstallServer | ModOpType::UpdateServer => {
             let ip = ip.ok_or("ip required")?;
             let port = port.ok_or("port required")?;
@@ -211,34 +402,26 @@ pub(crate) async fn start_mod_operation(
             }
         }
         ModOpType::UpdateAll => ModOperation::UpdateAll,
-        ModOpType::UpdateStale => {
-            let (update_cache, ctl) = {
-                let s = state.read().await;
-                (s.mod_update_cache.clone(), s.ctl.clone_for_task())
-            };
-            let installed = spawn_blocking_mapped(move || ctl.get_installed_mods())
-                .await
-                .unwrap_or_default();
-            let stale_mods = installed
-                .into_iter()
+        ModOpType::UpdateStale => ModOperation::UpdateStale {
+            stale_mods: installed
+                .iter()
                 .filter(|m| {
                     update_cache
                         .get(&m.id)
                         .is_some_and(|&r| r > m.local_updated)
                 })
-                .map(|m| (m.id, m.name))
-                .collect();
-            ModOperation::UpdateStale { stale_mods }
-        }
+                .map(|m| (m.id, m.name.clone()))
+                .collect(),
+        },
         ModOpType::UpdateOne => ModOperation::UpdateOne {
             mod_id: mod_id.ok_or("mod_id required")?,
             name: mod_name.unwrap_or_default(),
         },
         ModOpType::UpdateSelected => ModOperation::UpdateSelected {
-            mods: resolve_names(mod_ids.unwrap_or_default(), mod_names, &state).await?,
+            mods: resolve_names(mod_ids.unwrap_or_default(), mod_names, &installed),
         },
         ModOpType::Repair => ModOperation::Repair {
-            mods: resolve_names(mod_ids.unwrap_or_default(), mod_names, &state).await?,
+            mods: resolve_names(mod_ids.unwrap_or_default(), mod_names, &installed),
         },
         ModOpType::Login => ModOperation::Login,
         ModOpType::InstallManual => ModOperation::InstallManual {
@@ -249,40 +432,89 @@ pub(crate) async fn start_mod_operation(
                 .collect(),
         },
     };
+    name_op(&mut op, &installed, &list);
+    drop(list);
+    let queue = queue_of(&op, &installed);
 
-    // One operation at a time: two steamcmd sessions fight over the login,
-    // and the first would lose its input channel.
-    let ctl = {
-        let s = state.read().await;
-        if s.mod_op_abort.is_some() {
-            return Err("A mod operation is already running".into());
-        }
-        s.ctl.clone_for_task()
-    };
     // Starting scans the workshop directory: off the runtime, and without
     // holding the state's lock.
     let (mut rx, pty_input_tx, handle) =
         spawn_blocking_mapped(move || ctl.start_mod_operation(op)).await?;
+    let ours = pty_input_tx.clone();
     {
         let mut s = state.write().await;
+        // Another start won the race while this one read the disk.
+        if s.mod_op_abort.is_some() {
+            handle.abort();
+            return Err("A mod operation is already running".into());
+        }
         s.pty_input_tx = Some(pty_input_tx);
         s.mod_op_abort = Some(handle.abort_handle());
     }
+    let _ = on_progress.send(ModProgressEvent {
+        queue,
+        ..ModProgressEvent::of(ModProgressKind::Queued)
+    });
 
     let state = state.inner().clone();
     tauri::async_runtime::spawn(async move {
-        while let Some(msg) = rx.recv().await {
+        // The latest progress line not sent yet, and when one last went.
+        let mut held: Option<ModProgressEvent> = None;
+        let mut last_progress: Option<Instant> = None;
+        loop {
+            let next = match &held {
+                // Wait for the next message only until the held line is due.
+                Some(_) => {
+                    let due = last_progress.map_or(Duration::ZERO, |t| {
+                        PROGRESS_EVERY.saturating_sub(t.elapsed())
+                    });
+                    match tokio::time::timeout(due, rx.recv()).await {
+                        Ok(m) => m,
+                        Err(_) => {
+                            if let Some(evt) = held.take() {
+                                last_progress = Some(Instant::now());
+                                let _ = on_progress.send(evt);
+                            }
+                            continue;
+                        }
+                    }
+                }
+                None => rx.recv().await,
+            };
+            let Some(msg) = next else { break };
             remember_login(&state, &msg).await;
             let evt = mod_progress_to_event(&msg);
+            if evt.kind == ModProgressKind::LogProgress {
+                if last_progress.is_some_and(|t| t.elapsed() < PROGRESS_EVERY) {
+                    held = Some(evt);
+                    continue;
+                }
+                held = None;
+                last_progress = Some(Instant::now());
+                let _ = on_progress.send(evt);
+                continue;
+            }
+            // Anything else goes after the progress line it followed.
+            if let Some(h) = held.take() {
+                let _ = on_progress.send(h);
+            }
             let finished = evt.kind == ModProgressKind::Finished;
             let _ = on_progress.send(evt);
             if finished {
                 break;
             }
         }
+        // Cleared only if still this operation's: after a cancel, a new one
+        // may have started before this loop saw its channel close.
         let mut st = state.write().await;
-        st.pty_input_tx = None;
-        st.mod_op_abort = None;
+        if st
+            .pty_input_tx
+            .as_ref()
+            .is_some_and(|tx| tx.same_channel(&ours))
+        {
+            st.pty_input_tx = None;
+            st.mod_op_abort = None;
+        }
     });
 
     Ok(())
@@ -392,4 +624,89 @@ pub(crate) async fn open_steamcmd_dir(
     app.opener()
         .open_path(dir.to_string_lossy().as_ref(), None::<&str>)
         .cmd_err()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn on_disk(id: u64, name: &str) -> InstalledMod {
+        InstalledMod {
+            name: name.into(),
+            id,
+            local_updated: 0,
+            size: 0,
+            managed: false,
+            source: dz_game::mods::ModSource::Launcher,
+            path: Default::default(),
+            other_copy: false,
+        }
+    }
+
+    fn listed(mods: &[(i64, &str)]) -> dz_api::Server {
+        dz_api::Server {
+            mods: mods
+                .iter()
+                .map(|&(id, name)| dz_api::Mod {
+                    name: name.into(),
+                    steam_workshop_id: id,
+                })
+                .collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_manual_install_is_named_and_queues_only_what_is_missing() {
+        let installed = vec![on_disk(1, "CF")];
+        let list = dz_api::ServerList {
+            status: 0,
+            result: vec![listed(&[(2, "Expansion"), (3, "")])],
+        };
+        let mut op = ModOperation::InstallManual {
+            mods: vec![(1, "1".into()), (2, "2".into()), (3, "3".into())],
+        };
+        name_op(&mut op, &installed, &list);
+        let ModOperation::InstallManual { mods } = &op else {
+            unreachable!()
+        };
+        assert_eq!(
+            mods,
+            &[(1, "CF".into()), (2, "Expansion".into()), (3, "3".into())]
+        );
+        let queue = queue_of(&op, &installed);
+        assert_eq!(
+            queue,
+            [
+                QueuedModDto {
+                    id: 2,
+                    name: "Expansion".into()
+                },
+                QueuedModDto {
+                    id: 3,
+                    name: "3".into()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_servers_install_queues_its_missing_mods_in_its_order() {
+        let installed = vec![on_disk(1, "CF")];
+        let op = ModOperation::InstallServer {
+            server: listed(&[(5, "B"), (1, "CF"), (4, "A")]),
+        };
+        let ids: Vec<u64> = queue_of(&op, &installed).iter().map(|q| q.id).collect();
+        assert_eq!(ids, [5, 4]);
+        assert!(queue_of(&ModOperation::Login, &installed).is_empty());
+    }
+
+    #[test]
+    fn names_that_say_nothing() {
+        assert!(unnamed(7, ""));
+        assert!(unnamed(7, " 7 "));
+        assert!(unnamed(7, "Unknown"));
+        assert!(!unnamed(7, "8"));
+        assert!(!unnamed(7, "@CF"));
+    }
 }

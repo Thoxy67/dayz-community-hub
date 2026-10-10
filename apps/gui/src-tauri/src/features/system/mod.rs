@@ -28,6 +28,18 @@ pub struct SystemSpecsDto {
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn get_system_specs() -> Result<SystemSpecsDto, String> {
+    // The machine does not change while the app runs, and finding the cards
+    // may start `nvidia-smi` or `lspci`: worked out once, on first ask.
+    static SPECS: tokio::sync::OnceCell<SystemSpecsDto> = tokio::sync::OnceCell::const_new();
+    let specs = SPECS
+        .get_or_try_init(|| tokio::task::spawn_blocking(detect))
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(specs.clone())
+}
+
+/// Blocking: it reads files or the registry and may start helper programs.
+fn detect() -> SystemSpecsDto {
     // Logical cores: cheap and reliable via std, no sysinfo refresh needed.
     let logical_cores = std::thread::available_parallelism()
         .map(std::num::NonZero::get)
@@ -49,17 +61,14 @@ pub(crate) async fn get_system_specs() -> Result<SystemSpecsDto, String> {
         .map(|c| c.brand().trim().to_string())
         .filter(|b| !b.is_empty());
     let os = sysinfo::System::long_os_version();
-    // Files, the registry, maybe a helper program: off the runtime thread.
-    let gpus = tokio::task::spawn_blocking(gpu::gpus)
-        .await
-        .unwrap_or_default();
+    let gpus = gpu::gpus();
 
-    Ok(SystemSpecsDto {
+    SystemSpecsDto {
         logical_cores: logical_cores.max(1),
         physical_cores,
         total_memory_mb,
         cpu_name,
         os,
         gpus,
-    })
+    }
 }

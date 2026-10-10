@@ -11,6 +11,7 @@
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
+use futures_util::{StreamExt, TryStreamExt};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -20,6 +21,8 @@ use crate::state::{AppState, SharedState};
 const DAYZ: u32 = 221_100;
 /// Ids per GetPlayerSummaries call (Steam's limit).
 const SUMMARIES_PAGE: usize = 100;
+/// GetPlayerSummaries calls in flight at once.
+const SUMMARIES_IN_FLIGHT: usize = 4;
 
 /// What a friend is doing.
 #[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq, specta::Type)]
@@ -246,19 +249,27 @@ async fn from_web(key: &str, id: &str) -> Result<Vec<Raw>, String> {
         .into_iter()
         .map(|f| f.steamid)
         .collect();
+    // The pages at once (a few in flight): a long friends list is several
+    // round trips otherwise, and the view waits on the last.
+    let pages: Vec<String> = ids.chunks(SUMMARIES_PAGE).map(|p| p.join(",")).collect();
+    let pages: Vec<Summaries> = futures_util::stream::iter(pages)
+        .map(|page| async move {
+            send_ok(
+                client
+                    .get("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/")
+                    .query(&[("key", key), ("steamids", page.as_str())]),
+            )
+            .await
+            .http_err("Steam profiles")?
+            .json::<Summaries>()
+            .await
+            .http_err("Steam profiles")
+        })
+        .buffered(SUMMARIES_IN_FLIGHT)
+        .try_collect()
+        .await?;
     let mut out = Vec::with_capacity(ids.len());
-    for page in ids.chunks(SUMMARIES_PAGE) {
-        let page = page.join(",");
-        let s: Summaries = send_ok(
-            client
-                .get("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/")
-                .query(&[("key", key), ("steamids", page.as_str())]),
-        )
-        .await
-        .http_err("Steam profiles")?
-        .json()
-        .await
-        .http_err("Steam profiles")?;
+    for s in pages {
         out.extend(s.response.players.into_iter().map(|p| {
             let app: Option<u32> = p.gameid.as_deref().and_then(|g| g.parse().ok());
             let in_dayz = app == Some(DAYZ);

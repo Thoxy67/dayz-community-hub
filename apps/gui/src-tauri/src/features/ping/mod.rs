@@ -24,8 +24,10 @@ const MANUAL_TIMEOUT_MS: u64 = 10_000;
 const LIST_CONCURRENT: usize = 10;
 /// Results per Channel message for an explicit list.
 const BATCH_SIZE: usize = 50;
-/// How often partial batches and scan progress are sent (at most).
+/// How often partial batches of an explicit list are sent (at most).
 const FLUSH_INTERVAL: Duration = Duration::from_millis(250);
+/// How often a whole-list scan's progress is sent (at most).
+const PROGRESS_INTERVAL: Duration = Duration::from_millis(500);
 
 /// One ping, as the window receives it.
 #[derive(Serialize, Clone, Debug, specta::Type)]
@@ -54,7 +56,7 @@ fn to_dto(l: &Live, ip: String, port: i64) -> PingResultDto {
 }
 
 /// How far the scan of the whole list has got.
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, specta::Type)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, specta::Type)]
 pub struct ScanProgress {
     pub done: u32,
     pub total: u32,
@@ -80,7 +82,8 @@ pub struct PingState {
 }
 
 struct Queue {
-    tx: mpsc::UnboundedSender<String>,
+    /// Targets, with the tries each has had.
+    tx: mpsc::UnboundedSender<(String, u32)>,
     /// Targets sent so far: the scan is over when it has done as many.
     total: Arc<AtomicU32>,
 }
@@ -106,6 +109,15 @@ pub(crate) fn parse_target(target: &str) -> Option<(&str, i64)> {
     Some((ip, port.parse().ok()?))
 }
 
+/// What asking one target came to.
+enum Asked {
+    Done(String, i64, Live),
+    /// No answer, tries left: to the back of the queue.
+    Again(String, u32),
+    /// Not "ip:port": counted done, nothing recorded.
+    Invalid,
+}
+
 /// Where a scan's results go besides the live store.
 enum Sink {
     /// Batches of results, for explicit lists.
@@ -118,7 +130,8 @@ enum Sink {
 
 /// Ping `targets` with `concurrency` queries in flight, recording each result
 /// in the live store as it lands. A server that does not answer is asked
-/// again up to `retries` times: one lost UDP packet should not mark it dead.
+/// again up to `retries` times, after the targets queued before it: one lost
+/// UDP packet should not mark it dead, nor should it hold a slot meanwhile.
 /// A `whole` scan takes more targets while it runs ([`enqueue`]).
 async fn scan(
     targets: Vec<String>,
@@ -129,21 +142,23 @@ async fn scan(
     ping: Arc<PingState>,
     whole: bool,
 ) {
-    let (tx, rx) = mpsc::unbounded_channel::<String>();
+    // Each target with the number of tries it has had: one that timed out
+    // goes to the back of the queue rather than being asked again at once,
+    // so the silent ones are retried in a short pass at the end instead of
+    // each holding a slot for `retries + 1` timeouts.
+    let (tx, rx) = mpsc::unbounded_channel::<(String, u32)>();
     let total = Arc::new(AtomicU32::new(0));
     for t in targets {
-        if tx.send(t).is_ok() {
+        if tx.send((t, 0)).is_ok() {
             total.fetch_add(1, Ordering::Relaxed);
         }
     }
+    let again = tx.clone();
     if whole && let Ok(mut q) = ping.queue.lock() {
         *q = Some(Queue {
             tx,
             total: Arc::clone(&total),
         });
-    } else {
-        // Nothing more will come: the stream ends once these are done.
-        drop(tx);
     }
     let done = Arc::new(AtomicU32::new(0));
     let progress = |running: bool| ScanProgress {
@@ -152,11 +167,15 @@ async fn scan(
         paused: ping.is_paused(),
         running,
     };
-    // A whole scan is over when it has done every target it was sent; the
+    // A scan is over when it has done every target it was sent (retries
+    // keep the queue open, so it never runs dry by itself). A whole scan's
     // queue then closes, under its lock so nothing is sent into it after.
     let finished = || {
-        if !whole || done.load(Ordering::Relaxed) < total.load(Ordering::Relaxed) {
+        if done.load(Ordering::Relaxed) < total.load(Ordering::Relaxed) {
             return false;
+        }
+        if !whole {
+            return true;
         }
         let Ok(mut q) = ping.queue.lock() else {
             return true;
@@ -168,56 +187,79 @@ async fn scan(
         true
     };
 
-    // One client for the whole scan: async-a2s multiplexes replies on its one
-    // UDP socket, which saves a socket bind per query.
-    let Ok(client) = dz_a2s::new_client().await else {
+    // One client for the whole scan. async-a2s binds a socket per query, so
+    // the sockets open at once are the queries in flight, bounded by
+    // `concurrency`: an unbounded burst runs Winsock out of buffer space
+    // (WSAENOBUFS, 10055, learn.microsoft.com "Windows Sockets Error Codes").
+    // Its own retries are off: a timeout here is retried by the queue.
+    let Ok(mut client) = dz_a2s::client_with_timeout(timeout).await else {
         if let Sink::Progress(ch) = &sink {
             let _ = ch.send(progress(false));
         }
         return;
     };
+    client.retries(0);
     let client = Arc::new(client);
 
     let targets = Box::pin(stream::unfold(rx, |mut rx| async move {
         rx.recv().await.map(|t| (t, rx))
     }));
     let mut results = targets
-        .map(|target| {
+        .map(|(target, tries)| {
             let client = Arc::clone(&client);
             async move {
-                let (ip, port) = parse_target(&target)?;
-                let mut r = Err(dz_common::Error::A2sQuery("timeout".into()));
-                for _ in 0..=retries {
-                    r = tokio::time::timeout(timeout, dz_a2s::ping_using(&client, &target))
-                        .await
-                        .unwrap_or_else(|_| Err(dz_common::Error::A2sQuery("timeout".into())));
-                    if r.is_ok() {
-                        break;
-                    }
+                let Some((ip, port)) = parse_target(&target) else {
+                    return Asked::Invalid;
+                };
+                // The challenge and its answer, both within `timeout`.
+                let r = tokio::time::timeout(timeout, dz_a2s::ping_using(&client, &target))
+                    .await
+                    .unwrap_or_else(|_| Err(dz_common::Error::A2sQuery("timeout".into())));
+                if r.is_err() && tries < retries {
+                    return Asked::Again(target, tries + 1);
                 }
                 let l = Live::from_result(&r);
                 live::store().record(ip, port, l);
-                Some((ip.to_owned(), port, l))
+                Asked::Done(ip.to_owned(), port, l)
             }
         })
         .buffer_unordered(concurrency)
-        .filter_map(std::future::ready)
         .fuse();
 
     let mut batch: Vec<PingResultDto> = Vec::new();
-    let mut flush = tokio::time::interval(FLUSH_INTERVAL);
+    let mut flush = tokio::time::interval(if whole {
+        PROGRESS_INTERVAL
+    } else {
+        FLUSH_INTERVAL
+    });
     flush.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let send = |batch: &mut Vec<PingResultDto>| match &sink {
-        Sink::Batches(ch) if !batch.is_empty() => {
-            let _ = ch.send(std::mem::take(batch));
+    // Progress is sent only when it moved: a paused scan, or one waiting on
+    // slow servers, would otherwise repeat itself on every tick.
+    let mut last_sent: Option<ScanProgress> = None;
+    let mut send = |batch: &mut Vec<PingResultDto>| {
+        let fresh = |p: ScanProgress, last: &mut Option<ScanProgress>| {
+            let moved = *last != Some(p);
+            *last = Some(p);
+            moved
+        };
+        match &sink {
+            Sink::Batches(ch) if !batch.is_empty() => {
+                let _ = ch.send(std::mem::take(batch));
+            }
+            Sink::Progress(ch) => {
+                let p = progress(true);
+                if fresh(p, &mut last_sent) {
+                    let _ = ch.send(p);
+                }
+            }
+            Sink::Event(app) => {
+                let p = progress(true);
+                if fresh(p, &mut last_sent) {
+                    let _ = PingScanProgress(p).emit(app);
+                }
+            }
+            _ => {}
         }
-        Sink::Progress(ch) => {
-            let _ = ch.send(progress(true));
-        }
-        Sink::Event(app) => {
-            let _ = PingScanProgress(progress(true)).emit(app);
-        }
-        _ => {}
     };
 
     loop {
@@ -231,16 +273,26 @@ async fn scan(
         }
         tokio::select! {
             biased;
-            next = results.next() => {
-                let Some((ip, port, l)) = next else { break };
-                done.fetch_add(1, Ordering::Relaxed);
-                if let Sink::Batches(_) = &sink {
-                    batch.push(to_dto(&l, ip, port));
-                    if batch.len() >= BATCH_SIZE {
-                        send(&mut batch);
+            next = results.next() => match next {
+                None => break,
+                Some(Asked::Again(target, tries)) => {
+                    if again.send((target, tries)).is_err() {
+                        done.fetch_add(1, Ordering::Relaxed);
                     }
                 }
-            }
+                Some(Asked::Invalid) => {
+                    done.fetch_add(1, Ordering::Relaxed);
+                }
+                Some(Asked::Done(ip, port, l)) => {
+                    done.fetch_add(1, Ordering::Relaxed);
+                    if let Sink::Batches(_) = &sink {
+                        batch.push(to_dto(&l, ip, port));
+                        if batch.len() >= BATCH_SIZE {
+                            send(&mut batch);
+                        }
+                    }
+                }
+            },
             _ = flush.tick() => send(&mut batch),
         }
     }
@@ -306,7 +358,7 @@ pub(crate) fn enqueue(
     {
         let mut sent = true;
         for t in &targets {
-            if queue.tx.send(t.clone()).is_err() {
+            if queue.tx.send((t.clone(), 0)).is_err() {
                 sent = false;
                 break;
             }

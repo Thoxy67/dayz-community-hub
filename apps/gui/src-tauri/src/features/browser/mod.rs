@@ -169,7 +169,7 @@ fn scan_targets(s: &AppState) -> Vec<String> {
 }
 
 /// Ping the whole list in the background (replacing a running scan).
-/// Progress arrives on `on_progress` at most four times a second; the rows
+/// Progress arrives on `on_progress` at most twice a second; the rows
 /// themselves change through `servers-changed`.
 #[tauri::command]
 #[specta::specta]

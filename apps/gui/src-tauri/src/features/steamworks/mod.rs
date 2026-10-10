@@ -130,6 +130,17 @@ const FRESH: std::time::Duration = std::time::Duration::from_secs(4);
 static DETAILS: std::sync::Mutex<Option<std::collections::HashMap<u64, WorkshopItemDto>>> =
     std::sync::Mutex::new(None);
 
+/// The Workshop's title for `id`, when Steam has been asked about it this run.
+pub(crate) fn workshop_title(id: u64) -> Option<String> {
+    DETAILS
+        .lock()
+        .ok()?
+        .as_ref()?
+        .get(&id)
+        .map(|d| d.title.clone())
+        .filter(|t| !t.trim().is_empty())
+}
+
 /// The DayZ Workshop items the Steam account is subscribed to, with what
 /// Steam is doing with each (installed, downloading, waiting), and the
 /// Workshop's details (title, required items) of those and of `ids` (the

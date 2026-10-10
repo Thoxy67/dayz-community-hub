@@ -59,7 +59,7 @@ export const commands = {
 	serverMaps: () => __TAURI_INVOKE<MapCount[]>("server_maps"),
 	/**
 	 *  Ping the whole list in the background (replacing a running scan).
-	 *  Progress arrives on `on_progress` at most four times a second; the rows
+	 *  Progress arrives on `on_progress` at most twice a second; the rows
 	 *  themselves change through `servers-changed`.
 	 */
 	startScan: (onProgress: Channel<ScanProgress>) => __TAURI_INVOKE<null>("start_scan", { onProgress }),
@@ -181,7 +181,8 @@ export const commands = {
 	launchDirect: (ip: string, gamePort: number, password: string | null, extraArgs: string[] | null) => __TAURI_INVOKE<null>("launch_direct", { ip, gamePort, password, extraArgs }),
 	/**
 	 *  Start a mod operation in the background; its progress streams over
-	 *  `on_progress` and ends with a `finished` step.
+	 *  `on_progress`, starting with a `queued` step that names every mod it will
+	 *  work on and ending with a `finished` step.
 	 */
 	startModOperation: (opType: ModOpType, ip: string | null, port: number | null, modId: number | null, modName: string | null, modIds: number[] | null, modNames: string[] | null, onProgress: Channel<ModProgressEvent>) => __TAURI_INVOKE<null>("start_mod_operation", { opType, ip, port, modId, modName, modIds, modNames, onProgress }),
 	/**  Send input (password or Steam Guard code) to the running steamcmd PTY. */
@@ -778,10 +779,20 @@ export type ModProgressEvent = {
 	failed: number,
 	hint: string | null,
 	log_line: string | null,
+	/**
+	 *  Only on `queued`: the operation's mods with their names; empty on
+	 *  every other step.
+	 */
+	queue: QueuedModDto[],
 };
 
 /**  What a [`ModProgressEvent`] reports. */
 export type ModProgressKind = 
+/**
+ *  Sent first, once: every mod the operation will work on, in order,
+ *  named (`queue`). Empty for a login, or when there is nothing to do.
+ */
+"queued" | 
 /**  SteamCMD logged in; its login is cached from now on. */
 "logged_in" | "steam_guard_mobile_required" | "password_required" | "log_line" | "log_progress" | "starting" | "done" | "failed" | "finished";
 
@@ -983,6 +994,16 @@ export type ProfileSettingsInput = {
 	pingScanFavorites: boolean,
 	pingScanHistory: boolean,
 	pingScanServers: boolean,
+};
+
+/**
+ *  A mod an operation will work on, by the name it is best known by: its
+ *  files' (meta.cpp), the Workshop's title, a listed server's name for it,
+ *  else its id.
+ */
+export type QueuedModDto = {
+	id: number,
+	name: string,
 };
 
 /**  When the server restarts, as the site has measured it. */

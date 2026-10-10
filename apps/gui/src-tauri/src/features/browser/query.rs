@@ -316,7 +316,9 @@ fn sort(order: &mut [u32], list: &ServerList, live: &LiveMap, col: SortCol, asc:
     };
     match col {
         SortCol::None => {}
-        SortCol::Players => order.sort_by_key(|&i| {
+        // The keys that need a live lookup or a parse are worked out once per
+        // server, not twice per comparison (`sort_by_cached_key` is stable too).
+        SortCol::Players => order.sort_by_cached_key(|&i| {
             let p = view(i).players();
             if asc { p } else { -p }
         }),
@@ -333,16 +335,12 @@ fn sort(order: &mut [u32], list: &ServerList, live: &LiveMap, col: SortCol, asc:
             }
         }
         SortCol::Map => order.sort_by(|&a, &b| dir(at(a).map.cmp(&at(b).map))),
-        SortCol::Time => order.sort_by(|&a, &b| {
-            // Servers without a time go last either way.
-            match (time_minutes(&at(a).time), time_minutes(&at(b).time)) {
-                (Some(x), Some(y)) => dir(x.cmp(&y)),
-                (Some(_), None) => Ordering::Less,
-                (None, Some(_)) => Ordering::Greater,
-                (None, None) => Ordering::Equal,
-            }
+        // Servers without a time go last either way.
+        SortCol::Time => order.sort_by_cached_key(|&i| match time_minutes(&at(i).time) {
+            Some(m) => (0u8, if asc { i64::from(m) } else { -i64::from(m) }),
+            None => (1, 0),
         }),
-        SortCol::Ping => order.sort_by_key(|&i| {
+        SortCol::Ping => order.sort_by_cached_key(|&i| {
             // Answered first (by RTT, in the chosen direction), then timeouts,
             // then servers never pinged.
             match view(i).ping() {

@@ -235,14 +235,23 @@ async fn comb_once(app: &AppHandle) {
         return;
     };
     let list = Arc::clone(&state.read().await.servers);
-    let game_port: FxHashMap<(String, i64), i64> =
-        list.result.iter().map(|s| (key(s), s.game_port)).collect();
     let groups: Vec<(i64, Vec<(String, i64)>)> = {
+        let conflicts = dz_api::join_conflicts(&list.result);
+        if conflicts.is_empty() {
+            return;
+        }
+        // Borrowed keys: this runs on every change to the list while a
+        // listing adds to it, and an owned key would copy every IP.
+        let game_port: FxHashMap<(&str, i64), i64> = list
+            .result
+            .iter()
+            .map(|s| ((s.endpoint.ip.as_str(), s.endpoint.port), s.game_port))
+            .collect();
         let f = found();
-        dz_api::join_conflicts(&list.result)
+        conflicts
             .into_iter()
             .filter_map(|g| {
-                let gp = *game_port.get(&g[0])?;
+                let gp = *game_port.get(&(g[0].0.as_str(), g[0].1))?;
                 (!f.combed.contains(&(g[0].0.clone(), gp))).then_some((gp, g))
             })
             .collect()
@@ -564,6 +573,11 @@ async fn publish(
         }
         added
     };
+    // Only servers another pass already put in: the list is as it was, and
+    // composing, indexing and combing 10 000 servers again would change nothing.
+    if added.is_empty() {
+        return;
+    }
     sources::update(|s| s.steam.added += added.len() as u32);
     let list = show(app, state).await;
     let due = LAST_SAVE.lock().is_ok_and(|mut last| {
