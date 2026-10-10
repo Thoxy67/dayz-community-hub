@@ -28,13 +28,6 @@ export function parseOklch(oklchStr: string): OklchColor | null {
 }
 
 /**
- * Format OKLCH color to CSS string
- */
-export function formatOklch(color: OklchColor): string {
-  return `oklch(${Math.round(color.l * 100)}% ${color.c.toFixed(2)} ${Math.round(color.h)})`;
-}
-
-/**
  * Convert OKLCH to sRGB
  * Based on https://bottosson.github.io/posts/oklab/
  */

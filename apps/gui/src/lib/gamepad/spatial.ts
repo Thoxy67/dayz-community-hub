@@ -67,12 +67,3 @@ export function best(from: Box, candidates: readonly Box[], dir: Dir): number {
   });
   return at;
 }
-
-/** The candidates that are that way at all, cheapest first, as indices. */
-export function ranked(from: Box, candidates: readonly Box[], dir: Dir): number[] {
-  return candidates
-    .map((c, i) => [cost(from, c, dir), i] as const)
-    .filter((x): x is readonly [number, number] => x[0] !== null)
-    .sort((a, b) => a[0] - b[0])
-    .map(([, i]) => i);
-}

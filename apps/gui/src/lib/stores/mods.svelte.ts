@@ -25,6 +25,8 @@ const UPDATES_TTL_MS = 5 * 60 * 1000;
  * thousands; past this the oldest go, so the window stays responsive.
  */
 export const LOG_MAX = 5000;
+/** How far past `LOG_MAX` the log grows before it is cut back to it. */
+const LOG_SLACK = 500;
 
 export type ModOpPhase = "steam_guard_mobile" | "password_required" | "downloading" | "finished";
 
@@ -40,8 +42,13 @@ export type ModOp = {
   currentName: string;
   /** The mod being worked on (0 before the first starts). */
   currentId: number;
-  /** Every mod this operation works on, as far as known when it started. */
+  /**
+   * Every mod this operation works on: guessed when it starts, then the
+   * backend's own list (its first `queued` step).
+   */
   ids: number[];
+  /** Their names, from the backend's `queued` step. */
+  names: Map<number, string>;
   /** Mods that came through or failed, with how long each took. */
   completed: { id: number; name: string; ok: boolean; ms: number }[];
   ok: number;
@@ -68,6 +75,7 @@ const idle = (): ModOp => ({
   currentName: "",
   currentId: 0,
   ids: [],
+  names: new Map(),
   completed: [],
   ok: 0,
   failed: 0,
@@ -107,9 +115,13 @@ class Mods {
       for (const c of d.requires) out.set(c, [...(out.get(c) ?? []), d.id]);
     return out;
   });
-  /** A mod's name: from its files, else the Workshop, else its id. */
+  /** A mod's name: as the running operation named it, else from its files, else the Workshop, else its id. */
   nameOf(id: number): string {
-    return this.byId.get(id)?.name ?? (this.workshop.get(id)?.title || `Workshop ${id}`);
+    return (
+      this.op.names.get(id) ??
+      this.byId.get(id)?.name ??
+      (this.workshop.get(id)?.title || `Workshop ${id}`)
+    );
   }
   /** Items Steam is downloading or has queued, installed here or not. */
   steamActive = $derived((this.steam?.items ?? []).filter((i) => i.downloading || i.pending));
@@ -347,8 +359,11 @@ class Mods {
     // The last log entry is a transient "\r" progress line: the next one
     // overwrites it instead of appending, so a download is one live line.
     let lastWasProgress = false;
+    // Trimmed in batches: removing the oldest line shifts every line of the
+    // (deep, reactive) log, so doing it per line cost thousands of signal
+    // writes for each line SteamCMD printed past the cap.
     const trim = (op: ModOp) => {
-      if (op.log.length > LOG_MAX) {
+      if (op.log.length > LOG_MAX + LOG_SLACK) {
         op.log.splice(0, op.log.length - LOG_MAX);
         op.logAt.splice(0, op.logAt.length - LOG_MAX);
       }
@@ -358,6 +373,12 @@ class Mods {
       if (id !== this.#opId) return;
       const op = this.op;
       switch (ev.kind) {
+        case "queued":
+          // The backend's list replaces the guess (which is empty for a
+          // server's mods or a manual install).
+          op.ids = ev.queue.map((q) => q.id);
+          op.names = new Map(ev.queue.map((q) => [q.id, q.name]));
+          break;
         case "logged_in":
           // Its login is cached now, and a saved password forgotten.
           void profile.load();

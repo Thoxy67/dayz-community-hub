@@ -43,7 +43,7 @@ class Servers {
   refreshing = $state(false);
   lastRefreshed = $state(0);
   /** The title bar's totals (servers, players in game, account). */
-  stats = $state<AppStatsDto | null>(null);
+  stats = $state.raw<AppStatsDto | null>(null);
   steamPlayers = $state<number | null>(null);
   /** Bumped when the backend's data changed: views re-query on it. */
   generation = $state(0);

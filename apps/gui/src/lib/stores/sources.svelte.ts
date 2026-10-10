@@ -8,7 +8,7 @@ import { sourcesStatus } from "$lib/ipc/servers";
 import type { SourcesChanged } from "$lib/ipc/bindings";
 
 class Sources {
-  now = $state<SourcesChanged | null>(null);
+  now = $state.raw<SourcesChanged | null>(null);
   #listening = false;
 
   async start() {

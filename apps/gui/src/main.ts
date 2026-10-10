@@ -2,6 +2,10 @@ import { mount } from "svelte";
 
 import "./app.css";
 
+// The language's words are fetched first: every view reads them from its
+// first render, and nothing below depends on them.
+const words = import("$lib/i18n").then((m) => m.loadWords());
+
 if (import.meta.env.DEV || import.meta.env.VITE_MOCK === "1") {
   // An uncaught error leaves an empty window with nothing to say why: in
   // development it is written into the page, where a screenshot shows it.
@@ -39,8 +43,11 @@ if (import.meta.env.DEV || import.meta.env.VITE_MOCK === "1") {
 
 // The chosen theme is on :root before anything is drawn, so a light theme
 // does not flash the dark defaults of tokens.css first.
-const { theme } = await import("$lib/theme/theme.svelte");
+const [{ theme }, , { default: App }] = await Promise.all([
+  import("$lib/theme/theme.svelte"),
+  words,
+  import("./App.svelte"),
+]);
 theme.apply();
 
-const { default: App } = await import("./App.svelte");
 export default mount(App, { target: document.getElementById("app")! });

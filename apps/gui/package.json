@@ -29,7 +29,7 @@
     "@iconify-json/circle-flags": "^1.2.12",
     "@iconify-json/game-icons": "^1.2.4",
     "@iconify-json/lucide": "^1.2.142",
-    "@intlayer/svelte-compiler": "^9.7.0",
+    "@intlayer/core": "^9.7.0",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/cli": "^2.12.2",

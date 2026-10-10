@@ -34,6 +34,8 @@ export type ModStatus = "installed" | "stale" | "missing";
 /** Which port the player typed, once the query has told us. */
 export type PortKind = "game" | "query" | "unknown";
 
+const IPV4 = /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/;
+
 let uid = 0;
 const nextId = () => `a${++uid}`;
 
@@ -46,8 +48,9 @@ class DirectForm {
   /** The password came from a favourite, not the keyboard. */
   passwordFromFavorite = $state(false);
 
-  a2s = $state<A2sDetailsDto | null>(null);
-  details = $state<ServerFullDto | null>(null);
+  // Raw: answers from the backend, replaced whole.
+  a2s = $state.raw<A2sDetailsDto | null>(null);
+  details = $state.raw<ServerFullDto | null>(null);
   querying = $state(false);
   detailsLoading = $state(false);
   error = $state("");
@@ -55,7 +58,8 @@ class DirectForm {
   portKind = $state<PortKind>("unknown");
   queriedAt = $state<number | null>(null);
 
-  args = $state<LaunchArg[]>([]);
+  // Raw: every edit below builds a new array.
+  args = $state.raw<LaunchArg[]>([]);
 
   // ── what the form resolves to ───────────────────────────────────────────
   ip = $derived(this.address.trim());
@@ -66,8 +70,15 @@ class DirectForm {
   );
   valid = $derived(!this.addressError && !this.portError);
 
-  /** The server in the public list at this address, when there is one. */
-  listed = $derived(this.valid ? (servers.find(this.ip, this.portNum) ?? null) : null);
+  /**
+   * The server in the public list at this address, when there is one. The
+   * list is keyed by IPv4 address: anything else (a host name, an address
+   * half typed) is not looked up, so typing does not send a lookup per key
+   * nor leave each prefix in the addresses `servers` keeps re-asking for.
+   */
+  listed = $derived(
+    this.valid && IPV4.test(this.ip) ? (servers.find(this.ip, this.portNum) ?? null) : null,
+  );
 
   /** The favourite at this address (either port), for its saved password. */
   favorite = $derived.by(() => {

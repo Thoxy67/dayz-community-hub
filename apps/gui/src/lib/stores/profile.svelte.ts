@@ -38,11 +38,18 @@ export type PingSettings = Pick<
 const addrKey = (ip: string, port: number) => `${ip}:${port}`;
 
 class Profile {
-  data = $state<ProfileDto | null>(null);
+  // Raw: read everywhere, changed only here, always as a new object
+  // (`#patch`), so the history and favourites are not wrapped in proxies.
+  data = $state.raw<ProfileDto | null>(null);
   avatarUrl = $state<string | null>(null);
 
   favoriteKeys = $derived(new Set((this.data?.favorites ?? []).map((f) => addrKey(f.ip, f.port))));
   excludedIps = $derived(new Set(this.data?.excluded_ips ?? []));
+
+  /** Replace some fields of the profile on screen. */
+  #patch(p: Partial<ProfileDto>) {
+    if (this.data) this.data = { ...this.data, ...p };
+  }
 
   isFavorite(ip: string, port: number) {
     return this.favoriteKeys.has(addrKey(ip, port));
@@ -122,8 +129,7 @@ class Profile {
     if (!this.data) return;
     try {
       await ipc.saveProfileSettings({ ...this.#settings(), ...s });
-      this.data = {
-        ...this.data,
+      this.#patch({
         ping_concurrency: s.pingConcurrency,
         ping_timeout_auto: s.pingTimeoutAuto,
         ping_timeout_manual: s.pingTimeoutManual,
@@ -131,7 +137,7 @@ class Profile {
         ping_scan_favorites: s.pingScanFavorites,
         ping_scan_history: s.pingScanHistory,
         ping_scan_servers: s.pingScanServers,
-      };
+      });
     } catch (e) {
       say.err(words("settings").profileSettingsSaveFailed({ error: errorText(e) }));
     }
@@ -140,9 +146,7 @@ class Profile {
   /** SteamCMD or the Steam client: takes effect at once, from the next operation. */
   async setModDownloader(downloader: ModDownloaderDto) {
     await this.#write(
-      () => {
-        if (this.data) this.data.mod_downloader = downloader;
-      },
+      () => this.#patch({ mod_downloader: downloader }),
       () => setModDownloader(downloader),
     );
   }
@@ -150,9 +154,7 @@ class Profile {
   /** Steam's own server list is added to the launcher's. */
   async setSteamServerList(enabled: boolean) {
     await this.#write(
-      () => {
-        if (this.data) this.data.steam_server_list = enabled;
-      },
+      () => this.#patch({ steam_server_list: enabled }),
       () => setSteamServerList(enabled),
     );
   }
@@ -169,10 +171,9 @@ class Profile {
         if (!this.data) return;
         const rest = this.data.favorites.filter((f) => !(f.ip === ip && f.port === port));
         const prev = this.data.favorites.find((f) => f.ip === ip && f.port === port);
-        this.data.favorites = [
-          ...rest,
-          { name, ip, port, password: password ?? prev?.password ?? null },
-        ];
+        this.#patch({
+          favorites: [...rest, { name, ip, port, password: password ?? prev?.password ?? null }],
+        });
       },
       () => ipc.addFavorite(name, ip, port, password),
       words("favorites").added({ name }),
@@ -183,9 +184,9 @@ class Profile {
     await this.#write(
       () => {
         if (this.data)
-          this.data.favorites = this.data.favorites.filter(
-            (f) => !(f.ip === ip && f.port === port),
-          );
+          this.#patch({
+            favorites: this.data.favorites.filter((f) => !(f.ip === ip && f.port === port)),
+          });
       },
       () => ipc.removeFavorite(ip, port),
       words("favorites").removed,
@@ -225,9 +226,9 @@ class Profile {
     await this.#write(
       () => {
         if (this.data)
-          this.data.history = this.data.history.filter(
-            (e) => !(e.ip === h.ip && e.port === h.port),
-          );
+          this.#patch({
+            history: this.data.history.filter((e) => !(e.ip === h.ip && e.port === h.port)),
+          });
       },
       () => ipc.removeHistoryEntry(h.ip, h.port),
       w.removed,
@@ -246,9 +247,7 @@ class Profile {
     )
       return;
     await this.#write(
-      () => {
-        if (this.data) this.data.history = [];
-      },
+      () => this.#patch({ history: [] }),
       () => ipc.clearHistory(),
       w.cleared,
     );
@@ -260,7 +259,7 @@ class Profile {
     await this.#write(
       () => {
         if (this.data && !this.data.excluded_ips.includes(ip))
-          this.data.excluded_ips = [...this.data.excluded_ips, ip];
+          this.#patch({ excluded_ips: [...this.data.excluded_ips, ip] });
       },
       () => ipc.addExcludedIp(ip),
       w.ipExcluded({ ip }),
@@ -271,7 +270,8 @@ class Profile {
   async unexcludeIp(ip: string) {
     await this.#write(
       () => {
-        if (this.data) this.data.excluded_ips = this.data.excluded_ips.filter((e) => e !== ip);
+        if (this.data)
+          this.#patch({ excluded_ips: this.data.excluded_ips.filter((e) => e !== ip) });
       },
       () => ipc.removeExcludedIp(ip),
       words("favorites").ipUnexcluded({ ip }),
@@ -283,14 +283,14 @@ class Profile {
     const w = words("settings");
     const prev = this.data?.options.find((o) => o.key === key);
     if (this.data)
-      this.data.options = this.data.options.map((o) =>
-        o.key === key ? { ...o, enabled: !o.enabled } : o,
-      );
+      this.#patch({
+        options: this.data.options.map((o) => (o.key === key ? { ...o, enabled: !o.enabled } : o)),
+      });
     try {
       await ipc.toggleLaunchOption(key);
     } catch (e) {
       if (this.data && prev)
-        this.data.options = this.data.options.map((o) => (o.key === key ? prev : o));
+        this.#patch({ options: this.data.options.map((o) => (o.key === key ? prev : o)) });
       say.err(w.profileOptionToggleFailed({ error: errorText(e) }));
     }
   }
@@ -298,16 +298,17 @@ class Profile {
   async setOptionValue(key: string, value: string | null) {
     const w = words("settings");
     const prev = this.data?.options.find((o) => o.key === key);
-    if (this.data) {
-      this.data.options = this.data.options.map((o) =>
-        o.key === key ? { ...o, value, enabled: value !== null ? true : o.enabled } : o,
-      );
-    }
+    if (this.data)
+      this.#patch({
+        options: this.data.options.map((o) =>
+          o.key === key ? { ...o, value, enabled: value !== null ? true : o.enabled } : o,
+        ),
+      });
     try {
       await ipc.setLaunchOptionValue(key, value);
     } catch (e) {
       if (this.data && prev)
-        this.data.options = this.data.options.map((o) => (o.key === key ? prev : o));
+        this.#patch({ options: this.data.options.map((o) => (o.key === key ? prev : o)) });
       say.err(w.profileOptionSetFailed({ error: errorText(e) }));
     }
   }

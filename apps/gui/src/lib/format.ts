@@ -39,16 +39,38 @@ export function relative(ts: number): string {
   return String(w.timeLongAgo);
 }
 
+// `toLocaleString` builds a formatter on every call; lists format a date per row.
+const df = new Map<string, Intl.DateTimeFormat>();
+function dateFormat(kind: "dateTime" | "date") {
+  const key = getLocale() + kind;
+  let f = df.get(key);
+  if (!f)
+    df.set(
+      key,
+      (f = new Intl.DateTimeFormat(
+        getLocale(),
+        kind === "date"
+          ? { year: "numeric", month: "short", day: "numeric" }
+          : // What `toLocaleString` shows: the date and the time with seconds.
+            {
+              year: "numeric",
+              month: "numeric",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+              second: "2-digit",
+            },
+      )),
+    );
+  return f;
+}
+
 /** A full local date and time, for tooltips. */
 export function dateTime(ts: number): string {
-  return new Date(ts * 1000).toLocaleString(getLocale());
+  return dateFormat("dateTime").format(new Date(ts * 1000));
 }
 
 /** A calendar date. */
 export function date(d: Date | string | number): string {
-  return new Date(d).toLocaleDateString(getLocale(), {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  return dateFormat("date").format(new Date(d));
 }

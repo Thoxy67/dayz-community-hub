@@ -68,8 +68,6 @@ export const commands = {
 	 *  Runs beside the whole-list scan, not instead of it.
 	 */
 	pingServers: (targets: string[], concurrency: number | null, timeoutMs: number | null, onProgress: Channel<PingResultDto[]>) => __TAURI_INVOKE<null>("ping_servers", { targets, concurrency, timeoutMs, onProgress }),
-	/**  Known results for `targets` ("ip:port"); targets never pinged are left out. */
-	getPings: (targets: string[]) => __TAURI_INVOKE<PingResultDto[]>("get_pings", { targets }),
 	/**  Ping one server, with the long manual timeout. Returns the RTT in ms. */
 	pingSingle: (ip: string, port: number, timeoutMs: number | null) => __TAURI_INVOKE<number>("ping_single", { ip, port, timeoutMs }),
 	/**  Stop the whole-list scan and clear the pause. */

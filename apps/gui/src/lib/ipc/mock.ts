@@ -860,6 +860,7 @@ export function installMock() {
             failed: 0,
             hint: null,
             log_line: null,
+            queue: [],
             ...extra,
           });
         const log = (line: string, progress = false) =>
@@ -867,6 +868,15 @@ export function installMock() {
         const steps: Array<[number, () => void]> = [];
         let t = 0;
         const at = (dt: number, fn: () => void) => steps.push([(t += dt), fn]);
+        // First, as the backend does: every mod the operation works on, named.
+        const queue =
+          a.opType === "login"
+            ? []
+            : list.map((id) => ({
+                id,
+                name: mods.find((x) => x.id === id)?.name ?? `Workshop ${id}`,
+              }));
+        at(0, () => ev("queued", { queue }));
         if (profile.mod_downloader === "steamworks" && a.opType !== "login") {
           // What dz-steamworks reports: subscribe, Steam downloads, installed.
           at(200, () => log("Connected to Steam as DayZ (app 221100)"));

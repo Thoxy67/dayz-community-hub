@@ -18,7 +18,6 @@ permissions = [
   "allow-server-maps",
   "allow-start-scan",
   "allow-ping-servers",
-  "allow-get-pings",
   "allow-ping-single",
   "allow-cancel-ping",
   "allow-toggle-ping-pause",

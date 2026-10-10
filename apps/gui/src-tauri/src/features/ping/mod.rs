@@ -418,21 +418,6 @@ pub(crate) async fn ping_servers(
     Ok(())
 }
 
-/// Known results for `targets` ("ip:port"); targets never pinged are left out.
-#[tauri::command]
-#[specta::specta]
-pub(crate) async fn get_pings(targets: Vec<String>) -> Result<Vec<PingResultDto>, String> {
-    let map = live::store().read();
-    Ok(targets
-        .iter()
-        .filter_map(|key| {
-            let (ip, port) = parse_target(key)?;
-            let l = map.get(ip, port).filter(|l| l.ms.is_some() || l.failed)?;
-            Some(to_dto(l, ip.to_owned(), port))
-        })
-        .collect())
-}
-
 /// Ping one server, with the long manual timeout. Returns the RTT in ms.
 #[tauri::command]
 #[specta::specta]

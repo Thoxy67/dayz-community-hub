@@ -42,7 +42,28 @@ function load(): Stored {
 class Prefs {
   #s = $state<Stored>(load());
 
+  #timer: ReturnType<typeof setTimeout> | undefined;
+
+  constructor() {
+    // A write still waiting when the window closes is not lost.
+    addEventListener("pagehide", () => this.#flush());
+    addEventListener("blur", () => this.#flush());
+  }
+
+  /**
+   * Written a moment after the last change: dragging a pane's edge changes
+   * its size on every pointer move, and each write is a synchronous
+   * `localStorage` call on the main thread.
+   */
   #save() {
+    clearTimeout(this.#timer);
+    this.#timer = setTimeout(() => this.#flush(), 250);
+  }
+
+  #flush() {
+    if (this.#timer === undefined) return;
+    clearTimeout(this.#timer);
+    this.#timer = undefined;
     try {
       localStorage.setItem(KEY, JSON.stringify(this.#s));
     } catch {

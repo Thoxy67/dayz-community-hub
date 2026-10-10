@@ -20,7 +20,7 @@ export type UpdateState =
 
 class Updater {
   state = $state<UpdateState>("idle");
-  info = $state<UpdateInfo | null>(null);
+  info = $state.raw<UpdateInfo | null>(null);
   error = $state("");
   received = $state(0);
   total = $state(0);
@@ -32,8 +32,14 @@ class Updater {
     this.state = "checking";
     this.error = "";
     try {
-      this.support ??= await updateSupport().catch(() => null);
+      // Both questions at once: neither waits on the other.
+      const support = this.support
+        ? null
+        : updateSupport()
+            .then((s) => (this.support = s))
+            .catch(() => {});
       this.info = await checkForUpdate();
+      await support;
       this.state = this.info ? "available" : "up_to_date";
     } catch (e) {
       this.error = errorText(e);

@@ -12,13 +12,19 @@
  * frame, enough to freeze the window. Here each dictionary is one shared
  * store, transformed once per language.
  *
+ * Each language's words are a chunk of their own (`virtual:dzch-words/<l>`,
+ * built in vite.config.ts): `loadWords()` must resolve before the first
+ * word is read, and `setLocale` loads the new language before switching.
+ *
  * The choice lives in one `localStorage` key: this is a desktop app with no
  * server and no routing. A first run follows the OS language when it is one
  * we ship, English otherwise.
  */
 import { derived, type Readable } from "svelte/store";
-import { getIntlayer, intlayerStore, setupIntlayer, type useIntlayer } from "svelte-intlayer";
+import { getDictionary, intlayerStore, setupIntlayer } from "svelte-intlayer";
+import type { getIntlayer, useIntlayer } from "svelte-intlayer";
 import type { DictionaryKeys } from "@intlayer/types/module_augmentation";
+import type { Dictionary } from "@intlayer/types/dictionary";
 
 import { pickLocale, type Locale } from "./locale";
 
@@ -50,6 +56,32 @@ function initialLocale(): Locale {
 let current: Locale = initialLocale();
 let setter: ((l: Locale) => void) | null = null;
 
+type Words = Record<string, Dictionary>;
+const LOADERS: Record<Locale, () => Promise<{ default: Words }>> = {
+  en: () => import("virtual:dzch-words/en"),
+  fr: () => import("virtual:dzch-words/fr"),
+  de: () => import("virtual:dzch-words/de"),
+  es: () => import("virtual:dzch-words/es"),
+  ru: () => import("virtual:dzch-words/ru"),
+};
+const loaded = new Map<Locale, Words>();
+
+async function load(locale: Locale): Promise<Words> {
+  let w = loaded.get(locale);
+  if (!w) loaded.set(locale, (w = (await LOADERS[locale]()).default));
+  return w;
+}
+
+/** Load the starting language's words. Await it before mounting the app. */
+export function loadWords(): Promise<unknown> {
+  return load(current);
+}
+
+function read(key: string, locale: Locale) {
+  const w = loaded.get(locale) ?? loaded.get(current)!;
+  return getDictionary(w[key]!, locale);
+}
+
 /** Install the locale context. Call once, at the root. */
 export function initI18n() {
   const ctx = setupIntlayer(current);
@@ -66,8 +98,14 @@ export function getLocale(): Locale {
   return current;
 }
 
-/** Switch language, and remember it across launches. */
-export function setLocale(locale: Locale) {
+let wanted: Locale = current;
+
+/** Switch language (once its words are loaded), and remember it across launches. */
+export async function setLocale(locale: Locale) {
+  wanted = locale;
+  await load(locale);
+  // A later choice made while this one loaded wins.
+  if (wanted !== locale) return;
   current = locale;
   setter?.(locale);
   document.documentElement.lang = locale;
@@ -84,13 +122,13 @@ const shared = new Map<string, Readable<unknown>>();
 export function dict<K extends DictionaryKeys>(key: K): ReturnType<typeof useIntlayer<K>> {
   let store = shared.get(key);
   if (!store) {
-    store = derived(intlayerStore, ($s) => getIntlayer(key, $s.locale));
+    store = derived(intlayerStore, ($s) => read(key, $s.locale as Locale));
     shared.set(key, store);
   }
   return store as ReturnType<typeof useIntlayer<K>>;
 }
 
 /** A dictionary in the current language, for code outside components. */
-export function words<K extends DictionaryKeys>(key: K) {
-  return getIntlayer(key, current);
+export function words<K extends DictionaryKeys>(key: K): ReturnType<typeof getIntlayer<K, Locale>> {
+  return read(key, current) as never;
 }

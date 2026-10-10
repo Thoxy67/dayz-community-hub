@@ -63,6 +63,5 @@ export const pingServers = (
 ) => run(commands.pingServers(targets, concurrency, timeoutMs, onProgress));
 export const pingSingle = (ip: string, port: number, timeoutMs: number | null) =>
   run(commands.pingSingle(ip, port, timeoutMs));
-export const getPings = (targets: string[]) => run(commands.getPings(targets));
 export const cancelPing = () => run(commands.cancelPing());
 export const togglePingPause = () => run(commands.togglePingPause());

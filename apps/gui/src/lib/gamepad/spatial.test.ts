@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { best, cost, ranked, type Box } from "./spatial";
+import { best, cost, type Box } from "./spatial";
 
 const box = (left: number, top: number, w = 40, h = 20): Box => ({
   left,
@@ -44,13 +44,7 @@ describe("best", () => {
   });
 });
 
-describe("ranked", () => {
-  test("cheapest first, the other way left out", () => {
-    const from = box(100, 100);
-    expect(ranked(from, [box(100, 300), box(100, 20), box(110, 140)], "down")).toEqual([2, 0]);
-  });
-  test("half a line lower is still beside, not below", () => {
-    const from = box(300, 207, 60, 28);
-    expect(ranked(from, [box(0, 221, 200, 30)], "down")).toEqual([]);
-  });
+test("half a line lower is still beside, not below", () => {
+  const from = box(300, 207, 60, 28);
+  expect(best(from, [box(0, 221, 200, 30)], "down")).toBe(-1);
 });

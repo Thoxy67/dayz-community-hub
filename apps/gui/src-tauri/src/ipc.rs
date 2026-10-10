@@ -28,7 +28,6 @@ pub(crate) fn builder() -> tauri_specta::Builder<tauri::Wry> {
             browser::server_maps,
             browser::start_scan,
             ping::ping_servers,
-            ping::get_pings,
             ping::ping_single,
             ping::cancel_ping,
             ping::toggle_ping_pause,
