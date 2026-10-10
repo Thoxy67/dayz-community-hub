@@ -2,10 +2,12 @@
   import type { Snippet } from "svelte";
   import { dict } from "$lib/i18n";
   import Link from "~icons/lucide/link";
+  import Users from "~icons/lucide/users";
   import { Copy } from "$lib/components/ui/copy";
   import { IconButton } from "$lib/components/ui/button";
   import { ContextMenu, ContextMenuTrigger } from "$lib/components/ui/context-menu";
   import { connect } from "$lib/stores/connect.svelte";
+  import { friends } from "$lib/stores/friends.svelte";
   import { cn } from "$lib/cx";
   import FavoriteButton from "./FavoriteButton.svelte";
   import JoinButton from "./JoinButton.svelte";
@@ -102,7 +104,10 @@
   } = $props();
 
   const sv = dict("servers");
+  const fr = dict("friends");
   const address = $derived(`${ip}:${gamePort}`);
+  // Steam friends on it: one map lookup per row on screen.
+  const here = $derived(friends.on(ip, queryPort) ?? friends.on(ip, joinPort ?? gamePort));
 </script>
 
 <ContextMenu>
@@ -143,6 +148,13 @@
               {mimicsOfficial}
               savedPassword={!!savedPassword}
             />
+            {#if here}
+              <span
+                class="inline-flex shrink-0 items-center gap-0.5 rounded-xs bg-ok/15 px-1 font-mono text-3xs font-semibold text-ok"
+                title={$fr.friendsHere({ names: here.map((f) => f.name).join(", ") }).value}
+                ><Users class="size-2.5" /><span class="num">{here.length}</span></span
+              >
+            {/if}
             {#if tag}{@render tag()}{/if}
           </div>
           <div class="flex min-w-0 items-center gap-2 text-fg-faint">

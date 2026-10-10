@@ -47,8 +47,12 @@ export const commands = {
 	 *  for a moment.
 	 */
 	steamMe: () => __TAURI_INVOKE<SteamMeDto>("steam_me"),
-	/**  The account's friends and what they are doing. */
-	steamFriends: () => __TAURI_INVOKE<FriendsDto>("steam_friends"),
+	/**
+	 *  The account's friends and what they are doing. `client`: the running
+	 *  Steam client may be asked when the Web API cannot answer (it shows DayZ
+	 *  running for a moment, so only while the Friends view is open).
+	 */
+	steamFriends: (client: boolean) => __TAURI_INVOKE<FriendsDto>("steam_friends", { client }),
 	/**  The title bar's counters. */
 	getAppStats: () => __TAURI_INVOKE<AppStatsDto>("get_app_stats"),
 	/**  A filtered, sorted window of the server list, with totals. */

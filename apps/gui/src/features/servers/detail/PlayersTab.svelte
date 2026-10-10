@@ -6,12 +6,16 @@
   import { Button } from "$lib/components/ui/button";
   import { Empty } from "$lib/components/app";
   import { serverData } from "$lib/stores/server-data.svelte";
+  import { friends } from "$lib/stores/friends.svelte";
   import { duration } from "$lib/format";
   import type { DetailModel } from "./model.svelte";
 
   /** Everyone the server says is on it, longest first, searchable. */
   let { m }: { m: DetailModel } = $props();
   const c = dict("detail");
+  const fr = dict("friends");
+  // Steam friends on this server, by its query port or (unlisted) the port asked.
+  const mine = $derived(friends.on(m.ip, m.queryPort) ?? friends.on(m.ip, m.gamePort) ?? []);
 
   let query = $state("");
   const shown = $derived.by(() => {
@@ -22,6 +26,13 @@
 </script>
 
 <div class="flex min-h-0 flex-1 flex-col gap-2 px-pad py-2.5">
+  {#if mine.length}
+    <div class="flex items-center gap-1.5 rounded-sm bg-ok/10 px-2 py-1 text-2xs text-ok">
+      <Users class="size-3 shrink-0" /><span class="truncate"
+        >{$fr.friendsHere({ names: mine.map((f) => f.name).join(", ") }).value}</span
+      >
+    </div>
+  {/if}
   {#if m.live.loading && !m.a2s}
     <div class="flex flex-col gap-1">
       {#each [0, 1, 2, 3, 4, 5] as i (i)}<div

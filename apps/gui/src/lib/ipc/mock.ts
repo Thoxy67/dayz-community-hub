@@ -998,7 +998,9 @@ export function installMock() {
         case "sources_status":
           return mockSources();
         case "steam_friends": {
-          const at = (i: number) => servers[i * 7 + 3]!;
+          // The busiest servers, so the list's first rows show the marker.
+          const top = [...servers].sort((x, y) => y.players - x.players);
+          const at = (i: number) => top[i]!;
           const friend = (
             i: number,
             name: string,
@@ -1015,23 +1017,34 @@ export function installMock() {
             server:
               server == null
                 ? null
-                : {
-                    ip: at(server).ip,
-                    port: at(server).query_port,
-                    name: at(server).name,
-                    map: at(server).map,
-                    players: at(server).players,
-                    max_players: at(server).max_players,
-                  },
+                : server < 0
+                  ? {
+                      ip: "203.0.113.7",
+                      port: 2302,
+                      name: null,
+                      map: null,
+                      players: null,
+                      max_players: null,
+                    }
+                  : {
+                      ip: at(server).ip,
+                      port: at(server).query_port,
+                      name: at(server).name,
+                      map: at(server).map,
+                      players: at(server).players,
+                      max_players: at(server).max_players,
+                    },
             last_online: status === "offline" ? now - (i + 1) * 5400 : null,
           });
           return {
             source: "web_api",
             error: null,
             friends: [
-              friend(0, "Kozak", "online", "DayZ", 1),
-              friend(1, "nightwolf", "online", "DayZ", 2),
+              friend(0, "Kozak", "online", "DayZ", 2),
+              friend(1, "nightwolf", "online", "DayZ", 0),
+              friend(8, "Pavel", "online", "DayZ", 0),
               friend(2, "Bambi Hunter", "away", "DayZ", null),
+              friend(9, "Yuri", "snooze", "DayZ", -1),
               friend(3, "Mira", "online", "Counter-Strike 2", null),
               friend(4, "Tobi", "busy", null, null),
               friend(5, "ZedSlayer", "online", null, null),

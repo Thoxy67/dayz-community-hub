@@ -7,9 +7,17 @@
 //! a key, or when that fails (a private friends list), the running Steam
 //! client is asked instead (`dz_steamworks::friends`): Steam shows DayZ
 //! running for a moment, game names come from the Store.
+//!
+//! The interface asks on a cadence while it matters (every 20 to 120 s, see
+//! `lib/stores/friends.svelte.ts`). Asks closer together than `MIN_AGE`
+//! share one answer, and the friend list itself is kept `LIST_AGE`, so a
+//! refresh costs one GetPlayerSummaries call per hundred friends: far under
+//! the Web API's 100 000 calls a day per key
+//! (<https://steamcommunity.com/dev/apiterms>).
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
+use std::time::{Duration, Instant};
 
 use futures_util::{StreamExt, TryStreamExt};
 use serde::{Deserialize, Serialize};
@@ -23,6 +31,21 @@ const DAYZ: u32 = 221_100;
 const SUMMARIES_PAGE: usize = 100;
 /// GetPlayerSummaries calls in flight at once.
 const SUMMARIES_IN_FLIGHT: usize = 4;
+/// Asks closer together than this get the last answer: the cadence, a
+/// manual Refresh and the window's return can coincide.
+const MIN_AGE: Duration = Duration::from_secs(10);
+/// The friend list (who your friends are) is asked again after this; what
+/// they are doing is asked every time.
+const LIST_AGE: Duration = Duration::from_secs(10 * 60);
+
+/// The last answer, behind an async lock: a second ask while one is in
+/// flight waits for it and gets its answer instead of asking Steam again.
+static LAST: LazyLock<tokio::sync::Mutex<Option<(Instant, FriendsDto)>>> =
+    LazyLock::new(Default::default);
+/// A friend list's ids: whose, when asked, the ids.
+type KeptIds = (String, Instant, Vec<String>);
+/// The friend list's ids, by the Steam id they belong to.
+static IDS: LazyLock<Mutex<Option<KeptIds>>> = LazyLock::new(Default::default);
 
 /// What a friend is doing.
 #[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq, specta::Type)]
@@ -95,22 +118,51 @@ pub struct FriendsDto {
     pub friends: Vec<FriendDto>,
 }
 
-/// The account's friends and what they are doing.
+/// The account's friends and what they are doing. `client`: the running
+/// Steam client may be asked when the Web API cannot answer (it shows DayZ
+/// running for a moment, so only while the Friends view is open).
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn steam_friends(state: State<'_, SharedState>) -> Result<FriendsDto, String> {
-    let web = crate::features::steam::access::web(&state).await;
+pub(crate) async fn steam_friends(
+    state: State<'_, SharedState>,
+    client: bool,
+) -> Result<FriendsDto, String> {
+    let mut last = LAST.lock().await;
+    if let Some((at, dto)) = last.as_ref()
+        && at.elapsed() < MIN_AGE
+        && (client || dto.source == Some(FriendsSource::WebApi))
+    {
+        return Ok(dto.clone());
+    }
+    let dto = ask(&state, client).await?;
+    // Only answers: "the Web API is not set up" from a background ask must
+    // not stand in for the view's own ask a moment later.
+    if dto.source.is_some() {
+        *last = Some((Instant::now(), dto.clone()));
+    }
+    Ok(dto)
+}
+
+async fn ask(state: &SharedState, client: bool) -> Result<FriendsDto, String> {
+    let web = crate::features::steam::access::web(state).await;
     let mut web_error = None;
     if let (Some(key), Some(id)) = (&web.key, &web.steam_id) {
         match from_web(key, id).await {
-            Ok(friends) => return Ok(finish(&state, friends, FriendsSource::WebApi).await),
+            Ok(friends) => return Ok(finish(state, friends, FriendsSource::WebApi).await),
             Err(e) => web_error = Some(e),
         }
+    }
+    if !client {
+        return Ok(FriendsDto {
+            source: None,
+            error: Some(web_error.unwrap_or_else(|| "No Steam Web API key or Steam id.".into())),
+            friends: Vec::new(),
+        });
     }
     match tauri::async_runtime::spawn_blocking(dz_steamworks::friends).await {
         Ok(Ok(friends)) => {
             let friends = from_client(friends).await;
-            Ok(finish(&state, friends, FriendsSource::SteamClient).await)
+            Ok(finish(state, friends, FriendsSource::SteamClient).await)
         }
         Ok(Err(e)) => Ok(FriendsDto {
             source: None,
@@ -229,7 +281,16 @@ struct Summary {
     lastlogoff: Option<i64>,
 }
 
-async fn from_web(key: &str, id: &str) -> Result<Vec<Raw>, String> {
+/// The friend list's ids: kept `LIST_AGE`, else asked of Steam.
+async fn friend_ids(key: &str, id: &str) -> Result<Vec<String>, String> {
+    let kept = IDS.lock().ok().and_then(|g| {
+        g.as_ref()
+            .filter(|(of, at, _)| of == id && at.elapsed() < LIST_AGE)
+            .map(|(.., ids)| ids.clone())
+    });
+    if let Some(ids) = kept {
+        return Ok(ids);
+    }
     let client = crate::net::api();
     // The key goes as a query parameter, never into a string that could
     // end up in an error message.
@@ -249,6 +310,15 @@ async fn from_web(key: &str, id: &str) -> Result<Vec<Raw>, String> {
         .into_iter()
         .map(|f| f.steamid)
         .collect();
+    if let Ok(mut g) = IDS.lock() {
+        *g = Some((id.to_owned(), Instant::now(), ids.clone()));
+    }
+    Ok(ids)
+}
+
+async fn from_web(key: &str, id: &str) -> Result<Vec<Raw>, String> {
+    let client = crate::net::api();
+    let ids = friend_ids(key, id).await?;
     // The pages at once (a few in flight): a long friends list is several
     // round trips otherwise, and the view waits on the last.
     let pages: Vec<String> = ids.chunks(SUMMARIES_PAGE).map(|p| p.join(",")).collect();

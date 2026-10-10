@@ -9,6 +9,7 @@
   import { servers } from "$lib/stores/servers.svelte";
   import { profile } from "$lib/stores/profile.svelte";
   import { mods } from "$lib/stores/mods.svelte";
+  import { friends } from "$lib/stores/friends.svelte";
   import { prefs } from "$lib/stores/prefs.svelte";
   import { compact } from "$lib/format";
   import { GROUPS, PLACES, type Place } from "./nav";
@@ -53,6 +54,8 @@
           : mods.installed.length
             ? { value: String(mods.installed.length) }
             : null;
+      case "friends":
+        return friends.inDayz ? { value: String(friends.inDayz), tone: "text-ok" } : null;
       default:
         return null;
     }

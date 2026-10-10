@@ -159,6 +159,19 @@
     });
   });
 
+  // Another view asked for one server (`app.go("servers", "server:ip:port")`,
+  // the Friends view's "show in the list"): selected, details open.
+  $effect(() => {
+    if (app.view !== "servers" || !app.focus?.startsWith("server:")) return;
+    const key = app.focus.slice("server:".length);
+    app.focus = null;
+    selected = null;
+    selectedIndex = -1;
+    wantIndex = -1;
+    showDetail = true;
+    wantKey = key;
+  });
+
   // Screenshot aid, in mock and dev builds only: `?select=N` selects row N
   // once it has arrived, so a capture can show the detail panel.
   const wantSelect =
