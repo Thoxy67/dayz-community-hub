@@ -51,6 +51,9 @@ pub struct GamepadStatus {
     /// Running inside Steam's big-screen interface, a Steam Deck's Game Mode
     /// or Big Picture, where Steam's on-screen keyboard is there to type with.
     pub steam_ui: bool,
+    /// On a Steam Deck (its Game Mode sets `SteamDeck=1`): Steam Input hands
+    /// the app a generic pad, and the buttons to draw are the Deck's.
+    pub steam_deck: bool,
 }
 
 /// The main window has the focus. Starts true: a compositor that never says
@@ -71,7 +74,7 @@ pub(crate) fn set_focused(focused: bool) {
 fn in_steam_ui() -> bool {
     ["SteamDeck", "SteamGamepadUI", "SteamTenfoot", "SteamOS"]
         .iter()
-        .any(|k| std::env::var(k).is_ok_and(|v| !v.is_empty() && v != "0"))
+        .any(|k| env_flag(k))
 }
 
 /// The pads, and whether a controller UI is to be expected.
@@ -83,7 +86,13 @@ pub(crate) fn gamepad_status() -> GamepadStatus {
         available: s.0,
         pads: s.1.clone(),
         steam_ui: in_steam_ui(),
+        steam_deck: env_flag("SteamDeck"),
     }
+}
+
+/// An environment variable Steam sets to 1 for what it launches.
+fn env_flag(key: &str) -> bool {
+    std::env::var(key).is_ok_and(|v| !v.is_empty() && v != "0")
 }
 
 fn btn(b: Button) -> Option<Btn> {

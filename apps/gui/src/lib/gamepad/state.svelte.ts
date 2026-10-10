@@ -32,6 +32,8 @@ class PadState {
   pads = $state.raw<PadInfo[]>([]);
   /** Inside Steam's big-screen interface: its on-screen keyboard is there. */
   steamUi = $state(false);
+  /** On a Steam Deck, as Steam's Game Mode says (`SteamDeck=1`). */
+  steamDeck = $state(false);
   /** The focused element while a pad drives, for hints that depend on it. */
   focused = $state.raw<Element | null>(null);
 
@@ -42,14 +44,15 @@ class PadState {
   #glyphs = $state<GlyphChoice>(savedGlyphs());
   /**
    * Glyphs to draw: the setting's, else the first pad's. Steam Input hands
-   * the app a generic virtual pad; inside Steam's big-screen interface that
-   * is most likely a Deck, whose shoulders read L1/R1.
+   * the app a generic virtual pad: on a Deck (Game Mode says so) the Deck's
+   * buttons are drawn, and inside Steam's big-screen interface elsewhere a
+   * Deck is still the likeliest, whose shoulders read L1/R1.
    */
   kind: PadKind = $derived.by(() => {
     if (this.#glyphs !== "auto") return this.#glyphs;
     const k = this.pads[0]?.kind ?? "generic";
     if (k !== "generic") return k;
-    return this.steamUi ? "steamDeck" : "xbox";
+    return this.steamDeck || this.steamUi ? "steamDeck" : "xbox";
   });
   /** The last action a pad sent and when, for the settings' live test. */
   last = $state.raw<{ action: PadAction; at: number } | null>(null);

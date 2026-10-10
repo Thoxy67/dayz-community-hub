@@ -727,6 +727,11 @@ export type GamepadStatus = {
 	 *  or Big Picture, where Steam's on-screen keyboard is there to type with.
 	 */
 	steam_ui: boolean,
+	/**
+	 *  On a Steam Deck (its Game Mode sets `SteamDeck=1`): Steam Input hands
+	 *  the app a generic pad, and the buttons to draw are the Deck's.
+	 */
+	steam_deck: boolean,
 };
 
 /**  Where the player is, approximately, from their IP address. */

@@ -14,6 +14,10 @@
   import type { InstalledModDto } from "$lib/ipc/types";
   import { mods } from "$lib/stores/mods.svelte";
   import { review, workshopUrl } from "./review.svelte";
+  import { shortcut } from "$lib/shortcuts/registry";
+
+  // The chips say what the registry says, so the menu and the ? sheet agree.
+  const key = (id: string) => shortcut(id).keys[0] ?? "";
 
   /**
    * Everything that can be done to one mod: the items of its "⋯" menu and
@@ -25,14 +29,18 @@
   const Separator = $derived(context ? ContextMenuSeparator : DropdownMenuSeparator);
 </script>
 
-<Item icon={RefreshCw} kbd="U" onselect={() => review.updateSelected([mod.id])}>
+<Item icon={RefreshCw} kbd={key("mods.update")} onselect={() => review.updateSelected([mod.id])}>
   {mod.update_available ? $m.update.value : $m.redownload.value}
 </Item>
 <Item icon={Wrench} onselect={() => mods.repair(mod)}>
   {$m.repair.value}
 </Item>
 <Separator />
-<Item icon={mod.managed ? Unlink : Link} kbd="M" onselect={() => mods.toggleManaged(mod)}>
+<Item
+  icon={mod.managed ? Unlink : Link}
+  kbd={key("mods.managed")}
+  onselect={() => mods.toggleManaged(mod)}
+>
   {mod.managed ? $m.unlinkAction.value : $m.linkAction.value}
 </Item>
 <Item icon={FolderOpen} onselect={() => mods.openModDir(mod.id)}>
@@ -45,6 +53,6 @@
   {$m.copyId.value}
 </Item>
 <Separator />
-<Item icon={Trash} tone="danger" kbd="Del" onselect={() => mods.remove(mod)}>
+<Item icon={Trash} tone="danger" kbd={key("mods.delete")} onselect={() => mods.remove(mod)}>
   {$m.delete.value}
 </Item>

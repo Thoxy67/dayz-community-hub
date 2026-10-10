@@ -38,3 +38,6 @@ skills-lock.json
 .ruff_cache/
 __pycache__/
 .pytest_cache/
+
+# Cargo output anywhere (an agent once built into apps/target)
+target/

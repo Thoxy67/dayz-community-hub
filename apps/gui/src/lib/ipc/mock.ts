@@ -950,6 +950,7 @@ export function installMock() {
                 ]
               : [],
             steam_ui: false,
+            steam_deck: false,
           };
         case "get_system_specs":
           return {

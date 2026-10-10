@@ -27,6 +27,7 @@ export function start(views: readonly ViewId[]): () => void {
       pad.available = s.available;
       pad.pads = s.pads;
       pad.steamUi = s.steam_ui;
+      pad.steamDeck = s.steam_deck;
       // Game Mode on a Steam Deck: there is no mouse to start with.
       if (s.steam_ui) pad.usedPad();
     })
