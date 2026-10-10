@@ -31,9 +31,10 @@ impl Vdf {
 
 /// Parse a whole file. Unbalanced or truncated input yields what was read.
 pub fn parse(text: &str) -> Vdf {
-    let tokens = tokenize(text);
-    let mut i = 0;
-    Vdf::Obj(block(&tokens, &mut i))
+    // Tokens are read as the parser asks for them and each string is moved
+    // into the tree: `localconfig.vdf` runs to megabytes, and a token list
+    // whose strings were then cloned into the tree held the file twice.
+    Vdf::Obj(block(&mut Tokens(text.chars().peekable())))
 }
 
 #[derive(Debug)]
@@ -43,66 +44,62 @@ enum Tok {
     Close,
 }
 
-fn tokenize(text: &str) -> Vec<Tok> {
-    let mut out = Vec::new();
-    let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
-        match c {
-            '{' => out.push(Tok::Open),
-            '}' => out.push(Tok::Close),
-            '/' if chars.peek() == Some(&'/') => {
-                for c in chars.by_ref() {
-                    if c == '\n' {
-                        break;
+struct Tokens<'a>(std::iter::Peekable<std::str::Chars<'a>>);
+
+impl Iterator for Tokens<'_> {
+    type Item = Tok;
+
+    fn next(&mut self) -> Option<Tok> {
+        let chars = &mut self.0;
+        while let Some(c) = chars.next() {
+            match c {
+                '{' => return Some(Tok::Open),
+                '}' => return Some(Tok::Close),
+                '/' if chars.peek() == Some(&'/') => {
+                    for c in chars.by_ref() {
+                        if c == '\n' {
+                            break;
+                        }
                     }
                 }
-            }
-            '"' => {
-                let mut s = String::new();
-                while let Some(c) = chars.next() {
-                    match c {
-                        '\\' => match chars.next() {
-                            Some('n') => s.push('\n'),
-                            Some('t') => s.push('\t'),
-                            Some(other) => s.push(other),
-                            None => break,
-                        },
-                        '"' => break,
-                        other => s.push(other),
+                '"' => {
+                    let mut s = String::new();
+                    while let Some(c) = chars.next() {
+                        match c {
+                            '\\' => match chars.next() {
+                                Some('n') => s.push('\n'),
+                                Some('t') => s.push('\t'),
+                                Some(other) => s.push(other),
+                                None => break,
+                            },
+                            '"' => break,
+                            other => s.push(other),
+                        }
                     }
+                    return Some(Tok::Str(s));
                 }
-                out.push(Tok::Str(s));
+                _ => {}
             }
-            _ => {}
         }
+        None
     }
-    out
 }
 
-fn block(tokens: &[Tok], i: &mut usize) -> Vec<(String, Vdf)> {
+fn block(tokens: &mut Tokens<'_>) -> Vec<(String, Vdf)> {
     let mut items = Vec::new();
-    while *i < tokens.len() {
-        match &tokens[*i] {
-            Tok::Close => {
-                *i += 1;
-                break;
-            }
-            Tok::Open => *i += 1, // a stray brace: skip it
-            Tok::Str(key) => {
-                *i += 1;
-                match tokens.get(*i) {
-                    Some(Tok::Str(v)) => {
-                        items.push((key.clone(), Vdf::Str(v.clone())));
-                        *i += 1;
-                    }
-                    Some(Tok::Open) => {
-                        *i += 1;
-                        let inner = block(tokens, i);
-                        items.push((key.clone(), Vdf::Obj(inner)));
-                    }
-                    _ => {}
+    while let Some(tok) = tokens.next() {
+        match tok {
+            Tok::Close => break,
+            Tok::Open => {} // a stray brace: skip it
+            Tok::Str(key) => match tokens.next() {
+                Some(Tok::Str(v)) => items.push((key, Vdf::Str(v))),
+                Some(Tok::Open) => {
+                    let inner = block(tokens);
+                    items.push((key, Vdf::Obj(inner)));
                 }
-            }
+                // A key without a value closes its block.
+                Some(Tok::Close) | None => break,
+            },
         }
     }
     items
@@ -141,6 +138,13 @@ mod tests {
             Some("proton-cachyos-native")
         );
         assert_eq!(v.str(&["nope"]), None);
+    }
+
+    #[test]
+    fn a_key_without_a_value_ends_its_block() {
+        let v = parse(r#""a" { "k" } "b" "c" "#);
+        assert_eq!(v.get(&["a"]), Some(&Vdf::Obj(Vec::new())));
+        assert_eq!(v.str(&["b"]), Some("c"));
     }
 
     #[test]

@@ -206,8 +206,7 @@ fn run(
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd.creation_flags(dz_common::CREATE_NO_WINDOW);
     }
     let mut child = cmd
         .spawn()
@@ -265,8 +264,18 @@ fn run(
 /// Read the worker's lines until its outcome: events go to `on`, anything
 /// not meant for the launcher to stderr. `None` when it ended without one.
 fn read_replies(stdout: impl std::io::Read, on: &mut dyn FnMut(Update)) -> Option<Reply> {
-    for line in BufReader::new(stdout).lines() {
-        let line = line.ok()?;
+    let mut reader = BufReader::new(stdout);
+    // One buffer for every line: a listing sends one per batch of servers.
+    // Bytes, not `lines()`: a line of Valve's own that is not UTF-8 would end
+    // the read there, and the session with it, as if the worker had died.
+    let mut raw = Vec::new();
+    loop {
+        raw.clear();
+        if reader.read_until(b'\n', &mut raw).ok()? == 0 {
+            return None;
+        }
+        let line = String::from_utf8_lossy(&raw);
+        let line = line.trim_end_matches(['\n', '\r']);
         let Some(json) = line.strip_prefix(MARK) else {
             if !line.trim().is_empty() {
                 eprintln!("[steamworks] {line}");
@@ -280,7 +289,6 @@ fn read_replies(stdout: impl std::io::Read, on: &mut dyn FnMut(Update)) -> Optio
             Err(e) => eprintln!("[steamworks] unreadable reply ({e}): {json}"),
         }
     }
-    None
 }
 
 const MIXED_UP: &str = "The Steam session answered something else than asked.";
@@ -492,6 +500,15 @@ mod tests {
         });
         assert_eq!(events, vec![Event::Log("Connected".into())]);
         assert!(matches!(outcome, Some(Reply::Check(Err(e))) if e == "Steam is not running."));
+    }
+
+    #[test]
+    fn a_line_that_is_not_utf8_does_not_end_the_session() {
+        let done = Reply::Check(Ok(()));
+        let mut text = b"\xff\xfe breakpad\r\n".to_vec();
+        text.extend(format!("{MARK}{}\r\n", serde_json::to_string(&done).unwrap()).bytes());
+        let outcome = read_replies(&text[..], &mut |_| {});
+        assert!(matches!(outcome, Some(Reply::Check(Ok(())))));
     }
 
     #[test]

@@ -43,7 +43,9 @@ tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time", "
 futures-util = { version = "0.3.34", default-features = false, features = ["alloc"] }
 
 # HTTP
-reqwest = { version = "0.13.5", default-features = false, features = ["native-tls", "json", "query"] }
+# gzip: the public server list is several megabytes of JSON, and the
+# masters and the Steam Web API all compress when asked.
+reqwest = { version = "0.13.5", default-features = false, features = ["native-tls", "json", "query", "gzip"] }
 # Low-level HTTP/1 client used only for the dayz.com news endpoint, which is
 # Cloudflare-gated. Passing it requires mimicking a browser at three layers:
 # a Chrome-like TLS fingerprint (rustls + aws-lc-rs/BoringSSL), an advertised

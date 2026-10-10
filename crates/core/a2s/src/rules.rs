@@ -96,17 +96,20 @@ async fn fetch_once(addr: &str, kind: u8, answer: u8, timeout: Duration) -> Resu
     socket.connect(addr).await.map_err(|e| err(e.to_string()))?;
     let deadline = Instant::now() + timeout;
 
+    // One receive buffer for the whole exchange, challenges included.
+    let mut buf = vec![0u8; 65_535];
+    let mut request = [0u8; 9];
+    request[..4].copy_from_slice(&HEADER);
+    request[4] = kind;
     let mut challenge = [0xFF; 4];
     for _ in 0..MAX_CHALLENGES {
-        let mut request = HEADER.to_vec();
-        request.push(kind);
-        request.extend_from_slice(&challenge);
+        request[5..].copy_from_slice(&challenge);
         socket
             .send(&request)
             .await
             .map_err(|e| err(e.to_string()))?;
 
-        let payload = receive(&socket, deadline).await.map_err(err)?;
+        let payload = receive(&socket, &mut buf, deadline).await.map_err(err)?;
         match payload.first() {
             Some(&S2C_CHALLENGE) if payload.len() >= 5 => challenge.copy_from_slice(&payload[1..5]),
             Some(&b) if b == answer => return Ok(payload),
@@ -119,12 +122,15 @@ async fn fetch_once(addr: &str, kind: u8, answer: u8, timeout: Duration) -> Resu
 
 /// One whole answer: a single datagram, or every fragment of a split one put
 /// back in order. The leading `FF FF FF FF` is stripped.
-async fn receive(socket: &UdpSocket, deadline: Instant) -> std::result::Result<Vec<u8>, String> {
-    let mut buf = vec![0u8; 65_535];
+async fn receive(
+    socket: &UdpSocket,
+    buf: &mut [u8],
+    deadline: Instant,
+) -> std::result::Result<Vec<u8>, String> {
     let mut fragments: Vec<Option<Vec<u8>>> = Vec::new();
     let mut split_id = None;
     loop {
-        let n = timeout_at(deadline, socket.recv(&mut buf))
+        let n = timeout_at(deadline, socket.recv(buf))
             .await
             .map_err(|_| "timed out".to_string())?
             .map_err(|e| e.to_string())?;
@@ -154,13 +160,24 @@ async fn receive(socket: &UdpSocket, deadline: Instant) -> std::result::Result<V
             fragments[number] = Some(packet[12..].to_vec());
         }
         if fragments.iter().all(Option::is_some) {
-            let joined: Vec<u8> = fragments.into_iter().flatten().flatten().collect();
-            return joined
-                .strip_prefix(&HEADER)
-                .map(<[u8]>::to_vec)
-                .ok_or_else(|| "split answer without a header".to_string());
+            return join_fragments(&fragments);
         }
     }
+}
+
+/// The fragments of a split answer, in order, as one answer without its
+/// leading `FF FF FF FF`: copied once into a buffer sized for all of them.
+fn join_fragments(fragments: &[Option<Vec<u8>>]) -> std::result::Result<Vec<u8>, String> {
+    let len: usize = fragments.iter().flatten().map(Vec::len).sum();
+    let mut joined = Vec::with_capacity(len);
+    for f in fragments.iter().flatten() {
+        joined.extend_from_slice(f);
+    }
+    if !joined.starts_with(&HEADER) {
+        return Err("split answer without a header".into());
+    }
+    joined.drain(..HEADER.len());
+    Ok(joined)
 }
 
 /// Read an A2S_RULES answer (from its `0x45` byte). The rule count is only a
@@ -195,16 +212,21 @@ pub fn parse_rules(payload: &[u8]) -> Result<DayzRules> {
     }
 
     if !chunks.is_empty() {
+        // In index order whatever order they came in; a chunk sent twice
+        // counts once (the sort is stable: the first copy stays).
         chunks.sort_by_key(|&(index, _)| index);
+        chunks.dedup_by_key(|&mut (index, _)| index);
         let whole = chunks
             .iter()
             .enumerate()
             .all(|(i, &(index, _))| index as usize == i + 1);
-        let block: Vec<u8> = chunks
-            .iter()
-            .flat_map(|&(_, v)| v.iter().copied())
-            .collect();
-        match whole.then(|| read_block(&unescape(&block))).flatten() {
+        // Unescaped straight from the chunks into one buffer: an escape may
+        // straddle two chunks, so they are read as one stream.
+        let block = whole.then(|| {
+            let len = chunks.iter().map(|(_, v)| v.len()).sum();
+            unescape(chunks.iter().flat_map(|&(_, v)| v.iter().copied()), len)
+        });
+        match block.and_then(|b| read_block(&b)) {
             Some(b) => {
                 out.mods = b.mods;
                 out.signatures = b.signatures;
@@ -218,9 +240,9 @@ pub fn parse_rules(payload: &[u8]) -> Result<DayzRules> {
 
 /// Undo the block's escaping, which keeps NULs out of the rule values:
 /// `01 01` is `01`, `01 02` is `00`, `01 03` is `FF`.
-fn unescape(data: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(data.len());
-    let mut bytes = data.iter().copied().peekable();
+fn unescape(data: impl Iterator<Item = u8>, len: usize) -> Vec<u8> {
+    let mut out = Vec::with_capacity(len);
+    let mut bytes = data.peekable();
     while let Some(b) = bytes.next() {
         let escaped = match (b, bytes.peek()) {
             (0x01, Some(0x01)) => Some(0x01),
@@ -420,6 +442,51 @@ mod tests {
         assert_eq!(r.get("dedicated"), Some("1"));
         assert!(!r.mods_unreadable);
         assert!(r.mods.is_empty());
+    }
+
+    #[test]
+    fn escapes_are_undone_even_across_two_chunks() {
+        let raw = [0x05, 0x01, 0x01, 0x01, 0x02, 0x01, 0x03, 0x01, 0x07, 0x01];
+        assert_eq!(
+            unescape(raw.iter().copied(), raw.len()),
+            [0x05, 0x01, 0x00, 0xFF, 0x01, 0x07, 0x01]
+        );
+        // The block of `chunks_are_put_back_in_index_order`, its `01 02`
+        // split over the two chunks.
+        let mut payload = vec![S2A_RULES, 2, 0];
+        payload.extend_from_slice(&[1, 2, 0]);
+        payload.extend_from_slice(&[0x02, 0x01, 0x02, 0x01, 0x02, 0x01, 0x02, 0x01, 0x00]);
+        payload.extend_from_slice(&[2, 2, 0]);
+        payload.extend_from_slice(&[0x02, 0x00]);
+        let r = parse_rules(&payload).expect("parses");
+        assert!(!r.mods_unreadable && r.mods.is_empty());
+    }
+
+    #[test]
+    fn a_chunk_sent_twice_counts_once_and_a_missing_one_is_unreadable() {
+        let mut payload = vec![S2A_RULES, 3, 0];
+        for _ in 0..2 {
+            payload.extend_from_slice(&[1, 2, 0]);
+            payload.extend_from_slice(&[0x02, 0x01, 0x02, 0x01, 0x02, 0x01, 0x02, 0x00]);
+        }
+        payload.extend_from_slice(&[2, 2, 0]);
+        payload.extend_from_slice(&[0x01, 0x02, 0x00]);
+        assert!(!parse_rules(&payload).expect("parses").mods_unreadable);
+
+        let mut only_second = vec![S2A_RULES, 1, 0];
+        only_second.extend_from_slice(&[2, 2, 0]);
+        only_second.extend_from_slice(&[0x01, 0x02, 0x00]);
+        assert!(parse_rules(&only_second).expect("parses").mods_unreadable);
+    }
+
+    #[test]
+    fn split_fragments_join_without_their_header() {
+        let joined = join_fragments(&[
+            Some(vec![0xFF, 0xFF, 0xFF, 0xFF, S2A_RULES, 1]),
+            Some(vec![2, 3]),
+        ]);
+        assert_eq!(joined.unwrap(), [S2A_RULES, 1, 2, 3]);
+        assert!(join_fragments(&[Some(vec![S2A_RULES])]).is_err());
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! Reading steamcmd's terminal output: escape sequences, prompts, mod ids.
 
 use regex::Regex;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 /// Strip ANSI/VT100 escape sequences (and stray BEL / carriage returns) from a
 /// string. steamcmd embeds colour codes even when stdout is a pipe, and under a
@@ -20,8 +20,7 @@ pub(crate) fn strip_ansi(s: &str) -> std::borrow::Cow<'_, str> {
     {
         return std::borrow::Cow::Borrowed(s);
     }
-    static ANSI_RE: OnceLock<Regex> = OnceLock::new();
-    let re = ANSI_RE.get_or_init(|| {
+    static ANSI_RE: LazyLock<Regex> = LazyLock::new(|| {
         // OSC: ESC ] … (BEL | ST)  |  CSI: ESC [ params intermediates final
         // (params 0x30-0x3f covers digits ';' '?'), |  2-byte escapes, | lone BEL/CR
         Regex::new(
@@ -29,7 +28,7 @@ pub(crate) fn strip_ansi(s: &str) -> std::borrow::Cow<'_, str> {
         )
         .unwrap()
     });
-    re.replace_all(s, "")
+    ANSI_RE.replace_all(s, "")
 }
 
 /// A line as the log shows it: escape sequences gone, and without the notice
@@ -106,13 +105,13 @@ pub(crate) fn is_login_ok(line: &str) -> bool {
 }
 
 /// Regex for extracting a workshop mod ID from a steamcmd output line — compiled once.
-static MOD_ID_RE: OnceLock<Regex> = OnceLock::new();
+static MOD_ID_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"item[: ]+(\d+)").unwrap());
 
 /// Extract a workshop mod ID (number) from a steamcmd output line.
 /// Matches patterns like "item 1559212036" or "item:1559212036".
 pub(crate) fn extract_mod_id_from_line(line: &str) -> Option<u64> {
-    let re = MOD_ID_RE.get_or_init(|| Regex::new(r"item[: ]+(\d+)").unwrap());
-    re.captures(line)
+    MOD_ID_RE
+        .captures(line)
         .and_then(|c| c.get(1))
         .and_then(|m| m.as_str().parse::<u64>().ok())
 }

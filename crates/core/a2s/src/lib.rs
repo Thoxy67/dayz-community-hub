@@ -43,23 +43,30 @@ fn duration_to_ms_floor1(d: Duration) -> u32 {
     if ms == 0 && d.as_micros() > 0 { 1 } else { ms }
 }
 
-/// A fresh A2S client with the standard 5 s timeout.
+/// A fresh A2S client: queries give up after 5 s, with no retry.
 ///
-/// Create one per scan and share it: `async-a2s` multiplexes responses on
-/// its single UDP socket, so concurrent queries on one client are safe and
-/// save a socket bind each.
+/// Create one per scan and share it. The client holds only settings:
+/// `async-a2s` binds a socket connected to the server for each query, so
+/// concurrent queries on one client never see each other's answers.
 pub async fn new_client() -> Result<A2SClient> {
     client_with_timeout(Duration::from_secs(5)).await
 }
 
-/// A fresh A2S client whose queries give up after `timeout`.
+/// A fresh A2S client whose queries give up after `timeout`, with no retry.
+///
+/// `async-a2s` would otherwise send each query up to three times (two
+/// retries by default), each waiting `timeout`: a silent server held a scan
+/// slot three times as long as asked, under the caller's own retries. A
+/// caller that wants another try asks again (`Client::retries` restores
+/// the crate's).
 pub async fn client_with_timeout(timeout: Duration) -> Result<A2SClient> {
     let mut client = A2SClient::new()
         .await
         .map_err(|e| Error::A2sQuery(format!("Failed to create A2S client: {e}")))?;
     client
         .set_timeout(timeout)
-        .map_err(|e| Error::A2sQuery(format!("Failed to set timeout: {e}")))?;
+        .map_err(|e| Error::A2sQuery(format!("Failed to set timeout: {e}")))?
+        .retries(0);
     Ok(client)
 }
 
@@ -88,14 +95,24 @@ pub async fn ping_using(client: &A2SClient, addr: &str) -> Result<Ping> {
     })
 }
 
+/// A client for one query on its own (the detail panel, a manual ping):
+/// two tries of half the usual wait, so one lost UDP packet does not read
+/// as a silent server, and still no longer than 5 s in all. A scan keeps
+/// its own retries ([`client_with_timeout`]).
+async fn one_off_client() -> Result<A2SClient> {
+    let mut client = client_with_timeout(Duration::from_millis(2500)).await?;
+    client.retries(1);
+    Ok(client)
+}
+
 /// Ping with a client of its own.
 pub async fn ping(addr: &str) -> Result<Ping> {
-    ping_using(&new_client().await?, addr).await
+    ping_using(&one_off_client().await?, addr).await
 }
 
 /// A2S_INFO.
 pub async fn query_info(addr: &str) -> Result<Info> {
-    let client = new_client().await?;
+    let client = one_off_client().await?;
     let (info, _latency) = client
         .info(addr, None)
         .await

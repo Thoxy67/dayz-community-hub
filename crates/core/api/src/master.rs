@@ -23,6 +23,7 @@
 //! every request `200` with no servers, exactly as for a filter that
 //! matches nothing. [`web_throttled`] tells the two apart.
 
+use rustc_hash::FxHashSet;
 use serde::Deserialize;
 
 /// Steam's ceiling for one request.
@@ -82,17 +83,18 @@ impl WebPartition {
             Some(false) => "\\empty\\1",
             None => "",
         };
-        let mut name = String::new();
+        use std::fmt::Write;
+        let mut out = format!("\\appid\\221100{players}{}", self.extra);
         if !self.prefix.is_empty() {
-            name.push_str(&format!("\\name_match\\{}*", self.prefix));
+            let _ = write!(out, "\\name_match\\{}*", self.prefix);
         }
         if !self.excluded.is_empty() {
-            name.push_str(&format!("\\nor\\{}", self.excluded.len()));
+            let _ = write!(out, "\\nor\\{}", self.excluded.len());
             for e in &self.excluded {
-                name.push_str(&format!("\\name_match\\{e}*"));
+                let _ = write!(out, "\\name_match\\{e}*");
             }
         }
-        format!("\\appid\\221100{players}{}{name}", self.extra)
+        out
     }
 
     /// The same request as the Steam client's filters (`dz_steamworks`),
@@ -141,17 +143,23 @@ impl WebPartition {
         if self.prefix.chars().count() >= MAX_SPLIT_DEPTH || self.excluded.len() >= MAX_EXCLUDED {
             return Vec::new();
         }
+        // Ten thousand names, a handful of starts: each character is looked
+        // at once, and a start is written out only the first time it comes.
+        let mut seen: FxHashSet<char> = FxHashSet::default();
+        let excluded: FxHashSet<&str> = self.excluded.iter().map(String::as_str).collect();
         let mut starts: Vec<String> = Vec::new();
         for name in names {
             let Some(c) = next_char(name, &self.prefix) else {
                 continue;
             };
             // The filter's own syntax cannot be asked for: left to the rest.
-            if c == '*' || c == '\\' {
+            if c == '*' || c == '\\' || !seen.insert(c) {
                 continue;
             }
-            let start = format!("{}{c}", self.prefix);
-            if !self.excluded.contains(&start) && !starts.contains(&start) {
+            let mut start = String::with_capacity(self.prefix.len() + c.len_utf8());
+            start.push_str(&self.prefix);
+            start.push(c);
+            if !excluded.contains(start.as_str()) {
                 starts.push(start);
             }
         }
@@ -230,8 +238,13 @@ fn parse(body: &[u8]) -> Result<Vec<MasterAddr>, String> {
         .filter_map(|r| {
             let (ip, port) = r.addr.rsplit_once(':')?;
             let query_port: u16 = port.parse().ok().filter(|p| *p != 0)?;
+            // The address's own string, cut at the colon: no second
+            // allocation per row of up to twenty thousand.
+            let ip_len = ip.len();
+            let mut ip = r.addr;
+            ip.truncate(ip_len);
             Some(MasterAddr {
-                ip: ip.to_owned(),
+                ip,
                 name: r.name,
                 query_port,
                 game_port: if r.gameport == 0 {

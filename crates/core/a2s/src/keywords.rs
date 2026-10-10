@@ -44,10 +44,13 @@ pub struct DayzInfo {
 
 /// A number as DayZ writes it: `4.000000`, or `4-000000` through the master server.
 fn number(s: &str) -> Option<f32> {
-    s.replace('-', ".")
-        .parse::<f32>()
-        .ok()
-        .filter(|v| v.is_finite())
+    // Only the master's spelling needs rewriting: the server's own parses as is.
+    let parsed = if s.contains('-') {
+        s.replace('-', ".").parse::<f32>()
+    } else {
+        s.parse::<f32>()
+    };
+    parsed.ok().filter(|v| v.is_finite())
 }
 
 fn is_clock(tag: &str) -> bool {

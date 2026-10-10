@@ -15,7 +15,7 @@ use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{LazyLock, Mutex};
 
 /// Whose folder a mod copy is in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,12 +66,20 @@ impl ModDirs {
         )
     }
 
+    /// [`Self::all`], resolved once: each call canonicalises every folder,
+    /// which linking a modded server's thirty mods would otherwise repeat
+    /// per mod.
+    fn resolved(&self) -> Vec<(&Path, ModSource)> {
+        self.all().collect()
+    }
+
     /// Every installed mod, one entry per id (the copy updated last), sorted
     /// by name. `dayz` tells which are linked.
     pub fn scan(&self, dayz: Option<&Path>) -> Vec<InstalledMod> {
+        // Each folder unsorted: `merge_copies` sorts the union once.
         let copies = self
             .all()
-            .flat_map(|(dir, source)| scan_workshop_dir(dir, source).unwrap_or_default())
+            .flat_map(|(dir, source)| scan_dir(dir, source).unwrap_or_default())
             .collect();
         let mut mods = merge_copies(copies);
         if let Some(dayz) = dayz {
@@ -85,17 +93,7 @@ impl ModDirs {
     /// The directory of the copy of `id` to use: the one updated last, the
     /// launcher's on a tie. Reads only each copy's `meta.cpp`.
     pub fn copy_of(&self, id: u64) -> Option<(PathBuf, ModSource)> {
-        let mut best: Option<(PathBuf, ModSource, i64)> = None;
-        for (dir, source) in self.all() {
-            let path = dir.join(id.to_string());
-            let Some(updated) = meta_mtime(&path.join("meta.cpp")) else {
-                continue;
-            };
-            if best.as_ref().is_none_or(|(_, _, b)| updated > *b) {
-                best = Some((path, source, updated));
-            }
-        }
-        best.map(|(path, source, _)| (path, source))
+        copy_in(&self.resolved(), id)
     }
 
     /// The launcher's copy of `id`, whether or not it exists.
@@ -118,6 +116,22 @@ impl ModDirs {
             .filter(|(_, s)| *s == ModSource::Steam)
             .any(|(dir, _)| dir.join(id.to_string()).join("meta.cpp").is_file())
     }
+}
+
+/// [`ModDirs::copy_of`] over folders already resolved.
+fn copy_in(dirs: &[(&Path, ModSource)], id: u64) -> Option<(PathBuf, ModSource)> {
+    let name = id.to_string();
+    let mut best: Option<(PathBuf, ModSource, i64)> = None;
+    for &(dir, source) in dirs {
+        let path = dir.join(&name);
+        let Some(updated) = meta_mtime(&path.join("meta.cpp")) else {
+            continue;
+        };
+        if best.as_ref().is_none_or(|(_, _, b)| updated > *b) {
+            best = Some((path, source, updated));
+        }
+    }
+    best.map(|(path, source, _)| (path, source))
 }
 
 /// One entry per mod id from copies in several folders: the copy updated
@@ -144,21 +158,30 @@ pub fn merge_copies(copies: Vec<InstalledMod>) -> Vec<InstalledMod> {
         }
     }
     let mut mods: Vec<InstalledMod> = by_id.into_values().collect();
-    mods.sort_by_key(|a| a.name.to_lowercase());
+    sort_by_name(&mut mods);
     mods
 }
 
+/// Sorted by name without regard to case. Each lowercase key is made once,
+/// not once per comparison.
+fn sort_by_name(mods: &mut [InstalledMod]) {
+    mods.sort_by_cached_key(|a| a.name.to_lowercase());
+}
+
 fn meta_mtime(meta: &Path) -> Option<i64> {
-    fs::metadata(meta)
-        .and_then(|m| m.modified())
+    mtime_secs(&fs::metadata(meta).ok()?)
+}
+
+fn mtime_secs(meta: &fs::Metadata) -> Option<i64> {
+    meta.modified()
         .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_secs() as i64)
 }
 
 /// Regexes for parsing meta.cpp — compiled once at first use.
-static NAME_RE: OnceLock<Regex> = OnceLock::new();
-static ID_RE: OnceLock<Regex> = OnceLock::new();
+static NAME_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"name\s*=\s*"([^"]+)""#).unwrap());
+static ID_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"publishedid\s*=\s*(\d+)"#).unwrap());
 
 /// Process-lifetime cache: mod directory → (stamp, total size in bytes). The
 /// stamp is the directory's mtime together with `meta.cpp`'s: the directory's
@@ -166,41 +189,55 @@ static ID_RE: OnceLock<Regex> = OnceLock::new();
 /// while steamcmd rewrites `meta.cpp` on every download, so an update that
 /// only changed files deeper down still invalidates the size.
 type SizeCache = Mutex<HashMap<PathBuf, ((u64, u64), u64)>>;
-static SIZE_CACHE: OnceLock<SizeCache> = OnceLock::new();
+static SIZE_CACHE: LazyLock<SizeCache> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn size_cache() -> &'static SizeCache {
-    SIZE_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+    &SIZE_CACHE
 }
 
 /// Scan one workshop folder and return the mods in it, as `source`, sorted
 /// by name. Reads `meta.cpp` from each mod directory for its name and id.
 pub fn scan_workshop_dir(workshop_path: &Path, source: ModSource) -> Result<Vec<InstalledMod>> {
-    if !workshop_path.exists() {
-        return Ok(Vec::new());
-    }
+    let mut mods = scan_dir(workshop_path, source)?;
+    sort_by_name(&mut mods);
+    Ok(mods)
+}
 
+/// [`scan_workshop_dir`] in directory order.
+fn scan_dir(workshop_path: &Path, source: ModSource) -> Result<Vec<InstalledMod>> {
+    let entries = match fs::read_dir(workshop_path) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e.into()),
+    };
     let mut mods = Vec::new();
-    let entries = fs::read_dir(workshop_path)?;
-    let name_re = NAME_RE.get_or_init(|| Regex::new(r#"name\s*=\s*"([^"]+)""#).unwrap());
-    let id_re = ID_RE.get_or_init(|| Regex::new(r#"publishedid\s*=\s*(\d+)"#).unwrap());
 
     // An entry that cannot be read is skipped, not a reason to list nothing.
+    // No separate "is it a directory" check: a file has no `meta.cpp` under
+    // it, so opening that fails the same way, one stat sooner.
     for entry in entries.flatten() {
         let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
         let meta_path = path.join("meta.cpp");
-        let Ok(meta_content) = fs::read_to_string(&meta_path) else {
+        let Ok(mut meta_file) = fs::File::open(&meta_path) else {
             continue;
         };
-        let name = name_re
+        // The open file's own metadata: no second lookup of the path.
+        let local_updated = meta_file
+            .metadata()
+            .ok()
+            .and_then(|m| mtime_secs(&m))
+            .unwrap_or(0);
+        let mut meta_content = String::new();
+        if std::io::Read::read_to_string(&mut meta_file, &mut meta_content).is_err() {
+            continue;
+        }
+        let name = NAME_RE
             .captures(&meta_content)
             .and_then(|c| c.get(1))
             .map(|m| m.as_str().to_string())
             .unwrap_or_else(|| "Unknown".to_string());
         // Without an id in meta.cpp, the directory's name is the id.
-        let id = id_re
+        let id = ID_RE
             .captures(&meta_content)
             .and_then(|c| c.get(1))
             .and_then(|m| m.as_str().parse::<u64>().ok())
@@ -213,7 +250,6 @@ pub fn scan_workshop_dir(workshop_path: &Path, source: ModSource) -> Result<Vec<
             continue;
         };
 
-        let local_updated = meta_mtime(&meta_path).unwrap_or(0);
         let size = du_dir_cached(&path, local_updated.max(0) as u64).unwrap_or(0);
 
         mods.push(InstalledMod {
@@ -227,8 +263,6 @@ pub fn scan_workshop_dir(workshop_path: &Path, source: ModSource) -> Result<Vec<
             other_copy: false,
         });
     }
-
-    mods.sort_by_key(|a| a.name.to_lowercase());
     Ok(mods)
 }
 
@@ -419,9 +453,10 @@ fn same_path(a: &Path, b: &Path) -> bool {
 
 /// Link each of `mod_ids` to its chosen copy. Returns the ids linked.
 pub fn create_mod_symlinks(dirs: &ModDirs, dayz_path: &Path, mod_ids: &[u64]) -> Result<Vec<u64>> {
-    let mut created = Vec::new();
+    let resolved = dirs.resolved();
+    let mut created = Vec::with_capacity(mod_ids.len());
     for &mod_id in mod_ids {
-        let Some((source, _)) = dirs.copy_of(mod_id) else {
+        let Some((source, _)) = copy_in(&resolved, mod_id) else {
             continue;
         };
         match create_mod_symlink(&source, dayz_path, mod_id) {

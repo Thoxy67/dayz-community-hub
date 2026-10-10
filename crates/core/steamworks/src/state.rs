@@ -59,16 +59,18 @@ impl fmt::Display for ItemState {
             (ItemState::DOWNLOAD_PENDING, "download pending"),
             (ItemState::DISABLED_LOCALLY, "disabled locally"),
         ];
-        let words: Vec<&str> = NAMES
+        let mut words = NAMES
             .iter()
             .filter(|(flag, _)| self.has(*flag))
-            .map(|(_, name)| *name)
-            .collect();
-        if words.is_empty() {
-            f.write_str("unknown to Steam")
-        } else {
-            f.write_str(&words.join(", "))
-        }
+            .map(|(_, name)| *name);
+        let Some(first) = words.next() else {
+            return f.write_str("unknown to Steam");
+        };
+        f.write_str(first)?;
+        words.try_for_each(|w| {
+            f.write_str(", ")?;
+            f.write_str(w)
+        })
     }
 }
 

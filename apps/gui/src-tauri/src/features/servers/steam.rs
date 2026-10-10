@@ -183,11 +183,12 @@ fn compose() -> Arc<ServerList> {
     if f.rows.is_empty() && f.kept.is_empty() && f.dropped.is_empty() {
         return Arc::clone(&f.base);
     }
+    // One allocation of the final size: cloning the base and then merging
+    // into it grew the list a second time.
     let mut list = ServerList {
         status: f.base.status,
-        result: f.base.result.clone(),
+        result: dz_api::merged_steam(&f.base.result, &f.rows, &f.farms),
     };
-    dz_api::merge_steam(&mut list.result, &f.rows, &f.farms);
     if !f.kept.is_empty() {
         let mut have: FxHashSet<(String, i64)> = list.result.iter().map(key).collect();
         list.result

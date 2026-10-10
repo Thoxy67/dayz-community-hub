@@ -14,9 +14,9 @@ use crate::state::SharedState;
 const A2S_CACHE_TTL: Duration = Duration::from_secs(30);
 /// How long one A2S_RULES attempt waits (it is tried twice).
 const RULES_TIMEOUT: Duration = Duration::from_secs(3);
-/// The longest the panel waits for a server's info and players. async-a2s
-/// retries a silent server twice at 5 s each: 15 s of a panel loading,
-/// which reads as never.
+/// The longest the panel waits for a server's info and players: the info
+/// query tries twice within 5 s on its own, and a panel loading longer than
+/// this reads as never.
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(6);
 
 #[derive(Serialize, Clone, Debug, specta::Type)]

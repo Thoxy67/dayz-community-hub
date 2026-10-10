@@ -15,7 +15,7 @@ pub use master::{
 pub use official::{
     fetch_official_servers, merge_official, name_looks_official, tags_say_official,
 };
-pub use steam::{FARM_ADDRESS, FarmCounter, SteamListed, merge_steam};
+pub use steam::{FARM_ADDRESS, FarmCounter, SteamListed, merge_steam, merged_steam};
 
 use dz_common::{Error, Result};
 use serde::{Deserialize, Serialize};

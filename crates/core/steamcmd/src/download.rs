@@ -193,11 +193,13 @@ impl SteamCmd {
             // We now slice into `buf` in place, drain after we're done reading,
             // and use ASCII case-insensitive contains so the only allocation
             // per line is the one the channel send genuinely requires.
-            while let Some(nl_pos) = buf.find('\n') {
-                // Scope the borrow on `buf` so we can `.drain` after.
-                let advance_to = nl_pos + 1;
+            // The lines are read in place and drained once at the end: a
+            // drain per line moved the rest of a 4 KiB chunk once per line.
+            let mut start = 0;
+            while let Some(nl) = buf[start..].find('\n') {
+                let nl_pos = start + nl;
                 {
-                    let stripped = clean_line(&buf[..nl_pos]);
+                    let stripped = clean_line(&buf[start..nl_pos]);
                     let line: &str = stripped.as_ref();
 
                     // Forward every non-empty line to the UI log panel.
@@ -284,9 +286,9 @@ impl SteamCmd {
                         }
                     }
                 }
-                // Borrow on buf released; advance in place (no realloc).
-                buf.drain(..advance_to);
+                start = nl_pos + 1;
             }
+            buf.drain(..start);
 
             // ── Real-time download progress (carriage-return overwrites) ────
             // steamcmd reports download progress by rewriting one line with '\r'

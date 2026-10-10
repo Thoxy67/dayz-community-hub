@@ -355,14 +355,25 @@ fn steam_libraries_from_vdf(steamapps: &std::path::Path) -> Vec<PathBuf> {
 pub fn steam_workshop_dirs(steam_root: &Path) -> Vec<PathBuf> {
     let mut steamapps = vec![steam_root.to_path_buf()];
     steamapps.extend(default_steamapps_candidates());
+    // Every `libraryfolders.vdf` lists every library, and `steam_root` is
+    // usually one of the defaults: the same paths come back several times.
+    // Spelled the same, they are dropped before anything is read or asked
+    // of the disk again (this runs on every mod scan); the canonical check
+    // below still catches the same folder reached through a link.
+    let mut read = rustc_hash::FxHashSet::default();
+    let mut listed = rustc_hash::FxHashSet::default();
     let mut libraries: Vec<PathBuf> = Vec::new();
-    for sa in &steamapps {
-        libraries.push(sa.clone());
-        libraries.extend(
-            steam_libraries_from_vdf(sa)
-                .into_iter()
-                .map(|lib| lib.join("steamapps")),
-        );
+    for sa in steamapps {
+        if !read.insert(sa.clone()) {
+            continue;
+        }
+        let more = steam_libraries_from_vdf(&sa);
+        let found = std::iter::once(sa).chain(more.into_iter().map(|lib| lib.join("steamapps")));
+        for sa in found {
+            if listed.insert(sa.clone()) {
+                libraries.push(sa);
+            }
+        }
     }
     let mut seen = rustc_hash::FxHashSet::default();
     libraries

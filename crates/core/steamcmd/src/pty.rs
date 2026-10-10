@@ -17,10 +17,11 @@ pub(crate) type PtyStreamHandles = (
 );
 
 impl SteamCmd {
-    /// Spawn steamcmd under a PTY and stream its output as raw byte chunks.
+    /// Spawn steamcmd under a PTY and stream its output as text chunks.
     ///
-    /// Returns `(child, chunk_rx)`. The caller drains `chunk_rx` until it closes
-    /// (signals EOF / process exit), then calls `child.wait()`.
+    /// Returns `(child, chunk_rx, writer)`. The caller drains `chunk_rx` until
+    /// it closes (EOF / process exit), then calls `child.wait()`; `writer` is
+    /// steamcmd's terminal input, for a password or a Steam Guard code.
     ///
     /// Using a PTY forces steamcmd's stdio into line-buffered mode so every
     /// line arrives immediately (Linux PTY / Windows ConPTY).
@@ -30,12 +31,6 @@ impl SteamCmd {
     /// running a second watcher thread that calls `child.wait()` and then drops
     /// the master, which finally unblocks the reader and lets it return an error,
     /// breaking the read loop and closing `chunk_rx`.
-    /// PTY writer handle — wrapped so it can be shared across threads.
-    /// The download task uses this to send password / Steam Guard codes to
-    /// the running steamcmd process.
-    ///
-    /// Bundles the three handles spawn_pty_streamed hands back: the (no-op)
-    /// child, the stdout chunk receiver, and the PTY writer.
     pub(crate) fn spawn_pty_streamed(
         &self,
         args: &[std::ffi::OsString],
@@ -118,14 +113,17 @@ impl SteamCmd {
             // small per line, so this only batches what would otherwise be
             // multiple syscalls back-to-back.
             let mut buf = [0u8; 4096];
+            let mut split = Vec::new();
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => break,
                     Ok(n) => {
-                        let s = String::from_utf8_lossy(&buf[..n]).into_owned();
-                        let _ = chunk_tx.send(s);
+                        let _ = chunk_tx.send(decode_chunk(&mut split, &buf[..n]));
                     }
                 }
+            }
+            if !split.is_empty() {
+                let _ = chunk_tx.send(String::from_utf8_lossy(&split).into_owned());
             }
             // Drain the exit channel so the watcher thread is not leaked.
             let _ = exit_rx.recv();
@@ -133,6 +131,41 @@ impl SteamCmd {
 
         Ok((Box::new(PtyChild { killer, exited }), chunk_rx, writer))
     }
+}
+
+/// `read` as text, with `split` the bytes of a character the previous read
+/// cut in two: they are held back for the next read rather than turned into
+/// replacement characters (a Cyrillic mod name across a 4 KiB boundary).
+fn decode_chunk(split: &mut Vec<u8>, read: &[u8]) -> String {
+    let bytes: std::borrow::Cow<'_, [u8]> = if split.is_empty() {
+        read.into()
+    } else {
+        split.extend_from_slice(read);
+        std::mem::take(split).into()
+    };
+    let keep = unfinished_tail(&bytes);
+    let (text, rest) = bytes.split_at(bytes.len() - keep);
+    split.extend_from_slice(rest);
+    String::from_utf8_lossy(text).into_owned()
+}
+
+/// How many bytes at the end of `b` start a character that is not complete
+/// yet: at most three (a four-byte character missing its last).
+fn unfinished_tail(b: &[u8]) -> usize {
+    for back in 1..=b.len().min(3) {
+        let c = b[b.len() - back];
+        if c & 0xC0 == 0x80 {
+            continue; // a continuation byte: its lead is further back
+        }
+        let need = match c {
+            0xF0.. => 4,
+            0xE0.. => 3,
+            0xC0.. => 2,
+            _ => 1,
+        };
+        return if need > back { back } else { 0 };
+    }
+    0
 }
 
 /// The handle `spawn_pty_streamed` returns. The real child is owned by the
@@ -194,5 +227,30 @@ impl portable_pty::Child for PtyChild {
     #[cfg(windows)]
     fn as_raw_handle(&self) -> Option<std::os::windows::io::RawHandle> {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode_chunk;
+
+    #[test]
+    fn a_character_cut_between_reads_is_joined() {
+        let text = "Загрузка мода".as_bytes();
+        let mut split = Vec::new();
+        let mut out = String::new();
+        for part in text.chunks(3) {
+            out.push_str(&decode_chunk(&mut split, part));
+        }
+        assert!(split.is_empty());
+        assert_eq!(out, "Загрузка мода");
+    }
+
+    #[test]
+    fn invalid_bytes_are_replaced_and_ascii_passes_through() {
+        let mut split = Vec::new();
+        assert_eq!(decode_chunk(&mut split, b"ok\xffok"), "ok\u{fffd}ok");
+        assert_eq!(decode_chunk(&mut split, b"plain"), "plain");
+        assert!(split.is_empty());
     }
 }

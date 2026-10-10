@@ -106,7 +106,14 @@ impl FarmCounter {
     /// wherever they sit, and do not count.
     pub fn add(&mut self, ip: &str, query_port: i64, empty: Option<bool>) {
         if empty != Some(false) && self.seen.insert((ip.to_owned(), query_port)) {
-            *self.per_ip.entry(ip.to_owned()).or_default() += 1;
+            // An address is counted many times (that is what a farm is): its
+            // string is made once, not per server.
+            match self.per_ip.get_mut(ip) {
+                Some(n) => *n += 1,
+                None => {
+                    self.per_ip.insert(ip.to_owned(), 1);
+                }
+            }
         }
     }
 
@@ -121,27 +128,77 @@ impl FarmCounter {
 /// official the listed ones Steam's tags say are. Returns how many were
 /// added.
 pub fn merge_steam(list: &mut Vec<Server>, listed: &[SteamListed], farms: &FarmCounter) -> usize {
-    let mut at: FxHashMap<(String, i64), usize> = list
+    let (mark, add) = plan(list, listed, farms);
+    for i in mark {
+        list[i].official = true;
+    }
+    let added = add.len();
+    list.reserve(added);
+    list.extend(add.into_iter().map(steam_server));
+    added
+}
+
+/// [`merge_steam`] into a new list, `base` left as it is: one allocation of
+/// the final size and one copy of each server, where cloning `base` and then
+/// merging grew (and moved) the whole list a second time.
+pub fn merged_steam(base: &[Server], listed: &[SteamListed], farms: &FarmCounter) -> Vec<Server> {
+    let (mark, add) = plan(base, listed, farms);
+    let mut out = Vec::with_capacity(base.len() + add.len());
+    out.extend_from_slice(base);
+    for i in mark {
+        out[i].official = true;
+    }
+    out.extend(add.into_iter().map(steam_server));
+    out
+}
+
+/// One server to add, and whether a repeat of it says it is official.
+type Addition<'a> = (&'a SteamListed, bool);
+
+fn steam_server((s, official): Addition<'_>) -> Server {
+    let mut server = s.to_server();
+    server.official |= official;
+    server
+}
+
+/// What merging `listed` into `list` does: the positions to mark official
+/// and the servers to add, decided with keys borrowed from both lists (an
+/// index keyed by a copy of every address made ten thousand strings or more
+/// for each merge).
+fn plan<'a>(
+    list: &[Server],
+    listed: &'a [SteamListed],
+    farms: &FarmCounter,
+) -> (Vec<usize>, Vec<Addition<'a>>) {
+    let at: FxHashMap<(&str, i64), usize> = list
         .iter()
         .enumerate()
-        .map(|(i, s)| ((s.endpoint.ip.clone(), s.endpoint.port), i))
+        .map(|(i, s)| ((s.endpoint.ip.as_str(), s.endpoint.port), i))
         .collect();
-    let before = list.len();
+    let mut mark: Vec<usize> = Vec::new();
+    let mut add: Vec<Addition<'a>> = Vec::new();
+    let mut added: FxHashMap<(&str, i64), usize> = FxHashMap::default();
     for s in listed {
-        let key = (s.ip.clone(), s.query_port);
+        let key = (s.ip.as_str(), s.query_port);
         if let Some(&i) = at.get(&key) {
             if tags_say_official(&s.tags) {
-                list[i].official = true;
+                mark.push(i);
+            }
+            continue;
+        }
+        if let Some(&j) = added.get(&key) {
+            if tags_say_official(&s.tags) {
+                add[j].1 = true;
             }
             continue;
         }
         if s.empty != Some(false) && farms.is_farm(&s.ip) {
             continue;
         }
-        at.insert(key, list.len());
-        list.push(s.to_server());
+        added.insert(key, add.len());
+        add.push((s, false));
     }
-    list.len() - before
+    (mark, add)
 }
 
 #[cfg(test)]
@@ -231,6 +288,19 @@ mod tests {
             list.iter().filter(|s| s.endpoint.ip == "7.7.7.7").count(),
             5
         );
+    }
+
+    #[test]
+    fn a_new_merged_list_is_the_same_as_one_merged_in_place() {
+        let base = vec![known("1.1.1.1", 27016)];
+        let rows = [
+            listed("1.1.1.1", 27016, Some(false)),
+            listed("2.2.2.2", 27016, Some(true)),
+        ];
+        let mut in_place = base.clone();
+        merge(&mut in_place, &rows);
+        assert_eq!(merged_steam(&base, &rows, &counted(&rows)), in_place);
+        assert_eq!(base.len(), 1);
     }
 
     #[test]

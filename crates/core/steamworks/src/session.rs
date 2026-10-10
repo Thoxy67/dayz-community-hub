@@ -12,7 +12,7 @@
 //! run), so the results of subscriptions and downloads can be read without
 //! C++ callback objects.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::{CStr, c_char};
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -251,13 +251,12 @@ pub(crate) fn subscriptions(
         .collect();
 
     let mut details: Vec<Details> = Vec::new();
-    let mut asked: std::collections::HashSet<u64> = std::collections::HashSet::new();
+    // `known` may be every mod on disk and `ids` every subscription: a set,
+    // not a scan of the slice per id.
+    let mut asked: HashSet<u64> = known.iter().copied().collect();
     let mut next: Vec<u64> = ids.iter().chain(also).copied().collect();
     for _ in 0..DETAILS_DEPTH {
-        let want: Vec<u64> = next
-            .into_iter()
-            .filter(|&id| !known.contains(&id) && asked.insert(id))
-            .collect();
+        let want: Vec<u64> = next.into_iter().filter(|&id| asked.insert(id)).collect();
         if want.is_empty() {
             break;
         }
@@ -271,77 +270,125 @@ pub(crate) fn subscriptions(
     Ok((subscribed, details))
 }
 
+/// Details queries Steam works on at once: a page each. Pages were sent one
+/// after the other, so a few hundred subscriptions waited on as many round
+/// trips; a handful in flight keeps well under Steam's rate limit.
+const DETAILS_IN_FLIGHT: usize = 4;
+
+/// A details query sent and not yet read.
+struct DetailsQuery {
+    handle: u64,
+    call: ApiCall,
+    deadline: Instant,
+    /// The call's answer: the query's result and how many items it holds,
+    /// or `None` when the answer could not be read.
+    answer: Option<Option<(i32, u32)>>,
+}
+
 impl Session {
     /// The Workshop's details of `ids`, those it answered for. A query that
     /// fails or times out gives nothing for its page.
     fn details(&self, ugc: Iface, ids: &[u64]) -> Vec<Details> {
         let api = self.api;
         let mut out = Vec::new();
-        for page in ids.chunks(DETAILS_PAGE) {
-            let mut page = page.to_vec();
-            let handle = unsafe { (api.query_details)(ugc, page.as_mut_ptr(), page.len() as u32) };
-            if handle == u64::MAX {
-                continue;
-            }
-            unsafe { (api.set_return_children)(ugc, handle, true) };
-            let call = unsafe { (api.send_query)(ugc, handle) };
-            let mut returned = None;
-            let deadline = Instant::now() + DETAILS_TIMEOUT;
-            while call != 0 && returned.is_none() && Instant::now() < deadline {
-                self.pump(|callback, bytes| {
-                    if callback == state::CALL_COMPLETED
-                        && let Some(c) = state::call_completed(bytes)
-                        && c.call == call
-                        && c.callback == state::UGC_QUERY_COMPLETED
-                    {
-                        returned = Some(
-                            self.call_result(c.call, c.callback, c.size)
-                                .and_then(|b| state::query_completed(&b)),
-                        );
-                    }
+        let mut pages = ids.chunks(DETAILS_PAGE);
+        let mut flying: Vec<DetailsQuery> = Vec::with_capacity(DETAILS_IN_FLIGHT);
+        loop {
+            while flying.len() < DETAILS_IN_FLIGHT
+                && let Some(page) = pages.next()
+            {
+                let mut page = page.to_vec();
+                let handle =
+                    unsafe { (api.query_details)(ugc, page.as_mut_ptr(), page.len() as u32) };
+                if handle == u64::MAX {
+                    continue;
+                }
+                unsafe { (api.set_return_children)(ugc, handle, true) };
+                let call = unsafe { (api.send_query)(ugc, handle) };
+                if call == 0 {
+                    unsafe { (api.release_query)(ugc, handle) };
+                    continue;
+                }
+                flying.push(DetailsQuery {
+                    handle,
+                    call,
+                    deadline: Instant::now() + DETAILS_TIMEOUT,
+                    answer: None,
                 });
-                if returned.is_none() {
-                    std::thread::sleep(TICK);
-                }
             }
-            if let Some(Some((_, state::RESULT_OK, count))) = returned {
-                let mut buf = vec![0u8; DETAILS_BUF];
-                for i in 0..count {
-                    buf.fill(0);
-                    if !unsafe { (api.query_result)(ugc, handle, i, buf.as_mut_ptr()) } {
-                        continue;
+            if flying.is_empty() {
+                break;
+            }
+            self.pump(|callback, bytes| {
+                if callback == state::CALL_COMPLETED
+                    && let Some(c) = state::call_completed(bytes)
+                    && c.callback == state::UGC_QUERY_COMPLETED
+                    && let Some(q) = flying.iter_mut().find(|q| q.call == c.call)
+                {
+                    q.answer = Some(
+                        self.call_result(c.call, c.callback, c.size)
+                            .and_then(|b| state::query_completed(&b))
+                            .map(|(_, result, count)| (result, count)),
+                    );
+                }
+            });
+            let now = Instant::now();
+            let mut waiting = false;
+            flying.retain(|q| {
+                let finished = q.answer.is_some() || now >= q.deadline;
+                if finished {
+                    if let Some(Some((state::RESULT_OK, count))) = q.answer {
+                        self.read_details(ugc, q.handle, count, &mut out);
                     }
-                    let Some((id, state::RESULT_OK, title)) = state::details_head(&buf) else {
-                        continue;
-                    };
-                    let count = state::details_children(&buf).unwrap_or(0).min(1024);
-                    let mut children = vec![0u64; count as usize];
-                    let requires = if count > 0
-                        && unsafe {
-                            (api.query_children)(
-                                ugc,
-                                handle,
-                                i,
-                                children.as_mut_ptr(),
-                                children.len() as u32,
-                            )
-                        } {
-                        children.retain(|&c| c != 0);
-                        children
-                    } else {
-                        Vec::new()
-                    };
-                    out.push(Details {
-                        id,
-                        title,
-                        requires,
-                        updated: state::details_updated(&buf).unwrap_or(0),
-                    });
+                    unsafe { (api.release_query)(ugc, q.handle) };
+                } else {
+                    waiting = true;
                 }
+                !finished
+            });
+            if waiting {
+                std::thread::sleep(TICK);
             }
-            unsafe { (api.release_query)(ugc, handle) };
         }
         out
+    }
+
+    /// The `count` items of an answered details query, into `out`.
+    fn read_details(&self, ugc: Iface, handle: u64, count: u32, out: &mut Vec<Details>) {
+        let api = self.api;
+        let mut buf = vec![0u8; DETAILS_BUF];
+        for i in 0..count {
+            buf.fill(0);
+            if !unsafe { (api.query_result)(ugc, handle, i, buf.as_mut_ptr()) } {
+                continue;
+            }
+            let Some((id, state::RESULT_OK, title)) = state::details_head(&buf) else {
+                continue;
+            };
+            let count = state::details_children(&buf).unwrap_or(0).min(1024);
+            let mut children = vec![0u64; count as usize];
+            let requires = if count > 0
+                && unsafe {
+                    (api.query_children)(
+                        ugc,
+                        handle,
+                        i,
+                        children.as_mut_ptr(),
+                        children.len() as u32,
+                    )
+                } {
+                children.retain(|&c| c != 0);
+                children
+            } else {
+                Vec::new()
+            };
+            out.push(Details {
+                id,
+                title,
+                requires,
+                updated: state::details_updated(&buf).unwrap_or(0),
+            });
+        }
     }
 }
 

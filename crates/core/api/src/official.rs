@@ -160,21 +160,35 @@ pub async fn fetch_official_servers(
 /// Put the official servers into a list: a server already listed at the same
 /// query address is marked official, the others are added.
 pub fn merge_official(list: &mut Vec<Server>, official: Vec<Server>) {
-    let mut at: rustc_hash::FxHashMap<(String, i64), usize> = list
-        .iter()
-        .enumerate()
-        .map(|(i, s)| ((s.endpoint.ip.clone(), s.endpoint.port), i))
-        .collect();
-    for o in official {
-        let key = (o.endpoint.ip.clone(), o.endpoint.port);
-        match at.get(&key) {
-            Some(&i) => list[i].official = true,
-            None => {
-                at.insert(key, list.len());
-                list.push(o);
+    // Which to mark and which to add, decided with borrowed keys first: no
+    // copy of every address in the list.
+    let mut mark: Vec<usize> = Vec::new();
+    let mut keep = vec![false; official.len()];
+    {
+        let at: rustc_hash::FxHashMap<(&str, i64), usize> = list
+            .iter()
+            .enumerate()
+            .map(|(i, s)| ((s.endpoint.ip.as_str(), s.endpoint.port), i))
+            .collect();
+        let mut added = rustc_hash::FxHashSet::default();
+        for (j, o) in official.iter().enumerate() {
+            let key = (o.endpoint.ip.as_str(), o.endpoint.port);
+            match at.get(&key) {
+                Some(&i) => mark.push(i),
+                // A repeat of one added is official already.
+                None => keep[j] = added.insert(key),
             }
         }
     }
+    for i in mark {
+        list[i].official = true;
+    }
+    list.extend(
+        official
+            .into_iter()
+            .zip(keep)
+            .filter_map(|(o, keep)| keep.then_some(o)),
+    );
 }
 
 #[cfg(test)]
