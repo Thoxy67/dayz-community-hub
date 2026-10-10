@@ -229,5 +229,16 @@ class Staging(unittest.TestCase):
             self.assertFalse(r.staged_complete(d, "0.4.2"))
 
 
+class Retry(unittest.TestCase):
+    def test_only_busy_or_broken_forges_are_asked_again(self):
+        self.assertTrue(r.retryable(502))
+        self.assertTrue(r.retryable(429))
+        self.assertFalse(r.retryable(401))
+        self.assertFalse(r.retryable(422))
+
+    def test_creating_requests_are_never_repeated(self):
+        self.assertNotIn("POST", r.IDEMPOTENT)
+
+
 if __name__ == "__main__":
     unittest.main()

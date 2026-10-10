@@ -50,18 +50,29 @@ dev build only has to run here. A debug build also rewrites
 
 ### `make check`
 
-Everything a commit must pass, in order: `cargo test --workspace` and
-`cargo clippy --workspace --all-targets` (both with an absolute
-`CARGO_TARGET_DIR=$(CURDIR)/target/check`, so a check never fights `make dev`
-over the build lock or leaves artifacts it cannot use), `bunx svelte-check
---threshold error` in `apps/gui`, `pytest` over `tools/`, and `ruff check
-tools`.
+Everything a commit must pass, fastest first so a failure shows before the
+long Rust build: `cargo fmt --check`, `ruff check tools`, `pytest` over
+`tools/`, `bunx svelte-check --threshold error` and `bun test` in `apps/gui`,
+then `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test
+--workspace` (both with an absolute `CARGO_TARGET_DIR=$(CURDIR)/target/check`,
+so a check never fights `make dev` over the build lock or leaves artifacts it
+cannot use). CI runs the same Rust and interface steps.
 
 ### `make fmt`
 
 Formats everything: `cargo fmt --all`, prettier over the interface and the
 Markdown files (run from `apps/gui` because that is where its plugins are
 resolved), and `ruff format tools`.
+
+### `make screenshots`
+
+Photographs every view without Tauri (`scripts/screenshots.sh`): builds the
+interface on its pretend backend (`VITE_MOCK=1`, `lib/ipc/mock.ts`) into
+`apps/gui/dist-mock-shots`, serves it with `vite preview` and has a headless
+Chromium (brave, chromium or google-chrome; `BROWSER=` to choose) write
+`var/screenshots/<view>.png`. `VIEWS="servers mods"` limits the views,
+`QUERY="theme=…&rail=collapsed"` adds URL flags, `SIZE=1400,860` sets the
+window.
 
 ### `make bindings`
 
@@ -167,8 +178,8 @@ otherwise the next patch) and writes it to `Cargo.toml`, `tauri.conf.json` and
   against the public key and unpacks over the running executable;
 
 stages everything in `var/dist/vX.Y.Z/` under the names releases have always
-used (`dayz-community-hub-vX.Y.Z-x86_64-windows.zip`, `…-x86_64.AppImage`,
-`….deb`, `….rpm`, and the two `.sig`); commits `release: vX.Y.Z`, tags it,
+used (`dayz-community-hub-vX.Y.Z-x86_64-windows.zip`, `…-x86_64.AppImage` and
+their two `.sig`); commits `release: vX.Y.Z`, tags it,
 pushes `master` and the tag; publishes the release on Forgejo with every file
 and `latest.json`, uploads `latest.json` to the rolling `latest` release (the
 endpoint installed copies poll:

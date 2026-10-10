@@ -108,15 +108,18 @@ needless_collect = "warn"
 
 # ── Profile overrides ─────────────────────────────────────────────────────────
 
-[profile.dev]
-incremental = true
-
 # Optimize dependencies (not our own crates) even in dev. Tauri/reqwest/zstd
 # are slow when built unoptimized; this makes `tauri dev` run far faster while
-# keeping our own crates at opt-level 0 for a fast edit-compile loop.
+# keeping our own crates at opt-level 0 for a fast edit-compile loop. Their
+# debug info goes: an optimized dependency is barely debuggable anyway, and
+# without it the dev binary is far smaller and links faster (our own crates
+# keep full debug info).
 [profile.dev.package."*"]
 opt-level = 2
+debug = false
 
+# "s", not 3: the binary is shipped in the AppImage and the Windows zip, and
+# size matters more there than the last few percent of speed.
 [profile.release]
 codegen-units = 1
 lto = true

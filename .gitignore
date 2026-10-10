@@ -5,12 +5,10 @@ dayz-ctl-link
 /DayZCommunityOfflineMode
 /wiki
 /node_modules
-/.ruff_cache
 TODO.md
 /async-a2s
 
 # Build output / generated
-/dist
 **/*.rs.bk
 
 # OS junk

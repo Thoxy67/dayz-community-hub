@@ -61,6 +61,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -302,6 +303,15 @@ def with_release_notes(changelog: str, version: str, date: str, notes: str) -> s
     return changelog[:at] + section + changelog[at:]
 
 
+RETRIES = 3
+IDEMPOTENT = {"GET", "PATCH", "DELETE"}
+
+
+def retryable(status: int) -> bool:
+    """A forge answer worth asking again: overloaded or briefly unavailable."""
+    return status == 429 or status >= 500
+
+
 def asset_names(version: str) -> dict[str, str]:
     """The published file name of each artifact, by role. The names carry the
     tag (as they always have: the AUR package and old links rely on it)."""
@@ -522,16 +532,34 @@ class Forge:
         req.add_header("Accept", "application/json")
         if data is not None:
             req.add_header("Content-Type", ctype or "application/json")
-        try:
-            with urllib.request.urlopen(req, timeout=900) as r:
-                text = r.read().decode()
-                return json.loads(text) if text else None
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
-                return None
-            sys.exit(
-                f"{self.label}: {method} {url}: {e.code} {e.read().decode(errors='replace')[:300]}"
-            )
+        # A dropped connection or a busy forge (5xx, 429) is retried, but only
+        # for requests that can be repeated safely: a POST whose answer was
+        # lost may have created the release or the asset already, and a new
+        # run finds it (`release` and `upload` look before they create).
+        attempts = RETRIES if method in IDEMPOTENT else 1
+        for attempt in range(1, attempts + 1):
+            try:
+                with urllib.request.urlopen(req, timeout=900) as r:
+                    text = r.read().decode()
+                    return json.loads(text) if text else None
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    return None
+                if attempt < attempts and retryable(e.code):
+                    time.sleep(2**attempt)
+                    continue
+                sys.exit(
+                    f"{self.label}: {method} {url}: {e.code} {e.read().decode(errors='replace')[:300]}"
+                )
+            except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+                if attempt < attempts:
+                    time.sleep(2**attempt)
+                    continue
+                sys.exit(
+                    f"{self.label}: {method} {url}: {getattr(e, 'reason', e)} "
+                    "(run it again: it carries on from where it stopped)"
+                )
+        return None
 
     def fetch(self, url: str) -> bytes | None:
         req = urllib.request.Request(url)

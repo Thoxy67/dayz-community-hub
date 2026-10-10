@@ -4,6 +4,8 @@
 #   make check          everything a commit must pass: Rust, interface, tools
 #   make fmt            format every file
 #   make bindings       regenerate apps/gui/src/lib/ipc/bindings.ts from the Rust commands
+#   make screenshots    every view on the mock backend, photographed into var/screenshots
+#                       (VIEWS="servers mods" QUERY="theme=…"; see scripts/screenshots.sh)
 #   make windows        the Windows executable (MSVC, via cargo-xwin), zipped into var/dist
 #   make publish        build the AppImage and the Windows zip, sign, tag, publish on
 #                       git.thoxy.xyz and GitHub, update latest.json (the updater's manifest)
@@ -26,24 +28,26 @@ ZIG ?= 1
 LINUX_BUILD := ZIG=$(ZIG) NO_STRIP=true bun run tauri build \
                --runner $(CURDIR)/scripts/cargo-zigbuild.sh --target x86_64-unknown-linux-gnu
 
-.PHONY: help dev check fmt bindings windows build appimage publish prerelease aur aur-build keys
+.PHONY: help dev check fmt bindings screenshots windows build appimage publish prerelease aur aur-build keys
 help: ; @sed -n '2,/^$$/p' Makefile | sed 's/^# \{0,1\}//'
 
 dev:        ; cd apps/gui && bun run tauri dev
+# Fastest first, so a failure shows before the long Rust build.
 check:
 	cargo fmt --all --check
-	CARGO_TARGET_DIR=$(CHECK_TARGET) cargo test --workspace
-	CARGO_TARGET_DIR=$(CHECK_TARGET) cargo clippy --workspace --all-targets
+	uv tool run ruff check tools
+	uv run --project tools pytest -q
 	cd apps/gui && bunx svelte-check --threshold error
 	cd apps/gui && bun test
-	uv run --project tools pytest
-	uv tool run ruff check tools
+	CARGO_TARGET_DIR=$(CHECK_TARGET) cargo clippy --workspace --all-targets -- -D warnings
+	CARGO_TARGET_DIR=$(CHECK_TARGET) cargo test --workspace
 fmt:
 	cargo fmt --all
 	cd apps/gui && ./node_modules/.bin/prettier --write --log-level warn \
 	  "src/**/*.{svelte,ts,js,css}" "*.html" "*.ts" "*.json" ../../*.md ../../docs/*.md
 	uv tool run ruff format tools
 bindings:   ; CARGO_TARGET_DIR=$(CHECK_TARGET) cargo test -p dayz-community-hub export_bindings
+screenshots: ; scripts/screenshots.sh
 windows:
 	cd apps/gui && bunx tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --no-bundle
 	mkdir -p var/dist
