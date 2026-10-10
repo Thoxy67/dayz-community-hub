@@ -40,12 +40,14 @@
   {disabled}
   onclick={toggle}
   class={cn(
-    "grid size-3.5 shrink-0 place-items-center rounded-xs border transition-colors disabled:opacity-40",
+    "grid size-3.5 shrink-0 place-items-center rounded-xs border transition-colors duration-fast disabled:opacity-40",
     checked || indeterminate
       ? "border-accent bg-accent text-accent-fg"
       : "border-border-strong bg-bg hover:border-fg-faint",
     klass,
   )}
 >
-  {#if indeterminate}<Minus class="size-3" />{:else if checked}<Check class="size-3" />{/if}
+  {#if indeterminate}<Minus class="size-3" />{:else if checked}<Check
+      class="size-3 animate-pop-in"
+    />{/if}
 </button>

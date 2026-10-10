@@ -289,22 +289,6 @@ const content = {
       es: "Reanudar el escaneo de ping",
       ru: "Продолжить пинг",
     }),
-    listAge: insert(
-      t({
-        en: "List updated {{age}}",
-        fr: "Liste mise à jour {{age}}",
-        de: "Liste aktualisiert {{age}}",
-        es: "Lista actualizada {{age}}",
-        ru: "Список обновлён {{age}}",
-      }),
-    ),
-    listStale: t({
-      en: "The server list is getting old",
-      fr: "La liste des serveurs commence à dater",
-      de: "Die Serverliste ist veraltet",
-      es: "La lista de servidores está desactualizada",
-      ru: "Список серверов устарел",
-    }),
     modOpRunningSteam: insert(
       t({
         en: "Steam: {{current}} of {{total}}",

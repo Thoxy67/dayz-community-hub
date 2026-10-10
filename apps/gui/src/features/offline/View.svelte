@@ -19,6 +19,7 @@
   import { Spinner } from "$lib/components/ui/spinner";
   import { Topo } from "$lib/components/ui/topo";
   import { openUrl } from "$lib/ipc/native";
+  import { SkeletonRows } from "$lib/components/ui/skeleton";
   import { cn } from "$lib/cx";
   import { bytes, relative } from "$lib/format";
   import { offline, type Mission, type Tone } from "./offline.svelte";
@@ -26,6 +27,7 @@
 
   const REPO_URL = "https://github.com/Arkensor/DayZCommunityOfflineMode";
   const o = dict("offline");
+  const sv = dict("servers");
   const p = dict("pad");
 
   offline.listen();
@@ -84,16 +86,14 @@
       value={installed ? $o.installed.value : $o.notInstalled.value}
       tone={installed ? "text-ok" : "text-fg-faint"}
     />
-    <Figure label={$o.missions.value} value={String(list.length)} tone="text-accent" />
-    <Figure label={$o.maps.value} value={String(mapCount)} tone="text-map" />
+    <Figure label={$o.missions.value} amount={list.length} tone="text-accent" />
+    <Figure label={$o.maps.value} amount={mapCount} tone="text-map" />
   {/snippet}
   {#snippet actions()}
-    <IconButton
-      icon={RefreshCw}
-      label={$o.refreshTitle.value}
-      disabled={busy}
-      onclick={() => offline.load()}
-    />
+    <!-- Refresh, worded and drawn as in every other view. -->
+    <Button title={$o.refreshTitle.value} disabled={busy} onclick={() => offline.load()}>
+      <RefreshCw class={cn("size-icon-sm", offline.loading && "animate-spin")} />{$sv.refresh.value}
+    </Button>
     <Button onclick={offline.openMissionsDir} title={$o.exploreTitle.value}>
       <FolderOpen class="size-icon-sm" />{$o.explore.value}
     </Button>
@@ -136,7 +136,7 @@
   <!-- The missions, one card per map. -->
   <div class="min-h-0 overflow-y-auto bg-panel p-pad">
     {#if !offline.loaded}
-      <div class="grid h-full place-items-center"><Spinner class="size-6" /></div>
+      <SkeletonRows count={6} class="-mx-pad -mt-pad" />
     {:else if list.length === 0}
       <Empty icon={Tent} title={$o.noMissions.value}>
         {$o.noMissionsHint({ installButton: $o.installButton.value }).value}

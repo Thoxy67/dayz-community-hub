@@ -45,7 +45,15 @@
     >
   </div>
   {#if name}<p class="m-0 mt-1 truncate text-sm font-semibold text-fg" title={name}>{name}</p>{/if}
-  <Meter class="mt-2" value={percent ?? 0} max={100} size="md" tone="in" {label} />
+  <Meter
+    class="mt-2"
+    value={percent ?? 0}
+    indeterminate={percent === null}
+    max={100}
+    size="md"
+    tone="in"
+    {label}
+  />
   <dl class="m-0 mt-2 grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-2xs">
     <dt class="text-fg-faint">{labels.size}</dt>
     <dd class="m-0 text-right text-fg">

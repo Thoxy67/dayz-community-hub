@@ -256,9 +256,11 @@
 
 <Dialog.Root bind:open={dialogs.palette}>
   <Dialog.Portal>
-    <Dialog.Overlay class="fixed inset-0 z-dialog bg-plot/60" />
+    <Dialog.Overlay
+      class="fixed inset-0 z-dialog bg-plot/60 data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out"
+    />
     <Dialog.Content
-      class="fixed top-[12vh] left-1/2 z-dialog flex max-h-[70vh] w-[min(40rem,calc(100vw-2rem))] -translate-x-1/2 flex-col overflow-hidden rounded-md border border-border-strong bg-panel shadow-pop"
+      class="fixed top-[12vh] left-1/2 z-dialog flex max-h-[70vh] w-[min(40rem,calc(100vw-2rem))] -translate-x-1/2 flex-col overflow-hidden rounded-md border border-border-strong bg-panel shadow-pop data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out"
       aria-describedby={undefined}
     >
       <Dialog.Title class="sr-only">{$s.paletteTitle.value}</Dialog.Title>

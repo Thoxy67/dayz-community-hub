@@ -17,7 +17,6 @@ const content = {
     type: t({ en: "Type", fr: "Saisir", de: "Tippen", es: "Escribir", ru: "Ввод" }),
     views: t({ en: "Views", fr: "Vues", de: "Ansichten", es: "Vistas", ru: "Разделы" }),
     page: t({ en: "Page", fr: "Page", de: "Seite", es: "Página", ru: "Страница" }),
-    move: t({ en: "Move", fr: "Déplacer", de: "Bewegen", es: "Mover", ru: "Перемещение" }),
     settings: t({
       en: "Settings",
       fr: "Paramètres",

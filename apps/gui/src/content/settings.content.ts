@@ -242,13 +242,6 @@ const content = {
       es: "Déjalo vacío para usar el que se encuentre en este equipo.",
       ru: "Оставьте пустым, чтобы использовать найденный.",
     }),
-    steamcmdStatus: t({
-      en: "SteamCMD",
-      fr: "SteamCMD",
-      de: "SteamCMD",
-      es: "SteamCMD",
-      ru: "SteamCMD",
-    }),
     steamcmdFound: t({ en: "Found", fr: "Trouvé", de: "Gefunden", es: "Encontrado", ru: "Найден" }),
     steamcmdMissing: t({
       en: "Not found: mods cannot be downloaded",
@@ -698,20 +691,6 @@ const content = {
       ru: "API ключ",
     }),
     steamId: t({ en: "Steam ID", fr: "Steam ID", de: "Steam-ID", es: "Steam ID", ru: "Steam ID" }),
-    yourLocation: t({
-      en: "Your Location",
-      fr: "Votre position",
-      de: "Dein Standort",
-      es: "Tu ubicación",
-      ru: "Ваше местоположение",
-    }),
-    locationDesc: t({
-      en: "for distance calculation",
-      fr: "pour le calcul de distance",
-      de: "für Entfernungsberechnung",
-      es: "para cálculo de distancia",
-      ru: "для расчёта расстояния",
-    }),
     locationSet: t({
       en: "Location set",
       fr: "Position définie",
@@ -750,13 +729,6 @@ const content = {
     manual: t({ en: "Manual:", fr: "Manuel :", de: "Manuell:", es: "Manual:", ru: "Вручную:" }),
     lat: t({ en: "Lat", fr: "Lat", de: "Lat", es: "Lat", ru: "Шир." }),
     lon: t({ en: "Lon", fr: "Lon", de: "Lon", es: "Lon", ru: "Долг." }),
-    getTokenAt: t({
-      en: "Get a token at",
-      fr: "Obtenir un jeton sur",
-      de: "Token erhältlich unter",
-      es: "Obtener token en",
-      ru: "Получить токен на",
-    }),
     locationHelp: t({
       en: "Location is used to calculate distance to servers.",
       fr: "La position est utilisée pour calculer la distance aux serveurs.",
@@ -771,13 +743,6 @@ const content = {
       de: "Ausgeschlossene IPs",
       es: "IPs excluidas",
       ru: "Исключённые IP",
-    }),
-    manageExcluded: t({
-      en: "Manage excluded IPs",
-      fr: "Gérer les IPs exclues",
-      de: "Ausgeschlossene IPs verwalten",
-      es: "Gestionar IPs excluidas",
-      ru: "Управление исключёнными IP",
     }),
     save: t({
       en: "Save changes",
@@ -829,20 +794,6 @@ const content = {
         ru: "Ошибка: {{error}}",
       }),
     ),
-    excludedIpsTitle: t({
-      en: "Excluded IPs",
-      fr: "IPs exclues",
-      de: "Ausgeschlossene IPs",
-      es: "IPs excluidas",
-      ru: "Исключённые IP",
-    }),
-    excludedIpsDesc: t({
-      en: "Servers from these IPs are hidden from the browser",
-      fr: "Les serveurs de ces IPs sont masqués du navigateur",
-      de: "Server mit diesen IPs werden im Browser ausgeblendet",
-      es: "Los servidores de estas IPs están ocultos del navegador",
-      ru: "Серверы с этих IP скрыты из браузера",
-    }),
     excludedIpsNone: t({
       en: "No excluded IPs",
       fr: "Aucune IP exclue",

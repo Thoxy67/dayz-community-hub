@@ -48,15 +48,17 @@
   title={title || label}
   class={cn(
     "group flex h-row w-full cursor-pointer items-center gap-1.5 rounded-xs px-1 text-left text-2xs select-none",
-    "text-fg-faint hover:bg-raised data-[state=checked]:text-fg",
+    "text-fg-faint transition-colors duration-fast hover:bg-raised data-[state=checked]:text-fg",
     klass,
   )}
 >
   <span
-    class="grid size-3.5 shrink-0 place-items-center rounded-xs border border-border-strong bg-bg
+    class="grid size-3.5 shrink-0 place-items-center rounded-xs border border-border-strong bg-bg transition-colors duration-fast
            group-data-[state=checked]:border-accent group-data-[state=checked]:bg-accent"
   >
-    <Check class="hidden size-3 text-accent-fg group-data-[state=checked]:block" />
+    <Check
+      class="hidden size-3 text-accent-fg group-data-[state=checked]:block group-data-[state=checked]:animate-pop-in"
+    />
   </span>
   {#if color}
     <span class="size-2 shrink-0 rounded-xs" style:background={color}></span>

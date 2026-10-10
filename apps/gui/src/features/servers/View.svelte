@@ -7,8 +7,7 @@
   import Clock from "~icons/lucide/clock";
   import Server from "~icons/lucide/server";
   import { Button, IconButton } from "$lib/components/ui/button";
-  import { Spinner } from "$lib/components/ui/spinner";
-  import { Topo } from "$lib/components/ui/topo";
+  import { Skeleton } from "$lib/components/ui/skeleton";
   import {
     Empty,
     Figure,
@@ -22,7 +21,7 @@
     TableHead,
   } from "$lib/components/app";
   import { cn } from "$lib/cx";
-  import { compact, num } from "$lib/format";
+  import { compact } from "$lib/format";
   import type { ServerRow as Row } from "$lib/ipc/servers";
   import { app } from "$lib/stores/app.svelte";
   import { dialogs } from "$lib/stores/dialogs.svelte";
@@ -74,10 +73,15 @@
     return () => ro.disconnect();
   });
 
-  // A new request starts at the top.
+  // A new request starts at the top. Only a request that changed: the list
+  // growing (Steam's servers arriving for a minute after a refresh) used to
+  // throw the player back to the top every time.
+  let lastRequest = "";
   $effect(() => {
     const req = filters.request;
-    void servers.total;
+    const key = JSON.stringify(req);
+    if (key === lastRequest) return;
+    lastRequest = key;
     feed.setRequest(req);
     if (scroller) scroller.scrollTop = 0;
     scrollTop = 0;
@@ -242,6 +246,17 @@
 
 <svelte:window {onkeydown} />
 
+{#snippet placeholder()}
+  <div class={cn(LIST_GRID, "h-full border-b border-border/50 px-2")} aria-hidden="true">
+    <span></span>
+    <Skeleton class="w-12" />
+    <Skeleton class="w-16" />
+    <Skeleton class="h-2.5 w-3/5" />
+    <Skeleton class={cn("w-20", LIST_NARROW_HIDDEN)} />
+    <span></span><span></span>
+  </div>
+{/snippet}
+
 {#snippet listPane()}
   <div class="@container flex h-full min-h-0 flex-1 flex-col">
     <TableHead grid={LIST_GRID}>
@@ -279,12 +294,11 @@
     </TableHead>
 
     {#if feed.loading && feed.total === 0}
-      <div class="relative grid flex-1 place-items-center">
-        <Topo />
-        <div class="relative flex flex-col items-center gap-2 text-fg-muted">
-          <Spinner class="size-6 text-accent" />
-          <span class="label-stencil">{$c.loading.value}</span>
-        </div>
+      <!-- The list's own shape while the first page comes: rows, not a spinner. -->
+      <div class="min-h-0 flex-1 overflow-hidden" role="status" aria-label={$c.loading.value}>
+        {#each { length: 14 }, i (i)}
+          <div style:height="{ROW_PX}px">{@render placeholder()}</div>
+        {/each}
       </div>
     {:else if servers.total === 0 && servers.listError}
       <Empty icon={CloudOff} title={$c.listUnavailable.value} class="flex-1">
@@ -340,22 +354,7 @@
                     />
                   {:else}
                     <!-- Not arrived yet: the row's shape, so the list does not jump. -->
-                    <div
-                      class={cn(LIST_GRID, "h-full border-b border-border/50 px-2")}
-                      aria-hidden="true"
-                    >
-                      <span></span>
-                      <span class="h-2 w-12 animate-pulse rounded-full bg-raised"></span>
-                      <span class="h-2 w-16 animate-pulse rounded-full bg-raised"></span>
-                      <span class="h-2.5 w-3/5 animate-pulse rounded-full bg-raised"></span>
-                      <span
-                        class={cn(
-                          "h-2 w-20 animate-pulse rounded-full bg-raised",
-                          LIST_NARROW_HIDDEN,
-                        )}
-                      ></span>
-                      <span></span><span></span>
-                    </div>
+                    {@render placeholder()}
                   {/if}
                 </div>
               {/each}
@@ -387,10 +386,11 @@
 <div class="flex h-full min-h-0 flex-col">
   <PageHeader title={$n.servers.value}>
     {#snippet stats()}
-      <Figure label={$c.statShown.value} value={num(feed.total)} />
+      <Figure label={$c.statShown.value} amount={feed.total} />
       <Figure
         label={$c.statPlayers.value}
-        value={compact(fig?.players)}
+        amount={fig?.players}
+        format={compact}
         tone="text-ok"
         title={$c.figSortPlayers.value}
         active={filters.sort === "players" && !filters.asc}
@@ -401,7 +401,7 @@
       />
       <Figure
         label={$c.statFull.value}
-        value={num(fig?.full)}
+        amount={fig?.full}
         tone={fig?.full ? "text-err" : "text-fg-muted"}
         title={filters.hideFull ? $c.figShowFull.value : $c.figHideFull.value}
         active={filters.hideFull}
@@ -410,7 +410,7 @@
       <Figure
         secondary
         label={$c.statEmpty.value}
-        value={num(fig?.empty)}
+        amount={fig?.empty}
         tone="text-fg-muted"
         title={filters.hideEmpty ? $c.figShowEmpty.value : $c.figHideEmpty.value}
         active={filters.hideEmpty}
@@ -424,7 +424,7 @@
         active={filters.modded === "only"}
         onclick={() => (filters.modded = filters.modded === "only" ? "all" : "only")}
       />
-      <Figure secondary label={$c.statPinged.value} value={num(fig?.pinged)} tone="text-fg-muted" />
+      <Figure secondary label={$c.statPinged.value} amount={fig?.pinged} tone="text-fg-muted" />
       <Figure
         secondary
         label={$c.statBestPing.value}

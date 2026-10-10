@@ -84,15 +84,6 @@ const content = {
       es: "Historial limpiado",
       ru: "История очищена",
     }),
-    addedToFavorites: insert(
-      t({
-        en: "Added {{name}} to favorites",
-        fr: "{{name}} ajouté aux favoris",
-        de: "{{name}} zu Favoriten hinzugefügt",
-        es: "Añadido {{name}} a favoritos",
-        ru: "Добавлено {{name}} в избранное",
-      }),
-    ),
     statEntries: t({
       en: "Servers played",
       fr: "Serveurs joués",
@@ -120,13 +111,6 @@ const content = {
       de: "Jeder Server, dem du beitrittst, landet hier – neueste zuerst –, damit du mit einem Klick zurückkehrst.",
       es: "Cada servidor al que te unes se guarda aquí, del más reciente al más antiguo, para volver con un clic.",
       ru: "Каждый сервер, на который вы заходили, сохраняется здесь — новые сверху, чтобы вернуться в один клик.",
-    }),
-    sortRecent: t({
-      en: "Most recent",
-      fr: "Plus récents",
-      de: "Neueste",
-      es: "Más recientes",
-      ru: "Недавние",
     }),
   },
 } satisfies Dictionary;

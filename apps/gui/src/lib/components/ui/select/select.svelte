@@ -83,7 +83,7 @@
       sideOffset={4}
       collisionPadding={4}
       class="z-popover max-h-[min(20rem,var(--bits-select-content-available-height,20rem))] w-[var(--bits-select-anchor-width)]
-             min-w-32 overflow-hidden rounded-md border border-border bg-overlay shadow-pop outline-none"
+             min-w-32 overflow-hidden data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out rounded-md border border-border bg-overlay shadow-pop outline-none"
     >
       <Select.Viewport class="p-1">
         {#if placeholder}

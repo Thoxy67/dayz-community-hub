@@ -125,21 +125,22 @@
 
 <PageHeader title={$o.title.value}>
   {#snippet stats()}
-    <Figure label={$o.statActive.value} value={String(enabled.length)} tone="text-accent" />
-    <Figure label={$o.statWithValue.value} value={String(withValue.length)} />
-    <Figure label={$o.statAvailable.value} value={String(options.length)} tone="text-fg-muted" />
+    <Figure label={$o.statActive.value} amount={enabled.length} tone="text-accent" />
+    <Figure label={$o.statWithValue.value} amount={withValue.length} />
+    <Figure label={$o.statAvailable.value} amount={options.length} tone="text-fg-muted" />
   {/snippet}
-  {#snippet actions()}
-    <Chip active={activeOnly} onclick={() => (activeOnly = !activeOnly)}
-      >{$o.showActiveOnly.value}</Chip
-    >
+  <!-- Search and filter on the toolbar row, as in the lists. -->
+  <div class="flex min-w-0 items-center gap-1.5">
     <Input
       type="search"
-      class="w-60"
+      class="w-44 min-w-32 flex-1 xl:max-w-80"
       placeholder={$o.searchPlaceholder.value}
       bind:value={search}
     />
-  {/snippet}
+    <Chip active={activeOnly} onclick={() => (activeOnly = !activeOnly)}
+      >{$o.showActiveOnly.value}</Chip
+    >
+  </div>
 </PageHeader>
 
 <div class="flex min-h-0 flex-1">

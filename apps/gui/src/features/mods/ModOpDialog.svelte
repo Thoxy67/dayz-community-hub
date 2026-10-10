@@ -2,6 +2,9 @@
   import { Dialog } from "bits-ui";
   import { dict } from "$lib/i18n";
   import X from "~icons/lucide/x";
+  import Circle from "~icons/lucide/circle";
+  import PanelRightOpen from "~icons/lucide/panel-right-open";
+  import PanelRightClose from "~icons/lucide/panel-right-close";
   import Minimize from "~icons/lucide/minimize-2";
   import Check from "~icons/lucide/check";
   import CircleX from "~icons/lucide/circle-x";
@@ -70,11 +73,63 @@
   const eta = $derived(
     progress && speed && speed > 0 ? ((progress.total - progress.done) / speed) * 1000 : null,
   );
+  // The current mod's share counts only until it is among the finished: the
+  // last mod's 100 % added to a full count once showed 125 %.
+  const currentDone = $derived(op.completed.some((e) => e.id === op.currentId));
   const overall = $derived(
-    op.total > 0 ? (op.completed.length + (progress ? progress.percent / 100 : 0)) / op.total : 0,
+    op.total > 0
+      ? Math.min(
+          1,
+          (op.completed.length + (progress && !currentDone ? progress.percent / 100 : 0)) /
+            op.total,
+        )
+      : 0,
   );
   const okCount = $derived(op.completed.filter((e) => e.ok).length);
   const failCount = $derived(op.completed.length - okCount);
+
+  // ── what the operation is, said in its title ────────────────────────────
+  const kindLabel = $derived(
+    op.kind === "login"
+      ? $c.kindLogin.value
+      : op.kind === "repair"
+        ? $c.kindRepair.value
+        : op.kind === "install_server" || op.kind === "install_manual"
+          ? $c.kindInstall.value
+          : $c.kindUpdate.value,
+  );
+
+  // ── the queue: every mod asked for, by name, with where it is ───────────
+  type QueueState = "queued" | "downloading" | "done" | "failed";
+  const queue = $derived.by(() => {
+    const done = new Map(op.completed.map((e) => [e.id, e]));
+    // The ids known at the start, then any that came through without being
+    // announced (a server's mods resolved on the way).
+    const ids = [...op.ids, ...op.completed.map((e) => e.id).filter((id) => !op.ids.includes(id))];
+    return ids.map((id) => {
+      const e = done.get(id);
+      const state: QueueState = e
+        ? e.ok
+          ? "done"
+          : "failed"
+        : running && id === op.currentId
+          ? "downloading"
+          : "queued";
+      return { id, name: e?.name || mods.nameOf(id), state, ms: e?.ms ?? null };
+    });
+  });
+  // The row being downloaded stays in sight as the queue moves on.
+  let queueBox = $state<HTMLElement>();
+  $effect(() => {
+    void op.currentId;
+    queueBox
+      ?.querySelector('[data-state="downloading"]')
+      ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  });
+
+  // The downloader's own output: there for whoever wants it, out of the way
+  // otherwise. Kept for the session.
+  let showLog = $state(true);
 
   // ── Steam Guard: SteamCMD waits about 65 s for the phone per attempt ────
   const GUARD_S = 65;
@@ -163,76 +218,92 @@
 
 <Dialog.Root open={!op.minimised} onOpenChange={(v) => !v && close()}>
   <Dialog.Portal>
-    <Dialog.Overlay class="fixed inset-0 z-dialog bg-plot/75" />
+    <Dialog.Overlay
+      class="fixed inset-0 z-dialog bg-plot/75 data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out"
+    />
+    <!-- One frame for every phase (downloading, Steam Guard, password): the
+         header and footer stay put, only the left column's top changes. -->
     <Dialog.Content
-      class="fixed top-1/2 left-1/2 z-dialog flex h-[min(46rem,calc(100vh-3rem))] w-[min(68rem,calc(100vw-2rem))]
-             -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-md border border-border-strong bg-panel shadow-pop"
+      class={cn(
+        "fixed top-1/2 left-1/2 z-dialog flex h-[min(46rem,calc(100vh-3rem))] flex-col overflow-hidden data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
+        "-translate-x-1/2 -translate-y-1/2 rounded-md border border-border-strong bg-panel shadow-pop",
+        showLog ? "w-[min(68rem,calc(100vw-2rem))]" : "w-[min(30rem,calc(100vw-2rem))]",
+      )}
       interactOutsideBehavior="ignore"
     >
-      <!-- ── header ──────────────────────────────────────────────────────── -->
-      <header class="flex shrink-0 items-center gap-3 border-b border-border px-4 py-2.5">
-        <span class="grid size-8 shrink-0 place-items-center rounded-md border border-border bg-bg">
-          {#if running}
-            <Loader class="size-icon animate-spin text-accent" />
-          {:else if op.failed > 0 || op.hint}
-            <CircleX class="size-icon text-err" />
-          {:else}
-            <CircleCheck class="size-icon text-ok" />
-          {/if}
-        </span>
-        <div class="min-w-0 flex-1">
-          <Dialog.Title class="m-0 title-display text-lg text-fg">
-            {$c.modOperation.value}
-            {#if op.total > 0}
-              <span class="ml-1 font-mono text-sm font-medium text-fg-faint normal-case">
-                {op.completed.length}/{op.total}
-              </span>
+      <!-- ── header: what it is, where it is, the whole batch's progress ── -->
+      <header class="flex shrink-0 flex-col gap-2.5 border-b border-border px-4 pt-3 pb-3">
+        <div class="flex items-center gap-3">
+          <span
+            class="grid size-8 shrink-0 place-items-center rounded-md border border-border bg-bg"
+          >
+            {#if running}
+              <Loader class="size-icon animate-spin text-accent" />
+            {:else if op.failed > 0 || op.hint}
+              <CircleX class="size-icon text-err" />
+            {:else}
+              <CircleCheck class="size-icon text-ok" />
             {/if}
-          </Dialog.Title>
-          <Dialog.Description
-            class={cn(
-              "m-0 truncate text-xs",
-              op.hint ? "text-err" : !running && op.failed === 0 ? "text-ok" : "text-fg-muted",
-            )}
-          >
-            {status}
-          </Dialog.Description>
-        </div>
-        <div class="flex shrink-0 items-center gap-4 font-mono text-2xs text-fg-faint">
-          <span class="flex flex-col items-end">
-            <span class="num text-sm text-fg">{clock(elapsed)}</span>
-            <span>{$c.elapsed.value}</span>
           </span>
-          <span class="flex flex-col items-end">
-            <span class="num text-sm text-ok">{okCount}</span>
-            <span>{$c.succeeded.value}</span>
-          </span>
-          <span class="flex flex-col items-end">
-            <span class={cn("num text-sm", failCount > 0 ? "text-err" : "text-fg")}
-              >{failCount}</span
+          <div class="min-w-0 flex-1">
+            <Dialog.Title class="m-0 truncate title-display text-lg leading-tight text-fg">
+              {kindLabel}
+            </Dialog.Title>
+            <Dialog.Description
+              class={cn(
+                "m-0 truncate text-xs",
+                op.hint ? "text-err" : !running && op.failed === 0 ? "text-ok" : "text-fg-muted",
+              )}
             >
-            <span>{$c.failedLabel.value}</span>
-          </span>
+              {status}
+            </Dialog.Description>
+          </div>
+          <div class="flex shrink-0 items-end gap-x-5">
+            <span class="flex flex-col items-end gap-0.5">
+              <span class="label-stencil text-fg-faint">{$c.elapsed.value}</span>
+              <span class="num font-mono text-sm font-semibold text-fg">{clock(elapsed)}</span>
+            </span>
+            <span class="flex flex-col items-end gap-0.5">
+              <span class="label-stencil text-fg-faint">{$c.succeeded.value}</span>
+              <span class="num font-mono text-sm font-semibold text-ok">{okCount}</span>
+            </span>
+            <span class="flex flex-col items-end gap-0.5">
+              <span class="label-stencil text-fg-faint">{$c.failedLabel.value}</span>
+              <span
+                class={cn(
+                  "num font-mono text-sm font-semibold",
+                  failCount > 0 ? "text-err" : "text-fg-muted",
+                )}>{failCount}</span
+              >
+            </span>
+          </div>
         </div>
-        {#if running}
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={$c.minimise.value}
-            title={$c.minimise.value}
-            onclick={close}
-          >
-            <Minimize class="size-icon" />
-          </Button>
-        {:else}
-          <Button variant="ghost" size="icon" aria-label={$c.dismiss.value} onclick={close}>
-            <X class="size-icon" />
-          </Button>
+        {#if op.total > 0}
+          <div class="flex items-center gap-3">
+            <span class="label-stencil shrink-0 text-fg-faint">{$c.overall.value}</span>
+            <Meter
+              class="flex-1"
+              value={overall}
+              max={1}
+              size="md"
+              tone={failCount > 0 ? "warn" : "accent"}
+              label={$c.overall.value}
+            />
+            <span class="num w-24 shrink-0 text-right font-mono text-2xs text-fg-faint">
+              <span class="text-fg">{Math.round(overall * 100)}%</span> · {op.completed
+                .length}/{op.total}
+            </span>
+          </div>
         {/if}
       </header>
 
-      <div class="grid min-h-0 flex-1 grid-cols-[22rem_minmax(0,1fr)]">
-        <!-- ── left: where it is, and what came through ───────────────────── -->
+      <div
+        class={cn(
+          "grid min-h-0 flex-1",
+          showLog ? "grid-cols-[22rem_minmax(0,1fr)]" : "grid-cols-1",
+        )}
+      >
+        <!-- ── left: what needs the player, the current mod, the queue ──── -->
         <aside
           class="flex min-h-0 flex-col gap-3 overflow-y-auto border-r border-border bg-bg/40 p-3"
         >
@@ -368,28 +439,8 @@
             </section>
           {/if}
 
-          <!-- overall -->
-          <section class="rounded-md border border-border bg-panel p-3">
-            <div class="flex items-baseline justify-between">
-              <span class="label-stencil text-fg-faint">{$c.overall.value}</span>
-              <span class="num font-mono text-xs text-fg">{Math.round(overall * 100)}%</span>
-            </div>
-            <Meter
-              class="mt-1.5"
-              value={overall}
-              max={1}
-              size="md"
-              tone={failCount > 0 ? "warn" : "accent"}
-              label={$c.overall.value}
-            />
-            <div class="mt-1.5 flex justify-between font-mono text-2xs text-fg-faint">
-              <span>{op.completed.length} / {op.total || "—"}</span>
-              <span>{clock(elapsed)}</span>
-            </div>
-          </section>
-
-          <!-- the mod being worked on -->
-          {#if running && op.phase === "downloading"}
+          <!-- the mod being worked on: its bytes, speed and time left -->
+          {#if running && op.phase === "downloading" && op.currentId && !currentDone}
             <TransferProgress
               label={$c.itemProgress.value}
               name={op.currentName}
@@ -408,49 +459,102 @@
             />
           {/if}
 
-          <!-- what came through -->
-          <section class="flex min-h-32 flex-1 flex-col rounded-md border border-border bg-panel">
-            <div class="flex items-center justify-between border-b border-border/70 px-3 py-1.5">
-              <span class="label-stencil text-fg-faint">{$c.queue.value}</span>
-              <span class="font-mono text-2xs text-fg-faint">{op.completed.length}</span>
-            </div>
-            <ul class="m-0 min-h-0 flex-1 list-none divide-y divide-border/50 overflow-y-auto p-0">
-              {#each [...op.completed].reverse() as e (`${e.id}-${e.ms}`)}
-                {@const size = mods.byId.get(e.id)?.size}
-                <li class="flex items-center gap-2 px-3 py-1.5">
-                  {#if e.ok}<Check class="size-icon-sm shrink-0 text-ok" />{:else}<X
-                      class="size-icon-sm shrink-0 text-err"
-                    />{/if}
-                  <div class="min-w-0 flex-1">
-                    <p class="m-0 truncate text-xs text-fg">{e.name}</p>
-                    <p class="m-0 font-mono text-3xs text-fg-faint">
-                      #{e.id}{#if size}<span> · {bytes(size)}</span>{/if}
-                    </p>
-                  </div>
-                  <span class="num shrink-0 font-mono text-2xs text-fg-faint">{clock(e.ms)}</span>
-                </li>
-              {:else}
-                <li class="px-3 py-3 text-2xs text-fg-faint">{$c.noneYet.value}</li>
-              {/each}
-            </ul>
-          </section>
+          <!-- the queue: every mod by name, with where it is. A bounded
+               scroller: its box is sized by the column, not by the list. -->
+          {#if queue.length > 0}
+            <section class="flex min-h-32 flex-1 flex-col rounded-md border border-border bg-panel">
+              <div class="flex items-center justify-between border-b border-border/70 px-3 py-1.5">
+                <span class="label-stencil text-fg-faint">{$c.queue.value}</span>
+                <span class="num font-mono text-2xs text-fg-faint"
+                  >{op.completed.length}/{queue.length}</span
+                >
+              </div>
+              <div class="relative min-h-0 flex-1">
+                <ul
+                  bind:this={queueBox}
+                  class="absolute inset-0 m-0 list-none divide-y divide-border/50 overflow-y-auto p-0"
+                >
+                  {#each queue as q (q.id)}
+                    {@const size = mods.byId.get(q.id)?.size}
+                    <li
+                      data-state={q.state}
+                      class={cn(
+                        "relative flex items-center gap-2 px-3 py-1.5 transition-colors duration-base",
+                        q.state === "downloading" && "bg-accent/8",
+                        q.state === "queued" && "opacity-60",
+                      )}
+                    >
+                      {#if q.state === "downloading"}
+                        <span class="absolute inset-y-1 left-0 w-0.5 rounded-full bg-accent"></span>
+                        <Loader class="size-icon-sm shrink-0 animate-spin text-accent" />
+                      {:else if q.state === "done"}
+                        <Check class="size-icon-sm shrink-0 animate-pop-in text-ok" />
+                      {:else if q.state === "failed"}
+                        <X class="size-icon-sm shrink-0 animate-pop-in text-err" />
+                      {:else}
+                        <Circle class="size-icon-sm shrink-0 text-fg-faint" />
+                      {/if}
+                      <div class="min-w-0 flex-1">
+                        <p
+                          class={cn(
+                            "m-0 truncate text-xs",
+                            q.state === "downloading" ? "font-semibold text-fg" : "text-fg",
+                          )}
+                          title={q.name}
+                        >
+                          {q.name}
+                        </p>
+                        <p class="m-0 truncate font-mono text-3xs text-fg-faint" data-selectable>
+                          {q.id}{#if size}<span class="ml-1">· {bytes(size)}</span>{/if}
+                        </p>
+                      </div>
+                      <span class="num shrink-0 text-right font-mono text-2xs">
+                        {#if q.state === "downloading"}
+                          <span class="text-accent"
+                            >{progress && !currentDone
+                              ? `${Math.floor(progress.percent)}%`
+                              : "…"}</span
+                          >
+                        {:else if q.state === "done"}
+                          <span class="text-fg-faint">{clock(q.ms ?? 0)}</span>
+                        {:else if q.state === "failed"}
+                          <span class="text-err">{$c.itemFailed.value}</span>
+                        {:else}
+                          <span class="text-fg-faint">{$c.itemQueued.value}</span>
+                        {/if}
+                      </span>
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+            </section>
+          {/if}
         </aside>
 
         <!-- ── right: the downloader, live ────────────────────────────────── -->
-        <LogPane
-          lines={op.log}
-          times={op.logAt}
-          title={op.via === "steamworks" ? "$ steam (steamworks)" : "$ steamcmd"}
-          live={running}
-        />
+        {#if showLog}
+          <LogPane
+            lines={op.log}
+            times={op.logAt}
+            title={op.via === "steamworks" ? "$ steam (steamworks)" : "$ steamcmd"}
+            live={running}
+          />
+        {/if}
       </div>
 
-      <!-- ── footer ──────────────────────────────────────────────────────── -->
-      <footer class="flex shrink-0 items-center gap-2 border-t border-border px-4 py-2">
-        <span class="text-2xs text-fg-faint"
+      <!-- ── footer: the note, then the log, minimise and cancel, always in
+           that order at the right ─────────────────────────────────────────── -->
+      <footer class="flex shrink-0 items-center gap-3 border-t border-border px-4 py-2">
+        <span class="min-w-0 flex-1 text-2xs leading-snug text-fg-faint"
           >{op.via === "steamworks" ? $c.steamworksFooter.value : $m.confirmWarning.value}</span
         >
-        <div class="ml-auto flex items-center gap-1.5">
+        <div class="flex shrink-0 items-center gap-1">
+          <Button variant="ghost" onclick={() => (showLog = !showLog)}>
+            {#if showLog}<PanelRightClose class="size-icon-sm" />{:else}<PanelRightOpen
+                class="size-icon-sm"
+              />{/if}
+            {showLog ? $c.hideLog.value : $c.showLog.value}
+          </Button>
           {#if running}
             <Button variant="ghost" onclick={close}>
               <Minimize class="size-icon-sm" />{$c.minimise.value}

@@ -20,7 +20,7 @@
 <Menu.Root>
   <Tooltip text={$s.langChange.value} side="bottom">
     <Menu.Trigger
-      class="grid h-titlebar w-9 place-items-center text-fg-muted hover:bg-raised hover:text-fg"
+      class="grid h-titlebar w-9 place-items-center text-fg-muted transition-colors duration-fast hover:bg-raised hover:text-fg"
       aria-label={$s.langChange.value}
     >
       <Flag class="size-4" />

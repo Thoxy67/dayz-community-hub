@@ -169,13 +169,6 @@ const content = {
       es: "Doble clic para iniciar directamente",
       ru: "Дважды щёлкните для запуска",
     }),
-    selectMission: t({
-      en: "Select a mission",
-      fr: "Sélectionnez une mission",
-      de: "Mission auswählen",
-      es: "Selecciona una misión",
-      ru: "Выберите миссию",
-    }),
     selectHint: t({
       en: "or double-click to launch",
       fr: "ou double-cliquez pour lancer",
@@ -390,23 +383,6 @@ const content = {
       de: "Entfernen",
       es: "Eliminar",
       ru: "Удалить",
-    }),
-    missionTag: t({ en: "MISSION", fr: "MISSION", de: "MISSION", es: "MISIÓN", ru: "МИССИЯ" }),
-    missionOffline: t({
-      en: "OFFLINE",
-      fr: "HORS LIGNE",
-      de: "OFFLINE",
-      es: "SIN CONEXIÓN",
-      ru: "ОФФЛАЙН",
-    }),
-    missionCoop: t({ en: "COOP", fr: "COOP", de: "KOOP", es: "COOP", ru: "КООП" }),
-    missionPvp: t({ en: "PVP", fr: "PVP", de: "PVP", es: "PVP", ru: "PVP" }),
-    missionSurvival: t({
-      en: "SURVIVAL",
-      fr: "SURVIE",
-      de: "ÜBERLEBEN",
-      es: "SUPERVIVENCIA",
-      ru: "ВЫЖИВАНИЕ",
     }),
     intro: t({
       en: "Play DayZ alone on your own machine: no server, no other players, the full map. Community Offline Mode adds an admin toolbox to spawn items, vehicles and teleport.",

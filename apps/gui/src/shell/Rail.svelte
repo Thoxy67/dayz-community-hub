@@ -54,6 +54,42 @@
     }
   }
 
+  // ── the accent bar beside the current place: one bar that slides from the
+  // place left to the one arrived at, rather than one per entry that blinks.
+  // Measured, since the groups' captions and the Rejoin card above the foot
+  // put the entries at no fixed step; moved with a transform only. ─────────
+  let navEl: HTMLElement | undefined = $state();
+  let bar = $state<{ y: number; h: number } | null>(null);
+  /** Off for the first placement, so the bar does not slide in from the top. */
+  let glide = $state(false);
+  function place() {
+    const b = navEl?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!navEl || !b) {
+      bar = null;
+      return;
+    }
+    const top = navEl.getBoundingClientRect().top;
+    const r = b.getBoundingClientRect();
+    bar = { y: r.top - top + 6, h: Math.max(0, r.height - 12) };
+  }
+  $effect(() => {
+    void app.view;
+    void collapsed;
+    void game.running;
+    const raf = requestAnimationFrame(() => {
+      place();
+      if (!glide) requestAnimationFrame(() => (glide = true));
+    });
+    return () => cancelAnimationFrame(raf);
+  });
+  // The Rejoin card grows and shrinks, which moves the foot's entries.
+  $effect(() => {
+    if (!navEl) return;
+    const ro = new ResizeObserver(() => place());
+    for (const el of navEl.querySelectorAll("[data-rail-block]")) ro.observe(el);
+    return () => ro.disconnect();
+  });
+
   const shortcut = (p: Place) => {
     const i = PLACES.indexOf(p);
     return i < 9 ? `Ctrl+${i + 1}` : "";
@@ -66,7 +102,7 @@
   <Tooltip text={collapsed ? String($n[p.label]) : ""} kbd={shortcut(p)} class="flex">
     <button
       class={cn(
-        "group relative flex h-control-lg w-full items-center gap-2.5 rounded-sm text-sm transition-colors",
+        "group relative flex h-control-lg w-full items-center gap-2.5 rounded-sm text-sm transition-colors duration-fast",
         collapsed ? "justify-center px-0" : "px-2.5",
         on ? "bg-raised text-fg" : "text-fg-muted hover:bg-raised/60 hover:text-fg",
       )}
@@ -74,17 +110,23 @@
       aria-label={String($n[p.label])}
       onclick={() => app.go(p.id)}
     >
-      {#if on}<span class="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-accent"></span>{/if}
       <p.icon
         class={cn(
-          "size-icon shrink-0",
+          "size-icon shrink-0 transition-colors duration-fast",
           on ? "text-accent" : "text-fg-faint group-hover:text-fg-muted",
         )}
       />
       {#if !collapsed}
         <span class="min-w-0 flex-1 truncate text-left">{String($n[p.label])}</span>
-        {#if c}<span class={cn("num font-mono text-2xs", c.tone ?? "text-fg-faint")}>{c.value}</span
-          >{/if}
+        {#if c}
+          <!-- Re-made when the figure changes, so it pops once: a new mod
+               update, a favourite added. -->
+          {#key c.value}
+            <span class={cn("num animate-pop-in font-mono text-2xs", c.tone ?? "text-fg-faint")}
+              >{c.value}</span
+            >
+          {/key}
+        {/if}
       {:else if c?.tone}
         <span class="absolute top-1.5 right-2 size-1.5 rounded-full bg-warn"></span>
       {/if}
@@ -93,6 +135,7 @@
 {/snippet}
 
 <nav
+  bind:this={navEl}
   data-pad-region
   class={cn(
     "relative flex shrink-0 flex-col border-r border-border bg-bg transition-[width] duration-150",
@@ -100,7 +143,22 @@
   )}
   aria-label={$n.navigation.value}
 >
-  <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1.5 py-2.5">
+  {#if bar}
+    <span
+      aria-hidden="true"
+      class={cn(
+        "pointer-events-none absolute top-0 left-1.5 z-raised w-0.5 rounded-full bg-accent",
+        glide && "transition-[translate,height] duration-base ease-out",
+      )}
+      style:translate="0 {bar.y}px"
+      style:height="{bar.h}px"
+    ></span>
+  {/if}
+  <div
+    class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1.5 py-2.5"
+    data-rail-block
+    onscroll={place}
+  >
     {#each GROUPS as g (g.id)}
       <div class="flex flex-col gap-0.5">
         {#if !collapsed}
@@ -147,14 +205,14 @@
     {/if}
   </div>
 
-  <div class="relative flex flex-col gap-2 border-t border-border pt-2 pb-1.5">
+  <div class="relative flex flex-col gap-2 border-t border-border pt-2 pb-1.5" data-rail-block>
     <Topo class="opacity-40" />
     <div class="relative"><RejoinCard {collapsed} /></div>
     <div class="relative flex flex-col gap-0.5 px-1.5">
       {#each PLACES.filter((p) => p.group === "foot") as p (p.id)}{@render entry(p)}{/each}
       <button
         class={cn(
-          "flex h-control items-center gap-2.5 rounded-sm text-2xs text-fg-faint hover:bg-raised/60 hover:text-fg-muted",
+          "flex h-control items-center gap-2.5 rounded-sm text-2xs text-fg-faint transition-colors duration-fast hover:bg-raised/60 hover:text-fg-muted",
           collapsed ? "justify-center" : "px-2.5",
         )}
         onclick={() => (prefs.railCollapsed = !collapsed)}

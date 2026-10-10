@@ -136,7 +136,6 @@ const content = {
       es: "Abrir su carpeta",
       ru: "Открыть папку",
     }),
-    detailsStatus: t({ en: "Status", fr: "État", de: "Status", es: "Estado", ru: "Статус" }),
     detailsLink: t({
       en: "Loaded in game",
       fr: "Chargé en jeu",
@@ -179,15 +178,6 @@ const content = {
       es: "Parámetro de inicio",
       ru: "Параметр запуска",
     }),
-    bulkUpdate: insert(
-      t({
-        en: "Update {{count}}",
-        fr: "Mettre à jour {{count}}",
-        de: "{{count}} aktualisieren",
-        es: "Actualizar {{count}}",
-        ru: "Обновить {{count}}",
-      }),
-    ),
     reviewUpdateAll: t({
       en: "Re-validate every mod",
       fr: "Revalider tous les mods",
@@ -236,15 +226,6 @@ const content = {
         ru: "{{count}} модов",
       }),
     ),
-    countOne: insert(
-      t({
-        en: "{{count}} mod",
-        fr: "{{count}} mod",
-        de: "{{count}} Mod",
-        es: "{{count}} mod",
-        ru: "{{count}} мод",
-      }),
-    ),
     updatesAvailable: insert(
       t({
         en: "{{count}} updates available",
@@ -254,22 +235,6 @@ const content = {
         ru: "{{count}} обновлений доступно",
       }),
     ),
-    updateAvailableOne: insert(
-      t({
-        en: "{{count}} update available",
-        fr: "{{count}} mise à jour disponible",
-        de: "{{count}} Update verfügbar",
-        es: "{{count}} actualización disponible",
-        ru: "{{count}} обновление доступно",
-      }),
-    ),
-    allUpToDate: t({
-      en: "All up to date",
-      fr: "Tout est à jour",
-      de: "Alle aktuell",
-      es: "Todo actualizado",
-      ru: "Все моды актуальны",
-    }),
     install: t({
       en: "Install mod",
       fr: "Installer un mod",
@@ -412,13 +377,6 @@ const content = {
       ru: "Доступно обновление",
     }),
     managed: t({ en: "Managed", fr: "Géré", de: "Verwaltet", es: "Gestionado", ru: "Управляемый" }),
-    copyName: t({
-      en: "Copy mod name",
-      fr: "Copier le nom du mod",
-      de: "Mod-Name kopieren",
-      es: "Copiar nombre del mod",
-      ru: "Скопировать название мода",
-    }),
     copied: t({
       en: "Copied!",
       fr: "Copié !",
@@ -432,14 +390,6 @@ const content = {
       de: "Im Steam Workshop öffnen",
       es: "Abrir en Steam Workshop",
       ru: "Открыть в Steam Workshop",
-    }),
-    statusUpdate: t({ en: "UPDATE", fr: "MAJ", de: "UPDATE", es: "ACTUALIZAR", ru: "ОБНОВИТЬ" }),
-    updating: t({
-      en: "Updating…",
-      fr: "Mise à jour…",
-      de: "Aktualisiere…",
-      es: "Actualizando…",
-      ru: "Обновление…",
     }),
     delete: t({
       en: "Delete mod",
@@ -477,13 +427,6 @@ const content = {
       es: "uno por línea, o separados por comas",
       ru: "по одному на строку или через запятую",
     }),
-    noValidIds: t({
-      en: "No valid Workshop IDs found.",
-      fr: "Aucun ID Workshop valide trouvé.",
-      de: "Keine gültigen Workshop-IDs gefunden.",
-      es: "No se encontraron Workshop IDs válidos.",
-      ru: "Не найдено допустимых Workshop ID.",
-    }),
     queued: insert(
       t({
         en: "{{count}} mods queued",
@@ -491,15 +434,6 @@ const content = {
         de: "{{count}} Mods in Warteschlange",
         es: "{{count}} mods en cola",
         ru: "{{count}} модов в очереди",
-      }),
-    ),
-    queuedOne: insert(
-      t({
-        en: "{{count}} mod queued",
-        fr: "{{count}} mod en file d'attente",
-        de: "{{count}} Mod in Warteschlange",
-        es: "{{count}} mod en cola",
-        ru: "{{count}} мод в очереди",
       }),
     ),
     noValidDetected: t({
@@ -1004,14 +938,6 @@ const content = {
       es: "Todos los mods están actualizados",
       ru: "Все моды актуальны",
     }),
-    installAria: t({
-      en: "Install mod",
-      fr: "Installer le mod",
-      de: "Mod installieren",
-      es: "Instalar mod",
-      ru: "Установить мод",
-    }),
-    // ── the list and its details, said plainly ──
     stateDownloading: t({
       en: "Downloading…",
       fr: "Téléchargement…",

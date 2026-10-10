@@ -152,7 +152,7 @@
   <section class="flex min-w-0 flex-1 flex-col">
     <div class="h-0.5 shrink-0 bg-raised">
       <div
-        class="h-full bg-accent transition-[width] duration-300"
+        class="h-full bg-accent transition-[width] duration-slow ease-out"
         style="width: {progress}%"
       ></div>
     </div>

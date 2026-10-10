@@ -3,6 +3,9 @@
   import Star from "~icons/lucide/star";
   import History from "~icons/lucide/history";
   import { Signal } from "$lib/components/ui/signal";
+  import { Button } from "$lib/components/ui/button";
+  import { Empty } from "$lib/components/app";
+  import { app } from "$lib/stores/app.svelte";
   import { profile } from "$lib/stores/profile.svelte";
   import { servers, keyOf } from "$lib/stores/servers.svelte";
   import { relative } from "$lib/format";
@@ -16,6 +19,7 @@
    */
   let { wide = false }: { wide?: boolean } = $props();
   const c = dict("connect");
+  const fv = dict("favorites");
 
   type Pick = {
     key: string;
@@ -47,7 +51,12 @@
 </script>
 
 {#if picks.length === 0}
-  <p class="m-0 p-3 text-2xs text-fg-faint">{$c.noRecent.value}</p>
+  <!-- Nothing played or starred yet: the list where both come from. -->
+  <Empty icon={History} title={$c.noRecent.value} compact>
+    {#snippet action()}
+      <Button variant="accent" onclick={() => app.go("servers")}>{$fv.browseServers.value}</Button>
+    {/snippet}
+  </Empty>
 {:else if wide}
   <ul class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-2 p-0">
     {#each picks as p (p.key)}

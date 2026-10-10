@@ -91,15 +91,6 @@ const content = {
       es: "Tiempo jugado cada día durante el último año, en tu hora. Más oscuro, más largo.",
       ru: "Время игры по дням за последний год, по вашему времени. Темнее — дольше.",
     }),
-    activityCell: insert(
-      t({
-        en: "{{date}} · {{duration}}",
-        fr: "{{date}} · {{duration}}",
-        de: "{{date}} · {{duration}}",
-        es: "{{date}} · {{duration}}",
-        ru: "{{date}} · {{duration}}",
-      }),
-    ),
     legendLess: t({ en: "Less", fr: "Moins", de: "Weniger", es: "Menos", ru: "Меньше" }),
     legendMore: t({ en: "More", fr: "Plus", de: "Mehr", es: "Más", ru: "Больше" }),
     prevYear: t({

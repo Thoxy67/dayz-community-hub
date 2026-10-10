@@ -25,8 +25,8 @@
   import { Button, IconButton } from "$lib/components/ui/button";
   import { Input } from "$lib/components/ui/input";
   import { Segmented } from "$lib/components/ui/segmented";
-  import { Spinner } from "$lib/components/ui/spinner";
   import { Tag } from "$lib/components/ui/tag";
+  import { SkeletonRows } from "$lib/components/ui/skeleton";
   import { cn } from "$lib/cx";
   import { date, dateTime, duration, relative } from "$lib/format";
   import type { MapStatDto, PlaceStatDto, SessionDto, StatsRange } from "$lib/ipc/types";
@@ -43,6 +43,7 @@
    * play history is part of the profile, so exporting the profile keeps it.
    */
   const s = dict("stats");
+  const fv = dict("favorites");
   const n = dict("nav");
 
   // Asked when the view first shows, and again on every change after that.
@@ -170,8 +171,8 @@
       {#if play.data}
         {@const d = play.data}
         <Figure label={$s.figTime.value} value={duration(d.total_secs)} tone="text-accent" />
-        <Figure label={$s.figSessions.value} value={String(d.sessions)} />
-        <Figure label={$s.figPlaces.value} value={String(d.places)} />
+        <Figure label={$s.figSessions.value} amount={d.sessions} />
+        <Figure label={$s.figPlaces.value} amount={d.places} />
         <Figure
           secondary
           label={$s.figAverage.value}
@@ -221,13 +222,20 @@
 
   <div class="min-h-0 flex-1 overflow-y-auto">
     {#if play.loading}
-      <div class="grid h-full place-items-center"><Spinner class="size-6 text-accent" /></div>
+      <SkeletonRows count={10} />
     {:else if play.error}
       <Empty icon={ChartColumn} title={$s.emptyTitle.value}>
         <span class="font-mono text-2xs" data-selectable>{play.error}</span>
       </Empty>
     {:else if empty}
-      <Empty icon={ChartColumn} title={$s.emptyTitle.value}>{$s.emptyHint.value}</Empty>
+      <Empty icon={ChartColumn} title={$s.emptyTitle.value}>
+        {$s.emptyHint.value}
+        {#snippet action()}
+          <Button variant="accent" onclick={() => app.go("servers")}
+            >{$fv.browseServers.value}</Button
+          >
+        {/snippet}
+      </Empty>
     {:else if play.data}
       {@const d = play.data}
       <div class="flex flex-col gap-px bg-border">

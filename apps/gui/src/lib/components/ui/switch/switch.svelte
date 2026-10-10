@@ -41,7 +41,7 @@
 >
   <span
     class={cn(
-      "relative h-3.5 w-7 shrink-0 rounded-full border border-border bg-bg",
+      "relative h-3.5 w-7 shrink-0 rounded-full border border-border bg-bg transition-colors duration-fast",
       "group-data-[state=checked]:shadow-[var(--glow-accent-soft)]",
       tone === "warn"
         ? "group-data-[state=checked]:bg-warn"
@@ -52,7 +52,7 @@
          animation here, and a transform is the kind that lays nothing out. -->
     <Switch.Thumb
       class="absolute top-1/2 left-[0.1875rem] block size-2.5 -translate-y-1/2 rounded-full bg-fg-faint
-             transition-transform duration-(--duration-fast)
+             transition-[translate,background-color] duration-fast ease-out
              data-[state=checked]:translate-x-[0.8125rem] data-[state=checked]:bg-accent-fg"
     />
   </span>

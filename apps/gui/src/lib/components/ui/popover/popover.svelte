@@ -48,7 +48,7 @@
     aria-haspopup={kind}
     title={label}
     class={cn(
-      "grid shrink-0 place-items-center rounded-md text-fg-faint hover:bg-raised hover:text-fg",
+      "grid shrink-0 place-items-center rounded-md text-fg-faint transition-colors duration-fast hover:bg-raised hover:text-fg",
       "data-[state=open]:bg-raised data-[state=open]:text-fg",
       triggerClass,
     )}
@@ -64,7 +64,7 @@
       role={kind === "menu" ? "menu" : undefined}
       aria-label={label}
       class={cn(
-        "z-popover overflow-hidden rounded-md border border-border bg-overlay shadow-pop outline-none",
+        "z-popover overflow-hidden data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out rounded-md border border-border bg-overlay shadow-pop outline-none",
         panelClass,
       )}
     >

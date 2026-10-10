@@ -10,15 +10,13 @@ const content = {
       es: "Abrir todos los artículos en dayz.com",
       ru: "Открыть все статьи на dayz.com",
     }),
-    articles: insert(
-      t({
-        en: "{{count}} articles",
-        fr: "{{count}} articles",
-        de: "{{count}} Artikel",
-        es: "{{count}} artículos",
-        ru: "Статей: {{count}}",
-      }),
-    ),
+    statArticles: t({
+      en: "Articles",
+      fr: "Articles",
+      de: "Artikel",
+      es: "Artículos",
+      ru: "Статьи",
+    }),
     allCategories: t({ en: "All", fr: "Tout", de: "Alle", es: "Todo", ru: "Все" }),
     readTime: insert(
       t({
@@ -110,15 +108,6 @@ const content = {
       ru: "Выберите статью для чтения",
     }),
     close: t({ en: "Close", fr: "Fermer", de: "Schließen", es: "Cerrar", ru: "Закрыть" }),
-    fetchFailed: insert(
-      t({
-        en: "News fetch failed: {{error}}",
-        fr: "Échec de la récupération des actualités : {{error}}",
-        de: "Abrufen der Nachrichten fehlgeschlagen: {{error}}",
-        es: "Error al obtener noticias: {{error}}",
-        ru: "Ошибка загрузки новостей: {{error}}",
-      }),
-    ),
   },
 } satisfies Dictionary;
 

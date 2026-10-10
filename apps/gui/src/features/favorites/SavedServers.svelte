@@ -59,7 +59,8 @@
   import { profile } from "$lib/stores/profile.svelte";
   import { connect } from "$lib/stores/connect.svelte";
   import { dialogs } from "$lib/stores/dialogs.svelte";
-  import { dateTime, relative } from "$lib/format";
+  import { dateTime, num, relative } from "$lib/format";
+  import { cn } from "$lib/cx";
   import { indexOf, pad, padActions } from "$lib/gamepad";
 
   let {
@@ -80,8 +81,12 @@
     emptyIcon: Component<{ class?: string }>;
     emptyTitle: string;
     emptyHint: string;
-    /** The view header, given the figures worked out here. */
-    header: Snippet<[stats: Stats, toolbar: Snippet]>;
+    /**
+     * The view header, given the figures worked out here, the toolbar row
+     * (search, filters, count) and the tools that go in its actions, in the
+     * order the server browser has them.
+     */
+    header: Snippet<[stats: Stats, toolbar: Snippet, tools: Snippet]>;
   } = $props();
 
   const f = dict("favorites");
@@ -113,7 +118,7 @@
     r.listed ? servers.count(r.listed) : serverData.players(r.ip, r.port);
 
   // ── search, filter, sort ────────────────────────────────────────────────
-  type SortCol = "name" | "players" | "ping" | "map" | "recent";
+  type SortCol = "name" | "players" | "ping" | "map" | "time" | "mods" | "recent";
   let query = $state("");
   let listedOnly = $state(false);
   // A list is one kind for its whole life: its first sort follows it.
@@ -125,7 +130,7 @@
     if (sortCol === col) sortAsc = !sortAsc;
     else {
       sortCol = col;
-      sortAsc = col === "name" || col === "map" || col === "ping";
+      sortAsc = col === "name" || col === "map" || col === "time" || col === "ping";
     }
   }
 
@@ -150,6 +155,8 @@
       players: (a, b) => countOf(a).players - countOf(b).players,
       ping: (a, b) => pingOf(a) - pingOf(b),
       map: (a, b) => (a.listed?.map ?? "~").localeCompare(b.listed?.map ?? "~"),
+      time: (a, b) => (a.listed?.time ?? "~").localeCompare(b.listed?.time ?? "~"),
+      mods: (a, b) => (a.listed?.mods_count ?? -1) - (b.listed?.mods_count ?? -1),
       recent: (a, b) => (a.ts ?? 0) - (b.ts ?? 0),
     };
     return list.sort((a, b) => dir * by[sortCol](a, b));
@@ -341,31 +348,38 @@
 
 <svelte:window {onkeydown} />
 
+<!-- The same row as the server browser's: search, filters, and the count
+     at the right end. -->
 {#snippet toolbar()}
-  <div class="relative min-w-52 flex-1">
+  <div class="flex min-w-0 items-center gap-1.5">
     <Input
-      class="w-full"
+      class="w-44 min-w-32 flex-1 xl:max-w-80"
       bind:value={query}
       type="search"
       placeholder={$f.searchPlaceholder.value}
       clearLabel={$sv.clearSearch.value}
     />
+    <Chip
+      active={listedOnly}
+      title={$f.onlineOnlyTitle.value}
+      onclick={() => (listedOnly = !listedOnly)}
+    >
+      {$f.onlineOnly.value}
+    </Chip>
+    <span class="ml-auto shrink-0 pl-1 font-mono text-2xs whitespace-nowrap text-fg-faint">
+      <span class="num text-fg">{num(shown.length)}</span> / {num(rows.length)}
+    </span>
   </div>
-  <Chip
-    active={listedOnly}
-    title={$f.onlineOnlyTitle.value}
-    onclick={() => (listedOnly = !listedOnly)}
-  >
-    {$f.onlineOnly.value}
-  </Chip>
-  <span class="num font-mono text-2xs text-fg-faint"
-    >{shown.length}<span class="opacity-60">/{rows.length}</span></span
-  >
-  <span class="ml-auto"></span>
+{/snippet}
+
+<!-- The header's tools, as the server browser has them: shortcuts, then the
+     detail pane. -->
+{#snippet tools()}
   <ShortcutsButton />
   <IconButton
     icon={PanelRight}
-    label={$f.detailsTitle.value}
+    label={$sv.toggleDetails.value}
+    kbd="I"
     active={showDetail}
     onclick={() => (showDetail = !showDetail)}
   />
@@ -392,14 +406,27 @@
       asc={sortAsc}
       onclick={() => sortBy("name")}
     />
+    <span class={cn("flex items-center gap-2", LIST_NARROW_HIDDEN)}>
+      <SortHead
+        label={$sv.colMap.value}
+        active={sortCol === "map"}
+        asc={sortAsc}
+        onclick={() => sortBy("map")}
+      />
+      <SortHead
+        label={$sv.colTime.value}
+        title={$sv.colTimeTitle.value}
+        active={sortCol === "time"}
+        asc={sortAsc}
+        onclick={() => sortBy("time")}
+      />
+    </span>
     <SortHead
-      class={LIST_NARROW_HIDDEN}
-      label={`${$sv.colMap.value} · ${$sv.colTime.value}`}
-      active={sortCol === "map"}
+      label={$sv.colMods.value}
+      active={sortCol === "mods"}
       asc={sortAsc}
-      onclick={() => sortBy("map")}
+      onclick={() => sortBy("mods")}
     />
-    <span class="uppercase">{$sv.colMods.value}</span>
     {#if kind === "history"}
       <SortHead
         label={$h.colLastPlayed.value}
@@ -519,7 +546,7 @@
 {/snippet}
 
 <div class="flex min-h-0 flex-1 flex-col">
-  {@render header(stats, toolbar)}
+  {@render header(stats, toolbar, tools)}
   {#if rows.length === 0}
     <Empty icon={emptyIcon} title={emptyTitle}>
       {emptyHint}

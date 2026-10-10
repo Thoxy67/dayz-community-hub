@@ -11,6 +11,8 @@
   export const button = tv({
     base: [
       "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md font-medium select-none",
+      // Colours ease, and a press sinks the button a little: felt more than seen.
+      "transition-[background-color,border-color,color,box-shadow,transform,filter] duration-fast ease-out",
       "disabled:cursor-not-allowed disabled:opacity-40",
     ],
     variants: {
@@ -18,7 +20,7 @@
         default:
           "border border-border bg-raised/80 text-fg hover:border-border-strong hover:bg-raised active:bg-raised/60",
         accent:
-          "border border-accent/50 bg-accent text-accent-fg shadow-[var(--glow-accent-soft)] hover:bg-accent/90 active:bg-accent/80",
+          "border border-accent/50 bg-accent text-accent-fg shadow-[var(--glow-accent-soft)] hover:bg-accent/90 hover:shadow-glow active:bg-accent/80",
         ghost:
           "border border-transparent text-fg-muted hover:bg-raised hover:text-fg active:bg-raised/60",
         danger: "border border-err/40 text-err hover:bg-err/10 active:bg-err/15",
@@ -26,14 +28,14 @@
         // capitals on the accent, so it reads from across the room.
         play: [
           "border border-accent bg-accent text-accent-fg shadow-[var(--glow-accent-soft)]",
-          "font-display font-extrabold uppercase tracking-[0.08em] hover:brightness-110 active:brightness-95",
+          "font-display font-extrabold uppercase tracking-[0.08em] hover:shadow-glow hover:brightness-110 active:brightness-95",
         ],
       },
       size: {
-        lg: "h-control-lg px-4 text-sm",
-        sm: "h-control px-2.5 text-xs",
-        xs: "h-control-sm px-1.5 text-2xs",
-        icon: "size-control",
+        lg: "h-control-lg px-4 text-sm active:scale-[0.98]",
+        sm: "h-control px-2.5 text-xs active:scale-[0.98]",
+        xs: "h-control-sm px-1.5 text-2xs active:scale-[0.98]",
+        icon: "size-control active:scale-[0.96]",
         "icon-xs": "size-control-sm",
       },
     },

@@ -7,13 +7,13 @@
   import { Empty, Figure, JoinButton, PageHeader } from "$lib/components/app";
   import { Button } from "$lib/components/ui/button";
   import { SectionLabel } from "$lib/components/ui/section-label";
-  import { Spinner } from "$lib/components/ui/spinner";
+  import { SkeletonRows } from "$lib/components/ui/skeleton";
   import { Tag } from "$lib/components/ui/tag";
   import { steamFriends } from "$lib/ipc/friends";
   import { errorText } from "$lib/ipc/core";
   import type { FriendDto, FriendsDto, FriendStatus } from "$lib/ipc/types";
   import { app } from "$lib/stores/app.svelte";
-  import { num, relative } from "$lib/format";
+  import { relative } from "$lib/format";
   import { cn } from "$lib/cx";
 
   /**
@@ -103,7 +103,7 @@
 {#snippet row(f: FriendDto)}
   <li
     class={cn(
-      "group flex min-h-row items-center gap-3 border-b border-border/50 px-pad py-1.5",
+      "group flex min-h-row items-center gap-3 border-b border-border/50 px-pad py-1.5 transition-colors duration-fast hover:bg-raised/50",
       f.status === "offline" && !f.game && "opacity-60",
     )}
   >
@@ -164,9 +164,9 @@
 <div class="flex min-h-0 flex-1 flex-col">
   <PageHeader title={$nav.friends.value}>
     {#snippet stats()}
-      <Figure label={$fr.statInDayz.value} value={num(inDayz)} tone="text-accent" />
-      <Figure label={$fr.statOnline.value} value={num(online)} tone="text-ok" />
-      <Figure label={$fr.statTotal.value} value={num(friends.length)} />
+      <Figure label={$fr.statInDayz.value} amount={inDayz} tone="text-accent" />
+      <Figure label={$fr.statOnline.value} amount={online} tone="text-ok" />
+      <Figure label={$fr.statTotal.value} amount={friends.length} />
     {/snippet}
     {#snippet actions()}
       {#if data?.source}
@@ -174,15 +174,15 @@
           {data.source === "web_api" ? $fr.sourceWeb.value : $fr.sourceClient.value}
         </Tag>
       {/if}
-      <Button variant="ghost" size="xs" onclick={() => void load()} disabled={loading}>
-        {#if loading}<Spinner class="size-3" />{:else}<RefreshCw class="size-3" />{/if}
-        {$fr.refresh.value}
+      <!-- Refresh, as the server browser has it. -->
+      <Button onclick={() => void load()} disabled={loading}>
+        <RefreshCw class={cn("size-icon-sm", loading && "animate-spin")} />{$fr.refresh.value}
       </Button>
     {/snippet}
   </PageHeader>
 
   {#if !data && loading}
-    <div class="grid flex-1 place-items-center"><Spinner /></div>
+    <div class="min-h-0 flex-1 overflow-hidden bg-panel"><SkeletonRows media count={10} /></div>
   {:else if failed || data?.error}
     <Empty icon={Users} title={$fr.unavailable.value}>
       <span data-selectable>{failed ?? data?.error}</span>
@@ -194,20 +194,24 @@
       {/snippet}
     </Empty>
   {:else if friends.length === 0}
-    <Empty icon={Users} title={$fr.empty.value} />
+    <Empty icon={Users} title={$fr.empty.value}>
+      {#snippet action()}
+        <Button onclick={() => void load()} disabled={loading}>
+          <RefreshCw class={cn("size-icon-sm", loading && "animate-spin")} />{$fr.refresh.value}
+        </Button>
+      {/snippet}
+    </Empty>
   {:else}
     <div class="relative min-h-0 flex-1 bg-panel">
       <div class="@container absolute inset-0 overflow-y-auto">
         {#each groups as g (g.key)}
           {#if g.rows.length}
             <section>
-              <div
-                class="sticky top-0 z-10 border-b border-border bg-bg/90 px-pad py-1.5 backdrop-blur"
-              >
+              <div class="sticky top-0 z-raised border-b border-border bg-bg px-pad py-1.5">
                 <SectionLabel>
                   {g.label}
                   {#snippet actions()}
-                    <span class="font-mono text-2xs text-fg-faint">{g.rows.length}</span>
+                    <span class="num font-mono text-2xs text-fg-faint">{g.rows.length}</span>
                   {/snippet}
                 </SectionLabel>
               </div>

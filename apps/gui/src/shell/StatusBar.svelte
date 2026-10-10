@@ -31,6 +31,7 @@
   import { updater } from "$lib/stores/updater.svelte";
   import { profile } from "$lib/stores/profile.svelte";
   import { num, relative } from "$lib/format";
+  import { rolling } from "$lib/components/app/rolling.svelte";
   import { cn } from "$lib/cx";
 
   /**
@@ -66,17 +67,38 @@
   const op = $derived(mods.op.active && mods.op.phase !== "finished" ? mods.op : null);
   const opPct = $derived(op && op.total > 0 ? (op.current / op.total) * 100 : 0);
   const hasSteamcmd = $derived(servers.stats?.has_steamcmd ?? true);
+  /** The list's size, rolling to each new count. */
+  const total = rolling(() => servers.total);
+  /** Not while the window opens: a flash says "this just changed". */
+  let armed = $state(false);
+  $effect(() => {
+    const t = setTimeout(() => (armed = true), 1500);
+    return () => clearTimeout(t);
+  });
+  /** What the mods segment says; a change flashes it once. */
+  const modsKey = $derived(
+    mods.checking ? "checking" : `${mods.stale.length}/${mods.installed.length}`,
+  );
 
-  const seg = "flex h-full items-center gap-1.5 px-2.5 transition-colors";
+  const seg = "flex h-full items-center gap-1.5 px-2.5 transition-colors duration-fast";
   const btn = `${seg} hover:bg-raised hover:text-fg`;
 </script>
 
-{#snippet bar(value: number, tone: string)}
+<!-- A progress bar: it eases to each new value; with nothing to measure yet
+     (no total), a short band sweeps across instead. -->
+{#snippet bar(value: number, tone: string, unknown = false)}
   <span class="relative h-1 w-20 overflow-hidden rounded-full bg-raised" aria-hidden="true">
-    <span
-      class={cn("absolute inset-y-0 left-0 rounded-full transition-[width]", tone)}
-      style="width: {value}%"
-    ></span>
+    {#if unknown}
+      <span class={cn("absolute inset-y-0 left-0 w-1/3 animate-sweep rounded-full", tone)}></span>
+    {:else}
+      <span
+        class={cn(
+          "absolute inset-y-0 left-0 rounded-full transition-[width] duration-base ease-out",
+          tone,
+        )}
+        style="width: {value}%"
+      ></span>
+    {/if}
   </span>
 {/snippet}
 
@@ -99,9 +121,13 @@
         <span>{$n.sbListDown.value}</span>
       {:else}
         <ServerIcon class="size-3" />
-        <span class="num font-mono text-fg-muted"
-          >{$n.sbServers({ count: num(servers.total) }).value}</span
-        >
+        <!-- Flashes once when the list's size changes. -->
+        {#key servers.total}
+          <span
+            class={cn("num rounded-xs px-0.5 font-mono text-fg-muted", armed && "animate-flash")}
+            >{$n.sbServers({ count: num(total.current) }).value}</span
+          >
+        {/key}
         {#if age}<span class={cn(!stale && "text-fg-faint")}>· {age}</span>{/if}
       {/if}
     </button>
@@ -116,11 +142,11 @@
           ? $n.scanPaused.value
           : $n.scanning({ done: num(scan.done), total: num(scan.total) }).value}
       </span>
-      {@render bar(pct, servers.scanPaused ? "bg-warn" : "bg-accent")}
+      {@render bar(pct, servers.scanPaused ? "bg-warn" : "bg-accent", scan.total === 0)}
       <span class="num w-8 font-mono">{pct}%</span>
       <Tooltip text={servers.scanPaused ? $n.resumeScan.value : $n.pauseScan.value} side="top">
         <button
-          class="grid size-5 place-items-center rounded-xs hover:bg-raised hover:text-fg"
+          class="grid size-5 place-items-center rounded-xs transition-colors duration-fast hover:bg-raised hover:text-fg"
           aria-label={servers.scanPaused ? $n.resumeScan.value : $n.pauseScan.value}
           onclick={() => servers.toggleScanPause()}
         >
@@ -147,7 +173,7 @@
             total: op.total,
           }).value}</span
         >
-        {@render bar(opPct, "bg-info")}
+        {@render bar(opPct, "bg-info", op.total === 0)}
         <span class="max-w-48 min-w-0 truncate text-fg-muted">{op.currentName}</span>
       </button>
     </Tooltip>
@@ -205,15 +231,17 @@
   {#if mods.installed.length > 0 || mods.checking}
     <button class={cn(btn, mods.stale.length > 0 && "text-warn")} onclick={() => app.go("mods")}>
       <Puzzle class={cn("size-3", mods.checking && "animate-pulse")} />
-      <span class="num">
-        {#if mods.checking}
-          {$n.sbModsChecking.value}
-        {:else if mods.stale.length > 0}
-          {$n.sbModsStale({ count: mods.stale.length }).value}
-        {:else}
-          {$n.sbModsOk({ count: mods.installed.length }).value}
-        {/if}
-      </span>
+      {#key modsKey}
+        <span class={cn("num rounded-xs px-0.5", armed && "animate-flash")}>
+          {#if mods.checking}
+            {$n.sbModsChecking.value}
+          {:else if mods.stale.length > 0}
+            {$n.sbModsStale({ count: mods.stale.length }).value}
+          {:else}
+            {$n.sbModsOk({ count: mods.installed.length }).value}
+          {/if}
+        </span>
+      {/key}
     </button>
   {/if}
 

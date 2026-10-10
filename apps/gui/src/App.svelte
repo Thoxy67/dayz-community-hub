@@ -184,8 +184,14 @@
     window.addEventListener("focus", focus);
     document.addEventListener("visibilitychange", vis);
 
-    // Mods are checked for updates every half hour while the app is open.
-    const tick = setInterval(() => void mods.checkUpdates(true), 30 * 60 * 1000);
+    // Mods are checked for updates every half hour while the app is in use;
+    // not while it sits in the background (`app.back` checks on return).
+    const tick = setInterval(
+      () => {
+        if (app.focused) void mods.checkUpdates(true);
+      },
+      30 * 60 * 1000,
+    );
     return () => {
       disposed = true;
       off.forEach((u) => u());
@@ -260,8 +266,16 @@
             </div>
           </div>
         {:else}
+          <!-- A view comes into sight with a short rise. CSS restarts an
+               animation whenever an element leaves `display: none`, so taking
+               `hidden` off is the trigger: the views stay mounted, nothing
+               re-renders, and only opacity and transform move. -->
           {#each opened as id (id)}
-            <section class="absolute inset-0 flex flex-col" hidden={app.view !== id} data-view={id}>
+            <section
+              class="absolute inset-0 flex animate-view-in flex-col"
+              hidden={app.view !== id}
+              data-view={id}
+            >
               {#await viewOf(id) then mod}
                 <mod.default />
               {/await}

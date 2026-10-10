@@ -62,7 +62,7 @@
       {side}
       sideOffset={6}
       collisionPadding={4}
-      class="z-tip flex w-max max-w-[min(20rem,var(--bits-floating-available-width,20rem))] items-center gap-1.5
+      class="z-tip flex w-max animate-fade-in data-[state=closed]:animate-fade-out max-w-[min(20rem,var(--bits-floating-available-width,20rem))] items-center gap-1.5
              rounded-md border border-border bg-overlay px-2 py-1 text-2xs leading-snug text-fg shadow-pop"
     >
       <span class="min-w-0">{text}</span>

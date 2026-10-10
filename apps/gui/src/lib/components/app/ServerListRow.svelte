@@ -117,7 +117,7 @@
         aria-rowindex={rowindex}
         class={cn(
           wide ? LIST_GRID_EXTRA : LIST_GRID,
-          "group relative h-full cursor-pointer border-b border-border/50 pr-2 pl-2 text-xs transition-colors",
+          "group relative h-full cursor-pointer border-b border-border/50 pr-2 pl-2 text-xs transition-colors duration-fast",
           selected ? "bg-accent/10" : "hover:bg-raised/50",
           "data-[state=open]:bg-raised/70",
           (!listed || excluded) && "opacity-55",
@@ -125,7 +125,8 @@
         onclick={onselect}
         ondblclick={onjoin}
       >
-        {#if selected}<span class="absolute inset-y-0 left-0 w-0.5 bg-accent"></span>{/if}
+        {#if selected}<span class="absolute inset-y-0 left-0 w-0.5 animate-fade-in bg-accent"
+          ></span>{/if}
 
         <FavoriteButton {name} {ip} port={joinPort ?? queryPort} />
         <PingButton {ip} {queryPort} />

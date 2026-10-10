@@ -70,7 +70,7 @@
       title={o.title ?? (iconOnly ? o.label : undefined)}
       class={cn(
         "inline-flex items-center justify-center gap-1 border-r border-border last:border-r-0",
-        "text-fg-muted hover:bg-raised hover:text-fg",
+        "text-fg-muted transition-colors duration-fast hover:bg-raised hover:text-fg",
         "data-[state=checked]:bg-accent/15 data-[state=checked]:text-accent",
         "disabled:cursor-not-allowed disabled:opacity-40",
         size === "sm" ? "h-control text-xs" : "h-control-sm text-2xs",

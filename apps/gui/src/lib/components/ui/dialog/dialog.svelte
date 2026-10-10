@@ -51,11 +51,13 @@
 
 <Dialog.Root bind:open>
   <Dialog.Portal>
-    <Dialog.Overlay class="fixed inset-0 z-dialog bg-plot/75" />
+    <Dialog.Overlay
+      class="fixed inset-0 z-dialog bg-plot/75 data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out"
+    />
     <Dialog.Content
       class={cn(
         "fixed top-1/2 left-1/2 z-dialog flex max-h-[calc(100vh-2rem)] max-w-[calc(100vw-2rem)]",
-        "-translate-x-1/2 -translate-y-1/2 flex-col rounded-md border border-border-strong bg-panel shadow-pop",
+        "-translate-x-1/2 -translate-y-1/2 flex-col rounded-md border border-border-strong bg-panel shadow-pop data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
         sizes[size],
         klass,
       )}
@@ -72,7 +74,7 @@
         </div>
         <Dialog.Close
           aria-label={closeLabel}
-          class="grid size-control-sm shrink-0 place-items-center rounded-sm text-fg-faint hover:bg-raised hover:text-fg"
+          class="grid size-control-sm shrink-0 place-items-center rounded-sm text-fg-faint transition-colors duration-fast hover:bg-raised hover:text-fg"
         >
           <X class="size-icon" />
         </Dialog.Close>

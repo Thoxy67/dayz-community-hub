@@ -57,6 +57,35 @@
     class?: string;
     "aria-label": string;
   } = $props();
+
+  // The accent mark under the tab that is on: one mark that slides to the
+  // tab picked, measured from it (labels differ in width and language).
+  // `translate` and `width` on a 2-pixel bar; placed without sliding at first.
+  let listEl = $state<HTMLElement | null>(null);
+  let ink = $state<{ x: number; w: number } | null>(null);
+  let glide = $state(false);
+  function measure() {
+    const b = listEl?.querySelector<HTMLElement>('[role="tab"][data-state="active"]');
+    ink = b && b.offsetWidth > 0 ? { x: b.offsetLeft + 6, w: b.offsetWidth - 12 } : null;
+  }
+  $effect(() => {
+    void value;
+    if (!listEl) return;
+    const raf = requestAnimationFrame(() => {
+      measure();
+      if (!glide && ink) requestAnimationFrame(() => (glide = true));
+    });
+    return () => cancelAnimationFrame(raf);
+  });
+  // A tab's width moves with its label (language, count) and from 0 when a
+  // hidden view comes back.
+  $effect(() => {
+    if (!listEl) return;
+    const ro = new ResizeObserver(() => measure());
+    ro.observe(listEl);
+    for (const c of listEl.children) ro.observe(c);
+    return () => ro.disconnect();
+  });
 </script>
 
 <Tabs.Root
@@ -71,8 +100,10 @@
   class="contents"
 >
   <Tabs.List
+    bind:ref={listEl}
     aria-label={ariaLabel}
     class={cn(
+      "relative",
       // Sideways scroll, without a bar: six tabs in a narrow window used to
       // run off the edge, and the ones past it could only be reached with the
       // keyboard. The wheel and a drag reach them now, and the arrows still do.
@@ -91,7 +122,7 @@
           // Sharing a width, every pixel of padding is a letter of somebody's
           // label: three tabs in a 260 pixel sidebar read "Ressou...".
           fill ? "gap-1 px-1" : "gap-1.5 px-2.5",
-          "text-fg-muted hover:bg-raised/60 hover:text-fg data-[state=active]:text-accent",
+          "text-fg-muted transition-colors duration-fast hover:bg-raised/60 hover:text-fg data-[state=active]:text-accent",
           size === "sm" ? "text-xs" : "text-2xs",
           stretch ? "h-full" : size === "sm" ? "h-control" : "h-control-sm",
           fill && "flex-1",
@@ -117,12 +148,20 @@
                 >{t.count}</span
               >
             {/if}
-            <span
-              class="absolute inset-x-1.5 -bottom-px hidden h-0.5 rounded-full bg-accent group-data-[state=active]:block"
-            ></span>
           </button>
         {/snippet}
       </Tabs.Trigger>
     {/each}
+    {#if ink}
+      <span
+        aria-hidden="true"
+        class={cn(
+          "pointer-events-none absolute bottom-0 left-0 h-0.5 rounded-full bg-accent",
+          glide && "transition-[translate,width] duration-base ease-out",
+        )}
+        style:translate="{ink.x}px 0"
+        style:width="{ink.w}px"
+      ></span>
+    {/if}
   </Tabs.List>
 </Tabs.Root>

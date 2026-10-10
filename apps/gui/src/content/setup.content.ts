@@ -458,14 +458,6 @@ const content = {
       es: "Se descarga de Valve a",
       ru: "Скачивается от Valve в",
     }),
-    steamcmdOr: t({ en: "or", fr: "ou", de: "oder", es: "o", ru: "или" }),
-    steamcmdBrowse: t({
-      en: "Browse for steamcmd.exe",
-      fr: "Parcourir pour steamcmd.exe",
-      de: "steamcmd.exe suchen",
-      es: "Buscar steamcmd.exe",
-      ru: "Указать steamcmd.exe",
-    }),
     steamcmdPath: t({
       en: "SteamCMD path",
       fr: "Chemin SteamCMD",
@@ -532,13 +524,6 @@ const content = {
       de: "Konfiguration",
       es: "Configuración",
       ru: "Конфигурация",
-    }),
-    configDesc: t({
-      en: "Steam username is required. Everything else is optional.",
-      fr: "Le nom d'utilisateur Steam est requis. Tout le reste est optionnel.",
-      de: "Steam-Benutzername ist erforderlich. Alles andere ist optional.",
-      es: "El nombre de usuario de Steam es obligatorio. Todo lo demás es opcional.",
-      ru: "Имя пользователя Steam обязательно. Всё остальное — необязательно.",
     }),
     steamcmdLogin: t({
       en: "SteamCMD login",
@@ -642,13 +627,6 @@ const content = {
         ru: "Нажмите {{button}} для сохранения профиля и начала просмотра серверов.",
       }),
     ),
-    doneButton: t({
-      en: "Launch app",
-      fr: "Lancer l'app",
-      de: "App starten",
-      es: "Iniciar aplicación",
-      ru: "Запустить приложение",
-    }),
     doneSettingsHint: t({
       en: "You can update any of these settings later by clicking your name in the title bar.",
       fr: "Vous pouvez modifier ces paramètres plus tard en cliquant sur votre nom dans la barre de titre.",
@@ -694,20 +672,6 @@ const content = {
       de: "steamcmd Datei auswählen",
       es: "Seleccionar ejecutable de steamcmd",
       ru: "Выберите исполняемый файл steamcmd",
-    }),
-    importDialogTitle: t({
-      en: "Import DayZ Community Hub profile",
-      fr: "Importer un profil DayZ Community Hub",
-      de: "DayZ Community Hub Profil importieren",
-      es: "Importar perfil de DayZ Community Hub",
-      ru: "Импорт профиля DayZ Community Hub",
-    }),
-    importFilter: t({
-      en: "DayZ Community Hub profile",
-      fr: "Profil DayZ Community Hub",
-      de: "DayZ Community Hub Profil",
-      es: "Perfil de DayZ Community Hub",
-      ru: "Профиль DayZ Community Hub",
     }),
     steamcmdFilter: t({
       en: "SteamCMD",

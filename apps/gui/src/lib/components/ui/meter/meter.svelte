@@ -18,6 +18,7 @@
     size = "sm",
     label,
     animate = true,
+    indeterminate = false,
     class: klass = "",
   }: {
     value: number;
@@ -27,6 +28,8 @@
     /** What is being measured. Without it the bar is decoration and says so. */
     label?: string;
     animate?: boolean;
+    /** Under way with nothing to measure yet: a short band sweeps across. */
+    indeterminate?: boolean;
     class?: string;
   } = $props();
 
@@ -51,14 +54,18 @@
   {max}
   aria-label={label}
   aria-hidden={label ? undefined : true}
-  class={cn("w-full overflow-hidden rounded-full bg-raised", sizes[size], klass)}
+  class={cn("relative w-full overflow-hidden rounded-full bg-raised", sizes[size], klass)}
 >
-  <div
-    class={cn(
-      "h-full w-full origin-left rounded-full",
-      tones[tone],
-      animate && "transition-transform duration-(--duration-base) ease-out",
-    )}
-    style:transform="scaleX({fraction})"
-  ></div>
+  {#if indeterminate}
+    <div class={cn("h-full w-1/3 animate-sweep rounded-full", tones[tone])}></div>
+  {:else}
+    <div
+      class={cn(
+        "h-full w-full origin-left rounded-full",
+        tones[tone],
+        animate && "transition-transform duration-(--duration-base) ease-out",
+      )}
+      style:transform="scaleX({fraction})"
+    ></div>
+  {/if}
 </Meter.Root>

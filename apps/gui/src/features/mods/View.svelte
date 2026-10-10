@@ -47,6 +47,7 @@
     DropdownMenuItem,
     DropdownMenuSeparator,
   } from "$lib/components/ui/dropdown-menu";
+  import { Skeleton } from "$lib/components/ui/skeleton";
   import { cn } from "$lib/cx";
   import { bytes, date, relative } from "$lib/format";
   import { openUrl } from "$lib/ipc/native";
@@ -480,18 +481,13 @@
           <div class="{COLS} h-12 shrink-0 border-b border-border/40 px-pad" aria-hidden="true">
             <span class="size-3.5 rounded-xs bg-raised"></span>
             <span class="flex flex-col gap-1.5">
-              <span
-                class="h-2.5 animate-pulse rounded-full bg-raised"
-                style:width="{40 + ((i * 37) % 45)}%"
-              ></span>
-              <span class="h-2 w-24 animate-pulse rounded-full bg-raised/70"></span>
+              <span style:width="{40 + ((i * 37) % 45)}%"><Skeleton class="h-2.5" /></span>
+              <Skeleton class="w-24 opacity-70" />
             </span>
-            <span class="h-4 w-20 animate-pulse rounded-xs bg-raised"></span>
-            <span class={cn("h-2 w-12 animate-pulse rounded-full bg-raised/70", HIDE_IN_GAME)}
-            ></span>
-            <span class="h-2 w-10 animate-pulse justify-self-end rounded-full bg-raised/70"></span>
-            <span class={cn("h-2 w-16 animate-pulse rounded-full bg-raised/70", HIDE_VERSION)}
-            ></span>
+            <Skeleton class="h-4 w-20 rounded-xs" />
+            <Skeleton class={cn("w-12 opacity-70", HIDE_IN_GAME)} />
+            <Skeleton class="w-10 justify-self-end opacity-70" />
+            <Skeleton class={cn("w-16 opacity-70", HIDE_VERSION)} />
             <span></span>
           </div>
         {/each}
@@ -642,12 +638,12 @@
   <PageHeader title={$m.title.value}>
     {#snippet stats()}
       {#if mods.installed.length > 0}
-        <Figure label={$m.statInstalled.value} value={String(mods.installed.length)} />
+        <Figure label={$m.statInstalled.value} amount={mods.installed.length} />
         <Figure label={$m.statSize.value} value={bytes(mods.totalSize)} />
         {#if hasKey}
           <Figure
             label={$m.filterUpdates.value}
-            value={String(mods.stale.length)}
+            amount={mods.stale.length}
             tone={mods.stale.length ? "text-warn" : "text-ok"}
             title={mods.stale.length
               ? $m.toDownload({ count: mods.stale.length }).value

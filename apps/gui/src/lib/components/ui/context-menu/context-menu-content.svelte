@@ -13,7 +13,7 @@
     collisionPadding={4}
     class={cn(
       "z-popover max-h-[var(--bits-context-menu-content-available-height)] min-w-52 overflow-y-auto rounded-md border",
-      "border-border bg-overlay p-1 shadow-pop outline-none",
+      "border-border bg-overlay p-1 shadow-pop outline-none data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
       klass,
     )}
   >

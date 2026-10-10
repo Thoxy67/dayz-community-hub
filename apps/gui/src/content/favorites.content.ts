@@ -24,33 +24,12 @@ const content = {
       es: "Explorar servidores",
       ru: "Обзор серверов",
     }),
-    serverOffline: t({
-      en: "OFFLINE",
-      fr: "HORS LIGNE",
-      de: "OFFLINE",
-      es: "DESCONECTADO",
-      ru: "ОФФЛАЙН",
-    }),
     serverOfflineHint: t({
       en: "Server not found in the current server list — it may be offline, or try refreshing the server list",
       fr: "Serveur non trouvé — peut être hors ligne, essayez d'actualiser",
       de: "Server nicht in aktueller Liste gefunden — möglicherweise offline oder Serverliste aktualisieren",
       es: "Servidor no encontrado en la lista actual — puede estar desconectado, o intenta actualizar la lista de servidores",
       ru: "Сервер не найден в текущем списке — возможно, не в сети, или попробуйте обновить список серверов",
-    }),
-    closeDetails: t({
-      en: "Close details",
-      fr: "Fermer les détails",
-      de: "Details schließen",
-      es: "Cerrar detalles",
-      ru: "Закрыть детали",
-    }),
-    liveDetails: t({
-      en: "Live server details",
-      fr: "Détails du serveur en direct",
-      de: "Live-Server-Details",
-      es: "Detalles del servidor en vivo",
-      ru: "Детали сервера",
     }),
     querying: t({
       en: "Querying…",
@@ -60,28 +39,12 @@ const content = {
       ru: "Запрос…",
     }),
     close: t({ en: "Close", fr: "Fermer", de: "Schließen", es: "Cerrar", ru: "Закрыть" }),
-    onlineCount: insert(
-      t({
-        en: "Online ({{count}})",
-        fr: "En ligne ({{count}})",
-        de: "Online ({{count}})",
-        es: "En línea ({{count}})",
-        ru: "Онлайн ({{count}})",
-      }),
-    ),
     refreshA2s: t({
       en: "Refresh A2S",
       fr: "Actualiser A2S",
       de: "A2S aktualisieren",
       es: "Actualizar A2S",
       ru: "Обновить A2S",
-    }),
-    refreshA2sTitle: t({
-      en: "Re-query live server info via A2S protocol",
-      fr: "Ré-interroger les infos serveur via protocole A2S",
-      de: "Live-Server-Info per A2S-Protokoll erneut abfragen",
-      es: "Reconsultar info del servidor en vivo vía protocolo A2S",
-      ru: "Повторный запрос информации о сервере через A2S протокол",
     }),
     added: insert(
       t({
@@ -196,34 +159,13 @@ const content = {
       es: "No listado",
       ru: "Нет в списке",
     }),
-    passwordSaved: t({
-      en: "Password saved: filled in when joining",
-      fr: "Mot de passe enregistré : rempli à la connexion",
-      de: "Passwort gespeichert: wird beim Beitreten eingesetzt",
-      es: "Contraseña guardada: se usa al unirse",
-      ru: "Пароль сохранён: подставляется при входе",
-    }),
     join: t({ en: "Join", fr: "Rejoindre", de: "Beitreten", es: "Unirse", ru: "Войти" }),
-    joinTitle: t({
-      en: "Launch DayZ and join this server (Enter)",
-      fr: "Lancer DayZ et rejoindre ce serveur (Entrée)",
-      de: "DayZ starten und diesem Server beitreten (Enter)",
-      es: "Iniciar DayZ y unirse a este servidor (Intro)",
-      ru: "Запустить DayZ и войти на сервер (Enter)",
-    }),
     openDirect: t({
       en: "Open in Direct Connect (D)",
       fr: "Ouvrir dans Connexion directe (D)",
       de: "In Direktverbindung öffnen (D)",
       es: "Abrir en Conexión directa (D)",
       ru: "Открыть в прямом подключении (D)",
-    }),
-    removeKey: t({
-      en: "Remove (Del)",
-      fr: "Retirer (Suppr)",
-      de: "Entfernen (Entf)",
-      es: "Quitar (Supr)",
-      ru: "Удалить (Del)",
     }),
     searchPlaceholder: t({
       en: "Search name, address, map…",
@@ -247,13 +189,6 @@ const content = {
       ru: "Выберите сервер, чтобы увидеть игроков, моды и правила",
     }),
     address: t({ en: "Address", fr: "Adresse", de: "Adresse", es: "Dirección", ru: "Адрес" }),
-    detailsTitle: t({
-      en: "Show the details (I)",
-      fr: "Afficher les détails (I)",
-      de: "Details anzeigen (I)",
-      es: "Mostrar detalles (I)",
-      ru: "Показать детали (I)",
-    }),
   },
 } satisfies Dictionary;
 

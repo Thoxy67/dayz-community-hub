@@ -19,6 +19,7 @@
   import { profile } from "$lib/stores/profile.svelte";
   import { dialogs } from "$lib/stores/dialogs.svelte";
   import { num } from "$lib/format";
+  import { rolling } from "$lib/components/app/rolling.svelte";
   import { placeOf } from "./nav";
   import LanguageMenu from "./LanguageMenu.svelte";
   import ThemeMenu from "./ThemeMenu.svelte";
@@ -28,6 +29,11 @@
   const win = inTauri ? getCurrentWindow() : null;
 
   const here = $derived(placeOf(app.view));
+
+  // The live figures roll to each new count.
+  const serverCount = rolling(() => servers.stats?.server_count ?? (servers.total || null));
+  const ingame = rolling(() => servers.stats?.total_players);
+  const onSteam = rolling(() => servers.steamPlayers);
 
   /** Drag from anything that is not a control; double-click toggles maximise. */
   function onmousedown(e: MouseEvent) {
@@ -73,31 +79,16 @@
         </span>
       </Tooltip>
     {/snippet}
-    {@render stat(
-      ServerIcon,
-      num(servers.stats?.server_count ?? (servers.total || null)),
-      $s.titlebarServers.value,
-      "text-info",
-    )}
-    {@render stat(
-      Users,
-      num(servers.stats?.total_players),
-      $s.titlebarPlayersIngame.value,
-      "text-ok",
-    )}
-    {@render stat(
-      SteamIcon,
-      num(servers.steamPlayers),
-      $s.titlebarPlayersSteam.value,
-      "text-fg-muted",
-    )}
+    {@render stat(ServerIcon, num(serverCount.current), $s.titlebarServers.value, "text-info")}
+    {@render stat(Users, num(ingame.current), $s.titlebarPlayersIngame.value, "text-ok")}
+    {@render stat(SteamIcon, num(onSteam.current), $s.titlebarPlayersSteam.value, "text-fg-muted")}
   </div>
 
   <div class="ml-auto flex items-stretch">
     <!-- Downloading through the Steam client needs no SteamCMD. -->
     {#if servers.stats && !servers.stats.has_steamcmd && !profile.viaSteam}
       <button
-        class="flex items-center gap-1.5 px-2.5 text-2xs font-medium text-warn hover:bg-warn/10"
+        class="flex items-center gap-1.5 px-2.5 text-2xs font-medium text-warn transition-colors duration-fast hover:bg-warn/10"
         onclick={() => app.go("settings", "steam")}
       >
         <TriangleAlert class="size-icon-sm" />
@@ -110,7 +101,7 @@
          the status bar and the rail already say so. -->
     <Tooltip text={$s.paletteOpen.value} side="bottom">
       <button
-        class="my-1.5 mr-2 flex items-center gap-2 rounded-sm border border-border bg-panel/60 pr-1 pl-2 text-2xs text-fg-faint hover:border-border-strong hover:text-fg-muted"
+        class="my-1.5 mr-2 flex items-center gap-2 rounded-sm border border-border bg-panel/60 pr-1 pl-2 text-2xs text-fg-faint transition-colors duration-fast hover:border-border-strong hover:text-fg-muted"
         onclick={() => (dialogs.palette = true)}
       >
         <Search class="size-icon-sm" />
@@ -123,7 +114,7 @@
     <!-- The player: avatar, name, Steam login. Opens the account settings. -->
     <Tooltip text={$s.titlebarEditAccount.value} side="bottom">
       <button
-        class="flex max-w-56 items-center gap-2 px-2.5 text-xs text-fg-muted hover:bg-raised hover:text-fg"
+        class="flex max-w-56 items-center gap-2 px-2.5 text-xs text-fg-muted transition-colors duration-fast hover:bg-raised hover:text-fg"
         onclick={() => app.go("settings", "account")}
       >
         {#if profile.avatarUrl}
@@ -154,19 +145,19 @@
     {#if win}
       <span class="my-2 w-px bg-border"></span>
       <button
-        class="grid w-11 place-items-center text-fg-muted hover:bg-raised hover:text-fg"
+        class="grid w-11 place-items-center text-fg-muted transition-colors duration-fast hover:bg-raised hover:text-fg"
         aria-label={$s.windowMinimize.value}
         onclick={() => win.minimize()}><Minus class="size-icon-sm" /></button
       >
       <button
-        class="grid w-11 place-items-center text-fg-muted hover:bg-raised hover:text-fg"
+        class="grid w-11 place-items-center text-fg-muted transition-colors duration-fast hover:bg-raised hover:text-fg"
         aria-label={$s.windowMaximize.value}
         onclick={() => win.toggleMaximize()}
       >
         {#if app.maximized}<Copy class="size-3" />{:else}<Square class="size-3" />{/if}
       </button>
       <button
-        class="grid w-11 place-items-center text-fg-muted hover:bg-err hover:text-white"
+        class="grid w-11 place-items-center text-fg-muted transition-colors duration-fast hover:bg-err hover:text-white"
         aria-label={$s.windowClose.value}
         onclick={() => win.close()}><X class="size-icon-sm" /></button
       >

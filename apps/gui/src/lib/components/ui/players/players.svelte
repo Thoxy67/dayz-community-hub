@@ -63,7 +63,7 @@
   <span class="relative h-1 overflow-hidden rounded-full bg-raised">
     <span
       class={cn(
-        "absolute inset-y-0 left-0 rounded-full transition-[width] duration-500",
+        "absolute inset-y-0 left-0 rounded-full transition-[width] duration-slow ease-out",
         fill[tone],
       )}
       style="width: {pct}%"

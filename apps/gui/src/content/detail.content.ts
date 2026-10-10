@@ -642,13 +642,6 @@ const content = {
       ru: "Закрыть сведения",
     }),
     play: t({ en: "Play", fr: "Jouer", de: "Spielen", es: "Jugar", ru: "Играть" }),
-    playTitle: t({
-      en: "Launch DayZ and join this server",
-      fr: "Lancer DayZ et rejoindre ce serveur",
-      de: "DayZ starten und diesem Server beitreten",
-      es: "Iniciar DayZ y unirse a este servidor",
-      ru: "Запустить DayZ и подключиться к серверу",
-    }),
     addFavorite: t({
       en: "Add to favorites",
       fr: "Ajouter aux favoris",
@@ -670,33 +663,12 @@ const content = {
       es: "Abrir en Conexión directa",
       ru: "Открыть в прямом подключении",
     }),
-    exclude: t({
-      en: "Hide this IP from the list",
-      fr: "Masquer cette IP de la liste",
-      de: "Diese IP aus der Liste ausblenden",
-      es: "Ocultar esta IP de la lista",
-      ru: "Скрыть этот IP из списка",
-    }),
-    unexclude: t({
-      en: "Show this IP in the list again",
-      fr: "Réafficher cette IP dans la liste",
-      de: "Diese IP wieder in der Liste zeigen",
-      es: "Volver a mostrar esta IP en la lista",
-      ru: "Снова показывать этот IP",
-    }),
     excluded: t({
       en: "Excluded",
       fr: "Exclu",
       de: "Ausgeschlossen",
       es: "Excluido",
       ru: "Исключён",
-    }),
-    rePing: t({
-      en: "Ping again",
-      fr: "Relancer le ping",
-      de: "Erneut pingen",
-      es: "Hacer ping de nuevo",
-      ru: "Пинговать снова",
     }),
     refreshLive: t({
       en: "Ask the server again",
@@ -723,15 +695,6 @@ const content = {
     windows: t({ en: "Windows", fr: "Windows", de: "Windows", es: "Windows", ru: "Windows" }),
     linux: t({ en: "Linux", fr: "Linux", de: "Linux", es: "Linux", ru: "Linux" }),
     day: t({ en: "Day", fr: "Jour", de: "Tag", es: "Día", ru: "День" }),
-    night: t({ en: "Night", fr: "Nuit", de: "Nacht", es: "Noche", ru: "Ночь" }),
-    dawn: t({
-      en: "Dawn or dusk",
-      fr: "Aube ou crépuscule",
-      de: "Dämmerung",
-      es: "Amanecer o anochecer",
-      ru: "Сумерки",
-    }),
-    general: t({ en: "Server", fr: "Serveur", de: "Server", es: "Servidor", ru: "Сервер" }),
     location: t({
       en: "Location",
       fr: "Emplacement",
@@ -786,15 +749,6 @@ const content = {
       es: "Copiar el id de Workshop",
       ru: "Скопировать ID Workshop",
     }),
-    playersOnline: insert(
-      t({
-        en: "Online now ({{count}})",
-        fr: "En ligne ({{count}})",
-        de: "Jetzt online ({{count}})",
-        es: "En línea ({{count}})",
-        ru: "Сейчас в игре ({{count}})",
-      }),
-    ),
     rules: insert(
       t({
         en: "Server rules ({{count}})",
@@ -810,13 +764,6 @@ const content = {
       de: "Der Server hat auf die Abfrage nicht geantwortet.",
       es: "El servidor no respondió a la consulta.",
       ru: "Сервер не ответил на запрос.",
-    }),
-    queryingLive: t({
-      en: "Asking the server…",
-      fr: "Interrogation du serveur…",
-      de: "Server wird abgefragt…",
-      es: "Consultando el servidor…",
-      ru: "Опрос сервера…",
     }),
     queue: t({ en: "Queue", fr: "File d'attente", de: "Warteschlange", es: "Cola", ru: "Очередь" }),
     fill: t({
@@ -901,13 +848,6 @@ const content = {
       de: "IP:Port kopieren",
       es: "Copiar IP:puerto",
       ru: "Скопировать IP:порт",
-    }),
-    copyAll: t({
-      en: "Copy server details",
-      fr: "Copier les détails du serveur",
-      de: "Serverdetails kopieren",
-      es: "Copiar detalles del servidor",
-      ru: "Скопировать информацию о сервере",
     }),
     queryPort: t({
       en: "Query port",
@@ -996,13 +936,6 @@ const content = {
         ru: "{{count}} мод(ов) — не сообщается сервером",
       }),
     ),
-    queryMods: t({
-      en: "Query live server for mod list",
-      fr: "Interroger le serveur pour la liste des mods",
-      de: "Live-Server nach Mod-Liste abfragen",
-      es: "Consultar servidor en vivo para lista de mods",
-      ru: "Запросить список модов с сервера",
-    }),
     queryA2s: t({
       en: "Query A2S",
       fr: "Interroger A2S",
@@ -1044,29 +977,7 @@ const content = {
       }),
     ),
     bmNow: t({ en: "now", fr: "maintenant", de: "jetzt", es: "ahora", ru: "сейчас" }),
-    a2sTitle: t({
-      en: "Live A2S Info",
-      fr: "Infos A2S en direct",
-      de: "Live A2S-Info",
-      es: "Info A2S en vivo",
-      ru: "A2S информация",
-    }),
-    a2sLivePlayers: t({
-      en: "Live players",
-      fr: "Joueurs en direct",
-      de: "Live-Spieler",
-      es: "Jugadores en vivo",
-      ru: "Игроки онлайн",
-    }),
     bots: t({ en: "Bots", fr: "Bots", de: "Bots", es: "Bots", ru: "Боты" }),
-    a2sGame: t({ en: "Game", fr: "Jeu", de: "Spiel", es: "Juego", ru: "Игра" }),
-    a2sOnlinePlayers: t({
-      en: "Online players",
-      fr: "Joueurs en ligne",
-      de: "Online-Spieler",
-      es: "Jugadores en línea",
-      ru: "Игроки онлайн",
-    }),
     a2sNoPlayers: t({
       en: "No players online",
       fr: "Aucun joueur en ligne",
@@ -1088,46 +999,6 @@ const content = {
       es: "Clic en Actualizar para consultar datos en vivo",
       ru: "Нажмите Обновить для запроса данных",
     }),
-    ageToday: t({ en: "today", fr: "aujourd'hui", de: "heute", es: "hoy", ru: "сегодня" }),
-    ageDay: t({ en: "1 day", fr: "1 jour", de: "1 Tag", es: "1 día", ru: "1 день" }),
-    ageDays: insert(
-      t({
-        en: "{{count}} days",
-        fr: "{{count}} jours",
-        de: "{{count}} Tage",
-        es: "{{count}} días",
-        ru: "{{count}} дней",
-      }),
-    ),
-    ageMonth: t({ en: "1 month", fr: "1 mois", de: "1 Monat", es: "1 mes", ru: "1 месяц" }),
-    ageMonths: insert(
-      t({
-        en: "{{count}} months",
-        fr: "{{count}} mois",
-        de: "{{count}} Monate",
-        es: "{{count}} meses",
-        ru: "{{count}} месяцев",
-      }),
-    ),
-    ageYear: t({ en: "1 year", fr: "1 an", de: "1 Jahr", es: "1 año", ru: "1 год" }),
-    ageYears: insert(
-      t({
-        en: "{{count}} years",
-        fr: "{{count}} ans",
-        de: "{{count}} Jahre",
-        es: "{{count}} años",
-        ru: "{{count}} лет",
-      }),
-    ),
-    ago: insert(
-      t({
-        en: "{{time}} ago",
-        fr: "il y a {{time}}",
-        de: "vor {{time}}",
-        es: "hace {{time}}",
-        ru: "{{time}} назад",
-      }),
-    ),
   },
 } satisfies Dictionary;
 

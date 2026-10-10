@@ -3,7 +3,6 @@
   import Star from "~icons/lucide/star";
   import { PageHeader, Figure } from "$lib/components/app";
   import { profile } from "$lib/stores/profile.svelte";
-  import { num } from "$lib/format";
   import SavedServers, { type Entry } from "./SavedServers.svelte";
 
   /** The servers the player starred, with their live line, head-count and details. */
@@ -30,19 +29,20 @@
   emptyTitle={$f.noFavorites.value}
   emptyHint={$f.noFavoritesHint.value}
 >
-  {#snippet header(s, toolbar)}
+  {#snippet header(s, toolbar, tools)}
     <PageHeader title={$nav.favorites.value}>
       {#snippet stats()}
-        <Figure label={$f.statSaved.value} value={num(s.total)} tone="text-accent" />
+        <Figure label={$f.statSaved.value} amount={s.total} tone="text-accent" />
         <Figure label={$f.statOnline.value} value={`${s.listed}/${s.total}`} />
-        <Figure label={$f.statPlayers.value} value={num(s.players)} tone="text-ok" />
+        <Figure label={$f.statPlayers.value} amount={s.players} tone="text-ok" />
         <Figure
           label={$f.statBestPing.value}
           value={s.bestPing == null ? "—" : `${s.bestPing} ms`}
         />
         <Figure label={$f.statAvgPing.value} value={s.avgPing == null ? "—" : `${s.avgPing} ms`} />
       {/snippet}
-      <div class="flex min-w-0 flex-wrap items-center gap-1.5">{@render toolbar()}</div>
+      {#snippet actions()}{@render tools()}{/snippet}
+      {@render toolbar()}
     </PageHeader>
   {/snippet}
 </SavedServers>

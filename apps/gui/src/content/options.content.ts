@@ -238,13 +238,6 @@ const content = {
     cores: t({ en: "Cores", fr: "Cœurs", de: "Kerne", es: "Núcleos", ru: "Ядра" }),
     threads: t({ en: "Threads", fr: "Threads", de: "Threads", es: "Hilos", ru: "Потоки" }),
     memory: t({ en: "Memory", fr: "Mémoire", de: "Arbeitsspeicher", es: "Memoria", ru: "Память" }),
-    recommended: t({
-      en: "Recommended",
-      fr: "Recommandé",
-      de: "Empfohlen",
-      es: "Recomendado",
-      ru: "Рекомендуется",
-    }),
     recommendedHint: t({
       en: "Physical cores for -cpuCount, the three worker threads on four cores or more, and about 60 % of the memory for -maxMem.",
       fr: "Les cœurs physiques pour -cpuCount, les trois threads de travail à partir de quatre cœurs, et environ 60 % de la mémoire pour -maxMem.",
@@ -305,13 +298,6 @@ const content = {
       es: "Buscar opciones…",
       ru: "Поиск опций…",
     }),
-    recommendTitle: t({
-      en: "Recommended for your PC",
-      fr: "Recommandé pour votre PC",
-      de: "Empfohlen für deinen PC",
-      es: "Recomendado para tu PC",
-      ru: "Рекомендовано для вашего ПК",
-    }),
     recommendDesc: insert(
       t({
         en: "Detected {{cores}} cores · {{ram}} GB RAM — apply tuned performance flags.",
@@ -351,22 +337,6 @@ const content = {
         ru: "{{count}} активно",
       }),
     ),
-    activeOne: insert(
-      t({
-        en: "{{count}} active",
-        fr: "{{count}} active",
-        de: "{{count}} aktiv",
-        es: "{{count}} activa",
-        ru: "{{count}} активна",
-      }),
-    ),
-    flagsHint: t({
-      en: "Flags passed to DayZ at launch",
-      fr: "Options passées à DayZ au lancement",
-      de: "Flags die beim DayZ-Start übergeben werden",
-      es: "Parámetros pasados a DayZ al iniciar",
-      ru: "Флаги, передаваемые DayZ при запуске",
-    }),
     enabledCount: insert(
       t({
         en: "{{enabled}}/{{total}} enabled",
@@ -378,21 +348,6 @@ const content = {
     ),
     apply: t({ en: "Apply", fr: "Appliquer", de: "Anwenden", es: "Aplicar", ru: "Применить" }),
     cancel: t({ en: "Cancel", fr: "Annuler", de: "Abbrechen", es: "Cancelar", ru: "Отмена" }),
-    editValue: t({
-      en: "Edit value",
-      fr: "Modifier la valeur",
-      de: "Wert bearbeiten",
-      es: "Editar valor",
-      ru: "Изменить значение",
-    }),
-    setValue: t({
-      en: "set value",
-      fr: "définir la valeur",
-      de: "Wert setzen",
-      es: "establecer valor",
-      ru: "задать значение",
-    }),
-    edit: t({ en: "Edit", fr: "Modifier", de: "Bearbeiten", es: "Editar", ru: "Изменить" }),
     noMatch: insert(
       t({
         en: 'No options match "{{search}}"',
