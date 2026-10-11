@@ -6,6 +6,103 @@ notes; without one, the notes are the commit titles since the last release.
 
 ## Unreleased
 
+## 0.5.3
+
+- **Steam's own server list joins the public one.** The launcher asks
+  Steam's master server for every DayZ server (through the Web API when a
+  key is set, through the Steam client otherwise, the best way first) and
+  adds the ones the public list lacks, as they answer. Servers that a
+  refresh stops listing stay while they still answer, so a delisted server
+  you play on is not lost. Server farms are left out: an address running
+  dozens of servers Steam counts nobody on, or a server reporting bots
+  (DayZ has none), is a fake. Entries listed twice under different query
+  ports are combed down to the one that answers. A bar under the server
+  list's header shows each source, its progress and its counts, with a
+  breakdown on Details; the servers Steam adds are pinged like the rest,
+  and the counts in the title bar, the status bar and the map filter
+  follow the list as it grows. A switch in the Steam settings turns the
+  listing off.
+- **A Friends view.** Who among your Steam friends plays DayZ, grouped by
+  server, with the server shown as a real row (ping, players, map, mods,
+  favourite, Join) and Direct Connect for one that is not in the list;
+  then friends in other games, online, away, offline. It refreshes on its
+  own while it matters, says when it was updated, and toasts a friend
+  starting DayZ or changing server with a Join action. Search covers
+  names, games, servers and maps; server rows and the Players tab mark the
+  friends on a server; the side rail counts the friends in DayZ. Works
+  with a Web API key or through the Steam client alone.
+- **Steam without a Web API key.** The Steam id, the account's name and
+  avatar, the friends and the mod update check now come from the running
+  Steam client when no key is set. The setup wizard fills the in-game name
+  and Steam id from it.
+- **Reloading the window loses nothing.** A ping scan, a list refresh, a
+  mod download (with its password or Steam Guard prompt still live) and an
+  update download all carry on through F5 or a crash recovery, and the
+  servers view comes back with its search, filters, sort, selection and
+  scroll position.
+- **The mod download dialog names every mod.** Each mod is listed by name
+  with its id, size and state (queued, downloading with its progress,
+  done, failed), the overall bar sits in the header and the log can be
+  hidden. The queue is announced by name before the first download, so a
+  manual install's steps no longer show ids.
+- **One set of shortcuts for the keyboard, the controller and the Steam
+  Deck.** Every shortcut lives in one list that the `?` sheet, About, the
+  hint bar, the Controller settings and the rail's tooltips all read, so
+  none can disagree. Views are reached by the digit keys (AZERTY included),
+  single letters never fire while typing, Ctrl+F focuses the view's search,
+  Esc acts on the top-most thing only, and the three server lists share one
+  set of keys. The controller follows the Xbox layout Steam Input uses
+  (A selects, B goes back, X marks, Y refreshes, bumpers switch views,
+  triggers page, Menu opens the palette, View the shortcuts, R3 the
+  details, L3 rejoins), holding a direction speeds up, the hint bar shows
+  at most five hints for what is focused, a Steam Deck is recognised in
+  Game Mode and the rail collapses on its own at its size. Settings lets
+  you choose the button labels and try the controller live.
+- **Ctrl+K understands more.** The palette searches favourites, history,
+  servers, mods, views, actions and settings sections, accent-insensitive,
+  highlights the hits, understands a typed address, keeps your recent picks
+  and is driven from the keyboard or the pad.
+- **Seventeen legible themes, and your own.** The presets are down to the
+  ones with a character, each passing a legibility test (tokyonight, nord,
+  gruvbox and catppuccin use their real palettes). The theme menu groups
+  dark, light and your own themes, previews one on hover, and lets
+  "follow the system" choose which dark and which light theme it switches
+  between. Appearance shows a gallery of mini-previews and the editor keeps
+  several named custom themes (duplicate any preset, rename, derive the
+  other colours from the floor and the accent, a live legibility readout,
+  export and import).
+- **A clearer status bar.** What is happening on the left (the list and
+  its age, a refresh with its phase, a failed fetch with a retry, the Steam
+  listing, the ping scan with pause and rescan, a mod operation with its
+  current mod, mods behind, the offline mode's install, the launcher's own
+  download); the state of things on the right (the game running with its
+  time, Steam's downloader and whether the client is up, an update ready,
+  the version). Every segment has an icon, a short value, a thin bar when
+  there is something to measure and a tooltip that says what a click does;
+  words and then the least important segments go as the bar narrows.
+- **Every view is arranged the same way.** Servers, favourites and history
+  put the same controls in the same places, Refresh is one button
+  everywhere, News and Settings have the page header the other views have,
+  every empty list says what fills it, and the window moves a little: views
+  rise in, figures roll to their new value, badges pop when they change,
+  skeleton rows shimmer, all of it short and off under reduced motion.
+- **Faster to start and lighter to run.** One language loads at a time
+  (80 kB parsed at start instead of 528), the flags are cut to the ones a
+  flag can show, the fonts no longer flash a fallback face, the server list
+  downloads compressed, Workshop details are fetched four at a time, and
+  the Steam and A2S pipelines copy far less.
+- **Three silent bugs are gone:** a Cyrillic mod name cut between two reads
+  of SteamCMD's terminal became replacement characters; a line from Steam
+  that was not UTF-8 ended the Steam session as "stopped unexpectedly"; a
+  server sending one A2S_RULES chunk twice had its whole mod list unread.
+- The ping scan sends a silent server to the back of the queue instead of
+  asking it again at once, so the slow ones form a short pass at the end; a
+  single query (the detail panel, a manual ping) tries twice within the
+  same five seconds. A listing misses fewer servers and writes its cache as
+  it goes. The list no longer jumps to the top as Steam's servers arrive.
+  The sources bar keeps its cells apart in a narrow window. Steam no longer
+  receives a crash report when a listing's session closes.
+
 ## 0.5.2 - 2026-10-06
 
 - **DayZ no longer shows as running after opening Mods.** The launcher

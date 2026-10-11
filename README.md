@@ -1,7 +1,7 @@
 # DayZ Community Hub
 
 [![CI](https://git.thoxy.xyz/thoxy/dayz-community-hub/actions/workflows/ci.yml/badge.svg)](https://git.thoxy.xyz/thoxy/dayz-community-hub/actions?workflow=ci.yml)
-[![Version](https://img.shields.io/badge/version-0.5.2-blue?style=flat-square)](https://git.thoxy.xyz/thoxy/dayz-community-hub/releases)
+[![Version](https://img.shields.io/badge/version-0.5.3-blue?style=flat-square)](https://git.thoxy.xyz/thoxy/dayz-community-hub/releases)
 ![Platform](<https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20(AppImage%2C%20AUR)-lightgrey?style=flat-square>)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 
@@ -30,14 +30,15 @@ A fast, feature-rich DayZ launcher that replaces the official one — browse ser
 
 ### Browse
 
-- **18,000+ servers** — full public server list with live ping
+- **18,000+ servers** — the public list plus the servers Steam's master lists, with live ping
 - **Filter & search** — by map, mods, 1PP, password, BattleEye
 - **Favorites & history** — star servers and track your sessions
+- **Friends** — see which friends play DayZ, on which server, and join them
 - **Server stats** — rank, uptime, restarts, wipes and player graphs from DayZ Metrics (no key)
 
 ### Mods
 
-- **Auto-install** — missing mods download via SteamCMD before you connect
+- **Auto-install** — missing mods download via SteamCMD or the Steam client before you connect
 - **Update checker** — detect stale mods with one click
 - **Bulk operations** — update, link, or delete multiple mods at once
 - **Symlink management** — clean mod organization without duplicating files
@@ -54,7 +55,8 @@ A fast, feature-rich DayZ launcher that replaces the official one — browse ser
 - **News feed** — latest DayZ articles in-app
 - **Auto-updater** — Windows: updates apply in-place
 - **Cross-platform** — runs on Windows and Linux
-- **Keyboard-driven** — full keyboard navigation for power users
+- **Keyboard, controller, Steam Deck** — one set of shortcuts, a Ctrl+K palette and a hint bar for the pad
+- **Themes** — seventeen legible presets and your own, dark or light with the system
 
 ---
 
