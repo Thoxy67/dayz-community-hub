@@ -6,7 +6,7 @@ notes; without one, the notes are the commit titles since the last release.
 
 ## Unreleased
 
-## 0.5.3
+## 0.5.3 - 2026-10-11
 
 - **Steam's own server list joins the public one.** The launcher asks
   Steam's master server for every DayZ server (through the Web API when a
