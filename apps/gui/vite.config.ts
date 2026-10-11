@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import Icons from "unplugin-icons/vite";
 import { intlayer } from "vite-intlayer";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -83,7 +84,9 @@ function countryFlags(): Plugin {
     resolveId: (id) => (id === ID ? "\0country-flags" : undefined),
     load(id) {
       if (id !== "\0country-flags") return;
-      const path = fileURLToPath(import.meta.resolve(ID));
+      // Not import.meta.resolve: Vite rewrites it in the bundled config to a
+      // module hook that bun does not honour inside the AppImage container.
+      const path = createRequire(import.meta.url).resolve(ID);
       this.addWatchFile(path);
       const set = JSON.parse(readFileSync(path, "utf8"));
       const icons = Object.fromEntries(
