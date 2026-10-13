@@ -17,3 +17,7 @@ export const steamLaunchInfo = () => run(commands.steamLaunchInfo());
 export const gameRunning = () => run(commands.gameRunning());
 /** Close DayZ: how many of its processes were stopped. */
 export const killGame = () => run(commands.killGame());
+/** Where BattlEye stands: its service (Windows) or Proton runtime, and whether it runs. */
+export const battleyeStatus = () => run(commands.battleyeStatus());
+/** Repair BattlEye (a UAC prompt on Windows, Steam's install on Linux): the state after. */
+export const repairBattleye = () => run(commands.repairBattleye());

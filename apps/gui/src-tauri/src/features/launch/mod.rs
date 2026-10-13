@@ -244,3 +244,34 @@ pub(crate) async fn kill_game() -> Result<u32, String> {
         .await
         .map_err(|e| format!("Task join error: {e}"))
 }
+
+/// Where BattlEye stands: whether its service (Windows) or Proton runtime
+/// is there, and whether it runs.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn battleye_status(
+    state: State<'_, SharedState>,
+) -> Result<dz_game::battleye::BattlEyeStatus, String> {
+    let ctl = state.read().await.ctl.clone_for_task();
+    tokio::task::spawn_blocking(move || ctl.battleye_status())
+        .await
+        .map_err(|e| format!("Task join error: {e}"))
+}
+
+/// Repair BattlEye: reinstall its service as administrator (a UAC prompt) on
+/// Windows, have Steam install the Proton runtime on Linux. Returns the state
+/// after.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn repair_battleye(
+    state: State<'_, SharedState>,
+) -> Result<dz_game::battleye::BattlEyeStatus, String> {
+    let ctl = state.read().await.ctl.clone_for_task();
+    tokio::task::spawn_blocking(move || {
+        ctl.repair_battleye()?;
+        Ok::<_, dz_common::Error>(ctl.battleye_status())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {e}"))?
+    .map_err(|e| e.to_string())
+}

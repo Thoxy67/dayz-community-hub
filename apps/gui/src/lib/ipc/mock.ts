@@ -976,6 +976,12 @@ export function installMock() {
           return new URLSearchParams(location.search).get("game") === "1";
         case "kill_game":
           return 2;
+        case "battleye_status":
+        case "repair_battleye":
+          return {
+            state: new URLSearchParams(location.search).get("be") ?? "ready",
+            service: true,
+          };
         case "steam_launch_info":
           return {
             linux: true,

@@ -64,6 +64,8 @@ pub(crate) fn builder() -> tauri_specta::Builder<tauri::Wry> {
             launch::steam_launch_info,
             launch::game_running,
             launch::kill_game,
+            launch::battleye_status,
+            launch::repair_battleye,
             launch::set_launch_option_value,
             launch::launch_server,
             launch::launch_direct,

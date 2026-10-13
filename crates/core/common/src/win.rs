@@ -1,7 +1,8 @@
 //! The few Win32 calls the app makes itself, declared by hand rather than
 //! through a bindings crate: reading and writing a registry string, making an
-//! NTFS junction, and riding out the short locks antivirus scanners take on a
-//! freshly written file.
+//! NTFS junction, riding out the short locks antivirus scanners take on a
+//! freshly written file, reading a service's state and running a program
+//! as administrator.
 //!
 //! Each replaces a helper process (`reg query`, `cmd /c mklink /J`) that cost
 //! a process start, and a Defender scan of it, every time it ran.
@@ -57,9 +58,24 @@ unsafe extern "system" {
     ) -> i32;
 }
 
+#[link(name = "advapi32")]
+unsafe extern "system" {
+    fn OpenSCManagerW(machine: *const u16, database: *const u16, access: u32) -> Handle;
+    fn OpenServiceW(manager: Handle, name: *const u16, access: u32) -> Handle;
+    fn QueryServiceStatus(service: Handle, status: *mut ServiceStatus) -> i32;
+    fn QueryServiceConfigW(
+        service: Handle,
+        config: *mut c_void,
+        size: u32,
+        needed: *mut u32,
+    ) -> i32;
+    fn CloseServiceHandle(handle: Handle) -> i32;
+}
+
 #[link(name = "shell32")]
 unsafe extern "system" {
     fn SHChangeNotify(event: i32, flags: u32, item1: *const c_void, item2: *const c_void);
+    fn ShellExecuteExW(info: *mut ShellExecuteInfo) -> i32;
 }
 
 #[link(name = "kernel32")]
@@ -85,6 +101,8 @@ unsafe extern "system" {
     ) -> i32;
     fn CloseHandle(handle: Handle) -> i32;
     fn GetDriveTypeW(root: *const u16) -> u32;
+    fn WaitForSingleObject(handle: Handle, millis: u32) -> u32;
+    fn GetExitCodeProcess(process: Handle, code: *mut u32) -> i32;
 }
 
 fn wide(s: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
@@ -334,4 +352,236 @@ pub fn retry_locked<T>(mut op: impl FnMut() -> io::Result<T>) -> io::Result<T> {
         wait *= 2;
     }
     op()
+}
+
+/// `SERVICE_STATUS`. Filled by the system: most fields are never read.
+#[allow(dead_code)]
+#[repr(C)]
+#[derive(Default)]
+struct ServiceStatus {
+    kind: u32,
+    current_state: u32,
+    controls_accepted: u32,
+    win32_exit_code: u32,
+    specific_exit_code: u32,
+    check_point: u32,
+    wait_hint: u32,
+}
+
+/// What the service manager says of an installed service.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceInfo {
+    /// `SERVICE_RUNNING`, or on its way there (`SERVICE_START_PENDING`).
+    pub running: bool,
+    /// Its start type is `SERVICE_DISABLED`: nothing may start it.
+    pub disabled: bool,
+    /// The program it runs, without its quotes and arguments.
+    pub binary: Option<std::path::PathBuf>,
+}
+
+/// Closes a service manager handle when dropped.
+struct ScHandle(Handle);
+
+impl Drop for ScHandle {
+    fn drop(&mut self) {
+        // SAFETY: the handle came from OpenSCManagerW / OpenServiceW.
+        unsafe { CloseServiceHandle(self.0) };
+    }
+}
+
+/// The service `name` as the service manager knows it; `Ok(None)` when no
+/// such service is installed. Needs no administrator rights.
+pub fn service(name: &str) -> io::Result<Option<ServiceInfo>> {
+    const SC_MANAGER_CONNECT: u32 = 0x0001;
+    const SERVICE_QUERY_CONFIG: u32 = 0x0001;
+    const SERVICE_QUERY_STATUS: u32 = 0x0004;
+    const ERROR_SERVICE_DOES_NOT_EXIST: i32 = 1060;
+    const ERROR_INSUFFICIENT_BUFFER: i32 = 122;
+    const SERVICE_START_PENDING: u32 = 2;
+    const SERVICE_RUNNING: u32 = 4;
+    const SERVICE_DISABLED: u32 = 4;
+
+    // SAFETY: null machine and database name the local, active database.
+    let manager = unsafe { OpenSCManagerW(std::ptr::null(), std::ptr::null(), SC_MANAGER_CONNECT) };
+    if manager.is_null() {
+        return Err(io::Error::last_os_error());
+    }
+    let manager = ScHandle(manager);
+    let name = wide(name);
+    // SAFETY: `manager` is open, `name` NUL-terminated.
+    let service = unsafe {
+        OpenServiceW(
+            manager.0,
+            name.as_ptr(),
+            SERVICE_QUERY_CONFIG | SERVICE_QUERY_STATUS,
+        )
+    };
+    if service.is_null() {
+        let e = io::Error::last_os_error();
+        return match e.raw_os_error() {
+            Some(ERROR_SERVICE_DOES_NOT_EXIST) => Ok(None),
+            _ => Err(e),
+        };
+    }
+    let service = ScHandle(service);
+
+    let mut status = ServiceStatus::default();
+    // SAFETY: `service` is open with SERVICE_QUERY_STATUS.
+    if unsafe { QueryServiceStatus(service.0, &mut status) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+
+    // QUERY_SERVICE_CONFIGW and the strings after it: asked for its size
+    // first. Held in u64s so its pointers are aligned.
+    let mut needed = 0u32;
+    // SAFETY: a null buffer of size 0 only asks for the size.
+    unsafe { QueryServiceConfigW(service.0, std::ptr::null_mut(), 0, &mut needed) };
+    let e = io::Error::last_os_error();
+    if e.raw_os_error() != Some(ERROR_INSUFFICIENT_BUFFER) {
+        return Err(e);
+    }
+    let mut buf = vec![0u64; (needed as usize).div_ceil(8)];
+    // SAFETY: `buf` holds at least `needed` bytes.
+    if unsafe { QueryServiceConfigW(service.0, buf.as_mut_ptr().cast(), needed, &mut needed) } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    /// The head of `QUERY_SERVICE_CONFIGW`.
+    #[allow(dead_code)]
+    #[repr(C)]
+    struct Config {
+        kind: u32,
+        start_type: u32,
+        error_control: u32,
+        binary_path: *const u16,
+    }
+    // SAFETY: the call above filled `buf` with a QUERY_SERVICE_CONFIGW.
+    let config = unsafe { &*buf.as_ptr().cast::<Config>() };
+    // SAFETY: a NUL-terminated string inside `buf`, or null.
+    let binary = (!config.binary_path.is_null())
+        .then(|| unsafe {
+            let len = (0..)
+                .take_while(|&i| *config.binary_path.add(i) != 0)
+                .count();
+            OsString::from_wide(std::slice::from_raw_parts(config.binary_path, len))
+        })
+        .map(|cmd| service_program(&cmd.to_string_lossy()));
+
+    Ok(Some(ServiceInfo {
+        running: matches!(
+            status.current_state,
+            SERVICE_RUNNING | SERVICE_START_PENDING
+        ),
+        disabled: config.start_type == SERVICE_DISABLED,
+        binary,
+    }))
+}
+
+/// The program at the head of a service's command line:
+/// `"C:\Program Files\X\x.exe" -a` and `C:\X\x.exe -a` give the path.
+fn service_program(cmd: &str) -> std::path::PathBuf {
+    let cmd = cmd.trim();
+    let path = match cmd.strip_prefix('"') {
+        Some(rest) => rest.split('"').next().unwrap_or(rest),
+        // Unquoted: up to the end of `.exe`, since the path may hold spaces.
+        None => cmd
+            .to_ascii_lowercase()
+            .find(".exe")
+            .map_or(cmd, |i| &cmd[..i + 4]),
+    };
+    std::path::PathBuf::from(path)
+}
+
+/// `SHELLEXECUTEINFOW`. Read by the system: most fields are never read here.
+#[allow(dead_code)]
+#[repr(C)]
+struct ShellExecuteInfo {
+    size: u32,
+    mask: u32,
+    hwnd: Handle,
+    verb: *const u16,
+    file: *const u16,
+    parameters: *const u16,
+    directory: *const u16,
+    show: i32,
+    instance: Handle,
+    id_list: *mut c_void,
+    class: *const u16,
+    class_key: Handle,
+    hot_key: u32,
+    icon_or_monitor: Handle,
+    process: Handle,
+}
+
+/// Run `program` with `parameters` (one command-line string) in `directory`
+/// as administrator, through the UAC prompt, and wait for it to finish.
+/// Returns its exit code. Refusing the prompt is an error of kind
+/// [`io::ErrorKind::Interrupted`]. Blocking.
+pub fn run_elevated(program: &Path, parameters: &str, directory: &Path) -> io::Result<u32> {
+    const SEE_MASK_NOCLOSEPROCESS: u32 = 0x0000_0040;
+    const SEE_MASK_NOASYNC: u32 = 0x0000_0100;
+    const SW_SHOWNORMAL: i32 = 1;
+    const INFINITE: u32 = u32::MAX;
+    const ERROR_CANCELLED: i32 = 1223;
+
+    let (verb, file, params, dir) = (
+        wide("runas"),
+        wide(program),
+        wide(parameters),
+        wide(directory),
+    );
+    let mut info = ShellExecuteInfo {
+        size: std::mem::size_of::<ShellExecuteInfo>() as u32,
+        mask: SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC,
+        hwnd: std::ptr::null_mut(),
+        verb: verb.as_ptr(),
+        file: file.as_ptr(),
+        parameters: params.as_ptr(),
+        directory: dir.as_ptr(),
+        show: SW_SHOWNORMAL,
+        instance: std::ptr::null_mut(),
+        id_list: std::ptr::null_mut(),
+        class: std::ptr::null(),
+        class_key: std::ptr::null_mut(),
+        hot_key: 0,
+        icon_or_monitor: std::ptr::null_mut(),
+        process: std::ptr::null_mut(),
+    };
+    // SAFETY: every string is NUL-terminated and outlives the call.
+    if unsafe { ShellExecuteExW(&mut info) } == 0 {
+        let e = io::Error::last_os_error();
+        return Err(match e.raw_os_error() {
+            Some(ERROR_CANCELLED) => io::Error::new(io::ErrorKind::Interrupted, e),
+            _ => e,
+        });
+    }
+    if info.process.is_null() {
+        return Ok(0);
+    }
+    let mut code = 0u32;
+    // SAFETY: `process` is the started program's handle, closed below.
+    unsafe {
+        WaitForSingleObject(info.process, INFINITE);
+        GetExitCodeProcess(info.process, &mut code);
+        CloseHandle(info.process);
+    }
+    Ok(code)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::service_program;
+    use std::path::PathBuf;
+
+    #[test]
+    fn a_services_program_is_the_head_of_its_command_line() {
+        assert_eq!(
+            service_program(r#""C:\Program Files (x86)\Common Files\BattlEye\BEService.exe" -x"#),
+            PathBuf::from(r"C:\Program Files (x86)\Common Files\BattlEye\BEService.exe")
+        );
+        assert_eq!(
+            service_program(r"C:\Program Files\BE\BEService.EXE -x"),
+            PathBuf::from(r"C:\Program Files\BE\BEService.EXE")
+        );
+    }
 }

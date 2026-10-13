@@ -348,18 +348,17 @@ fn steam_libraries_from_vdf(steamapps: &std::path::Path) -> Vec<PathBuf> {
         .collect()
 }
 
-/// Every Steam library's DayZ workshop folder
-/// (`<library>/steamapps/workshop/content/221100`) that exists: the library
-/// at `steam_root`, the default install's, and every library their
-/// `libraryfolders.vdf` lists. These belong to the Steam client: read only.
-pub fn steam_workshop_dirs(steam_root: &Path) -> Vec<PathBuf> {
+/// Every Steam library's `steamapps` folder, each once: the one at
+/// `steam_root`, the default install's, and every library their
+/// `libraryfolders.vdf` lists. Not checked to exist.
+pub fn steam_libraries(steam_root: &Path) -> Vec<PathBuf> {
     let mut steamapps = vec![steam_root.to_path_buf()];
     steamapps.extend(default_steamapps_candidates());
     // Every `libraryfolders.vdf` lists every library, and `steam_root` is
     // usually one of the defaults: the same paths come back several times.
     // Spelled the same, they are dropped before anything is read or asked
-    // of the disk again (this runs on every mod scan); the canonical check
-    // below still catches the same folder reached through a link.
+    // of the disk again (this runs on every mod scan); callers check
+    // canonical paths for the same folder reached through a link.
     let mut read = rustc_hash::FxHashSet::default();
     let mut listed = rustc_hash::FxHashSet::default();
     let mut libraries: Vec<PathBuf> = Vec::new();
@@ -375,8 +374,15 @@ pub fn steam_workshop_dirs(steam_root: &Path) -> Vec<PathBuf> {
             }
         }
     }
-    let mut seen = rustc_hash::FxHashSet::default();
     libraries
+}
+
+/// Every Steam library's DayZ workshop folder
+/// (`<library>/steamapps/workshop/content/221100`) that exists, from
+/// [`steam_libraries`]. These belong to the Steam client: read only.
+pub fn steam_workshop_dirs(steam_root: &Path) -> Vec<PathBuf> {
+    let mut seen = rustc_hash::FxHashSet::default();
+    steam_libraries(steam_root)
         .into_iter()
         .map(|sa| crate::cmd::workshop_content(&sa, DAYZ_GAME_ID))
         .filter(|dir| dir.is_dir())

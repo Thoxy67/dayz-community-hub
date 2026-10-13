@@ -1,7 +1,8 @@
 //! The game on this machine: its workshop mods and the links DayZ loads them
 //! through, joining a server through Steam, the community offline mode, and
-//! `.dzch` connection files.
+//! `.dzch` connection files, and BattlEye.
 
+pub mod battleye;
 pub mod ctl;
 pub mod dzch;
 pub mod launch;

@@ -164,6 +164,19 @@ impl DayzCtl {
         Ok(self.steam_root.join("common").join("DayZ"))
     }
 
+    /// Where BattlEye stands. Blocking: see [`crate::battleye::status`].
+    pub fn battleye_status(&self) -> crate::battleye::BattlEyeStatus {
+        crate::battleye::status(
+            &self.steam_root.join("common").join("DayZ"),
+            &self.steam_root,
+        )
+    }
+
+    /// Repair BattlEye (a UAC prompt on Windows). Blocking.
+    pub fn repair_battleye(&self) -> Result<()> {
+        crate::battleye::repair(&self.dayz_path()?)
+    }
+
     fn mod_dirs_without_steam(&self) -> mods::ModDirs {
         mods::ModDirs {
             launcher: content_dir()
@@ -318,13 +331,21 @@ impl DayzCtl {
     }
 
     /// Join `server` through `steam -applaunch`. Recording the server in the
-    /// history is the caller's job, on the profile it actually keeps.
+    /// history is the caller's job, on the profile it actually keeps. A
+    /// BattlEye server first has BattlEye checked, and repaired if need be:
+    /// without it the game would only be kicked.
     pub async fn launch_game(
         &self,
         server: &Server,
         password: Option<&str>,
         extra_args: &[String],
     ) -> Result<()> {
+        if server.battl_eye == Some(true) {
+            let (dayz, steam_root) = (self.dayz_path()?, self.steam_root.clone());
+            tokio::task::spawn_blocking(move || crate::battleye::ensure(&dayz, &steam_root))
+                .await
+                .map_err(|e| Error::Other(format!("battleye task failed: {e}")))??;
+        }
         run_through_steam(self.build_steam_launch_args(server, password, extra_args)).await
     }
 }

@@ -54,6 +54,8 @@ permissions = [
   "allow-steam-launch-info",
   "allow-game-running",
   "allow-kill-game",
+  "allow-battleye-status",
+  "allow-repair-battleye",
   "allow-set-launch-option-value",
   "allow-launch-server",
   "allow-launch-direct",

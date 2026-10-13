@@ -180,6 +180,17 @@ export const commands = {
 	gameRunning: () => __TAURI_INVOKE<boolean>("game_running"),
 	/**  Close DayZ. Returns how many of its processes were stopped. */
 	killGame: () => __TAURI_INVOKE<number>("kill_game"),
+	/**
+	 *  Where BattlEye stands: whether its service (Windows) or Proton runtime
+	 *  is there, and whether it runs.
+	 */
+	battleyeStatus: () => __TAURI_INVOKE<BattlEyeStatus>("battleye_status"),
+	/**
+	 *  Repair BattlEye: reinstall its service as administrator (a UAC prompt) on
+	 *  Windows, have Steam install the Proton runtime on Linux. Returns the state
+	 *  after.
+	 */
+	repairBattleye: () => __TAURI_INVOKE<BattlEyeStatus>("repair_battleye"),
 	/**  Set a launch option's value; a value also enables it. */
 	setLaunchOptionValue: (key: string, value: string | null) => __TAURI_INVOKE<null>("set_launch_option_value", { key, value }),
 	/**
@@ -547,6 +558,33 @@ export type ArticleDto = {
 	image_url: string | null,
 	category: string | null,
 	author: string | null,
+};
+
+export type BattlEyeState = 
+/**  Running (Windows: the service is up, so the game has it). */
+"running" | 
+/**  Installed, ready to start with the game. */
+"ready" | 
+/**
+ *  Not installed (Windows: no service, or its program is gone; Proton:
+ *  no runtime). BattlEye servers kick the game.
+ */
+"missing" | 
+/**  Windows: the service is disabled, so nothing can start it. */
+"disabled" | 
+/**
+ *  The game's BattlEye launcher is not there (DayZ not found): nothing to
+ *  check or repair.
+ */
+"no_game";
+
+export type BattlEyeStatus = {
+	state: BattlEyeState,
+	/**
+	 *  BattlEye is a service here (Windows), which runs while the game does:
+	 *  a game running without it went wrong.
+	 */
+	service: boolean,
 };
 
 /**  DayZ Community Hub launcher. */

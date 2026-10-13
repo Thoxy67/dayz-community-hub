@@ -14,7 +14,7 @@ pub use client::{DayzGame, SteamClient, appimage_env};
 pub use cmd::SteamCmd;
 pub use detect::{
     DayzInstall, SteamGameConfig, dayz_steam_config, detect_dayz, find_steam_root, find_steamcmd,
-    steam_workshop_dirs,
+    steam_libraries, steam_workshop_dirs,
 };
 pub use progress::{ModProgress, ProgressTx, PtyInputRx, PtyInputTx};
 
