@@ -16,6 +16,7 @@ import Frame from "~icons/lucide/frame";
 import ImageOff from "~icons/lucide/image-off";
 import SkipForward from "~icons/lucide/skip-forward";
 import PlaneTakeoff from "~icons/lucide/square-arrow-out-up-right";
+import UserRoundX from "~icons/lucide/user-round-x";
 import ArrowUpNarrowWide from "~icons/lucide/arrow-up-narrow-wide";
 import MemoryStick from "~icons/lucide/memory-stick";
 import Cpu from "~icons/lucide/cpu";
@@ -90,6 +91,13 @@ export const META: Record<string, OptionMeta> = {
     label: "labelNolauncher",
     desc: "descNolauncher",
     icon: PlaneTakeoff,
+    value: "none",
+  },
+  nocharmenu: {
+    flag: "-nocharmenu",
+    label: "labelNocharmenu",
+    desc: "descNocharmenu",
+    icon: UserRoundX,
     value: "none",
   },
   high: {
@@ -202,7 +210,7 @@ export const GROUPS: Group[] = [
     label: "groupStartup",
     icon: Rocket,
     tone: "text-ok",
-    keys: ["nosplash", "skipintro", "nolauncher"],
+    keys: ["nosplash", "skipintro", "nolauncher", "nocharmenu"],
   },
   { id: "world", label: "groupWorld", icon: Globe, tone: "text-map", keys: ["world", "no_pause"] },
   {

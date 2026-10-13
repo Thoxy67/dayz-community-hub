@@ -416,6 +416,13 @@ const content = {
       es: "Sin launcher",
       ru: "Без лаунчера",
     }),
+    labelNocharmenu: t({
+      en: "No Character Menu",
+      fr: "Sans menu personnage",
+      de: "Kein Charaktermenü",
+      es: "Sin menú de personaje",
+      ru: "Без меню персонажа",
+    }),
     labelHigh: t({
       en: "High Priority",
       fr: "Priorité haute",
@@ -536,6 +543,13 @@ const content = {
       de: "Launcher überspringen",
       es: "Omitir launcher",
       ru: "Пропустить лаунчер",
+    }),
+    descNocharmenu: t({
+      en: "Skip the character menu",
+      fr: "Passer le menu du personnage",
+      de: "Charaktermenü überspringen",
+      es: "Omitir el menú de personaje",
+      ru: "Пропустить меню персонажа",
     }),
     descHigh: t({
       en: "High process priority",
