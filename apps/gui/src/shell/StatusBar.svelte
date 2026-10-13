@@ -18,14 +18,15 @@
   import ScanSegment from "./status/ScanSegment.svelte";
   import ModSegments from "./status/ModSegments.svelte";
   import SteamSegment from "./status/SteamSegment.svelte";
+  import BattlEyeSegment from "./status/BattlEyeSegment.svelte";
 
   /**
    * The window's instrument panel, in two groups. On the left, what is
    * happening: the server list, the ping scan, the mods' downloads and
    * their state, the offline mode's install, the launcher's own download;
    * each segment shows only while it has something to say, except the list.
-   * On the right, the state of things: the game, Steam, an update, the
-   * version. Every segment has the same anatomy (`status/Segment.svelte`);
+   * On the right, the state of things: the game, BattlEye, Steam, an
+   * update, the version. Every segment has the same anatomy (`status/Segment.svelte`);
    * a narrow bar drops the words, then the least needed segments, by its
    * own width (container queries), not the window's.
    */
@@ -115,6 +116,7 @@
         {#if played}<span class="num font-mono font-normal text-fg-muted">{played}</span>{/if}
       </Segment>
     {/if}
+    <BattlEyeSegment {now} />
     <SteamSegment {now} />
     {#if updater.state === "available" && updater.info}
       <Segment
