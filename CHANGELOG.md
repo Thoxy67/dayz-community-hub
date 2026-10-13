@@ -6,7 +6,7 @@ notes; without one, the notes are the commit titles since the last release.
 
 ## Unreleased
 
-## 0.5.4
+## 0.5.4 - 2026-10-13
 
 - **BattlEye is watched and repaired.** On Windows the game often starts
   without BattlEye's service (removed, disabled, or its program quarantined
