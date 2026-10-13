@@ -6,6 +6,29 @@ notes; without one, the notes are the commit titles since the last release.
 
 ## Unreleased
 
+## 0.5.4
+
+- **BattlEye is watched and repaired.** On Windows the game often starts
+  without BattlEye's service (removed, disabled, or its program quarantined
+  by an antivirus), and every BattlEye server then kicks it. The launcher
+  now reads the service's state from Windows, and joining a BattlEye server
+  checks it first: a missing or disabled service is reinstalled through
+  the game's own BattlEye installer (one administrator prompt), and the
+  launch stops with an explanation rather than starting a game bound to
+  be kicked. On Linux the same check looks for Steam's Proton BattlEye
+  Runtime and has Steam install it.
+- **BattlEye in the status bar.** A segment beside Steam's shows whether
+  BattlEye is ready, running, or missing; it turns red when DayZ runs
+  without the service, and a click reinstalls it.
+- **A thorough BattlEye repair in the settings.** A new BattlEye section
+  shows its state and repairs it after deleting DayZ's own data outside
+  its folder (`Documents\DayZ` and `AppData\Local\DayZ`, inside the
+  Proton prefix on Linux): its settings, key bindings and caches. The
+  folders are listed before anything is deleted, DayZ must be closed, and
+  offline saves are kept.
+- **`-nocharmenu` launch option**, on by default, skips the character menu
+  on start. It can be turned off in Launch options, under Startup.
+
 ## 0.5.3 - 2026-10-11
 
 - **Steam's own server list joins the public one.** The launcher asks
