@@ -187,10 +187,16 @@ export const commands = {
 	battleyeStatus: () => __TAURI_INVOKE<BattlEyeStatus>("battleye_status"),
 	/**
 	 *  Repair BattlEye: reinstall its service as administrator (a UAC prompt) on
-	 *  Windows, have Steam install the Proton runtime on Linux. Returns the state
-	 *  after.
+	 *  Windows, have Steam install the Proton runtime on Linux. With `clear`,
+	 *  first delete the game's data outside its folder (DayZ must be closed).
+	 *  Returns the state after.
 	 */
-	repairBattleye: () => __TAURI_INVOKE<BattlEyeStatus>("repair_battleye"),
+	repairBattleye: (clear: boolean) => __TAURI_INVOKE<BattlEyeStatus>("repair_battleye", { clear }),
+	/**
+	 *  The game's data outside its folder (`Documents\DayZ`,
+	 *  `AppData\Local\DayZ`) that a thorough BattlEye repair deletes.
+	 */
+	gameDataDirs: () => __TAURI_INVOKE<string[]>("game_data_dirs"),
 	/**  Set a launch option's value; a value also enables it. */
 	setLaunchOptionValue: (key: string, value: string | null) => __TAURI_INVOKE<null>("set_launch_option_value", { key, value }),
 	/**

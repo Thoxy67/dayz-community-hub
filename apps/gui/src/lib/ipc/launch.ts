@@ -19,5 +19,10 @@ export const gameRunning = () => run(commands.gameRunning());
 export const killGame = () => run(commands.killGame());
 /** Where BattlEye stands: its service (Windows) or Proton runtime, and whether it runs. */
 export const battleyeStatus = () => run(commands.battleyeStatus());
-/** Repair BattlEye (a UAC prompt on Windows, Steam's install on Linux): the state after. */
-export const repairBattleye = () => run(commands.repairBattleye());
+/**
+ * Repair BattlEye (a UAC prompt on Windows, Steam's install on Linux): the
+ * state after. `clear` first deletes the game's data outside its folder.
+ */
+export const repairBattleye = (clear = false) => run(commands.repairBattleye(clear));
+/** The game's data outside its folder that a thorough repair deletes. */
+export const gameDataDirs = () => run(commands.gameDataDirs());

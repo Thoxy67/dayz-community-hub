@@ -3,11 +3,9 @@
   import ShieldCheck from "~icons/lucide/shield-check";
   import ShieldAlert from "~icons/lucide/shield-alert";
   import ShieldX from "~icons/lucide/shield-x";
-  import type { BattlEyeStatus } from "$lib/ipc/bindings";
-  import { battleyeStatus, repairBattleye } from "$lib/ipc/launch";
   import { app } from "$lib/stores/app.svelte";
+  import { battleye } from "$lib/stores/battleye.svelte";
   import { game } from "$lib/stores/game.svelte";
-  import { say, errorText } from "$lib/stores/say";
   import { cn } from "$lib/cx";
   import Segment, { WORD, type Tone } from "./Segment.svelte";
 
@@ -25,22 +23,15 @@
   const GRACE_MS = 20_000;
   const EVERY_MS = 5_000;
 
-  let status = $state<BattlEyeStatus | null>(null);
-  let repairing = $state(false);
   /** When the game was first seen running (ms), 0 while it is not. */
   let gameSeen = $state(0);
   /** The clock while the game runs, every few seconds. */
   let clock = $state(0);
 
-  const refresh = () =>
-    battleyeStatus()
-      .then((r) => (status = r))
-      .catch(() => (status = null));
-
   $effect(() => {
     void now;
     void clock;
-    if (app.focused || game.running) void refresh();
+    if (app.focused || game.running) void battleye.refresh();
   });
   $effect(() => {
     if (!game.running) {
@@ -52,6 +43,8 @@
     return () => clearInterval(t);
   });
 
+  const status = $derived(battleye.status);
+  const repairing = $derived(battleye.repairing);
   const be = $derived(status?.state ?? "no_game");
   const service = $derived(status?.service ?? false);
   /** DayZ is running and BattlEye's service is not, past the grace time. */
@@ -92,21 +85,6 @@
   );
   /** Running needs nothing; a ready Proton runtime has nothing to repair. */
   const acts = $derived(!repairing && be !== "running" && (service || broken));
-
-  async function repair() {
-    repairing = true;
-    try {
-      const r = await repairBattleye();
-      status = r;
-      if (r.state === "running" || r.state === "ready") say.ok($s.sbBeRepaired.value);
-      else if (!r.service) say.info($s.sbBeInstalling.value);
-      else say.warn($s.sbBeStillMissing.value);
-    } catch (e) {
-      say.err($s.sbBeRepairFailed({ error: errorText(e) }).value);
-    } finally {
-      repairing = false;
-    }
-  }
 </script>
 
 {#if status && be !== "no_game"}
@@ -115,7 +93,7 @@
     {tone}
     {tip}
     label={tip}
-    onclick={acts ? () => void repair() : undefined}
+    onclick={acts ? () => void battleye.repair() : undefined}
     progress={repairing ? null : undefined}
     class={notStarted || broken ? "" : "@max-[900px]:hidden"}
   >

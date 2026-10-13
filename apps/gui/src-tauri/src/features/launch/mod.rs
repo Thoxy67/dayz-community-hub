@@ -259,19 +259,37 @@ pub(crate) async fn battleye_status(
 }
 
 /// Repair BattlEye: reinstall its service as administrator (a UAC prompt) on
-/// Windows, have Steam install the Proton runtime on Linux. Returns the state
-/// after.
+/// Windows, have Steam install the Proton runtime on Linux. With `clear`,
+/// first delete the game's data outside its folder (DayZ must be closed).
+/// Returns the state after.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn repair_battleye(
+    clear: bool,
     state: State<'_, SharedState>,
 ) -> Result<dz_game::battleye::BattlEyeStatus, String> {
     let ctl = state.read().await.ctl.clone_for_task();
     tokio::task::spawn_blocking(move || {
-        ctl.repair_battleye()?;
+        ctl.repair_battleye(clear)?;
         Ok::<_, dz_common::Error>(ctl.battleye_status())
     })
     .await
     .map_err(|e| format!("Task join error: {e}"))?
     .map_err(|e| e.to_string())
+}
+
+/// The game's data outside its folder (`Documents\DayZ`,
+/// `AppData\Local\DayZ`) that a thorough BattlEye repair deletes.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn game_data_dirs(state: State<'_, SharedState>) -> Result<Vec<String>, String> {
+    let ctl = state.read().await.ctl.clone_for_task();
+    tokio::task::spawn_blocking(move || {
+        ctl.game_data_dirs()
+            .into_iter()
+            .map(|d| d.to_string_lossy().into_owned())
+            .collect()
+    })
+    .await
+    .map_err(|e| format!("Task join error: {e}"))
 }

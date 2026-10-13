@@ -19,6 +19,7 @@
   import LanguageSection from "./LanguageSection.svelte";
   import WindowSection from "./WindowSection.svelte";
   import ControllerSection from "./ControllerSection.svelte";
+  import BattlEyeSection from "./BattlEyeSection.svelte";
   import DataSection from "./DataSection.svelte";
 
   /**
@@ -41,6 +42,7 @@
     { id: "language", label: () => $s.sectionLanguage.value },
     { id: "window", label: () => $s.sectionWindow.value },
     { id: "controller", label: () => $p.section.value },
+    { id: "battleye", label: () => $s.sectionBattleye.value },
     { id: "data", label: () => $s.sectionData.value },
   ];
   // The account form covers these; they get a dot while it has unsaved edits.
@@ -95,6 +97,7 @@
           <LanguageSection />
           <WindowSection />
           <ControllerSection />
+          <BattlEyeSection />
           <DataSection />
         </div>
       </div>

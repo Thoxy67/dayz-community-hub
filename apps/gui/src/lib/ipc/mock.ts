@@ -173,6 +173,7 @@ const profile = {
     ["nosplash", "Skip splash screen"],
     ["skipintro", "Skip intro videos"],
     ["nolauncher", "Skip the Bohemia launcher"],
+    ["nocharmenu", "Skip the character menu"],
     ["file_patching", "Load unpacked files"],
     ["do_logs", "Write RPT logs"],
     ["high", "High process priority"],
@@ -976,6 +977,8 @@ export function installMock() {
           return new URLSearchParams(location.search).get("game") === "1";
         case "kill_game":
           return 2;
+        case "game_data_dirs":
+          return ["C:\\Users\\Player\\Documents\\DayZ", "C:\\Users\\Player\\AppData\\Local\\DayZ"];
         case "battleye_status":
         case "repair_battleye":
           return {

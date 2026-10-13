@@ -10,6 +10,11 @@
 //!
 //! Under Proton there is no service: Steam's "Proton BattlEye Runtime" tool
 //! (app 1161040) stands in for it, and must be installed.
+//!
+//! A thorough repair also clears the game's own data outside its folder,
+//! which a damaged install leaves behind: `Documents\DayZ` (its settings and
+//! in-game profile) and `AppData\Local\DayZ` (caches, logs, crash dumps).
+//! Offline saves live in the game's folder and are not touched.
 
 use std::path::{Path, PathBuf};
 
@@ -167,4 +172,62 @@ pub fn ensure(dayz: &Path, steam_root: &Path) -> Result<()> {
          Join again once it is installed."
             .into()
     }))
+}
+
+/// The game's own data outside its folder: `Documents\DayZ` and
+/// `AppData\Local\DayZ`, those that exist. Under Proton, the same folders
+/// inside DayZ's prefix. Blocking.
+pub fn game_data_dirs(steam_root: &Path) -> Vec<PathBuf> {
+    data_dir_candidates(steam_root)
+        .into_iter()
+        .filter(|d| d.is_dir())
+        .collect()
+}
+
+#[cfg(windows)]
+fn data_dir_candidates(_steam_root: &Path) -> Vec<PathBuf> {
+    use dz_common::win::{HKEY_CURRENT_USER, reg_string};
+    // Documents may be moved (OneDrive, another drive): the shell knows where.
+    let documents = reg_string(
+        HKEY_CURRENT_USER,
+        r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders",
+        "Personal",
+    )
+    .ok()
+    .flatten()
+    .map(PathBuf::from)
+    .or_else(|| std::env::var_os("USERPROFILE").map(|h| PathBuf::from(h).join("Documents")));
+    let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
+    [documents, local]
+        .into_iter()
+        .flatten()
+        .map(|d| d.join("DayZ"))
+        .collect()
+}
+
+#[cfg(not(windows))]
+fn data_dir_candidates(steam_root: &Path) -> Vec<PathBuf> {
+    let user = steam_root
+        .join("compatdata")
+        .join(dz_steamcmd::DAYZ_GAME_ID.to_string())
+        .join("pfx/drive_c/users/steamuser");
+    vec![
+        user.join("Documents").join("DayZ"),
+        user.join("AppData").join("Local").join("DayZ"),
+    ]
+}
+
+/// Delete the game's data outside its folder ([`game_data_dirs`]). DayZ must
+/// be closed: its files are open while it runs. Blocking.
+pub fn clear_game_data(steam_root: &Path) -> Result<()> {
+    if dz_steamcmd::DayzGame::is_running() {
+        return Err(Error::Other(
+            "Close DayZ first: its files are in use".into(),
+        ));
+    }
+    for dir in game_data_dirs(steam_root) {
+        std::fs::remove_dir_all(&dir)
+            .map_err(|e| Error::Other(format!("Could not delete {}: {e}", dir.display())))?;
+    }
+    Ok(())
 }

@@ -250,6 +250,7 @@
     ["language", "sectionLanguage"],
     ["window", "sectionWindow"],
     ["controller", null],
+    ["battleye", "sectionBattleye"],
     ["data", "sectionData"],
   ] as const;
   const settings = $derived(

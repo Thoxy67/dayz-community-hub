@@ -172,9 +172,19 @@ impl DayzCtl {
         )
     }
 
-    /// Repair BattlEye (a UAC prompt on Windows). Blocking.
-    pub fn repair_battleye(&self) -> Result<()> {
+    /// Repair BattlEye (a UAC prompt on Windows), after deleting the game's
+    /// data outside its folder when `clear` is set. Blocking.
+    pub fn repair_battleye(&self, clear: bool) -> Result<()> {
+        if clear {
+            crate::battleye::clear_game_data(&self.steam_root)?;
+        }
         crate::battleye::repair(&self.dayz_path()?)
+    }
+
+    /// The game's data outside its folder, which a thorough repair deletes.
+    /// Blocking.
+    pub fn game_data_dirs(&self) -> Vec<PathBuf> {
+        crate::battleye::game_data_dirs(&self.steam_root)
     }
 
     fn mod_dirs_without_steam(&self) -> mods::ModDirs {
