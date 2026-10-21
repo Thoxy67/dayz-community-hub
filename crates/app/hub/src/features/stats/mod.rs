@@ -12,7 +12,9 @@ use std::sync::{LazyLock, Mutex};
 use dz_profile::{History, PlayLog, SESSIONS_FILE, Snapshot, Writer};
 use serde::{Deserialize, Serialize};
 
-pub use compute::{PlayStatsDto, SessionDto, StatsRange};
+pub use compute::{
+    DayStatDto, MapStatDto, PlaceStatDto, PlayKind, PlayStatsDto, SessionDto, StatsRange,
+};
 
 /// The sessions changed (one started, ended, ran on, or was deleted).
 #[derive(Serialize, Deserialize, Clone, Debug)]

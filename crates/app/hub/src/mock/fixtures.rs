@@ -204,6 +204,25 @@ impl World {
         }
     }
 
+    /// [`World::friends`], or another answer for screenshots of the view's other
+    /// states: `DZCH_MOCK_FRIENDS=empty` (Steam answered, no friends), `error` (the ask
+    /// failed), `client` (the Steam client answered).
+    pub(crate) fn friends_answer(&self) -> Result<FriendsDto, String> {
+        match std::env::var("DZCH_MOCK_FRIENDS").as_deref() {
+            Ok("empty") => Ok(FriendsDto {
+                source: Some(FriendsSource::WebApi),
+                error: None,
+                friends: Vec::new(),
+            }),
+            Ok("error") => Err("Steam is not running, and no Steam Web API key is set.".into()),
+            Ok("client") => Ok(FriendsDto {
+                source: Some(FriendsSource::SteamClient),
+                ..self.friends()
+            }),
+            _ => Ok(self.friends()),
+        }
+    }
+
     /// Ten friends, the ones in DayZ on the busiest servers.
     pub(crate) fn friends(&self) -> FriendsDto {
         let mut top: Vec<&super::MockServer> = self.servers.iter().collect();
@@ -524,7 +543,11 @@ pub(crate) fn metrics_heatmap() -> Vec<HeatCell> {
         .collect()
 }
 
+/// The offline missions; none with `DZCH_MOCK=offline-empty`.
 pub(crate) fn offline_missions() -> Vec<String> {
+    if super::switch("offline-empty") {
+        return Vec::new();
+    }
     [
         "DayZCommunityOfflineMode.ChernarusPlus",
         "DayZCommunityOfflineMode.Enoch",
@@ -583,23 +606,43 @@ pub(crate) fn update_info() -> UpdateInfo {
     }
 }
 
-/// An update can be installed, whatever this build is.
+/// The mock's check: a newer version, none with `DZCH_MOCK=update-none`, a failure with
+/// `update-error`.
+pub(crate) fn check_update() -> Result<Option<UpdateInfo>, String> {
+    if super::switch("update-error") {
+        return Err("Update check: the release server could not be reached".to_string());
+    }
+    if super::switch("update-none") {
+        return Ok(None);
+    }
+    Ok(Some(update_info()))
+}
+
+/// An update can be installed, whatever this build is; with `DZCH_MOCK=update-package`
+/// (or `update-dev`) this copy only hears of it.
 pub(crate) fn update_support() -> UpdateSupport {
+    let kind = if super::switch("update-package") {
+        UpdateKind::PackageManager
+    } else if super::switch("update-dev") {
+        UpdateKind::Dev
+    } else if cfg!(windows) {
+        UpdateKind::WindowsZip
+    } else {
+        UpdateKind::Appimage
+    };
+    let supported = matches!(kind, UpdateKind::WindowsZip | UpdateKind::Appimage);
     UpdateSupport {
-        supported: true,
-        kind: if cfg!(windows) {
-            UpdateKind::WindowsZip
-        } else {
-            UpdateKind::Appimage
-        },
+        supported,
+        kind,
         reason: None,
     }
 }
 
 pub(crate) fn steamcmd_status() -> SteamcmdStatusDto {
+    let found = !super::switch("steamcmd-missing");
     SteamcmdStatusDto {
-        found: true,
-        path: Some("/usr/bin/steamcmd".to_string()),
+        found,
+        path: found.then(|| "/usr/bin/steamcmd".to_string()),
         platform: "linux".to_string(),
     }
 }

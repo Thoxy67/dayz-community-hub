@@ -50,7 +50,7 @@ impl Hub {
     /// Fetch an image URL through Rust (bypasses WebKit TLS cert validation),
     /// cache it to disk, and return the cached file's path.
     pub async fn fetch_image(&self, url: String) -> Result<PathBuf, String> {
-        mocked!(self => Err(format!("The mock world has no images: {url}")));
+        mocked!(self, w => w.news_image(&url).await);
         let cache_dir = image_cache_dir().await?;
         let filename = url_to_cache_filename(&url);
         let path = cache_dir.join(&filename);

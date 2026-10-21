@@ -37,8 +37,11 @@ impl Hub {
 
     /// Download/update DayZCommunityOfflineMode.
     pub async fn update_offline_mode(&self) -> Result<(), String> {
+        // `DZCH_MOCK=offline-installing`: the download never ends (its screenshots).
         mocked!(self => {
-            self.emit(crate::HubEvent::OfflineModeUpdated);
+            if !crate::mock::switch("offline-installing") {
+                self.emit(crate::HubEvent::OfflineModeUpdated);
+            }
             Ok(())
         });
         let state = self.state()?;

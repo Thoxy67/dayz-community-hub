@@ -178,7 +178,7 @@ impl Hub {
     /// Look for a newer version. `None` when this one is the latest. Works on
     /// every kind of copy, so a package user still learns a release is out.
     pub async fn check_for_update(&self) -> Result<Option<UpdateInfo>, String> {
-        mocked!(self => Ok(Some(crate::mock::fixtures::update_info())));
+        mocked!(self => crate::mock::fixtures::check_update());
         #[cfg(windows)]
         windows::remove_leftovers();
         let installer = (kind() == UpdateKind::Appimage).then_some("appimage");

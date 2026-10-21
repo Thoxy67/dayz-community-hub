@@ -32,7 +32,7 @@ impl Hub {
     /// serves a challenge anyway, the error starts with [`BLOCKED_PREFIX`]
     /// (`"blocked:"`), so the window can offer to open dayz.com instead.
     pub async fn fetch_news(&self) -> Result<Vec<ArticleDto>, String> {
-        mocked!(self, w => Ok(w.articles.clone()));
+        mocked!(self, w => w.news());
         let articles: Vec<Article> = match dz_news::fetch_news().await {
             Ok(articles) => articles,
             Err(CoreError::CloudflareChallenge) => {

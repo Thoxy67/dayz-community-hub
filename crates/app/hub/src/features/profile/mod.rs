@@ -4,8 +4,8 @@
 mod dto;
 pub(crate) mod io;
 
-pub use dto::ProfileDto;
 pub(crate) use dto::profile_to_dto;
+pub use dto::{LaunchOptionDto, ProfileDto};
 
 use crate::Hub;
 use crate::state::mutate_profile;

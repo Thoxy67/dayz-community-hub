@@ -428,7 +428,7 @@ impl Hub {
     /// Steam client may be asked when the Web API cannot answer (it shows DayZ
     /// running for a moment, so only while the Friends view is open).
     pub async fn steam_friends(&self, client: bool) -> Result<FriendsDto, String> {
-        mocked!(self, w => Ok(w.friends()));
+        mocked!(self, w => w.friends_answer());
         let state = self.state()?;
         let mut last = LAST.lock().await;
         if let Some((at, dto)) = last.as_ref()

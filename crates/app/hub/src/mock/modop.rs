@@ -80,6 +80,12 @@ impl Steps {
     }
 }
 
+/// Workshop ids whose manual install stops at a prompt (Steam Guard, password).
+const PROMPT_GUARD: u64 = 2;
+const PROMPT_PASSWORD: u64 = 3;
+/// How long such a prompt waits before the run goes on.
+const PROMPT_WAIT_MS: u64 = 60_000;
+
 /// `done` of `total` as SteamCMD prints it.
 fn percent(done: u64, total: u64) -> String {
     format!("{:.2}", done as f64 / total.max(1) as f64 * 100.0)
@@ -187,6 +193,33 @@ fn steps(
         100,
         "Steam Console Client (c) Valve Corporation - version 1726604893".into(),
     );
+    // A manual install of Workshop id 2 (or 3) stops at a Steam Guard approval (or the
+    // password), so the dialog's prompts can be looked at.
+    if list == [PROMPT_GUARD] {
+        s.log(
+            100,
+            "Logging in user 'survivor_42' to Steam Public...".into(),
+        );
+        let ev = s.ev(ModProgressKind::SteamGuardMobileRequired);
+        s.at(50, ev);
+        s.log(
+            10,
+            "Please confirm the login in the Steam Mobile app on your phone.".into(),
+        );
+        s.log(PROMPT_WAIT_MS, "Retrying...".into());
+    } else if list == [PROMPT_PASSWORD] {
+        s.log(
+            100,
+            "Logging in user 'survivor_42' to Steam Public...".into(),
+        );
+        let ev = s.ev(ModProgressKind::PasswordRequired);
+        s.at(50, ev);
+        s.log(10, "password: ".into());
+        s.log(
+            PROMPT_WAIT_MS,
+            "Logging in user 'survivor_42' to Steam Public...OK".into(),
+        );
+    }
     s.log(
         100,
         "Logging in user 'survivor_42' to Steam Public...OK".into(),

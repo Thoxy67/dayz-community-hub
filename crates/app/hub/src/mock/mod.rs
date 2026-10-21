@@ -25,6 +25,7 @@ mod commands;
 pub(crate) mod fixtures;
 mod generate;
 mod modop;
+mod news;
 #[cfg(test)]
 mod tests;
 
@@ -37,6 +38,18 @@ use crate::features::browser::live::{self, Live};
 use crate::state::AppState;
 
 pub(crate) use generate::{MockMod, MockServer};
+
+/// A switch of the mock, for screenshots of states its world does not show by itself:
+/// `DZCH_MOCK=wizard,steamcmd-missing` (comma-separated). `wizard` makes this a first
+/// launch (the setup wizard opens), `steamcmd-missing` hides SteamCMD from detection;
+/// `update-none`, `update-error`, `update-package`, `update-dev` set the updater's answers;
+/// `offline-empty` installs no offline mission, `offline-installing` never ends its install;
+/// `stats-empty` writes no play session.
+pub(crate) fn switch(name: &str) -> bool {
+    std::env::var("DZCH_MOCK")
+        .map(|v| v.split(',').any(|s| s.trim() == name))
+        .unwrap_or(false)
+}
 
 /// A ping at or above this is a timeout in the mock (`pingOf(k) > 270`).
 const PING_TIMEOUT_ABOVE: u32 = 270;
@@ -77,7 +90,12 @@ impl World {
             servers: generated.servers,
             mods: generated.mods,
             articles: generated.articles,
-            play_log: generated.play_log,
+            // `stats-empty`: nobody has played yet (the stats view's empty state).
+            play_log: if switch("stats-empty") {
+                Vec::new()
+            } else {
+                generated.play_log
+            },
             data_dir,
             owned,
         };
