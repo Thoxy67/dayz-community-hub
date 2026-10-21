@@ -155,7 +155,11 @@ pub fn mix(a: Oklch, p: f32, b: Oklch) -> Oklch {
     } else if d < -180.0 {
         d += 360.0;
     }
-    [a[0] * p + b[0] * q, a[1] * p + b[1] * q, (ha + d * q).rem_euclid(360.0)]
+    [
+        a[0] * p + b[0] * q,
+        a[1] * p + b[1] * q,
+        (ha + d * q).rem_euclid(360.0),
+    ]
 }
 
 /// `color-mix(in oklch, a pa, b pb)` with `pa + pb < 1`: the mix normalised, its
@@ -182,7 +186,11 @@ pub fn rgb([l, c, h]: Oklch) -> Color32 {
     let g = -1.268_438 * l3 + 2.609_757_4 * m3 - 0.341_319_38 * s3;
     let b = -0.004_196_086_3 * l3 - 0.703_418_6 * m3 + 1.707_614_7 * s3;
     let enc = |x: f32| {
-        let v = if x >= 0.003_130_8 { 1.055 * x.powf(1.0 / 2.4) - 0.055 } else { 12.92 * x };
+        let v = if x >= 0.003_130_8 {
+            1.055 * x.powf(1.0 / 2.4) - 0.055
+        } else {
+            12.92 * x
+        };
         (v.clamp(0.0, 1.0) * 255.0).round() as u8
     };
     Color32::from_rgb(enc(r), enc(g), enc(b))
@@ -192,7 +200,11 @@ pub fn rgb([l, c, h]: Oklch) -> Color32 {
 pub fn oklch(c: Color32) -> Oklch {
     let lin = |v: u8| {
         let x = f32::from(v) / 255.0;
-        if x >= 0.040_45 { ((x + 0.055) / 1.055).powf(2.4) } else { x / 12.92 }
+        if x >= 0.040_45 {
+            ((x + 0.055) / 1.055).powf(2.4)
+        } else {
+            x / 12.92
+        }
     };
     let (r, g, b) = (lin(c.r()), lin(c.g()), lin(c.b()));
     let l = (0.412_221_46 * r + 0.536_332_55 * g + 0.051_445_995 * b).cbrt();
@@ -201,7 +213,11 @@ pub fn oklch(c: Color32) -> Oklch {
     let ll = 0.210_454_26 * l + 0.793_617_8 * m - 0.004_072_047 * s;
     let aa = 1.977_998_5 * l - 2.428_592_2 * m + 0.450_593_7 * s;
     let bb = 0.025_904_037 * l + 0.782_771_77 * m - 0.808_675_77 * s;
-    [ll, aa.hypot(bb), bb.atan2(aa).to_degrees().rem_euclid(360.0)]
+    [
+        ll,
+        aa.hypot(bb),
+        bb.atan2(aa).to_degrees().rem_euclid(360.0),
+    ]
 }
 
 /// Sizes, from the `--spacing-*`, `--text-*` and `--radius-*` tokens (CSS px = egui points).
@@ -252,7 +268,8 @@ pub trait TokensExt {
 
 impl TokensExt for egui::Context {
     fn tokens(&self) -> Tokens {
-        self.data(|d| d.get_temp::<Tokens>(egui::Id::NULL)).unwrap_or_default()
+        self.data(|d| d.get_temp::<Tokens>(egui::Id::NULL))
+            .unwrap_or_default()
     }
 }
 
@@ -265,7 +282,11 @@ impl TokensExt for egui::Ui {
 /// Wear `t`: store it for [`TokensExt`] and dress egui's own widgets with it.
 pub fn apply(ctx: &egui::Context, t: Tokens) {
     ctx.data_mut(|d| d.insert_temp(egui::Id::NULL, t));
-    let mut v = if t.is_dark() { egui::Visuals::dark() } else { egui::Visuals::light() };
+    let mut v = if t.is_dark() {
+        egui::Visuals::dark()
+    } else {
+        egui::Visuals::light()
+    };
     v.panel_fill = t.panel;
     v.window_fill = t.raised;
     v.window_stroke = egui::Stroke::new(1.0, t.border);
@@ -297,7 +318,12 @@ pub fn apply(ctx: &egui::Context, t: Tokens) {
         w.expansion = 0.0;
     }
     v.widgets.noninteractive.fg_stroke.color = t.fg_muted;
-    v.popup_shadow = egui::Shadow { offset: [0, 8], blur: 24, spread: 0, color: Color32::from_black_alpha(128) };
+    v.popup_shadow = egui::Shadow {
+        offset: [0, 8],
+        blur: 24,
+        spread: 0,
+        color: Color32::from_black_alpha(128),
+    };
     v.window_shadow = v.popup_shadow;
     // The theme is ours, not the OS's: both of egui's slots wear it.
     ctx.set_visuals_of(egui::Theme::Dark, v.clone());

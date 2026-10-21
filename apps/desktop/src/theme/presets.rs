@@ -382,6 +382,9 @@ pub const RETIRED: &[(&str, &str)] = &[
 
 /// The preset with this id, following [`RETIRED`].
 pub fn by_id(id: &str) -> Option<&'static Preset> {
-    let id = RETIRED.iter().find(|(old, _)| *old == id).map_or(id, |(_, new)| *new);
+    let id = RETIRED
+        .iter()
+        .find(|(old, _)| *old == id)
+        .map_or(id, |(_, new)| *new);
     PRESETS.iter().find(|p| p.id == id)
 }

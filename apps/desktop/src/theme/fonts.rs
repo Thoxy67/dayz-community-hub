@@ -71,13 +71,26 @@ pub fn font(face: Face, size: f32) -> FontId {
 macro_rules! subsets {
     ($stem:literal) => {
         [
-            ($stem, "latin", include_bytes!(concat!("../../assets/fonts/", $stem, "-latin.ttf")).as_slice()),
-            ($stem, "latin-ext", include_bytes!(concat!("../../assets/fonts/", $stem, "-latin-ext.ttf")).as_slice()),
-            ($stem, "cyrillic", include_bytes!(concat!("../../assets/fonts/", $stem, "-cyrillic.ttf")).as_slice()),
+            (
+                $stem,
+                "latin",
+                include_bytes!(concat!("../../assets/fonts/", $stem, "-latin.ttf")).as_slice(),
+            ),
+            (
+                $stem,
+                "latin-ext",
+                include_bytes!(concat!("../../assets/fonts/", $stem, "-latin-ext.ttf")).as_slice(),
+            ),
+            (
+                $stem,
+                "cyrillic",
+                include_bytes!(concat!("../../assets/fonts/", $stem, "-cyrillic.ttf")).as_slice(),
+            ),
             (
                 $stem,
                 "cyrillic-ext",
-                include_bytes!(concat!("../../assets/fonts/", $stem, "-cyrillic-ext.ttf")).as_slice(),
+                include_bytes!(concat!("../../assets/fonts/", $stem, "-cyrillic-ext.ttf"))
+                    .as_slice(),
             ),
         ]
     };
@@ -117,7 +130,8 @@ pub fn definitions() -> FontDefinitions {
         let mut chain = Vec::new();
         for (stem, sub, bytes) in files(face) {
             let key = format!("{stem}-{sub}");
-            defs.font_data.insert(key.clone(), Arc::new(FontData::from_static(bytes)));
+            defs.font_data
+                .insert(key.clone(), Arc::new(FontData::from_static(bytes)));
             chain.push(key);
         }
         chain.extend(emoji.iter().cloned());

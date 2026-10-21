@@ -127,7 +127,11 @@ pub struct Fetch<T> {
 
 impl<T> Default for Fetch<T> {
     fn default() -> Self {
-        Self { value: None, error: None, task: None }
+        Self {
+            value: None,
+            error: None,
+            task: None,
+        }
     }
 }
 
@@ -142,7 +146,9 @@ impl<T: Send + 'static> Fetch<T> {
 
     /// Take a finished answer in; true when the value or error changed.
     pub fn poll(&mut self) -> bool {
-        let Some(task) = self.task.as_mut() else { return false };
+        let Some(task) = self.task.as_mut() else {
+            return false;
+        };
         match task.poll() {
             Some(Ok(v)) => {
                 self.value = Some(v);

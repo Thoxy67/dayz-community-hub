@@ -38,6 +38,9 @@ egui = { workspace = true, features = ["default_fonts"] }
 resvg.workspace = true
 rfd.workspace = true
 open.workspace = true
+# i18n: the OS language on first run, and local dates.
+sys-locale = "0.3.2"
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 
 [dev-dependencies]
 egui_kittest = { workspace = true, features = ["wgpu", "snapshot"] }

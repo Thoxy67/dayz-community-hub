@@ -9,6 +9,10 @@
 )]
 
 pub mod app;
+pub mod catalog;
+pub mod i18n;
+pub mod icons;
+pub mod kit;
 pub mod rt;
 pub mod theme;
 

@@ -16,7 +16,14 @@ impl HubApp {
         let t = ui.tokens();
         egui::Frame::new().fill(t.bg).show(ui, |ui| {
             ui.set_min_size(ui.available_size());
-            ui.label(egui::RichText::new("DAYZ COMMUNITY HUB").font(theme::font(theme::fonts::Face::DisplayBold, theme::size::TEXT_2XL)).color(t.accent));
+            ui.label(
+                egui::RichText::new("DAYZ COMMUNITY HUB")
+                    .font(theme::font(
+                        theme::fonts::Face::DisplayBold,
+                        theme::size::TEXT_2XL,
+                    ))
+                    .color(t.accent),
+            );
         });
     }
 }
