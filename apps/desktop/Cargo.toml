@@ -1,0 +1,44 @@
+[package]
+name = "dayz-community-hub-egui"
+description = "DayZ Community Hub: the egui window (replaces apps/gui)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+name = "dzch_ui"
+path = "src/lib.rs"
+
+[[bin]]
+name = "dayz-community-hub-egui"
+path = "src/main.rs"
+
+[features]
+default = []
+
+[dependencies]
+dz-hub = { workspace = true, features = ["mock"] }
+dz-common.workspace = true
+dz-api.workspace = true
+dz-game.workspace = true
+dz-profile.workspace = true
+dz-steamworks.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+clap.workspace = true
+rustc-hash.workspace = true
+eframe = { workspace = true, features = ["wgpu", "wayland", "x11", "accesskit", "default_fonts"] }
+egui = { workspace = true, features = ["default_fonts"] }
+resvg.workspace = true
+rfd.workspace = true
+open.workspace = true
+
+[dev-dependencies]
+egui_kittest = { workspace = true, features = ["wgpu", "snapshot"] }
+image.workspace = true

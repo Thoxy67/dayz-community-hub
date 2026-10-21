@@ -41,3 +41,6 @@ __pycache__/
 
 # Cargo output anywhere (an agent once built into apps/target)
 target/
+
+# Local plan (craft workflow: STATUS, execution plan, architecture)
+/plan

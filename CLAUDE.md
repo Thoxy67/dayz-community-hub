@@ -3,6 +3,11 @@
 A DayZ launcher (server browser, mod manager, offline mode) for **Windows and
 Linux**, both with the same features. Tauri 2 + Rust, Svelte 5 + Vite.
 
+**Rewrite in progress:** the interface is being rebuilt in egui (`apps/desktop`, backend
+`crates/app/hub`), 1:1 with the Svelte one, the way `~/wordcraft` and `~/photocraft` are built.
+For that work read `AGENTS.md` and the local `plan/` first. The rules below about Svelte and
+Tauri hold for `apps/gui` until it is removed (M4.2).
+
 ## Layout
 
 ```

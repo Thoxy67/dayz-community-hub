@@ -8,13 +8,16 @@
 #                  (mods, launch, offline mode, .dzch files) and the news feed.
 #   crates/app/    what the app needs around the domain that is not the shell:
 #                  the DayZ Metrics lookups.
-#   apps/gui/src-tauri  the shell: windows, commands, events, the bridge.
+#   crates/app/hub the backend the window talks to (was the Tauri shell's
+#                  features): shared state, every command, the events, the mock.
+#   apps/desktop   the egui window (replaces apps/gui, see plan/ and AGENTS.md).
+#   apps/gui/src-tauri  the Tauri shell, until the egui window reaches parity.
 
 [workspace]
 resolver = "3"
 # Every crate is two levels down: crates/<role>/<name>. A new crate is a new
 # directory there and a line in [workspace.dependencies] below.
-members = ["crates/*/*", "apps/gui/src-tauri"]
+members = ["crates/*/*", "apps/gui/src-tauri", "apps/desktop", "xtask"]
 
 [workspace.package]
 version = "0.5.4"
@@ -37,6 +40,7 @@ dz-steamworks = { path = "crates/core/steamworks" }
 dz-game = { path = "crates/core/game" }
 dz-news = { path = "crates/core/news" }
 dz-dayzmetrics = { path = "crates/app/dayzmetrics" }
+dz-hub = { path = "crates/app/hub" }
 
 # Async runtime
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time", "sync", "io-util", "process", "fs", "net"] }
@@ -72,6 +76,16 @@ serde_json = "1.0.151"
 specta = { version = "=2.0.0-rc.25", features = ["derive", "function", "serde_json"] }
 specta-typescript = "=0.0.12"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
+
+# The egui window (apps/desktop), as in ~/wordcraft and ~/photocraft.
+eframe = { version = "0.36.2", default-features = false }
+egui = { version = "0.36.2", default-features = false }
+egui_extras = { version = "0.36.2", default-features = false }
+egui_kittest = "0.36.2"
+resvg = { version = "0.45.1", default-features = false }
+rfd = "0.17.2"
+open = "5.3.2"
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 # Error handling
 thiserror = "2.0.21"

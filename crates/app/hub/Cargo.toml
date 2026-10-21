@@ -1,0 +1,51 @@
+[package]
+name = "dz-hub"
+description = "The backend the launcher's window talks to: shared state, every command, the events, and a mock for screenshots"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# The invented world of `HubMode::Mock` (screenshots, ui_shot, `--mock`).
+mock = []
+
+[dependencies]
+tokio.workspace = true
+futures-util.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+base64.workspace = true
+which.workspace = true
+zip.workspace = true
+clap.workspace = true
+thiserror.workspace = true
+rustc-hash.workspace = true
+sysinfo.workspace = true
+dz-common.workspace = true
+dz-api.workspace = true
+dz-a2s.workspace = true
+dz-profile.workspace = true
+dz-steamcmd.workspace = true
+dz-steamworks.workspace = true
+dz-game.workspace = true
+dz-news.workspace = true
+dz-dayzmetrics.workspace = true
+lru = "0.18.5"
+# Controllers (Steam Deck, Xbox, PlayStation) for the gamepad navigation mode.
+gilrs = "0.11.2"
+
+[target."cfg(not(windows))".dependencies]
+zstd = { version = "0.14.0", features = ["pkg-config"] }
+
+[target."cfg(target_os = \"linux\")".dependencies]
+openssl = { version = "0.10.81", features = ["vendored"] }
+
+[target."cfg(windows)".dependencies]
+zstd = "0.14.0"
+minisign-verify = "0.3.0"
