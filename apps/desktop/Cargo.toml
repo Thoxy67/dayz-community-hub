@@ -43,7 +43,11 @@ sys-locale = "0.3.2"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 # The control channel: its random key, and `ui.screenshot`'s PNG.
 getrandom = "0.3.4"
-image.workspace = true
+# Pictures the window loads at run time (parts/image.rs): the Steam avatar, friends'
+# avatars, news images. Steam serves JPEG, the news WebP and PNG.
+image = { workspace = true, features = ["jpeg", "webp"] }
+base64.workspace = true
+reqwest.workspace = true
 
 [dev-dependencies]
 egui_kittest = { workspace = true, features = ["wgpu", "snapshot"] }

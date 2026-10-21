@@ -5,6 +5,7 @@
 //!
 //! Part (Svelte)            | egui
 //! -------------------------|----------------------------------------------------------------
+//! Picture (run-time)     | `image::paint(painter, rect, src, radius) -> bool` (src: `data:` URI, https URL or file), `image::texture(ctx, src)`
 //! ServerListRow            | `ServerListRow::new(RowData::from_row(&row)).selected(b).friends(&names).tag(RowTag{..}).extra(RowExtra{..}).buttons(&[RowButton{..}]).menu(&[RowMenuItem{..}]).mods_clickable(b).show(ui, &cols, &mut cache) -> RowResponse { response, action: Option<RowAction> }`
 //! server-list.ts           | `ListColumns::new(x_range, wide)` (`.get(Col::Map)`, `.narrow()`), `ROW_PX`, `NARROW_PX`, `RowCache::new()` (owned by the list)
 //! ServerMenu               | `server_menu(ui, ip, favorite, excluded, show_mods, &more) -> Option<RowAction>` (inside `kit::menu::context`)
@@ -58,6 +59,7 @@ pub mod charts;
 pub mod facts;
 pub mod header;
 pub mod html;
+pub mod image;
 pub mod inputs;
 pub mod log_pane;
 pub mod pad;

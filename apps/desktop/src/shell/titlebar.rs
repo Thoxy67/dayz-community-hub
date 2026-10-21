@@ -17,6 +17,8 @@ use crate::theme::{TokensExt, font, fonts::Face, size};
 
 /// Below this window width the figures go (`max-[1180px]:hidden`).
 const FIGURES_MIN: f32 = 1180.0;
+/// The Steam avatar's side (`size-5`).
+const AVATAR: f32 = 20.0;
 /// The window buttons' width (`w-11`).
 const WIN_BTN: f32 = 44.0;
 
@@ -401,12 +403,12 @@ fn profile(ui: &mut Ui, cx: &mut Ctx, right: f32, rect: Rect, win_w: f32) -> f32
             None,
         ),
     };
-    let w = 10.0
-        + size::ICON
-        + 8.0
-        + ng.size().x
-        + lg.as_ref().map_or(0.0, |g| g.size().x + 8.0)
-        + 10.0;
+    // The avatar is drawn at `size-5`, the icon at `size-icon`.
+    let lead = match cx.stores.profile.avatar_url.as_deref() {
+        Some(src) if crate::parts::image::texture(ui.ctx(), src).is_some() => AVATAR,
+        _ => size::ICON,
+    };
+    let w = 10.0 + lead + 8.0 + ng.size().x + lg.as_ref().map_or(0.0, |g| g.size().x + 8.0) + 10.0;
     let r = Rect::from_min_max(
         pos2(right - w, rect.top()),
         pos2(right, rect.bottom() - 1.0),
@@ -421,12 +423,26 @@ fn profile(ui: &mut Ui, cx: &mut Ctx, right: f32, rect: Rect, win_w: f32) -> f32
     );
     let cy = r.center().y;
     let mut x = r.left() + 10.0;
-    lucide::USER_ROUND.paint(
-        p,
-        Rect::from_min_size(pos2(x, cy - size::ICON / 2.0), Vec2::splat(size::ICON)),
-        paint::lerp(tk.fg_muted, tk.fg, h),
-    );
-    x += size::ICON + 8.0;
+    // The Steam avatar (`size-5 rounded-full ring-1 ring-border-strong`), else the icon.
+    let avatar = cx.stores.profile.avatar_url.as_deref().and_then(|src| {
+        let a = Rect::from_min_size(pos2(x, cy - AVATAR / 2.0), Vec2::splat(AVATAR));
+        crate::parts::image::paint(p, a, src, CornerRadius::same(255)).then_some(a)
+    });
+    match avatar {
+        Some(a) => {
+            p.circle_stroke(
+                a.center(),
+                AVATAR / 2.0 + 0.5,
+                Stroke::new(1.0, tk.border_strong),
+            );
+        }
+        None => lucide::USER_ROUND.paint(
+            p,
+            Rect::from_min_size(pos2(x, cy - size::ICON / 2.0), Vec2::splat(size::ICON)),
+            paint::lerp(tk.fg_muted, tk.fg, h),
+        ),
+    }
+    x += lead + 8.0;
     let name_ink = if name.is_some() {
         tk.fg
     } else {
