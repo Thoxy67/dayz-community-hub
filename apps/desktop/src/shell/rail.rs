@@ -624,7 +624,7 @@ fn listed_lines(
     let max = u32::try_from(live.max.max(0)).unwrap_or(0);
     ui.put(pr, Players::new(players, max).bots(live.bots).compact());
     let key = key_of(row);
-    let ms = cx.stores.servers.ping.get(&key).copied();
+    let ms = cx.stores.servers.ping_ms(&row.ip, row.query_port);
     let pending = cx.stores.servers.pending.contains(&key);
     let sr = Rect::from_min_max(pos2(right - 56.0, y), pos2(right, y + 21.0));
     let mut sui = ui.new_child(

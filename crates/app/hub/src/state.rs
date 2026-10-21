@@ -79,6 +79,13 @@ impl AppState {
         self.index = ServerIndex::build(&servers.result);
         crate::features::servers::sources::counted(&servers);
         self.servers = servers;
+        crate::features::browser::publish_snapshot(self);
+    }
+
+    /// The profile's favourites or exclusions, or the mods on disk, changed:
+    /// the browser's flags follow.
+    pub fn profile_changed(&self) {
+        crate::features::browser::profile_changed(self);
     }
 
     /// The server whose query port is `port`.
@@ -105,11 +112,11 @@ pub(crate) async fn mutate_profile<T>(
     let (out, snapshot, writer) = {
         let mut s = state.write().await;
         let out = f(&mut s)?;
+        // Favorites and excluded IPs show in the browser.
+        s.profile_changed();
         let snapshot = s.profile_writer.stamp(s.ctl.profile_snapshot().cmd_err()?);
         (out, snapshot, Arc::clone(&s.profile_writer))
     };
-    // Favorites and excluded IPs show in the browser.
-    crate::features::browser::live::store().touch();
     writer.write(snapshot).await.cmd_err()?;
     Ok(out)
 }

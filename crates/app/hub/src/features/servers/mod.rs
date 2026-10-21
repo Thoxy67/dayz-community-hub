@@ -143,6 +143,7 @@ async fn initialize_mock(hub: &Hub, world: &crate::mock::World) -> Result<InitRe
     let mut app_state = AppState::new(ctl);
     app_state.set_servers(Arc::clone(&list));
     world.seed_state(&mut app_state);
+    app_state.profile_changed();
     hub.set_state(Arc::new(RwLock::new(app_state)));
     world.seed_pings();
     world.seed_sources();
@@ -163,7 +164,15 @@ async fn get_server_details(hub: &Hub, ip: String, port: i64) -> Result<ServerDt
     let server = state
         .find_by_query_port(&ip, port)
         .ok_or_else(|| "Server not found".to_string())?;
-    Ok(server_to_dto(server))
+    let mut dto = server_to_dto(server);
+    // The map's one spelling, as the rows show it.
+    if let Some(r) = crate::features::browser::live::store()
+        .snapshot()
+        .lookup(&ip, port)
+    {
+        r.map.clone_into(&mut dto.map);
+    }
+    Ok(dto)
 }
 
 /// Fetch the list from the API again (a step of `refresh::servers_refresh`).
@@ -304,7 +313,7 @@ impl Hub {
     /// Whether this is the first launch (no profile yet), asked before
     /// `initialize` so the wizard can show at once.
     pub async fn check_first_launch(&self) -> bool {
-        mocked!(self, w => !w.profile_path().exists());
+        mocked!(self, w => !w.profile_path().exists() || crate::mock::switch("wizard"));
         first_launch().await
     }
 

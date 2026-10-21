@@ -4,10 +4,16 @@
 //! One process-wide store behind a `std` lock that is only ever held for a
 //! lookup or an insert, never across an `.await`, so the ping scan (dozens of
 //! writers) never contends with the commands that need the app state.
+//!
+//! It also holds the current [`ServerSnapshot`]: every write lands in the
+//! snapshot's live table too (under the same lock, so a snapshot being
+//! published never misses one), where the window's rows read it.
 
 use rustc_hash::FxHashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{LazyLock, RwLock, RwLockReadGuard};
+use std::sync::{Arc, LazyLock, RwLock, RwLockReadGuard};
+
+use super::snapshot::ServerSnapshot;
 
 /// A ping at or above this is shown as a timeout.
 pub(crate) const PING_FAILED_MS: u32 = 5_000;
@@ -92,6 +98,8 @@ impl LiveMap {
 /// shows may have changed.
 pub(crate) struct LiveStore {
     map: RwLock<LiveMap>,
+    /// The list as the window reads it. Lock order: `map`, then `snapshot`.
+    snapshot: RwLock<Arc<ServerSnapshot>>,
     generation: AtomicU64,
     /// Set by every write; turned into a generation bump by [`LiveStore::tick`],
     /// so a scan landing hundreds of results a second moves the generation
@@ -101,6 +109,7 @@ pub(crate) struct LiveStore {
 
 static STORE: LazyLock<LiveStore> = LazyLock::new(|| LiveStore {
     map: RwLock::new(LiveMap::default()),
+    snapshot: RwLock::new(Arc::new(ServerSnapshot::empty())),
     generation: AtomicU64::new(1),
     dirty: AtomicBool::new(false),
 });
@@ -116,12 +125,39 @@ impl LiveStore {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
+    /// The current snapshot (a refcount bump).
+    pub(crate) fn snapshot(&self) -> Arc<ServerSnapshot> {
+        Arc::clone(
+            &self
+                .snapshot
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+    }
+
+    /// Make `snap` the current snapshot, its live table filled from what is
+    /// known, and move the generation.
+    pub(crate) fn publish(&self, snap: Arc<ServerSnapshot>) {
+        {
+            let map = self.read();
+            snap.fill_live(&map);
+            *self
+                .snapshot
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = snap;
+        }
+        self.touch();
+    }
+
     /// Record a query's result for `ip:port`.
     pub(crate) fn record(&self, ip: &str, port: i64, live: Live) {
-        self.map
+        let mut map = self
+            .map
             .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .put(ip, port, live);
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        map.put(ip, port, live);
+        self.snapshot().put_live(ip, port, &live);
+        drop(map);
         self.dirty.store(true, Ordering::Release);
     }
 
@@ -139,25 +175,28 @@ impl LiveStore {
             .map
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        match map.get_mut(ip, port) {
+        let live = match map.get_mut(ip, port) {
             Some(l) => {
                 l.players = Some(players);
                 l.max_players = Some(max_players);
                 l.bots = Some(bots);
                 l.failed = false;
+                *l
             }
-            None => map.put(
-                ip,
-                port,
-                Live {
+            None => {
+                let l = Live {
                     ms: None,
                     players: Some(players),
                     max_players: Some(max_players),
                     bots: Some(bots),
                     failed: false,
-                },
-            ),
-        }
+                };
+                map.put(ip, port, l);
+                l
+            }
+        };
+        self.snapshot().put_live(ip, port, &live);
+        drop(map);
         self.dirty.store(true, Ordering::Release);
     }
 
@@ -178,22 +217,5 @@ impl LiveStore {
 
     pub(crate) fn generation(&self) -> u64 {
         self.generation.load(Ordering::Acquire)
-    }
-}
-
-#[cfg(test)]
-impl LiveMap {
-    pub(crate) fn put_for_test(&mut self, ip: &str, port: i64, ms: u32) {
-        self.put(
-            ip,
-            port,
-            Live {
-                ms: Some(ms),
-                players: None,
-                max_players: None,
-                bots: None,
-                failed: false,
-            },
-        );
     }
 }

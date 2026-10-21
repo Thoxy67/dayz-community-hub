@@ -196,6 +196,17 @@ impl ServerData {
             .unwrap_or_default()
     }
 
+    /// The A2S entry under an exact key ("ip:query_port"), borrowed (for rows and panels
+    /// that know the query port and draw every frame).
+    pub fn a2s_entry(&self, key: &str) -> Option<&Entry<A2sDetailsDto>> {
+        self.a2s.get(key)
+    }
+
+    /// Whether a query of the server under this exact key is in flight.
+    pub fn a2s_loading(&self, key: &str) -> bool {
+        self.a2s_flights.iter().any(|(k, _)| k == key)
+    }
+
     pub fn has_fresh_a2s(&self, servers: &mut Servers, ip: &str, port: i64) -> bool {
         self.a2s
             .get(&Self::key(servers, ip, port))
@@ -330,11 +341,8 @@ impl ServerData {
             }
             None => t.is_pending(),
         });
-        for (asked, key, row, r) in done {
+        for (asked, key, _row, r) in done {
             changed = true;
-            if let Some(row) = row {
-                servers.remember([row]);
-            }
             if key != asked
                 && let Some(e) = self.a2s.get_mut(&asked)
             {

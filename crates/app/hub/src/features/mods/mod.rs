@@ -207,7 +207,11 @@ impl Hub {
         };
 
         let mods = spawn_blocking_mapped(move || ctl_clone.get_installed_mods()).await?;
-        state.write().await.mods_on_disk = Some(on_disk(&mods));
+        {
+            let mut s = state.write().await;
+            s.mods_on_disk = Some(on_disk(&mods));
+            s.profile_changed();
+        }
 
         Ok(mods
             .iter()
@@ -229,7 +233,9 @@ impl Hub {
             .unwrap_or_default();
 
         if installed_mods.is_empty() {
-            state.write().await.mods_on_disk = Some(FxHashMap::default());
+            let mut s = state.write().await;
+            s.mods_on_disk = Some(FxHashMap::default());
+            s.profile_changed();
             return Ok(vec![]);
         }
 
@@ -254,6 +260,7 @@ impl Hub {
             let mut s = state.write().await;
             s.mod_update_cache = remote_map;
             s.mods_on_disk = Some(on_disk(&installed_mods));
+            s.profile_changed();
         }
         Ok(dtos)
     }

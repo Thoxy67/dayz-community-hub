@@ -90,6 +90,21 @@ async fn a_mock_hub_answers_as_mock_ts_did() {
         258_643 - page_excluded_players(&hub).await
     );
     assert_eq!(page.stats.best_ping, Some(54));
+    // The native shape answers the same: an order of indices into the snapshot.
+    let snap = hub.servers_snapshot();
+    assert_eq!(snap.len(), 9500);
+    let native = hub.servers_order(query()).await.unwrap();
+    assert_eq!(native.total(), 9499);
+    assert_eq!(native.stats, page.stats);
+    for (n, row) in page.rows.iter().enumerate() {
+        let r = native.get(n).unwrap();
+        assert_eq!((r.ip(), r.query_port()), (row.ip.as_str(), row.query_port));
+        assert_eq!(r.ping_ms(), row.ping_ms);
+        assert_eq!(r.favorite(), row.favorite);
+        assert_eq!(r.mods_missing(), row.mods_missing);
+    }
+    let maps = hub.server_maps().await.unwrap();
+    assert_eq!(maps.iter().map(|m| m.count).sum::<u32>(), 9500);
     let first = &page.rows[0];
     assert_eq!(first.name, "4100 | EUROPE - DE");
     assert_eq!(first.ping_ms, Some(92));
@@ -219,4 +234,77 @@ async fn page_excluded_players(hub: &Hub) -> u64 {
         .filter(|s| &s.ip == ip)
         .map(|s| s.players as u64)
         .sum()
+}
+
+/// How long re-filtering the 9 500-server mock takes (the window does it on
+/// every query change). `cargo test -p dz-hub --features mock --release
+/// refilter_timings -- --nocapture` prints the figures; the bound here is
+/// loose so a debug build passes.
+#[test]
+fn refilter_timings() {
+    use crate::features::browser::{ProfileView, ServerSnapshot, SortCol, order};
+    use std::time::{Duration, Instant};
+
+    let world = super::World::create(None).unwrap();
+    let list = Arc::new(world.server_list());
+    let t = Instant::now();
+    let snap = Arc::new(ServerSnapshot::build(
+        Arc::clone(&list),
+        &ProfileView::default(),
+    ));
+    let build = t.elapsed();
+    for s in &list.result {
+        snap.put_live(
+            &s.endpoint.ip,
+            s.endpoint.port,
+            &super::live_of(&s.endpoint.ip, s.endpoint.port),
+        );
+    }
+    assert_eq!(snap.len(), 9500);
+
+    // The median of a few runs, so one scheduler hiccup does not count.
+    let time = |q: &ServerQuery| -> (Duration, usize) {
+        let mut runs: Vec<(Duration, usize)> = (0..15)
+            .map(|_| {
+                let t = Instant::now();
+                let o = order(&snap, q);
+                (t.elapsed(), o.total())
+            })
+            .collect();
+        runs.sort();
+        runs[runs.len() / 2]
+    };
+    let mut cases: Vec<(String, ServerQuery)> = Vec::new();
+    cases.push(("everything".into(), query()));
+    for typed in ["d", "de", "dee", "deer"] {
+        let mut q = query();
+        q.search = typed.into();
+        cases.push((format!("search {typed:?}"), q));
+    }
+    let mut q = query();
+    q.hide_empty = true;
+    cases.push(("toggle hide empty".into(), q));
+    for (name, col, asc) in [
+        ("sort name", SortCol::Name, true),
+        ("sort players desc", SortCol::Players, false),
+        ("sort ping", SortCol::Ping, true),
+        ("sort map", SortCol::Map, true),
+        ("sort time", SortCol::Time, true),
+    ] {
+        let mut q = query();
+        q.sort = col;
+        q.asc = asc;
+        cases.push((name.into(), q));
+    }
+    let mut q = query();
+    q.map = Some("ChernarusPlus".into());
+    q.sort = SortCol::Ping;
+    cases.push(("map + sort ping".into(), q));
+
+    eprintln!("snapshot build: {build:?}");
+    for (name, q) in &cases {
+        let (d, total) = time(q);
+        eprintln!("{name:>20}: {d:>10?}  ({total} shown)");
+        assert!(d < Duration::from_millis(100), "{name}: {d:?}");
+    }
 }

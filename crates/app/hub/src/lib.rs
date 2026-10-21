@@ -21,6 +21,8 @@
 //! - `a2s`:
 //!   - `query_a2s(&self, ip: String, query_port: i64, game_port: Option<i64>) -> Result<Arc<A2sDetailsDto>, String>`
 //! - `browser`:
+//!   - `servers_snapshot(&self) -> Arc<ServerSnapshot>` (native: rows by index, live state in atomics)
+//!   - `servers_order(&self, query: ServerQuery) -> Result<ServerOrder, String>` (native: `Arc<[u32]>` + stats)
 //!   - `servers_query(&self, query: ServerQuery) -> Result<ServerPage, String>`
 //!   - `servers_lookup(&self, keys: Vec<String>) -> Result<Vec<Option<ServerRow>>, String>`
 //!   - `server_maps(&self) -> Result<Vec<MapCount>, String>`
@@ -179,7 +181,7 @@
 //!
 //! [`HubEvent`] has one variant per `tauri_specta::Event` (`LaunchDone`,
 //! `LaunchError`, `OfflineModeUpdated`, `OfflineModeError`,
-//! `SteamcmdDetected`, `CliArgs`, `ServersChanged` (at most 2/s),
+//! `SteamcmdDetected`, `CliArgs`, `ServersChanged` (a wake-up, at most ~30/s),
 //! `SourcesChanged` (at most 4/s), `RefreshChanged`, `PingScanProgress`
 //! (at most 2/s), `PlaySessionsChanged`, `GamepadInput`, `GamepadPads`), with
 //! the same payloads, plus `ModProgress`, `UpdateDownload` and `PingResults`.

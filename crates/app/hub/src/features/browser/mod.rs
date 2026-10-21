@@ -1,18 +1,28 @@
-//! The server browser, answered in Rust: the window asks for a filtered,
-//! sorted window of rows and never holds the list itself.
+//! The server browser, answered in Rust.
 //!
-//! - `servers_query` pages through the filtered list;
+//! - The window reads the list in process: [`Hub::servers_snapshot`] hands
+//!   the current [`ServerSnapshot`] (an `Arc`: the servers, their live and
+//!   profile state in atomics), and [`order`] / [`Hub::servers_order`] filter
+//!   and sort it into an `Arc<[u32]>` of indices with the header's counts.
+//!   Rows are read by index straight from the snapshot; pings land in it as
+//!   they arrive.
+//! - `servers_query` pages through the same order as owned rows, for the
+//!   control channel and the tests;
 //! - `start_scan` pings the whole list in the background, reporting progress
 //!   as `ping-scan-progress` events (see `ping`);
 //! - full servers are re-queried after every load, since the list's player
 //!   counts are often stale for them;
-//! - `servers-changed` tells the window, at most twice a second, that what
-//!   it shows may have changed.
+//! - `servers-changed` wakes the window when the list, the profile's flags
+//!   or live data moved, at most ~30 times a second.
 
 pub(crate) mod live;
 mod query;
+mod snapshot;
 
-pub use query::{ServerPage, ServerQuery, ServerRow};
+pub use query::{ServerPage, ServerQuery, ServerRow, ServerStats, SortCol, Tri};
+#[cfg(all(test, feature = "mock"))]
+pub(crate) use snapshot::ProfileView;
+pub use snapshot::{ServerOrder, ServerRef, ServerSnapshot, order};
 
 use crate::{Hub, HubEvent};
 use dz_api::ServerList;
@@ -26,14 +36,15 @@ use crate::error::ResultExt;
 use crate::features::ping::{self, PingState, ScanProgress};
 use crate::state::{AppState, SharedState};
 
-/// The list, or live data, changed: re-query what is on screen.
+/// The list, the profile's flags or live data changed: look at the snapshot again.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ServersChanged {
     pub generation: u64,
 }
 
-/// How often `servers-changed` may fire.
-const CHANGED_INTERVAL: Duration = Duration::from_millis(500);
+/// How often `servers-changed` may fire: the window picks the change up on
+/// its next frame, so a scan repaints it at most ~30 times a second.
+const CHANGED_INTERVAL: Duration = Duration::from_millis(33);
 /// Concurrent A2S queries of the full-server check.
 const VERIFY_CONCURRENT: usize = 8;
 const VERIFY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -45,14 +56,14 @@ pub struct MapCount {
     pub count: u32,
 }
 
-fn profile_view(s: &AppState) -> query::ProfileView {
+pub(crate) fn profile_view(s: &AppState) -> snapshot::ProfileView {
     let p = s.ctl.profile();
-    query::ProfileView {
+    snapshot::ProfileView {
         excluded: p.excluded_ips.iter().cloned().collect(),
         favorites: p
             .favorites
             .iter()
-            .map(|f| format!("{}:{}", f.ip, f.port))
+            .map(|f| (f.ip.clone(), i64::from(f.port)))
             .collect(),
         mods: s.mods_on_disk.as_ref().map(|disk| {
             disk.iter()
@@ -65,15 +76,28 @@ fn profile_view(s: &AppState) -> query::ProfileView {
     }
 }
 
+/// The list was replaced in `s`: build its snapshot and publish it.
+pub(crate) fn publish_snapshot(s: &AppState) {
+    let snap = ServerSnapshot::build(Arc::clone(&s.servers), &profile_view(s));
+    live::store().publish(Arc::new(snap));
+}
+
+/// The profile's flags (favourites, exclusions, mods on disk) may have
+/// changed in `s`: write them into the snapshot again.
+pub(crate) fn profile_changed(s: &AppState) {
+    let snap = live::store().snapshot();
+    if Arc::ptr_eq(snap.list(), &s.servers) {
+        snap.apply_profile(&profile_view(s));
+    }
+    live::store().touch();
+}
+
 /// A filtered, sorted window of the server list, with totals.
 async fn servers_query(hub: &Hub, query: ServerQuery) -> Result<ServerPage, String> {
-    let state = hub.state()?;
-    let (list, profile) = {
-        let s = state.read().await;
-        (Arc::clone(&s.servers), profile_view(&s))
-    };
+    hub.state()?;
+    let snap = live::store().snapshot();
     let generation = live::store().generation();
-    tokio::task::spawn_blocking(move || query::run(list, &profile, &query, generation))
+    tokio::task::spawn_blocking(move || query::run(&snap, &query, generation))
         .await
         .cmd_err()
 }
@@ -81,16 +105,13 @@ async fn servers_query(hub: &Hub, query: ServerQuery) -> Result<ServerPage, Stri
 /// Full rows for "ip:port" keys (query or game port), in the same order;
 /// null for a server that is not in the list.
 async fn servers_lookup(hub: &Hub, keys: Vec<String>) -> Result<Vec<Option<ServerRow>>, String> {
-    let state = hub.state()?;
-    let s = state.read().await;
-    let profile = profile_view(&s);
-    let live = live::store().read();
+    hub.state()?;
+    let snap = live::store().snapshot();
     Ok(keys
         .iter()
         .map(|k| {
             let (ip, port) = ping::parse_target(k)?;
-            s.find_flexible(ip, port)
-                .map(|srv| query::row(srv, &live, &profile))
+            snap.lookup(ip, port).map(|r| r.to_row())
         })
         .collect())
 }
@@ -99,23 +120,8 @@ async fn servers_lookup(hub: &Hub, keys: Vec<String>) -> Result<Vec<Option<Serve
 /// different cases ("chernarusplus", "ChernarusPlus"): they count as one map,
 /// named by its most common spelling.
 async fn server_maps(hub: &Hub) -> Result<Vec<MapCount>, String> {
-    let state = hub.state()?;
-    let list = Arc::clone(&state.read().await.servers);
-    tokio::task::spawn_blocking(move || {
-        let names = list.result.iter().map(|s| s.map.as_str());
-        let mut maps: Vec<MapCount> = count_maps(names)
-            .into_iter()
-            .map(|(map, count)| MapCount { map, count })
-            .collect();
-        maps.sort_by(|a, b| {
-            b.count
-                .cmp(&a.count)
-                .then_with(|| a.map.to_lowercase().cmp(&b.map.to_lowercase()))
-        });
-        maps
-    })
-    .await
-    .cmd_err()
+    hub.state()?;
+    Ok(live::store().snapshot().maps().to_vec())
 }
 
 /// Every query address to scan, in order: favorites, then history, then the
@@ -251,6 +257,21 @@ pub(crate) fn spawn_change_notifier(hub: Hub) {
 }
 
 impl Hub {
+    /// The server list as it stands, with its live and profile state (a
+    /// refcount bump; never waits). Empty before `initialize`.
+    pub fn servers_snapshot(&self) -> Arc<ServerSnapshot> {
+        live::store().snapshot()
+    }
+
+    /// The current snapshot filtered and sorted for `query` (its window is
+    /// ignored), off the async threads.
+    pub async fn servers_order(&self, query: ServerQuery) -> Result<ServerOrder, String> {
+        let snap = live::store().snapshot();
+        tokio::task::spawn_blocking(move || order(&snap, &query))
+            .await
+            .cmd_err()
+    }
+
     /// A filtered, sorted window of the server list, with totals.
     pub async fn servers_query(&self, query: ServerQuery) -> Result<ServerPage, String> {
         servers_query(self, query).await

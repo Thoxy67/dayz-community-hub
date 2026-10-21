@@ -38,9 +38,10 @@ regenerate with `QUERY=theme=chernarus make screenshots` and copy into `var/refe
   and index orders in process, the window reads them directly. Table in
   `plan/architecture.md` (Native first). When a Svelte behaviour exists only to be fast in a
   web view, port the *effect*, not the mechanism.
-- **Heavy work stays in Rust below the window** (`dz-hub`): the server list is filtered,
-  sorted, counted and paged by `servers_query`; the window holds only the rows on screen and
-  draws them with `ScrollArea::show_rows` (or the kit's virtual list).
+- **Heavy work stays in Rust below the window** (`dz-hub`): the server list is a
+  `ServerSnapshot` filtered, sorted and counted by `browser::order` (an `Arc<[u32]>` of
+  indices, via the `servers` store); the window draws only the rows on screen with
+  `ScrollArea::show_rows` (or the kit's virtual list), read from the snapshot by index.
 - **Tokens only.** Colours from `ui.tokens()` (`theme::Tokens`), sizes from `theme::size`,
   faces from `theme::font(Face, size)`, durations from `theme::motion`. Never a literal
   `Color32` in a view.

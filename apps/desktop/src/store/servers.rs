@@ -1,18 +1,25 @@
-//! The server list, as the window sees it: never the whole list (=
-//! `stores/servers.svelte.ts`).
+//! The server list, as the window sees it (= `stores/servers.svelte.ts`), read in
+//! process.
 //!
-//! The hub holds the nine-thousand-odd servers, their pings and live counts, and
-//! filters, sorts and counts them (`servers_query`, which the views call for the rows on
-//! screen). This store keeps the totals, the maps, the refresh and scan state, and the
-//! few servers other parts of the window mention (favourites, history, the rejoin card),
-//! fetched by address in batches ([`Servers::find`]). When the hub says something
-//! changed (`ServersChanged`, at most twice a second) those are asked for again, and
-//! [`Servers::generation`] tells the views to re-query.
+//! The hub publishes the list as an immutable [`ServerSnapshot`] (an `Arc`) whose rows
+//! carry their live state (pings, live counts) and the profile's flags in atomics the
+//! ping tasks write. This store holds the current snapshot and the browser's query; it
+//! asks for the filtered, sorted order ([`ServerOrder`]: an `Arc<[u32]>` of indices and
+//! the header's counts) only when the snapshot, the profile's flags or the query change
+//! (typing debounced, toggles at once, the newest request winning), and again when live
+//! data moved under a query that depends on it. The virtual list reads its visible rows
+//! straight from the snapshot by index: scrolling costs nothing, a ping appears in its
+//! row on the next frame, nothing is paged.
+//!
+//! The hub wakes the window (`ServersChanged`, at most ~30 times a second) when anything
+//! moved; [`Servers::poll`] picks the new state up on that frame.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use dz_hub::features::browser::{MapCount, ServerRow};
+use dz_hub::features::browser::{
+    MapCount, ServerOrder, ServerQuery, ServerRef, ServerRow, ServerSnapshot, SortCol, Tri, order,
+};
 use dz_hub::features::ping::{PingResultDto, ScanProgress, ScanState};
 use dz_hub::features::servers::AppStatsDto;
 use dz_hub::{Hub, HubEvent};
@@ -40,18 +47,64 @@ pub const STALE_MS: i64 = 10 * 60 * 1000;
 /// A ping at or above this is a timeout.
 pub const TIMEOUT_MS: u32 = 9999;
 
-/// Rows kept by address; past this the least recently asked-for are let go.
-const KNOWN_MAX: usize = 6000;
-/// Addresses re-asked for when the hub's data changes: the ones shown lately.
-const WATCHED_MAX: usize = 400;
-/// Lookups asked for in the same moment go as one batch.
-const LOOKUP_DELAY: Duration = Duration::from_millis(30);
-/// The maps and figures that follow the list's total, at most this often.
+/// Typing in the search waits this long after the last key (`rt::Debounce`'s 80 ms).
+pub const QUERY_DEBOUNCE: Duration = Duration::from_millis(80);
+/// Under a query that depends on live data (ping sort, hide full…), a scan landing
+/// results re-orders the list at most this often: rows show new pings at once, but
+/// do not jump under the pointer on every result.
+const LIVE_REORDER: Duration = Duration::from_millis(500);
+/// The title bar's figures that follow a new list, at most this often.
 const COUNTS_DELAY: Duration = Duration::from_secs(2);
+/// Owned rows kept for `find` (favourites, history, the rejoin card).
+const ROWS_MAX: usize = 512;
 
-type Lookup = (Vec<String>, Result<Vec<Option<ServerRow>>, String>);
 /// An explicit ping list in flight: its targets (pending until they answer).
 type PingList = (Vec<String>, Task<Result<(), String>>);
+
+/// Everything shown, no sort: the browser's query before the view sets one.
+pub fn default_query() -> ServerQuery {
+    ServerQuery {
+        search: String::new(),
+        map: None,
+        first_person: Tri::All,
+        password: Tri::All,
+        battleye: Tri::All,
+        modded: Tri::All,
+        official: Tri::All,
+        hide_empty: false,
+        hide_full: false,
+        max_ping: 0,
+        show_excluded: false,
+        sort: SortCol::None,
+        asc: true,
+        offset: 0,
+        limit: 0,
+    }
+}
+
+/// "ip:port" into its parts.
+fn split_key(k: &str) -> Option<(&str, i64)> {
+    let (ip, port) = k.rsplit_once(':')?;
+    Some((ip, port.parse().ok()?))
+}
+
+/// What an order was computed from: when one of these moves, it is asked again.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Seen {
+    list: u64,
+    profile: u64,
+    live: u64,
+}
+
+impl Seen {
+    fn of(s: &ServerSnapshot) -> Self {
+        Self {
+            list: s.generation(),
+            profile: s.profile_generation(),
+            live: s.live_stamp(),
+        }
+    }
+}
 
 /// Where a refresh has got (mirror of the hub's `RefreshPhase`, which it does not export).
 #[derive(serde::Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -84,10 +137,11 @@ pub struct RefreshState {
 pub struct Servers {
     hub: Hub,
     bus: Bus,
-    /// How many servers the hub holds.
+    /// How many servers the list holds (the snapshot's, deduplicated by the hub).
     pub total: u32,
     /// Why the hub has no list (API down and no cache), until a refresh works.
     pub list_error: Option<String>,
+    /// Every map, busiest first, each named by its most common spelling.
     pub maps: Vec<MapCount>,
     pub loading: bool,
     pub refreshing: bool,
@@ -96,7 +150,7 @@ pub struct Servers {
     /// The title bar's totals.
     pub stats: Option<AppStatsDto>,
     pub steam_players: Option<u32>,
-    /// Bumped when the hub's data changed: views re-query on it.
+    /// Moves whenever anything the rows show changed (the list, a flag, a ping).
     pub generation: u64,
     /// The hub's last word on the list's refresh, for the status bar.
     pub last_refresh: Option<RefreshState>,
@@ -104,30 +158,36 @@ pub struct Servers {
     pub scan: Option<(u32, u32)>,
     pub scan_paused: bool,
 
-    /// Rows seen, by "ip:query_port" and "ip:game_port", with when they were stored.
-    known: FxHashMap<String, (Arc<ServerRow>, u64)>,
-    stamp: u64,
-    /// Round trip per server (ms; ≥ 5000 is a timeout).
+    /// The list as the hub published it, and what of it was last seen.
+    snapshot: Arc<ServerSnapshot>,
+    seen: Seen,
+
+    /// The browser's query, its answer, and the answer on its way.
+    query: ServerQuery,
+    order: Option<ServerOrder>,
+    order_task: Option<(u64, Task<Option<ServerOrder>>)>,
+    order_req: u64,
+    /// When the query's debounce ends.
+    query_due: Option<Instant>,
+    /// The last time the order was asked for because of live data.
+    live_ordered: Option<Instant>,
+
+    /// Owned rows handed out by `find`, by "ip:port"; let go when anything changes.
+    rows: FxHashMap<String, Arc<ServerRow>>,
+    /// Round trips of servers pinged on request (ms; ≥ 5000 is a timeout), for those the
+    /// list lacks: a listed server's ping is in the snapshot.
     pub ping: FxHashMap<String, u32>,
     pub pending: FxHashSet<String>,
     pub timeouts: FxHashMap<String, u32>,
     pub a2s_failures: FxHashSet<String>,
 
-    wanted: FxHashSet<String>,
-    /// Addresses asked for with `find`, and when last.
-    watched: FxHashMap<String, u64>,
-    /// Addresses the hub said it does not list, until the next change.
-    missing: FxHashSet<String>,
-    lookup_due: Option<Instant>,
-    lookup: Option<Task<Lookup>>,
-
-    load_task: Option<Task<Result<Vec<MapCount>, String>>>,
+    /// `load` was asked: take the snapshot in on the next poll.
+    load_due: bool,
     /// The load was started by a refresh's end: (quiet, count) for its toast.
     load_after_refresh: Option<(bool, u32)>,
     first_load_done: bool,
     resume_task: Option<Task<(Option<ScanState>, RefreshState)>>,
     counts_due: Option<Instant>,
-    maps_task: Option<Task<Result<Vec<MapCount>, String>>>,
     refresh_task: Option<Task<Result<RefreshState, String>>>,
     refresh_id: u32,
     ended_id: u32,
@@ -143,6 +203,7 @@ pub struct Servers {
 
 impl Servers {
     pub fn new(hub: Hub, bus: Bus) -> Self {
+        let snapshot = hub.servers_snapshot();
         Self {
             hub,
             bus,
@@ -158,23 +219,24 @@ impl Servers {
             last_refresh: None,
             scan: None,
             scan_paused: false,
-            known: FxHashMap::default(),
-            stamp: 0,
+            seen: Seen::of(&snapshot),
+            snapshot,
+            query: default_query(),
+            order: None,
+            order_task: None,
+            order_req: 0,
+            query_due: None,
+            live_ordered: None,
+            rows: FxHashMap::default(),
             ping: FxHashMap::default(),
             pending: FxHashSet::default(),
             timeouts: FxHashMap::default(),
             a2s_failures: FxHashSet::default(),
-            wanted: FxHashSet::default(),
-            watched: FxHashMap::default(),
-            missing: FxHashSet::default(),
-            lookup_due: None,
-            lookup: None,
-            load_task: None,
+            load_due: false,
             load_after_refresh: None,
             first_load_done: false,
             resume_task: None,
             counts_due: None,
-            maps_task: None,
             refresh_task: None,
             refresh_id: 0,
             ended_id: 0,
@@ -189,108 +251,138 @@ impl Servers {
         }
     }
 
-    // ── rows ────────────────────────────────────────────────────────────────
+    // ── the list, in process ────────────────────────────────────────────────
 
-    /// Put rows from a query or a lookup where `find` and the pings see them.
-    pub fn remember(&mut self, rows: impl IntoIterator<Item = ServerRow>) {
-        if self.known.len() > KNOWN_MAX {
-            self.prune();
-        }
-        for r in rows {
-            let k = key_of(&r);
-            if let Some(ms) = r.ping_ms {
-                self.ping
-                    .insert(k.clone(), if r.ping_failed { TIMEOUT_MS } else { ms });
-            }
-            if r.unverified_full {
-                self.a2s_failures.insert(k.clone());
-            } else {
-                self.a2s_failures.remove(&k);
-            }
-            let game = format!("{}:{}", r.ip, r.game_port);
-            self.stamp += 1;
-            let row = Arc::new(r);
-            self.known.insert(game, (Arc::clone(&row), self.stamp));
-            self.known.insert(k, (row, self.stamp));
-        }
+    /// The list as it stands (rows by index, lookups by address).
+    pub fn snapshot(&self) -> &Arc<ServerSnapshot> {
+        &self.snapshot
     }
 
-    /// Let go of the oldest rows nobody has asked for lately, with their pings.
-    fn prune(&mut self) {
-        let target = KNOWN_MAX - 1000;
-        let mut by_age: Vec<(u64, String)> = self
-            .known
-            .iter()
-            .filter(|(k, _)| !self.watched.contains_key(*k))
-            .map(|(k, (_, s))| (*s, k.clone()))
-            .collect();
-        by_age.sort_unstable();
-        let excess = self.known.len().saturating_sub(target);
-        for (_, k) in by_age.into_iter().take(excess) {
-            self.known.remove(&k);
-            self.ping.remove(&k);
-        }
+    /// A listed server with its freshest state, by address (query or game port),
+    /// borrowed from the snapshot.
+    pub fn row(&self, ip: &str, port: i64) -> Option<ServerRef<'_>> {
+        self.snapshot.lookup(ip, port)
     }
 
-    fn watch(&mut self, key: &str) {
-        self.stamp += 1;
-        if let Some(s) = self.watched.get_mut(key) {
-            *s = self.stamp;
+    /// The browser's query as it stands (the last one set, maybe still debouncing).
+    pub fn query(&self) -> &ServerQuery {
+        &self.query
+    }
+
+    /// Set the browser's query. `debounce` for typing (the order follows
+    /// [`QUERY_DEBOUNCE`] after the last change); toggles and sorts go at once. The
+    /// last order stays shown until the new one is in.
+    pub fn set_query(&mut self, q: ServerQuery, debounce: bool) {
+        let q = ServerQuery {
+            offset: 0,
+            limit: 0,
+            ..q
+        };
+        if q == self.query {
             return;
         }
-        self.watched.insert(key.to_string(), self.stamp);
-        if self.watched.len() > WATCHED_MAX
-            && let Some(oldest) = self
-                .watched
-                .iter()
-                .min_by_key(|(_, s)| **s)
-                .map(|(k, _)| k.clone())
-        {
-            self.watched.remove(&oldest);
+        self.query = q;
+        if debounce {
+            self.query_due = Some(Instant::now() + QUERY_DEBOUNCE);
+            self.bus.ctx().request_repaint_after(QUERY_DEBOUNCE);
+        } else {
+            self.query_due = None;
+            self.ask_order();
         }
     }
 
-    /// A server by address, whether `port` is its query or its game port. What is not
-    /// known yet is fetched (batched with others asked for in the same moment) and
-    /// appears when it arrives; `None` meanwhile, and for servers the list lacks.
+    /// The browser's filtered, sorted list: indices into its snapshot, and the header's
+    /// counts. `None` before the first one is in.
+    pub fn order(&self) -> Option<&ServerOrder> {
+        self.order.as_ref()
+    }
+
+    /// An order is on its way (a query or a list change).
+    pub fn ordering(&self) -> bool {
+        self.order_task.is_some() || self.query_due.is_some()
+    }
+
+    /// Ask for the order of the current query on the current snapshot, superseding one
+    /// in flight. The very first is worked out here, so the list is there on the first
+    /// frame; later ones off the frame, the old order shown meanwhile.
+    fn ask_order(&mut self) {
+        self.order_req += 1;
+        let snap = Arc::clone(&self.snapshot);
+        let q = self.query.clone();
+        if !snap.is_empty() && self.order.as_ref().is_none_or(|o| o.snapshot.is_empty()) {
+            self.order = Some(order(&snap, &q));
+            self.order_task = None;
+            self.generation += 1;
+            return;
+        }
+        let req = self.order_req;
+        let task = rt::spawn(async move {
+            tokio::task::spawn_blocking(move || order(&snap, &q))
+                .await
+                .ok()
+        });
+        self.order_task = Some((req, task));
+    }
+
+    /// The round trip of a server, listed or pinged on request; `None` never pinged.
+    pub fn ping_ms(&self, ip: &str, port: i64) -> Option<u32> {
+        self.snapshot
+            .lookup(ip, port)
+            .and_then(|r| {
+                if r.ping_failed() {
+                    Some(TIMEOUT_MS)
+                } else {
+                    r.ping_ms()
+                }
+            })
+            .or_else(|| self.ping.get(&format!("{ip}:{port}")).copied())
+    }
+
+    /// How many servers have answered a ping or timed out.
+    pub fn pinged(&self) -> usize {
+        let listed = (0..self.snapshot.len() as u32)
+            .filter(|&i| self.snapshot.get(i).is_some_and(|r| r.ping_ms().is_some()))
+            .count();
+        listed
+            + self
+                .ping
+                .keys()
+                .filter(|k| {
+                    split_key(k).is_none_or(|(ip, port)| self.snapshot.find(ip, port).is_none())
+                })
+                .count()
+    }
+
+    /// A server by address, whether `port` is its query or its game port, as an owned
+    /// row (for the parts that keep one); `None` for servers the list lacks.
     pub fn find(&mut self, ip: &str, port: i64) -> Option<Arc<ServerRow>> {
         let key = format!("{ip}:{port}");
-        self.watch(&key);
-        let row = self.known.get(&key).map(|(r, _)| Arc::clone(r));
-        if row.is_none() && !self.missing.contains(&key) {
-            self.want(key);
+        if let Some(r) = self.rows.get(&key) {
+            return Some(Arc::clone(r));
         }
-        row
+        let row = Arc::new(self.snapshot.lookup(ip, port)?.to_row());
+        if self.rows.len() >= ROWS_MAX {
+            self.rows.clear();
+        }
+        self.rows.insert(key, Arc::clone(&row));
+        Some(row)
     }
 
-    /// A known row, without asking for it.
-    pub fn peek(&self, ip: &str, port: i64) -> Option<&ServerRow> {
-        self.known.get(&format!("{ip}:{port}")).map(|(r, _)| &**r)
+    /// A listed row, without keeping it.
+    pub fn peek(&self, ip: &str, port: i64) -> Option<Arc<ServerRow>> {
+        self.rows
+            .get(&format!("{ip}:{port}"))
+            .cloned()
+            .or_else(|| self.snapshot.lookup(ip, port).map(|r| Arc::new(r.to_row())))
     }
 
-    fn want(&mut self, key: String) {
-        self.wanted.insert(key);
-        if self.lookup_due.is_none() {
-            self.lookup_due = Some(Instant::now() + LOOKUP_DELAY);
-            self.bus.ctx().request_repaint_after(LOOKUP_DELAY);
+    /// Kept for callers that hold rows from a lookup: a listed row is in the snapshot
+    /// already (with its live state), so there is nothing to keep; owned rows handed
+    /// out by `find` are made again.
+    pub fn remember(&mut self, rows: impl IntoIterator<Item = ServerRow>) {
+        for r in rows {
+            self.rows.remove(&key_of(&r));
         }
-    }
-
-    fn start_lookup(&mut self) {
-        self.lookup_due = None;
-        // Before the list is loaded nothing can be found: keep the wish, `load` asks again.
-        if self.total == 0 || self.lookup.is_some() {
-            return;
-        }
-        if self.wanted.is_empty() {
-            return;
-        }
-        let keys: Vec<String> = self.wanted.drain().collect();
-        let hub = self.hub.clone();
-        self.lookup = Some(rt::spawn(async move {
-            let r = hub.servers_lookup(keys.clone()).await;
-            (keys, r)
-        }));
     }
 
     /// The freshest head-count for a row.
@@ -302,24 +394,73 @@ impl Servers {
         }
     }
 
-    /// A query answered by the server itself: shown at once, before the next change.
-    pub fn apply_live_count(&mut self, key: &str, players: i64, max: i64, bots: u32) {
-        if let Some((r, _)) = self.known.get(key) {
-            let mut row = (**r).clone();
-            row.players = players;
-            row.max_players = max;
-            row.bots = bots;
-            self.remember([row]);
+    /// A query answered by the server itself: the hub has written it into the
+    /// snapshot; the owned row is made again on the next `find`.
+    pub fn apply_live_count(&mut self, key: &str, _players: i64, _max: i64, _bots: u32) {
+        self.rows.remove(key);
+        self.generation += 1;
+    }
+
+    /// Take a new snapshot or new state of it in, and ask for what follows.
+    fn follow_snapshot(&mut self) -> bool {
+        let snap = self.hub.servers_snapshot();
+        let seen = Seen::of(&snap);
+        if seen == self.seen && Arc::ptr_eq(&snap, &self.snapshot) {
+            return false;
         }
+        let list_moved = seen.list != self.seen.list;
+        let flags_moved = list_moved || seen.profile != self.seen.profile;
+        self.snapshot = snap;
+        self.seen = seen;
+        self.rows.clear();
+        self.generation += 1;
+        if list_moved && self.first_load_done {
+            self.take_list_in();
+            if self.counts_due.is_none() {
+                self.counts_due = Some(Instant::now() + COUNTS_DELAY);
+                self.bus.ctx().request_repaint_after(COUNTS_DELAY);
+            }
+        }
+        if flags_moved {
+            self.ask_order();
+        } else if self.query.depends_on_live() {
+            self.order_for_live();
+        }
+        true
+    }
+
+    /// Live data moved under a query that depends on it: order again, at most every
+    /// [`LIVE_REORDER`].
+    fn order_for_live(&mut self) {
+        let now = Instant::now();
+        match self.live_ordered {
+            Some(at) if now < at + LIVE_REORDER => {
+                self.bus
+                    .ctx()
+                    .request_repaint_after(at + LIVE_REORDER - now);
+            }
+            _ => {
+                self.live_ordered = Some(now);
+                if self.order_task.is_none() {
+                    self.ask_order();
+                }
+            }
+        }
+    }
+
+    /// The total and the maps of the snapshot on hand.
+    fn take_list_in(&mut self) {
+        self.total = u32::try_from(self.snapshot.len()).unwrap_or(u32::MAX);
+        self.maps = self.snapshot.maps().to_vec();
     }
 
     // ── loading ─────────────────────────────────────────────────────────────
 
-    /// After start-up: the maps and the total.
+    /// After start-up, or a refresh: the list's total and maps (taken on the next poll).
     pub fn load(&mut self) {
         self.loading = true;
-        let hub = self.hub.clone();
-        self.load_task = Some(rt::spawn(async move { hub.server_maps().await }));
+        self.load_due = true;
+        self.bus.ctx().request_repaint();
     }
 
     /// After the first `load`: show what the hub is doing, and start only what a fresh
@@ -332,38 +473,11 @@ impl Servers {
         }));
     }
 
-    /// The list holds `total` servers now: show it, and fetch the maps and figures that
-    /// depend on it again, at most every two seconds.
-    fn follow_total(&mut self, total: u32) {
-        if total == self.total || self.refreshing {
-            return;
-        }
-        self.total = total;
-        if self.counts_due.is_none() {
-            self.counts_due = Some(Instant::now() + COUNTS_DELAY);
-            self.bus.ctx().request_repaint_after(COUNTS_DELAY);
-        }
-    }
-
-    /// Something the rows show changed here (the mods on disk): ask again.
+    /// Something the rows show changed here (the mods on disk): look again.
     pub fn touch(&mut self) {
-        self.changed(self.generation + 1);
-    }
-
-    fn changed(&mut self, generation: u64) {
-        self.generation = (self.generation + 1).max(generation);
-        self.reask();
-    }
-
-    /// Whatever other views show is asked for again, pings and counts included.
-    fn reask(&mut self) {
-        self.missing.clear();
-        let keys: Vec<String> = self.watched.keys().cloned().collect();
-        self.wanted.extend(keys);
-        if !self.wanted.is_empty() && self.lookup_due.is_none() {
-            self.lookup_due = Some(Instant::now() + LOOKUP_DELAY);
-            self.bus.ctx().request_repaint_after(LOOKUP_DELAY);
-        }
+        self.rows.clear();
+        self.generation += 1;
+        self.follow_snapshot();
     }
 
     /// Have the hub fetch a fresh list; `quiet` for the background refresh after a
@@ -419,7 +533,7 @@ impl Servers {
         let quiet = self.quiet;
         if st.phase == RefreshPhase::Done {
             self.list_error = None;
-            self.known.clear();
+            self.rows.clear();
             self.ping.clear();
             self.load();
             self.load_after_refresh = Some((quiet, st.count));
@@ -497,7 +611,10 @@ impl Servers {
     pub fn ping_visible(&mut self, keys: &[String], concurrency: u32, timeout_ms: u32) {
         let todo: Vec<String> = keys
             .iter()
-            .filter(|k| !self.pending.contains(*k) && !self.ping.contains_key(*k))
+            .filter(|k| {
+                !self.pending.contains(*k)
+                    && split_key(k).is_some_and(|(ip, port)| self.ping_ms(ip, port).is_none())
+            })
             .cloned()
             .collect();
         if todo.is_empty() {
@@ -551,16 +668,12 @@ impl Servers {
 
     pub fn on_event(&mut self, ev: &HubEvent) {
         match ev {
-            HubEvent::ServersChanged(c) => self.changed(c.generation),
+            // Picked up by `poll` on the frame this wakes.
+            HubEvent::ServersChanged(_) => {}
             HubEvent::PingScanProgress(p) => self.show_scan(p.0),
             HubEvent::RefreshChanged(r) => {
                 if let Some(st) = mirror(&r.0) {
                     self.follow(st);
-                }
-            }
-            HubEvent::SourcesChanged(s) => {
-                if self.first_load_done {
-                    self.follow_total(s.total);
                 }
             }
             HubEvent::PingResults(r) => self.apply_pings(r),
@@ -572,58 +685,23 @@ impl Servers {
         let mut changed = false;
         let now = Instant::now();
 
-        if let Some(due) = self.lookup_due {
-            if now >= due {
-                self.start_lookup();
-            } else {
-                self.bus.ctx().request_repaint_after(due - now);
-            }
-        }
-        if let Some(t) = &mut self.lookup
-            && let Some((keys, r)) = t.poll()
-        {
-            self.lookup = None;
-            if let Ok(rows) = r {
-                let mut found = Vec::new();
-                for (k, row) in keys.into_iter().zip(rows) {
-                    match row {
-                        Some(r) => found.push(r),
-                        None => {
-                            self.missing.insert(k);
-                        }
-                    }
-                }
-                self.remember(found);
-                changed = true;
-            }
-            // Wishes made while it was in flight.
-            if !self.wanted.is_empty() && self.lookup_due.is_none() {
-                self.lookup_due = Some(Instant::now());
-                self.bus.ctx().request_repaint();
-            }
-        }
+        changed |= self.follow_snapshot();
 
-        if let Some(t) = &mut self.load_task
-            && let Some(r) = t.poll()
-        {
-            self.load_task = None;
+        if self.load_due {
+            self.load_due = false;
             changed = true;
-            match r {
-                Ok(maps) => {
-                    self.total = maps.iter().map(|m| m.count).sum();
-                    self.maps = maps;
-                    self.last_refreshed = now_ms();
-                    self.generation += 1;
-                    self.reask();
-                    if !self.first_load_done {
-                        self.first_load_done = true;
-                        signals.push(Signal::ServersLoaded);
-                    }
-                    if let Some((false, count)) = self.load_after_refresh {
-                        self.bus.ok(tf("servers", "loaded", &[("count", &count)]));
-                    }
-                }
-                Err(e) => self.bus.err(tf("servers", "loadFailed", &[("error", &e)])),
+            self.take_list_in();
+            self.last_refreshed = now_ms();
+            self.generation += 1;
+            if !self.first_load_done {
+                self.first_load_done = true;
+                signals.push(Signal::ServersLoaded);
+            }
+            if self.order.is_none() {
+                self.ask_order();
+            }
+            if let Some((false, count)) = self.load_after_refresh {
+                self.bus.ok(tf("servers", "loaded", &[("count", &count)]));
             }
             if self.load_after_refresh.take().is_some() {
                 self.loading = false;
@@ -632,6 +710,39 @@ impl Servers {
                 // A refresh in flight owns the flag until it is done.
                 self.loading = self.refreshing && !self.quiet;
             }
+        }
+
+        if let Some(due) = self.query_due {
+            if now >= due {
+                self.query_due = None;
+                self.ask_order();
+            } else {
+                self.bus.ctx().request_repaint_after(due - now);
+            }
+        }
+        if let Some((req, t)) = &mut self.order_task
+            && let Some(o) = t.poll()
+        {
+            let req = *req;
+            self.order_task = None;
+            // An older answer than the newest request is dropped.
+            if req == self.order_req
+                && let Some(o) = o
+            {
+                self.order = Some(o);
+                self.generation += 1;
+                changed = true;
+            }
+        }
+        // Live data moved during a reorder wait: once it is over, order again.
+        if self.query.depends_on_live()
+            && self.order_task.is_none()
+            && self
+                .order
+                .as_ref()
+                .is_some_and(|o| o.live_stamp != self.snapshot.live_stamp())
+        {
+            self.order_for_live();
         }
 
         if let Some(t) = &mut self.resume_task
@@ -662,20 +773,9 @@ impl Servers {
         if let Some(due) = self.counts_due {
             if now >= due {
                 self.counts_due = None;
-                let hub = self.hub.clone();
-                self.maps_task = Some(rt::spawn(async move { hub.server_maps().await }));
                 self.load_stats();
             } else {
                 self.bus.ctx().request_repaint_after(due - now);
-            }
-        }
-        if let Some(t) = &mut self.maps_task
-            && let Some(r) = t.poll()
-        {
-            self.maps_task = None;
-            if let Ok(maps) = r {
-                self.maps = maps;
-                changed = true;
             }
         }
 

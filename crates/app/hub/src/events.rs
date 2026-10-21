@@ -11,7 +11,7 @@ pub use crate::features::dzch_cli::CliArgs;
 pub use crate::features::gamepad::{GamepadInput, GamepadPads};
 pub use crate::features::ping::{PingResultDto, PingScanProgress};
 pub use crate::features::servers::refresh::RefreshChanged;
-pub use crate::features::servers::sources::SourcesChanged;
+pub use crate::features::servers::sources::{Phase as SourcePhase, SourcesChanged};
 pub use crate::features::stats::PlaySessionsChanged;
 pub use crate::features::steamcmd::ModProgressEvent;
 pub use crate::features::steamcmd::detect::SteamcmdStatusDto;
@@ -33,7 +33,8 @@ pub enum HubEvent {
     SteamcmdDetected(SteamcmdStatusDto),
     /// A second launch, or a `dzch://` link, asked for something.
     CliArgs(CliArgs),
-    /// The list or live data changed: re-query what is on screen (≤ 2/s).
+    /// The list, the profile's flags or live data changed (≤ ~30/s): the window
+    /// reads the new state from `Hub::servers_snapshot` on its next frame.
     ServersChanged(ServersChanged),
     /// Where each source of the list has got (≤ 4/s).
     SourcesChanged(Box<SourcesChanged>),

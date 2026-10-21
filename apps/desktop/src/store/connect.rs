@@ -524,12 +524,6 @@ async fn flow_server(hub: Hub, bus: Bus, s: ServerRow, known: Option<String>, sn
     }
 }
 
-async fn remember(bus: &Bus, row: &Option<ServerRow>) {
-    if let Some(r) = row.clone() {
-        bus.run(move |cx| cx.stores.servers.remember([r]));
-    }
-}
-
 async fn flow_address(
     hub: Hub,
     bus: Bus,
@@ -539,7 +533,6 @@ async fn flow_address(
     snap: Snapshot,
 ) {
     let row = super::servers::lookup_one(&hub, &ip, i64::from(port)).await;
-    remember(&bus, &row).await;
     match row {
         Some(s) => flow_server(hub, bus, s, password, snap).await,
         None => {
@@ -556,7 +549,6 @@ async fn flow_address(
 
 async fn flow_direct(hub: Hub, bus: Bus, mut t: Target, snap: Snapshot) {
     let listed = super::servers::lookup_one(&hub, &t.ip, i64::from(t.port)).await;
-    remember(&bus, &listed).await;
     let name = listed
         .as_ref()
         .map_or_else(|| format!("{}:{}", t.ip, t.port), |l| l.name.clone());

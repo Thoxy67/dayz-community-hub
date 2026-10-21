@@ -193,6 +193,7 @@ impl Hub {
         crate::features::stats::open(&state.ctl.profile().history);
         state.ctl.rebuild_steamcmd();
         state.cached_avatar = None;
+        state.profile_changed();
         Ok(profile_to_dto(state.ctl.profile()))
     }
 

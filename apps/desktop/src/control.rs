@@ -392,7 +392,7 @@ pub fn state(app: &mut HubApp, ctx: &egui::Context) -> Value {
                 "favorites": s.profile.favorites.len(),
                 "history": s.profile.history.len(),
                 "mods": s.mods.installed.len(),
-                "pinged": s.servers.ping.len(),
+                "pinged": s.servers.pinged(),
             },
             "busy": {
                 "servers": s.servers.loading || s.servers.refreshing,
