@@ -1,5 +1,5 @@
 //! Where the server list comes from, and how far each source has got: the
-//! launcher list (dayzsalauncher.com), Steam's master (Web API or client),
+//! launcher list (dayzsalauncher.com), Steam's master (Web API),
 //! the servers kept from earlier lists. Shown above the server list; sent
 //! as `sources-changed` at most a few times a second.
 
@@ -27,14 +27,6 @@ pub enum Phase {
     Off,
 }
 
-/// How Steam's master is reached.
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum SteamVia {
-    WebApi,
-    SteamClient,
-}
-
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct DzsaStatus {
     pub phase: Phase,
@@ -48,15 +40,14 @@ pub struct DzsaStatus {
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct SteamStatus {
     pub phase: Phase,
-    pub via: Option<SteamVia>,
-    /// Why the other way, or none, was used: a sentence.
+    /// Off because the profile has no Steam Web API key: the only way the
+    /// master is asked.
+    pub needs_key: bool,
+    /// Why the listing failed: a sentence.
     pub note: Option<String>,
     /// Requests to the master answered, and planned so far (splits add some).
     pub requests_done: u32,
     pub requests_total: u32,
-    /// Web API requests the Steam client answered while the Web API was
-    /// rationing.
-    pub client_assists: u32,
     /// What is being asked now.
     pub current: Option<String>,
     /// The master refused; asked again at this time (Unix seconds).

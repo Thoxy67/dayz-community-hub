@@ -16,7 +16,7 @@ use crate::features::native::GeoLocation;
 use crate::features::offline::MissionSaveDto;
 use crate::features::servers::ModDto;
 use crate::features::servers::sources::{
-    DzsaStatus, KeptStatus, Phase, SourcesChanged, SteamStatus, SteamVia,
+    DzsaStatus, KeptStatus, Phase, SourcesChanged, SteamStatus,
 };
 use crate::features::steam::SteamMeDto;
 use crate::features::steamcmd::SteamcmdDirsDto;
@@ -52,11 +52,10 @@ pub(super) fn sources(now: i64) -> SourcesChanged {
         },
         steam: SteamStatus {
             phase: Phase::Running,
-            via: Some(SteamVia::WebApi),
+            needs_key: false,
             note: None,
             requests_done: 37,
             requests_total: 112,
-            client_assists: 3,
             current: Some("empty · map chernarusplus · d*".to_string()),
             waiting_until: None,
             listed: 41_230,

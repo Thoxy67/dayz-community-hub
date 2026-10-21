@@ -1,19 +1,14 @@
 //! The servers Steam's master lists that the launcher list lacks, found and
 //! added to the list as they answer.
 //!
-//! The master is reached the best way at hand, the other as its fallback:
-//!
-//! - **Web API** (a key in the profile): about two seconds a request, a few
-//!   at once, no Steam session. A request that hits the 10 000 cap is split
-//!   by how the names it answered start, whatever the script, plus the rest
-//!   (`dz_api::WebPartition`), which brings back the honest servers farms
-//!   crowd out. Its silent rationing (an empty answer) is waited out, the
-//!   Steam client taking the next requests meanwhile until it refuses too.
-//! - **Steam client** (Steamworks): addresses in about a second, but about
-//!   one request a minute once past a short burst, so only the most useful
-//!   (servers with players, then the busiest maps); each runs in its own
-//!   short session (Steam shows DayZ running for those seconds), a refused
-//!   one asked again after a pause.
+//! The master is reached through the Steam **Web API** only (a key in the
+//! profile): about two seconds a request, a few at once, no Steam session.
+//! A request that hits the 10 000 cap is split by how the names it answered
+//! start, whatever the script, plus the rest (`dz_api::WebPartition`), which
+//! brings back the honest servers farms crowd out. Its silent rationing (an
+//! empty answer) is waited out. Without a key the listing does not run and
+//! says so (`SteamStatus::needs_key`): the Steam client is never asked, as it
+//! showed DayZ running for each request and answered about once a minute.
 //!
 //! Both give addresses only: each new one is queried here (A2S_INFO, and
 //! A2S_RULES for its mods), many at once, and lands in the list as soon as
@@ -42,13 +37,12 @@ use std::time::{Duration, Instant};
 
 use crate::Hub;
 use dz_api::{FarmCounter, Mod, Server, ServerList, SteamListed, WebPartition};
-use dz_steamworks::{Answer, Filters, ListEvent};
 use futures_util::stream::FuturesUnordered;
 use futures_util::{StreamExt, stream};
 use rustc_hash::{FxHashMap, FxHashSet};
 use tokio::sync::mpsc;
 
-use super::sources::{self, Phase, SteamVia};
+use super::sources::{self, Phase};
 use crate::features::browser::live::{self, Live};
 use crate::state::SharedState;
 
@@ -81,12 +75,6 @@ const WEB_THROTTLE_GIVE_UP: u32 = 8;
 /// at least this many servers on, at most [`WEB_MAX_MAPS`].
 const WEB_MIN_SERVERS: usize = 2;
 const WEB_MAX_MAPS: usize = 60;
-/// Wait after the client's master refused a request (about one a minute).
-const THROTTLE_WAIT: Duration = Duration::from_secs(60);
-/// Times a refused request is asked again.
-const RETRIES: usize = 2;
-/// Maps asked for one by one through the client, the busiest first.
-const CLIENT_MAX_MAPS: usize = 8;
 /// A listing is not started again sooner than this.
 const MIN_INTERVAL: Duration = Duration::from_secs(10 * 60);
 /// Times a kept server is asked before it is taken for gone.
@@ -434,17 +422,21 @@ async fn run(hub: &Hub) {
         return;
     }
     let started = Instant::now();
-    found().last = Some(started);
     CANCEL.store(false, Ordering::SeqCst);
-    let web_key = crate::features::steam::access::web_key(&state).await;
+    let Some(web_key) = crate::features::steam::access::web_key(&state).await else {
+        sources::update(|s| {
+            s.steam = sources::SteamStatus {
+                phase: Phase::Off,
+                needs_key: true,
+                ..Default::default()
+            };
+        });
+        return;
+    };
+    found().last = Some(started);
     sources::update(|s| {
         s.steam = sources::SteamStatus {
             phase: Phase::Running,
-            via: Some(if web_key.is_some() {
-                SteamVia::WebApi
-            } else {
-                SteamVia::SteamClient
-            }),
             started: Some(sources::now()),
             ..Default::default()
         };
@@ -609,37 +601,20 @@ fn maps_by_size(list: &ServerList) -> Vec<(String, usize)> {
     maps.into_iter().map(|(m, n)| (m.to_owned(), n)).collect()
 }
 
-/// Ask the master the best way at hand: the Web API with a key, the Steam
-/// client otherwise or when the Web API fails outright.
+/// Ask the master through the Web API: every map with servers enough, the
+/// busiest first.
 async fn list(
-    web_key: Option<String>,
+    key: String,
     maps: &[(String, usize)],
     tx: &mpsc::UnboundedSender<Candidate>,
 ) -> Result<(), String> {
-    if let Some(key) = web_key {
-        let names: Vec<String> = maps
-            .iter()
-            .filter(|(_, n)| *n >= WEB_MIN_SERVERS)
-            .take(WEB_MAX_MAPS)
-            .map(|(m, _)| m.clone())
-            .collect();
-        match list_web(&key, &names, tx).await {
-            Ok(()) => return Ok(()),
-            Err(e) => sources::update(|s| {
-                s.steam.via = Some(SteamVia::SteamClient);
-                s.steam.note = Some(format!("Web API: {e}. Through the Steam client instead."));
-            }),
-        }
-    }
     let names: Vec<String> = maps
         .iter()
-        .take(CLIENT_MAX_MAPS)
+        .filter(|(_, n)| *n >= WEB_MIN_SERVERS)
+        .take(WEB_MAX_MAPS)
         .map(|(m, _)| m.clone())
         .collect();
-    let tx = tx.clone();
-    tokio::task::spawn_blocking(move || list_client(&names, &tx))
-        .await
-        .map_err(|e| e.to_string())?
+    list_web(&key, &names, tx).await
 }
 
 /// Hand on what a request listed: at once for servers Steam counts players
@@ -666,9 +641,9 @@ fn hand_on(rows: Vec<Candidate>, tx: &mpsc::UnboundedSender<Candidate>) {
     });
 }
 
-/// Through the Web API, splitting what hits the cap. `Err` only when the
-/// very first request fails (a refused key, Steam unreachable): the client
-/// then takes over.
+/// Through the Web API, splitting what hits the cap. `Err` when the very
+/// first request fails (a refused key, Steam unreachable) or the master
+/// keeps withholding answers.
 async fn list_web(
     key: &str,
     maps: &[String],
@@ -684,10 +659,6 @@ async fn list_web(
     let mut paused_until: Option<Instant> = None;
     let mut backoff = WEB_THROTTLE_FIRST;
     let mut pauses = 0;
-    // Whether the Steam client can stand in during a pause: at all (it
-    // runs), and in this pause (it has not refused yet).
-    let mut client_usable = true;
-    let mut client_helps = false;
     loop {
         if CANCEL.load(Ordering::SeqCst) {
             return Ok(());
@@ -695,35 +666,6 @@ async fn list_web(
         if let Some(until) = paused_until {
             if Instant::now() < until {
                 if running.is_empty() {
-                    // The Steam client has its own allowance: it takes the
-                    // next requests until it refuses too.
-                    if client_helps && let Some(part) = queue.pop_front() {
-                        let asked = part.clone();
-                        let outcome = tokio::task::spawn_blocking(move || client_try(&asked))
-                            .await
-                            .unwrap_or(ClientTry::Refused);
-                        match outcome {
-                            ClientTry::Rows(rows) => {
-                                sources::update(|s| {
-                                    s.steam.requests_done += 1;
-                                    s.steam.client_assists += 1;
-                                });
-                                hand_on(rows, tx);
-                            }
-                            // Splitting needs the names, which the Web API gives.
-                            ClientTry::Capped => queue.push_front(part),
-                            ClientTry::Refused => {
-                                queue.push_front(part);
-                                client_helps = false;
-                            }
-                            ClientTry::Unavailable => {
-                                queue.push_front(part);
-                                client_usable = false;
-                                client_helps = false;
-                            }
-                        }
-                        continue;
-                    }
                     tokio::time::sleep(Duration::from_millis(200)).await;
                     continue;
                 }
@@ -771,7 +713,6 @@ async fn list_web(
                 sources::update(|s| s.steam.waiting_until = Some(shown));
                 paused_until = Some(until);
                 backoff = (backoff * 2).min(WEB_THROTTLE_MAX);
-                client_helps = client_usable;
             }
             Ok(rows) => {
                 answered_once = true;
@@ -803,124 +744,6 @@ async fn list_web(
         }
     }
     Ok(())
-}
-
-/// What the Steam client answered for a Web API request.
-enum ClientTry {
-    Rows(Vec<Candidate>),
-    /// At the cap: the Web API asks it again, to split it by names.
-    Capped,
-    /// Nothing: rationing, or nothing matched (the Web API asks again).
-    Refused,
-    /// Steam not running, or no session.
-    Unavailable,
-}
-
-/// One Web API request through the Steam client, in a short session.
-/// Blocking.
-fn client_try(part: &WebPartition) -> ClientTry {
-    let mut rows = Vec::new();
-    let mut listing = None;
-    let outcome = dz_steamworks::list_servers(&[part.pairs()], &CANCEL, &mut |ev| match ev {
-        ListEvent::Found { servers, .. } => {
-            rows.extend(servers.into_iter().map(|s| Candidate {
-                ip: s.ip.to_string(),
-                query_port: s.query_port,
-                game_port: s.game_port,
-                empty: part.empty,
-            }));
-        }
-        ListEvent::Done(l) => listing = Some(l),
-    });
-    match (outcome, listing) {
-        (Err(_), _) => ClientTry::Unavailable,
-        (Ok(_), Some(l)) if l.capped => ClientTry::Capped,
-        (Ok(_), Some(l)) if l.listed > 0 => ClientTry::Rows(rows),
-        _ => ClientTry::Refused,
-    }
-}
-
-/// Through the Steam client, one short session per partition, waiting out
-/// the master's refusals. Blocking.
-fn list_client(maps: &[String], tx: &mpsc::UnboundedSender<Candidate>) -> Result<(), String> {
-    let parts = dz_steamworks::partitions(maps);
-    sources::update(|s| s.steam.requests_total = parts.len() as u32);
-    for part in &parts {
-        sources::update(|s| s.steam.current = Some(client_label(part)));
-        for attempt in 0..=RETRIES {
-            if CANCEL.load(Ordering::SeqCst) {
-                return Ok(());
-            }
-            let mut rows: Vec<Candidate> = Vec::new();
-            let mut refused = false;
-            let outcome = dz_steamworks::list_servers(
-                std::slice::from_ref(part),
-                &CANCEL,
-                &mut |ev| match ev {
-                    ListEvent::Found { empty, servers } => {
-                        let found = servers.into_iter().map(|s| Candidate {
-                            ip: s.ip.to_string(),
-                            query_port: s.query_port,
-                            game_port: s.game_port,
-                            empty,
-                        });
-                        // With players: on at once; empty: once the whole
-                        // partition is in, so farms can be told.
-                        if empty == Some(false) {
-                            hand_on(found.collect(), tx);
-                        } else {
-                            rows.extend(found);
-                        }
-                    }
-                    ListEvent::Done(l) => {
-                        refused |= l.answer == Answer::NoServers && l.listed == 0;
-                        hand_on(std::mem::take(&mut rows), tx);
-                    }
-                },
-            );
-            match outcome {
-                // Steam not running, busy, or the account not logged in.
-                Err(e) => return Err(e),
-                Ok(_) if refused && attempt < RETRIES => {
-                    let until = sources::now() + THROTTLE_WAIT.as_secs() as i64;
-                    sources::update(|s| s.steam.waiting_until = Some(until));
-                    let went_on = wait(THROTTLE_WAIT);
-                    sources::update(|s| s.steam.waiting_until = None);
-                    if !went_on {
-                        return Ok(());
-                    }
-                }
-                Ok(_) => break,
-            }
-        }
-        sources::update(|s| s.steam.requests_done += 1);
-    }
-    Ok(())
-}
-
-fn client_label(f: &Filters) -> String {
-    let mut parts = Vec::new();
-    match dz_steamworks::empty_of(f) {
-        Some(true) => parts.push("empty".to_owned()),
-        Some(false) => parts.push("with players".to_owned()),
-        None => {}
-    }
-    if let Some((_, map)) = f.iter().find(|(k, _)| k == "map") {
-        parts.push(format!("map {map}"));
-    }
-    parts.join(" · ")
-}
-
-/// Sleep `d` unless the listing is stopped; false when it is.
-fn wait(d: Duration) -> bool {
-    let end = Instant::now() + d;
-    while Instant::now() < end {
-        if CANCEL.load(Ordering::SeqCst) {
-            return false;
-        }
-        std::thread::sleep(Duration::from_millis(200));
-    }
-    true
 }
 
 // ── the servers themselves ──────────────────────────────────────────────
