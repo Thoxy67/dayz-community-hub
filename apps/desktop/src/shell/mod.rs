@@ -41,6 +41,8 @@ mod statusbar;
 mod titlebar;
 mod window;
 
+pub(crate) use dialogs::shortcut_list;
+
 use std::sync::{Arc, OnceLock};
 
 use egui::mutex::Mutex;
@@ -199,6 +201,12 @@ pub fn titlebar(ui: &mut egui::Ui, cx: &mut Ctx) {
     let st = state(ui.ctx());
     let mut st = st.lock();
     titlebar::show(ui, cx, &mut st.menus);
+}
+
+/// The launcher's mark (`/icon.svg`, its own colours) fitted in `rect`: the title bar's,
+/// and the setup's.
+pub fn logo(ui: &egui::Ui, rect: egui::Rect) {
+    titlebar::logo(ui, rect);
 }
 
 /// The navigation rail.

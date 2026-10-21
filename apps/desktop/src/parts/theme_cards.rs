@@ -228,6 +228,8 @@ impl<'a> ThemeSwatches<'a> {
             let p = ui.painter();
             if on {
                 p.add(paint::glow_soft(&tk).as_shape(r, CornerRadius::same(size::RADIUS_MD)));
+                // The glow is a filled shape: the page's ground goes back under the tint.
+                p.rect_filled(r, CornerRadius::same(size::RADIUS_MD), tk.bg);
                 paint::plate(p, r, size::RADIUS_MD, alpha(tk.accent, 0.08), tk.accent);
             } else {
                 paint::plate(

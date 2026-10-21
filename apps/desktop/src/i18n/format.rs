@@ -257,7 +257,7 @@ pub fn date_str(s: &str) -> String {
 }
 
 /// Short month names as they read inside a date (genitive in Russian).
-fn month(l: Locale, m: u32) -> &'static str {
+pub fn month(l: Locale, m: u32) -> &'static str {
     const EN: [&str; 12] = [
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ];

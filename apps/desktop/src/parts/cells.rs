@@ -1081,6 +1081,9 @@ pub struct JoinButton {
     quiet: bool,
     lit: bool,
     group_hover: bool,
+    width: Option<f32>,
+    /// Another hint and name than "Connect" (an offline mission's map).
+    tip: Option<String>,
 }
 
 impl Default for JoinButton {
@@ -1097,7 +1100,22 @@ impl JoinButton {
             quiet: false,
             lit: false,
             group_hover: false,
+            width: None,
+            tip: None,
         }
+    }
+
+    /// Its hint and accessible name, when it launches something else than a server (the
+    /// stats' offline missions: the map's name).
+    pub fn tip(mut self, t: impl Into<String>) -> Self {
+        self.tip = Some(t.into());
+        self
+    }
+
+    /// As wide as this (`[&_button]:w-full`: the server panel's foot).
+    pub fn width(mut self, w: f32) -> Self {
+        self.width = Some(w);
+        self
     }
 
     /// `Size::Sm` (the default) or `Size::Lg`.
@@ -1130,8 +1148,10 @@ impl JoinButton {
 
 impl Widget for JoinButton {
     fn ui(self, ui: &mut Ui) -> Response {
-        let label = t("servers", "connect");
-        let tip = t("servers", "connectTitle");
+        let (label, tip) = match self.tip.as_deref() {
+            Some(s) => (s, s),
+            None => (t("servers", "connect"), t("servers", "connectTitle")),
+        };
         if self.quiet && self.compact {
             let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size::CONTROL), Sense::click());
             resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, label));
@@ -1148,11 +1168,14 @@ impl Widget for JoinButton {
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .tip_kbd(tip, "", Side::Top);
         }
-        let b = if self.compact {
+        let mut b = if self.compact {
             Button::new(label).size(Size::Icon)
         } else {
             Button::new(label).size(self.size)
         };
+        if let Some(w) = self.width {
+            b = b.width(w);
+        }
         ui.add(
             b.variant(Variant::Play)
                 .icon(lucide::PLAY)

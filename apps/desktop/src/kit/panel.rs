@@ -496,6 +496,8 @@ pub struct EmptyState<'a> {
     icon: Option<Icon>,
     title: &'a str,
     text: &'a str,
+    error: &'a str,
+    detail: &'a str,
     compact: bool,
 }
 
@@ -511,6 +513,8 @@ impl<'a> EmptyState<'a> {
             icon: None,
             title: "",
             text: "",
+            error: "",
+            detail: "",
             compact: false,
         }
     }
@@ -527,6 +531,18 @@ impl<'a> EmptyState<'a> {
 
     pub fn text(mut self, t: &'a str) -> Self {
         self.text = t;
+        self
+    }
+
+    /// What went wrong, in red and selectable, before the text.
+    pub fn error(mut self, e: &'a str) -> Self {
+        self.error = e;
+        self
+    }
+
+    /// A raw detail (an error's own words) after the text: mono, faint, selectable.
+    pub fn detail(mut self, d: &'a str) -> Self {
+        self.detail = d;
         self
     }
 
@@ -601,6 +617,22 @@ impl<'a> EmptyState<'a> {
             let (r, _) = child.allocate_exact_size(g.size(), Sense::hover());
             child.painter().galley(r.min, g, t.fg);
         }
+        if !self.error.is_empty() {
+            let w = 300.0_f32.min(full.width());
+            child.allocate_ui(Vec2::new(w, 0.0), |ui| {
+                ui.with_layout(Layout::top_down(Align::Center), |ui| {
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(self.error)
+                                .font(font(Face::Sans, size::TEXT_XS))
+                                .color(t.err),
+                        )
+                        .wrap()
+                        .selectable(true),
+                    );
+                });
+            });
+        }
         if !self.text.is_empty() {
             let mut job = LayoutJob::simple(
                 self.text.to_owned(),
@@ -618,11 +650,39 @@ impl<'a> EmptyState<'a> {
                 .painter()
                 .galley(Pos2::new(r.center().x, r.top()), g, t.fg_muted);
         }
+        if !self.detail.is_empty() {
+            let w = 300.0_f32.min(full.width());
+            child.allocate_ui(Vec2::new(w, 0.0), |ui| {
+                ui.with_layout(Layout::top_down(Align::Center), |ui| {
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(self.detail)
+                                .font(font(Face::Mono, size::TEXT_3XS))
+                                .color(t.fg_faint),
+                        )
+                        .wrap()
+                        .selectable(true),
+                    );
+                });
+            });
+        }
         child.add_space(4.0);
-        child.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 6.0;
-            action(ui);
-        });
+        // The buttons centred under the words: a row as wide as they were last frame.
+        let aw_id = hid.with("actions-w");
+        let aw: f32 = ui.data(|d| d.get_temp(aw_id)).unwrap_or(0.0);
+        let row = child.allocate_ui_with_layout(
+            Vec2::new(aw.max(1.0), 0.0),
+            Layout::left_to_right(Align::Center),
+            |ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                action(ui);
+            },
+        );
+        let used = row.response.rect.width();
+        if (used - aw).abs() > 0.5 {
+            ui.data_mut(|d| d.insert_temp(aw_id, used));
+            ui.ctx().request_repaint();
+        }
         let h = child.cursor().top() - start;
         if (h - last_h).abs() > 0.5 {
             ui.data_mut(|d| d.insert_temp(hid, h));

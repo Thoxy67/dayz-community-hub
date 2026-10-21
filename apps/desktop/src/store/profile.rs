@@ -78,6 +78,8 @@ pub struct Profile {
     pub favorites: Vec<Favorite>,
     pub history: Vec<History>,
     pub avatar_url: Option<String>,
+    /// Account writes that failed (the settings form puts the player's edits back).
+    pub account_failures: u32,
     favorite_keys: FxHashSet<String>,
     excluded: FxHashSet<String>,
     load: Option<Task<Result<ProfileDto, String>>>,
@@ -98,6 +100,7 @@ impl Profile {
             favorites: Vec::new(),
             history: Vec::new(),
             avatar_url: None,
+            account_failures: 0,
             favorite_keys: FxHashSet::default(),
             excluded: FxHashSet::default(),
             load: None,
@@ -243,7 +246,17 @@ impl Profile {
 
     // ── account ─────────────────────────────────────────────────────────────
 
+    /// Optimistic: the profile takes the values at once; a failed write reloads it.
     pub fn save_account(&mut self, a: AccountSettings) {
+        if let Some(p) = &mut self.data {
+            p.player.clone_from(&a.player);
+            p.steam_login.clone_from(&a.steam_login);
+            p.steam_root.clone_from(&a.steam_root);
+            p.steamcmd_path.clone_from(&a.steamcmd_path);
+            p.steam_api_key.clone_from(&a.steam_api_key);
+            p.steam_id.clone_from(&a.steam_id);
+            p.user_location = a.user_location;
+        }
         let mut s = self.settings();
         s.player = a.player;
         s.steam_login = a.steam_login;
@@ -604,11 +617,15 @@ impl Profile {
                     self.bus.ok(t("settings", "profileSettingsSaved"));
                     signals.push(Signal::AccountSaved);
                 }
-                Err(e) => self.bus.err(tf(
-                    "settings",
-                    "profileSettingsSaveFailed",
-                    &[("error", &e)],
-                )),
+                Err(e) => {
+                    self.bus.err(tf(
+                        "settings",
+                        "profileSettingsSaveFailed",
+                        &[("error", &e)],
+                    ));
+                    self.account_failures = self.account_failures.wrapping_add(1);
+                    self.load();
+                }
             }
         }
         if let Some(task) = &mut self.ping

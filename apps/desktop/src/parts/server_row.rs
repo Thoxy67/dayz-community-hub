@@ -165,6 +165,44 @@ pub struct RowData<'a> {
 }
 
 impl<'a> RowData<'a> {
+    /// A listed server read straight from the hub's snapshot (no copy): its live
+    /// state and flags as they stand this frame.
+    pub fn from_server(r: &dz_hub::features::browser::ServerRef<'a>) -> Self {
+        let s = r.server;
+        Self {
+            ip: &s.endpoint.ip,
+            query_port: s.endpoint.port,
+            game_port: s.game_port,
+            join_port: s.endpoint.port,
+            name: &s.name,
+            map: r.map,
+            time: &s.time,
+            version: &s.version,
+            environment: &s.environment,
+            mods_count: s.mods.len(),
+            mods_missing: r.mods_missing(),
+            mods_stale: r.mods_stale(),
+            flags: Flags {
+                password: s.password,
+                first_person: s.first_person_only,
+                battleye: s.battl_eye.unwrap_or(false),
+                saved_password: false,
+                official: s.official,
+                mimics_official: r.mimics_official,
+            },
+            players: u32::try_from(r.players().max(0)).unwrap_or(u32::MAX),
+            max_players: u32::try_from(r.max_players().max(0)).unwrap_or(u32::MAX),
+            bots: r.bots(),
+            players_loading: false,
+            ping_ms: r.ping_ms(),
+            ping_pending: false,
+            unverified_full: r.unverified_full(),
+            favorite: r.favorite(),
+            excluded: r.excluded(),
+            listed: true,
+        }
+    }
+
     /// A listed server, as the hub's page gives it.
     pub fn from_row(r: &'a dz_hub::features::browser::ServerRow) -> Self {
         Self {
@@ -248,6 +286,8 @@ pub struct RowMenuItem<'a> {
     pub icon: Icon,
     pub label: &'a str,
     pub danger: bool,
+    /// Its shortcut, written at the right ("Del"); empty for none.
+    pub kbd: &'a str,
 }
 
 /// What the user did to a row this frame.
@@ -1187,6 +1227,9 @@ pub fn server_menu(
         menu::separator(ui);
         for m in more {
             let mut it = MenuItem::new(m.label).icon(m.icon);
+            if !m.kbd.is_empty() {
+                it = it.kbd(m.kbd);
+            }
             if m.danger {
                 it = it.danger();
             }

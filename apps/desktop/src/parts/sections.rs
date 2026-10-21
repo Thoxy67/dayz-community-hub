@@ -536,6 +536,8 @@ pub struct Empty<'a> {
     icon: Option<Icon>,
     title: &'a str,
     text: &'a str,
+    error: &'a str,
+    detail: &'a str,
     compact: bool,
 }
 
@@ -551,6 +553,8 @@ impl<'a> Empty<'a> {
             icon: None,
             title: "",
             text: "",
+            error: "",
+            detail: "",
             compact: false,
         }
     }
@@ -570,6 +574,18 @@ impl<'a> Empty<'a> {
         self
     }
 
+    /// What went wrong, in red and selectable, before the text.
+    pub fn error(mut self, e: &'a str) -> Self {
+        self.error = e;
+        self
+    }
+
+    /// A raw detail (an error's own words) after the text: mono, faint, selectable.
+    pub fn detail(mut self, d: &'a str) -> Self {
+        self.detail = d;
+        self
+    }
+
     pub fn compact(mut self) -> Self {
         self.compact = true;
         self
@@ -585,7 +601,11 @@ impl<'a> Empty<'a> {
         );
         topo::paint(&ui.painter().with_clip_rect(rect), rect, &tk, 0.5);
         let mut c = ui.new_child(UiBuilder::new().max_rect(rect));
-        let mut e = EmptyState::new().title(self.title).text(self.text);
+        let mut e = EmptyState::new()
+            .title(self.title)
+            .text(self.text)
+            .error(self.error)
+            .detail(self.detail);
         if let Some(i) = self.icon {
             e = e.icon(i);
         }

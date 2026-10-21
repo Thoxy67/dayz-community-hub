@@ -232,6 +232,8 @@ struct LogState {
     copied_at: Option<f64>,
     follow: bool,
     started: bool,
+    /// A command asked to go back to the end (`log.follow`).
+    jump: bool,
 }
 
 type Shared = Arc<Mutex<LogState>>;
@@ -268,6 +270,33 @@ impl LogState {
         }
         self.shown_for.1 = lines.len();
     }
+}
+
+/// The lines as the Copy button writes them: `[+m:ss] line` when times are known.
+pub fn copy_text(lines: &[String], times: Option<&[f64]>) -> String {
+    let mut out = String::new();
+    for (i, l) in lines.iter().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        if let Some(ts) = times {
+            out.push_str(&format!("[+{}] ", clock(ts.get(i).copied().unwrap_or(0.0))));
+        }
+        out.push_str(l);
+    }
+    out
+}
+
+fn state_of(ctx: &egui::Context, id: Id) -> Shared {
+    ctx.data_mut(|d| {
+        d.get_temp_mut_or_insert_with(id, || {
+            Arc::new(Mutex::new(LogState {
+                follow: true,
+                ..Default::default()
+            }))
+        })
+        .clone()
+    })
 }
 
 /// `LogPane`: a tool's output, live. Each line with the time it arrived (`times`, ms since
@@ -319,21 +348,40 @@ impl<'a> LogPane<'a> {
         self
     }
 
+    /// `log.filter`: the filter of the pane shown under `id_salt` (applied as it draws).
+    pub fn set_filter(ctx: &egui::Context, id_salt: impl egui::AsId, text: &str) {
+        let st = state_of(ctx, Id::new(id_salt));
+        st.lock().filter = text.chars().take(256).collect();
+        ctx.request_repaint();
+    }
+
+    /// `log.follow`: back to the end, following it.
+    pub fn follow(ctx: &egui::Context, id_salt: impl egui::AsId) {
+        let st = state_of(ctx, Id::new(id_salt));
+        st.lock().jump = true;
+        ctx.request_repaint();
+    }
+
+    /// `log.copy`: copy the lines (the pane's button says "Copied" a moment).
+    pub fn copy(
+        ctx: &egui::Context,
+        id_salt: impl egui::AsId,
+        lines: &[String],
+        times: Option<&[f64]>,
+    ) {
+        ctx.copy_text(copy_text(lines, times));
+        let st = state_of(ctx, Id::new(id_salt));
+        st.lock().copied_at = Some(ctx.input(|i| i.time));
+        ctx.request_repaint();
+    }
+
     /// Fills the rect it is given.
     #[allow(clippy::too_many_lines)]
     pub fn show(self, ui: &mut Ui) -> Response {
         let tk = ui.tokens();
         let rect = ui.available_rect_before_wrap();
         let resp = ui.allocate_rect(rect, Sense::hover());
-        let state: Shared = ui.data_mut(|d| {
-            d.get_temp_mut_or_insert_with(self.id, || {
-                Arc::new(Mutex::new(LogState {
-                    follow: true,
-                    ..Default::default()
-                }))
-            })
-            .clone()
-        });
+        let state: Shared = state_of(ui.ctx(), self.id);
         let mut st = state.lock();
         st.sync(self.lines, self.classify);
         ui.painter().rect_filled(rect, CornerRadius::ZERO, tk.plot);
@@ -397,17 +445,7 @@ impl<'a> LogPane<'a> {
                 .add(b.variant(Variant::Ghost).size(Size::Xs).icon_size(12.0))
                 .clicked()
             {
-                let mut out = String::new();
-                for (i, l) in self.lines.iter().enumerate() {
-                    if i > 0 {
-                        out.push('\n');
-                    }
-                    if let Some(ts) = self.times {
-                        out.push_str(&format!("[+{}] ", clock(ts.get(i).copied().unwrap_or(0.0))));
-                    }
-                    out.push_str(l);
-                }
-                ui.ctx().copy_text(out);
+                ui.ctx().copy_text(copy_text(self.lines, self.times));
                 st.copied_at = Some(now);
             }
             ui.add(
@@ -506,6 +544,13 @@ impl<'a> LogPane<'a> {
         });
         let at_end = out.state.offset.y + out.inner_rect.height() >= out.content_size.y - 24.0;
         st.follow = at_end;
+        if std::mem::take(&mut st.jump) && !at_end {
+            let mut s = out.state;
+            s.offset.y = (out.content_size.y - out.inner_rect.height()).max(0.0);
+            s.store(ui.ctx(), out.id);
+            st.follow = true;
+            ui.ctx().request_repaint();
+        }
         st.started = true;
         if !st.follow {
             let label = t("common", "live");

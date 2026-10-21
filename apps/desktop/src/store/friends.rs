@@ -48,6 +48,20 @@ pub struct Friends {
     /// Indexes into `data.friends` by "ip:port".
     by_server: FxHashMap<String, Vec<usize>>,
     task: Option<(bool, Task<Result<FriendsDto, String>>)>,
+    /// Bumped whenever `data` changes: what the view derived from it is redone.
+    pub generation: u64,
+    /// The Friends view's search, as typed (kept here so commands reach it).
+    pub query: String,
+    /// The server whose details the Friends view shows.
+    pub selected: Option<Selected>,
+}
+
+/// A server picked in the Friends view: its address (query port when listed) and name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Selected {
+    pub ip: String,
+    pub port: u16,
+    pub name: String,
 }
 
 impl Friends {
@@ -66,6 +80,9 @@ impl Friends {
             online: 0,
             by_server: FxHashMap::default(),
             task: None,
+            generation: 0,
+            query: String::new(),
+            selected: None,
         }
     }
 
@@ -165,6 +182,7 @@ impl Friends {
                             self.arrivals(&before, &next);
                         }
                         self.data = Some(next);
+                        self.generation = self.generation.wrapping_add(1);
                         self.derive();
                         self.failed = None;
                         self.updated_at = Some(Instant::now());

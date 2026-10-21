@@ -31,6 +31,7 @@ pub struct VirtualList {
     header: f32,
     stick_to_end: bool,
     scroll_to: Option<usize>,
+    offset: Option<f32>,
 }
 
 impl VirtualList {
@@ -43,6 +44,7 @@ impl VirtualList {
             header: 0.0,
             stick_to_end: false,
             scroll_to: None,
+            offset: None,
         }
     }
 
@@ -71,6 +73,12 @@ impl VirtualList {
     /// Brings a row into view (the selection, a row a controller walked to).
     pub fn scroll_to(mut self, index: Option<usize>) -> Self {
         self.scroll_to = index;
+        self
+    }
+
+    /// Puts the scroll at `y` points (a new search starts at the top).
+    pub fn offset(mut self, y: Option<f32>) -> Self {
+        self.offset = y;
         self
     }
 
@@ -111,6 +119,9 @@ impl VirtualList {
                     area = area.vertical_scroll_offset(top + h - height);
                 }
             }
+        }
+        if let Some(y) = self.offset {
+            area = area.vertical_scroll_offset(y.max(0.0));
         }
         let total = self.count as f32 * h;
         let overscan = self.overscan;

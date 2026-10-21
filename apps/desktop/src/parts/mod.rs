@@ -28,7 +28,7 @@
 //! SettingsSection          | `SettingsSection::new("Theme").description("…").icon(i).danger().show(ui, \|ui\| aside, \|ui\| body) -> Response`
 //! SectionNav               | `SectionNav::new("On this page", &[NavEntry{id,label,dot}], active).show(ui) -> Option<&str>`; `SectionNav::spy(top, &tops)`
 //! BulkBar                  | `BulkBar::new("3 mods selected").info("1.2 GB").show(ui, \|ui\| lead, \|ui\| actions)`
-//! Empty                    | `Empty::new().icon(i).title("…").text("…").compact().show(ui, \|ui\| action)`
+//! Empty                    | `Empty::new().icon(i).title("…").text("…").detail(raw).compact().show(ui, \|ui\| action)`
 //! MasterDetail             | `MasterDetail::new("id").detail_shown(b).selected(b).initial(400.0).range(320.0, 620.0).breakpoint(980.0).show(ui, main, detail)`
 //! Lightbox                 | `Lightbox::new(image_source, "Close").show(ctx, &mut open)`
 //! Facts                    | `ui.add(Facts::new(&[Fact::new("Players", "41").tone(c).tip(t)]).columns(2))`
@@ -38,7 +38,7 @@
 //! CommandPreview           | `CommandPreview::new("Command line", &flags, "No arguments", "Copy").program("DayZ_x64.exe").hint("…").show(ui)`
 //! PlayerChart              | `ui.add(PlayerChart::new(&points).max(Some(60.0)).label("…").since("…"))` (points oldest first)
 //! WeekHeat                 | `WeekHeat::new(&values, \|day, hour, v\| tip, "hint").now(day, hour).show(ui)`; `weekday_short(locale, day)`
-//! ChartTip                 | `chart_tip(ctx, id, anchor_rect, "text")`
+//! ChartTip                 | `chart_tip(ctx, id, anchor_rect, "text")`; rich runs: `chart_tip_job(ctx, id, anchor_rect, layout_job)`
 //! LogPane                  | `LogPane::new("id", &lines).times(&ms).title("steamcmd").live(b).classify(f).show(ui)`
 //! log.ts                   | `classify_line(&str) -> LineKind` (`.color(&tokens)`), `Rate::new(5000.0)` (`add`, `per_second`), `clock(ms)`
 //! SecretInput              | `ui.add(SecretInput::new(&mut key).placeholder("…").id_salt(id))`
@@ -73,7 +73,7 @@ pub use cells::{
     ServerFlags, ShortcutsButton, StarSize, TimeOfDay, day_phase, exclude_label, mods_extra,
     mods_tip, mods_tone, os_brand, os_label, ping_text, star_label,
 };
-pub use charts::{PlayerChart, WeekHeat, chart_tip, weekday_short};
+pub use charts::{PlayerChart, WeekHeat, chart_tip, chart_tip_job, weekday_short};
 pub use facts::{
     CommandPreview, DetailList, DetailRow, DetailRows, Fact, Facts, ModRef, ModState,
     ModStatusList, TransferLabels, TransferProgress,

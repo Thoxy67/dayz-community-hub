@@ -309,19 +309,34 @@ impl egui::Widget for ColorToken<'_> {
 /// Answers the one clicked; the caller switches (`i18n::set_locale`) and saves.
 pub struct LanguagePicker {
     current: Locale,
+    inline: bool,
 }
 
 impl LanguagePicker {
     pub fn new(current: Locale) -> Self {
-        Self { current }
+        Self {
+            current,
+            inline: false,
+        }
+    }
+
+    /// The settings page's look: the flag at the left of the name and its code, a check
+    /// on the current one (`flex items-center gap-2 px-2.5 py-2`).
+    pub fn inline(mut self) -> Self {
+        self.inline = true;
+        self
     }
 
     pub fn show(self, ui: &mut Ui) -> Option<Locale> {
+        if self.inline {
+            return self.show_inline(ui);
+        }
         let tk = ui.tokens();
         let w = ui.available_width();
         let gap = 6.0;
         let cw = ((w - 4.0 * gap) / 5.0).max(40.0);
-        let ch = 10.0 + 24.0 + 6.0 + 15.4 + 10.0;
+        // `py-2.5`, the flag, `gap-1.5`, the name, and the 1px border at each side.
+        let ch = 1.0 + 10.0 + 24.0 + 6.0 + 15.4 + 10.0 + 1.0;
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, ch), Sense::hover());
         let mut out = None;
         for (i, l) in Locale::ALL.iter().enumerate() {
@@ -335,6 +350,8 @@ impl LanguagePicker {
             let p = ui.painter();
             if on {
                 p.add(paint::glow_soft(&tk).as_shape(r, CornerRadius::same(size::RADIUS_MD)));
+                // The glow is a filled shape: the page's ground goes back under the tint.
+                p.rect_filled(r, CornerRadius::same(size::RADIUS_MD), tk.bg);
                 paint::plate(p, r, size::RADIUS_MD, alpha(tk.accent, 0.10), tk.accent);
             } else {
                 paint::plate(
@@ -355,7 +372,7 @@ impl LanguagePicker {
             icon.paint(
                 p,
                 Rect::from_min_size(
-                    Pos2::new(r.center().x - 12.0, r.top() + 10.0),
+                    Pos2::new(r.center().x - 12.0, r.top() + 11.0),
                     Vec2::splat(24.0),
                 ),
                 Color32::WHITE,
@@ -370,9 +387,82 @@ impl LanguagePicker {
                 p,
                 &g,
                 r.center().x - g.size().x / 2.0,
-                r.top() + 10.0 + 24.0 + 6.0 + 7.7,
+                r.top() + 11.0 + 24.0 + 6.0 + 7.7,
                 ink,
             );
+            let b = b.on_hover_cursor(egui::CursorIcon::PointingHand);
+            b.widget_info(|| {
+                egui::WidgetInfo::selected(egui::WidgetType::RadioButton, true, on, l.label())
+            });
+            if b.clicked() && !on {
+                out = Some(*l);
+            }
+        }
+        out
+    }
+
+    fn show_inline(self, ui: &mut Ui) -> Option<Locale> {
+        let tk = ui.tokens();
+        let w = ui.available_width();
+        let gap = 8.0;
+        let cw = ((w - 4.0 * gap) / 5.0).max(40.0);
+        let ch = 8.0 + 16.0 + 13.0 + 8.0;
+        let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, ch), Sense::hover());
+        let mut out = None;
+        for (i, l) in Locale::ALL.iter().enumerate() {
+            let r = Rect::from_min_size(
+                Pos2::new(rect.left() + i as f32 * (cw + gap), rect.top()),
+                Vec2::new(cw, ch),
+            );
+            let b = ui.interact(r, resp.id.with(("inline", i)), Sense::click());
+            let on = *l == self.current;
+            let h = paint::ease(ui, b.id.with("hover"), b.hovered());
+            let p = ui.painter();
+            if on {
+                paint::plate(p, r, size::RADIUS_MD, alpha(tk.accent, 0.08), tk.accent);
+            } else {
+                paint::plate(
+                    p,
+                    r,
+                    size::RADIUS_MD,
+                    alpha(tk.raised, 0.4 * h),
+                    paint::lerp(tk.border, tk.border_strong, h),
+                );
+            }
+            let icon = match l {
+                Locale::En => flag::GB,
+                Locale::Fr => flag::FR,
+                Locale::De => flag::DE,
+                Locale::Es => flag::ES,
+                Locale::Ru => flag::RU,
+            };
+            let x = r.left() + 10.0;
+            icon.paint(
+                p,
+                Rect::from_min_size(Pos2::new(x, r.center().y - 10.0), Vec2::splat(20.0)),
+                Color32::WHITE,
+            );
+            let tx = x + 20.0 + 8.0;
+            let check = if on { size::ICON_SM + 8.0 } else { 0.0 };
+            let room = (r.right() - 10.0 - check - tx).max(10.0);
+            let g = ph_trunc(ui, l.label(), font(Face::SansMedium, size::TEXT_XS), room);
+            draw(p, &g, tx, r.top() + 8.0 + 8.0, tk.fg);
+            let code = l.code().to_uppercase();
+            let cg = ph_trunc(ui, &code, font(Face::Mono, size::TEXT_3XS), room);
+            draw(p, &cg, tx, r.top() + 8.0 + 16.0 + 6.5, tk.fg_faint);
+            if on {
+                lucide::CHECK.paint(
+                    p,
+                    Rect::from_min_size(
+                        Pos2::new(
+                            r.right() - 10.0 - size::ICON_SM,
+                            r.center().y - size::ICON_SM / 2.0,
+                        ),
+                        Vec2::splat(size::ICON_SM),
+                    ),
+                    tk.accent,
+                );
+            }
             let b = b.on_hover_cursor(egui::CursorIcon::PointingHand);
             b.widget_info(|| {
                 egui::WidgetInfo::selected(egui::WidgetType::RadioButton, true, on, l.label())

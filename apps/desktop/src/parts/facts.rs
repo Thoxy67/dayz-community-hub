@@ -749,8 +749,10 @@ impl<'a> CommandPreview<'a> {
                                 self.flow(ui, w - 16.0);
                                 ui.add_space(6.0);
                             });
-                        let rect =
-                            Rect::from_min_size(start, Vec2::new(w, out.inner_rect.height()));
+                        let rect = Rect::from_min_size(
+                            start,
+                            Vec2::new(w, out.inner_rect.height().min(out.content_size.y)),
+                        );
                         ui.painter().set(
                             slot,
                             egui::Shape::rect_filled(

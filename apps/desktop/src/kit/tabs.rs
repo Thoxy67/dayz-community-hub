@@ -25,6 +25,10 @@ pub struct Tab<'a, V> {
     /// A figure after the label: how many are in there.
     pub count: Option<u64>,
     pub title: &'a str,
+    /// The icon's own colour (a warning on the tab), whatever the tab's state.
+    pub tint: Option<Color32>,
+    /// A small dot at the icon's top right, in this colour (`TabIcon.svelte`).
+    pub dot: Option<Color32>,
 }
 
 impl<'a, V> Tab<'a, V> {
@@ -35,7 +39,16 @@ impl<'a, V> Tab<'a, V> {
             icon: None,
             count: None,
             title: "",
+            tint: None,
+            dot: None,
         }
+    }
+
+    /// The icon in its own colour, with an optional dot (missing or stale mods).
+    pub fn tinted(mut self, tint: Color32, dot: Option<Color32>) -> Self {
+        self.tint = Some(tint);
+        self.dot = dot;
+        self
     }
 
     pub fn icon(mut self, icon: Icon) -> Self {
@@ -202,14 +215,14 @@ impl<V: PartialEq + Clone> Widget for TabStrip<'_, V> {
                 let mut cx = r.center().x - content / 2.0;
                 let cy = r.center().y;
                 if let Some(icon) = tab.icon {
-                    icon.paint(
-                        p,
-                        Rect::from_min_size(
-                            egui::pos2(cx, cy - size::ICON / 2.0),
-                            Vec2::splat(size::ICON),
-                        ),
-                        ink,
+                    let ir = Rect::from_min_size(
+                        egui::pos2(cx, cy - size::ICON / 2.0),
+                        Vec2::splat(size::ICON),
                     );
+                    icon.paint(p, ir, tab.tint.unwrap_or(ink));
+                    if let Some(d) = tab.dot {
+                        p.circle_filled(ir.right_top() + Vec2::new(-1.0, 1.0), 3.0, d);
+                    }
                     cx += size::ICON + gap;
                 }
                 paint::text_at(p, &label_g, cx, cy, ink);

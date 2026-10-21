@@ -21,14 +21,24 @@ pub fn chart_tip(ctx: &egui::Context, id: Id, anchor: Rect, text: &str) {
         return;
     }
     let tk = ctx.tokens();
-    let galley = ctx.fonts_mut(|f| {
-        f.layout(
-            text.to_owned(),
-            font(Face::Sans, size::TEXT_2XS),
-            tk.fg,
-            320.0 - 16.0,
-        )
-    });
+    let job = egui::text::LayoutJob::simple(
+        text.to_owned(),
+        font(Face::Sans, size::TEXT_2XS),
+        tk.fg,
+        320.0 - 16.0,
+    );
+    chart_tip_job(ctx, id, anchor, job);
+}
+
+/// [`chart_tip`] with its own text runs (faces and colours per run, as the Svelte tips mix
+/// a bold title, an accent figure and muted words). Wrapped at the plate's width.
+pub fn chart_tip_job(ctx: &egui::Context, id: Id, anchor: Rect, mut job: egui::text::LayoutJob) {
+    if job.text.is_empty() || !anchor.is_finite() {
+        return;
+    }
+    let tk = ctx.tokens();
+    job.wrap.max_width = 320.0 - 16.0;
+    let galley = ctx.fonts_mut(|f| f.layout_job(job));
     let size = galley.size() + Vec2::new(16.0, 12.0);
     let screen = ctx.content_rect();
     let gap = 6.0;
@@ -65,6 +75,7 @@ pub struct PlayerChart<'a> {
     capacity: Option<f64>,
     label: Option<&'a str>,
     since: Option<&'a str>,
+    plot_h: f32,
 }
 
 impl<'a> PlayerChart<'a> {
@@ -74,7 +85,14 @@ impl<'a> PlayerChart<'a> {
             capacity: None,
             label: None,
             since: None,
+            plot_h: 64.0,
         }
+    }
+
+    /// The plot's height (64px by default; the server panel's Stats tab draws it larger).
+    pub fn height(mut self, h: f32) -> Self {
+        self.plot_h = h.clamp(32.0, 480.0);
+        self
     }
 
     /// The server's capacity: a red line, and the top of the scale.
@@ -151,17 +169,18 @@ impl Widget for PlayerChart<'_> {
         let span = (t1 - t0).max(1) as f64;
         let long = t1 - t0 > 36 * 3600;
         let line_h = 12.0;
-        let h = line_h + 4.0 + 64.0 + 4.0 + line_h;
+        let ph_ = self.plot_h;
+        let h = line_h + 4.0 + ph_ + 4.0 + line_h;
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
         if !ui.is_rect_visible(rect) {
             return resp;
         }
         let plot = Rect::from_min_size(
             Pos2::new(rect.left(), rect.top() + line_h + 4.0),
-            Vec2::new(w, 64.0),
+            Vec2::new(w, ph_),
         );
         let x = |ts: i64| plot.left() + ((ts - t0) as f64 / span) as f32 * plot.width();
-        let y = |v: f64| plot.bottom() - (v / top) as f32 * (64.0 - 4.0) - 2.0;
+        let y = |v: f64| plot.bottom() - (v / top) as f32 * (ph_ - 4.0) - 2.0;
         let p = ui.painter();
         p.rect_filled(plot, CornerRadius::same(size::RADIUS_XS), tk.plot);
         let pp = p.with_clip_rect(plot.intersect(p.clip_rect()));

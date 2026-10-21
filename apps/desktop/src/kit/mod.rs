@@ -5,7 +5,7 @@
 //!
 //! Widget                    | Constructor
 //! --------------------------|-------------------------------------------------------------
-//! Button                    | `Button::new("Refresh").icon(lucide::REFRESH_CW).variant(Variant::Accent).size(Size::Sm)`; `.active(b) .enabled(b) .width(w) .trailing(icon) .tip(t) .tip_kbd(t, kbd, Side) .danger_hover()`
+//! Button                    | `Button::new("Refresh").icon(lucide::REFRESH_CW).variant(Variant::Accent).size(Size::Sm)`; `.active(b) .enabled(b) .width(w) .start() .trailing(icon) .tip(t) .tip_kbd(t, kbd, Side) .danger_hover()`
 //! Chip (latching)           | `Button::chip("1PP", on)`
 //! IconButton                | `IconButton::new(lucide::X, "Close").kbd("Esc").side(Side::Bottom).size(Size::IconXs).variant(Variant::Ghost).active(b).danger_hover().tint(c)`
 //! Tooltip                   | `response.tip("text")`, `response.tip_kbd("text", "Ctrl K", Side::Bottom)` (trait `TipExt`)
@@ -38,7 +38,7 @@
 //! Field (settings row)      | `Field::new("Label").hint("…").stacked().last().show(ui, \|ui\| control)`
 //! SectionLabel              | `SectionLabel::new("Maps").icon(i).no_tick()`; `.show_with(ui, \|ui\| actions)`
 //! StatStrip / Stat          | `StatStrip::show(ui, &[Stat::new("Players", "258 643").tone(t.ok).icon(i).grow().tip("…")])`
-//! EmptyState                | `EmptyState::new().icon(i).title("…").text("…").compact().show(ui, \|ui\| action)`
+//! EmptyState                | `EmptyState::new().icon(i).title("…").text("…").detail(raw).compact().show(ui, \|ui\| action)`
 //! Disclosure                | `Disclosure::new("id", "Details").default_open(false).show(ui, \|ui\| body)`
 //! Alert                     | `Alert::new(Tone::Warn, lucide::TRIANGLE_ALERT, "Title").text("…").banner().dismissible("Dismiss").show(ui, \|ui\| actions) -> AlertResponse`
 //! CommandLine               | `CommandLine::new("sudo …", "Copy").width(w)`

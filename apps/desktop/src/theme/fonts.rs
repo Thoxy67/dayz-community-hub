@@ -112,11 +112,14 @@ fn files(face: Face) -> [Subset; 4] {
     }
 }
 
-/// The font definitions: every face, each falling back on egui's emoji faces.
+/// The font definitions: every face, each falling back on egui's emoji faces and its
+/// sans (for signs the subsets lack).
 pub fn definitions() -> FontDefinitions {
     let egui_defaults = FontDefinitions::default();
     let mut defs = FontDefinitions::empty();
-    let emoji: Vec<String> = ["NotoEmoji-Regular", "emoji-icon-font"]
+    // Last: egui's own faces, for the few signs the subsets lack (`≤`, as a browser
+    // falls back on a system font), then the emoji.
+    let emoji: Vec<String> = ["NotoEmoji-Regular", "emoji-icon-font", "Ubuntu-Light"]
         .into_iter()
         .filter(|n| egui_defaults.font_data.contains_key(*n))
         .map(String::from)

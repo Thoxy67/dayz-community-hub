@@ -100,6 +100,7 @@ pub struct Input<'a> {
     enabled: bool,
     id_salt: Option<Id>,
     char_limit: usize,
+    error: bool,
 }
 
 impl<'a> Input<'a> {
@@ -114,7 +115,14 @@ impl<'a> Input<'a> {
             enabled: true,
             id_salt: None,
             char_limit: usize::MAX,
+            error: false,
         }
+    }
+
+    /// A wrong value: the border turns red (`[&_input]:border-err/60`).
+    pub fn error(mut self, on: bool) -> Self {
+        self.error = on;
+        self
     }
 
     pub fn size(mut self, s: FieldSize) -> Self {
@@ -194,26 +202,35 @@ impl Widget for Input<'_> {
         let mut edit = TextEdit::singleline(&mut *self.value)
             .frame(egui::Frame::NONE)
             .margin(egui::Margin::ZERO)
-            .font(f)
+            .font(f.clone())
             .text_color(t.fg)
             .vertical_align(Align::Center)
             .desired_width(inner.width())
             .password(self.kind == InputKind::Password)
             .char_limit(self.char_limit)
-            .hint_text(RichText::new(self.placeholder).color(t.fg_faint));
+            .hint_text(RichText::new(self.placeholder).font(f).color(t.fg_faint));
         if let Some(id) = self.id_salt {
             edit = edit.id(id);
         }
-        let mut resp = ui
-            .add_enabled_ui(self.enabled, |ui| ui.put(inner, edit))
-            .inner;
+        // A child that does not allocate in `ui`: a scope here would add the row's
+        // spacing a second time after the field.
+        let mut field = ui.new_child(egui::UiBuilder::new().max_rect(inner));
+        if !self.enabled {
+            field.disable();
+        }
+        let mut resp = field.put(inner, edit);
         let hover = paint::ease(
             ui,
             resp.id.with("hover"),
             self.enabled && ui.rect_contains_pointer(rect),
         );
         let focus = paint::ease(ui, resp.id.with("focus"), resp.has_focus());
-        frame(ui.painter(), bg, rect, &t, hover, focus, self.enabled);
+        let mut ft = t;
+        if self.error {
+            ft.border = alpha(t.err, 0.6);
+            ft.border_strong = ft.border;
+        }
+        frame(ui.painter(), bg, rect, &ft, hover, focus, self.enabled);
         if search {
             let ir = Rect::from_center_size(
                 egui::pos2(rect.left() + 6.0 + size::ICON_SM / 2.0, rect.center().y),

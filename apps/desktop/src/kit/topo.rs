@@ -107,6 +107,21 @@ fn segments() -> &'static [Seg] {
 
 /// Paints the contours over `rect` (`opacity` 0.5 is the Svelte default).
 pub fn paint(painter: &Painter, rect: Rect, t: &Tokens, opacity: f32) {
+    let color = alpha(t.border, opacity * f32::from(t.border.a()) / 255.0);
+    paint_color(painter, rect, color);
+}
+
+/// The contours in another ink (`<Topo class="text-map" opacity={0.28} />`): `color` at
+/// `opacity`.
+pub fn paint_tinted(painter: &Painter, rect: Rect, color: Color32, opacity: f32) {
+    paint_color(
+        painter,
+        rect,
+        alpha(color, opacity * f32::from(color.a()) / 255.0),
+    );
+}
+
+fn paint_color(painter: &Painter, rect: Rect, color: Color32) {
     if !rect.is_positive() {
         return;
     }
@@ -115,7 +130,6 @@ pub fn paint(painter: &Painter, rect: Rect, t: &Tokens, opacity: f32) {
     let ox = rect.center().x - 200.0 * s;
     let oy = rect.center().y - 150.0 * s;
     let map = |p: [f32; 2]| Pos2::new(ox + p[0] * s, oy + p[1] * s);
-    let color = alpha(t.border, opacity * f32::from(t.border.a()) / 255.0);
     let painter = painter.with_clip_rect(rect.intersect(painter.clip_rect()));
     for seg in segments() {
         let pts = [map(seg[0]), map(seg[1]), map(seg[2]), map(seg[3])];

@@ -462,7 +462,7 @@ fn profile(ui: &mut Ui, cx: &mut Ctx, right: f32, rect: Rect, win_w: f32) -> f32
 }
 
 /// The launcher's mark (`/icon.svg`, its own colours), rasterised once per size.
-fn logo(ui: &Ui, rect: Rect) {
+pub(super) fn logo(ui: &Ui, rect: Rect) {
     static SVG: &[u8] = include_bytes!("logo.svg");
     let ctx = ui.ctx();
     let px = (rect.width() * ctx.pixels_per_point())

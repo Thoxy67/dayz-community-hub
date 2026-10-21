@@ -338,6 +338,7 @@ pub struct Copy<'a> {
     copy: &'a str,
     copied: &'a str,
     max_width: Option<f32>,
+    wrap: bool,
 }
 
 impl<'a> Copy<'a> {
@@ -348,7 +349,14 @@ impl<'a> Copy<'a> {
             copy: "",
             copied: "",
             max_width: None,
+            wrap: false,
         }
+    }
+
+    /// Long text wraps onto more lines (anywhere: a path) instead of being cut.
+    pub fn wrap(mut self) -> Self {
+        self.wrap = true;
+        self
     }
 
     /// What is shown, when it is not the text copied.
@@ -375,13 +383,15 @@ impl Widget for Copy<'_> {
         let t = ui.tokens();
         let f = font(Face::Mono, size::TEXT_2XS);
         let room = self.max_width.unwrap_or_else(|| ui.available_width()) - 16.0;
-        let g = paint::galley_trunc(
-            ui,
-            self.shown.unwrap_or(self.text),
-            f,
-            t.fg_faint,
-            room.max(0.0),
-        );
+        let shown = self.shown.unwrap_or(self.text);
+        let g = if self.wrap {
+            let mut job =
+                egui::text::LayoutJob::simple(shown.to_owned(), f, t.fg_faint, room.max(8.0));
+            job.wrap.break_anywhere = true;
+            ui.fonts_mut(|fo| fo.layout_job(job))
+        } else {
+            paint::galley_trunc(ui, shown, f, t.fg_faint, room.max(0.0))
+        };
         let (rect, resp) = ui.allocate_exact_size(
             Vec2::new(g.size().x + 4.0 + 12.0, g.size().y.max(14.0)),
             Sense::click(),
@@ -407,8 +417,16 @@ impl Widget for Copy<'_> {
         };
         let p = ui.painter();
         paint::text_at(p, &g, rect.left(), rect.center().y, ink);
+        // After the text: its last line when it wraps.
+        let (end_x, end_cy) = match g.rows.last().filter(|_| g.rows.len() > 1) {
+            Some(row) => {
+                let top = rect.center().y - g.size().y / 2.0;
+                (row.rect().right(), top + row.rect().center().y)
+            }
+            None => (g.size().x, rect.center().y),
+        };
         let ir = Rect::from_min_size(
-            Pos2::new(rect.left() + g.size().x + 4.0, rect.center().y - 6.0),
+            Pos2::new(rect.left() + end_x + 4.0, end_cy - 6.0),
             Vec2::splat(12.0),
         );
         if copied {

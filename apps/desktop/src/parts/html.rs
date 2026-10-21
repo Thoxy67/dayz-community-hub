@@ -796,7 +796,13 @@ impl<'a> SafeHtml<'a> {
         } else {
             Sense::click()
         };
-        let (rect, resp) = ui.allocate_exact_size(g.size(), sense);
+        // A selectable label: the article's words can be selected and copied.
+        let resp = ui.add(
+            egui::Label::new(egui::WidgetText::Galley(g.clone()))
+                .selectable(true)
+                .sense(sense),
+        );
+        let rect = resp.rect;
         let _ = id;
         let link_at = |pos: Pos2| {
             let c = g.cursor_from_pos(pos - rect.min);
@@ -814,7 +820,6 @@ impl<'a> SafeHtml<'a> {
                 out = Some(HtmlAction::Open(url.clone()));
             }
         }
-        ui.painter().galley(rect.min, g, ui.tokens().fg_muted);
         out
     }
 }

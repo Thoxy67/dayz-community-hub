@@ -217,6 +217,8 @@ pub struct Mods {
 enum MutateDone {
     Reload(Vec<String>),
     Managed(u64, bool, String),
+    /// The link could not be changed: the optimistic flip is undone by a re-read.
+    ManagedFailed(String),
 }
 
 impl Mods {
@@ -497,20 +499,26 @@ impl Mods {
         });
     }
 
-    /// Link or unlink a mod for the game.
+    /// Link or unlink a mod for the game: the row flips at once (optimistic), the
+    /// hub's answer settles it, a failure re-reads the disk.
     pub fn toggle_managed(&mut self, id: u64) {
-        let Some(m) = self.by_id(id) else {
+        let Some(m) = self.by_id.get(&id).and_then(|i| self.installed.get_mut(*i)) else {
             return;
         };
+        m.managed = !m.managed;
         let name = m.name.clone();
         let hub = self.hub.clone();
         self.mutate.push(rt::spawn(async move {
-            let managed = hub
-                .toggle_mod_managed(id)
-                .await
-                .map_err(|e| tf("mods", "toggleFailed", &[("error", &e)]))?;
-            Ok(MutateDone::Managed(id, managed, name))
+            Ok(match hub.toggle_mod_managed(id).await {
+                Ok(managed) => MutateDone::Managed(id, managed, name),
+                Err(e) => MutateDone::ManagedFailed(tf("mods", "toggleFailed", &[("error", &e)])),
+            })
         }));
+    }
+
+    /// When the Workshop was last asked which mods are behind.
+    pub fn last_checked(&self) -> Option<Instant> {
+        self.last_checked
     }
 
     /// Delete the launcher's downloads and game links, after asking.
@@ -969,6 +977,10 @@ impl Mods {
                     let word = if managed { "linked" } else { "unlinked" };
                     self.bus.ok(tf("mods", word, &[("name", &name)]));
                     signals.push(Signal::ModsChanged);
+                }
+                Ok(MutateDone::ManagedFailed(e)) => {
+                    self.load();
+                    self.bus.err(e);
                 }
                 Err(e) => self.bus.err(e),
             }

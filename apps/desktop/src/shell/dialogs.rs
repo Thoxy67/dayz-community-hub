@@ -515,6 +515,25 @@ pub(super) fn shortcuts(ctx: &Context, cx: &mut Ctx, st: &mut DialogState) {
     } else {
         ShortcutMode::Keys
     });
+    Dialog::new("dzch.shortcuts", t("keys", "title"))
+        .size(DialogSize::Lg)
+        .close_label(t("common", "close"))
+        .show(
+            ctx,
+            &mut open,
+            |ui, _| {
+                shortcut_list(ui, mode, kind);
+            },
+            |_, _| {},
+        );
+    if cx.stores.dialogs.shortcuts && !open {
+        cx.stores.dialogs.shortcuts = false;
+    }
+}
+
+/// Every shortcut by where it works, keyboard or controller, from the one registry
+/// (the `?` sheet and the About page's card both draw it).
+pub(crate) fn shortcut_list(ui: &mut Ui, mode: &mut ShortcutMode, kind: crate::parts::PadKind) {
     // The rows, owned for this frame (only while the sheet shows).
     struct Owned {
         label: &'static str,
@@ -606,22 +625,9 @@ pub(super) fn shortcuts(ctx: &Context, cx: &mut Ctx, st: &mut DialogState) {
             rows,
         })
         .collect();
-    Dialog::new("dzch.shortcuts", t("keys", "title"))
-        .size(DialogSize::Lg)
-        .close_label(t("common", "close"))
-        .show(
-            ctx,
-            &mut open,
-            |ui, _| {
-                ShortcutList::new(&key_groups, &pad_groups, mode)
-                    .pad_kind(kind)
-                    .show(ui);
-            },
-            |_, _| {},
-        );
-    if cx.stores.dialogs.shortcuts && !open {
-        cx.stores.dialogs.shortcuts = false;
-    }
+    ShortcutList::new(&key_groups, &pad_groups, mode)
+        .pad_kind(kind)
+        .show(ui);
 }
 
 /// Until the mods view installs its own: the operation's progress, and a way to

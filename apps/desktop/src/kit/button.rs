@@ -197,6 +197,8 @@ pub struct Button<'a> {
     width: Option<f32>,
     icon_size: Option<f32>,
     tip: Option<(&'a str, &'a str, Side)>,
+    spinning: bool,
+    start: bool,
 }
 
 impl<'a> Button<'a> {
@@ -214,7 +216,21 @@ impl<'a> Button<'a> {
             width: None,
             icon_size: None,
             tip: None,
+            spinning: false,
+            start: false,
         }
+    }
+
+    /// Icon and label from the left edge, not centred (`justify-start`, with a width).
+    pub fn start(mut self) -> Self {
+        self.start = true;
+        self
+    }
+
+    /// While `on`, a turning spinner stands in for the leading icon (a check under way).
+    pub fn spinner(mut self, on: bool) -> Self {
+        self.spinning = on;
+        self
     }
 
     /// An icon before the label.
@@ -281,7 +297,8 @@ impl<'a> Button<'a> {
     /// `ui/chip`: an `Xs` button that says "on" by outline, not by fill.
     pub fn chip(label: &'a str, on: bool) -> Self {
         let mut b = Self::new(label).size(Size::Xs);
-        b.chip = on;
+        b.chip = true;
+        b.active = on;
         b
     }
 }
@@ -390,12 +407,21 @@ impl Widget for Button<'_> {
                 );
             }
             let ink = fade(l.ink, en);
-            let mut x = r.center().x - content / 2.0;
+            let mut x = if self.start {
+                r.left() + s.pad()
+            } else {
+                r.center().x - content / 2.0
+            };
             let cy = r.center().y;
             if let Some(icon) = self.icon {
                 let ir =
                     Rect::from_min_size(egui::pos2(x, cy - icon_px / 2.0), Vec2::splat(icon_px));
-                icon.paint(painter, ir, ink);
+                if self.spinning {
+                    super::Spinner::paint(ui, ir, ink);
+                    ui.ctx().request_repaint();
+                } else {
+                    icon.paint(painter, ir, ink);
+                }
                 x += icon_px + gap;
             }
             if let Some(g) = &g {

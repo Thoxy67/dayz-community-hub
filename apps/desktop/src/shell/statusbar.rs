@@ -1,9 +1,9 @@
 //! The status bar (= `StatusBar.svelte` and `status/*.svelte`): the window's instrument
 //! panel in two groups. On the left, what is happening: the server list, the ping scan,
-//! the mods' downloads and their state, the launcher's own download; on the right, the
-//! state of things: the game, BattlEye, Steam, an update, the version. Every segment has
-//! the same anatomy ([`Segment`]); a narrow bar drops the words, then the least needed
-//! segments, by its own width.
+//! the mods' downloads and their state, the offline mode's install, the launcher's own
+//! download; on the right, the state of things: the game, BattlEye, Steam, an update, the
+//! version. Every segment has the same anatomy ([`Segment`]); a narrow bar drops the words,
+//! then the least needed segments, by its own width.
 //!
 //! Nothing here ticks for nothing: ages and the game's time are re-read every 30 s (one
 //! repaint asked for then), the Steam client and BattlEye are asked with that clock while
@@ -401,6 +401,16 @@ fn left_segments(cx: &Ctx, st: &StatusState, now: f64, tk: &Tokens) -> Vec<Segme
         out.push(s);
     }
     out.extend(mod_segments(cx, st, now));
+    if crate::views::offline::installing(cx.egui) {
+        let tip = t("shell", "sbOfflineTip").to_string();
+        out.push(
+            Segment::new(SegIcon::Icon(lucide::MAP), Tone::Info, tip)
+                .act(Act::Go(ViewId::Offline, None))
+                .progress(Progress::Sweep)
+                .piece(Piece::text(t("shell", "sbOffline")).word())
+                .piece(Piece::text(t("offline", "installing"))),
+        );
+    }
     let u = &cx.stores.updater;
     if u.state == UpdateState::Downloading {
         let v = u.info.as_ref().map_or("", |i| i.version.as_str());

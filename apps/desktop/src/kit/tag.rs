@@ -17,6 +17,9 @@ pub struct Tag<'a> {
     filled: bool,
     icon: Option<Icon>,
     tip: &'a str,
+    spinner: bool,
+    brand: Option<super::Brand>,
+    trailing: Option<Icon>,
 }
 
 impl<'a> Tag<'a> {
@@ -27,7 +30,28 @@ impl<'a> Tag<'a> {
             filled: false,
             icon: None,
             tip: "",
+            spinner: false,
+            brand: None,
+            trailing: None,
         }
+    }
+
+    /// A turning spinner first (`<Spinner class="size-2.5 text-current" />`).
+    pub fn spinner(mut self) -> Self {
+        self.spinner = true;
+        self
+    }
+
+    /// A brand mark (Steam) before the text, after the icon or spinner.
+    pub fn brand(mut self, b: super::Brand) -> Self {
+        self.brand = Some(b);
+        self
+    }
+
+    /// An icon after the text (a retry glyph).
+    pub fn trailing(mut self, icon: Icon) -> Self {
+        self.trailing = Some(icon);
+        self
     }
 
     /// Neutral, Ok, Warn, Err or Accent (others read as neutral).
@@ -78,7 +102,10 @@ impl Widget for Tag<'_> {
             }
         };
         let g = paint::galley(ui, self.text, font(Face::Mono, size::TEXT_2XS), ink);
-        let icon_w = self.icon.map_or(0.0, |_| 12.0 + 4.0);
+        let icon_w = self.icon.map_or(0.0, |_| 12.0 + 4.0)
+            + if self.spinner { 10.0 + 4.0 } else { 0.0 }
+            + self.brand.map_or(0.0, |_| 10.0 + 4.0)
+            + self.trailing.map_or(0.0, |_| 10.0 + 4.0);
         let sz = Vec2::new(g.size().x + icon_w + 12.0, 18.0);
         let (rect, resp) = ui.allocate_exact_size(sz, Sense::hover());
         if ui.is_rect_visible(rect) {
@@ -101,7 +128,22 @@ impl Widget for Tag<'_> {
                 );
                 x += 16.0;
             }
+            let small = |x: f32| {
+                Rect::from_min_size(egui::pos2(x, rect.center().y - 5.0), Vec2::splat(10.0))
+            };
+            if self.spinner {
+                super::Spinner::paint(ui, small(x), ink);
+                ui.ctx().request_repaint();
+                x += 14.0;
+            }
+            if let Some(b) = self.brand {
+                b.paint(p, small(x), ink);
+                x += 14.0;
+            }
             paint::text_at(p, &g, x, rect.center().y, ink);
+            if let Some(icon) = self.trailing {
+                icon.paint(p, small(x + g.size().x + 4.0), ink);
+            }
         }
         resp.tip_kbd(self.tip, "", super::Side::Top)
     }
