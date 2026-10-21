@@ -1,6 +1,6 @@
 # Where the egui window falls short of the Svelte interface
 
-> **Last updated:** 2026-10-21 · **Change:** created
+> **Last updated:** 2026-10-22 · **Change:** G1–G18 closed (M1, M2); G25 visual polish added
 
 The ranked work list of the egui rewrite: one entry per remaining task of
 `plan/execution-plan.md` M1–M4, with each view of M2 as its own entry. Take the highest-ranked
@@ -15,31 +15,32 @@ Feature counts are entries of `apps/desktop/src/catalog.rs` ([checklist](parity-
 
 | # | Gap | Task | Needs | Estimate | Parity doc |
 |---|---|---|---|---:|---|
-| G1 | Generic widget kit | M1.1 | M0.4, M0.1 theme | 20–30 h | [ui-parity](ui-parity.md) |
-| G2 | App parts | M1.2 | G1 | 20–30 h | [ui-parity](ui-parity.md) |
-| G3 | Stores on Task + HubEvent | M1.3 | M0.2, M0.3 | 15–25 h | [ui-parity](ui-parity.md) |
-| G4 | Shell (77 features) | M1.4 | G1–G3 | 35–50 h | [ui-parity › shell](ui-parity.md#shell) |
-| G5 | Control channel and ui_shot | M1.5 | G4 | 6–10 h | [ui-parity](ui-parity.md) |
-| G6 | Servers view (99) | M2 | G4, G5 | 30–45 h | [ui-parity › servers](ui-parity.md#servers) |
-| G7 | Mods view and mod-op dialog (116) | M2 | G4, G5 | 30–45 h | [ui-parity › mods](ui-parity.md#mods) |
-| G8 | Settings view (77) | M2 | G4 | 20–30 h | [ui-parity › settings](ui-parity.md#settings) |
-| G9 | Stats view (52) | M2 | G4 | 15–22 h | [ui-parity › stats](ui-parity.md#stats) |
-| G10 | Friends view (47) | M2 | G6 parts | 10–15 h | [ui-parity › friends](ui-parity.md#friends) |
-| G11 | Direct connect view (46) | M2 | G6 parts | 10–15 h | [ui-parity › connect](ui-parity.md#connect) |
-| G12 | News view (41) | M2 | G4 | 10–16 h | [ui-parity › news](ui-parity.md#news) |
-| G13 | Setup wizard (28) | M2 | G4 | 10–14 h | [ui-parity › setup](ui-parity.md#setup) |
-| G14 | Favorites view (21) | M2 | G6 | 6–10 h | [ui-parity › favorites](ui-parity.md#favorites) |
-| G15 | Launch options view (33) | M2 | G4 | 8–12 h | [ui-parity › options](ui-parity.md#options) |
-| G16 | About view (38) | M2 | G4 | 6–10 h | [ui-parity › about](ui-parity.md#about) |
-| G17 | Offline view (27) | M2 | G4 | 5–8 h | [ui-parity › offline](ui-parity.md#offline) |
-| G18 | History view (14) | M2 | G14 | 4–6 h | [ui-parity › history](ui-parity.md#history) |
+| G1 | Generic widget kit | M1.1 | M0.4, M0.1 theme | done | [ui-parity](ui-parity.md) |
+| G2 | App parts | M1.2 | G1 | done | [ui-parity](ui-parity.md) |
+| G3 | Stores on Task + HubEvent | M1.3 | M0.2, M0.3 | done | [ui-parity](ui-parity.md) |
+| G4 | Shell (77 features) | M1.4 | G1–G3 | done | [ui-parity › shell](ui-parity.md#shell) |
+| G5 | Control channel and ui_shot | M1.5 | G4 | done | [ui-parity](ui-parity.md) |
+| G6 | Servers view (99) | M2 | G4, G5 | done | [ui-parity › servers](ui-parity.md#servers) |
+| G7 | Mods view and mod-op dialog (116) | M2 | G4, G5 | done | [ui-parity › mods](ui-parity.md#mods) |
+| G8 | Settings view (77) | M2 | G4 | done | [ui-parity › settings](ui-parity.md#settings) |
+| G9 | Stats view (52) | M2 | G4 | done | [ui-parity › stats](ui-parity.md#stats) |
+| G10 | Friends view (47) | M2 | G6 parts | done | [ui-parity › friends](ui-parity.md#friends) |
+| G11 | Direct connect view (46) | M2 | G6 parts | done | [ui-parity › connect](ui-parity.md#connect) |
+| G12 | News view (41) | M2 | G4 | done | [ui-parity › news](ui-parity.md#news) |
+| G13 | Setup wizard (28) | M2 | G4 | done | [ui-parity › setup](ui-parity.md#setup) |
+| G14 | Favorites view (21) | M2 | G6 | done | [ui-parity › favorites](ui-parity.md#favorites) |
+| G15 | Launch options view (33) | M2 | G4 | done | [ui-parity › options](ui-parity.md#options) |
+| G16 | About view (38) | M2 | G4 | done | [ui-parity › about](ui-parity.md#about) |
+| G17 | Offline view (27) | M2 | G4 | done | [ui-parity › offline](ui-parity.md#offline) |
+| G18 | History view (14) | M2 | G14 | done | [ui-parity › history](ui-parity.md#history) |
 | G19 | Single instance, dzch:// and .dzch, paste-to-connect | M3.1 | G4, G11 | 8–14 h | [ui-parity › shell](ui-parity.md#shell) |
 | G20 | Updater | M3.2 | G16 | 8–14 h | [ui-parity › about](ui-parity.md#about) |
 | G21 | Gamepad | M3.3 | G4, views | 15–25 h | [ui-parity › shell](ui-parity.md#shell) |
 | G22 | Window: size, position, maximise, Windows icon, fatal box | M3.4 | G4 | 5–8 h | [ui-parity › shell](ui-parity.md#shell) |
 | G23 | Packaging and release tooling for the egui binary | M4.1 | M3 | 8–14 h + owner | — |
 | G24 | Remove apps/gui, rename, update docs | M4.2 | all above | 4–8 h | — |
-| | **Total** | | | **~310–480 h** | |
+| G25 | Visual polish: shared `Field` rows 4–5 px short, page header 2 px low, chip tints, `Copy` muted text, Play-button lettering width, `→` glyph | M2 follow-up | — | 8–15 h | [ui-parity](ui-parity.md) |
+| | **Total left** | | | **~56–98 h** | |
 
 About 70% parallelizes: the M2 views fan out once the shell and parts exist; G1–G4 and M4 are
 the serial path.
@@ -85,6 +86,9 @@ the serial path.
 - **Estimate:** 6–10 h.
 
 ## Views (M2)
+
+**Closed 2026-10-22**: every view is ported (701 / 716 catalog features, mean SSIM 0.847).
+What is left of a view is either gamepad focus (G21) or polish (G25).
 
 Each view is done when its catalog entries are done, its commands are registered and its shot
 is compared with `var/reference/<view>.png`.
@@ -194,6 +198,17 @@ is compared with `var/reference/<view>.png`.
 - **Missing:** remembered size and position, maximise state, Windows icon and VERSIONINFO,
   fatal error box on Windows.
 - **Estimate:** 5–8 h.
+
+## Polish
+
+### G25. Visual polish (M2 follow-up)
+
+What the lanes measured but left in shared widgets so other views stayed stable: `kit::Field`
+label/hint lines are 4–5 px shorter than the web version (settings, options rows drift);
+`PageHeader` sits 2 px low; `Button::chip` has no tint (servers' Missing / To update counts);
+`Copy` uses faint where Svelte uses muted; the Play button's lettering is ~12 px wider; the
+bundled subsets lack `→`. Fix in the shared widget, re-run `cargo xtask shots` and
+`visual-diff`, check every view.
 
 ## Switch-over (M4)
 

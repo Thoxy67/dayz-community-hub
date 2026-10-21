@@ -50,6 +50,20 @@ const content = {
       es: "dayz.com no respondió o rechazó la solicitud. Comprueba la conexión e inténtalo de nuevo.",
       ru: "dayz.com не ответил или отклонил запрос. Проверьте подключение и повторите.",
     }),
+    blockedHint: t({
+      en: "dayz.com asked for a browser check. Read the news on the site, or try again later.",
+      fr: "dayz.com demande une vérification du navigateur. Lisez les actualités sur le site, ou réessayez plus tard.",
+      de: "dayz.com verlangt eine Browserprüfung. Lies die Neuigkeiten auf der Seite oder versuche es später erneut.",
+      es: "dayz.com pide una verificación del navegador. Lee las noticias en el sitio o inténtalo más tarde.",
+      ru: "dayz.com требует проверку браузера. Читайте новости на сайте или повторите позже.",
+    }),
+    openSite: t({
+      en: "Open dayz.com",
+      fr: "Ouvrir dayz.com",
+      de: "dayz.com öffnen",
+      es: "Abrir dayz.com",
+      ru: "Открыть dayz.com",
+    }),
     retry: t({
       en: "Try again",
       fr: "Réessayer",

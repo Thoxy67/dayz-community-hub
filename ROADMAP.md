@@ -1,8 +1,8 @@
 # DayZ Community Hub roadmap
 
-**Stage: rewrite: M0 foundation** · next: M1 kit and shell, then the views (M2) in parallel
+**Stage: rewrite: M2 views done** · next: M3 platform (links, updater, gamepad, window), then M4 switch-over
 
-> **Last updated:** 2026-10-21 · **Change:** created
+> **Last updated:** 2026-10-22 · **Change:** M2 views landed
 
 The launcher's Tauri/Svelte interface (`apps/gui`) is being rebuilt 1:1 in egui
 (`apps/desktop`, backend `crates/app/hub`), features and looks, on Windows and Linux alike.
@@ -17,23 +17,43 @@ remaining work parallelizes (the views fan out once the shell exists).
 
 | | Value | Kind |
 |---|---|---|
-| **Catalog features done** | **0 / 716 (0%)** | measured: `catalog.rs`, `cargo xtask parity` |
-| Views ported | 0 / 13 (+ shell) | measured: rows of [ui-parity](docs/ui-parity.md) at 100% |
-| Visual diff, mean SSIM | n/a yet | measured once `cargo xtask shots` runs (needs M1.5) |
-| Tests (new crates) | 91 `#[test]` in `apps/desktop`, `crates/app/hub`, `xtask` | counted 2026-10-21, moving while M0 runs |
-| Remaining to switch-over | ~310–480 h | estimated: sum of [gaps](docs/gaps.md) |
+| **Catalog features done** | **701 / 716 (97.9%)** | measured: `catalog.rs`, `cargo xtask parity` |
+| Views ported | 13 / 13 (shell 66 / 77, the rest is gamepad) | measured: [parity checklist](docs/parity-checklist.md) |
+| Visual diff, mean SSIM | 0.847 over 13 views (0.75–0.95) | measured: `cargo xtask visual-diff` 2026-10-22 |
+| Tests (new crates) | 131 desktop + 60 hub + xtask, all passing | `cargo xtask ci` 2026-10-22 |
+| Remaining to switch-over | ~56–98 h | estimated: sum of [gaps](docs/gaps.md) |
 
 ## Milestones
 
 | Milestone | What | State |
 |---|---|---|
-| M0 Foundation | skeleton, hub port, mock, assets, i18n, xtask, catalog and docs | running |
-| M1 Kit and shell | widget kit, app parts, stores, shell, control channel + ui_shot | next |
-| M2 Views | servers, favorites, history, friends, connect, offline, mods, options, news, stats, settings, about, setup | queued |
-| M3 Platform | single instance + links, updater, gamepad, window | queued |
+| M0 Foundation | skeleton, hub port, mock, assets, i18n, xtask, catalog and docs | done |
+| M1 Kit and shell | widget kit, app parts, stores, shell, control channel + ui_shot | done |
+| M2 Views | servers, favorites, history, friends, connect, offline, mods, options, news, stats, settings, about, setup | done |
+| M3 Platform | single instance + links, updater, gamepad, window | next |
 | M4 Switch-over | packaging under the old name, remove `apps/gui` | queued |
 
 ## Progress log
+
+### 2026-10-22
+
+- M2 landed (four parallel lanes, 14 agents). M2.0: the hub publishes the server list as an
+  immutable snapshot and the window filters it into an `Arc<[u32]>` order (0.2–0.6 ms for
+  9 500 servers in release); pings land in rows as they arrive; no paging. Then every view:
+  servers, favorites and history (one saved list), mods with the operation dialog, options,
+  offline, settings, setup wizard, about, Direct Connect, friends, news (no web view, "Open
+  dayz.com" when Cloudflare blocks), stats. Parity 135 → 701 / 716, floor raised to 701;
+  mean SSIM 0.79 → 0.847.
+- Steam's master server is asked through the Web API only (no Steam client fallback).
+- The Steam avatar shows in the title bar and in settings › account (shared picture loader,
+  also used by friends and news).
+- Left: gamepad focus navigation (M3.3, 12 features), the window frame and the legibility
+  report (dropped by the simplified theme), visual polish listed in [gaps](docs/gaps.md).
+
+### 2026-10-21 (M1)
+
+- M1 landed (b03879e9): kit, parts, stores on the hub, shell, command registry, control
+  channel and `ui_shot`; parity 135 / 716. Title-bar drag works on an unfocused window.
 
 ### 2026-10-21
 

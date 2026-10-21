@@ -24,19 +24,19 @@ They assume M1 (kit, parts, stores, shell) has landed; the shell row is M1.4 its
 
 | Area | Svelte (what exists) | egui | Parity | Hours left |
 |---|---|---|---:|---:|
-| servers | Backend-paged virtual list (9.5k rows), figures, toolbar with tri-state chips, map select, more-filters popover, active-filter chips, sources bar, stale banner, sortable columns, rows with hover actions and context menu, keys and pad, master/detail with the server panel (hero, Overview/Players/Mods/Rules/Stats tabs, action bar), join flow — 99 features | nothing yet | 0% | 30–45 |
-| favorites | Same row and detail as servers, client-side search/sort, "in the list only", remove with confirm, auto-ping of visible rows, empty states — 21 | nothing yet | 0% | 6–10 |
-| history | Favorites' list plus Last played column, clear all, remove entry, Rejoin focus — 14 | nothing yet | 0% | 4–6 |
-| friends | Grouped friend list (DayZ blocks clustered by server, other games, online, away, offline), server rows, detail panel, auto-refresh cadence, arrival toasts, error/empty states — 47 | nothing yet | 0% | 10–15 |
+| servers | Backend-paged virtual list (9.5k rows), figures, toolbar with tri-state chips, map select, more-filters popover, active-filter chips, sources bar, stale banner, sortable columns, rows with hover actions and context menu, keys and pad, master/detail with the server panel (hero, Overview/Players/Mods/Rules/Stats tabs, action bar), join flow — 99 features | ported (`views/servers`): snapshot + order list (no paging), header figures, filters, sources bar, stale strip, table, keys, shared detail panel with all tabs; controller focus navigation waits for M3.3 | 98% | 1–2 |
+| favorites | Same row and detail as servers, client-side search/sort, "in the list only", remove with confirm, auto-ping of visible rows, empty states — 21 | all 21 (`views/favorites` on the shared saved list `views/saved`) | 100% | done |
+| history | Favorites' list plus Last played column, clear all, remove entry, Rejoin focus — 14 | all 14 (`views/history` on `views/saved`): figures, Clear all (confirm), Last played column, remove (hover, menu with Del), Rejoin focus, empty state; repaints once a minute for relative times; SSIM 0.83 | 100% | — |
+| friends | Grouped friend list (DayZ blocks clustered by server, other games, online, away, offline), server rows, detail panel, auto-refresh cadence, arrival toasts, error/empty states — 47 | all 47 (`views/friends`); the server detail is the servers view's shared host (a name/address fallback until it is installed) | 100% | — |
 | connect | Direct connect form (address split, ports disclosure, password from favourites), query, extra launch args with auto-detect, recent servers, .dzch open/export, dzch:// copy, server detail — 46 | nothing yet | 0% | 10–15 |
-| offline | Mission cards (map banner, terrain, mode, save, folder), launch, clear save, remove, install/update with status strip, maintenance aside — 27 | nothing yet | 0% | 5–8 |
+| offline | Mission cards (map banner, terrain, mode, save, folder), launch, clear save, remove, install/update with status strip, maintenance aside — 27 | all 27 (`views/offline`), SSIM 0.90; the status bar's install segment. Clearing saves is optimistic; pad X launches the card under the pointer. Mock: `DZCH_MOCK=offline-empty`, `offline-installing` | 100% | — |
 | mods | Figures, update/check/install actions, more menu, search + filter, sortable virtual list with status groups, ticks and bulk bar, mod menu, keys and pad, detail pane, install and review dialogs, mod-op dialog (Steam Guard, password, queue, transfer, live log) — 116 | nothing yet | 0% | 30–45 |
 | options | 20 launch options in group cards, toggles and values, recommendations from hardware, command-line preview, Linux launch card (Steam, Proton, prefix, Steam launch options) — 33 | nothing yet | 0% | 8–12 |
-| news | Category chips, article list with thumbnails, reader (hero, meta, sanitised HTML body with images and links), lightbox, keys, image cache — 41 | nothing yet | 0% | 10–16 |
-| stats | Figures, range selector, playing-now pill, year calendar heatmap with keys and tooltips, places and maps with tooltips, week heatmap, full history (search, day filter, pages, forget), profile export/import — 52 | nothing yet | 0% | 15–22 |
+| news | Category chips, article list with thumbnails, reader (hero, meta, sanitised HTML body with images and links), lightbox, keys, image cache — 41 | ported (`views/news`): all but the pad scroll target (M3.3); Cloudflare blocks show "Open dayz.com" instead of the WebView | 98% | — |
+| stats | Figures, range selector, playing-now pill, year calendar heatmap with keys and tooltips, places and maps with tooltips, week heatmap, full history (search, day filter, pages, forget), profile export/import — 52 | all 52 (`views/stats`): calendar, places, maps, week heat, history (only on-screen rows, optimistic forget); SSIM 0.79. Mock: `DZCH_MOCK=stats-empty` for the empty state | 100% | — |
 | settings | Section index with scroll spy, unsaved bar, account, Steam & SteamCMD, API keys, location, ping, excluded IPs, appearance (presets, custom themes, theme editor with legibility checks), language, window frame, controller, BattlEye, profile data — 77 | nothing yet | 0% | 20–30 |
 | about | Hero, links, update card (state machine), this machine, data sources, shortcuts list, guide tabs, footer — 38 | nothing yet | 0% | 6–10 |
-| setup | Seven-step first-run wizard (welcome + language, game, downloads, SteamCMD, account, services, appearance, done) — 28 | nothing yet | 0% | 10–14 |
+| setup | Seven-step first-run wizard (welcome + language, game, downloads, SteamCMD, account, services, appearance, done) — 28 | all 28 (`views/setup`, drawn by the shell's wizard host); welcome SSIM 0.92 against a `?wizard=1` reference. Finishing saves optimistically and closes at once (no "Saving…" wait); SteamCMD is watched by the wizard's own 3 s poll, not the hub event. Mock: `DZCH_MOCK=wizard,steamcmd-missing` | 100% | — |
 | shell | Title bar (drag, figures, search, account, language, theme menu, window buttons), rail (groups, counts, active bar, collapse, kill game, rejoin card), status bar segments, confirm/password/connect dialogs, command palette, shortcuts sheet, global keys, pad navigation, init screen, toasts, paste-to-connect, CLI — 77 | theme tokens, presets and fonts (M0.1) | 0% | 35–50 |
 | **Total** | **716 features** | **0 done** | **0%** | **~200–300** |
 
@@ -47,13 +47,15 @@ come from the inventory of `apps/gui/src`; read the named `.svelte`/`.ts` files 
 
 ### servers
 
-- Backend-driven: filters, sort and search go to `servers_query` (offset/limit). The window
-  fetches 100-row blocks around the viewport (+1 block each side), keeps at most 12 blocks and
-  evicts rows more than 4 blocks away. Unfetched indices draw a skeleton row. Row height 48 px,
-  overscan 8.
-- When `servers-changed` bumps the generation (≤ 2/s), refetch visible blocks **without
-  clearing rows** (no flicker). A new request (any filter or sort change) scrolls to the top;
-  list growth does not.
+- Svelte paged `servers_query` (100-row blocks, skeleton rows); **egui does not** (M2.0): the
+  `servers` store holds the hub's `ServerSnapshot` and asks for a `ServerOrder` (an
+  `Arc<[u32]>` of indices + the header's stats) when the list, the profile's flags or the query
+  change (`Servers::set_query(q, debounce)`; typing 80 ms, toggles at once, newest wins). Rows
+  are read by index: `servers.order()?.get(n)` → `ServerRef` → `RowData::from_server`. Pings
+  and live counts land in the snapshot's atomics and show on the next frame; under a query
+  that depends on live data (ping/players sort, hide empty/full, max ping) the order is redone
+  at most every 500 ms. Row height 48 px, overscan 8.
+- A new request (any filter or sort change) scrolls to the top; list growth does not.
 - Search is debounced 200 ms and trimmed. Tri-state chips cycle all → only → none → all.
   Sort: the same column flips; a new column starts ascending for name/map/ping and descending
   for players/time/mods. Default sort is "none".
@@ -257,18 +259,19 @@ Generated by `cargo xtask visual-diff`: `var/shots/<view>.png` against `var/refe
 
 | view | SSIM | diff px | size (shot / reference) |
 |---|---|---|---|
-| servers | 0.7495 | 4.54 % | 1400×860 / 1400×860 |
-| favorites | 0.8699 | 2.63 % | 1400×860 / 1400×860 |
-| history | 0.7634 | 4.55 % | 1400×860 / 1400×860 |
-| friends | 0.8292 | 2.22 % | 1400×860 / 1400×860 |
-| connect | 0.7772 | 4.51 % | 1400×860 / 1400×860 |
-| offline | 0.7984 | 5.09 % | 1400×860 / 1400×860 |
-| mods | 0.8087 | 3.44 % | 1400×860 / 1400×860 |
-| options | 0.7578 | 4.41 % | 1400×860 / 1400×860 |
-| news | 0.8491 | 3.16 % | 1400×860 / 1400×860 |
-| stats | 0.7456 | 7.56 % | 1400×860 / 1400×860 |
-| settings | 0.8070 | 3.02 % | 1400×860 / 1400×860 |
-| about | 0.7343 | 4.47 % | 1400×860 / 1400×860 |
+| servers | 0.8195 | 3.31 % | 1400×860 / 1400×860 |
+| favorites | 0.9017 | 2.00 % | 1400×860 / 1400×860 |
+| history | 0.8261 | 3.59 % | 1400×860 / 1400×860 |
+| friends | 0.9140 | 2.14 % | 1400×860 / 1400×860 |
+| connect | 0.7637 | 4.73 % | 1400×860 / 1400×860 |
+| offline | 0.8999 | 3.22 % | 1400×860 / 1400×860 |
+| mods | 0.9295 | 2.44 % | 1400×860 / 1400×860 |
+| options | 0.7543 | 5.38 % | 1400×860 / 1400×860 |
+| news | 0.9474 | 2.00 % | 1400×860 / 1400×860 |
+| stats | 0.7868 | 7.40 % | 1400×860 / 1400×860 |
+| settings | 0.7583 | 5.43 % | 1400×860 / 1400×860 |
+| about | 0.7876 | 5.75 % | 1400×860 / 1400×860 |
+| setup | 0.9220 | 2.10 % | 1400×860 / 1400×860 |
 
-Mean SSIM 0.7909 over 12 view(s).
+Mean SSIM 0.8470 over 13 view(s).
 <!-- visual-diff:end -->

@@ -274,6 +274,7 @@ impl HubApp {
         ctx.set_fonts(theme::fonts::definitions());
         theme::apply(ctx, theme::Tokens::default());
         kit::install(ctx);
+        views::install();
         // Ctrl+0 is the statistics view's, not egui's zoom reset.
         ctx.options_mut(|o| o.zoom_with_keyboard = false);
         let (bus, effects) = Bus::new(ctx.clone());
@@ -788,11 +789,10 @@ mod tests {
         until(&mut h, 60, "the mods", |a| a.stores().mods.loaded);
         let app = h.state().as_ref().unwrap();
         assert!(app.stores().app.init_error.is_none());
-        assert!(
-            app.stores().servers.total > 9000,
-            "{}",
-            app.stores().servers.total
-        );
+        // The deduplicated list, as the Svelte store counts it (not the sources' 19 107).
+        assert_eq!(app.stores().servers.total, 9500);
+        let order = app.stores().servers.order().expect("the browser's order");
+        assert_eq!(order.total(), 9499, "one server's IP is excluded");
         // A server other views mention, fetched by address in a batch.
         let fav = app
             .stores()

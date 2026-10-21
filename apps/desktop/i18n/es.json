@@ -853,6 +853,7 @@
   },
   "news": {
     "allCategories": "Todo",
+    "blockedHint": "dayz.com pide una verificación del navegador. Lee las noticias en el sitio o inténtalo más tarde.",
     "by": "Por {author}",
     "close": "Cerrar",
     "empty": "Aún no hay artículos",
@@ -862,6 +863,7 @@
     "noContent": "Sin contenido disponible.",
     "openAllOnSite": "Abrir todos los artículos en dayz.com",
     "openBrowser": "Abrir en navegador",
+    "openSite": "Abrir dayz.com",
     "readTime": "{minutes} min de lectura",
     "refresh": "Actualizar",
     "retry": "Reintentar",

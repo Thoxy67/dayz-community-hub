@@ -8,6 +8,21 @@
 //! Views are made on first visit and then kept (as `App.svelte` kept them mounted), so a
 //! list keeps its scroll, its filters and its selection when the player comes back.
 
+pub mod about;
+pub mod connect;
+pub mod favorites;
+pub mod friends;
+pub mod history;
+pub mod mods;
+pub mod news;
+pub mod offline;
+pub mod options;
+pub mod saved;
+pub mod servers;
+pub mod settings;
+pub mod setup;
+pub mod stats;
+
 use dz_hub::HubEvent;
 
 use crate::app::Ctx;
@@ -207,12 +222,54 @@ pub trait View {
     fn on_event(&mut self, _ev: &HubEvent, _cx: &mut Ctx) {}
 }
 
+/// Draws the shared server detail (= `ServerDetail.svelte`) for `(ip, query port, name)`
+/// into the `Ui` it is given.
+pub type DetailHost = for<'a, 'b> fn(&'a mut egui::Ui, &'a mut Ctx<'b>, &'a str, i64, &'a str);
+
+static DETAIL_HOST: std::sync::OnceLock<DetailHost> = std::sync::OnceLock::new();
+
+/// The view that owns the server detail (servers) installs it once; the others (favourites,
+/// history, Direct Connect) draw it with [`server_detail`].
+pub fn set_server_detail(host: DetailHost) {
+    let _ = DETAIL_HOST.set(host);
+}
+
+/// Draw the shared server detail; `false` (nothing drawn) while none is installed, so the
+/// caller draws its own summary.
+pub fn server_detail(ui: &mut egui::Ui, cx: &mut Ctx, ip: &str, port: i64, name: &str) -> bool {
+    match DETAIL_HOST.get() {
+        Some(host) => {
+            host(ui, cx, ip, port, name);
+            true
+        }
+        None => false,
+    }
+}
+
+/// Once at start: what views draw outside their own area before they are first shown
+/// (the mod operation's dialog, through the shell's hooks).
+pub fn install() {
+    mods::install();
+    servers::install();
+    setup::install();
+}
+
 /// The view for `id`: one line per view as they are ported
 /// (`ViewId::Servers => Box::new(servers::ServersView::new()),`).
 pub fn create(id: ViewId) -> Box<dyn View> {
-    #[allow(clippy::match_single_binding)]
     match id {
-        _ => Box::new(Placeholder(id)),
+        ViewId::About => Box::new(about::AboutView::new()),
+        ViewId::Connect => Box::new(connect::ConnectView::new()),
+        ViewId::Favorites => Box::new(favorites::FavoritesView::new()),
+        ViewId::Friends => Box::new(friends::FriendsView::new()),
+        ViewId::History => Box::new(history::HistoryView::new()),
+        ViewId::Mods => Box::new(mods::ModsView::new()),
+        ViewId::News => Box::new(news::NewsView::new()),
+        ViewId::Offline => Box::new(offline::OfflineView::new()),
+        ViewId::Options => Box::new(options::OptionsView::new()),
+        ViewId::Settings => Box::new(settings::SettingsView::new()),
+        ViewId::Stats => Box::new(stats::StatsView::new()),
+        ViewId::Servers => Box::new(servers::ServersView::new()),
     }
 }
 

@@ -1116,6 +1116,262 @@ pub static COMMANDS: &[CommandSpec] = &[
             cx.stores.bus.ok(t("settings", "themeCopied"));
         }
     ),
+    // ── launch options (`views/options`) ──
+    cmd!(
+        "options.search",
+        ("options", "searchPlaceholder"),
+        "options",
+        |cx, a| crate::views::options::command(cx, "search", a)
+    ),
+    cmd!(
+        "options.active_only",
+        ("options", "showActiveOnly"),
+        "options",
+        |cx, a| crate::views::options::command(cx, "active_only", a)
+    ),
+    cmd!(
+        "options.toggle",
+        ("options", "statActive"),
+        "options",
+        |cx, a| crate::views::options::command(cx, "toggle", a)
+    ),
+    cmd!(
+        "options.set_value",
+        ("options", "valuePlaceholder"),
+        "options",
+        |cx, a| crate::views::options::command(cx, "set_value", a)
+    ),
+    cmd!(
+        "options.use_recommended",
+        ("options", "useRecommended"),
+        "options",
+        |cx, a| crate::views::options::command(cx, "use_recommended", a)
+    ),
+    cmd!(
+        "options.browse_folder",
+        ("options", "browseFolder"),
+        "options",
+        |cx, a| crate::views::options::command(cx, "browse_folder", a)
+    ),
+    cmd!(
+        "options.clear_value",
+        ("options", "clearValue"),
+        "options",
+        |cx, a| crate::views::options::command(cx, "clear_value", a)
+    ),
+    cmd!(
+        "options.apply_recommended",
+        ("options", "recommendApply"),
+        "options",
+        |cx, a| crate::views::options::command(cx, "apply_recommended", a),
+        |cx| crate::views::options::can_apply(cx)
+    ),
+    cmd!(
+        "options.copy_command",
+        ("options", "copyCommand"),
+        "options",
+        |cx, a| crate::views::options::command(cx, "copy_command", a)
+    ),
+    cmd!(
+        "options.copy_prefix",
+        ("options", "linuxPrefix"),
+        "options",
+        |cx, a| crate::views::options::command(cx, "copy_prefix", a)
+    ),
+    cmd!(
+        "options.copy_linux_command",
+        ("options", "linuxCommand"),
+        "options",
+        |cx, a| crate::views::options::command(cx, "copy_linux_command", a)
+    ),
+    cmd!(
+        "options.linux_raw",
+        ("options", "linuxRaw"),
+        "options",
+        |cx, a| crate::views::options::command(cx, "linux_raw", a)
+    ),
+    // ── settings (`views/settings`) ──
+    cmd!(
+        "settings.goto_section",
+        ("settings", "onThisPage"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "goto_section", a)
+    ),
+    cmd!(
+        "settings.account.save",
+        ("settings", "save"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "account.save", a)
+    ),
+    cmd!(
+        "settings.account.discard",
+        ("settings", "discard"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "account.discard", a)
+    ),
+    cmd!(
+        "settings.account.edit_name",
+        ("settings", "ingameName"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "account.edit_name", a)
+    ),
+    cmd!(
+        "settings.steam.set_downloader",
+        ("settings", "modDownloads"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "steam.set_downloader", a)
+    ),
+    cmd!(
+        "settings.steam.test_steamworks",
+        ("settings", "steamworksTest"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "steam.test_steamworks", a)
+    ),
+    cmd!(
+        "settings.steam.toggle_steam_server_list",
+        ("settings", "steamServerList"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "steam.toggle_steam_server_list", a)
+    ),
+    cmd!(
+        "settings.steam.edit_login",
+        ("settings", "username"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "steam.edit_login", a)
+    ),
+    cmd!(
+        "settings.steam.pick_steam_root",
+        ("settings", "selectSteamRoot"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "steam.pick_steam_root", a)
+    ),
+    cmd!(
+        "settings.steam.pick_steamcmd",
+        ("settings", "selectSteamcmd"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "steam.pick_steamcmd", a)
+    ),
+    cmd!(
+        "settings.steam.open_steamcmd_dir",
+        ("settings", "openFolder"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "steam.open_steamcmd_dir", a)
+    ),
+    cmd!(
+        "settings.steam.detect_steamcmd",
+        ("settings", "steamcmdDetect"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "steam.detect_steamcmd", a)
+    ),
+    cmd!(
+        "settings.steam.install_steamcmd",
+        ("settings", "steamcmdInstallWin"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "steam.install_steamcmd", a)
+    ),
+    cmd!(
+        "settings.apis.edit_key",
+        ("settings", "apiKey"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "apis.edit_key", a)
+    ),
+    cmd!(
+        "settings.apis.edit_steam_id",
+        ("settings", "steamId"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "apis.edit_steam_id", a)
+    ),
+    cmd!(
+        "settings.apis.detect_steam_id",
+        ("settings", "detectSteamId"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "apis.detect_steam_id", a)
+    ),
+    cmd!(
+        "settings.location.open_maps",
+        ("settings", "openMaps"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "location.open_maps", a)
+    ),
+    cmd!(
+        "settings.location.clear",
+        ("settings", "clearLocation"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "location.clear", a)
+    ),
+    cmd!(
+        "settings.location.detect_ip",
+        ("settings", "autodetectIp"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "location.detect_ip", a)
+    ),
+    cmd!(
+        "settings.location.apply_manual",
+        ("settings", "apply"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "location.apply_manual", a)
+    ),
+    cmd!(
+        "settings.ping.set_concurrency",
+        ("about", "pingConcurrency"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "ping.set_concurrency", a)
+    ),
+    cmd!(
+        "settings.ping.set_timeout_auto",
+        ("about", "pingTimeoutAuto"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "ping.set_timeout_auto", a)
+    ),
+    cmd!(
+        "settings.ping.set_timeout_manual",
+        ("about", "pingTimeoutManual"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "ping.set_timeout_manual", a)
+    ),
+    cmd!(
+        "settings.ping.set_retries",
+        ("about", "pingMaxRetries"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "ping.set_retries", a)
+    ),
+    cmd!(
+        "settings.ping.toggle_scope",
+        ("about", "pingScanScope"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "ping.toggle_scope", a)
+    ),
+    cmd!(
+        "settings.excluded.remove_ip",
+        ("settings", "sectionExcluded"),
+        "settings",
+        |cx, a| crate::views::settings::command(cx, "excluded.remove_ip", a)
+    ),
+    cmd!(
+        "theme.derive",
+        ("theme", "derive"),
+        "theme",
+        crate::views::settings::cmd_theme_derive
+    ),
+    cmd!(
+        "theme.import_file",
+        ("theme", "import"),
+        "theme",
+        crate::views::settings::cmd_theme_import
+    ),
+    cmd!(
+        "theme.export_file",
+        ("theme", "export"),
+        "theme",
+        crate::views::settings::cmd_theme_export
+    ),
+    cmd!(
+        "battleye.repair_thorough",
+        ("settings", "battleyeRepair"),
+        "settings",
+        crate::views::settings::cmd_battleye_thorough,
+        crate::views::settings::battleye_repairable
+    ),
     // ── updates ──
     cmd!(
         "updates.check",
@@ -1148,6 +1404,73 @@ pub static COMMANDS: &[CommandSpec] = &[
         "settings",
         |cx, _| cx.stores.battleye.repair(false)
     ),
+    // ── about ──
+    cmd!(
+        "about.open_repo",
+        ("about", "sourceRepo"),
+        "about",
+        crate::views::about::cmd_open_repo
+    ),
+    cmd!(
+        "about.open_releases",
+        ("about", "linkReleases"),
+        "about",
+        crate::views::about::cmd_open_releases
+    ),
+    cmd!(
+        "about.report_bug",
+        ("about", "linkBug"),
+        "about",
+        crate::views::about::cmd_report_bug
+    ),
+    cmd!(
+        "about.open_wiki",
+        ("about", "linkWiki"),
+        "about",
+        crate::views::about::cmd_open_wiki
+    ),
+    cmd!(
+        "about.open_license",
+        ("about", "linkLicense"),
+        "about",
+        crate::views::about::cmd_open_license
+    ),
+    cmd!(
+        "about.open_source_link",
+        ("about", "dataSources"),
+        "about",
+        crate::views::about::cmd_open_source_link
+    ),
+    cmd!(
+        "about.open_stack_link",
+        ("about", "builtWith"),
+        "about",
+        crate::views::about::cmd_open_stack_link
+    ),
+    cmd!(
+        "about.copy_system_info",
+        ("about", "copyInfo"),
+        "about",
+        crate::views::about::cmd_copy_system_info
+    ),
+    cmd!(
+        "about.shortcuts_mode",
+        ("keys", "title"),
+        "about",
+        crate::views::about::cmd_shortcuts_mode
+    ),
+    cmd!(
+        "about.guide_tab",
+        ("about", "guide"),
+        "about",
+        crate::views::about::cmd_guide_tab
+    ),
+    cmd!(
+        "about.copy_example",
+        ("about", "sharing"),
+        "about",
+        crate::views::about::cmd_copy_example
+    ),
     // ── the profile file ──
     cmd!(
         "profile.export",
@@ -1170,6 +1493,115 @@ pub static COMMANDS: &[CommandSpec] = &[
         ("about", "profileReset"),
         "settings",
         |cx, _| cx.stores.profile.reset()
+    ),
+    // ── the first-launch setup (`views/setup`) ──
+    cmd!("setup.open", ("setup", "welcomeTitle"), "setup", |cx, a| {
+        crate::views::setup::command(cx, "open", a)
+    }),
+    cmd!(
+        "setup.next",
+        ("setup", "next"),
+        "setup",
+        |cx, a| crate::views::setup::command(cx, "next", a),
+        crate::views::setup::shown
+    ),
+    cmd!(
+        "setup.back",
+        ("setup", "back"),
+        "setup",
+        |cx, a| crate::views::setup::command(cx, "back", a),
+        crate::views::setup::shown
+    ),
+    cmd!(
+        "setup.go_step",
+        ("setup", "stepOf"),
+        "setup",
+        |cx, a| crate::views::setup::command(cx, "go_step", a),
+        crate::views::setup::shown
+    ),
+    cmd!(
+        "setup.choose_downloader",
+        ("setup", "downloadsTitle"),
+        "setup",
+        |cx, a| crate::views::setup::command(cx, "choose_downloader", a),
+        crate::views::setup::shown
+    ),
+    cmd!(
+        "setup.pick_steam_library",
+        ("setup", "selectSteamRoot"),
+        "setup",
+        |cx, a| crate::views::setup::command(cx, "pick_steam_library", a),
+        crate::views::setup::shown
+    ),
+    cmd!(
+        "setup.pick_steamcmd",
+        ("setup", "selectSteamcmd"),
+        "setup",
+        |cx, a| crate::views::setup::command(cx, "pick_steamcmd", a),
+        crate::views::setup::shown
+    ),
+    cmd!(
+        "setup.copy_install_command",
+        ("setup", "copyCommand"),
+        "setup",
+        |cx, a| crate::views::setup::command(cx, "copy_install_command", a),
+        crate::views::setup::shown
+    ),
+    cmd!(
+        "setup.download_steamcmd",
+        ("setup", "steamcmdInstallAuto"),
+        "setup",
+        |cx, a| crate::views::setup::command(cx, "download_steamcmd", a),
+        crate::views::setup::shown
+    ),
+    cmd!(
+        "setup.rescan_steamcmd",
+        ("setup", "rescan"),
+        "setup",
+        |cx, a| crate::views::setup::command(cx, "rescan_steamcmd", a),
+        crate::views::setup::shown
+    ),
+    cmd!(
+        "setup.rescan_game",
+        ("setup", "rescan"),
+        "setup",
+        |cx, a| crate::views::setup::command(cx, "rescan_game", a),
+        crate::views::setup::shown
+    ),
+    cmd!(
+        "setup.check_steam",
+        ("setup", "checkAgain"),
+        "setup",
+        |cx, a| crate::views::setup::command(cx, "check_steam", a),
+        crate::views::setup::shown
+    ),
+    cmd!(
+        "setup.edit_login",
+        ("setup", "username"),
+        "setup",
+        |cx, a| crate::views::setup::command(cx, "edit_login", a),
+        crate::views::setup::shown
+    ),
+    cmd!(
+        "setup.edit_name",
+        ("setup", "ingameName"),
+        "setup",
+        |cx, a| crate::views::setup::command(cx, "edit_name", a),
+        crate::views::setup::shown
+    ),
+    cmd!(
+        "setup.edit_api",
+        ("setup", "steamApi"),
+        "setup",
+        |cx, a| crate::views::setup::command(cx, "edit_api", a),
+        crate::views::setup::shown
+    ),
+    cmd!(
+        "setup.finish",
+        ("setup", "goServers"),
+        "setup",
+        |cx, a| crate::views::setup::command(cx, "finish", a),
+        crate::views::setup::shown
     ),
     // ── joining ──
     cmd!("connect.address", ("keys", "join"), "connect", |cx, a| {
@@ -1214,6 +1646,9 @@ pub static COMMANDS: &[CommandSpec] = &[
             if let (Some(ip), Some(port)) = (arg_str(a, "ip"), arg_u16(a, "port")) {
                 let (qp, name) = (arg_u16(a, "query_port"), arg_str(a, "name"));
                 cx.stores.connect.copy_link(cx.egui, ip, port, qp, name);
+            } else {
+                // No address given: the Direct Connect form's.
+                cx.stores.direct_copy_link(cx.egui);
             }
         }
     ),
@@ -1248,6 +1683,173 @@ pub static COMMANDS: &[CommandSpec] = &[
                 cx.stores.connect.request = None;
             } else {
                 cx.answer_connect(arg_bool(a, "fetch").unwrap_or(true));
+            }
+        }
+    ),
+    // ── Direct Connect's form (store/direct.rs) ──
+    cmd!("connect.query", ("connect", "query"), "connect", |cx, _| {
+        cx.stores.direct_query()
+    }),
+    cmd!(
+        "connect.join",
+        ("connect", "connect"),
+        "connect",
+        |cx, _| { cx.stores.direct_join() }
+    ),
+    cmd!(
+        "connect.favorite",
+        ("connect", "addFavorite"),
+        "connect",
+        |cx, _| cx.stores.direct_favorite()
+    ),
+    cmd!("connect.clear", ("common", "clear"), "connect", |cx, _| {
+        cx.stores.direct.clear()
+    }),
+    cmd!(
+        "connect.export_dzch",
+        ("connect", "export"),
+        "connect",
+        |cx, _| cx.stores.direct_export()
+    ),
+    cmd!(
+        "connect.set_address",
+        ("connect", "ipHostname"),
+        "connect",
+        |cx, a| {
+            if let Some(v) = arg_str(a, "address") {
+                cx.stores.direct.address = v.chars().take(256).collect();
+                cx.stores.direct.split_address();
+            }
+        }
+    ),
+    cmd!(
+        "connect.password",
+        ("connect", "password"),
+        "connect",
+        |cx, a| {
+            if let Some(v) = arg_str(a, "password") {
+                cx.stores.direct.password = v.chars().take(256).collect();
+                cx.stores.direct.password_from_favorite = false;
+            }
+        }
+    ),
+    cmd!(
+        "connect.toggle_password",
+        ("connect", "showPassword"),
+        "connect",
+        |cx, _| {
+            let d = &mut cx.stores.direct;
+            d.show_password = !d.show_password;
+        }
+    ),
+    cmd!(
+        "connect.toggle_ports",
+        ("connect", "portGame"),
+        "connect",
+        |cx, _| {
+            let d = &mut cx.stores.direct;
+            d.ports_open = !d.ports_open;
+        }
+    ),
+    cmd!("connect.port", ("connect", "port"), "connect", |cx, a| {
+        if let Some(p) = a.get("port") {
+            let v = p
+                .as_u64()
+                .map_or_else(|| p.as_str().unwrap_or("").to_string(), |n| n.to_string());
+            cx.stores.direct.port = v.chars().filter(char::is_ascii_digit).take(5).collect();
+        }
+    }),
+    cmd!(
+        "connect.query_port",
+        ("connect", "queryPort"),
+        "connect",
+        |cx, a| {
+            let v = arg_u16(a, "port")
+                .map(|p| p.to_string())
+                .unwrap_or_default();
+            cx.stores.direct.query_port = v;
+        }
+    ),
+    cmd!(
+        "connect.toggle_args",
+        ("connect", "extraMods"),
+        "connect",
+        |cx, _| {
+            let d = &mut cx.stores.direct;
+            d.args_open = !d.args_open;
+        }
+    ),
+    cmd!(
+        "connect.arg_toggle",
+        ("connect", "enable"),
+        "connect",
+        |cx, a| {
+            if let Some(id) = arg_u64(a, "id") {
+                cx.stores.direct.toggle_arg(id);
+            }
+        }
+    ),
+    cmd!(
+        "connect.arg_up",
+        ("connect", "moveUp"),
+        "connect",
+        |cx, a| {
+            if let Some(id) = arg_u64(a, "id") {
+                cx.stores.direct.move_arg(id, -1);
+            }
+        }
+    ),
+    cmd!(
+        "connect.arg_down",
+        ("connect", "moveDown"),
+        "connect",
+        |cx, a| {
+            if let Some(id) = arg_u64(a, "id") {
+                cx.stores.direct.move_arg(id, 1);
+            }
+        }
+    ),
+    cmd!(
+        "connect.arg_remove",
+        ("connect", "remove"),
+        "connect",
+        |cx, a| {
+            if let Some(id) = arg_u64(a, "id") {
+                cx.stores.direct.remove_arg(id);
+            }
+        }
+    ),
+    cmd!(
+        "connect.arg_add_mod",
+        ("connect", "addMod"),
+        "connect",
+        |cx, a| {
+            if let Some(id) = arg_u64(a, "id") {
+                cx.stores.direct_add_mod(id);
+            }
+        }
+    ),
+    cmd!(
+        "connect.arg_add_custom",
+        ("connect", "addArg"),
+        "connect",
+        |cx, a| {
+            if let Some(v) = arg_str(a, "value") {
+                let v: String = v.chars().take(512).collect();
+                cx.stores.direct.add_custom(&v);
+            }
+        }
+    ),
+    cmd!(
+        "connect.load_recent",
+        ("connect", "recent"),
+        "connect",
+        |cx, a| {
+            if let (Some(ip), Some(port)) = (arg_str(a, "ip"), arg_u16(a, "port")) {
+                let qp = arg_u16(a, "query_port");
+                let pw = arg_str(a, "password").map(str::to_string);
+                cx.go(ViewId::Connect);
+                cx.stores.direct_load(ip, port, qp, pw);
             }
         }
     ),
@@ -1352,6 +1954,640 @@ pub static COMMANDS: &[CommandSpec] = &[
         |cx, _| cx.stores.mods.op.minimised = false,
         |cx| cx.stores.mods.op.active
     ),
+    // ── the mods view's own (`views/mods`) ──
+    cmd!(
+        "mods.update_stale",
+        ("mods", "updateAll"),
+        "mods",
+        crate::views::mods::cmd_update_stale
+    ),
+    cmd!(
+        "mods.update_all",
+        ("mods", "redownloadAll"),
+        "mods",
+        crate::views::mods::cmd_update_all
+    ),
+    cmd!(
+        "mods.update_one",
+        ("mods", "update"),
+        "mods",
+        crate::views::mods::cmd_update_one
+    ),
+    cmd!(
+        "mods.update",
+        ("keys", "updateMod"),
+        "mods",
+        crate::views::mods::cmd_update
+    ),
+    cmd!(
+        "mods.install_dialog",
+        ("mods", "install"),
+        "mods",
+        crate::views::mods::cmd_install_dialog
+    ),
+    cmd!(
+        "mods.install",
+        ("mods", "installMod"),
+        "mods",
+        crate::views::mods::cmd_install
+    ),
+    cmd!(
+        "mods.review_confirm",
+        ("pad", "confirm"),
+        "mods",
+        crate::views::mods::cmd_review_confirm
+    ),
+    cmd!(
+        "mods.more_menu",
+        ("mods", "moreActions"),
+        "mods",
+        crate::views::mods::cmd_more_menu
+    ),
+    cmd!(
+        "mods.search",
+        ("mods", "searchPlaceholder"),
+        "mods",
+        crate::views::mods::cmd_search
+    ),
+    cmd!(
+        "mods.filter",
+        ("mods", "filterLabel"),
+        "mods",
+        crate::views::mods::cmd_filter
+    ),
+    cmd!(
+        "mods.steam_retry",
+        ("mods", "steamNoAnswer"),
+        "mods",
+        crate::views::mods::cmd_steam_retry
+    ),
+    cmd!(
+        "mods.open_settings_steam",
+        ("mods", "openSettings"),
+        "mods",
+        crate::views::mods::cmd_open_settings_steam
+    ),
+    cmd!(
+        "mods.tick_all",
+        ("mods", "selectAll"),
+        "mods",
+        crate::views::mods::cmd_tick_all
+    ),
+    cmd!(
+        "mods.sort.name",
+        ("mods", "colName"),
+        "mods",
+        crate::views::mods::cmd_sort_name
+    ),
+    cmd!(
+        "mods.sort.status",
+        ("mods", "colStatus"),
+        "mods",
+        crate::views::mods::cmd_sort_status
+    ),
+    cmd!(
+        "mods.sort.managed",
+        ("mods", "colInGame"),
+        "mods",
+        crate::views::mods::cmd_sort_managed
+    ),
+    cmd!(
+        "mods.sort.size",
+        ("mods", "colSize"),
+        "mods",
+        crate::views::mods::cmd_sort_size
+    ),
+    cmd!(
+        "mods.sort.local",
+        ("mods", "colDownloaded"),
+        "mods",
+        crate::views::mods::cmd_sort_local
+    ),
+    cmd!(
+        "mods.group.fold",
+        ("mods", "groupCollapse"),
+        "mods",
+        crate::views::mods::cmd_fold
+    ),
+    cmd!(
+        "mods.tick",
+        ("keys", "tick"),
+        "mods",
+        crate::views::mods::cmd_tick
+    ),
+    cmd!(
+        "mods.select",
+        ("keys", "detail"),
+        "mods",
+        crate::views::mods::cmd_select
+    ),
+    cmd!(
+        "mods.close_detail",
+        ("mods", "closeDetail"),
+        "mods",
+        crate::views::mods::cmd_close_detail
+    ),
+    cmd!(
+        "mods.row_menu",
+        ("mods", "moreActions"),
+        "mods",
+        crate::views::mods::cmd_row_menu
+    ),
+    cmd!(
+        "mods.row_context_menu",
+        ("mods", "moreActions"),
+        "mods",
+        crate::views::mods::cmd_row_menu
+    ),
+    cmd!(
+        "mods.open_workshop",
+        ("mods", "openWorkshop"),
+        "mods",
+        crate::views::mods::cmd_open_workshop
+    ),
+    cmd!(
+        "mods.copy_id",
+        ("mods", "copyId"),
+        "mods",
+        crate::views::mods::cmd_copy_id
+    ),
+    cmd!(
+        "mods.tick_stale",
+        ("mods", "selectAllUpdates"),
+        "mods",
+        crate::views::mods::cmd_tick_stale
+    ),
+    cmd!(
+        "mods.bulk_update",
+        ("mods", "update"),
+        "mods",
+        crate::views::mods::cmd_bulk_update
+    ),
+    cmd!(
+        "mods.bulk_redownload",
+        ("mods", "redownload"),
+        "mods",
+        crate::views::mods::cmd_bulk_redownload
+    ),
+    cmd!(
+        "mods.bulk_link",
+        ("mods", "linkAction"),
+        "mods",
+        crate::views::mods::cmd_bulk_link
+    ),
+    cmd!(
+        "mods.bulk_unlink",
+        ("mods", "unlinkAction"),
+        "mods",
+        crate::views::mods::cmd_bulk_unlink
+    ),
+    cmd!(
+        "mods.bulk_delete",
+        ("mods", "deleteSelectedTitle"),
+        "mods",
+        crate::views::mods::cmd_bulk_delete
+    ),
+    cmd!(
+        "mods.clear_ticks",
+        ("mods", "clearSelectionTitle"),
+        "mods",
+        crate::views::mods::cmd_clear_ticks
+    ),
+    cmd!(
+        "mods.move",
+        ("keys", "move"),
+        "mods",
+        crate::views::mods::cmd_move
+    ),
+    cmd!(
+        "mods.edges",
+        ("keys", "edges"),
+        "mods",
+        crate::views::mods::cmd_edges
+    ),
+    cmd!(
+        "mods.op.toggle_log",
+        ("progress", "showLog"),
+        "mods",
+        crate::views::mods::op::cmd_toggle_log
+    ),
+    cmd!(
+        "mods.op.manual_login",
+        ("progress", "dontTrust"),
+        "mods",
+        crate::views::mods::op::cmd_manual_login
+    ),
+    cmd!(
+        "log.filter",
+        ("common", "filterLines"),
+        "mods",
+        crate::views::mods::op::cmd_log_filter
+    ),
+    cmd!(
+        "log.copy",
+        ("common", "copy"),
+        "mods",
+        crate::views::mods::op::cmd_log_copy
+    ),
+    cmd!(
+        "log.follow",
+        ("common", "live"),
+        "mods",
+        crate::views::mods::op::cmd_log_follow
+    ),
+    // ── the server browser (`views/servers/cmds.rs`) ──
+    cmd!(
+        "servers.toggle_detail",
+        ("servers", "toggleDetails"),
+        "servers",
+        crate::views::servers::cmds::toggle_detail
+    ),
+    cmd!(
+        "servers.sort_by",
+        ("servers", "colServer"),
+        "servers",
+        crate::views::servers::cmds::sort_by
+    ),
+    cmd!(
+        "servers.sort_busiest",
+        ("servers", "figSortPlayers"),
+        "servers",
+        crate::views::servers::cmds::sort_busiest
+    ),
+    cmd!(
+        "servers.sort_closest",
+        ("servers", "figSortPing"),
+        "servers",
+        crate::views::servers::cmds::sort_closest
+    ),
+    cmd!(
+        "servers.toggle_hide_full",
+        ("servers", "hideFull"),
+        "servers",
+        crate::views::servers::cmds::toggle_hide_full
+    ),
+    cmd!(
+        "servers.toggle_hide_empty",
+        ("servers", "hideEmpty"),
+        "servers",
+        crate::views::servers::cmds::toggle_hide_empty
+    ),
+    cmd!(
+        "servers.toggle_modded_only",
+        ("servers", "filterModsTitleAll"),
+        "servers",
+        crate::views::servers::cmds::toggle_modded_only
+    ),
+    cmd!(
+        "servers.search",
+        ("servers", "searchPlaceholder"),
+        "servers",
+        crate::views::servers::cmds::search
+    ),
+    cmd!(
+        "servers.filter.cycle",
+        ("servers", "moreFilters"),
+        "servers",
+        crate::views::servers::cmds::cycle
+    ),
+    cmd!(
+        "servers.filter.cycle_1pp",
+        ("servers", "filterFpTitleAll"),
+        "servers",
+        crate::views::servers::cmds::cycle_1pp
+    ),
+    cmd!(
+        "servers.filter.cycle_password",
+        ("servers", "filterPwdTitleAll"),
+        "servers",
+        crate::views::servers::cmds::cycle_password
+    ),
+    cmd!(
+        "servers.filter.cycle_battleye",
+        ("servers", "filterBeTitleAll"),
+        "servers",
+        crate::views::servers::cmds::cycle_battleye
+    ),
+    cmd!(
+        "servers.filter.cycle_modded",
+        ("servers", "filterModsTitleAll"),
+        "servers",
+        crate::views::servers::cmds::cycle_modded
+    ),
+    cmd!(
+        "servers.filter.cycle_official",
+        ("servers", "filterOfficialTitleAll"),
+        "servers",
+        crate::views::servers::cmds::cycle_official
+    ),
+    cmd!(
+        "servers.filter.map",
+        ("servers", "allMaps"),
+        "servers",
+        crate::views::servers::cmds::map
+    ),
+    cmd!(
+        "servers.filter.more_popover",
+        ("servers", "moreFilters"),
+        "servers",
+        crate::views::servers::cmds::more_popover
+    ),
+    cmd!(
+        "servers.filter.max_ping",
+        ("servers", "maxPing"),
+        "servers",
+        crate::views::servers::cmds::max_ping
+    ),
+    cmd!(
+        "servers.filter.hide_empty",
+        ("servers", "hideEmpty"),
+        "servers",
+        crate::views::servers::cmds::hide_empty
+    ),
+    cmd!(
+        "servers.filter.hide_full",
+        ("servers", "hideFull"),
+        "servers",
+        crate::views::servers::cmds::hide_full
+    ),
+    cmd!(
+        "servers.filter.toggle_excluded",
+        ("servers", "excludedReveal"),
+        "servers",
+        crate::views::servers::cmds::toggle_excluded
+    ),
+    cmd!(
+        "servers.filter.remove_one",
+        ("servers", "clearFilters"),
+        "servers",
+        crate::views::servers::cmds::remove_one
+    ),
+    cmd!(
+        "servers.filter.clear",
+        ("servers", "clearFilters"),
+        "servers",
+        crate::views::servers::cmds::clear
+    ),
+    cmd!(
+        "servers.sources.details",
+        ("sources", "title"),
+        "servers",
+        crate::views::servers::cmds::sources_details
+    ),
+    cmd!(
+        "servers.row.select",
+        ("keys", "detail"),
+        "servers",
+        crate::views::servers::cmds::select
+    ),
+    cmd!(
+        "servers.row.show_mods",
+        ("servers", "colMods"),
+        "servers",
+        crate::views::servers::cmds::show_mods
+    ),
+    cmd!(
+        "servers.row.refresh_players",
+        ("detail", "refreshLive"),
+        "servers",
+        crate::views::servers::cmds::refresh_live
+    ),
+    cmd!(
+        "servers.row.copy_address",
+        ("keys", "copyAddress"),
+        "servers",
+        crate::views::servers::cmds::copy_address
+    ),
+    cmd!(
+        "servers.row.exclude_ip",
+        ("servers", "colServer"),
+        "servers",
+        crate::views::servers::cmds::exclude
+    ),
+    cmd!(
+        "list.join",
+        ("keys", "join"),
+        "servers",
+        crate::views::servers::cmds::join
+    ),
+    cmd!(
+        "list.fav",
+        ("keys", "favorite"),
+        "servers",
+        crate::views::servers::cmds::favorite
+    ),
+    cmd!(
+        "list.ping",
+        ("keys", "ping"),
+        "servers",
+        crate::views::servers::cmds::ping
+    ),
+    cmd!(
+        "list.copy",
+        ("keys", "copyAddress"),
+        "servers",
+        crate::views::servers::cmds::copy_address
+    ),
+    cmd!(
+        "list.link",
+        ("keys", "copyLink"),
+        "servers",
+        crate::views::servers::cmds::copy_link
+    ),
+    cmd!(
+        "list.direct",
+        ("keys", "direct"),
+        "servers",
+        crate::views::servers::cmds::direct
+    ),
+    cmd!(
+        "list.move",
+        ("keys", "move"),
+        "servers",
+        crate::views::servers::cmds::list_move
+    ),
+    cmd!(
+        "list.page",
+        ("keys", "page"),
+        "servers",
+        crate::views::servers::cmds::list_page
+    ),
+    cmd!(
+        "list.edges",
+        ("keys", "edges"),
+        "servers",
+        crate::views::servers::cmds::list_edges
+    ),
+    cmd!(
+        "list.close",
+        ("keys", "deselect"),
+        "servers",
+        crate::views::servers::cmds::list_close
+    ),
+    // ── favourites (`views/favorites`, on the shared saved list `views/saved`) ──
+    cmd!(
+        "favorites.toggle_detail",
+        ("servers", "toggleDetails"),
+        "favorites",
+        crate::views::favorites::toggle_detail
+    ),
+    cmd!(
+        "favorites.toggle_listed_only",
+        ("favorites", "onlineOnly"),
+        "favorites",
+        crate::views::favorites::toggle_listed_only
+    ),
+    cmd!(
+        "favorites.sort_by",
+        ("servers", "colServer"),
+        "favorites",
+        crate::views::favorites::sort_by
+    ),
+    cmd!(
+        "favorites.search",
+        ("favorites", "searchPlaceholder"),
+        "favorites",
+        crate::views::favorites::search
+    ),
+    cmd!(
+        "favorites.select",
+        ("keys", "detail"),
+        "favorites",
+        crate::views::favorites::select
+    ),
+    cmd!(
+        "favorites.remove",
+        ("servers", "removeFavorite"),
+        "favorites",
+        crate::views::favorites::remove
+    ),
+    // ── history (`views/history`, on the shared saved list `views/saved`) ──
+    cmd!(
+        "history.clear",
+        ("history", "clearAll"),
+        "history",
+        crate::views::history::clear,
+        |cx| !cx.stores.profile.history.is_empty()
+    ),
+    cmd!(
+        "history.toggle_detail",
+        ("servers", "toggleDetails"),
+        "history",
+        crate::views::history::toggle_detail
+    ),
+    cmd!(
+        "history.toggle_listed_only",
+        ("favorites", "onlineOnly"),
+        "history",
+        crate::views::history::toggle_listed_only
+    ),
+    cmd!(
+        "history.sort_by",
+        ("history", "colLastPlayed"),
+        "history",
+        crate::views::history::sort_by
+    ),
+    cmd!(
+        "history.search",
+        ("favorites", "searchPlaceholder"),
+        "history",
+        crate::views::history::search
+    ),
+    cmd!(
+        "history.select",
+        ("keys", "detail"),
+        "history",
+        crate::views::history::select
+    ),
+    cmd!(
+        "history.remove",
+        ("history", "remove"),
+        "history",
+        crate::views::history::remove
+    ),
+    cmd!("saved.remove", ("keys", "remove"), "favorites", |cx, a| {
+        if let Some(k) = crate::views::saved::cmds::on_screen(cx) {
+            crate::views::saved::cmds::remove(cx, k, a);
+        }
+    }),
+    cmd!(
+        "servers.detail.resize",
+        ("detail", "title"),
+        "servers",
+        crate::views::servers::cmds::resize
+    ),
+    cmd!(
+        "servers.detail.refresh_live",
+        ("detail", "refreshLive"),
+        "servers",
+        crate::views::servers::cmds::refresh_live
+    ),
+    cmd!(
+        "servers.detail.tab",
+        ("detail", "sections"),
+        "servers",
+        crate::views::servers::cmds::tab
+    ),
+    cmd!(
+        "servers.detail.copy_address",
+        ("detail", "copyIp"),
+        "servers",
+        crate::views::servers::cmds::detail_copy_address
+    ),
+    cmd!(
+        "servers.detail.download_and_join",
+        ("servers", "connect"),
+        "servers",
+        crate::views::servers::cmds::download_and_join
+    ),
+    cmd!(
+        "servers.detail.install_missing",
+        ("detail", "filterMissing"),
+        "servers",
+        crate::views::servers::cmds::install_missing
+    ),
+    cmd!(
+        "servers.detail.update_stale",
+        ("detail", "filterStale"),
+        "servers",
+        crate::views::servers::cmds::update_stale
+    ),
+    cmd!(
+        "servers.detail.search_players",
+        ("detail", "searchPlayers"),
+        "servers",
+        crate::views::servers::cmds::search_players
+    ),
+    cmd!(
+        "servers.detail.search_rules",
+        ("detail", "searchRules"),
+        "servers",
+        crate::views::servers::cmds::search_rules
+    ),
+    cmd!(
+        "servers.detail.mods_filter",
+        ("detail", "filterAll"),
+        "servers",
+        crate::views::servers::cmds::mods_filter
+    ),
+    cmd!(
+        "servers.detail.refresh_stats",
+        ("detail", "dmRefresh"),
+        "servers",
+        crate::views::servers::cmds::refresh_stats
+    ),
+    cmd!(
+        "servers.detail.stats_range",
+        ("detail", "dmRange"),
+        "servers",
+        crate::views::servers::cmds::stats_range
+    ),
+    cmd!(
+        "servers.detail.open_link",
+        ("detail", "dmLinks"),
+        "servers",
+        crate::views::servers::cmds::open_link
+    ),
     // ── friends, the scan ──
     cmd!(
         "friends.refresh",
@@ -1360,6 +2596,57 @@ pub static COMMANDS: &[CommandSpec] = &[
         |cx, _| {
             let shown = cx.nav.view == ViewId::Friends;
             cx.stores.friends.load(shown);
+        }
+    ),
+    cmd!(
+        "friends.search",
+        ("friends", "search"),
+        "friends",
+        |cx, a| {
+            // With `query`, search for it; without, put the cursor in the field.
+            match arg_str(a, "query") {
+                Some(q) => q.clone_into(&mut cx.stores.friends.query),
+                None => cx.nav.focus_search = true,
+            }
+            if cx.nav.view != ViewId::Friends {
+                cx.go(ViewId::Friends);
+            }
+        }
+    ),
+    cmd!(
+        "friends.message",
+        ("friends", "sendMessage"),
+        "friends",
+        |cx, a| {
+            if let Some(id) = arg_str(a, "steam_id") {
+                crate::views::friends::open_steam(cx, &crate::views::friends::message_url(id));
+            }
+        }
+    ),
+    cmd!(
+        "friends.profile",
+        ("friends", "openProfile"),
+        "friends",
+        |cx, a| {
+            if let Some(id) = arg_str(a, "steam_id") {
+                crate::views::friends::open_steam(cx, &crate::views::friends::profile_url(id));
+            }
+        }
+    ),
+    cmd!(
+        "friends.select_server",
+        ("friends", "details"),
+        "friends",
+        |cx, a| {
+            // `{ip, port, name?}` shows that server's details; anything else closes them.
+            cx.stores.friends.selected = match (arg_str(a, "ip"), arg_u16(a, "port")) {
+                (Some(ip), Some(port)) => Some(crate::store::friends::Selected {
+                    ip: ip.to_string(),
+                    port,
+                    name: arg_str(a, "name").unwrap_or_default().to_string(),
+                }),
+                _ => None,
+            };
         }
     ),
     cmd!("servers.scan", ("nav", "sbRescan"), "servers", |cx, _| cx
@@ -1446,6 +2733,209 @@ pub static COMMANDS: &[CommandSpec] = &[
         ("keys", "back"),
         "shell",
         crate::shell::cmd_field_escape
+    ),
+    // ── news ──
+    cmd!(
+        "news.refresh",
+        ("news", "refresh"),
+        "news",
+        crate::views::news::cmd_refresh
+    ),
+    cmd!(
+        "news.open_site",
+        ("news", "openAllOnSite"),
+        "news",
+        crate::views::news::cmd_open_site
+    ),
+    cmd!(
+        "news.filter_category",
+        ("news", "allCategories"),
+        "news",
+        crate::views::news::cmd_filter_category
+    ),
+    cmd!(
+        "news.select",
+        ("news", "selectArticle"),
+        "news",
+        crate::views::news::cmd_select
+    ),
+    cmd!(
+        "news.move",
+        ("keys", "article"),
+        "news",
+        crate::views::news::cmd_move
+    ),
+    cmd!(
+        "news.open",
+        ("keys", "openArticle"),
+        "news",
+        crate::views::news::cmd_open_article,
+        crate::views::news::can_open_article
+    ),
+    cmd!(
+        "news.open_article",
+        ("news", "openBrowser"),
+        "news",
+        crate::views::news::cmd_open_article,
+        crate::views::news::can_open_article
+    ),
+    cmd!(
+        "news.open_link",
+        ("news", "openBrowser"),
+        "news",
+        crate::views::news::cmd_open_link
+    ),
+    cmd!(
+        "news.zoom_image",
+        ("news", "zoomImage"),
+        "news",
+        crate::views::news::cmd_zoom_image
+    ),
+    cmd!(
+        "news.close_lightbox",
+        ("news", "close"),
+        "news",
+        crate::views::news::cmd_close_lightbox
+    ),
+    // ── offline (`views/offline`) ──
+    cmd!(
+        "offline.refresh",
+        ("offline", "refreshTitle"),
+        "offline",
+        crate::views::offline::cmd_refresh,
+        crate::views::offline::can_act
+    ),
+    cmd!(
+        "offline.open_missions_dir",
+        ("offline", "exploreTitle"),
+        "offline",
+        crate::views::offline::cmd_open_missions_dir
+    ),
+    cmd!(
+        "offline.install",
+        ("offline", "installUpdate"),
+        "offline",
+        crate::views::offline::cmd_install,
+        crate::views::offline::can_act
+    ),
+    cmd!(
+        "offline.launch",
+        ("offline", "launch"),
+        "offline",
+        crate::views::offline::cmd_launch
+    ),
+    cmd!(
+        "offline.open_dir",
+        ("offline", "openFolder"),
+        "offline",
+        crate::views::offline::cmd_open_dir
+    ),
+    cmd!(
+        "offline.clear_save",
+        ("offline", "clearSave"),
+        "offline",
+        crate::views::offline::cmd_clear_save,
+        crate::views::offline::can_act
+    ),
+    cmd!(
+        "offline.remove_mission",
+        ("offline", "removeMission"),
+        "offline",
+        crate::views::offline::cmd_remove_mission,
+        crate::views::offline::can_act
+    ),
+    cmd!(
+        "offline.open_project",
+        ("offline", "project"),
+        "offline",
+        crate::views::offline::cmd_open_project
+    ),
+    cmd!(
+        "offline.clear_saves",
+        ("offline", "clearSaves"),
+        "offline",
+        crate::views::offline::cmd_clear_saves,
+        crate::views::offline::can_maintain
+    ),
+    cmd!(
+        "offline.remove_all",
+        ("offline", "removeAll"),
+        "offline",
+        crate::views::offline::cmd_remove_all,
+        crate::views::offline::can_maintain
+    ),
+    // ── stats (`views/stats`) ──
+    cmd!(
+        "stats.set_range",
+        ("stats", "rangeLabel"),
+        "stats",
+        |cx, a| crate::views::stats::command(cx, "set_range", a)
+    ),
+    cmd!(
+        "stats.calendar_prev",
+        ("stats", "prevYear"),
+        "stats",
+        |cx, a| crate::views::stats::command(cx, "calendar_prev", a)
+    ),
+    cmd!(
+        "stats.calendar_next",
+        ("stats", "nextYear"),
+        "stats",
+        |cx, a| crate::views::stats::command(cx, "calendar_next", a)
+    ),
+    cmd!(
+        "stats.calendar_navigate",
+        ("stats", "sectionActivity"),
+        "stats",
+        |cx, a| crate::views::stats::command(cx, "calendar_navigate", a)
+    ),
+    cmd!(
+        "stats.filter_day",
+        ("stats", "pickHint"),
+        "stats",
+        |cx, a| crate::views::stats::command(cx, "filter_day", a)
+    ),
+    cmd!(
+        "stats.clear_day",
+        ("stats", "filterRemove"),
+        "stats",
+        |cx, a| crate::views::stats::command(cx, "clear_day", a)
+    ),
+    cmd!(
+        "stats.filter_text",
+        ("stats", "sectionPlaces"),
+        "stats",
+        |cx, a| crate::views::stats::command(cx, "filter_text", a)
+    ),
+    cmd!(
+        "stats.history_search",
+        ("stats", "historySearch"),
+        "stats",
+        |cx, a| crate::views::stats::command(cx, "history_search", a)
+    ),
+    cmd!(
+        "stats.history_more",
+        ("stats", "sectionHistory"),
+        "stats",
+        |cx, a| crate::views::stats::command(cx, "history_more", a)
+    ),
+    cmd!(
+        "stats.toggle_all_places",
+        ("stats", "showFewerPlaces"),
+        "stats",
+        |cx, a| crate::views::stats::command(cx, "toggle_all_places", a)
+    ),
+    cmd!(
+        "stats.forget_session",
+        ("stats", "deleteSession"),
+        "stats",
+        |cx, a| crate::views::stats::command(cx, "forget_session", a)
+    ),
+    cmd!(
+        "stats.week_navigate",
+        ("stats", "sectionWhen"),
+        "stats",
+        |cx, a| crate::views::stats::command(cx, "week_navigate", a)
     ),
 ];
 

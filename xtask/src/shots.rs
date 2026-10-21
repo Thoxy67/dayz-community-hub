@@ -60,11 +60,17 @@ const EXAMPLE: &str = "apps/desktop/examples/ui_shot.rs";
 
 /// The script that renders `view` into `shot`.
 pub fn script(view: &str, shot: &Path) -> String {
+    // The setup is not a place of the rail: it opens over the servers (`setup.open`).
+    let open = if view == "setup" {
+        serde_json::json!({ "command": "setup.open" })
+    } else {
+        serde_json::json!({ "view": view })
+    };
     let lines = [
         serde_json::json!({ "size": SIZE }),
         serde_json::json!({ "locale": LOCALE }),
         serde_json::json!({ "theme": THEME }),
-        serde_json::json!({ "view": view }),
+        open,
         serde_json::json!({ "steps": STEPS }),
         serde_json::json!({ "shot": shot.to_string_lossy() }),
     ];

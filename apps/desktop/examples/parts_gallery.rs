@@ -766,6 +766,7 @@ fn parts(ui: &mut Ui, s: &mut State) {
             icon: lucide::TRASH_2,
             label: "Remove",
             danger: true,
+            kbd: "Del",
         }];
         let mut pending = s.rows[0].clone();
         pending.ping_ms = None;

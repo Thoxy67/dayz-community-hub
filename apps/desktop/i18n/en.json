@@ -853,6 +853,7 @@
   },
   "news": {
     "allCategories": "All",
+    "blockedHint": "dayz.com asked for a browser check. Read the news on the site, or try again later.",
     "by": "By {author}",
     "close": "Close",
     "empty": "No articles yet",
@@ -862,6 +863,7 @@
     "noContent": "No content available.",
     "openAllOnSite": "Open every article on dayz.com",
     "openBrowser": "Open in browser",
+    "openSite": "Open dayz.com",
     "readTime": "{minutes} min read",
     "refresh": "Refresh",
     "retry": "Try again",

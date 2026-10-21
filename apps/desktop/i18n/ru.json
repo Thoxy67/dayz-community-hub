@@ -853,6 +853,7 @@
   },
   "news": {
     "allCategories": "Все",
+    "blockedHint": "dayz.com требует проверку браузера. Читайте новости на сайте или повторите позже.",
     "by": "Автор: {author}",
     "close": "Закрыть",
     "empty": "Пока нет статей",
@@ -862,6 +863,7 @@
     "noContent": "Нет контента.",
     "openAllOnSite": "Открыть все статьи на dayz.com",
     "openBrowser": "Открыть в браузере",
+    "openSite": "Открыть dayz.com",
     "readTime": "{minutes} мин чтения",
     "refresh": "Обновить",
     "retry": "Повторить",
