@@ -1,0 +1,849 @@
+//! What the browser asks for (= `filters.svelte.ts`), its line of filters (=
+//! `Toolbar.svelte`, `TriChip.svelte`) and the filters in force in words (=
+//! `ActiveFilters.svelte`).
+//!
+//! The choices live in the view's [`super::UiState`]; each frame they become the
+//! `servers` store's [`ServerQuery`] (typing debounced there, toggles at once), and the
+//! hub's order answers it. Buttons here push commands (`servers.filter.*`), so the
+//! palette, the keys and the control channel change the same thing.
+
+use dz_hub::features::browser::{ServerQuery, SortCol, Tri};
+use egui::{CornerRadius, Pos2, Rect, Response, Sense, Stroke, Ui, Vec2, Widget};
+use serde_json::{Value, json};
+
+use super::Run;
+use crate::i18n::{format, t, tf};
+use crate::icons::{Icon, lucide};
+use crate::kit::paint::{self, alpha};
+use crate::kit::{
+    Align, FieldSize, Input, Segment, Segmented, Select, SelectOption, Side, Switch, TipExt, menu,
+};
+use crate::parts::{draw, ph};
+use crate::theme::{TokensExt, font, fonts::Face, size};
+
+/// The ping ceilings "More filters" offers (0 = any).
+pub const PINGS: [u32; 5] = [0, 50, 100, 150, 250];
+
+/// The browser's choices: the search as typed, the filters, the order.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Filters {
+    pub search: String,
+    pub map: Option<String>,
+    pub first_person: Tri,
+    pub password: Tri,
+    pub battleye: Tri,
+    pub modded: Tri,
+    pub official: Tri,
+    pub hide_empty: bool,
+    pub hide_full: bool,
+    /// Hide servers slower than this (ms); 0 for any.
+    pub max_ping: u32,
+    pub show_excluded: bool,
+    pub sort: SortCol,
+    pub asc: bool,
+}
+
+impl Default for Filters {
+    fn default() -> Self {
+        Self {
+            search: String::new(),
+            map: None,
+            first_person: Tri::All,
+            password: Tri::All,
+            battleye: Tri::All,
+            modded: Tri::All,
+            official: Tri::All,
+            hide_empty: false,
+            hide_full: false,
+            max_ping: 0,
+            show_excluded: false,
+            sort: SortCol::None,
+            asc: true,
+        }
+    }
+}
+
+/// One click moves to the next answer: every server, only these, none of these.
+pub fn tri_next(t: Tri) -> Tri {
+    match t {
+        Tri::All => Tri::Only,
+        Tri::Only => Tri::None,
+        Tri::None => Tri::All,
+    }
+}
+
+/// A column by the id the commands and the Svelte interface use.
+pub fn sort_col(id: &str) -> Option<SortCol> {
+    Some(match id {
+        "ping" => SortCol::Ping,
+        "players" => SortCol::Players,
+        "name" | "server" => SortCol::Name,
+        "map" => SortCol::Map,
+        "time" => SortCol::Time,
+        "mods" => SortCol::Mods,
+        "none" => SortCol::None,
+        _ => return None,
+    })
+}
+
+impl Filters {
+    /// The request (the search trimmed; the window is the whole order).
+    pub fn query(&self) -> ServerQuery {
+        ServerQuery {
+            search: self.search.trim().to_string(),
+            map: self.map.clone(),
+            first_person: self.first_person,
+            password: self.password,
+            battleye: self.battleye,
+            modded: self.modded,
+            official: self.official,
+            hide_empty: self.hide_empty,
+            hide_full: self.hide_full,
+            max_ping: self.max_ping,
+            show_excluded: self.show_excluded,
+            sort: self.sort,
+            asc: self.asc,
+            offset: 0,
+            limit: 0,
+        }
+    }
+
+    /// Any filter in force (not the order, not "show excluded").
+    pub fn active(&self) -> bool {
+        !self.search.trim().is_empty()
+            || self.map.is_some()
+            || self.first_person != Tri::All
+            || self.password != Tri::All
+            || self.battleye != Tri::All
+            || self.modded != Tri::All
+            || self.official != Tri::All
+            || self.hide_empty
+            || self.hide_full
+            || self.max_ping > 0
+    }
+
+    pub fn clear(&mut self) {
+        self.search.clear();
+        self.map = None;
+        self.first_person = Tri::All;
+        self.password = Tri::All;
+        self.battleye = Tri::All;
+        self.modded = Tri::All;
+        self.official = Tri::All;
+        self.hide_empty = false;
+        self.hide_full = false;
+        self.max_ping = 0;
+    }
+
+    /// The same column flips; a new one starts A→Z for names, smallest first for ping,
+    /// biggest first for the figures.
+    pub fn toggle_sort(&mut self, col: SortCol) {
+        if col == SortCol::None {
+            self.sort = SortCol::None;
+            self.asc = true;
+        } else if self.sort == col {
+            self.asc = !self.asc;
+        } else {
+            self.sort = col;
+            self.asc = matches!(col, SortCol::Name | SortCol::Map | SortCol::Ping);
+        }
+    }
+
+    /// How many of "More filters"' choices are on (its badge).
+    pub fn more_count(&self) -> usize {
+        usize::from(self.max_ping > 0)
+            + usize::from(self.hide_empty)
+            + usize::from(self.hide_full)
+            + usize::from(self.show_excluded)
+    }
+
+    /// One of the three-way filters by its key.
+    pub fn tri_mut(&mut self, key: &str) -> Option<&mut Tri> {
+        Some(match key {
+            "fp" | "1pp" | "first_person" => &mut self.first_person,
+            "pwd" | "password" => &mut self.password,
+            "be" | "battleye" => &mut self.battleye,
+            "mods" | "modded" => &mut self.modded,
+            "off" | "official" => &mut self.official,
+            _ => return None,
+        })
+    }
+
+    /// Clear one filter by its chip's key (`ActiveFilters`).
+    pub fn remove(&mut self, key: &str) {
+        match key {
+            "search" => self.search.clear(),
+            "map" => self.map = None,
+            "ping" => self.max_ping = 0,
+            "empty" => self.hide_empty = false,
+            "full" => self.hide_full = false,
+            k => {
+                if let Some(t) = self.tri_mut(k) {
+                    *t = Tri::All;
+                }
+            }
+        }
+    }
+}
+
+// ── the line of filters ─────────────────────────────────────────────────────
+
+/// What the toolbar needs from the stores, read before drawing.
+pub struct ToolbarData<'a> {
+    pub shown: usize,
+    pub total: u32,
+    pub maps: &'a [dz_hub::features::browser::MapCount],
+    pub has_key: bool,
+    pub excluded: usize,
+    pub focus_search: bool,
+    pub open_more: bool,
+}
+
+/// `Toolbar.svelte`: search, the three-way chips, the map, "More filters", the count.
+/// The line never wraps.
+pub fn toolbar(ui: &mut Ui, f: &mut Filters, d: &ToolbarData, run: &mut Run) {
+    let tk = ui.tokens();
+    let win_w = ui.ctx().content_rect().width();
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        // The count, at the right end, is measured first so the search can flex.
+        let count_l = format::num(d.shown as f64);
+        let count_r = format!(" / {}", format::num(f64::from(d.total)));
+        let mono = font(Face::Mono, size::TEXT_2XS);
+        let gl = ph(ui, &count_l, mono.clone());
+        let gr = ph(ui, &count_r, mono);
+        let count_w = gl.size().x + gr.size().x + 4.0;
+
+        let compact = win_w < 1500.0;
+        let chips_w = chips_width(ui, compact);
+        let more_w =
+            if win_w < 1536.0 { 34.0 } else { 118.0 } + if f.more_count() > 0 { 22.0 } else { 0.0 };
+        let rest = chips_w + 160.0 + more_w + count_w + 6.0 * 4.0;
+        let max_search = if win_w >= 1280.0 {
+            320.0
+        } else {
+            f32::INFINITY
+        };
+        let search_w = (ui.available_width() - rest).clamp(128.0, max_search);
+        let before = f.search.clone();
+        let r = ui.add(
+            Input::new(&mut f.search)
+                .search()
+                .placeholder(t("servers", "searchPlaceholder"))
+                .clear_label(t("servers", "clearSearch"))
+                .width(search_w)
+                .char_limit(200)
+                .id_salt("servers-search"),
+        );
+        if d.focus_search {
+            r.request_focus();
+        }
+        if f.search != before {
+            ui.ctx().request_repaint();
+        }
+
+        ui.scope(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            let fp = t("servers", "filterFpTitleAll");
+            chip(ui, f.first_person, "1PP", fp, None, false, "fp", run);
+            chip(
+                ui,
+                f.password,
+                t("servers", "passwordProtected"),
+                t("servers", "filterPwdTitleAll"),
+                Some(lucide::LOCK),
+                compact,
+                "pwd",
+                run,
+            );
+            chip(
+                ui,
+                f.battleye,
+                "BattlEye",
+                t("servers", "filterBeTitleAll"),
+                Some(lucide::SHIELD_CHECK),
+                compact,
+                "be",
+                run,
+            );
+            chip(
+                ui,
+                f.modded,
+                t("servers", "colMods"),
+                t("servers", "filterModsTitleAll"),
+                Some(lucide::PUZZLE),
+                compact,
+                "mods",
+                run,
+            );
+            let off_tip = if d.has_key {
+                t("servers", "filterOfficialTitleAll")
+            } else {
+                t("servers", "filterOfficialNoKey")
+            };
+            chip(
+                ui,
+                f.official,
+                t("servers", "official"),
+                off_tip,
+                Some(lucide::BADGE_CHECK),
+                compact,
+                "off",
+                run,
+            );
+        });
+
+        // The map: "<map> · <count>", busiest first; the placeholder clears it.
+        let labels: Vec<String> = d
+            .maps
+            .iter()
+            .map(|m| format!("{} · {}", m.map, m.count))
+            .collect();
+        let opts: Vec<SelectOption<Option<String>>> = d
+            .maps
+            .iter()
+            .zip(&labels)
+            .map(|(m, l)| SelectOption::new(Some(m.map.clone()), l.as_str()))
+            .collect();
+        let mut map = f.map.clone();
+        let r = ui.add(
+            Select::new("servers-map", &mut map, &opts)
+                .placeholder(t("servers", "allMaps"))
+                .none(None)
+                .width(160.0)
+                .label(t("servers", "colMap")),
+        );
+        if r.changed() || map != f.map {
+            run.push(("servers.filter.map", json!({ "map": map })));
+        }
+
+        more_filters(ui, f, d, win_w, run);
+
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let (rect, _) =
+                ui.allocate_exact_size(Vec2::new(count_w, size::CONTROL), Sense::hover());
+            let x = rect.right() - gr.size().x - gl.size().x;
+            draw(ui.painter(), &gl, x, rect.center().y, tk.fg);
+            draw(
+                ui.painter(),
+                &gr,
+                x + gl.size().x,
+                rect.center().y,
+                tk.fg_faint,
+            );
+        });
+    });
+}
+
+/// The chips' width, for the search to take what is left.
+fn chips_width(ui: &Ui, compact: bool) -> f32 {
+    let f = font(Face::SansMedium, size::TEXT_2XS);
+    let w = |label: &str, icon: bool| {
+        let text = if compact && icon {
+            0.0
+        } else {
+            paint::galley(ui, label, f.clone(), egui::Color32::WHITE)
+                .size()
+                .x
+        };
+        12.0 + 2.0 + text + if icon { 16.0 } else { 0.0 } + 16.0
+    };
+    w("1PP", false)
+        + w(t("servers", "passwordProtected"), true)
+        + w("BattlEye", true)
+        + w(t("servers", "colMods"), true)
+        + w(t("servers", "official"), true)
+        + 4.0 * 4.0
+}
+
+#[allow(clippy::too_many_arguments)]
+fn chip(
+    ui: &mut Ui,
+    value: Tri,
+    label: &str,
+    title: &str,
+    icon: Option<Icon>,
+    compact: bool,
+    key: &str,
+    run: &mut Run,
+) {
+    let tip = format!("{label} — {title}");
+    let r = ui.add(TriChip {
+        value,
+        label,
+        icon,
+        compact,
+        tip: &tip,
+    });
+    if r.clicked() {
+        run.push((
+            "servers.filter.cycle",
+            json!({ "key": key, "value": tri_id(tri_next(value)) }),
+        ));
+    }
+}
+
+/// A three-way value as the commands write it.
+pub fn tri_id(t: Tri) -> &'static str {
+    match t {
+        Tri::All => "all",
+        Tri::Only => "only",
+        Tri::None => "none",
+    }
+}
+
+pub fn tri_from(id: &str) -> Option<Tri> {
+    Some(match id {
+        "all" => Tri::All,
+        "only" => Tri::Only,
+        "none" => Tri::None,
+        _ => return None,
+    })
+}
+
+/// `TriChip.svelte`: a filter with three answers; a tick or a cross says which, so the
+/// state reads without hovering. `compact` keeps only the icon below 1500px of window.
+struct TriChip<'a> {
+    value: Tri,
+    label: &'a str,
+    icon: Option<Icon>,
+    compact: bool,
+    tip: &'a str,
+}
+
+impl Widget for TriChip<'_> {
+    fn ui(self, ui: &mut Ui) -> Response {
+        let tk = ui.tokens();
+        let f = font(Face::SansMedium, size::TEXT_2XS);
+        let show_label = !(self.compact && self.icon.is_some());
+        let g = show_label.then(|| ph(ui, self.label, f));
+        let mark = matches!(self.value, Tri::Only | Tri::None);
+        let mut w = 12.0;
+        let mut parts = 0;
+        if self.icon.is_some() {
+            w += 12.0;
+            parts += 1;
+        }
+        if mark {
+            w += 12.0;
+            parts += 1;
+        }
+        if let Some(g) = &g {
+            w += g.size().x;
+            parts += 1;
+        }
+        w += 4.0 * (parts as f32 - 1.0).max(0.0) + 2.0;
+        let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, size::CONTROL), Sense::click());
+        let hover = paint::ease(ui, resp.id.with("hover"), resp.hovered());
+        let (border, fill, ink) = match self.value {
+            Tri::All => (
+                paint::lerp(tk.border, tk.border_strong, hover),
+                egui::Color32::TRANSPARENT,
+                paint::lerp(tk.fg_muted, tk.fg, hover),
+            ),
+            Tri::Only => (alpha(tk.ok, 0.5), alpha(tk.ok, 0.1), tk.ok),
+            Tri::None => (alpha(tk.err, 0.5), alpha(tk.err, 0.1), tk.err),
+        };
+        if ui.is_rect_visible(rect) {
+            let p = ui.painter();
+            p.rect(
+                rect.shrink(0.5),
+                CornerRadius::same(size::RADIUS_SM),
+                fill,
+                Stroke::new(1.0, border),
+                egui::StrokeKind::Inside,
+            );
+            let mut x = rect.left() + 7.0;
+            let cy = rect.center().y;
+            let icon_at =
+                |x: f32| Rect::from_center_size(Pos2::new(x + 6.0, cy), Vec2::splat(12.0));
+            if let Some(i) = self.icon {
+                i.paint(p, icon_at(x), ink);
+                x += 16.0;
+            }
+            match self.value {
+                Tri::Only => {
+                    lucide::CHECK.paint(p, icon_at(x), ink);
+                    x += 16.0;
+                }
+                Tri::None => {
+                    lucide::X.paint(p, icon_at(x), ink);
+                    x += 16.0;
+                }
+                Tri::All => {}
+            }
+            if let Some(g) = &g {
+                draw(p, g, x, cy, ink);
+            }
+        }
+        let pressed = match self.value {
+            Tri::All => false,
+            Tri::Only | Tri::None => true,
+        };
+        let label = self.label;
+        resp.widget_info(|| {
+            egui::WidgetInfo::selected(egui::WidgetType::Button, true, pressed, label)
+        });
+        resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+            .tip_kbd(self.tip, "", Side::Bottom)
+    }
+}
+
+/// "More filters": the ping ceiling, empty and full servers, excluded addresses; its
+/// badge says how many of those are on.
+fn more_filters(ui: &mut Ui, f: &Filters, d: &ToolbarData, win_w: f32, run: &mut Run) {
+    let tk = ui.tokens();
+    let n = f.more_count();
+    let label = t("servers", "moreFilters");
+    let show_label = win_w >= 1536.0;
+    let g = show_label.then(|| ph(ui, label, font(Face::Sans, size::TEXT_XS)));
+    let mut w = 16.0 + size::ICON_SM;
+    if let Some(g) = &g {
+        w += 6.0 + g.size().x;
+    }
+    if n > 0 {
+        w += 6.0 + 16.0;
+    }
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, size::CONTROL), Sense::click());
+    let open = menu::is_open(&resp);
+    let hover = paint::ease(ui, resp.id.with("hover"), resp.hovered() || open);
+    if ui.is_rect_visible(rect) {
+        let p = ui.painter();
+        let (border, ink) = if n > 0 {
+            (alpha(tk.accent, 0.6), tk.accent)
+        } else {
+            (
+                paint::lerp(tk.border, tk.border_strong, hover),
+                paint::lerp(tk.fg_muted, tk.fg, hover),
+            )
+        };
+        p.rect(
+            rect.shrink(0.5),
+            CornerRadius::same(size::RADIUS_SM),
+            paint::lerp(egui::Color32::TRANSPARENT, alpha(tk.raised, 0.6), hover),
+            Stroke::new(1.0, border),
+            egui::StrokeKind::Inside,
+        );
+        let cy = rect.center().y;
+        let mut x = rect.left() + 8.0;
+        lucide::SLIDERS_HORIZONTAL.paint(
+            p,
+            Rect::from_min_size(
+                Pos2::new(x, cy - size::ICON_SM / 2.0),
+                Vec2::splat(size::ICON_SM),
+            ),
+            ink,
+        );
+        x += size::ICON_SM + 6.0;
+        if let Some(g) = &g {
+            draw(p, g, x, cy, ink);
+            x += g.size().x + 6.0;
+        }
+        if n > 0 {
+            let c = Pos2::new(x + 8.0, cy);
+            p.circle_filled(c, 8.0, tk.accent);
+            let ng = ph(ui, &n.to_string(), font(Face::Mono, size::TEXT_3XS));
+            paint::text_center(
+                p,
+                &ng,
+                Rect::from_center_size(c, Vec2::splat(16.0)),
+                tk.accent_fg,
+            );
+        }
+    }
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+    let resp = resp
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .tip_kbd(label, "", Side::Bottom);
+    if d.open_more && !open {
+        egui::Popup::open_id(ui.ctx(), egui::Popup::default_response_id(&resp));
+    }
+    menu::popover(&resp, Side::Bottom, Align::End, |ui| {
+        ui.set_width(288.0);
+        ui.spacing_mut().item_spacing = Vec2::ZERO;
+        // The ping ceiling.
+        egui::Frame::new()
+            .inner_margin(egui::Margin::same(10))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.spacing_mut().item_spacing.y = 6.0;
+                let g = crate::views::servers::stencil_galley(
+                    ui,
+                    t("servers", "maxPing"),
+                    tk.fg_faint,
+                    None,
+                );
+                let (r, _) = ui.allocate_exact_size(g.size(), Sense::hover());
+                ui.painter().galley(r.min, g, tk.fg_faint);
+                let labels: Vec<String> = PINGS
+                    .iter()
+                    .map(|p| {
+                        if *p == 0 {
+                            t("servers", "anyPing").to_string()
+                        } else {
+                            format!("≤{p}")
+                        }
+                    })
+                    .collect();
+                let segs: Vec<Segment<u32>> = PINGS
+                    .iter()
+                    .zip(&labels)
+                    .map(|(p, l)| Segment::new(*p, l.as_str()))
+                    .collect();
+                let mut v = f.max_ping;
+                ui.add(Segmented::new(&mut v, &segs).size(FieldSize::Xs).fill());
+                if v != f.max_ping {
+                    run.push(("servers.filter.max_ping", json!({ "ms": v })));
+                }
+            });
+        let r = ui.painter().add(egui::Shape::Noop);
+        let y = ui.cursor().top();
+        ui.painter().set(
+            r,
+            egui::Shape::hline(
+                ui.max_rect().x_range(),
+                y - 0.5,
+                Stroke::new(1.0, tk.border),
+            ),
+        );
+        let mut e = f.hide_empty;
+        ui.add(Switch::new(&mut e, t("servers", "hideEmpty")));
+        if e != f.hide_empty {
+            run.push(("servers.filter.hide_empty", json!({ "on": e })));
+        }
+        let mut full = f.hide_full;
+        ui.add(Switch::new(&mut full, t("servers", "hideFull")));
+        if full != f.hide_full {
+            run.push(("servers.filter.hide_full", json!({ "on": full })));
+        }
+        if d.excluded > 0 && excluded_row(ui, f.show_excluded, d.excluded).clicked() {
+            run.push(("servers.filter.toggle_excluded", Value::Null));
+        }
+    });
+}
+
+/// "Click to reveal excluded" / "Click to hide excluded", with how many there are.
+fn excluded_row(ui: &mut Ui, shown: bool, n: usize) -> Response {
+    let tk = ui.tokens();
+    let w = ui.available_width();
+    let words = if shown {
+        t("servers", "excludedHide")
+    } else {
+        t("servers", "excludedReveal")
+    };
+    let count = ph(ui, &n.to_string(), font(Face::Mono, size::TEXT_2XS));
+    let x0 = 10.0 + size::ICON_SM + 8.0;
+    let room = w - x0 - 10.0 - count.size().x - 8.0;
+    // `flex-1`: the words wrap rather than cut.
+    let g = paint::galley_wrap(
+        ui,
+        words,
+        font(Face::Sans, size::TEXT_XS),
+        egui::Color32::PLACEHOLDER,
+        room.max(20.0),
+    );
+    let h = (g.size().y + 16.0).max(32.0);
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
+    let hover = paint::ease(ui, resp.id.with("hover"), resp.hovered());
+    let p = ui.painter();
+    p.hline(
+        rect.x_range(),
+        rect.top() + 0.5,
+        Stroke::new(1.0, tk.border),
+    );
+    p.rect_filled(
+        rect.shrink2(Vec2::new(0.0, 0.5)),
+        CornerRadius::ZERO,
+        alpha(tk.raised, hover),
+    );
+    let ink = paint::lerp(tk.fg_muted, tk.fg, hover);
+    let cy = rect.center().y;
+    let icon = if shown { lucide::EYE } else { lucide::EYE_OFF };
+    icon.paint(
+        p,
+        Rect::from_min_size(
+            Pos2::new(rect.left() + 10.0, cy - size::ICON_SM / 2.0),
+            Vec2::splat(size::ICON_SM),
+        ),
+        ink,
+    );
+    p.galley(Pos2::new(rect.left() + x0, cy - g.size().y / 2.0), g, ink);
+    draw(
+        p,
+        &count,
+        rect.right() - 10.0 - count.size().x,
+        cy,
+        tk.fg_faint,
+    );
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, words));
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+// ── the filters in force, in words ──────────────────────────────────────────
+
+/// `ActiveFilters.svelte`: each filter in force as a sentence with its own ✕, and one
+/// button that clears them all. Nothing while none is on.
+pub fn active_line(ui: &mut Ui, f: &Filters, run: &mut Run) {
+    let mut chips: Vec<(&'static str, String)> = Vec::new();
+    let q = f.search.trim();
+    if !q.is_empty() {
+        chips.push(("search", tf("servers", "filterSearch", &[("query", &q)])));
+    }
+    if let Some(m) = &f.map {
+        chips.push((
+            "map",
+            tf(
+                "servers",
+                "filterValue",
+                &[("label", &t("servers", "colMap")), ("value", m)],
+            ),
+        ));
+    }
+    let tri = |chips: &mut Vec<(&'static str, String)>, key, v: Tri, label: &str| match v {
+        Tri::All => {}
+        Tri::Only => chips.push((key, tf("servers", "filterYes", &[("label", &label)]))),
+        Tri::None => chips.push((key, tf("servers", "filterNo", &[("label", &label)]))),
+    };
+    tri(&mut chips, "fp", f.first_person, "1PP");
+    tri(
+        &mut chips,
+        "pwd",
+        f.password,
+        t("servers", "passwordProtected"),
+    );
+    tri(&mut chips, "be", f.battleye, "BattlEye");
+    tri(&mut chips, "mods", f.modded, t("servers", "colMods"));
+    tri(&mut chips, "off", f.official, t("servers", "official"));
+    if f.max_ping > 0 {
+        chips.push((
+            "ping",
+            format!("{} ≤ {} ms", t("servers", "colPing"), f.max_ping),
+        ));
+    }
+    if f.hide_empty {
+        chips.push(("empty", t("servers", "hideEmpty").to_string()));
+    }
+    if f.hide_full {
+        chips.push(("full", t("servers", "hideFull").to_string()));
+    }
+    if chips.is_empty() {
+        return;
+    }
+    let tk = ui.tokens();
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
+        for (key, text) in &chips {
+            let g = ph(ui, text, font(Face::Sans, size::TEXT_2XS));
+            let w = 8.0 + g.size().x + 4.0 + 16.0 + 2.0;
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(w, size::CONTROL_SM), Sense::hover());
+            let p = ui.painter();
+            p.rect(
+                rect.shrink(0.5),
+                CornerRadius::same(size::RADIUS_SM),
+                alpha(tk.accent, 0.08),
+                Stroke::new(1.0, alpha(tk.accent, 0.35)),
+                egui::StrokeKind::Inside,
+            );
+            draw(p, &g, rect.left() + 8.0, rect.center().y, tk.fg);
+            let xr = Rect::from_center_size(
+                Pos2::new(rect.right() - 2.0 - 8.0, rect.center().y),
+                Vec2::splat(16.0),
+            );
+            let remove = tf("servers", "filterRemove", &[("label", text)]);
+            let x = ui.interact(xr, ui.id().with(("chip-x", *key)), Sense::click());
+            let h = paint::ease(ui, x.id.with("hover"), x.hovered());
+            let p = ui.painter();
+            p.rect_filled(
+                xr,
+                CornerRadius::same(size::RADIUS_XS),
+                alpha(tk.accent, 0.15 * h),
+            );
+            lucide::X.paint(
+                p,
+                Rect::from_center_size(xr.center(), Vec2::splat(12.0)),
+                paint::lerp(tk.fg_faint, tk.fg, h),
+            );
+            x.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::WidgetType::Button, true, remove.as_str())
+            });
+            let x = x.on_hover_cursor(egui::CursorIcon::PointingHand).tip_kbd(
+                &remove,
+                "",
+                Side::Bottom,
+            );
+            if x.clicked() {
+                run.push(("servers.filter.remove_one", json!({ "key": key })));
+            }
+        }
+        ui.add_space(4.0);
+        // "Clear filters": accent words with the filter-x mark.
+        let label = t("servers", "clearFilters");
+        let g = ph(ui, label, font(Face::SansMedium, size::TEXT_2XS));
+        let w = 6.0 + 12.0 + 4.0 + g.size().x + 6.0;
+        let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, size::CONTROL_SM), Sense::click());
+        let h = paint::ease(ui, resp.id.with("hover"), resp.hovered());
+        let p = ui.painter();
+        p.rect_filled(
+            rect,
+            CornerRadius::same(size::RADIUS_SM),
+            alpha(tk.accent, 0.1 * h),
+        );
+        lucide::FILTER_X.paint(
+            p,
+            Rect::from_center_size(
+                Pos2::new(rect.left() + 6.0 + 6.0, rect.center().y),
+                Vec2::splat(12.0),
+            ),
+            tk.accent,
+        );
+        draw(p, &g, rect.left() + 22.0, rect.center().y, tk.accent);
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+        if resp
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
+            run.push(("servers.filter.clear", Value::Null));
+        }
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tri_cycles_and_sorts_flip() {
+        assert_eq!(tri_next(Tri::All), Tri::Only);
+        assert_eq!(tri_next(Tri::Only), Tri::None);
+        assert_eq!(tri_next(Tri::None), Tri::All);
+        let mut f = Filters::default();
+        f.toggle_sort(SortCol::Players);
+        assert!(!f.asc);
+        f.toggle_sort(SortCol::Players);
+        assert!(f.asc);
+        f.toggle_sort(SortCol::Ping);
+        assert!(f.asc);
+        f.toggle_sort(SortCol::Name);
+        assert!(f.asc && f.sort == SortCol::Name);
+    }
+
+    #[test]
+    fn active_and_clear() {
+        let mut f = Filters::default();
+        assert!(!f.active());
+        f.search = "  ".into();
+        assert!(!f.active());
+        f.search = " de ".into();
+        f.show_excluded = true;
+        f.max_ping = 100;
+        assert!(f.active());
+        assert_eq!(f.query().search, "de");
+        assert_eq!(f.more_count(), 2);
+        f.remove("ping");
+        assert_eq!(f.max_ping, 0);
+        f.clear();
+        assert!(!f.active());
+        // "Show excluded" is not a filter the clear button resets.
+        assert!(f.show_excluded);
+    }
+}
