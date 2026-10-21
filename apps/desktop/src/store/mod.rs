@@ -24,6 +24,7 @@ pub mod app;
 pub mod battleye;
 pub mod connect;
 pub mod dialogs;
+pub mod direct;
 pub mod friends;
 pub mod game;
 pub mod mods;
@@ -193,6 +194,8 @@ pub struct Stores {
     pub profile: profile::Profile,
     pub mods: mods::Mods,
     pub connect: connect::Connect,
+    /// The Direct Connect form.
+    pub direct: direct::Direct,
     pub game: game::Game,
     pub battleye: battleye::BattlEye,
     pub dialogs: dialogs::Dialogs,
@@ -213,6 +216,7 @@ impl Stores {
             profile: profile::Profile::new(hub.clone(), bus.clone()),
             mods: mods::Mods::new(hub.clone(), bus.clone()),
             connect: connect::Connect::new(hub.clone(), bus.clone()),
+            direct: direct::Direct::new(hub.clone(), bus.clone()),
             game: game::Game::new(hub.clone(), bus.ctx().clone()),
             battleye: battleye::BattlEye::new(hub.clone(), bus.clone()),
             dialogs: dialogs::Dialogs::default(),
