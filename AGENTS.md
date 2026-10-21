@@ -33,6 +33,11 @@ regenerate with `QUERY=theme=chernarus make screenshots` and copy into `var/refe
   nothing blocks, no disk or network on the UI thread. Repaint on events and finished tasks,
   not on a timer. Optimistic updates for toggles. Searches debounced (`rt::Debounce`) and
   superseded (newest request wins).
+- **Native first.** The Svelte app's IPC workarounds (paged row DTOs, throttled events,
+  progress-only pings, skeletons over latency) are not ported: the hub shares `Arc` snapshots
+  and index orders in process, the window reads them directly. Table in
+  `plan/architecture.md` (Native first). When a Svelte behaviour exists only to be fast in a
+  web view, port the *effect*, not the mechanism.
 - **Heavy work stays in Rust below the window** (`dz-hub`): the server list is filtered,
   sorted, counted and paged by `servers_query`; the window holds only the rows on screen and
   draws them with `ScrollArea::show_rows` (or the kit's virtual list).
