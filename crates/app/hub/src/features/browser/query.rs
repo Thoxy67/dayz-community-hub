@@ -254,8 +254,8 @@ fn compute(
             continue;
         }
         if let Some(map) = &q.map
-            && !map.is_empty()
-            && s.map != *map
+            && !map.trim().is_empty()
+            && !s.map.trim().eq_ignore_ascii_case(map.trim())
         {
             continue;
         }
@@ -334,7 +334,18 @@ fn sort(order: &mut [u32], list: &ServerList, live: &LiveMap, col: SortCol, asc:
                 *slot = i;
             }
         }
-        SortCol::Map => order.sort_by(|&a, &b| dir(at(a).map.cmp(&at(b).map))),
+        // One map spelled in several cases sorts as one.
+        SortCol::Map => {
+            let keys: Vec<String> = order
+                .iter()
+                .map(|&i| at(i).map.trim().to_lowercase())
+                .collect();
+            let mut keyed: Vec<(&String, _)> = keys.iter().zip(order.iter().copied()).collect();
+            keyed.sort_by(|a, b| dir(a.0.cmp(b.0)));
+            for (slot, (_, i)) in order.iter_mut().zip(keyed) {
+                *slot = i;
+            }
+        }
         // Servers without a time go last either way.
         SortCol::Time => order.sort_by_cached_key(|&i| match time_minutes(&at(i).time) {
             Some(m) => (0u8, if asc { i64::from(m) } else { -i64::from(m) }),

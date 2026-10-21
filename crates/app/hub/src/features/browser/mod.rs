@@ -95,23 +95,23 @@ async fn servers_lookup(hub: &Hub, keys: Vec<String>) -> Result<Vec<Option<Serve
         .collect())
 }
 
-/// Every map in the list, busiest first.
+/// Every map in the list, busiest first. Servers spell the same map in
+/// different cases ("chernarusplus", "ChernarusPlus"): they count as one map,
+/// named by its most common spelling.
 async fn server_maps(hub: &Hub) -> Result<Vec<MapCount>, String> {
     let state = hub.state()?;
     let list = Arc::clone(&state.read().await.servers);
     tokio::task::spawn_blocking(move || {
-        let mut counts: rustc_hash::FxHashMap<&str, u32> = Default::default();
-        for s in &list.result {
-            *counts.entry(s.map.as_str()).or_default() += 1;
-        }
-        let mut maps: Vec<MapCount> = counts
+        let names = list.result.iter().map(|s| s.map.as_str());
+        let mut maps: Vec<MapCount> = count_maps(names)
             .into_iter()
-            .map(|(map, count)| MapCount {
-                map: map.to_owned(),
-                count,
-            })
+            .map(|(map, count)| MapCount { map, count })
             .collect();
-        maps.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.map.cmp(&b.map)));
+        maps.sort_by(|a, b| {
+            b.count
+                .cmp(&a.count)
+                .then_with(|| a.map.to_lowercase().cmp(&b.map.to_lowercase()))
+        });
         maps
     })
     .await
@@ -274,5 +274,63 @@ impl Hub {
     /// Progress goes out as `PingScanProgress`; returns the first.
     pub async fn start_scan(&self) -> Result<ScanProgress, String> {
         start_scan(self).await
+    }
+}
+
+/// A map's total and each spelling's count, keyed by the lowercased name.
+type Spellings<'a> = (u32, Vec<(&'a str, u32)>);
+
+/// Map names counted case-insensitively (and trimmed), each named by its most
+/// common spelling; ties go to the first spelling met. Blank names are skipped.
+fn count_maps<'a>(names: impl Iterator<Item = &'a str>) -> Vec<(String, u32)> {
+    let mut by_key: rustc_hash::FxHashMap<String, Spellings<'a>> = Default::default();
+    for name in names {
+        let name = name.trim();
+        if name.is_empty() {
+            continue;
+        }
+        let entry = by_key.entry(name.to_lowercase()).or_default();
+        entry.0 += 1;
+        match entry.1.iter_mut().find(|(s, _)| *s == name) {
+            Some((_, n)) => *n += 1,
+            None => entry.1.push((name, 1)),
+        }
+    }
+    by_key
+        .into_values()
+        .map(|(total, spellings)| {
+            let mut best = ("", 0);
+            for (s, n) in spellings {
+                if n > best.1 {
+                    best = (s, n);
+                }
+            }
+            (best.0.to_owned(), total)
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod map_tests {
+    use super::count_maps;
+
+    #[test]
+    fn maps_differing_in_case_are_one_map() {
+        let mut maps = count_maps(
+            [
+                "chernarusplus",
+                "ChernarusPlus",
+                "chernarusplus",
+                " enoch ",
+                "Enoch",
+                "",
+            ]
+            .into_iter(),
+        );
+        maps.sort();
+        assert_eq!(
+            maps,
+            vec![("chernarusplus".to_owned(), 3), ("enoch".to_owned(), 2)]
+        );
     }
 }
