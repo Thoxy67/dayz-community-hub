@@ -1,7 +1,14 @@
 [package]
 name = "xtask"
+description = "Workspace tooling for the egui window: cargo xtask ci, assets, layers, parity, shots, visual-diff"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 publish = false
 
+[lints]
+workspace = true
+
 [dependencies]
+serde_json.workspace = true
+image.workspace = true
