@@ -27,6 +27,9 @@ clap.workspace = true
 thiserror.workspace = true
 rustc-hash.workspace = true
 sysinfo.workspace = true
+dirs.workspace = true
+# Checks the updates' signatures (the AppImage and the Windows zip).
+minisign-verify = "0.3.0"
 dz-common.workspace = true
 dz-api.workspace = true
 dz-a2s.workspace = true
@@ -48,4 +51,3 @@ openssl = { version = "0.10.81", features = ["vendored"] }
 
 [target."cfg(windows)".dependencies]
 zstd = "0.14.0"
-minisign-verify = "0.3.0"
