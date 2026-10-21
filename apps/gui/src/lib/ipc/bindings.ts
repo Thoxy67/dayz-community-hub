@@ -1603,17 +1603,16 @@ export type SteamMeDto = {
 
 export type SteamStatus = {
 	phase: Phase,
-	via: SteamVia | null,
-	/**  Why the other way, or none, was used: a sentence. */
+	/**
+	 *  Off because the profile has no Steam Web API key: the only way the
+	 *  master is asked.
+	 */
+	needs_key: boolean,
+	/**  Why the listing failed: a sentence. */
 	note: string | null,
 	/**  Requests to the master answered, and planned so far (splits add some). */
 	requests_done: number,
 	requests_total: number,
-	/**
-	 *  Web API requests the Steam client answered while the Web API was
-	 *  rationing.
-	 */
-	client_assists: number,
 	/**  What is being asked now. */
 	current: string | null,
 	/**  The master refused; asked again at this time (Unix seconds). */
@@ -1664,9 +1663,6 @@ export type SteamSubscriptionsDto = {
 	 */
 	details: WorkshopItemDto[],
 };
-
-/**  How Steam's master is reached. */
-export type SteamVia = "web_api" | "steam_client";
 
 /**  steamcmd appeared while `watch_steamcmd` was polling. */
 export type SteamcmdDetected = SteamcmdStatusDto;

@@ -43,8 +43,9 @@
       failed: "bg-err",
       off: "bg-fg-faint/30",
     })[p];
+  // The Web API is the only way to Steam's master; without a key it is off.
   const via = $derived(
-    steam?.via === "web_api" ? $w.viaWeb.value : steam?.via ? $w.viaClient.value : "",
+    steam?.needs_key ? $w.needsKey.value : steam && steam.phase !== "off" ? $w.viaWeb.value : "",
   );
   const waitLeft = $derived(steam?.waiting_until ? Math.max(0, steam.waiting_until - clock) : null);
   const took = $derived(
@@ -153,9 +154,6 @@
           <p class="m-0 mb-1 text-fg-faint">{$w.steamHint.value}</p>
           {#if steam.note}<p class="m-0 mb-1 text-warn" data-selectable>{steam.note}</p>{/if}
           {@render line($w.requestsLabel.value, `${steam.requests_done}/${steam.requests_total}`)}
-          {#if steam.client_assists}
-            {@render line($w.clientAssists.value, num(steam.client_assists), "text-fg-muted")}
-          {/if}
           {#if steam.current && steam.phase === "running"}
             {@render line($w.now.value, steam.current, "text-fg-muted")}
           {/if}

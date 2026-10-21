@@ -27,19 +27,19 @@ const content = {
     }),
     steam: t({ en: "Steam", fr: "Steam", de: "Steam", es: "Steam", ru: "Steam" }),
     viaWeb: t({ en: "Web API", fr: "API Web", de: "Web-API", es: "API web", ru: "Web API" }),
-    viaClient: t({
-      en: "Steam client",
-      fr: "client Steam",
-      de: "Steam-Client",
-      es: "cliente de Steam",
-      ru: "клиент Steam",
+    needsKey: t({
+      en: "needs a Web API key",
+      fr: "clé d'API Web requise",
+      de: "Web-API-Schlüssel nötig",
+      es: "requiere una clave de API web",
+      ru: "нужен ключ Web API",
     }),
     steamHint: t({
-      en: "Every server Steam's master lists: through the Web API with a key (fast, split past Steam's 10 000 cap), else through the Steam client (about one request a minute). Each new address is queried, farms left out.",
-      fr: "Tous les serveurs que le master de Steam connaît : via l'API Web avec une clé (rapide, découpé au-delà du plafond de 10 000), sinon via le client Steam (environ une requête par minute). Chaque nouvelle adresse est interrogée, les fermes écartées.",
-      de: "Alle Server, die Steams Master kennt: über die Web-API mit Schlüssel (schnell, über Steams 10 000er-Grenze hinaus aufgeteilt), sonst über den Steam-Client (etwa eine Anfrage pro Minute). Jede neue Adresse wird abgefragt, Farmen bleiben außen vor.",
-      es: "Todos los servidores que lista el máster de Steam: con la API web y una clave (rápido, dividido más allá del tope de 10 000), si no con el cliente de Steam (una petición por minuto aprox.). Cada dirección nueva se consulta y las granjas se descartan.",
-      ru: "Все серверы мастер-сервера Steam: через Web API с ключом (быстро, с разбиением сверх лимита 10 000), иначе через клиент Steam (около запроса в минуту). Каждый новый адрес опрашивается, фермы отбрасываются.",
+      en: "Every server Steam's master lists, through the Steam Web API (a key in Settings › API keys; split past Steam's 10 000 cap). Each new address is queried, farms left out.",
+      fr: "Tous les serveurs que le master de Steam connaît, via l'API Web de Steam (une clé dans Réglages › Clés d'API ; découpé au-delà du plafond de 10 000). Chaque nouvelle adresse est interrogée, les fermes écartées.",
+      de: "Alle Server, die Steams Master kennt, über die Steam-Web-API (ein Schlüssel unter Einstellungen › API-Schlüssel; über Steams 10 000er-Grenze hinaus aufgeteilt). Jede neue Adresse wird abgefragt, Farmen bleiben außen vor.",
+      es: "Todos los servidores que lista el máster de Steam, con la API web de Steam (una clave en Ajustes › Claves de API; dividido más allá del tope de 10 000). Cada dirección nueva se consulta y las granjas se descartan.",
+      ru: "Все серверы мастер-сервера Steam через Steam Web API (ключ в Настройки › API-ключи; с разбиением сверх лимита 10 000). Каждый новый адрес опрашивается, фермы отбрасываются.",
     }),
     kept: t({ en: "Kept", fr: "Conservés", de: "Behalten", es: "Conservados", ru: "Сохранённые" }),
     keptHint: t({
@@ -101,13 +101,6 @@ const content = {
       de: "Anfragen an Steam",
       es: "Peticiones a Steam",
       ru: "Запросы к Steam",
-    }),
-    clientAssists: t({
-      en: "Of those, by the Steam client during pauses",
-      fr: "Dont via le client Steam pendant les pauses",
-      de: "Davon über den Steam-Client während Pausen",
-      es: "De ellas, por el cliente de Steam en las pausas",
-      ru: "Из них через клиент Steam во время пауз",
     }),
     waiting: insert(
       t({

@@ -408,11 +408,11 @@ const content = {
       ru: "Список серверов Steam",
     }),
     steamServerListHint: t({
-      en: "Adds the servers Steam lists that the public list lacks, as they answer. Steam shows DayZ running for a few seconds each time it is asked.",
-      fr: "Ajoute les serveurs que Steam connaît et que la liste publique n'a pas, dès qu'ils répondent. Steam affiche DayZ lancé quelques secondes à chaque demande.",
-      de: "Fügt die Server hinzu, die Steam kennt und die öffentliche Liste nicht, sobald sie antworten. Steam zeigt DayZ bei jeder Abfrage einige Sekunden als laufend an.",
-      es: "Añade los servidores que Steam conoce y la lista pública no, en cuanto responden. Steam muestra DayZ en ejecución unos segundos cada vez.",
-      ru: "Добавляет серверы, которые знает Steam, но нет в общем списке, по мере ответа. Steam на несколько секунд показывает DayZ запущенной при каждом запросе.",
+      en: "Adds the servers Steam lists that the public list lacks, as they answer. Asked through the Steam Web API: needs a key (API keys, below).",
+      fr: "Ajoute les serveurs que Steam connaît et que la liste publique n'a pas, dès qu'ils répondent. Demandé via l'API Web de Steam : une clé est nécessaire (Clés d'API, plus bas).",
+      de: "Fügt die Server hinzu, die Steam kennt und die öffentliche Liste nicht, sobald sie antworten. Über die Steam-Web-API abgefragt: ein Schlüssel ist nötig (API-Schlüssel, weiter unten).",
+      es: "Añade los servidores que Steam conoce y la lista pública no, en cuanto responden. Se piden con la API web de Steam: hace falta una clave (Claves de API, más abajo).",
+      ru: "Добавляет серверы, которые знает Steam, но нет в общем списке, по мере ответа. Запрашивается через Steam Web API: нужен ключ (API-ключи, ниже).",
     }),
     steamServerListSwitch: t({
       en: "Add Steam's servers",

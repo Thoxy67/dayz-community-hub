@@ -370,11 +370,10 @@ function mockSources() {
     dzsa: { phase: "done", count: 10005, error: null, at: now - 40 },
     steam: {
       phase: "running",
-      via: "web_api",
+      needs_key: false,
       note: null,
       requests_done: 37,
       requests_total: 112,
-      client_assists: 3,
       current: "empty · map chernarusplus · d*",
       waiting_until: null,
       listed: 41230,
