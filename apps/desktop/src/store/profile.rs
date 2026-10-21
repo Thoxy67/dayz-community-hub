@@ -1,0 +1,663 @@
+//! The player's profile and what changes it (= `stores/profile.svelte.ts`). Edits are
+//! applied here first and then written; a failed write reloads the profile from disk, so
+//! the screen never shows something that was not saved.
+//!
+//! The hub's `FavoriteDto` and `HistoryDto` are not exported (their module is private),
+//! so the store keeps its own copies, [`Favorite`] and [`History`], made from each
+//! profile it reads and edited optimistically: read `favorites` / `history` here, not
+//! `data.favorites`.
+
+use dz_hub::Hub;
+use dz_hub::features::profile::{ProfileDto, ProfileSettingsInput};
+use dz_hub::features::steamworks::ModDownloaderDto;
+use rustc_hash::FxHashSet;
+
+use super::{Bus, ConfirmRequest, Signal};
+use crate::i18n::{t, tf};
+use crate::rt::{self, Task};
+
+/// A saved server.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Favorite {
+    pub name: String,
+    pub ip: String,
+    pub port: u16,
+    pub password: Option<String>,
+}
+
+/// A server played, newest first.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct History {
+    pub name: String,
+    pub ip: String,
+    pub port: u16,
+    /// Unix seconds of the last join.
+    pub ts: i64,
+    pub relative_time: String,
+}
+
+/// The account part of the settings.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AccountSettings {
+    pub player: Option<String>,
+    pub steam_login: Option<String>,
+    pub steam_root: Option<String>,
+    pub steamcmd_path: Option<String>,
+    pub steam_api_key: Option<String>,
+    pub steam_id: Option<String>,
+    pub user_location: Option<(f64, f64)>,
+}
+
+/// The ping part of the settings.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PingSettings {
+    pub concurrency: u32,
+    pub timeout_auto: u32,
+    pub timeout_manual: u32,
+    pub max_retries: u32,
+    pub scan_favorites: bool,
+    pub scan_history: bool,
+    pub scan_servers: bool,
+}
+
+fn addr_key(ip: &str, port: u16) -> String {
+    format!("{ip}:{port}")
+}
+
+/// A write's outcome: the toast for success, or the message for failure.
+type WriteResult = Result<Option<String>, String>;
+
+/// A launch option's write: what it was (`toggle:<key>` / `set:<key>`), the profile
+/// before (restored on failure), the write.
+type OptionWrite = (String, Option<ProfileDto>, Task<Result<(), String>>);
+
+pub struct Profile {
+    hub: Hub,
+    bus: Bus,
+    pub data: Option<ProfileDto>,
+    pub favorites: Vec<Favorite>,
+    pub history: Vec<History>,
+    pub avatar_url: Option<String>,
+    favorite_keys: FxHashSet<String>,
+    excluded: FxHashSet<String>,
+    load: Option<Task<Result<ProfileDto, String>>>,
+    avatar: Option<Task<Option<String>>>,
+    writes: Vec<Task<WriteResult>>,
+    account: Option<Task<Result<(), String>>>,
+    ping: Option<Task<Result<(), String>>>,
+    ping_pending: Option<PingSettings>,
+    option: Vec<OptionWrite>,
+}
+
+impl Profile {
+    pub fn new(hub: Hub, bus: Bus) -> Self {
+        Self {
+            hub,
+            bus,
+            data: None,
+            favorites: Vec::new(),
+            history: Vec::new(),
+            avatar_url: None,
+            favorite_keys: FxHashSet::default(),
+            excluded: FxHashSet::default(),
+            load: None,
+            avatar: None,
+            writes: Vec::new(),
+            account: None,
+            ping: None,
+            ping_pending: None,
+            option: Vec::new(),
+        }
+    }
+
+    fn set(&mut self, p: ProfileDto) {
+        self.favorites = p
+            .favorites
+            .iter()
+            .map(|f| Favorite {
+                name: f.name.clone(),
+                ip: f.ip.clone(),
+                port: f.port,
+                password: f.password.clone(),
+            })
+            .collect();
+        self.history = p
+            .history
+            .iter()
+            .map(|h| History {
+                name: h.name.clone(),
+                ip: h.ip.clone(),
+                port: h.port,
+                ts: h.ts,
+                relative_time: h.relative_time.clone(),
+            })
+            .collect();
+        self.data = Some(p);
+        self.derive();
+    }
+
+    fn derive(&mut self) {
+        self.favorite_keys = self
+            .favorites
+            .iter()
+            .map(|f| addr_key(&f.ip, f.port))
+            .collect();
+        self.excluded = self
+            .data
+            .as_ref()
+            .map(|p| p.excluded_ips.iter().cloned().collect())
+            .unwrap_or_default();
+    }
+
+    pub fn is_favorite(&self, ip: &str, port: u16) -> bool {
+        self.favorite_keys.contains(&addr_key(ip, port))
+    }
+
+    pub fn is_excluded(&self, ip: &str) -> bool {
+        self.excluded.contains(ip)
+    }
+
+    pub fn has_api_key(&self) -> bool {
+        self.data
+            .as_ref()
+            .is_some_and(|p| p.steam_api_key.as_deref().is_some_and(|k| !k.is_empty()))
+    }
+
+    /// A Web API key and a Steam id: friends can be asked behind other views.
+    pub fn has_web_api(&self) -> bool {
+        self.has_api_key()
+            && self
+                .data
+                .as_ref()
+                .is_some_and(|p| p.steam_id.as_deref().is_some_and(|k| !k.is_empty()))
+    }
+
+    /// Mods download through the running Steam client rather than SteamCMD.
+    pub fn via_steam(&self) -> bool {
+        self.data
+            .as_ref()
+            .is_some_and(|p| p.mod_downloader == ModDownloaderDto::Steamworks)
+    }
+
+    /// (concurrency, background timeout, manual timeout), with the defaults.
+    pub fn ping_settings(&self) -> (u32, u32, u32) {
+        self.data.as_ref().map_or((64, 2000, 10_000), |p| {
+            (
+                p.ping_concurrency,
+                p.ping_timeout_auto,
+                p.ping_timeout_manual,
+            )
+        })
+    }
+
+    pub fn load(&mut self) {
+        let hub = self.hub.clone();
+        self.load = Some(rt::spawn(async move { hub.get_profile().await }));
+    }
+
+    pub fn load_avatar(&mut self) {
+        if !self.has_web_api() {
+            self.avatar_url = None;
+            return;
+        }
+        let hub = self.hub.clone();
+        self.avatar = Some(rt::spawn(async move {
+            hub.fetch_steam_avatar().await.ok().flatten()
+        }));
+    }
+
+    /// Apply locally (already done by the caller), write, and on failure reload and say why.
+    fn write<F>(&mut self, fut: F, done: Option<String>, fail_prefix: Option<String>)
+    where
+        F: std::future::Future<Output = Result<(), String>> + Send + 'static,
+    {
+        let prefix = fail_prefix.unwrap_or_else(|| t("shell", "errorFailed").to_string());
+        self.writes.push(rt::spawn(async move {
+            match fut.await {
+                Ok(()) => Ok(done),
+                Err(e) => Err(format!("{prefix}: {e}")),
+            }
+        }));
+    }
+
+    fn settings(&self) -> ProfileSettingsInput {
+        let p = self.data.as_ref();
+        ProfileSettingsInput {
+            player: p.and_then(|p| p.player.clone()),
+            steam_login: p.and_then(|p| p.steam_login.clone()),
+            steam_root: p.and_then(|p| p.steam_root.clone()),
+            steamcmd_enabled: p.is_none_or(|p| p.steamcmd_enabled),
+            steamcmd_path: p.and_then(|p| p.steamcmd_path.clone()),
+            steam_api_key: p.and_then(|p| p.steam_api_key.clone()),
+            steam_id: p.and_then(|p| p.steam_id.clone()),
+            user_location: p.and_then(|p| p.user_location),
+            ping_concurrency: p.map_or(64, |p| p.ping_concurrency),
+            ping_timeout_auto: p.map_or(2000, |p| p.ping_timeout_auto),
+            ping_timeout_manual: p.map_or(10_000, |p| p.ping_timeout_manual),
+            ping_max_retries: p.map_or(0, |p| p.ping_max_retries),
+            ping_scan_favorites: p.is_none_or(|p| p.ping_scan_favorites),
+            ping_scan_history: p.is_none_or(|p| p.ping_scan_history),
+            ping_scan_servers: p.is_none_or(|p| p.ping_scan_servers),
+        }
+    }
+
+    // ── account ─────────────────────────────────────────────────────────────
+
+    pub fn save_account(&mut self, a: AccountSettings) {
+        let mut s = self.settings();
+        s.player = a.player;
+        s.steam_login = a.steam_login;
+        s.steam_root = a.steam_root;
+        s.steamcmd_path = a.steamcmd_path;
+        s.steam_api_key = a.steam_api_key;
+        s.steam_id = a.steam_id;
+        s.user_location = a.user_location;
+        let hub = self.hub.clone();
+        self.account = Some(rt::spawn(async move { hub.save_profile_settings(s).await }));
+    }
+
+    /// Ping settings are written as the sliders move, without a toast; a write waits for
+    /// the one in flight, and only the newest waiting one is sent.
+    pub fn save_ping(&mut self, p: PingSettings) {
+        if self.data.is_none() {
+            return;
+        }
+        if let Some(d) = &mut self.data {
+            d.ping_concurrency = p.concurrency;
+            d.ping_timeout_auto = p.timeout_auto;
+            d.ping_timeout_manual = p.timeout_manual;
+            d.ping_max_retries = p.max_retries;
+            d.ping_scan_favorites = p.scan_favorites;
+            d.ping_scan_history = p.scan_history;
+            d.ping_scan_servers = p.scan_servers;
+        }
+        if self.ping.is_some() {
+            self.ping_pending = Some(p);
+            return;
+        }
+        let s = self.settings();
+        let hub = self.hub.clone();
+        self.ping = Some(rt::spawn(async move { hub.save_profile_settings(s).await }));
+    }
+
+    /// SteamCMD or the Steam client: takes effect at once, from the next operation.
+    pub fn set_mod_downloader(&mut self, d: ModDownloaderDto) {
+        if let Some(p) = &mut self.data {
+            p.mod_downloader = d;
+        }
+        let hub = self.hub.clone();
+        self.write(async move { hub.set_mod_downloader(d).await }, None, None);
+    }
+
+    /// Steam's own server list is added to the launcher's.
+    pub fn set_steam_server_list(&mut self, enabled: bool) {
+        if let Some(p) = &mut self.data {
+            p.steam_server_list = enabled;
+        }
+        let hub = self.hub.clone();
+        self.write(
+            async move { hub.set_steam_server_list(enabled).await },
+            None,
+            None,
+        );
+    }
+
+    // ── favourites ──────────────────────────────────────────────────────────
+
+    pub fn add_favorite(&mut self, name: &str, ip: &str, port: u16, password: Option<String>) {
+        let prev = self
+            .favorites
+            .iter()
+            .position(|f| f.ip == ip && f.port == port)
+            .map(|i| self.favorites.remove(i));
+        self.favorites.push(Favorite {
+            name: name.to_string(),
+            ip: ip.to_string(),
+            port,
+            password: password.clone().or_else(|| prev.and_then(|p| p.password)),
+        });
+        self.derive();
+        let hub = self.hub.clone();
+        let (n, i) = (name.to_string(), ip.to_string());
+        let done = tf("favorites", "added", &[("name", &name)]);
+        self.write(
+            async move { hub.add_favorite(n, i, port, password).await },
+            Some(done),
+            None,
+        );
+    }
+
+    pub fn remove_favorite(&mut self, ip: &str, port: u16) {
+        self.favorites.retain(|f| !(f.ip == ip && f.port == port));
+        self.derive();
+        let hub = self.hub.clone();
+        let i = ip.to_string();
+        self.write(
+            async move { hub.remove_favorite(i, port).await },
+            Some(t("favorites", "removed").to_string()),
+            None,
+        );
+    }
+
+    pub fn toggle_favorite(&mut self, name: &str, ip: &str, port: u16) {
+        if self.is_favorite(ip, port) {
+            self.remove_favorite(ip, port);
+        } else {
+            self.add_favorite(name, ip, port, None);
+        }
+    }
+
+    /// Remove, after asking.
+    pub fn confirm_remove_favorite(&self, fav: &Favorite) {
+        let req = ConfirmRequest::new(
+            t("favorites", "removeTitle"),
+            tf("favorites", "removeMessage", &[("name", &fav.name)]),
+        )
+        .danger();
+        let (ip, port) = (fav.ip.clone(), fav.port);
+        self.bus
+            .confirm_then(req, move |cx| cx.stores.profile.remove_favorite(&ip, port));
+    }
+
+    // ── history ─────────────────────────────────────────────────────────────
+
+    /// Remove an entry, after asking.
+    pub fn remove_history(&self, h: &History) {
+        let req = ConfirmRequest::new(
+            t("history", "removeTitle"),
+            tf("history", "removeMessage", &[("name", &h.name)]),
+        )
+        .danger();
+        let (ip, port) = (h.ip.clone(), h.port);
+        self.bus.confirm_then(req, move |cx| {
+            cx.stores.profile.remove_history_now(&ip, port)
+        });
+    }
+
+    fn remove_history_now(&mut self, ip: &str, port: u16) {
+        self.history.retain(|e| !(e.ip == ip && e.port == port));
+        let hub = self.hub.clone();
+        let i = ip.to_string();
+        self.write(
+            async move { hub.remove_history_entry(i, port).await },
+            Some(t("history", "removed").to_string()),
+            None,
+        );
+    }
+
+    /// Clear the whole history, after asking.
+    pub fn clear_history(&self) {
+        let count = self.history.len();
+        let req = ConfirmRequest::new(
+            t("history", "clearTitle"),
+            tf("history", "clearMessage", &[("count", &count)]),
+        )
+        .danger();
+        self.bus
+            .confirm_then(req, move |cx| cx.stores.profile.clear_history_now());
+    }
+
+    fn clear_history_now(&mut self) {
+        self.history.clear();
+        let hub = self.hub.clone();
+        self.write(
+            async move { hub.clear_history().await },
+            Some(t("history", "cleared").to_string()),
+            None,
+        );
+    }
+
+    // ── excluded IPs ────────────────────────────────────────────────────────
+
+    pub fn exclude_ip(&mut self, ip: &str) {
+        if let Some(p) = &mut self.data
+            && !p.excluded_ips.iter().any(|e| e == ip)
+        {
+            p.excluded_ips.push(ip.to_string());
+        }
+        self.derive();
+        let hub = self.hub.clone();
+        let i = ip.to_string();
+        self.write(
+            async move { hub.add_excluded_ip(i).await },
+            Some(tf("favorites", "ipExcluded", &[("ip", &ip)])),
+            Some(t("favorites", "ipExcludeFailed").to_string()),
+        );
+    }
+
+    pub fn unexclude_ip(&mut self, ip: &str) {
+        if let Some(p) = &mut self.data {
+            p.excluded_ips.retain(|e| e != ip);
+        }
+        self.derive();
+        let hub = self.hub.clone();
+        let i = ip.to_string();
+        self.write(
+            async move { hub.remove_excluded_ip(i).await },
+            Some(tf("favorites", "ipUnexcluded", &[("ip", &ip)])),
+            None,
+        );
+    }
+
+    // ── launch options ──────────────────────────────────────────────────────
+
+    pub fn toggle_option(&mut self, key: &str) {
+        let before = self.data.clone();
+        if let Some(o) = self
+            .data
+            .as_mut()
+            .and_then(|p| p.options.iter_mut().find(|o| o.key == key))
+        {
+            o.enabled = !o.enabled;
+        }
+        let hub = self.hub.clone();
+        let k = key.to_string();
+        let task = rt::spawn(async move { hub.toggle_launch_option(k).await.map(|_| ()) });
+        self.option.push((format!("toggle:{key}"), before, task));
+    }
+
+    pub fn set_option_value(&mut self, key: &str, value: Option<String>) {
+        let before = self.data.clone();
+        if let Some(o) = self
+            .data
+            .as_mut()
+            .and_then(|p| p.options.iter_mut().find(|o| o.key == key))
+        {
+            if value.is_some() {
+                o.enabled = true;
+            }
+            o.value.clone_from(&value);
+        }
+        let hub = self.hub.clone();
+        let k = key.to_string();
+        let task = rt::spawn(async move { hub.set_launch_option_value(k, value).await });
+        self.option.push((format!("set:{key}"), before, task));
+    }
+
+    // ── the profile file ────────────────────────────────────────────────────
+
+    /// Export to a file the player picks.
+    pub fn export_to(&self, include_mods: bool) {
+        let hub = self.hub.clone();
+        let bus = self.bus.clone();
+        rt::fire(async move {
+            let Some(path) = rfd::AsyncFileDialog::new()
+                .set_title(t("settings", "profileExportTitle"))
+                .set_file_name("dayz-community-hub-profile.dchub")
+                .add_filter(t("settings", "profileFilterName"), &["dchub"])
+                .save_file()
+                .await
+            else {
+                return;
+            };
+            let path = path.path().to_string_lossy().into_owned();
+            match hub.export_profile(path, include_mods).await {
+                Ok(()) => bus.ok(t("settings", "profileExported")),
+                Err(e) => bus.err(tf("settings", "profileExportFailed", &[("error", &e)])),
+            }
+        });
+    }
+
+    /// Import a file the player picks, after asking, then restart.
+    pub fn import_from(&self) {
+        let hub = self.hub.clone();
+        let bus = self.bus.clone();
+        rt::fire(async move {
+            let Some(path) = rfd::AsyncFileDialog::new()
+                .set_title(t("settings", "profileImportTitle"))
+                .add_filter(t("settings", "profileFilterName"), &["dchub"])
+                .pick_file()
+                .await
+            else {
+                return;
+            };
+            let req = ConfirmRequest::new(
+                t("settings", "profileImportConfirmTitle"),
+                t("settings", "profileImportConfirmMessage"),
+            );
+            if !bus.confirm(req).await {
+                return;
+            }
+            let path = path.path().to_string_lossy().into_owned();
+            let r = match hub.import_profile(path).await {
+                Ok(_) => hub.restart_app().await,
+                Err(e) => Err(e),
+            };
+            if let Err(e) = r {
+                bus.err(format!("{}: {e}", t("settings", "profileImportFailed")));
+            }
+        });
+    }
+
+    /// Back to factory defaults, after asking, then restart.
+    pub fn reset(&self) {
+        let hub = self.hub.clone();
+        let bus = self.bus.clone();
+        rt::fire(async move {
+            let req = ConfirmRequest::new(
+                t("settings", "profileResetTitle"),
+                t("settings", "profileResetMessage"),
+            )
+            .danger();
+            if !bus.confirm(req).await {
+                return;
+            }
+            let r = match hub.reset_profile().await {
+                Ok(()) => hub.restart_app().await,
+                Err(e) => Err(e),
+            };
+            if let Err(e) = r {
+                bus.err(format!("{}: {e}", t("settings", "profileResetFailed")));
+            }
+        });
+    }
+
+    // ── the frame ───────────────────────────────────────────────────────────
+
+    pub fn poll(&mut self, signals: &mut Vec<Signal>) -> bool {
+        let mut changed = false;
+        if let Some(task) = &mut self.load
+            && let Some(r) = task.poll()
+        {
+            self.load = None;
+            changed = true;
+            match r {
+                Ok(p) => {
+                    self.set(p);
+                    signals.push(Signal::ProfileLoaded);
+                }
+                Err(e) => self
+                    .bus
+                    .err(tf("settings", "profileLoadFailed", &[("error", &e)])),
+            }
+        }
+        if let Some(task) = &mut self.avatar
+            && let Some(a) = task.poll()
+        {
+            self.avatar = None;
+            self.avatar_url = a;
+            changed = true;
+        }
+        let mut reload = false;
+        let bus = self.bus.clone();
+        self.writes.retain_mut(|task| match task.poll() {
+            Some(Ok(done)) => {
+                if let Some(d) = done {
+                    bus.ok(d);
+                }
+                false
+            }
+            Some(Err(e)) => {
+                bus.err(e);
+                reload = true;
+                false
+            }
+            None => task.is_pending(),
+        });
+        if let Some(task) = &mut self.account
+            && let Some(r) = task.poll()
+        {
+            self.account = None;
+            changed = true;
+            match r {
+                Ok(()) => {
+                    self.bus.ok(t("settings", "profileSettingsSaved"));
+                    signals.push(Signal::AccountSaved);
+                }
+                Err(e) => self.bus.err(tf(
+                    "settings",
+                    "profileSettingsSaveFailed",
+                    &[("error", &e)],
+                )),
+            }
+        }
+        if let Some(task) = &mut self.ping
+            && let Some(r) = task.poll()
+        {
+            self.ping = None;
+            if let Err(e) = r {
+                self.bus.err(tf(
+                    "settings",
+                    "profileSettingsSaveFailed",
+                    &[("error", &e)],
+                ));
+            }
+            if let Some(p) = self.ping_pending.take() {
+                self.save_ping(p);
+            }
+        }
+        let mut failed = Vec::new();
+        self.option
+            .retain_mut(|(what, before, task)| match task.poll() {
+                Some(Ok(())) => false,
+                Some(Err(e)) => {
+                    failed.push((what.clone(), before.take(), e));
+                    false
+                }
+                None => task.is_pending(),
+            });
+        for (what, before, e) in failed {
+            changed = true;
+            let key = what.split_once(':').map_or("", |(_, k)| k);
+            if let (Some(p), Some(b)) = (&mut self.data, before)
+                && let (Some(o), Some(prev)) = (
+                    p.options.iter_mut().find(|o| o.key == key),
+                    b.options.into_iter().find(|o| o.key == key),
+                )
+            {
+                *o = prev;
+            }
+            let word = if what.starts_with("toggle:") {
+                "profileOptionToggleFailed"
+            } else {
+                "profileOptionSetFailed"
+            };
+            self.bus.err(tf("settings", word, &[("error", &e)]));
+        }
+        if reload {
+            self.load();
+            changed = true;
+        }
+        changed
+    }
+}

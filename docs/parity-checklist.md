@@ -2,26 +2,26 @@
 
 Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo test -p dayz-community-hub-egui catalog::tests::write_checklist -- --ignored`). Do not edit by hand.
 
-**0 of 716 features done (0.0%).**
+**135 of 716 features done (18.9%).**
 
 | View | Done | Total | % |
 |---|---:|---:|---:|
-| servers | 0 | 99 | 0% |
-| favorites | 0 | 21 | 0% |
-| history | 0 | 14 | 0% |
-| friends | 0 | 47 | 0% |
-| connect | 0 | 46 | 0% |
+| servers | 9 | 99 | 9% |
+| favorites | 2 | 21 | 10% |
+| history | 1 | 14 | 7% |
+| friends | 5 | 47 | 11% |
+| connect | 3 | 46 | 7% |
 | offline | 0 | 27 | 0% |
-| mods | 0 | 116 | 0% |
+| mods | 19 | 116 | 16% |
 | options | 0 | 33 | 0% |
 | news | 0 | 41 | 0% |
-| stats | 0 | 52 | 0% |
-| settings | 0 | 77 | 0% |
-| about | 0 | 38 | 0% |
-| setup | 0 | 28 | 0% |
-| shell | 0 | 77 | 0% |
+| stats | 5 | 52 | 10% |
+| settings | 18 | 77 | 23% |
+| about | 4 | 38 | 11% |
+| setup | 3 | 28 | 11% |
+| shell | 66 | 77 | 86% |
 
-## servers (0/99)
+## servers (9/99)
 
 | id | what | kind / command | |
 |---|---|---|---|
@@ -33,9 +33,9 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `servers.fig.modded` | Figure 'Modded' (mods colour): percentage modded/shown rounded, '—' when none shown; click toggles modded filter between 'only' and 'all'; tooltip figAllMods when only, else filterModsTitleAll; active while modded=only | `servers.toggle_modded_only` | ⬜ |
 | `servers.fig.pinged` | Figure 'Pinged' (secondary, muted, hidden <1240px): how many shown servers have a ping | display | ⬜ |
 | `servers.fig.best_ping` | Figure 'Best ping' (secondary, green): '<n> ms' or '—'; click sets sort=ping ascending; tooltip figSortPing 'Closest servers first'; active when that sort is in force | `servers.sort_closest` | ⬜ |
-| `servers.header.shortcuts` | Keyboard icon button in header actions opening the shortcuts sheet dialog (tooltip keys.sheet 'Show the shortcuts' with kbd '?') [keys: ?] | `shell.shortcuts_sheet` | ⬜ |
+| `servers.header.shortcuts` | Keyboard icon button in header actions opening the shortcuts sheet dialog (tooltip keys.sheet 'Show the shortcuts' with kbd '?') [keys: ?] | `sheet.toggle` | ✅ |
 | `servers.header.toggle_detail` | Panel-right icon toggle button (accent filled when on) showing/hiding the details pane; tooltip 'Toggle details panel' with kbd I; default on [keys: I] | `servers.toggle_detail` | ⬜ |
-| `servers.header.refresh` | 'Refresh' button with refresh icon (tooltip 'Refresh server list'); disabled and icon spinning while refreshing; toasts info 'Refreshing server list…', then ok 'Loaded {count} servers' or error 'Refresh failed: {error}' [keys: Ctrl+R] | `servers.refresh` | ⬜ |
+| `servers.header.refresh` | 'Refresh' button with refresh icon (tooltip 'Refresh server list'); disabled and icon spinning while refreshing; toasts info 'Refreshing server list…', then ok 'Loaded {count} servers' or error 'Refresh failed: {error}' [keys: Ctrl+R] | `servers.refresh` | ✅ |
 | `servers.filter.search` | Search field (placeholder 'Search name, IP, map…', search icon, clear ✕ button 'Clear search'); debounced 200 ms (trimmed) before the query is sent; Esc empties then leaves the field [keys: Ctrl+F or /] | `servers.search` | ⬜ |
 | `servers.filter.first_person` | Tri-state chip '1PP': click cycles all → only (green border/bg + check icon) → none (red + X icon) → all; tooltip '1PP — 1P = First-Person Only servers… Click to show only 1P servers.' | `servers.filter.cycle_1pp` | ⬜ |
 | `servers.filter.password` | Tri-state chip with lock icon for 'Password protected' (compact: label hidden below 1500px window width, icon only); tooltip 'Click to hide password servers' | `servers.filter.cycle_password` | ⬜ |
@@ -56,25 +56,25 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `servers.sources.kept` | 'KEPT' cell (only when kept.total>0): phase dot, alive (or total) count, red '−removed' when any; tooltip keptHint | display | ⬜ |
 | `servers.sources.in_list` | Right side: 'In the list <total>' · '<n> official' · '<n> duplicates removed' (tooltip duplicatesHint); official/duplicates hidden below 760px | display | ⬜ |
 | `servers.sources.details` | 'ⓘ Details' popover (320px) 'Where the list comes from': per source phase, hint, lines — public list count, fetched (relative), error; Steam via/phase, note (warn), requests, client assists, now asking (while running), addresses listed, farms, already in list, queried, answered, retried, modded-unreadable, fakes, +added (green), took (s or 'm min s s'); duplicates text; kept checked/total, still answer, removed, fakes | `servers.sources.details` | ⬜ |
-| `servers.stale_banner` | Warning strip with clock icon 'Server data is N minutes old' when last refresh >10 min ago (re-checked every 30 s, hidden while loading) with a 'Refresh' button at the right | `servers.refresh` | ⬜ |
+| `servers.stale_banner` | Warning strip with clock icon 'Server data is N minutes old' when last refresh >10 min ago (re-checked every 30 s, hidden while loading) with a 'Refresh' button at the right | `servers.refresh` | ✅ |
 | `servers.table.head` | Sticky table heading row (h-7, stencil uppercase): [star] PING · PLAYERS · SERVER · MAP + TIME (together) · MODS · [actions]; grid columns 1.5rem/4.75rem/6.25rem/1fr/8.5rem/4.5rem/7.5rem; map column hidden when list <720px wide | display | ⬜ |
 | `servers.table.sort` | Each column heading (Ping, Players, Server, Map, Time with tooltip 'In-game server time', Mods) sorts server-side; clicking the active column flips direction, a new column starts ascending for name/map/ping and descending for players/time/mods; up/down arrow on the active one (accent), faint up-down arrow otherwise; default sort 'none' | `servers.sort_by` | ⬜ |
 | `servers.table.virtual` | Virtualised list of all matching servers, 48 px rows, overscan 8; rows fetched from backend in blocks of 100 (in-view blocks ±1), rows >4 blocks away evicted when >1200 held; not-yet-arrived rows draw a skeleton placeholder of the row shape | display | ⬜ |
 | `servers.table.loading` | First load of a request: 14 skeleton rows (role status 'Loading servers…') instead of a spinner | display | ⬜ |
-| `servers.table.error` | When backend has no list: empty state with cloud-off icon 'The server list could not be loaded', the error text in mono (selectable), and accent 'Refresh' button (spinning/disabled while refreshing) | `servers.refresh` | ⬜ |
+| `servers.table.error` | When backend has no list: empty state with cloud-off icon 'The server list could not be loaded', the error text in mono (selectable), and accent 'Refresh' button (spinning/disabled while refreshing) | `servers.refresh` | ✅ |
 | `servers.table.no_match` | Empty state with search-x icon 'No servers match your search' over contour texture; accent 'Clear filters' button only when filters are active | `servers.filter.clear` | ⬜ |
 | `servers.row.favorite` | Star button in the first column: filled amber when favourite, faint otherwise; tooltip 'Add to favorites'/'Remove from favorites'; pops once when starred by this click; toast 'Added {name} to favorites' / 'Removed from favorites'; optimistic [keys: F] | `list.fav` | ⬜ |
 | `servers.row.ping` | Ping cell: 4-bar signal (4 bars <50ms green, 3 <100, 2 <180 amber, 1 red, 0 faint) and 'Nms' / '—' / red '×' on timeout (bars struck through); bars sweep while pending; click re-pings with manual timeout (tooltip 'Click to ping'); amber triangle when a 'full' count could not be verified ('Player count could not be verified - may be stale') [keys: P] | `list.ping` | ⬜ |
 | `servers.row.players` | Players cell: 'players /max' (tone: muted empty, green ≤50%, amber >50%, red full), fill bar beneath with hatched bot portion, bot icon+count with tooltip '{n} bots reported (often fake players)'; dimmed while querying; click asks the server directly via A2S (tooltip 'Click to refresh player count') | `servers.row.refresh_players` | ⬜ |
-| `servers.row.name` | Server name (semibold, truncated, tooltip full name) | display | ⬜ |
-| `servers.row.flags` | Flags after the name: green 'OFFICIAL' badge (tooltip officialTitle) or amber outlined '⚠ Looks official' (tooltip mimicsOfficialTitle); red lock if password; green key if saved password; amber '1PP' badge; blue shield if BattlEye | display | ⬜ |
-| `servers.row.friends` | Green badge with users icon and count when Steam friends are on that server; tooltip 'Friends here: names' | display | ⬜ |
+| `servers.row.name` | Server name (semibold, truncated, tooltip full name) | display | ✅ |
+| `servers.row.flags` | Flags after the name: green 'OFFICIAL' badge (tooltip officialTitle) or amber outlined '⚠ Looks official' (tooltip mimicsOfficialTitle); red lock if password; green key if saved password; amber '1PP' badge; blue shield if BattlEye | display | ✅ |
+| `servers.row.friends` | Green badge with users icon and count when Steam friends are on that server; tooltip 'Friends here: names' | display | ✅ |
 | `servers.row.address` | Second line: ip:gamePort as a copy button (copy glyph on hover, turns to green tick 1.4 s; tooltip 'Copy {address} to clipboard'), game version in mono, OS icon (Windows/Linux) | `servers.row.copy_address` | ⬜ |
-| `servers.row.map_time` | Map column: map id in map colour (tooltip) and in-game time with sun (7–19h)/moon/sunrise (dawn 5–7, dusk 19–21) icon; '—' when no map; hidden <720px | display | ⬜ |
+| `servers.row.map_time` | Map column: map id in map colour (tooltip) and in-game time with sun (7–19h)/moon/sunrise (dawn 5–7, dusk 19–21) icon; '—' when no map; hidden <720px | display | ✅ |
 | `servers.row.mods` | Mods cell: puzzle icon + count; green when all installed & current, amber '↑n' when n stale, red '−n' when n missing, mods colour when unknown; tooltip e.g. '{missing} of its {count} mods are not installed: downloaded when you join' · '{stale} of your copies need an update' / 'Its {count} mods are installed and current: joins at once' / 'Show mod list'; click selects row and opens details on Mods tab; '—' when no mods | `servers.row.show_mods` | ⬜ |
 | `servers.row.select` | Click a row selects it (accent wash + accent left bar fading in); hover lightens; excluded rows at 55% opacity | `servers.row.select` | ⬜ |
 | `servers.row.dblclick_join` | Double-click a row joins the server | `list.join` | ⬜ |
-| `servers.row.hover_actions` | Framed group of xs icon buttons, visible on row hover/focus and always on the selected row: copy dzch link, open in Direct Connect, exclude IP | display | ⬜ |
+| `servers.row.hover_actions` | Framed group of xs icon buttons, visible on row hover/focus and always on the selected row: copy dzch link, open in Direct Connect, exclude IP | display | ✅ |
 | `servers.row.copy_link` | Link icon: copies dzch:// link (tooltip 'Copy a dzch:// link to send to a friend'); toast 'Link copied' [keys: L] | `list.link` | ⬜ |
 | `servers.row.direct` | Plug-zap icon 'Open in Direct Connect': prefills Direct Connect with ip/game port/query port and switches to that view [keys: D] | `list.direct` | ⬜ |
 | `servers.row.exclude` | Ban icon (danger hover): excludes every server at that IP from the browser, red when already excluded (tooltip 'Exclude {ip} from list' / '{ip} is excluded — click to remove'); toasts '{ip} excluded from server list' / '{ip} removed from exclusions' | `servers.row.exclude_ip` | ⬜ |
@@ -125,7 +125,7 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `servers.focus_from_other_view` | Another view (Friends 'Show in the server list', palette) can open the browser on one server: it is resolved, selected and details opened | display | ⬜ |
 | `servers.session_restore` | Search text, filters, sort, scroll, selected server and details visibility restored after a window reload (session 'servers.filters', 'servers.view'); filters survive leaving the view | display | ⬜ |
 
-## favorites (0/21)
+## favorites (2/21)
 
 | id | what | kind / command | |
 |---|---|---|---|
@@ -135,7 +135,7 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `favorites.fig.players` | Figure 'Players on them' (green): sum of players on listed favourites | display | ⬜ |
 | `favorites.fig.best_ping` | Figure 'Best ping': min ping 'N ms' or '—' (timeouts ≥5000 ignored) | display | ⬜ |
 | `favorites.fig.avg_ping` | Figure 'Average ping': rounded mean 'N ms' or '—' | display | ⬜ |
-| `favorites.header.shortcuts` | Keyboard icon opening the shortcuts sheet [keys: ?] | `shell.shortcuts_sheet` | ⬜ |
+| `favorites.header.shortcuts` | Keyboard icon opening the shortcuts sheet [keys: ?] | `sheet.toggle` | ✅ |
 | `favorites.header.toggle_detail` | Panel-right toggle for the details pane (on by default, not persisted) [keys: I] | `favorites.toggle_detail` | ⬜ |
 | `favorites.toolbar.search` | Search 'Search name, address, map…' (immediate, client-side; matches name, ip:port, listed map) with clear ✕ [keys: Ctrl+F or /] | `favorites.search` | ⬜ |
 | `favorites.toolbar.listed_only` | Chip 'In the list only' (tooltip 'Hide servers missing from the current server list'), active state toggles | `favorites.toggle_listed_only` | ⬜ |
@@ -147,11 +147,11 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `favorites.row.context_menu` | Right-click: the shared server menu (Connect, Details, Show mods, Favourite, Ping, Copy IP:port, Copy link, Direct Connect, Exclude IP); no extra item for favourites | `list.join` | ⬜ |
 | `favorites.keys` | Same list keys as the browser plus Del removes the selected favourite (with confirmation); gamepad X/Y/R3 [keys: Up/Down, PgUp/PgDn, Home/End, Esc, Enter, F, P, D, C, L, I, Del] | `list.move` | ⬜ |
 | `favorites.ping_visible` | Rows on screen that have no ping yet are pinged automatically 200 ms after the visible range settles | display | ⬜ |
-| `favorites.empty` | No favourites: star empty state 'No favorites yet', hint 'Press F on any server in the browser to add it', accent 'Browse Servers' button going to the server browser | `view.servers` | ⬜ |
+| `favorites.empty` | No favourites: star empty state 'No favorites yet', hint 'Press F on any server in the browser to add it', accent 'Browse Servers' button going to the server browser | `view.servers` | ✅ |
 | `favorites.no_match` | Search/filter yields nothing: compact empty 'Nothing matches the search' | display | ⬜ |
 | `favorites.detail` | Details pane = the same ServerDetail panel (hero, tabs, action bar); empty pane text 'Select a server to see who is on it, its mods and its rules'; resizable (initial 380, min 300, remembered as 'favorites-detail') | display | ⬜ |
 
-## history (0/14)
+## history (1/14)
 
 | id | what | kind / command | |
 |---|---|---|---|
@@ -167,10 +167,10 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `history.row.remove` | Hover trash 'Remove from history' and context-menu danger item 'Remove from history' (kbd Del); confirms 'Remove Entry' / "Remove '{name}' from history?"; toast 'Removed from history' [keys: Del] | `history.remove` | ⬜ |
 | `history.row` | Same shared row as favourites (star toggles favourite, ping, players, flags, 'Not listed' tag, mods, direct connect, copy link, join) | display | ⬜ |
 | `history.focus_last` | Rail 'Rejoin' card opening History (focus 'last'): resets search/filter, sorts by last played desc, selects newest entry and opens details | display | ⬜ |
-| `history.empty` | No history: history icon empty state 'No connection history yet', hint 'Every server you join is kept here, newest first, so you can go back in one click.', 'Browse Servers' button | `view.servers` | ⬜ |
+| `history.empty` | No history: history icon empty state 'No connection history yet', hint 'Every server you join is kept here, newest first, so you can go back in one click.', 'Browse Servers' button | `view.servers` | ✅ |
 | `history.detail` | Same detail panel and empty-pane text as favourites; pane width remembered as 'history-detail' | display | ⬜ |
 
-## friends (0/47)
+## friends (5/47)
 
 | id | what | kind / command | |
 |---|---|---|---|
@@ -180,12 +180,12 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `friends.header.stat.total` | Figure 'Friends' (statTotal): total friend count, default fg tone | display | ⬜ |
 | `friends.header.source_client_tag` | Tag 'From the Steam client' (sourceClient) shown only when data.source == steam_client; tooltip sourceClientHint (no Web API key: Steam client is asked and shows DayZ running for a moment; a key adds avatars) | display | ⬜ |
 | `friends.header.updated_ago` | Faint text 'Updated {when}' (friends.updated) with relative time since last answer; tooltip 'From Steam's Web API' (sourceWeb) when source is web_api; hidden before first answer; re-rendered every 15 s while view shows | display | ⬜ |
-| `friends.header.refresh` | Button 'Refresh' with refresh icon: calls friends.load(); disabled while loading; icon spins while loading | `friends.refresh` | ⬜ |
+| `friends.header.refresh` | Button 'Refresh' with refresh icon: calls friends.load(); disabled while loading; icon spins while loading | `friends.refresh` | ✅ |
 | `friends.search` | Search input (placeholder 'Search a friend, a server, a map', clear button); shown only when the friend list is non-empty; case-insensitive substring match on friend name, game name, server name (list row name or friend's server name) and map; trimmed; live filter, not persisted | `friends.search` | ⬜ |
 | `friends.state.loading` | Before first data and while loading: skeleton rows (10 rows with avatar/media placeholder) on panel background | display | ⬜ |
 | `friends.state.unavailable` | Error empty state when fetch failed (friends.failed or data.error) and list is empty: user-x icon, title 'Friends unavailable', red selectable error text, hint 'Start Steam, or add a Steam Web API key and your Steam id in the settings.' | display | ⬜ |
-| `friends.state.unavailable.retry` | In error state: 'Retry' button (spinning refresh icon while loading, disabled while loading) re-runs friends.load() | `friends.refresh` | ⬜ |
-| `friends.state.unavailable.open_settings` | In error state: accent button 'Open the settings' navigates to settings view, section 'apis' | `view.settings.apis` | ⬜ |
+| `friends.state.unavailable.retry` | In error state: 'Retry' button (spinning refresh icon while loading, disabled while loading) re-runs friends.load() | `friends.refresh` | ✅ |
+| `friends.state.unavailable.open_settings` | In error state: accent button 'Open the settings' navigates to settings view, section 'apis' | `view.settings.apis` | ✅ |
 | `friends.state.empty` | Empty state (users icon) 'No friends to show'; when Steam answered, hint 'Steam answered, with no friends: the list is empty, or your profile's friends list is private.'; action = Refresh button | display | ⬜ |
 | `friends.state.no_match` | When search filters out everyone: search-x icon empty state 'No friend matches' inside the list pane | display | ⬜ |
 | `friends.layout.master_detail` | Master/detail layout (id 'friends-detail', detail initial 380px, min 300, max 620): list on left, server detail on right only while a server is selected; width resizable and persisted in dzch.prefs panes; double-click splitter resets; below 980px own width the detail slides over the list's right edge as a drawer (min(24rem,88%)) | display | ⬜ |
@@ -211,18 +211,18 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `friends.server_row.unlisted` | Server not in the public list: row dimmed (opacity 55%) and warn tag 'Server not in the list' (unlisted) after flags | display | ⬜ |
 | `friends.server_row.friends_badge` | Green users badge with count of friends on that server; tooltip 'Friends here: {names}' (comma-separated) | display | ⬜ |
 | `friends.server_row.select` | Click on server row selects it: accent left bar + accent/10 bg, opens ServerDetail in the detail pane | `friends.select_server` | ⬜ |
-| `friends.server_row.join` | Double-click row or Join (play) button joins via connect.address(ip, port) (password prompt, mods check dialog, launch) | `servers.join` | ⬜ |
+| `friends.server_row.join` | Double-click row or Join (play) button joins via connect.address(ip, port) (password prompt, mods check dialog, launch) | `connect.address` | ✅ |
 | `friends.server_row.copy_link` | Hover action 'copy link' (link icon, kbd L) copies dzch:// link; toast 'Link copied' | `servers.copy_link` | ⬜ |
 | `friends.server_row.show_in_list` | Listed server: hover icon 'Show in the server list' (list icon) navigates to servers view focused on server:<ip>:<port> | `servers.reveal` | ⬜ |
 | `friends.server_row.details` | Unlisted server: hover icon 'Ask the server and show its details' (scan-search) selects it and opens detail | `friends.select_server` | ⬜ |
-| `friends.server_row.direct_connect` | Hover icon 'Direct connect' (plug-zap) opens the server in Direct Connect view prefilled with game/query ports | `connect.open_in_direct` | ⬜ |
+| `friends.server_row.direct_connect` | Hover icon 'Direct connect' (plug-zap) opens the server in Direct Connect view prefilled with game/query ports | `connect.open_in_direct` | ✅ |
 | `friends.server_row.context_menu` | Right-click the server row opens the shared ServerMenu (every server action) | `servers.context_menu` | ⬜ |
 | `friends.detail.server` | Detail pane shows shared ServerDetail (ip, port, name) with a close button that deselects; when nothing selected, empty state 'Select a server' (servers.selectServer, server icon) | display | ⬜ |
 | `friends.auto_refresh` | Auto refresh cadence only while window focused: every 20 s on Friends view if a friend is in DayZ (web API), 60 s on the view otherwise or when source is steam_client, 120 s behind other views but only via Web API (key+steam id set) and only once it has worked; a failed background ask stops background asks until view opened; counts from end of last ask | display | ⬜ |
 | `friends.toast.arrival` | Toast when a friend starts DayZ or moves to another server between answers: '{name} is playing on {server}' (server name or ip:port) with 'Join' action, or '{name} started DayZ' without action | display | ⬜ |
 | `friends.toast.many` | More than 2 arrivals at once: single toast '{count} friends joined DayZ servers' with 'Show' action navigating to Friends view | display | ⬜ |
 
-## connect (0/46)
+## connect (3/46)
 
 | id | what | kind / command | |
 |---|---|---|---|
@@ -231,14 +231,14 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `connect.header.stat.ping` | Figure 'Ping': '—' when unknown, '×' when >=5000, else 'N ms', coloured by signal level | display | ⬜ |
 | `connect.header.stat.map` | Figure 'Map' with map name in map tone, '—' when none | display | ⬜ |
 | `connect.header.stat.mods` | Figure labelled 'Mods ({count})': value '<n> missing' in warn when any not installed, else count in mods tone | display | ⬜ |
-| `connect.header.open_dzch` | Button 'Open .dzch' (file-up icon, tooltip 'Open a server config file someone shared'): native file picker filtered to .dzch ('DayZ Community Hub server'), then connect.openDzch -> navigates to connect and joins; error toast 'Failed to open .dzch config: {error}' | `connect.open_dzch` | ⬜ |
-| `connect.header.copy_url` | Button 'Copy URL' (link icon, tooltip 'Copy a dzch:// URL to share this server'), disabled until form valid; copies dzch:// link with ip, game port, query port (if different), name, password, mod ids; toast 'Link copied' | `connect.copy_link` | ⬜ |
+| `connect.header.open_dzch` | Button 'Open .dzch' (file-up icon, tooltip 'Open a server config file someone shared'): native file picker filtered to .dzch ('DayZ Community Hub server'), then connect.openDzch -> navigates to connect and joins; error toast 'Failed to open .dzch config: {error}' | `connect.open_dzch` | ✅ |
+| `connect.header.copy_url` | Button 'Copy URL' (link icon, tooltip 'Copy a dzch:// URL to share this server'), disabled until form valid; copies dzch:// link with ip, game port, query port (if different), name, password, mod ids; toast 'Link copied' | `connect.copy_link` | ✅ |
 | `connect.header.export` | Button 'Export .dzch' (file-down, tooltip 'Save a .dzch file for one-click connect'), disabled until valid: save dialog with default name '<sanitized server name, 60 chars>.dzch' or '<ip>_<port>.dzch'; writes v1 config (ip, port, query_port, name, password, mods); toast 'Saved {file}' or error 'Could not save the file: {error}' | `connect.export_dzch` | ⬜ |
 | `connect.layout` | Two columns: fixed 25rem left (Connection panel, Extra mods disclosure, Recent list panel or filler) and flexible right (server detail / querying / recent cards) | display | ⬜ |
 | `connect.form.panel` | Panel 'Connection' containing the form; form tooltip is the intro text 'Join any server by its address, even one missing from the public list...' | display | ⬜ |
 | `connect.form.favorite` | Panel toolbar star icon: 'Add to favorites' / 'Already in favorites' (active/filled when the address is a favourite on either port); disabled until valid; adds favourite with name (or ip:gamePort), ip, game port, password | `connect.favorite` | ⬜ |
 | `connect.form.clear` | Panel toolbar eraser icon 'Clear' (common.clear), disabled when address empty: resets address, port to 2302, query port, password, removes server-detected args (keeps manual ones), clears query results | `connect.clear` | ⬜ |
-| `connect.form.address` | Field 'IP / Hostname', mono, placeholder 'e.g. 192.168.1.1', tooltip 'Paste ip:port and the port is split off by itself.'; no autocomplete/spellcheck; on blur 'host:port' (or [ipv6]:port) is split into address + port | `connect.address` | ⬜ |
+| `connect.form.address` | Field 'IP / Hostname', mono, placeholder 'e.g. 192.168.1.1', tooltip 'Paste ip:port and the port is split off by itself.'; no autocomplete/spellcheck; on blur 'host:port' (or [ipv6]:port) is split into address + port | `connect.address` | ✅ |
 | `connect.form.address.error` | After a submit/join attempt with empty address: red border and red text 'Enter an IP address or a host name.' | display | ⬜ |
 | `connect.form.password` | Field 'Password (optional)', masked, placeholder 'Leave blank if none'; typing clears the 'from favourites' marker | `connect.password` | ⬜ |
 | `connect.form.password.reveal` | Eye icon button toggles password visibility: 'Show the password' / 'Hide the password' (eye/eye-off); not persisted | `connect.toggle_password` | ⬜ |
@@ -305,7 +305,7 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `offline.install_events` | Background install finishes via event offline-mode-updated (status ok + toast offline updated, reload keeping status) or offline-mode-error (status err 'update failed: {error}'); listener registered once | display | ⬜ |
 | `offline.autoload` | Missions loaded on first view open (then saves loaded separately, failure tolerated); not re-loaded on revisits unless Refresh | display | ⬜ |
 
-## mods (0/116)
+## mods (19/116)
 
 | id | what | kind / command | |
 |---|---|---|---|
@@ -315,13 +315,13 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `mods.header.stat.updates` | Figure 'Updates' = count of mods with update_available; tone warn when >0 else ok; tooltip '{count} to update' or 'All mods are up to date'. Only when a Steam Web API key is set. | display | ⬜ |
 | `mods.header.stat.checked` | Secondary Figure 'Last checked': 'Checking…' while checking, relative time of last check (e.g. 'just now'), or 'never'. Only with API key. | display | ⬜ |
 | `mods.header.update_stale` | Accent button 'Update {count}' (refresh icon), only when stale mods exist; tooltip 'Update only the {count} mods with available updates'; opens the review dialog (kind update_stale). | `mods.update_stale` | ⬜ |
-| `mods.header.check_updates` | Button 'Check updates' (cloud-download icon; spinner + disabled while checking), tooltip 'Check Steam Workshop for updates'; ghost variant when stale mods exist; forces a Workshop check. Only with API key and ≥1 mod. | `mods.check_updates` | ⬜ |
+| `mods.header.check_updates` | Button 'Check updates' (cloud-download icon; spinner + disabled while checking), tooltip 'Check Steam Workshop for updates'; ghost variant when stale mods exist; forces a Workshop check. Only with API key and ≥1 mod. | `mods.check_updates` | ✅ |
 | `mods.header.install` | Button 'Install mod' (download icon), tooltip 'Install a mod manually by Workshop ID or URL'; opens the Install dialog. | `mods.install_dialog` | ⬜ |
 | `mods.header.more_menu` | '⋯' icon button (tooltip 'More actions') opening a dropdown with Rescan / Download all again / Open folder / separator / Cleanup. | `mods.more_menu` | ⬜ |
-| `mods.menu.rescan` | Menu item 'Read the folders again' (rotate icon): reload disk list, re-ask Steam, force update check; disabled while loading. | `mods.refresh` | ⬜ |
+| `mods.menu.rescan` | Menu item 'Read the folders again' (rotate icon): reload disk list, re-ask Steam, force update check; disabled while loading. | `mods.refresh` | ✅ |
 | `mods.menu.redownload_all` | Menu item 'Download all again' (refresh icon): opens review dialog kind update_all (description 'Re-validate every mod'); disabled when no mods. | `mods.update_all` | ⬜ |
-| `mods.menu.open_workshop_dir` | Menu item 'Open Workshop mods directory in file manager' (folder icon). | `mods.open_workshop_dir` | ⬜ |
-| `mods.menu.cleanup` | Danger menu item 'Delete the launcher's downloads and game links' (brush icon); confirm dialog (title 'Remove all managed mods and symlinks', message about Steam library mods staying), then backend cleanup, reload, success toast with backend's result text; error toast 'Cleanup failed: …'. | `mods.cleanup` | ⬜ |
+| `mods.menu.open_workshop_dir` | Menu item 'Open Workshop mods directory in file manager' (folder icon). | `mods.open_workshop_dir` | ✅ |
+| `mods.menu.cleanup` | Danger menu item 'Delete the launcher's downloads and game links' (brush icon); confirm dialog (title 'Remove all managed mods and symlinks', message about Steam library mods staying), then backend cleanup, reload, success toast with backend's result text; error toast 'Cleanup failed: …'. | `mods.cleanup` | ✅ |
 | `mods.toolbar.search` | Search input (w-72, placeholder 'Search name or Workshop ID…', clear button) filtering by name substring (case-insensitive) or id substring; toolbar only shows when there is ≥1 row. | `mods.search` | ⬜ |
 | `mods.toolbar.filter` | Segmented control (aria 'Show'): 'All · N' (all rows incl. incoming), 'Updates · N' (stale + incoming Steam items), 'Unlinked · N' (installed not managed). Not persisted (session state, defaults All). | `mods.filter` | ⬜ |
 | `mods.toolbar.steam_error` | Warn tag 'Steam did not answer' with Steam icon and retry glyph, shown when Steam's subscription query failed; tooltip = error/reason; click re-asks Steam. | `mods.steam_retry` | ⬜ |
@@ -354,12 +354,12 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `mods.row.context_menu` | Right-click on an installed row opens the same items as a context menu; row shows raised bg while open. | `mods.row_context_menu` | ⬜ |
 | `mods.row.incoming_workshop` | Incoming (Steam-fetching, not on disk) rows: name from Workshop or 'Workshop {id}', 'Subscribed on Steam' line, state tag, external-link button 'Open on Steam Workshop'. | `mods.open_workshop` | ⬜ |
 | `mods.menuitem.update` | Menu item 'Update' (if stale) or 'Download again', kbd chip U; opens review dialog. [keys: U] | `mods.update_one` | ⬜ |
-| `mods.menuitem.repair` | Menu item 'Repair (check every file)' (wrench): starts repair operation immediately (no review). | `mods.repair` | ⬜ |
-| `mods.menuitem.link` | Menu item 'Link into the game' / 'Remove the game link', kbd M; toast '{name} linked (symlink created)' / '{name} unlinked (symlink removed)'; error 'Failed: …'. Updates row in place without rescan. [keys: M] | `mods.toggle_managed` | ⬜ |
-| `mods.menuitem.open_folder` | Menu item 'Open its folder'. | `mods.open_mod_dir` | ⬜ |
+| `mods.menuitem.repair` | Menu item 'Repair (check every file)' (wrench): starts repair operation immediately (no review). | `mods.repair` | ✅ |
+| `mods.menuitem.link` | Menu item 'Link into the game' / 'Remove the game link', kbd M; toast '{name} linked (symlink created)' / '{name} unlinked (symlink removed)'; error 'Failed: …'. Updates row in place without rescan. [keys: M] | `mods.toggle_managed` | ✅ |
+| `mods.menuitem.open_folder` | Menu item 'Open its folder'. | `mods.open_mod_dir` | ✅ |
 | `mods.menuitem.open_workshop` | Menu item 'Open on Steam Workshop' (opens steamcommunity filedetails URL). | `mods.open_workshop` | ⬜ |
 | `mods.menuitem.copy_id` | Menu item 'Copy the Workshop ID' to clipboard. | `mods.copy_id` | ⬜ |
-| `mods.menuitem.delete` | Danger menu item 'Delete mod', kbd Del; confirm 'Delete Mod' / "Delete '{name}' ({id})? Size: … Your Steam account is unsubscribed from it."; toast 'Deleted {name}' or info that files stay in Steam library when unsubscribe failed. [keys: Del] | `mods.delete` | ⬜ |
+| `mods.menuitem.delete` | Danger menu item 'Delete mod', kbd Del; confirm 'Delete Mod' / "Delete '{name}' ({id})? Size: … Your Steam account is unsubscribed from it."; toast 'Deleted {name}' or info that files stay in Steam library when unsubscribe failed. [keys: Del] | `mods.delete` | ✅ |
 | `mods.bulk.bar` | Bulk bar at list foot (slides up) when ≥1 ticked: '{n} mod(s) selected' and '{size} on disk'. | display | ⬜ |
 | `mods.bulk.select_updates` | Ghost button 'Select all with updates' (when some stale mods are not ticked): ticks exactly the stale mods. | `mods.tick_stale` | ⬜ |
 | `mods.bulk.update` | Accent 'Update {n}' for ticked stale mods (only when >0); opens review. | `mods.bulk_update` | ⬜ |
@@ -372,28 +372,28 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `mods.keys.move` | Arrow keys move the detail selection through visible (unfolded) rows, scrolling it into view; ignored while typing, in dialogs/menus, or when another view shows. [keys: ↑/↓] | `mods.move` | ⬜ |
 | `mods.keys.edges` | Jump selection to first/last visible row. [keys: Home/End] | `mods.edges` | ⬜ |
 | `mods.keys.tick` | Tick/untick the selected mod. [keys: Space] | `mods.tick` | ⬜ |
-| `mods.keys.managed` | Toggle game link of selected mod. [keys: M] | `mods.toggle_managed` | ⬜ |
-| `mods.keys.delete` | Delete selected mod (with confirm). [keys: Del] | `mods.delete` | ⬜ |
+| `mods.keys.managed` | Toggle game link of selected mod. [keys: M] | `mods.toggle_managed` | ✅ |
+| `mods.keys.delete` | Delete selected mod (with confirm). [keys: Del] | `mods.delete` | ✅ |
 | `mods.keys.update` | Review update of selected mod. [keys: U] | `mods.update_one` | ⬜ |
 | `mods.keys.close` | Close detail pane (deselect). [keys: Esc] | `mods.close_detail` | ⬜ |
 | `mods.pad.tick` | Gamepad X ticks the mod row under pad focus (or the open one). [keys: Pad X] | `mods.tick` | ⬜ |
 | `mods.pad.update` | Gamepad Y: review ticked mods, else the focused mod, else update all stale directly. [keys: Pad Y] | `mods.update` | ⬜ |
 | `mods.pad.back` | Gamepad B deselects (registry mods.close). [keys: Pad B] | `mods.close_detail` | ⬜ |
-| `mods.palette.search` | Command palette entry for a mod navigates to mods with focus 'search:<name>': fills search, resets filter to All. | `view.mods` | ⬜ |
+| `mods.palette.search` | Command palette entry for a mod navigates to mods with focus 'search:<name>': fills search, resets filter to All. | `view.mods` | ✅ |
 | `mods.layout.master_detail` | Detail pane right of the list (resizable splitter, initial 360px, min 300, max 520, width persisted under pane id 'mods-detail'; double-click/Home resets, arrow keys resize). Below 900px container width the detail slides over as a drawer (min(24rem,88%)). | display | ⬜ |
 | `mods.detail.header` | Detail header: mod name (selectable, wraps), state tag, source tag (accent when subscribed; tooltip hints), size. | display | ⬜ |
 | `mods.detail.close` | X icon button 'Close the details' (kbd Esc). | `mods.close_detail` | ⬜ |
 | `mods.detail.update` | Button 'Update' (accent when stale) or 'Download again'; disabled while the mod is in the running op; opens review. | `mods.update_one` | ⬜ |
 | `mods.detail.workshop` | Button 'Workshop' (external-link, tooltip 'Open on Steam Workshop'). | `mods.open_workshop` | ⬜ |
-| `mods.detail.open_folder` | Folder icon button 'Open its folder' in header (and again beside the path). | `mods.open_mod_dir` | ⬜ |
+| `mods.detail.open_folder` | Folder icon button 'Open its folder' in header (and again beside the path). | `mods.open_mod_dir` | ✅ |
 | `mods.detail.version` | Section 'Version': 'Your copy' date (+relative if <30 days); 'On the Workshop' date (warn + '{days} d behind'/'behind' when stale, relative if recent, or 'Not checked'); note 'Steam updates this copy itself…' when subscribed. | display | ⬜ |
 | `mods.detail.where` | Section 'Where it is': source hint sentence, click-to-copy path, extra notes (subscribed hint for launcher copies also subscribed, 'unknown while Steam is not running' with reason tooltip, 'An older copy is also in the other folder'), meter of share of all mods + 'size · x.x%'. | display | ⬜ |
 | `mods.detail.dependencies` | Section 'Dependencies' (only when any): 'Requires' and 'Required by' lists of names, each tagged 'not installed' (err) or 'Subscribed'. | display | ⬜ |
 | `mods.detail.your_servers` | Section 'Your servers': favourites running it (filled star) then played servers (history icon); else 'None of your favourites or recent servers runs it: deleting it frees {size}.' | display | ⬜ |
-| `mods.detail.in_game` | Section 'In game': 'Linked'/'Not linked' label with mini switch (aria 'Loaded in game') toggling the link; hint about joining creating the link. | `mods.toggle_managed` | ⬜ |
+| `mods.detail.in_game` | Section 'In game': 'Linked'/'Not linked' label with mini switch (aria 'Loaded in game') toggling the link; hint about joining creating the link. | `mods.toggle_managed` | ✅ |
 | `mods.detail.ids` | Section 'Identifiers': 'Workshop ID' and 'Launch parameter' (@id), each click-to-copy with tick feedback 1.4s. | `mods.copy_id` | ⬜ |
-| `mods.detail.repair` | Section 'Repair or remove': 'Repair (check every file)' (tooltip repairHint, disabled while busy). | `mods.repair` | ⬜ |
-| `mods.detail.delete` | Danger 'Delete mod' button + hint 'Deletes its files and the game link, and unsubscribes your Steam account from it.' | `mods.delete` | ⬜ |
+| `mods.detail.repair` | Section 'Repair or remove': 'Repair (check every file)' (tooltip repairHint, disabled while busy). | `mods.repair` | ✅ |
+| `mods.detail.delete` | Danger 'Delete mod' button + hint 'Deletes its files and the game link, and unsubscribes your Steam account from it.' | `mods.delete` | ✅ |
 | `mods.install.dialog` | Install dialog 'Install Mod' / 'Download via Steam Workshop ID or URL': monospace textarea (6 rows, label 'Workshop IDs or URLs', hint 'one per line, or comma-separated'), cleared on open; accepts ids or URLs with ?id=, split by whitespace/comma/semicolon, deduped. | `mods.install` | ⬜ |
 | `mods.install.parsed` | Live parse: '{n} IDs found' + up to 12 id tags (accent if new, neutral with name tooltip if installed) + '+N'; 'No valid IDs detected.' (err) when text has none. | display | ⬜ |
 | `mods.install.submit` | Footer 'Cancel' and accent 'Install mod'/'Install {n} mods' (disabled with no ids): closes and opens review dialog kind install. | `mods.install` | ⬜ |
@@ -406,7 +406,7 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `mods.op.figures` | Figures 'Elapsed' (m:ss clock ticking every 500ms), 'Succeeded' (ok), 'Failed' (err when >0). | display | ⬜ |
 | `mods.op.overall` | 'Overall' bar (warn when failures) with 'x% · done/total'; includes current mod's fraction until it completes, capped at 100%. | display | ⬜ |
 | `mods.op.steam_guard` | Steam Guard panel: title, 'Open the Steam Mobile app…', 3 numbered steps, 'Waiting for confirmation…' with 65s countdown (warn ≤30, err ≤15) and bar, reset on log line containing 'retrying'; 'Hurry…' at ≤15s, 'SteamCMD may have timed out' at 0. | display | ⬜ |
-| `mods.op.password` | Password panel: 'Steam Password Required' + desc; password input (reveal toggle eye button 'Show the password'), accent 'Send' (spinner while sending, disabled when empty); Enter submits; cleared after send. | `mods.op.send_password` | ⬜ |
+| `mods.op.password` | Password panel: 'Steam Password Required' + desc; password input (reveal toggle eye button 'Show the password'), accent 'Send' (spinner while sending, disabled when empty); Enter submits; cleared after send. | `mods.op.send_password` | ✅ |
 | `mods.op.dont_trust` | Danger 'I don't trust this': copies `[HOME="<steamcmd home>"] steamcmd +login <login> +quit` and switches to manual panel: 'Login Manually via Terminal', the command, 4 steps, note, accent 'Got it, cancel operation' (cancels op). | `mods.op.manual_login` | ⬜ |
 | `mods.op.hint` | Error hint box (err, preformatted, selectable) when backend reports a hint. | display | ⬜ |
 | `mods.op.current` | 'Current mod' transfer block: name, percent (1 decimal), bar (indeterminate before first progress), Size done/total, Speed (5s window rate), ETA, Elapsed for this item; dashes when unknown. | display | ⬜ |
@@ -417,9 +417,9 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `mods.op.log.follow` | Auto-follows the end; scrolling up stops following and shows a floating 'LIVE' button to jump back. | `log.follow` | ⬜ |
 | `mods.op.footer.note` | Footer note: Steamworks note or the SteamCMD disconnect warning. | display | ⬜ |
 | `mods.op.toggle_log` | 'Show the log'/'Hide the log' button (panel icons); session-only, default shown. | `mods.op.toggle_log` | ⬜ |
-| `mods.op.minimise` | While running: 'Keep running in the background' minimises (also Esc/close); status bar keeps showing it; a finished op behind a minimised dialog auto-dismisses. | `mods.op.minimise` | ⬜ |
-| `mods.op.cancel` | Danger 'Cancel' while running: cancels the backend op and dismisses. | `mods.op.cancel` | ⬜ |
-| `mods.op.dismiss` | Accent 'Dismiss' once finished: closes, re-checks updates (or reloads), re-asks Steam, reloads server stats. | `mods.op.dismiss` | ⬜ |
+| `mods.op.minimise` | While running: 'Keep running in the background' minimises (also Esc/close); status bar keeps showing it; a finished op behind a minimised dialog auto-dismisses. | `mods.op.minimise` | ✅ |
+| `mods.op.cancel` | Danger 'Cancel' while running: cancels the backend op and dismisses. | `mods.op.cancel` | ✅ |
+| `mods.op.dismiss` | Accent 'Dismiss' once finished: closes, re-checks updates (or reloads), re-asks Steam, reloads server stats. | `mods.op.dismiss` | ✅ |
 | `mods.op.toasts` | Toasts at finish: 'Mods: N updated successfully' / 'Mods: N OK, M failed' (warn) / 'SteamCMD is logged in' / 'SteamCMD did not log in'; 'Mod operation failed: …' on start error; 'Failed to send password: …'. | display | ⬜ |
 | `mods.op.single` | Only one op at a time: starting another while busy just un-minimises the running one. | display | ⬜ |
 | `mods.op.resume` | After a reload, the running/finished op is re-attached from a backend snapshot (queue, results, log). | display | ⬜ |
@@ -510,7 +510,7 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `news.reader.pad_scroll` | Reader pane is the gamepad scroll target (data-pad-scroll) | display | ⬜ |
 | `news.images.cache` | Images: already-cached ones resolved in one batch when the list arrives, then missing thumbnails downloaded max 6 concurrently, deduplicated in-flight | display | ⬜ |
 
-## stats (0/52)
+## stats (5/52)
 
 | id | what | kind / command | |
 |---|---|---|---|
@@ -521,15 +521,15 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `stats.header.fig.average` | Secondary figure 'Average session' (duration or '—'); hidden when window narrower than 1240px | display | ⬜ |
 | `stats.header.fig.longest` | Secondary figure 'Longest' (duration or '—'); tooltip '{place name} · {date time}'; hidden below 1240px | display | ⬜ |
 | `stats.header.fig.streak` | Figure 'Streak' = '{n} d' (green when >0, muted when 0); tooltip 'Days in a row with play, ending today. Best: {best} d.' | display | ⬜ |
-| `stats.header.export` | 'Export the profile' button (file-down icon), tooltip exportHint: save dialog (default 'dayz-community-hub-profile.dchub', filter .dchub) then exports without mods; toast 'Profile exported successfully' or 'Export failed: {error}' | `profile.export` | ⬜ |
-| `stats.header.import` | 'Import a profile' button (file-up icon), same tooltip: open dialog (.dchub) → confirm dialog 'Import Profile' ('This will overwrite your current profile, favorites, history and launch options. The app will restart…') → import and restart app; error toast 'Import failed: …' | `profile.import` | ⬜ |
+| `stats.header.export` | 'Export the profile' button (file-down icon), tooltip exportHint: save dialog (default 'dayz-community-hub-profile.dchub', filter .dchub) then exports without mods; toast 'Profile exported successfully' or 'Export failed: {error}' | `profile.export` | ✅ |
+| `stats.header.import` | 'Import a profile' button (file-up icon), same tooltip: open dialog (.dchub) → confirm dialog 'Import Profile' ('This will overwrite your current profile, favorites, history and launch options. The app will restart…') → import and restart app; error toast 'Import failed: …' | `profile.import` | ✅ |
 | `stats.range` | Segmented control 'Period': 7 days / 30 days / 1 year / All time (default All time); changes reload figures, places, maps, calendar data, week heat (history not affected); not persisted | `stats.set_range` | ⬜ |
 | `stats.playing_now` | Green pill right of the range selector with pulsing radio icon: 'Playing {name} for {duration}' while a session is running; duration ticks every 30 s locally | display | ⬜ |
 | `stats.load.lazy` | Data is fetched first time the view becomes active; afterwards refetched (figures and history first page) on every play-sessions-changed backend event | display | ⬜ |
 | `stats.loading` | 10 skeleton rows while the first answer is pending (later reloads keep old data on screen) | display | ⬜ |
 | `stats.error` | Error state: chart icon empty state 'No play time yet' with the raw error in selectable mono | display | ⬜ |
 | `stats.empty` | Empty state when no session ever: 'No play time yet' + hint 'Join a server or an offline map: the launcher writes down how long DayZ runs, where and when.' | display | ⬜ |
-| `stats.empty.browse` | Accent 'Browse servers' (favorites.browseServers) button in empty state: goes to the Servers view | `view.servers` | ⬜ |
+| `stats.empty.browse` | Accent 'Browse servers' (favorites.browseServers) button in empty state: goes to the Servers view | `view.servers` | ✅ |
 | `stats.activity.section` | Section 'Activity' (calendar icon) with the year calendar heatmap (max width 64rem) and below it hint 'Click a day, a server or a map (or press Enter on it) to list its sessions below.' | display | ⬜ |
 | `stats.calendar.grid` | 53 week columns x 7 rows (Monday on top), square cells; colour = accent at opacity 0/0.3/0.5/0.75/1 by quartile of played days' seconds; future days blank; today ringed | display | ⬜ |
 | `stats.calendar.months` | Short month names above the column in which each month starts (first 7 days) | display | ⬜ |
@@ -544,7 +544,7 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `stats.places.empty` | 'Nothing played in this period.' when no places in the range | display | ⬜ |
 | `stats.places.row` | Ranked rows (rank number, name bold + 'Offline' accent tag for offline missions, sub-line: map name in map colour, '{n} sessions'/'1 session', '· {relative last played}', proportional accent bar vs top place (min 2%), duration or '—'); name tooltip = raw name; unknown place shows 'Started outside the launcher'; offline shows the mission's map | display | ⬜ |
 | `stats.places.unmeasured_tip` | Duration tooltip 'A join from before the launcher measured play time…' when the place has unmeasured sessions | display | ⬜ |
-| `stats.places.join` | Per server row: compact quiet Join (play) button — outline that fills on row hover; tooltip 'Launch DayZ and connect to this server'; connects to ip:port (does not trigger row click) | `servers.join` | ⬜ |
+| `stats.places.join` | Per server row: compact quiet Join (play) button — outline that fills on row hover; tooltip 'Launch DayZ and connect to this server'; connects to ip:port (does not trigger row click) | `connect.address` | ✅ |
 | `stats.places.launch_offline` | Per offline row: play icon button labelled with the map name, launches that offline mission (click also bubbles to the row, narrowing history) | `offline.launch` | ⬜ |
 | `stats.places.pick` | Click a place row (or Enter/Space when focused) sets the history search to its name immediately and scrolls to history; rows focusable with focus ring | `stats.filter_text` | ⬜ |
 | `stats.places.tooltip` | Hover/focus tooltip on a place: name, duration (accent) + '{share} of your time' (% of range total), sessions + '~{duration} per session' (excluding unmeasured), 'first played {date}' | display | ⬜ |
@@ -562,12 +562,12 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `stats.history.row` | Session rows: start date-time in mono (tooltip relative age), name (+Offline tag, tooltip raw name), map name, duration right-aligned | display | ⬜ |
 | `stats.history.row.duration_states` | Duration cell: running session green '{duration} · running'; measured normal; unmeasured faint 'length unknown' with unmeasured tooltip | display | ⬜ |
 | `stats.history.row.forget` | Trash icon button 'Forget this session' (danger hover) appears on row hover/focus for finished sessions; deletes immediately without confirmation; list refreshes via event; error toast on failure | `stats.forget_session` | ⬜ |
-| `stats.history.row.join` | Per history row Join button (server) or offline launch button (offline mission), same as places | `servers.join` | ⬜ |
+| `stats.history.row.join` | Per history row Join button (server) or offline launch button (offline mission), same as places | `connect.address` | ✅ |
 | `stats.history.more` | 'Show {count} more' button appends the next page (pages of 100); hidden when all loaded | `stats.history_more` | ⬜ |
 | `stats.history.error` | History fetch/delete failures surface as an error toast | display | ⬜ |
 | `stats.tooltip.plate` | Chart tooltips sit above the hovered mark (below if no room), clamped to window, never capture the pointer | display | ⬜ |
 
-## settings (0/77)
+## settings (18/77)
 
 | id | what | kind / command | |
 |---|---|---|---|
@@ -591,7 +591,7 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `settings.steam.server_list_switch` | 'Steam server list' switch 'Add Steam's servers' (default on), applied immediately (optimistic) | `settings.steam.toggle_steam_server_list` | ⬜ |
 | `settings.steam.username` | Steam username field (mono, autocomplete username, hint: blank downloads anonymously); part of account form | `settings.steam.edit_login` | ⬜ |
 | `settings.steam.login_state` | Login row: green check 'Logged in as <name>' when SteamCMD's cached login matches the saved login, else shield 'not logged in' or 'enter a username first'; note 'password never stored, asked once'; amber 'saved password pending' line when the profile has a legacy saved password | display | ⬜ |
-| `settings.steam.login_button` | 'Log in to SteamCMD' ghost button runs mods.login (opens mod-op dialog); disabled without saved login, without SteamCMD found, while mods busy, or while the form has unsaved edits | `mods.steamcmd_login` | ⬜ |
+| `settings.steam.login_button` | 'Log in to SteamCMD' ghost button runs mods.login (opens mod-op dialog); disabled without saved login, without SteamCMD found, while mods busy, or while the form has unsaved edits | `mods.steamcmd_login` | ✅ |
 | `settings.steam.steam_root` | Steam folder path field + 'Browse…' (folder picker, title selectSteamRoot), placeholder ~/.steam/steam; part of account form | `settings.steam.pick_steam_root` | ⬜ |
 | `settings.steam.steamcmd_path` | SteamCMD path field + Browse (file picker); placeholder is detected path or 'auto'; part of account form | `settings.steam.pick_steamcmd` | ⬜ |
 | `settings.steam.content_dir` | 'Content folder' row: SteamCMD's own content directory as a click-to-copy chip, and 'Open folder' button opening it in the file manager | `settings.steam.open_steamcmd_dir` | ⬜ |
@@ -616,40 +616,40 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `settings.excluded.list` | List of excluded IPs (red ban icon, selectable mono IP); empty state centred 'no excluded IPs' | display | ⬜ |
 | `settings.excluded.remove` | X button per IP (tooltip 'Remove <ip>') un-excludes it immediately (optimistic) with toast 'ip unexcluded' | `settings.excluded.remove_ip` | ⬜ |
 | `settings.appearance.worn_tag` | Appearance aside: accent tag with worn theme name ('Follow system', custom name, or preset name) | display | ⬜ |
-| `settings.appearance.follow_system` | 'Follow system' toggle button (monitor icon, check + accent glow when selected) — theme follows OS dark/light | `theme.follow_system` | ⬜ |
-| `settings.appearance.pair` | 'When dark' and 'When light' selects (moon/sun icon, the one matching the OS scheme tinted accent) picking which dark/light preset 'follow system' wears | `theme.set_pair` | ⬜ |
-| `settings.appearance.preset_grid` | Preset cards grouped 'Dark' (moon) and 'Light' (sun), auto-fill grid min 9.5rem: each a ThemePreview mini-window in its colours, name, 2-line blurb, check + accent border/glow when worn; click wears it (18 presets: chernarus, topo, oled, github_dark, tokyonight, nord, forest, military, blood_moon, sepia, gruvbox_dark, catppuccin, sand, github_light, gruvbox_light, catppuccin_latte, rosepine_dawn…) | `theme.use_preset` | ⬜ |
+| `settings.appearance.follow_system` | 'Follow system' toggle button (monitor icon, check + accent glow when selected) — theme follows OS dark/light | `theme.follow_system` | ✅ |
+| `settings.appearance.pair` | 'When dark' and 'When light' selects (moon/sun icon, the one matching the OS scheme tinted accent) picking which dark/light preset 'follow system' wears | `theme.set_pair` | ✅ |
+| `settings.appearance.preset_grid` | Preset cards grouped 'Dark' (moon) and 'Light' (sun), auto-fill grid min 9.5rem: each a ThemePreview mini-window in its colours, name, 2-line blurb, check + accent border/glow when worn; click wears it (18 presets: chernarus, topo, oled, github_dark, tokyonight, nord, forest, military, blood_moon, sepia, gruvbox_dark, catppuccin, sand, github_light, gruvbox_light, catppuccin_latte, rosepine_dawn…) | `theme.use_preset` | ✅ |
 | `settings.appearance.preview_card` | ThemePreview: tiny title bar with accent mark, two server rows (second selected) with ping signal (ok/warn colours), players bar, map name, mods mark, and an accent play button, all from the theme tokens | display | ⬜ |
 | `settings.appearance.your_themes` | 'Your themes' block with hint; grid of custom theme cards (sub = Dark/Light) or 'no custom themes yet' text | display | ⬜ |
-| `settings.appearance.duplicate` | 'Duplicate' accent button (only when a preset, not a custom, is worn) copies the worn theme into a new custom theme named '<name> *' and wears it | `theme.duplicate` | ⬜ |
+| `settings.appearance.duplicate` | 'Duplicate' accent button (only when a preset, not a custom, is worn) copies the worn theme into a new custom theme named '<name> *' and wears it | `theme.duplicate` | ✅ |
 | `settings.appearance.import` | 'Import' ghost button opens a .json file picker; adds it as a custom theme (name from file or filename minus .dzch-theme.json) and wears it; toast 'imported' or 'import error' | `theme.import_file` | ⬜ |
-| `settings.theme_editor.name` | Theme editor (shown when a custom theme is worn): name field, renamed on change/blur (empty ignored) | `theme.rename` | ⬜ |
-| `settings.theme_editor.scheme` | Dark \| Light segmented (moon/sun icons) setting the custom theme's scheme | `theme.set_scheme` | ⬜ |
+| `settings.theme_editor.name` | Theme editor (shown when a custom theme is worn): name field, renamed on change/blur (empty ignored) | `theme.rename` | ✅ |
+| `settings.theme_editor.scheme` | Dark \| Light segmented (moon/sun icons) setting the custom theme's scheme | `theme.set_scheme` | ✅ |
 | `settings.theme_editor.derive` | 'Derive' button (wand icon, tooltip deriveHint) regenerates all colours and scheme from the background and accent | `theme.derive` | ⬜ |
-| `settings.theme_editor.reset` | Reset icon button (only if the custom has a base preset; label resetHint) restores the base preset's colours and scheme | `theme.reset_custom` | ⬜ |
-| `settings.theme_editor.copy_json` | Copy icon button (label 'Export') copies the theme JSON {version:2, app, name, scheme, tokens} to clipboard; toast 'theme copied' | `theme.export_clipboard` | ⬜ |
+| `settings.theme_editor.reset` | Reset icon button (only if the custom has a base preset; label resetHint) restores the base preset's colours and scheme | `theme.reset_custom` | ✅ |
+| `settings.theme_editor.copy_json` | Copy icon button (label 'Export') copies the theme JSON {version:2, app, name, scheme, tokens} to clipboard; toast 'theme copied' | `theme.export_clipboard` | ✅ |
 | `settings.theme_editor.download` | Download icon button 'Export (.json)' saves '<slug-name>.dzch-theme.json'; toast 'exported' | `theme.export_file` | ⬜ |
-| `settings.theme_editor.delete` | Trash icon button (danger hover, label 'Remove') deletes the custom theme immediately (no confirm); if worn, falls back to follow-system | `theme.remove_custom` | ⬜ |
-| `settings.theme_editor.tokens` | Two-column grid of the 12 colour tokens (Background, Panel, Raised, Text, Accent, Accent text, OK, Warn, Error, Info, Map, Mods): swatch opening the system colour picker (hex converted to oklch), label, and an editable text value accepted only if a valid CSS colour (else reverts) | `theme.set_token` | ⬜ |
+| `settings.theme_editor.delete` | Trash icon button (danger hover, label 'Remove') deletes the custom theme immediately (no confirm); if worn, falls back to follow-system | `theme.remove_custom` | ✅ |
+| `settings.theme_editor.tokens` | Two-column grid of the 12 colour tokens (Background, Panel, Raised, Text, Accent, Accent text, OK, Warn, Error, Info, Map, Mods): swatch opening the system colour picker (hex converted to oklch), label, and an editable text value accepted only if a valid CSS colour (else reverts) | `theme.set_token` | ✅ |
 | `settings.theme_editor.legibility` | Live 'Legibility' checks: header with amber warning + failing count or green check; hint; list of contrast checks each with an 'Aa' sample in its colours, label (Text/Muted/Faint on floor/panel/control, accent label, token on panel), ratio floored to 1 decimal and '/min' (amber when failing); plus 'Too alike: A · B' rows for confusable token pairs with split swatch | display | ⬜ |
-| `settings.language.grid` | 5-column grid of language buttons (circle flag, native name, mono code EN/FR/DE/ES/RU, check when current, accent border); switches the whole UI immediately | `i18n.set_locale` | ⬜ |
+| `settings.language.grid` | 5-column grid of language buttons (circle flag, native name, mono code EN/FR/DE/ES/RU, check when current, accent border); switches the whole UI immediately | `i18n.set_locale` | ✅ |
 | `settings.window.radius` | Window corner radius slider 0–16 px, value 'N px'; applied live (0 when maximised), persisted with the theme | `window.set_radius` | ⬜ |
 | `settings.window.border` | Window border width slider 0–4 px; applied live (not when maximised) | `window.set_border` | ⬜ |
 | `settings.window.border_colours` | When border > 0: two colour tokens 'Border (focused)' and 'Border (unfocused)'; the window frame uses one or the other by window focus | `window.set_border_colours` | ⬜ |
 | `settings.controller.status_tag` | Controller aside tag 'Connected' / 'No controller' (accent tone while in gamepad mode) | display | ⬜ |
-| `settings.controller.mode` | Controller mode segmented Auto \| Always \| Never (prefs.padMode); Never ignores pad input entirely, Always forces gamepad UI | `pad.set_mode` | ⬜ |
-| `settings.controller.scale` | Interface scale while a controller drives: 100 % \| 115 % (default) \| 130 % — zoom | `pad.set_scale` | ⬜ |
-| `settings.controller.glyphs` | Button labels segmented Auto \| Xbox \| PlayStation \| Nintendo \| Steam Deck (persisted as padGlyphs) | `pad.set_glyphs` | ⬜ |
+| `settings.controller.mode` | Controller mode segmented Auto \| Always \| Never (prefs.padMode); Never ignores pad input entirely, Always forces gamepad UI | `pad.set_mode` | ✅ |
+| `settings.controller.scale` | Interface scale while a controller drives: 100 % \| 115 % (default) \| 130 % — zoom | `pad.set_scale` | ✅ |
+| `settings.controller.glyphs` | Button labels segmented Auto \| Xbox \| PlayStation \| Nintendo \| Steam Deck (persisted as padGlyphs) | `pad.set_glyphs` | ✅ |
 | `settings.controller.connected` | Connected pads list (gamepad icon + name each), else 'No controller' or 'unavailable' when pads cannot be opened; 'Steam keyboard available' line inside Steam big-screen | display | ⬜ |
 | `settings.controller.test` | Live button test: 14 glyphs (dpad, A, B, X, Y, LB, RB, LT, RT, Menu, View, L3, R3, RS); the button behind the last pad action lights (accent halo) for 450 ms | display | ⬜ |
 | `settings.controller.legend` | Stacked legend of every controller shortcut by group in the current pad's glyphs (2 columns, 1 below 900px), from the shortcut registry | display | ⬜ |
 | `settings.battleye.state` | BattlEye state line with coloured dot (green running, grey ready, amber otherwise) and the status-bar wording (running / disabled / missing / missing Proton / ready / ready Proton); amber text when missing or disabled; hidden when no game; refreshed on mount | display | ⬜ |
 | `settings.battleye.repair` | 'Repair BattlEye' danger button (wrench, spinner while repairing; disabled when no game or repairing): lists DayZ data folders outside its install, confirm dialog (danger, lists dirs or 'no data'), then deletes them and reinstalls BattlEye; toast ready/installing/still missing/failed | `battleye.repair_thorough` | ⬜ |
-| `settings.data.export` | Export profile: description '.dchub', 'include mods' checkbox (default on), accent Export button opens save dialog (default dayz-community-hub-profile.dchub); toast exported/failed | `profile.export` | ⬜ |
-| `settings.data.import` | Import profile: file picker (.dchub), confirm dialog, then imports and restarts the app; error toast on failure | `profile.import` | ⬜ |
-| `settings.data.reset` | 'Danger zone' red-tinted row: Reset profile danger button → danger confirm → reset and restart app | `profile.reset` | ⬜ |
+| `settings.data.export` | Export profile: description '.dchub', 'include mods' checkbox (default on), accent Export button opens save dialog (default dayz-community-hub-profile.dchub); toast exported/failed | `profile.export` | ✅ |
+| `settings.data.import` | Import profile: file picker (.dchub), confirm dialog, then imports and restarts the app; error toast on failure | `profile.import` | ✅ |
+| `settings.data.reset` | 'Danger zone' red-tinted row: Reset profile danger button → danger confirm → reset and restart app | `profile.reset` | ✅ |
 
-## about (0/38)
+## about (4/38)
 
 | id | what | kind / command | |
 |---|---|---|---|
@@ -662,17 +662,17 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `about.links.wiki` | Link button 'Wiki' → repo /wiki | `about.open_wiki` | ⬜ |
 | `about.links.license` | Link button 'License' → repo LICENSE file | `about.open_license` | ⬜ |
 | `about.update.card` | Update card: 'Updates' label + tag 'Version {version}'; border green when an update is available; glows with accent border for 2.5 s and is scrolled into view when opened from the title bar's update badge (focus 'update') | display | ⬜ |
-| `about.update.check` | Ghost 'Check for updates' button (icon spins while checking); disabled while checking or downloading; a check runs automatically when the view shows and the updater is idle | `updates.check` | ⬜ |
+| `about.update.check` | Ghost 'Check for updates' button (icon spins while checking); disabled while checking or downloading; a check runs automatically when the view shows and the updater is idle | `updates.check` | ✅ |
 | `about.update.checking` | Spinner + 'Checking for updates…' | display | ⬜ |
 | `about.update.up_to_date` | Green check 'You're up to date' + 'v{version} is the latest version' | display | ⬜ |
 | `about.update.available` | Download icon, 'Update available — v{new}' (new version in green display face), 'Current: v{cur} · Released {date}', release notes in a scrollable mono box (max 10rem, selectable) | display | ⬜ |
-| `about.update.install` | Large play-style 'Install update' button when this copy can update itself | `updates.install` | ⬜ |
+| `about.update.install` | Large play-style 'Install update' button when this copy can update itself | `updates.install` | ✅ |
 | `about.update.unsupported` | Instead of the button: 'This is a development build: updates are not installed from here.' or 'On this system, updates come through your package manager or a new release download.' | display | ⬜ |
 | `about.update.downloading` | 'Downloading v{version}…' + progress meter, bytes received / total and percent; download resumed/followed after a window reload (polled every 250 ms) | display | ⬜ |
 | `about.update.done` | 'Download complete' with 'The installer is launching — the app will restart automatically.' | display | ⬜ |
-| `about.update.restart` | Large 'Restart now' button after download completes: restarts the app | `updates.restart` | ⬜ |
+| `about.update.restart` | Large 'Restart now' button after download completes: restarts the app | `updates.restart` | ✅ |
 | `about.update.error` | Error state: red warning icon + error text (mono, selectable) | display | ⬜ |
-| `about.update.retry` | 'Retry' button in the error state runs a new check | `updates.check` | ⬜ |
+| `about.update.retry` | 'Retry' button in the error state runs a new check | `updates.check` | ✅ |
 | `about.system.card` | Card 'This machine' (cpu icon): System (OS, if known), Processor (name + '{p} cores · {l} threads'), Memory ('{n} GB'), Graphics (each GPU name + '{n} GB VRAM' or 'No graphics card detected'); values selectable | display | ⬜ |
 | `about.system.loading` | Three pulsing placeholder bars until specs arrive | display | ⬜ |
 | `about.system.copy` | 'Copy for a bug report' button: copies lines 'DayZ Community Hub v…', OS, CPU (cores c/threads t), RAM, GPU(s), 'Mods: Steam client\|SteamCMD'; toast 'Copied: paste it into your bug report.' | `about.copy_system_info` | ⬜ |
@@ -692,20 +692,20 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `about.footer.stack` | Footer 'Built with' chips Tauri, Rust, Svelte, bits-ui, Tailwind CSS, intlayer — each opens its website (should become the egui stack) | `about.open_stack_link` | ⬜ |
 | `about.footer.license` | Right side of footer: 'Free and open source · MIT licence · Forgejo' | display | ⬜ |
 
-## setup (0/28)
+## setup (3/28)
 
 | id | what | kind / command | |
 |---|---|---|---|
 | `setup.overlay` | Full-window modal wizard below the title bar (title bar stays usable), fade in; shown on first launch while the server list loads behind | display | ⬜ |
 | `setup.sidebar.brand` | Left 288px aside over topographic texture: app icon, 'DayZ / Community Hub' (accent second line) | display | ⬜ |
 | `setup.sidebar.steps` | Numbered step list Welcome, Game, Downloads, Account, Services ('optional' italic), Appearance, Done: current = accent filled circle + bold, done = green check, future dimmed; click jumps; only the next step is reachable and not if the current blocks advancing | `setup.go_step` | ⬜ |
-| `setup.sidebar.import` | Footer of aside: hint + 'Import profile' button (file picker .dchub → confirm → import and restart) | `profile.import` | ⬜ |
+| `setup.sidebar.import` | Footer of aside: hint + 'Import profile' button (file picker .dchub → confirm → import and restart) | `profile.import` | ✅ |
 | `setup.progress` | 2px progress bar across the top of the content pane, width (index+1)/7, eased | display | ⬜ |
 | `setup.header` | 'Step N of 7' stencil label, step title (3xl display), description (account description differs when Steam client chosen; done description names the 'Go to servers' button) | display | ⬜ |
 | `setup.footer.nav` | Footer: Back (ghost, from step 2), 'n / 7' counter, and accent large 'Get started' (welcome) / 'Next' with arrow, disabled when the step blocks (Account without Steam login when SteamCMD is chosen) | `setup.next` | ⬜ |
 | `setup.enter_key` | Enter anywhere in the wizard (except on a button/textarea) advances, or on Done finishes to servers [keys: Enter] | `setup.next` | ⬜ |
 | `setup.welcome.features` | Welcome: 2x2 cards with tinted icons — server (info), puzzle (mods), star (warn), play (accent) and their feature sentences | display | ⬜ |
-| `setup.welcome.language` | Language card: 5 flag buttons (radio group, name under flag, accent glow when chosen) switching the UI language at once; hint line below | `i18n.set_locale` | ⬜ |
+| `setup.welcome.language` | Language card: 5 flag buttons (radio group, name under flag, accent glow when chosen) switching the UI language at once; hint line below | `i18n.set_locale` | ✅ |
 | `setup.game.status` | Game step status box: spinner 'Looking for DayZ…'; green 'DayZ found' + selectable path + 'N Workshop mods' (mods colour) if any; amber 'DayZ not found' + hint (not blocking); 'Rescan' button when done | display | ⬜ |
 | `setup.game.auto_find` | DayZ is searched automatically when the Game step first opens (all Steam libraries on all drives) | display | ⬜ |
 | `setup.game.library` | 'Steam library' card: path field + Browse (folder); placeholder = found steamapps or 'auto-detect'; OS-specific example path hint; typing re-searches 500 ms after typing stops (debounced) | `setup.pick_steam_library` | ⬜ |
@@ -720,74 +720,74 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `setup.account.name` | In-game name card (hint about -name), and 'filled from Steam' green note when prefilled | `setup.edit_name` | ⬜ |
 | `setup.account.steam_prefill` | Entering Account or Services asks the running Steam client once and fills empty name and Steam ID | display | ⬜ |
 | `setup.services.api` | Services (optional): Steam API card with 'Get API key' link button, description, secret API key field, Steam ID numeric field | `setup.edit_api` | ⬜ |
-| `setup.appearance.swatches` | Theme card: 5-column grid of 'Follow system' (split dark/light preview with monitor icon) and every preset preview (dark first), check on worn, blurb as tooltip; applies immediately | `theme.use_preset` | ⬜ |
+| `setup.appearance.swatches` | Theme card: 5-column grid of 'Follow system' (split dark/light preview with monitor icon) and every preset preview (dark first), check on worn, blurb as tooltip; applies immediately | `theme.use_preset` | ✅ |
 | `setup.done.ready` | Done: box 'N servers ready' (green server icon) once the list loaded, else spinner 'still loading' | display | ⬜ |
 | `setup.done.summary` | Summary card rows (icon green check / amber warning / dashed grey): DayZ path or not found; Downloads (Steam client or 'SteamCMD · path'/missing); Username (only SteamCMD); In-game name or 'not set'; API key 'configured'/'not set'; Language; Theme; then hints about Settings and the About tab | display | ⬜ |
 | `setup.done.finish` | Done footer: 'Go to Mods', 'Go to Favorites' (only if favorites exist), and large play 'Go to servers' (spinner 'Saving…'); saves account + downloader, closes wizard, reloads profile/stats/avatar, opens the chosen view | `setup.finish` | ⬜ |
 
-## shell (0/77)
+## shell (66/77)
 
 | id | what | kind / command | |
 |---|---|---|---|
-| `friends.rail.count` | Rail 'Friends' item shows count of friends in DayZ in ok green when > 0 | display | ⬜ |
-| `connect.paste_anywhere` | Pasting outside any text field: a dzch:// link opens it (join); an 'ipv4\|hostname:port' opens it in Direct Connect with info toast 'Pasted {address}: opened in Direct Connect' [keys: Ctrl+V] | `connect.paste` | ⬜ |
-| `shell.titlebar.brand` | Title bar left: app icon, 'DayZ Community Hub' (accent second half), divider, current view name in stencil | display | ⬜ |
-| `shell.titlebar.drag` | Dragging any non-control part of the title bar moves the window; double-click toggles maximise | `window.drag` | ⬜ |
-| `shell.titlebar.figures` | Centred on the window (hidden below 1180px): server count (info), players in-game (ok), players on Steam (muted, Steam icon), each with tooltip; numbers roll to new values (400 ms tween, none with reduced motion) | display | ⬜ |
-| `shell.titlebar.search` | Search pill (magnifier, 'Search…' text hidden <1024px, Ctrl K kbd) opens the command palette; tooltip 'Search (Ctrl+K)' [keys: Ctrl+K] | `palette.open` | ⬜ |
-| `shell.titlebar.account` | Account chip: avatar or user icon, player name and mono Steam login (login hidden <1280px), or italic 'Set up account'; tooltip 'Edit account settings'; opens Settings at Account | `settings.open_account` | ⬜ |
-| `shell.titlebar.language` | Flag button (current locale's flag, tooltip 'Change language') opening a menu of 5 languages: flag, name, code, check on current | `i18n.set_locale` | ⬜ |
-| `shell.titlebar.theme_menu` | Palette icon button (tooltip 'Change theme') menu: Follow system (check), 'When dark'/'When light' submenus showing current pair name and listing presets with swatches; Dark and Light groups; Custom group if any; 'Edit / custom theme…' opens Settings › Appearance. Each entry shows a 5-colour swatch strip (bg, panel, accent, ok, err) | `theme.menu` | ⬜ |
-| `shell.titlebar.theme_hover_preview` | Hovering a theme entry for 150 ms wears it as a preview (not saved); leaving, choosing or closing the menu ends it | display | ⬜ |
-| `shell.titlebar.window_buttons` | Minimise, Maximise/Restore (icon switches to 'copy' when maximised), Close (red hover) | `window.minimize_maximize_close` | ⬜ |
-| `shell.rail.groups` | Left rail with stencil group captions Play (Servers, Favorites, History, Friends, Direct connect, Offline), Gear (Mods, Launch options), Intel (News, Stats); foot: Settings, About; collapsed shows a short rule instead of captions | display | ⬜ |
-| `shell.rail.entry` | Each entry: icon (accent when current), label, raised background when current; click opens view; tooltip (when collapsed: label) with the view's shortcut key | `view.<id>` | ⬜ |
-| `shell.rail.counts` | Counts beside entries: servers total compact ('9,5 k'), favorites count, history count, mods 'N↑' amber when updates pending else installed count, friends in DayZ (green); pop animation when value changes; collapsed shows an amber dot for toned counts | display | ⬜ |
-| `shell.rail.active_bar` | A single 2px accent bar beside the current entry that slides to the new entry on navigation; no slide on first placement; re-measured on resize/scroll | display | ⬜ |
-| `shell.rail.collapse` | 'Collapse menu' / expand button at the foot toggles icon-only rail (persisted prefs.railCollapsed); auto-collapsed in gamepad mode when window < 1200px | `rail.toggle_collapse` | ⬜ |
-| `shell.rail.kill_game` | While DayZ runs (not in gamepad mode): red block at bottom of the views 'Game running' (pulsing green dot) + 'Close DayZ' button; collapsed: icon-only red button; danger confirm before killing; disabled while closing | `game.close` | ⬜ |
-| `shell.rail.rejoin_card` | Rejoin card above the foot: 'Last played' + relative time (tooltip exact date-time), close X, server name (click opens History at that entry), live players bar + ping signal (click pings it), map and in-game time, or amber 'not listed'; big accent 'Rejoin' button | display | ⬜ |
-| `shell.rail.rejoin_compact` | Short window (<760px high): single-line accent 'play + server name' button; collapsed rail: play icon button; both tooltip 'Rejoin: name' | `rejoin` | ⬜ |
-| `shell.rail.rejoin_dismiss` | X hides the rejoin card for that address until another server becomes the last played (prefs.dismissedRejoin) | `rejoin.dismiss` | ⬜ |
-| `shell.status.layout` | 28px status bar: left 'what is happening' segments, divider, right 'state of things'; words hide when the bar is <1100px wide, less important segments hide progressively | display | ⬜ |
-| `shell.status.segment` | Segment anatomy: tone-coloured icon (idle/accent/info/ok/warn/err), short text, tooltip; clickable ones are buttons with hover; optional 2px bar along the foot (value 0–100 eased, or sweeping band when indeterminate); optional pulsing icon; optional small action buttons beside | display | ⬜ |
-| `shell.status.list` | Server-list segment: rolling count (flashes when changed after first 1.5 s) + 'servers' + '· age'; tooltip with count and age; click refreshes. Amber when older than 10 min. Refreshing: accent sweep 'Fetching the list…'. Failed: red 'Fetch failed' (or cloud-off 'list down' when empty), click retries. Steam listing: accent bar 'Steam N%' with requests done/total/added tooltip, click opens Servers | `servers.refresh` | ⬜ |
-| `shell.status.scan` | Ping segment: idle 'Ping' (click pings all); running: pulsing radar 'Ping done/total' with progress bar, plus pause/resume and restart mini buttons (tooltips); paused shows amber 'Paused' | `servers.scan` | ⬜ |
-| `shell.status.mod_op` | Running mod operation: kind (Login/Repair/Install/Update) + 'cur/total' + current mod name, info bar of batch progress (sweep when unknown); amber key icon 'Waiting for you' when Steam Guard/password needed; click restores the minimised operation dialog | `mods.reopen_op` | ⬜ |
-| `shell.status.steamcmd_missing` | Amber 'SteamCMD missing' segment when SteamCMD is the downloader and not installed; click opens Settings › Steam | `settings.open_steam` | ⬜ |
-| `shell.status.mods_behind` | 'Checking mods' sweeping segment while checking; else amber 'N to update' (flash on change) opening Mods; hidden below 800px bar width | `view.mods` | ⬜ |
-| `shell.status.offline_install` | While offline mode installs: info sweep 'Offline mode · installing', click opens Offline | `view.offline` | ⬜ |
-| `shell.status.updater_download` | While the launcher update downloads: 'Update N%' info bar, tooltip version+percent, click opens About › update | `about.open_update` | ⬜ |
-| `shell.status.game` | While DayZ runs: green pulsing dot 'DayZ' + played duration (refreshed every 30 s); tooltip 'running for …' + how to quit (rail or Steam overlay with a pad) | display | ⬜ |
-| `shell.status.battleye` | BattlEye segment (hidden when no game; hidden <900px unless faulty): dot green running / grey ready; amber 'off' when missing/disabled; red shield 'off' when DayZ has run 20 s without the service; tooltips per state + action; click repairs/installs when applicable; refreshed with the 30 s clock while focused and every 5 s while DayZ runs | `battleye.repair` | ⬜ |
-| `shell.status.steam` | Steam segment: 'Steam'/'SteamCMD' + dot (green Steam running, amber not, grey unknown; amber tone when not running), tooltip login/state; click opens upward menu: 'Downloader' label, SteamCMD and Steam client items with check and hint (disabled 'busy' while an op runs), separator, 'Steam settings'. Steam running polled every 30 s while focused | `steam.downloader_menu` | ⬜ |
-| `shell.status.update` | Green 'vX available' segment when an update exists, or 'Restart to update' when downloaded; click opens About › update | `about.open_update` | ⬜ |
-| `shell.status.version` | App version 'vX.Y.Z' at the far right (hidden below 1000px bar width) | display | ⬜ |
-| `shell.confirm` | Confirm dialog for any confirm(): title, pre-line message, Cancel (ghost, focused) and confirm (danger red or accent; custom label); Esc/close = no; a second request answers the first 'no' | display | ⬜ |
-| `shell.password` | Server password dialog: message naming the server, masked field with eye toggle (focused, emptied each time), 'save password' checkbox (default on), Cancel and 'Join' (disabled when empty); Enter submits | `connect.answer_password` | ⬜ |
-| `shell.connect_dialog` | Before joining a modded server: title + server name, tag 'N mods not installed'/'N mods to check', scrollable list (name, #id, local and Workshop dates, size, amber 'N days newer' tag, open-in-Workshop button), switch install/update mods (default on for missing) with warning hint, amber 'will fail without mods' line when off; Cancel and play-button 'Install & connect'/'Update & connect'/'Connect' | `connect.confirm_mods` | ⬜ |
-| `shell.palette.open` | Command palette dialog (top 12vh, max 42rem wide, 72vh tall, dim overlay, pop animation); input auto-focused, fresh (empty, first item) every open; Esc closes [keys: Ctrl+K] | `palette.toggle` | ⬜ |
-| `shell.palette.empty` | Empty query: sections Recent (last 5 picks, persisted, max 8, servers rebuilt even if no longer in lists), Actions, Views; plus 'Try' box (search a server, type an address, anything else) | display | ⬜ |
-| `shell.palette.actions` | Actions: Refresh list (Ctrl+R), Rejoin <last server> (Ctrl+L, if history), Update mods (amber, count, Ctrl+U, only when updates), Check mods for updates (opens Mods + forced check), Keyboard shortcuts (?) | `palette.actions` | ⬜ |
-| `shell.palette.search` | Typed query: fuzzy-matches views, actions, 12 settings sections ('appearance' also matches 'theme colours'), favorites (name or ip:port, star icon), history (excluding favorites), installed mods (name or id; opens Mods filtered by name), max 5 per section, matched characters accent-underlined; sections ordered by best score | display | ⬜ |
-| `shell.palette.servers` | Servers section: backend query 120 ms after typing pauses (≥2 chars), 6 most-populated matches with 'players/max · map · ip:port'; spinner replaces magnifier and footer says 'Searching…' while asking | display | ⬜ |
-| `shell.palette.address` | Typing an address (host:port) puts first an Address section: 'Connect to <addr>' and 'Open <addr> in Direct connect' | `palette.connect_address` | ⬜ |
-| `shell.palette.row` | Row: icon (tinted), label, mono sub-text, active row raised with accent left bar and '<verb> ↵' (Open/Run/Join/Show), shortcut kbd on the right; hovering sets the active row; 'nothing for <query>' when empty | display | ⬜ |
-| `shell.palette.keys` | ↑/↓ move (wrap), PgUp/PgDn by 5, Tab/Shift+Tab jump to next/previous section start, Enter runs and records to recent; footer key hints ↑↓ move, Enter run, Tab section, Esc close | `palette.navigate` | ⬜ |
-| `shell.shortcuts_dialog` | Keyboard shortcuts dialog (large): Keys \| Controller tabs (default by input mode), groups in 2 columns: global, views (2-col chips), server lists, saved, mods, news, palette, dialogs (controller tab adds pad, servers, connect, offline, options); key chips joined by + with '/' or 'or'; footer note about typing/right-click or pad [keys: ?] | `sheet.toggle` | ⬜ |
+| `friends.rail.count` | Rail 'Friends' item shows count of friends in DayZ in ok green when > 0 | display | ✅ |
+| `connect.paste_anywhere` | Pasting outside any text field: a dzch:// link opens it (join); an 'ipv4\|hostname:port' opens it in Direct Connect with info toast 'Pasted {address}: opened in Direct Connect' [keys: Ctrl+V] | `connect.paste` | ✅ |
+| `shell.titlebar.brand` | Title bar left: app icon, 'DayZ Community Hub' (accent second half), divider, current view name in stencil | display | ✅ |
+| `shell.titlebar.drag` | Dragging any non-control part of the title bar moves the window; double-click toggles maximise | `window.drag` | ✅ |
+| `shell.titlebar.figures` | Centred on the window (hidden below 1180px): server count (info), players in-game (ok), players on Steam (muted, Steam icon), each with tooltip; numbers roll to new values (400 ms tween, none with reduced motion) | display | ✅ |
+| `shell.titlebar.search` | Search pill (magnifier, 'Search…' text hidden <1024px, Ctrl K kbd) opens the command palette; tooltip 'Search (Ctrl+K)' [keys: Ctrl+K] | `palette.toggle` | ✅ |
+| `shell.titlebar.account` | Account chip: avatar or user icon, player name and mono Steam login (login hidden <1280px), or italic 'Set up account'; tooltip 'Edit account settings'; opens Settings at Account | `settings.open_account` | ✅ |
+| `shell.titlebar.language` | Flag button (current locale's flag, tooltip 'Change language') opening a menu of 5 languages: flag, name, code, check on current | `i18n.set_locale` | ✅ |
+| `shell.titlebar.theme_menu` | Palette icon button (tooltip 'Change theme') menu: Follow system (check), 'When dark'/'When light' submenus showing current pair name and listing presets with swatches; Dark and Light groups; Custom group if any; 'Edit / custom theme…' opens Settings › Appearance. Each entry shows a 5-colour swatch strip (bg, panel, accent, ok, err) | `theme.menu` | ✅ |
+| `shell.titlebar.theme_hover_preview` | Hovering a theme entry for 150 ms wears it as a preview (not saved); leaving, choosing or closing the menu ends it | display | ✅ |
+| `shell.titlebar.window_buttons` | Minimise, Maximise/Restore (icon switches to 'copy' when maximised), Close (red hover) | `window.minimize_maximize_close` | ✅ |
+| `shell.rail.groups` | Left rail with stencil group captions Play (Servers, Favorites, History, Friends, Direct connect, Offline), Gear (Mods, Launch options), Intel (News, Stats); foot: Settings, About; collapsed shows a short rule instead of captions | display | ✅ |
+| `shell.rail.entry` | Each entry: icon (accent when current), label, raised background when current; click opens view; tooltip (when collapsed: label) with the view's shortcut key | `view.<id>` | ✅ |
+| `shell.rail.counts` | Counts beside entries: servers total compact ('9,5 k'), favorites count, history count, mods 'N↑' amber when updates pending else installed count, friends in DayZ (green); pop animation when value changes; collapsed shows an amber dot for toned counts | display | ✅ |
+| `shell.rail.active_bar` | A single 2px accent bar beside the current entry that slides to the new entry on navigation; no slide on first placement; re-measured on resize/scroll | display | ✅ |
+| `shell.rail.collapse` | 'Collapse menu' / expand button at the foot toggles icon-only rail (persisted prefs.railCollapsed); auto-collapsed in gamepad mode when window < 1200px | `rail.toggle_collapse` | ✅ |
+| `shell.rail.kill_game` | While DayZ runs (not in gamepad mode): red block at bottom of the views 'Game running' (pulsing green dot) + 'Close DayZ' button; collapsed: icon-only red button; danger confirm before killing; disabled while closing | `game.close` | ✅ |
+| `shell.rail.rejoin_card` | Rejoin card above the foot: 'Last played' + relative time (tooltip exact date-time), close X, server name (click opens History at that entry), live players bar + ping signal (click pings it), map and in-game time, or amber 'not listed'; big accent 'Rejoin' button | display | ✅ |
+| `shell.rail.rejoin_compact` | Short window (<760px high): single-line accent 'play + server name' button; collapsed rail: play icon button; both tooltip 'Rejoin: name' | `rejoin` | ✅ |
+| `shell.rail.rejoin_dismiss` | X hides the rejoin card for that address until another server becomes the last played (prefs.dismissedRejoin) | `rejoin.dismiss` | ✅ |
+| `shell.status.layout` | 28px status bar: left 'what is happening' segments, divider, right 'state of things'; words hide when the bar is <1100px wide, less important segments hide progressively | display | ✅ |
+| `shell.status.segment` | Segment anatomy: tone-coloured icon (idle/accent/info/ok/warn/err), short text, tooltip; clickable ones are buttons with hover; optional 2px bar along the foot (value 0–100 eased, or sweeping band when indeterminate); optional pulsing icon; optional small action buttons beside | display | ✅ |
+| `shell.status.list` | Server-list segment: rolling count (flashes when changed after first 1.5 s) + 'servers' + '· age'; tooltip with count and age; click refreshes. Amber when older than 10 min. Refreshing: accent sweep 'Fetching the list…'. Failed: red 'Fetch failed' (or cloud-off 'list down' when empty), click retries. Steam listing: accent bar 'Steam N%' with requests done/total/added tooltip, click opens Servers | `servers.refresh` | ✅ |
+| `shell.status.scan` | Ping segment: idle 'Ping' (click pings all); running: pulsing radar 'Ping done/total' with progress bar, plus pause/resume and restart mini buttons (tooltips); paused shows amber 'Paused' | `servers.scan` | ✅ |
+| `shell.status.mod_op` | Running mod operation: kind (Login/Repair/Install/Update) + 'cur/total' + current mod name, info bar of batch progress (sweep when unknown); amber key icon 'Waiting for you' when Steam Guard/password needed; click restores the minimised operation dialog | `mods.reopen_op` | ✅ |
+| `shell.status.steamcmd_missing` | Amber 'SteamCMD missing' segment when SteamCMD is the downloader and not installed; click opens Settings › Steam | `settings.open_steam` | ✅ |
+| `shell.status.mods_behind` | 'Checking mods' sweeping segment while checking; else amber 'N to update' (flash on change) opening Mods; hidden below 800px bar width | `view.mods` | ✅ |
+| `shell.status.offline_install` | While offline mode installs: info sweep 'Offline mode · installing', click opens Offline | `view.offline` | ✅ |
+| `shell.status.updater_download` | While the launcher update downloads: 'Update N%' info bar, tooltip version+percent, click opens About › update | `about.open_update` | ✅ |
+| `shell.status.game` | While DayZ runs: green pulsing dot 'DayZ' + played duration (refreshed every 30 s); tooltip 'running for …' + how to quit (rail or Steam overlay with a pad) | display | ✅ |
+| `shell.status.battleye` | BattlEye segment (hidden when no game; hidden <900px unless faulty): dot green running / grey ready; amber 'off' when missing/disabled; red shield 'off' when DayZ has run 20 s without the service; tooltips per state + action; click repairs/installs when applicable; refreshed with the 30 s clock while focused and every 5 s while DayZ runs | `battleye.repair` | ✅ |
+| `shell.status.steam` | Steam segment: 'Steam'/'SteamCMD' + dot (green Steam running, amber not, grey unknown; amber tone when not running), tooltip login/state; click opens upward menu: 'Downloader' label, SteamCMD and Steam client items with check and hint (disabled 'busy' while an op runs), separator, 'Steam settings'. Steam running polled every 30 s while focused | `steam.downloader_menu` | ✅ |
+| `shell.status.update` | Green 'vX available' segment when an update exists, or 'Restart to update' when downloaded; click opens About › update | `about.open_update` | ✅ |
+| `shell.status.version` | App version 'vX.Y.Z' at the far right (hidden below 1000px bar width) | display | ✅ |
+| `shell.confirm` | Confirm dialog for any confirm(): title, pre-line message, Cancel (ghost, focused) and confirm (danger red or accent; custom label); Esc/close = no; a second request answers the first 'no' | display | ✅ |
+| `shell.password` | Server password dialog: message naming the server, masked field with eye toggle (focused, emptied each time), 'save password' checkbox (default on), Cancel and 'Join' (disabled when empty); Enter submits | `connect.answer_password` | ✅ |
+| `shell.connect_dialog` | Before joining a modded server: title + server name, tag 'N mods not installed'/'N mods to check', scrollable list (name, #id, local and Workshop dates, size, amber 'N days newer' tag, open-in-Workshop button), switch install/update mods (default on for missing) with warning hint, amber 'will fail without mods' line when off; Cancel and play-button 'Install & connect'/'Update & connect'/'Connect' | `connect.confirm_mods` | ✅ |
+| `shell.palette.open` | Command palette dialog (top 12vh, max 42rem wide, 72vh tall, dim overlay, pop animation); input auto-focused, fresh (empty, first item) every open; Esc closes [keys: Ctrl+K] | `palette.toggle` | ✅ |
+| `shell.palette.empty` | Empty query: sections Recent (last 5 picks, persisted, max 8, servers rebuilt even if no longer in lists), Actions, Views; plus 'Try' box (search a server, type an address, anything else) | display | ✅ |
+| `shell.palette.actions` | Actions: Refresh list (Ctrl+R), Rejoin <last server> (Ctrl+L, if history), Update mods (amber, count, Ctrl+U, only when updates), Check mods for updates (opens Mods + forced check), Keyboard shortcuts (?) | `palette.actions` | ✅ |
+| `shell.palette.search` | Typed query: fuzzy-matches views, actions, 12 settings sections ('appearance' also matches 'theme colours'), favorites (name or ip:port, star icon), history (excluding favorites), installed mods (name or id; opens Mods filtered by name), max 5 per section, matched characters accent-underlined; sections ordered by best score | display | ✅ |
+| `shell.palette.servers` | Servers section: backend query 120 ms after typing pauses (≥2 chars), 6 most-populated matches with 'players/max · map · ip:port'; spinner replaces magnifier and footer says 'Searching…' while asking | display | ✅ |
+| `shell.palette.address` | Typing an address (host:port) puts first an Address section: 'Connect to <addr>' and 'Open <addr> in Direct connect' | `palette.connect_address` | ✅ |
+| `shell.palette.row` | Row: icon (tinted), label, mono sub-text, active row raised with accent left bar and '<verb> ↵' (Open/Run/Join/Show), shortcut kbd on the right; hovering sets the active row; 'nothing for <query>' when empty | display | ✅ |
+| `shell.palette.keys` | ↑/↓ move (wrap), PgUp/PgDn by 5, Tab/Shift+Tab jump to next/previous section start, Enter runs and records to recent; footer key hints ↑↓ move, Enter run, Tab section, Esc close | `palette.navigate` | ✅ |
+| `shell.shortcuts_dialog` | Keyboard shortcuts dialog (large): Keys \| Controller tabs (default by input mode), groups in 2 columns: global, views (2-col chips), server lists, saved, mods, news, palette, dialogs (controller tab adds pad, servers, connect, offline, options); key chips joined by + with '/' or 'or'; footer note about typing/right-click or pad [keys: ?] | `sheet.toggle` | ✅ |
 | `shell.pad_hints` | In gamepad mode, a 28px hint bar above the status bar: up to 5 glyph+word hints in fixed order (A select/type/join, B back/done/close, view's X and Y when applicable, Menu search, LB/RB views, R3, View shortcuts); palette shows A/B/LB-RB/(Y keyboard); dialogs show A, B, X confirm; first pad name at the right | display | ⬜ |
-| `shortcuts.global.palette` | Toggle command palette from anywhere, even over dialogs/fields (closes shortcut sheet) [keys: Ctrl+K / pad Menu] | `palette.toggle` | ⬜ |
-| `shortcuts.global.search` | Focus and select the current view's visible search field [keys: Ctrl+F or /] | `view.focus_search` | ⬜ |
-| `shortcuts.global.sheet` | Toggle keyboard shortcut sheet (closes palette) [keys: ? / pad View] | `sheet.toggle` | ⬜ |
-| `shortcuts.global.refresh` | Refresh the server list (browser reload swallowed) [keys: Ctrl+R] | `servers.refresh` | ⬜ |
-| `shortcuts.global.update_mods` | If mods are behind: open Mods and update them all; else toast 'mods up to date' [keys: Ctrl+U] | `mods.update_all` | ⬜ |
-| `shortcuts.global.rejoin` | Rejoin last played server; toast warn 'no history' if none [keys: Ctrl+L / pad L3] | `rejoin` | ⬜ |
-| `shortcuts.views.jump` | Ctrl+1 Servers, 2 Favorites, 3 History, 4 Friends, 5 Direct connect, 6 Offline, 7 Mods, 8 Options, 9 News, 0 Stats, Ctrl+, Settings, F1 About; digits also match physical key (AZERTY) [keys: Ctrl+1..9, Ctrl+0, Ctrl+, , F1] | `view.<id>` | ⬜ |
-| `shortcuts.views.cycle` | Previous/next view in rail order, wrapping [keys: Ctrl+PgUp / Ctrl+PgDn, pad LB/RB] | `view.prev_next` | ⬜ |
+| `shortcuts.global.palette` | Toggle command palette from anywhere, even over dialogs/fields (closes shortcut sheet) [keys: Ctrl+K / pad Menu] | `palette.toggle` | ✅ |
+| `shortcuts.global.search` | Focus and select the current view's visible search field [keys: Ctrl+F or /] | `view.focus_search` | ✅ |
+| `shortcuts.global.sheet` | Toggle keyboard shortcut sheet (closes palette) [keys: ? / pad View] | `sheet.toggle` | ✅ |
+| `shortcuts.global.refresh` | Refresh the server list (browser reload swallowed) [keys: Ctrl+R] | `servers.refresh` | ✅ |
+| `shortcuts.global.update_mods` | If mods are behind: open Mods and update them all; else toast 'mods up to date' [keys: Ctrl+U] | `mods.update_behind` | ✅ |
+| `shortcuts.global.rejoin` | Rejoin last played server; toast warn 'no history' if none [keys: Ctrl+L / pad L3] | `rejoin` | ✅ |
+| `shortcuts.views.jump` | Ctrl+1 Servers, 2 Favorites, 3 History, 4 Friends, 5 Direct connect, 6 Offline, 7 Mods, 8 Options, 9 News, 0 Stats, Ctrl+, Settings, F1 About; digits also match physical key (AZERTY) [keys: Ctrl+1..9, Ctrl+0, Ctrl+, , F1] | `view.<id>` | ✅ |
+| `shortcuts.views.cycle` | Previous/next view in rail order, wrapping [keys: Ctrl+PgUp / Ctrl+PgDn, pad LB/RB] | `view.next` | ✅ |
 | `shortcuts.list` | Registry list keys (handled by views): ↑↓ move, Home/End, PgUp/PgDn (LT/RT), Enter join (A), F favorite (X), P ping (Y), I details (R3), C copy address, L copy link, D direct connect, Esc deselect (B), Del remove (favorites/history); mods: ↑↓, Home/End, Space tick (X), U update (Y), M managed, Del delete, Esc; news: ↑↓/J/K, O open (X); pad-only: servers Y refresh, connect X query / Y join (Enter), offline X launch / Y install, options X apply recommended / Y active only; dialog X confirm, B close | display | ⬜ |
-| `shortcuts.escape` | Esc closes topmost overlay only; in a view's search field with text it clears it, otherwise leaves (blurs) the field [keys: Esc] | `field.escape` | ⬜ |
-| `shortcuts.field_guard` | Shortcuts without Ctrl (and not F-keys) never fire while a text field has focus; nothing but Ctrl+K fires while any dialog/popup/menu is open | display | ⬜ |
-| `shortcuts.browser_keys` | Release builds swallow browser keys: F5, F3, F7, BrowserBack/Forward, Alt+←/→, Ctrl+R/P/F/G/J/S/O/0 (Ctrl+R/F still run the app's own); in egui only the app's own keys remain | display | ⬜ |
+| `shortcuts.escape` | Esc closes topmost overlay only; in a view's search field with text it clears it, otherwise leaves (blurs) the field [keys: Esc] | `field.escape` | ✅ |
+| `shortcuts.field_guard` | Shortcuts without Ctrl (and not F-keys) never fire while a text field has focus; nothing but Ctrl+K fires while any dialog/popup/menu is open | display | ✅ |
+| `shortcuts.browser_keys` | Release builds swallow browser keys: F5, F3, F7, BrowserBack/Forward, Alt+←/→, Ctrl+R/P/F/G/J/S/O/0 (Ctrl+R/F still run the app's own); in egui only the app's own keys remain | display | ✅ |
 | `pad.move` | D-pad/stick moves focus spatially to nearest focusable in that direction within the topmost dialog/popup or the app; prefers staying in the current region (title bar, rail, status bar, nav/aside); in lists goes row by row (scrolls virtual list); held direction accelerates 1→3→10 rows; sliders take left/right; menus/selects/palette receive arrow keys | `pad.move` | ⬜ |
 | `pad.accept` | A clicks the focused element; on a text field focuses it and opens Steam's on-screen keyboard in Steam big-screen; on a list row first selects, second A on selected row joins (double-click); focus restored after redraw | `pad.accept` | ⬜ |
 | `pad.back` | B closes topmost popup/dialog; on a text field leaves it downward; else sends Escape to the view (deselect/close details) | `pad.back` | ⬜ |
@@ -795,14 +795,14 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `pad.landing` | When nothing is focused, a press lands on the element last focused in this view, else the view's list at its remembered/selected row, else the top-left focusable; switching view with LB/RB waits for it to load then lands | display | ⬜ |
 | `pad.view_buttons` | X/Y/R3/L3/Menu/View run the current view's registered command when it applies (first applicable wins), else app-wide (Menu palette, View sheet, L3 rejoin); in a dialog X clicks the confirm (or last footer button); in the palette Menu closes, Y opens Steam keyboard, LB/RB = Shift+Tab/Tab | display | ⬜ |
 | `pad.input_mode` | Input mode follows last input (pad action → gamepad; real pointer move/press → pointer) unless forced; gamepad mode shows focus ring, hint bar, zoom at pad scale, hides rail kill-game block; Steam big-screen starts in gamepad mode | display | ⬜ |
-| `app.init_screen` | Until initialised the main area shows topo texture with spinner 'Initializing…'; on failure red triangle 'Initialization Failed', selectable mono error and 'Retry' | display | ⬜ |
-| `app.views_kept` | Views load on first visit and stay mounted (scroll, filters, selection kept); shown with a short rise-in animation; current view restored after a reload (session) | display | ⬜ |
-| `app.paste_connect` | Pasting outside a text field: 'dzch://' link opens it in Direct connect; 'host:port' (IPv4 or hostname, port 1–65535) opens Direct connect prefilled with toast 'pasted address' | `connect.paste` | ⬜ |
-| `app.no_context_menu` | Release builds suppress the webview's right-click menu except on inputs, textareas and selectable text (egui: no stray context menu; text fields keep copy/paste) | display | ⬜ |
-| `app.launch_toasts` | Toasts on backend launch events: ok 'launched <name>' (then watches for game, reloads profile), error 'launch error: …' | display | ⬜ |
-| `app.cli` | Command-line/second-instance args: --connect host[:port] opens Direct connect and connects, --reconnect rejoins (warn if no history), open dzch:// or .dzch file; queued until initialised | display | ⬜ |
-| `app.focus_return` | Window blur/hidden marks away; on return after ≥5 min refreshes the server list, after ≥10 min checks mod updates; focus state also drives window border colour and status polling | display | ⬜ |
-| `app.periodic_mod_check` | Every 30 min while the window is focused, mods are force-checked for Workshop updates (needs API key); status bar shows 'Checking mods' | display | ⬜ |
+| `app.init_screen` | Until initialised the main area shows topo texture with spinner 'Initializing…'; on failure red triangle 'Initialization Failed', selectable mono error and 'Retry' | display | ✅ |
+| `app.views_kept` | Views load on first visit and stay mounted (scroll, filters, selection kept); shown with a short rise-in animation; current view restored after a reload (session) | display | ✅ |
+| `app.paste_connect` | Pasting outside a text field: 'dzch://' link opens it in Direct connect; 'host:port' (IPv4 or hostname, port 1–65535) opens Direct connect prefilled with toast 'pasted address' | `connect.paste` | ✅ |
+| `app.no_context_menu` | Release builds suppress the webview's right-click menu except on inputs, textareas and selectable text (egui: no stray context menu; text fields keep copy/paste) | display | ✅ |
+| `app.launch_toasts` | Toasts on backend launch events: ok 'launched <name>' (then watches for game, reloads profile), error 'launch error: …' | display | ✅ |
+| `app.cli` | Command-line/second-instance args: --connect host[:port] opens Direct connect and connects, --reconnect rejoins (warn if no history), open dzch:// or .dzch file; queued until initialised | display | ✅ |
+| `app.focus_return` | Window blur/hidden marks away; on return after ≥5 min refreshes the server list, after ≥10 min checks mod updates; focus state also drives window border colour and status polling | display | ✅ |
+| `app.periodic_mod_check` | Every 30 min while the window is focused, mods are force-checked for Workshop updates (needs API key); status bar shows 'Checking mods' | display | ✅ |
 | `app.frame` | Window frame: rounded corners (theme radius, 0 when maximised) and optional border in focus/blur colour; maximised state tracked on resize (once per frame) | display | ⬜ |
-| `app.toasts` | Toaster for info/ok/warn/err messages used across the app | display | ⬜ |
+| `app.toasts` | Toaster for info/ok/warn/err messages used across the app | display | ✅ |
 | `app.mod_op_dialog` | Mod operation dialog mounted whenever an operation is active (lazy); wizard mounted when showWizard | display | ⬜ |

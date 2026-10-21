@@ -10,10 +10,17 @@
 
 pub mod app;
 pub mod catalog;
+pub mod commands;
+pub mod control;
 pub mod i18n;
 pub mod icons;
 pub mod kit;
+pub mod parts;
+pub mod prefs;
 pub mod rt;
+pub mod shell;
+pub mod store;
 pub mod theme;
+pub mod views;
 
 pub use app::HubApp;
