@@ -1,8 +1,8 @@
 # DayZ Community Hub roadmap
 
-**Stage: rewrite: M2 views done** · next: M3 platform (links, updater, gamepad, window), then M4 switch-over
+**Stage: rewrite: M3 platform done** · next: M4 switch-over (packaging under the old name, remove apps/gui)
 
-> **Last updated:** 2026-10-22 · **Change:** M2 views landed
+> **Last updated:** 2026-10-22 · **Change:** M3 platform landed
 
 The launcher's Tauri/Svelte interface (`apps/gui`) is being rebuilt 1:1 in egui
 (`apps/desktop`, backend `crates/app/hub`), features and looks, on Windows and Linux alike.
@@ -17,11 +17,11 @@ remaining work parallelizes (the views fan out once the shell exists).
 
 | | Value | Kind |
 |---|---|---|
-| **Catalog features done** | **701 / 716 (97.9%)** | measured: `catalog.rs`, `cargo xtask parity` |
-| Views ported | 13 / 13 (shell 66 / 77, the rest is gamepad) | measured: [parity checklist](docs/parity-checklist.md) |
-| Visual diff, mean SSIM | 0.847 over 13 views (0.75–0.95) | measured: `cargo xtask visual-diff` 2026-10-22 |
-| Tests (new crates) | 131 desktop + 60 hub + xtask, all passing | `cargo xtask ci` 2026-10-22 |
-| Remaining to switch-over | ~56–98 h | estimated: sum of [gaps](docs/gaps.md) |
+| **Catalog features done** | **714 / 719 (99.3%)** | measured: `catalog.rs`, `cargo xtask parity` |
+| Views ported | 13 / 13, shell complete but the window frame | measured: [parity checklist](docs/parity-checklist.md) |
+| Visual diff, mean SSIM | 0.855 over 13 views (0.75–0.95) | measured: `cargo xtask visual-diff` 2026-10-22 |
+| Tests (new crates) | 160 desktop + 66 hub + xtask, all passing | `cargo xtask ci` 2026-10-22 |
+| Remaining to switch-over | ~12–22 h + owner checks | estimated: G23, G24 in [gaps](docs/gaps.md) |
 
 ## Milestones
 
@@ -30,10 +30,22 @@ remaining work parallelizes (the views fan out once the shell exists).
 | M0 Foundation | skeleton, hub port, mock, assets, i18n, xtask, catalog and docs | done |
 | M1 Kit and shell | widget kit, app parts, stores, shell, control channel + ui_shot | done |
 | M2 Views | servers, favorites, history, friends, connect, offline, mods, options, news, stats, settings, about, setup | done |
-| M3 Platform | single instance + links, updater, gamepad, window | next |
-| M4 Switch-over | packaging under the old name, remove `apps/gui` | queued |
+| M3 Platform | single instance + links, updater, gamepad, window | done |
+| M4 Switch-over | packaging under the old name, remove `apps/gui` | next |
 
 ## Progress log
+
+### 2026-10-22 (M3)
+
+- M3 landed (three lanes, six agents): one window per user with dzch:// links and .dzch
+  files handed over a token-checked local socket, registration off the UI thread (skipped in
+  debug and mock); the updater end to end without the Tauri plugin (same latest.json and key,
+  atomic AppImage replace, Windows zip swap, relaunch); the gamepad (spatial focus, list
+  stepping with acceleration, view buttons, hint bar, two-column shortcuts sheet); the window
+  remembers its geometry, the Windows exe carries icon, VERSIONINFO and manifest.
+- G25 polish: shared rows, headers, chips, Copy, Play lettering, symbol glyphs; mean SSIM
+  0.847 → 0.855. Parity 714 / 719, floor 714; the 5 left are the window frame and the theme
+  editor's legibility report, dropped by the simplified theme.
 
 ### 2026-10-22
 

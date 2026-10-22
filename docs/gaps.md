@@ -1,6 +1,6 @@
 # Where the egui window falls short of the Svelte interface
 
-> **Last updated:** 2026-10-22 · **Change:** G1–G18 closed (M1, M2); G25 visual polish added
+> **Last updated:** 2026-10-22 · **Change:** G19–G22 and G25 closed (M3)
 
 The ranked work list of the egui rewrite: one entry per remaining task of
 `plan/execution-plan.md` M1–M4, with each view of M2 as its own entry. Take the highest-ranked
@@ -33,14 +33,14 @@ Feature counts are entries of `apps/desktop/src/catalog.rs` ([checklist](parity-
 | G16 | About view (38) | M2 | G4 | done | [ui-parity › about](ui-parity.md#about) |
 | G17 | Offline view (27) | M2 | G4 | done | [ui-parity › offline](ui-parity.md#offline) |
 | G18 | History view (14) | M2 | G14 | done | [ui-parity › history](ui-parity.md#history) |
-| G19 | Single instance, dzch:// and .dzch, paste-to-connect | M3.1 | G4, G11 | 8–14 h | [ui-parity › shell](ui-parity.md#shell) |
+| G19 | Single instance, dzch:// and .dzch, paste-to-connect | M3.1 | G4, G11 | done (Wayland activation token left) | [ui-parity › shell](ui-parity.md#shell) |
 | G20 | Updater | M3.2 | G16 | done | [ui-parity › about](ui-parity.md#about) |
-| G21 | Gamepad | M3.3 | G4, views | 15–25 h | [ui-parity › shell](ui-parity.md#shell) |
+| G21 | Gamepad | M3.3 | G4, views | done | [ui-parity › shell](ui-parity.md#shell) |
 | G22 | Window: size, position, maximise, Windows icon, fatal box | M3.4 | G4 | done | [ui-parity › shell](ui-parity.md#shell) |
 | G23 | Packaging and release tooling for the egui binary | M4.1 | M3 | 8–14 h + owner | — |
 | G24 | Remove apps/gui, rename, update docs | M4.2 | all above | 4–8 h | — |
 | G25 | Visual polish: shared `Field` rows, page header, chip tints, `Copy` colours, Play lettering, symbol glyphs, wizard, palette search | M2 follow-up | — | done | [ui-parity](ui-parity.md) |
-| | **Total left** | | | **~56–98 h** | |
+| | **Total left** | | | **~12–22 h + owner checks** | |
 
 About 70% parallelizes: the M2 views fan out once the shell and parts exist; G1–G4 and M4 are
 the serial path.
