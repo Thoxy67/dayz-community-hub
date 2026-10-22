@@ -6,6 +6,26 @@ notes; without one, the notes are the commit titles since the last release.
 
 ## Unreleased
 
+- **A native interface.** The launcher is now drawn by Rust itself (egui on
+  the GPU) instead of a web view: it starts faster, scrolls the full server
+  list smoothly, and needs no WebView2 on Windows or WebKitGTK on Linux. Every view, dialog, setting and shortcut is still
+  there, and your profile, favourites, history and mods carry over as they
+  are. Updating from the previous version works as usual. The interface's
+  own choices (theme, language, rail and pane sizes, controller labels) lived
+  in the web view's storage and start from the defaults once; the language
+  follows the system's.
+- **Controller support everywhere.** A gamepad (Steam Deck, Xbox,
+  PlayStation) moves through every view and dialog, with a focus ring and
+  a hint bar showing what each button does.
+- **The AppImage no longer bundles libraries**: it uses your system's
+  graphics drivers and desktop directly.
+- **Removed:** the news feed's built-in browser fallback when dayz.com's
+  protection blocks it (an "Open dayz.com" button opens the site in your
+  browser instead); the window's corner radius and border settings; the
+  theme editor's contrast report; and the Steam client as a second way to
+  ask Steam's server list (Steam's own servers are now asked through the
+  Web API only, which needs a Steam Web API key in the profile).
+
 ## 0.5.4 - 2026-10-13
 
 - **BattlEye is watched and repaired.** On Windows the game often starts

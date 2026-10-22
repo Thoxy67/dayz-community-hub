@@ -3,8 +3,10 @@
 > **Last updated:** 2026-10-21 · **Change:** created
 
 How close the egui window (`apps/desktop`) is to the Tauri/Svelte interface (`apps/gui/src`),
-view by view. The Svelte interface is the specification until M4.2 removes it: every view,
-dialog, menu, tooltip, empty state, shortcut and word is ported 1:1, features and looks.
+view by view. The Svelte interface was the specification until M4.2 removed it (2026-10-22):
+every view, dialog, menu, tooltip, empty state, shortcut and word was ported 1:1, features and
+looks. This page is now a record; the `apps/gui/…` paths below name files in the history
+(`jj file show -r 67e3940c <path>`).
 
 What is measured:
 

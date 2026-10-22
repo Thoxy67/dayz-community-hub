@@ -2,7 +2,7 @@
 //! `var/shots/<view>.png`, to be compared with `var/reference/<view>.png` by `visual-diff`.
 //!
 //! For each view this writes `var/shots/<view>.jsonl` and runs
-//! `cargo run -p dayz-community-hub-egui --example ui_shot -- <script>`.
+//! `cargo run -p dayz-community-hub --example ui_shot -- <script>`.
 //!
 //! # The ui_shot script format
 //!
@@ -30,8 +30,8 @@
 //! {"shot":"/…/var/shots/servers.png"}
 //! ```
 //!
-//! The reference images (`var/reference/`) are the Svelte interface on its mock backend, chernarus
-//! theme, 1400×860, French.
+//! The reference images (`var/reference/`) are the record of the Svelte interface (removed in
+//! M4.2) on its mock backend, chernarus theme, 1400×860, French: files, never regenerated.
 
 use std::path::Path;
 

@@ -1,8 +1,0 @@
-node_modules
-/dist
-/.intlayer
-.env
-.env.*
-!.env.example
-vite.config.ts.timestamp-*
-/dist-mock*

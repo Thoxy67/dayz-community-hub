@@ -1,4 +1,4 @@
-//! App-wide state (= `apps/gui/src/lib/stores`): what more than one view reads.
+//! App-wide state (the Svelte interface's `lib/stores`, ported): what more than one view reads.
 //!
 //! Each store keeps the state its Svelte namesake kept, with the same actions and derived
 //! values, and reaches the hub through [`crate::rt`]: an action spawns the hub call and

@@ -1,7 +1,7 @@
 //! `cargo xtask visual-diff [views...]`: how close each egui view is to the Svelte interface.
 //!
 //! Compares `var/shots/<view>.png` (from `cargo xtask shots`) with `var/reference/<view>.png`
-//! (the Svelte interface on its mock backend). With no view named, every view that has a
+//! (the Svelte interface on its mock backend, kept as files since it was removed). With no view named, every view that has a
 //! reference. Pure Rust, no external tools:
 //!
 //! - the shot is resized to the reference's size when they differ, both are turned to greyscale;

@@ -1,27 +1,30 @@
 #!/usr/bin/env python3
-"""Regenerate the egui window's icons from the Svelte interface's iconify sets.
+"""Regenerate apps/desktop/src/icons/list.rs from the SVG files.
 
-Scans apps/gui/src for `~icons/<set>/<name>` imports, adds every two-letter
-country flag of circle-flags (`ui/flag` draws a flag per server country), then
-writes each icon as an SVG file into apps/desktop/assets/icons/<set>/<name>.svg
-and the Rust constants that embed them into apps/desktop/src/icons/list.rs.
+The icons are the SVG files in apps/desktop/assets/icons/<set>/<name>.svg
+(lucide, game-icons, boxicons, circle-flags): that folder is the source. To add
+an icon, take its SVG from the iconify set (https://icon-sets.iconify.design),
+save it as <set>/<name>.svg (a monochrome one with `color="#ffffff"` on the
+root `<svg>`, so the window can tint it), and run this script; it writes one
+`Icon` constant per file, each set's `ALL`, and `flag::by_code`. Every file
+needs a row in ATTRIBUTION.md (`cargo xtask assets` checks).
 
-Run from anywhere: `python3 scripts/icons.py` (stdlib only). Stale SVG files of
-icons no longer used are removed.
+    python3 scripts/icons.py           # rewrite list.rs
+    python3 scripts/icons.py --check   # fail when list.rs is stale
+
+Stdlib only; list.rs is formatted with rustfmt when it is on the PATH.
 """
 
 from __future__ import annotations
 
-import json
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-GUI_SRC = ROOT / "apps/gui/src"
-ICONIFY = ROOT / "apps/gui/node_modules/@iconify-json"
 ASSETS = ROOT / "apps/desktop/assets/icons"
 LIST_RS = ROOT / "apps/desktop/src/icons/list.rs"
 
@@ -32,75 +35,9 @@ SETS: dict[str, tuple[str, bool]] = {
     "boxicons": ("bx", False),
     "circle-flags": ("flag", True),
 }
-IMPORT = re.compile(r"~icons/([a-z0-9-]+)/([a-z0-9-]+)")
 COUNTRY = re.compile(r"[a-z]{2}")
-SOURCE_EXT = {".svelte", ".ts", ".js"}
-
-
-def scan() -> dict[str, set[str]]:
-    used: dict[str, set[str]] = {s: set() for s in SETS}
-    for path in GUI_SRC.rglob("*"):
-        if path.suffix not in SOURCE_EXT or not path.is_file():
-            continue
-        for m in IMPORT.finditer(path.read_text(encoding="utf-8")):
-            prefix, name = m.groups()
-            if prefix not in SETS:
-                sys.exit(f"{path}: unknown icon set {prefix!r}; add it to SETS")
-            used[prefix].add(name)
-    return used
-
-
-def load(prefix: str) -> dict:
-    with open(ICONIFY / prefix / "icons.json", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def resolve(data: dict, name: str) -> dict | None:
-    """The icon's body and box, following aliases and their transformations."""
-    chain: list[dict] = []
-    seen: set[str] = set()
-    while name not in data["icons"]:
-        alias = data.get("aliases", {}).get(name)
-        if alias is None or name in seen:
-            return None
-        seen.add(name)
-        chain.append(alias)
-        name = alias["parent"]
-    icon = dict(data["icons"][name])
-    left = icon.get("left", data.get("left", 0))
-    top = icon.get("top", data.get("top", 0))
-    width = icon.get("width", data.get("width", 16))
-    height = icon.get("height", data.get("height", 16))
-    rotate, hflip, vflip = icon.get("rotate", 0), icon.get("hFlip", False), icon.get("vFlip", False)
-    for alias in reversed(chain):
-        left, top = alias.get("left", left), alias.get("top", top)
-        width, height = alias.get("width", width), alias.get("height", height)
-        rotate += alias.get("rotate", 0)
-        hflip ^= alias.get("hFlip", False)
-        vflip ^= alias.get("vFlip", False)
-    body = icon["body"]
-    transforms = []
-    if hflip:
-        transforms.append(f"translate({width + 2 * left} 0) scale(-1 1)")
-    if vflip:
-        transforms.append(f"translate(0 {height + 2 * top}) scale(1 -1)")
-    rotate %= 4
-    if rotate:
-        cx, cy = left + width / 2, top + height / 2
-        transforms.insert(0, f"rotate({rotate * 90} {cx} {cy})")
-    if transforms:
-        body = f'<g transform="{" ".join(transforms)}">{body}</g>'
-    return {"body": body, "box": (left, top, width, height)}
-
-
-def svg(icon: dict, colored: bool) -> str:
-    left, top, width, height = icon["box"]
-    # Monochrome sets draw in `currentColor`: white here, tinted when drawn.
-    color = "" if colored else ' color="#ffffff"'
-    return (
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
-        f'viewBox="{left} {top} {width} {height}"{color}>{icon["body"]}</svg>\n'
-    )
+# Codes circle-flags draws with another country's file (its own aliases).
+FLAG_ALIASES = {"iw": "il", "sj": "bv"}
 
 
 def const_name(name: str) -> str:
@@ -108,42 +45,18 @@ def const_name(name: str) -> str:
     return f"I_{ident}" if ident[:1].isdigit() else ident
 
 
-def main() -> None:
-    used = scan()
-    flags = load("circle-flags")
-    used["circle-flags"] |= {k for k in flags["icons"] if COUNTRY.fullmatch(k)}
-    flag_aliases = {
-        k: v["parent"]
-        for k, v in flags.get("aliases", {}).items()
-        if COUNTRY.fullmatch(k) and COUNTRY.fullmatch(v["parent"]) and k not in flags["icons"]
-    }
-
+def render() -> str:
     out = [
-        "// @generated by scripts/icons.py: do not edit; rerun the script instead.",
+        "// @generated by scripts/icons.py from apps/desktop/assets/icons: do not edit;",
+        "// add or remove an SVG file there and rerun the script.",
         "",
     ]
-    total = 0
     for prefix, (module, colored) in SETS.items():
-        data = load(prefix) if used[prefix] else {"icons": {}}
-        target = ASSETS / prefix
-        names = sorted(used[prefix])
-        if names:
-            target.mkdir(parents=True, exist_ok=True)
-        consts: list[tuple[str, str]] = []
-        for name in names:
-            icon = resolve(data, name)
-            if icon is None:
-                sys.exit(f"{prefix}/{name}: not in the iconify set")
-            (target / f"{name}.svg").write_text(svg(icon, colored), encoding="utf-8")
-            consts.append((const_name(name), name))
+        folder = ASSETS / prefix
+        names = sorted(p.stem for p in folder.glob("*.svg")) if folder.is_dir() else []
+        consts = [(const_name(n), n) for n in names]
         if len({c for c, _ in consts}) != len(consts):
             sys.exit(f"{prefix}: two icons map to the same constant name")
-        for stale in target.glob("*.svg"):
-            if stale.stem not in used[prefix]:
-                stale.unlink()
-        if target.is_dir() and not any(target.iterdir()):
-            target.rmdir()
-        total += len(consts)
 
         out.append(f"/// The `{prefix}` icons the interface uses.")
         out.append(f"pub mod {module} {{")
@@ -162,29 +75,45 @@ def main() -> None:
         out.append("    /// Every icon of this set, for tests and galleries.")
         out.append(f"    pub const ALL: &[Icon] = &[{', '.join(c for c, _ in consts)}];")
         if module == "flag":
+            countries = [(c, n) for c, n in consts if COUNTRY.fullmatch(n)]
             out.append("")
             out.append("    /// A country's flag from its ISO 3166-1 alpha-2 code, in any case.")
             out.append("    pub fn by_code(code: &str) -> Option<Icon> {")
             out.append("        let code = code.trim().to_ascii_lowercase();")
             out.append("        Some(match code.as_str() {")
-            for ident, name in consts:
+            for ident, name in countries:
                 out.append(f'            "{name}" => {ident},')
-            for alias, parent in sorted(flag_aliases.items()):
-                if parent in used[prefix]:
+            for alias, parent in sorted(FLAG_ALIASES.items()):
+                if parent in names and alias not in names:
                     out.append(f'            "{alias}" => {const_name(parent)},')
             out.append("            _ => return None,")
             out.append("        })")
             out.append("    }")
         out.append("}")
         out.append("")
-
-    LIST_RS.parent.mkdir(parents=True, exist_ok=True)
-    LIST_RS.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
+    text = "\n".join(out).rstrip() + "\n"
     if rustfmt := shutil.which("rustfmt"):
-        subprocess.run([rustfmt, "--edition", "2024", str(LIST_RS)], check=False)
-    print(f"{total} icons -> {ASSETS.relative_to(ROOT)}, {LIST_RS.relative_to(ROOT)}")
-    for prefix in SETS:
-        print(f"  {prefix}: {len(used[prefix])}")
+        with tempfile.NamedTemporaryFile("w", suffix=".rs", delete=False) as f:
+            f.write(text)
+        tmp = Path(f.name)
+        subprocess.run([rustfmt, "--edition", "2024", str(tmp)], check=False)
+        text = tmp.read_text(encoding="utf-8")
+        tmp.unlink()
+    return text
+
+
+def main() -> None:
+    text = render()
+    if "--check" in sys.argv[1:]:
+        if LIST_RS.read_text(encoding="utf-8") != text:
+            sys.exit(f"{LIST_RS.relative_to(ROOT)} is stale: run python3 scripts/icons.py")
+        print(f"{LIST_RS.relative_to(ROOT)} is up to date")
+        return
+    LIST_RS.write_text(text, encoding="utf-8")
+    counts = ", ".join(
+        f"{p}: {len(list((ASSETS / p).glob('*.svg')))}" for p in SETS if (ASSETS / p).is_dir()
+    )
+    print(f"{LIST_RS.relative_to(ROOT)} ({counts})")
 
 
 if __name__ == "__main__":

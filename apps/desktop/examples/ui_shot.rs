@@ -2,7 +2,7 @@
 //! (works with a locked screen, in CI, over SSH). It drives the same [`HubApp::ui`] as
 //! the real window, on a real tokio runtime: the mock's timers run in real time.
 //!
-//! `cargo run -p dayz-community-hub-egui --example ui_shot -- script.jsonl`
+//! `cargo run -p dayz-community-hub --example ui_shot -- script.jsonl`
 //!
 //! The script is one JSON object per line, run in order; blank lines and lines starting
 //! with `//` are skipped. The format is `xtask/src/shots.rs`'s, plus a few lines of its own:

@@ -1,5 +1,5 @@
 //! The invented world of [`HubMode::Mock`](crate::HubMode): the port of
-//! `apps/gui/src/lib/ipc/mock.ts`, the pretend backend the Svelte interface's
+//! the Svelte interface's `lib/ipc/mock.ts`, the pretend backend its
 //! screenshots (`var/reference/*.png`) were taken on.
 //!
 //! The same generator with the same seed (42, the same linear congruential

@@ -1,6 +1,6 @@
 # Svelte → egui parity checklist
 
-Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo test -p dayz-community-hub-egui catalog::tests::write_checklist -- --ignored`). Do not edit by hand.
+Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo test -p dayz-community-hub catalog::tests::write_checklist -- --ignored`). Do not edit by hand.
 
 **714 of 719 features done (99.3%).**
 

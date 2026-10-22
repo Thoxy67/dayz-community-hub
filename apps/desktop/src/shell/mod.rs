@@ -1,4 +1,4 @@
-//! The shell (= `apps/gui/src/shell`): title bar, rail, status bar, and what floats over
+//! The shell (the Svelte interface's `src/shell`, ported): title bar, rail, status bar, and what floats over
 //! everything (the dialog host, the command palette, the shortcuts sheet, the mod
 //! operation's dialog, the setup wizard, the pad hints, the window's resize edges).
 //!

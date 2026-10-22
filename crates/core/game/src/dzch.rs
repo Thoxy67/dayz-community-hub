@@ -14,7 +14,7 @@ use std::path::Path;
 pub const DZCH_VERSION: u8 = 1;
 
 /// A mod entry inside a `.dzch` file.
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DzchMod {
     pub id: i64,
     #[serde(default)]
@@ -22,7 +22,7 @@ pub struct DzchMod {
 }
 
 /// The `.dzch` server connection config.
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DzchConfig {
     /// Format version (currently 1).
     pub version: u8,

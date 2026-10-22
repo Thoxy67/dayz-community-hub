@@ -206,7 +206,7 @@ mod tests {
 
     #[test]
     fn progress_lines_read_as_steamcmds() {
-        // The window's pattern (apps/gui/src/features/mods/steamcmd-log.ts).
+        // The window's pattern (the mods view's SteamCMD log parser).
         let re = regex::Regex::new(r"(?i)progress:\s*([\d.]+)\s*\((\d+)\s*/\s*(\d+)\)").unwrap();
         let line = progress_line(1_559_212_036, 50, 200);
         let c = re.captures(&line).expect("matches");

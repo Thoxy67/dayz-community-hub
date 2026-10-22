@@ -1,4 +1,4 @@
-//! Every place the window can show (= `apps/gui/src/shell/nav.ts`), and the views
+//! Every place the window can show (the Svelte interface's `nav.ts`), and the views
 //! themselves (= `src/features/<view>`). The rail, the keyboard shortcuts (Ctrl+1…) and
 //! the view host all read [`PLACES`].
 //!

@@ -4,7 +4,10 @@ FROM debian:bookworm-slim
 ENV DEBIAN_FRONTEND=noninteractive
 
 # ── System packages ───────────────────────────────────────────────────────────
-# Base tools + clang/lld for cargo-xwin + Tauri Linux runtime deps
+# Base tools, clang/lld for cargo-xwin, and the egui window's build deps:
+# libudev (gilrs, the controllers) and zstd (linked through pkg-config). The
+# window loads Vulkan/OpenGL/Wayland/X11 with dlopen; Mesa's software Vulkan
+# (lavapipe) lets its headless snapshot tests render without a GPU.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
@@ -16,28 +19,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     llvm \
     unzip \
     pkg-config \
-    libssl-dev \
-    libayatana-appindicator3-dev \
-    librsvg2-dev \
-    libwebkit2gtk-4.1-dev \
-    libgtk-3-dev \
-    libsoup-3.0-dev \
-    libjavascriptcoregtk-4.1-dev \
-    # gilrs (controllers) links libudev
+    perl \
+    make \
     libudev-dev \
-    # .deb bundling
-    dpkg \
-    dpkg-dev \
-    # AppImage bundling
-    squashfs-tools \
-    file \
-    # RPM bundling
-    rpm \
-    # AppImage runtime deps
-    xdg-utils \
+    libzstd-dev \
+    mesa-vulkan-drivers \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Bun (also symlinked as `node` so actions/checkout works without Node.js) ──
+# ── Bun, only as `node` so actions/checkout runs without Node.js ─────────────
 ENV BUN_INSTALL=/usr/local
 RUN curl -fsSL https://bun.sh/install | bash \
     && ln -s /usr/local/bin/bun /usr/local/bin/node
@@ -57,9 +46,5 @@ RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y \
 # xwin handles downloading the MSVC sysroot at build time; no Windows SDK needed
 RUN cargo install cargo-xwin
 
-# ── @tauri-apps/cli (for `bun tauri signer sign`) ────────────────────────────
-# Install globally so it's available without bun install in each job
-RUN bun add -g @tauri-apps/cli
-
 # Sanity checks
-RUN rustc --version && cargo --version && bun --version && cargo xwin --version
+RUN rustc --version && cargo --version && cargo xwin --version

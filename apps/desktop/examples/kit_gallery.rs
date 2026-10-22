@@ -1,7 +1,7 @@
 //! Every widget of the kit in every variant, rendered headless (egui_kittest + wgpu) into
 //! PNGs to compare with the Svelte interface (`var/reference/*.png`).
 //!
-//! `cargo run -p dayz-community-hub-egui --example kit_gallery -- /abs/out.png`
+//! `cargo run -p dayz-community-hub --example kit_gallery -- /abs/out.png`
 //!
 //! Writes `out.png` (chernarus, the dark default), `out-topo.png` (the light preset),
 //! `out-float0.png` (dropdown, tooltip, toasts), `out-float1.png` (select),

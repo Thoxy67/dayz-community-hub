@@ -6,13 +6,11 @@
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 
 [![Rust](https://img.shields.io/badge/Rust-2024-orange?style=flat-square&logo=rust&logoColor=white)](https://rust-lang.org/)
-[![Tauri](https://img.shields.io/badge/Tauri-2-24C8D8?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app/)
-[![Svelte](https://img.shields.io/badge/Svelte-5-FF3E00?style=flat-square&logo=svelte&logoColor=white)](https://svelte.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![TailwindCSS](https://img.shields.io/badge/Tailwind-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
-[![bits-ui](https://img.shields.io/badge/bits--ui-2-181818?style=flat-square&logo=svelte&logoColor=white)](https://bits-ui.com/)
+[![egui](https://img.shields.io/badge/egui-0.36-1E90FF?style=flat-square)](https://github.com/emilk/egui)
+[![wgpu](https://img.shields.io/badge/wgpu-Vulkan%20%7C%20D3D12%20%7C%20GL-5C2D91?style=flat-square)](https://wgpu.rs/)
+[![Tokio](https://img.shields.io/badge/Tokio-1-463A2A?style=flat-square)](https://tokio.rs/)
 
-A fast, feature-rich DayZ launcher that replaces the official one — browse servers, manage mods, and connect in one click.
+A fast, feature-rich DayZ launcher that replaces the official one — browse servers, manage mods, and connect in one click. A native Rust application (egui on wgpu): no web view, one small executable.
 
 ![DayZ Community Hub screenshot](.forgejo/assets/screenshot.png)
 
@@ -99,15 +97,17 @@ Full docs available in the [Wiki](https://git.thoxy.xyz/thoxy/dayz-community-hub
 
 ## Building from Source
 
-**Prerequisites:** Rust, Bun, uv, [Tauri v2 system deps](https://tauri.app/start/prerequisites/)
+**Prerequisites:** Rust (rustup reads `rust-toolchain.toml`), uv, and on Linux
+the headers of libudev and zstd (`libudev-dev libzstd-dev` on Debian/Ubuntu;
+already there on Arch). No Node, no bun, no WebKit.
 
 ```bash
 git clone https://git.thoxy.xyz/thoxy/dayz-community-hub
 cd dayz-community-hub
-(cd apps/gui && bun install)
-make dev             # development
+make dev             # the app (make dev-mock: on an invented world)
 make check           # everything a commit must pass
-make build           # production (Linux)
+make build           # release executable (Linux, glibc 2.35 floor with zig)
+make appimage        # the AppImage (Ubuntu 22.04 container, podman)
 make windows         # Windows, cross-compiled with cargo-xwin
 ```
 

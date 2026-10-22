@@ -1,5 +1,5 @@
 //! The backend the launcher's window talks to (L2 in `plan/architecture.md`):
-//! what `apps/gui/src-tauri/src` did, without Tauri. The egui window keeps a
+//! what the Tauri shell's `src-tauri/src` did, without Tauri. The egui window keeps a
 //! [`Hub`], calls its methods from the tokio runtime, and drains [`HubEvent`]s
 //! from the sink it handed [`Hub::new`].
 //!
@@ -196,11 +196,10 @@
 //! - [`Hub::hand_off`]: a second launch's arguments (see
 //!   [`CliArgs::from_second_launch`]) become a `HubEvent::CliArgs`.
 //! - [`Hub::set_focused`]: the window's focus, for the pads.
-//! - [`features::dzch_cli::register_url_scheme`] (`dzch://`: a Linux
-//!   `.desktop` file and `xdg-mime`, or HKCU on Windows) and, on Windows,
-//!   `features::dzch_cli::register_file_type` (`.dzch`): call at start-up.
+//! - `dzch://` and `.dzch` registration is the window's (`dzch_ui::platform::register`):
+//!   the hub only names the scheme, [`features::dzch_cli::URL_SCHEME`].
 //! - **Mock mode** (`HubMode::Mock`, the `mock` feature): the invented world
-//!   of `apps/gui/src/lib/ipc/mock.ts` (9 500 servers, 24 mods, a profile, a
+//!   of the Svelte interface's `mock.ts` (9 500 servers, 24 mods, a profile, a
 //!   year of play), seeded into the real state in a temporary data directory;
 //!   what would reach the network, Steam or the game answers from fixtures.
 //!   A build without the feature refuses Mock mode.
@@ -244,5 +243,13 @@ pub mod paths;
 mod state;
 
 pub use events::HubEvent;
+
+/// The launcher's version: the workspace's (`Cargo.toml`), or the one `DZCH_VERSION`
+/// gives the build (a preview, `make prerelease`: `0.5.5-pre`, never written to the
+/// sources). The updater compares it with the release manifest's.
+pub const VERSION: &str = match option_env!("DZCH_VERSION") {
+    Some(v) if !v.is_empty() => v,
+    _ => env!("CARGO_PKG_VERSION"),
+};
 pub use features::dzch_cli::CliArgs;
 pub use hub::{EventSink, Hub, HubConfig, HubMode};

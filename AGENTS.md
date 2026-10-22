@@ -1,7 +1,8 @@
 # DayZ Community Hub: instructions for agents
 
-The launcher is being rebuilt in egui, **1:1 with the Tauri/Svelte interface** (features and
-looks), the way `~/wordcraft` and `~/photocraft` are built. Read `CLAUDE.md` (project rules),
+The launcher is an egui window, rebuilt **1:1 with the Tauri/Svelte interface** it replaced
+(features and looks), the way `~/wordcraft` and `~/photocraft` are built; the switch-over is
+done and the Svelte interface is gone. Read `CLAUDE.md` (layout, commands, project rules),
 then this file.
 
 ## Start every session here
@@ -12,12 +13,14 @@ then this file.
 2. Follow the autonomous protocol (`plan/execution-plan.md` §5). Ask the owner only what is
    genuinely theirs (publishing, pushing, secrets, dropping a feature).
 
-## The reference is the Svelte interface
+## The record of the Svelte interface
 
-`apps/gui/src` is the specification until it is removed (M4.2): every view, dialog, menu,
-tooltip, empty state, shortcut and word. Port behaviour from the `.svelte`/`.ts` files, not
-from memory. Its looks are in `var/reference/<view>.png` (mock backend, chernarus, 1400×860);
-regenerate with `QUERY=theme=chernarus make screenshots` and copy into `var/reference`.
+The Svelte interface was removed at the switch-over (M4.2). What it did is recorded in
+`apps/desktop/src/catalog.rs` (every feature, with the files it came from) and in
+`docs/ui-parity.md`; how it looked is in `var/reference/<view>.png` (mock backend,
+chernarus, French, 1400×860). Those PNGs are files, never regenerated: keep them. To read
+an original `.svelte`/`.ts` file, use the history (`jj file show -r 67e3940c apps/gui/…`).
+New features are designed for egui directly; they need no reference.
 
 ## Never crash
 
@@ -33,7 +36,7 @@ regenerate with `QUERY=theme=chernarus make screenshots` and copy into `var/refe
   nothing blocks, no disk or network on the UI thread. Repaint on events and finished tasks,
   not on a timer. Optimistic updates for toggles. Searches debounced (`rt::Debounce`) and
   superseded (newest request wins).
-- **Native first.** The Svelte app's IPC workarounds (paged row DTOs, throttled events,
+- **Native first.** The old Svelte app's IPC workarounds (paged row DTOs, throttled events,
   progress-only pings, skeletons over latency) are not ported: the hub shares `Arc` snapshots
   and index orders in process, the window reads them directly. Table in
   `plan/architecture.md` (Native first). When a Svelte behaviour exists only to be fast in a
@@ -50,16 +53,18 @@ regenerate with `QUERY=theme=chernarus make screenshots` and copy into `var/refe
   copying it into a view.
 - **Everything is a command.** A user-visible action that a shortcut, the palette, a pad or
   the control channel could trigger is a `CommandSpec` in `commands.rs`; buttons call it by id.
-- **Words through `i18n`**, five languages (en fr de es ru), same keys as
-  `apps/gui/src/content/*.content.ts`. No English literal in a view.
-- **Icons through `icons`** (the same lucide / game-icons / boxicons / circle-flags icons
-  the Svelte interface uses). Every asset file has a row in `ATTRIBUTION.md`.
+- **Words through `i18n`**, five languages (en fr de es ru), from `apps/desktop/i18n/<lang>.json`
+  (the source: add a word to all five, sorted by key). No English literal in a view.
+- **Icons through `icons`** (lucide / game-icons / boxicons / circle-flags SVGs in
+  `apps/desktop/assets/icons/`; add a file, run `python3 scripts/icons.py`). Every asset file
+  has a row in `ATTRIBUTION.md`.
 - Motion is subtle: ≤ 6 px, ease-out, `theme::motion` durations, none when reduced motion is on.
 
 ## Parity is measured
 
 - `apps/desktop/src/catalog.rs` lists every feature of the Svelte interface. `cargo xtask
-  parity` writes `docs/parity-checklist.md`; a test pins a floor that only rises.
+  parity` writes `docs/parity-checklist.md`; a test pins a floor that only rises (it reads
+  only the catalog).
 - `cargo xtask shots` renders every view headless on the mock hub into `var/shots/`;
   `cargo xtask visual-diff` compares them with `var/reference/` and updates `docs/ui-parity.md`.
 - **For UI work, look at the result**: render it with `ui_shot`, read the PNG, compare with the
@@ -67,8 +72,8 @@ regenerate with `QUERY=theme=chernarus make screenshots` and copy into `var/refe
 
 ## Running and looking
 
-- `cargo run -p dayz-community-hub-egui` (real backend), `-- --mock` (invented world).
-- Headless screenshots: `cargo run -p dayz-community-hub-egui --example ui_shot -- script.jsonl`
+- `cargo run -p dayz-community-hub` (real backend), `-- --mock` (invented world).
+- Headless screenshots: `cargo run -p dayz-community-hub --example ui_shot -- script.jsonl`
   (see the example's header: `{"view": "servers"}`, `{"command": …}`, `{"shot": "/abs.png"}`).
 - Control channel: `--control <port>`; JSON lines on 127.0.0.1 keyed by the file the app writes
   (see `apps/desktop/src/control.rs`).
@@ -77,7 +82,8 @@ regenerate with `QUERY=theme=chernarus make screenshots` and copy into `var/refe
 
 `cargo xtask ci` before every commit: fmt check, clippy `-D warnings`, tests, assets, layers,
 parity floor, and `cargo xwin check --target x86_64-pc-windows-msvc` for the new crates when
-cargo-xwin is installed. `make check` keeps covering the old interface until M4.2.
+cargo-xwin is installed. `make check` runs it, the domain crates' clippy and tests, and the
+`tools/` checks (pytest, ruff).
 
 ## Version control
 

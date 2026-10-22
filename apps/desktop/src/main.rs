@@ -1,6 +1,6 @@
 //! The launcher's executable: the Steamworks worker hand-off, the arguments, the tokio
-//! runtime, the hub, and the window (as `apps/gui/src-tauri/src/main.rs` and Tauri's
-//! `setup()` did).
+//! runtime, the hub, and the window (what the Tauri shell's `main.rs` and `setup()` did
+//! before the egui rewrite).
 // No console window on Windows in release.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -16,7 +16,7 @@ use dzch_ui::prefs::Prefs;
 /// The launcher's arguments: the old ones, unchanged for users (`--connect`,
 /// `--reconnect`, a `.dzch` file or `dzch://` link), plus the window's own, hidden.
 #[derive(Parser, Debug)]
-#[command(name = "dayz-community-hub", about = "DayZ Community Hub")]
+#[command(name = "dayz-community-hub", about = "DayZ Community Hub", version = dz_hub::VERSION)]
 struct Args {
     #[command(flatten)]
     cli: CliArgs,

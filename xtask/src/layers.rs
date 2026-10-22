@@ -1,11 +1,11 @@
 //! `cargo xtask layers`: the window toolkit stays in the window.
 //!
-//! No workspace crate other than `dayz-community-hub-egui` may depend on egui, eframe,
+//! No workspace crate other than `dayz-community-hub` may depend on egui, eframe,
 //! egui_extras, winit, rfd, arboard or egui_kittest: directly (any kind of dependency, on any
 //! target), or through a workspace crate it depends on (normal or build dependencies; a
 //! dev-dependency does not travel). Depending on the window crate itself counts too. External
-//! crates are judged by their direct dependencies only: the Tauri shell may use a plugin that
-//! uses rfd, but may not name rfd itself (it goes when the Tauri shell goes, M4.2).
+//! crates are judged by their direct dependencies only: a crate may use a library that uses
+//! rfd, but may not name rfd itself.
 //!
 //! The rules run on a small model (`Crate`) so they are testable without `cargo metadata`.
 

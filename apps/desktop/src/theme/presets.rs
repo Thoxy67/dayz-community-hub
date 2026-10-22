@@ -1,4 +1,5 @@
-//! The theme presets, from `apps/gui/src/lib/theme/presets.ts`: twelve raw colours
+//! The theme presets, the source of truth (ported from the Svelte interface's
+//! `presets.ts`; edit them here): twelve raw colours
 //! each, in oklch (lightness 0–1, chroma, hue in degrees). Everything else is derived
 //! in [`super::Tokens::derive`], so a preset cannot forget a colour. Ids are stable:
 //! a stored choice names one; removed presets resolve through [`RETIRED`].

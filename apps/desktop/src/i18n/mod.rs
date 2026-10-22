@@ -1,9 +1,11 @@
-//! Words, in five languages (= `apps/gui/src/lib/i18n`).
+//! Words, in five languages (en fr de es ru).
 //!
 //! The words live in `apps/desktop/i18n/<lang>.json`, `{ dictionary: { word: text } }`,
-//! exported from `apps/gui/src/content/*.content.ts` by `bun tools/i18n-export/export.ts`
-//! (same dictionary and word keys as the Svelte `dict(key)` / `words(key)`). Inserts are
-//! written `{name}` and filled by [`tf`].
+//! sorted by key: these files are the source, edited by hand (first exported from the
+//! Svelte interface's intlayer dictionaries, with the same dictionary and word keys).
+//! The tests want every English word in every language, and no key or insert English
+//! does not have; at run time a missing word would fall back to English. Inserts are written
+//! `{name}` and filled by [`tf`].
 //!
 //! Each language is embedded, parsed the first time it is read and kept for the life of
 //! the process (its strings leaked once, so [`t`] hands out `&'static str`): switching

@@ -1,40 +1,50 @@
 # DayZ Community Hub
 
 A DayZ launcher (server browser, mod manager, offline mode) for **Windows and
-Linux**, both with the same features. Tauri 2 + Rust, Svelte 5 + Vite.
-
-**Rewrite in progress:** the interface is being rebuilt in egui (`apps/desktop`, backend
-`crates/app/hub`), 1:1 with the Svelte one, the way `~/wordcraft` and `~/photocraft` are built.
-For that work read `AGENTS.md` and the local `plan/` first. The rules below about Svelte and
-Tauri hold for `apps/gui` until it is removed (M4.2).
+Linux**, both with the same features. Rust throughout: an egui window
+(`apps/desktop`) on a backend crate (`crates/app/hub`) and the domain
+libraries (`crates/core/*`). The window's own rules (never crash, the frame
+never waits, tokens, commands, words, icons, parity) are in `AGENTS.md`: read
+it too. The local `plan/` (gitignored) holds the status and the plan.
 
 ## Layout
 
 ```
-apps/gui/                 the interface (bun project) and its Tauri shell
-  src-tauri/src/features/ one module per feature: its commands and DTOs
-  src/content/            intlayer dictionaries, 5 languages (en fr de es ru)
-  src/features/<view>/    one folder per view: View.svelte, its parts, its store
-  src/shell/              title bar, rail, status bar, global dialogs, nav registry
-  src/lib/components/ui/  the generic kit (bits-ui + tailwind-variants)
-  src/lib/components/app/ components that know this app, shared by every view
-  src/lib/ipc/            typed wrappers over the generated bindings.ts
-  src/lib/stores/         app-wide state (servers, profile, mods, connect…)
+apps/desktop/             the window: package and executable `dayz-community-hub`, lib `dzch_ui`
+  src/app.rs, main.rs     the frame loop; start-up (single instance, links, runtime, hub)
+  src/kit/                generic widgets, dressed from the tokens only
+  src/parts/              app-aware parts shared by every view (server row, header, figure…)
+  src/views/<view>/       one folder per place of the rail, plus setup and the dialogs
+  src/shell/              title bar, rail, status bar, palette, dialog host, pad hints
+  src/store/              app-wide state on the hub (servers, profile, mods, connect…)
+  src/commands.rs         every user-visible action, by id (shortcuts, palette, pad, control)
+  src/theme/              tokens derived from 12 raw colours; presets.rs is the source of the presets
+  src/i18n/ + i18n/*.json words in en fr de es ru; the JSON files are the source
+  src/icons/ + assets/icons/  SVG icons; scripts/icons.py rewrites icons/list.rs from the folder
+  src/catalog.rs          the parity catalog (the Svelte interface's features, as a record)
+  examples/ui_shot.rs     headless screenshots driven by a JSON-lines script
+  build.rs, windows/      Windows icon, VERSIONINFO and manifest
+crates/app/hub/           the backend: shared state, every command as a method, events, mock, updater
+crates/app/dayzmetrics/   DayZ Metrics lookups
 crates/core/*             dz-* libraries: api, a2s, profile, steamcmd, steamworks, game, news, common
-crates/app/*              app-level libraries (dayzmetrics)
-tools/                    uv project: `dzch release`
+xtask/                    cargo xtask: ci, assets, layers, parity, shots, visual-diff, sign, keygen
+tools/                    uv project: `dzch release`, `dzch aur`, `dzch keys` (+ pytest)
+packaging/                AppImage container, AUR PKGBUILD, .desktop and MIME files
 docs/build.md             build, check, publish, known failures
+var/reference/*.png       the Svelte interface's screenshots, the visual record (files, keep them)
 ```
 
 ## Commands
 
-`make` lists them. `make dev` runs the app; `make check` is what every change
-must pass (cargo test + clippy, svelte-check, pytest, ruff); `make bindings`
-regenerates `apps/gui/src/lib/ipc/bindings.ts` after a command or DTO changes;
-`make fmt` formats everything. `make publish` (AppImage + Windows zip on
-git.thoxy.xyz and GitHub, plus latest.json), `make aur` and `make keys` are
-the owner's to run (`DRY=1` shows the plan); never run them or push without
-being asked.
+`make` lists them. `make dev` runs the window on the real backend, `make
+dev-mock` on an invented world (9 500 servers); `make check` is what every
+change must pass (cargo xtask ci, the domain crates' clippy and tests,
+pytest, ruff); `make fmt` formats everything; `make screenshots` renders every
+view headless (`cargo xtask shots`), `cargo xtask visual-diff` compares them
+with `var/reference/`. `make build`, `make appimage`, `make windows` build
+releases locally. `make publish`, `make prerelease`, `make aur` and `make keys`
+are the owner's to run (`DRY=1` shows the plan); never run them or push
+without being asked.
 
 ## Version control
 
@@ -46,44 +56,36 @@ commit or edit it.
 
 ## Rules learned the hard way
 
-- **Heavy work belongs in Rust; the interface only displays results.** The
-  server list (9k+ rows) is filtered, sorted, counted and paged by
-  `servers_query`; the UI holds only the rows on screen. Ping scans report
-  progress, not per-server results; `servers-changed` (≤ 2/s) tells views to
-  re-query.
-- **Virtual lists need a bounded scroller.** A scroller whose height follows
-  its content makes every row "visible": the server view once mounted all
-  9 499 rows (66 MB of DOM) and froze the window. Pin scrollers with
-  `absolute inset-0` inside a sized box; `Split` panes need a flex parent.
-- **Read words with `dict(key)` from `$lib/i18n`, never `useIntlayer`**: the
-  latter re-transforms the whole dictionary per component instance. Outside
-  components use `words(key)`. Insert keys are functions:
-  `$c.loaded({ count }).value`. Attribute values need `.value`.
-- **Tokens only.** Tailwind's stock colours, text sizes and radii are wiped
-  (`styles/tokens.css`); `text-white`, `text-lg` etc. render nothing. Use
-  `bg-bg/panel/raised`, `text-fg/fg-muted/fg-faint`, `accent`, `ok/warn/err/info`,
-  `map`, `mods`, `h-control`, `h-row`, `px-pad`…
-- **Reuse before writing.** A header, a figure, a server's flags, a ping or
-  players cell, an empty state: they exist in `lib/components/app`. Extend
-  the shared component rather than copying it into a feature.
-- **No `<style>` block in a component.** Tailwind's Vite plugin treats it as a
-  CSS module and, during hot reloads, was sometimes handed the component's
-  script instead ("Invalid declaration: `const doc = …`"). Style with
-  utilities; rules for HTML the app does not write go in `styles/*.css`.
-- **Never pass `name` to a bits-ui primitive** (hidden inputs crash
-  WebKitGTK); `tv` comes from `tailwind-variants/lite`.
-- **Cross-platform**: every `#[cfg(windows)]` path must keep working
-  (`cargo xwin check --target x86_64-pc-windows-msvc`). SteamCMD must run in
-  its own PTY/ConPTY; do not replace it with piped I/O.
-- **No `.svelte` file may import from the old paths** (`lib/actions`,
-  `lib/services`, paraglide): they are gone.
+- **Heavy work belongs in Rust below the window.** The server list (9k+ rows)
+  is a snapshot in `dz-hub`, filtered, sorted and counted into an index order;
+  the window draws only the rows on screen.
+- **Virtual lists need a bounded height.** A list whose height follows its
+  content lays out every row: the server view once built all 9 499 rows and
+  froze the window (in the web view: 66 MB of DOM). Give the scroller a fixed
+  height and draw with `ScrollArea::show_rows` or the kit's virtual list.
+- **Same identity as the Tauri build.** Executable `dayz-community-hub`,
+  identifier `com.thoxy.dayz-community-hub` and its data folders
+  (`dz_hub::paths`), the release file names, `latest.json`'s keys, the updater
+  endpoint and public key (`crates/app/hub/src/features/updater/release.rs`):
+  an installed copy updates across releases only while these hold.
+- **Signatures**: `cargo xtask sign` writes the `.sig` files the updater
+  checks, with the owner's existing key and password. Never read, print, copy
+  or move a key or a secret (`.env`, `~/.config/dayz-community-hub/`,
+  variables with KEY/PASSWORD/TOKEN in their name).
+- **Cross-platform**: every `#[cfg(windows)]` path must keep working (`cargo
+  xtask ci` runs `cargo xwin check --target x86_64-pc-windows-msvc`). SteamCMD
+  must run in its own PTY/ConPTY; do not replace it with piped I/O.
+- **glibc floor**: Linux releases are linked against glibc 2.35 (the Ubuntu
+  22.04 container, or zig for `make build`); a system library that needs a
+  newer glibc cannot be linked (OpenSSL is vendored for that reason).
+- **One build per package**: name `-p dayz-community-hub --bin
+  dayz-community-hub` in release builds; parallel agents use their own
+  absolute `CARGO_TARGET_DIR` and never `target/check` or `target/debug`.
 
-## Looking at the interface without Tauri
+## Looking at the window without a display
 
-`VITE_MOCK=1 bunx vite build --outDir dist-mock` then `bunx vite preview
---outDir dist-mock` serves the app on a pretend backend (`lib/ipc/mock.ts`,
-9 500 invented servers). URL flags: `?theme=<preset>`, `?view=<id>`,
-`?focus=<section>`, `?rail=collapsed`, `?wizard=1`. Headless Brave screenshots
-it: `brave --headless=new --screenshot=out.png --window-size=1400,860
---virtual-time-budget=6000 <url>`. In development an uncaught error is written
-into the page, so a screenshot shows it.
+`cargo run -p dayz-community-hub --example ui_shot -- script.jsonl` renders
+on the mock hub (`{"view": "servers"}`, `{"theme": "chernarus"}`,
+`{"locale": "fr"}`, `{"command": …}`, `{"shot": "/abs.png"}`; see the
+example's header). A running window also answers JSON lines on
+`--control <port>` (`docs/control-protocol.md`).

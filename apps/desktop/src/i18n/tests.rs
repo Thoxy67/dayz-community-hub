@@ -17,29 +17,22 @@ fn every_language_parses() {
     }
 }
 
-/// Missing translations are reported (the source may lack them; English stands in at run
-/// time). A word that only a translation has is a stale export and fails.
+/// The JSON files are the source of the words: every language has every English word
+/// (English would stand in at run time, but a missing translation is a mistake here), and
+/// a word that only a translation has is a typo or a leftover.
 #[test]
 fn every_language_has_every_english_word() {
     let en = all_words(Locale::En);
     let mut orphans = Vec::new();
+    let mut missing = Vec::new();
     for l in Locale::ALL.into_iter().filter(|l| *l != Locale::En) {
         let words = all_words(l);
-        let mut missing = Vec::new();
         for (d, ws) in &en {
             for k in ws.keys() {
                 if words.get(d).and_then(|w| w.get(k)).is_none() {
-                    missing.push(format!("{d}.{k}"));
+                    missing.push(format!("{}: {d}.{k}", l.code()));
                 }
             }
-        }
-        if !missing.is_empty() {
-            eprintln!(
-                "{}: {} words fall back to English: {}",
-                l.code(),
-                missing.len(),
-                missing.join(", ")
-            );
         }
         for (d, ws) in &words {
             for k in ws.keys() {
@@ -50,6 +43,7 @@ fn every_language_has_every_english_word() {
         }
     }
     assert!(orphans.is_empty(), "words missing in English: {orphans:?}");
+    assert!(missing.is_empty(), "untranslated words: {missing:?}");
 }
 
 #[test]

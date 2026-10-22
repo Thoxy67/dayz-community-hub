@@ -4,7 +4,6 @@ dayz-ctl-link
 /.claude
 /DayZCommunityOfflineMode
 /wiki
-/node_modules
 TODO.md
 /async-a2s
 
@@ -32,6 +31,9 @@ skills-lock.json
 
 # Release staging and scratch (make windows, make publish)
 /var
+
+# Release secrets the environment does not set (dzch release; see .env.example)
+/.env
 
 # Python tools (uv)
 /tools/.venv

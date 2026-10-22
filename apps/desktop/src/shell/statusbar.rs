@@ -261,7 +261,7 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx, st: &mut StatusState) {
     let mut x = rect.right() - 4.0;
     let mut acts: Vec<(Act, Rect)> = Vec::new();
     if bar_w >= 1000.0 {
-        let v = tf("nav", "version", &[("version", &env!("CARGO_PKG_VERSION"))]);
+        let v = tf("nav", "version", &[("version", &dz_hub::VERSION)]);
         let g = paint::galley(ui, &v, font(Face::Mono, size::TEXT_2XS), tk.fg_faint);
         x -= g.size().x + 16.0;
         paint::text_at(ui.painter(), &g, x + 8.0, cy, tk.fg_faint);

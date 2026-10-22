@@ -1,4 +1,4 @@
-//! App parts: `apps/gui/src/lib/components/app` as egui, built from the kit and dressed
+//! App parts: the Svelte interface's `lib/components/app` as egui, built from the kit and dressed
 //! from `ui.tokens()`. A part takes plain data (dz-hub DTOs, borrowed strings) and answers
 //! with a `Response` or what the user did (an action enum); it calls no hub method, so a
 //! view decides what a click means. The server row is the hot path: see [`server_row`].

@@ -8,15 +8,15 @@
 //!   platform data directory joined with the bundle identifier
 //!   (`com.thoxy.dayz-community-hub`): `$XDG_DATA_HOME` or
 //!   `~/.local/share` on Linux, the roaming AppData known folder on Windows.
-//!   [`tauri_app_data_dir`] and its siblings resolve them as Tauri 2 did
-//!   (through the `dirs` crate, as `tauri::path::PathResolver` does).
+//!   [`tauri_app_data_dir`] resolves it as Tauri 2 did (through the `dirs`
+//!   crate, as `tauri::path::PathResolver` does).
 //!
 //! [`HubConfig::data_dir`](crate::HubConfig) moves both to one directory.
 
 use std::path::PathBuf;
 use std::sync::RwLock;
 
-/// `identifier` in `apps/gui/src-tauri/tauri.conf.json`.
+/// The `identifier` the Tauri build had (`tauri.conf.json`), kept for its data folders.
 pub const TAURI_IDENTIFIER: &str = "com.thoxy.dayz-community-hub";
 
 static OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);
@@ -50,26 +50,6 @@ pub fn server_list_cache_path() -> PathBuf {
 /// Tauri's `app_data_dir()`: `dirs::data_dir()/<identifier>`.
 pub fn tauri_app_data_dir() -> Option<PathBuf> {
     dirs::data_dir().map(|d| d.join(TAURI_IDENTIFIER))
-}
-
-/// Tauri's `app_local_data_dir()`: `dirs::data_local_dir()/<identifier>`.
-pub fn tauri_app_local_data_dir() -> Option<PathBuf> {
-    dirs::data_local_dir().map(|d| d.join(TAURI_IDENTIFIER))
-}
-
-/// Tauri's `app_config_dir()`: `dirs::config_dir()/<identifier>`.
-pub fn tauri_app_config_dir() -> Option<PathBuf> {
-    dirs::config_dir().map(|d| d.join(TAURI_IDENTIFIER))
-}
-
-/// Tauri's `app_cache_dir()`: `dirs::cache_dir()/<identifier>`.
-pub fn tauri_app_cache_dir() -> Option<PathBuf> {
-    dirs::cache_dir().map(|d| d.join(TAURI_IDENTIFIER))
-}
-
-/// Tauri's `app_log_dir()` (Linux and Windows): `app_local_data_dir()/logs`.
-pub fn tauri_app_log_dir() -> Option<PathBuf> {
-    tauri_app_local_data_dir().map(|d| d.join("logs"))
 }
 
 /// The news image cache: `app_data_dir()/cache/images`, as the shell kept it.

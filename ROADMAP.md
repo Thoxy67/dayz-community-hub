@@ -1,11 +1,12 @@
 # DayZ Community Hub roadmap
 
-**Stage: rewrite: M3 platform done** · next: M4 switch-over (packaging under the old name, remove apps/gui)
+**Stage: switch-over done** · the egui window is the launcher; next: the owner's release checks, then the first egui release
 
-> **Last updated:** 2026-10-22 · **Change:** M3 platform landed
+> **Last updated:** 2026-10-22 · **Change:** M4 switch-over landed (Svelte/Tauri removed)
 
-The launcher's Tauri/Svelte interface (`apps/gui`) is being rebuilt 1:1 in egui
-(`apps/desktop`, backend `crates/app/hub`), features and looks, on Windows and Linux alike.
+The launcher's Tauri/Svelte interface was rebuilt 1:1 in egui (`apps/desktop`, backend
+`crates/app/hub`), features and looks, on Windows and Linux alike, and replaced it: the
+Svelte interface and the Tauri shell are gone, the catalog and `var/reference/` are their record.
 Detail: [UI parity](docs/ui-parity.md) (view by view, porting notes, visual diff),
 [gaps](docs/gaps.md) (the ranked work list), [parity checklist](docs/parity-checklist.md)
 (generated from `apps/desktop/src/catalog.rs`), [AGENTS.md](AGENTS.md) (how agents work here).
@@ -21,7 +22,7 @@ remaining work parallelizes (the views fan out once the shell exists).
 | Views ported | 13 / 13, shell complete but the window frame | measured: [parity checklist](docs/parity-checklist.md) |
 | Visual diff, mean SSIM | 0.855 over 13 views (0.75–0.95) | measured: `cargo xtask visual-diff` 2026-10-22 |
 | Tests (new crates) | 160 desktop + 66 hub + xtask, all passing | `cargo xtask ci` 2026-10-22 |
-| Remaining to switch-over | ~12–22 h + owner checks | estimated: G23, G24 in [gaps](docs/gaps.md) |
+| Remaining to switch-over | owner checks on a real release | G23 in [gaps](docs/gaps.md) |
 
 ## Milestones
 
@@ -31,9 +32,21 @@ remaining work parallelizes (the views fan out once the shell exists).
 | M1 Kit and shell | widget kit, app parts, stores, shell, control channel + ui_shot | done |
 | M2 Views | servers, favorites, history, friends, connect, offline, mods, options, news, stats, settings, about, setup | done |
 | M3 Platform | single instance + links, updater, gamepad, window | done |
-| M4 Switch-over | packaging under the old name, remove `apps/gui` | next |
+| M4 Switch-over | packaging under the old name, remove the Svelte interface and Tauri | done |
 
 ## Progress log
+
+### 2026-10-22 (M4)
+
+- M4.1: the AppImage, the Windows zip, the AUR package and `dzch release` build the egui
+  executable under the old name, with the same file names, `latest.json` keys, endpoint and
+  key; `cargo xtask sign` writes the updater's signatures (Tauri's format) without the Tauri
+  CLI; the AppImage carries no library (wgpu and winit load the host's with dlopen).
+- M4.2: `apps/gui` (Svelte interface, bun project, Tauri shell) deleted, with specta and the
+  Tauri crates (~2 900 lines of Cargo.lock); the package is now `dayz-community-hub`. The
+  JSON words, `presets.rs` and the SVG icon folder are the sources (`scripts/icons.py`
+  rewrites `list.rs` from the folder); `scripts/screenshots.sh` and `tools/i18n-export`
+  retired; CI runs the Rust checks only. CLAUDE.md, AGENTS.md, README, docs/build.md rewritten.
 
 ### 2026-10-22 (M3)
 

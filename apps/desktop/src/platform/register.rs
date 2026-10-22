@@ -1,5 +1,5 @@
 //! `dzch://` links and `.dzch` files open this executable, for the current user: what
-//! tauri-plugin-deep-link's `register_all`, `dzch_cli::register_file_type` and the
+//! tauri-plugin-deep-link's `register_all`, the Tauri shell's `register_file_type` and the
 //! bundle's `fileAssociations` (`application/x-dzch`, `*.dzch`) did. The AppImage and
 //! the Windows zip have no installer, and a moved executable needs it pointed at its
 //! new place, so it is checked at every start, on a thread of its own, and written only
@@ -234,6 +234,16 @@ mod windows {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_packaged_mime_file_is_the_one_registered() {
+        // The AppImage and the AUR package install packaging/linux's copy.
+        let packaged = include_str!("../../../../packaging/linux/dayz-community-hub.xml");
+        assert_eq!(packaged, mime_package());
+        let desktop = include_str!("../../../../packaging/linux/dayz-community-hub.desktop");
+        assert!(desktop.contains(&format!("MimeType=x-scheme-handler/{SCHEME};{FILE_MIME};")));
+        assert!(desktop.contains("Icon=dayz-community-hub\n"));
+    }
 
     #[test]
     fn exec_lines_quote_what_the_spec_says() {

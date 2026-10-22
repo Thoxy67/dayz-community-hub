@@ -31,7 +31,7 @@ use crate::views::View;
 use crate::views::news::open_url;
 
 /// This build's version.
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const VERSION: &str = dz_hub::VERSION;
 /// Where the project lives (`links.ts`).
 pub const AUTHOR: &str = "Thoxy";
 pub const REPO_URL: &str = "https://git.thoxy.xyz/thoxy/dayz-community-hub";

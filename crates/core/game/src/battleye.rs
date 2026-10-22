@@ -25,7 +25,7 @@ use serde::Serialize;
 #[cfg(not(windows))]
 const RUNTIME_APP_ID: u32 = 1161040;
 
-#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq, specta::Type)]
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum BattlEyeState {
     /// Running (Windows: the service is up, so the game has it).
@@ -49,7 +49,7 @@ impl BattlEyeState {
     }
 }
 
-#[derive(Serialize, Clone, Debug, specta::Type)]
+#[derive(Serialize, Clone, Debug)]
 pub struct BattlEyeStatus {
     pub state: BattlEyeState,
     /// BattlEye is a service here (Windows), which runs while the game does:

@@ -1,7 +1,0 @@
-/* The window's stylesheet: Tailwind over everything in `src`, the fonts, the
-   tokens, and the base every element starts from. */
-@import "tailwindcss";
-@import "./styles/fonts.css";
-@import "./styles/tokens.css";
-@import "./styles/base.css";
-@import "./styles/prose.css";

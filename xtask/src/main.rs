@@ -18,25 +18,27 @@ mod assets;
 mod layers;
 mod parity;
 mod shots;
+mod sign;
 mod visual_diff;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
-/// The crates of the egui rewrite: the ones `ci` formats, lints, tests and cross-checks.
-pub const NEW_CRATES: &[&str] = &["dz-hub", "dayz-community-hub-egui", "xtask"];
-/// The egui window's package name: the only workspace crate allowed to use egui.
-pub const UI_PACKAGE: &str = "dayz-community-hub-egui";
+/// The window, its backend and xtask: the crates `ci` formats, lints, tests and cross-checks
+/// (`make check` adds the domain crates).
+pub const NEW_CRATES: &[&str] = &["dz-hub", "dayz-community-hub", "xtask"];
+/// The launcher's package (apps/desktop, the egui window): the only crate allowed to use egui.
+pub const UI_PACKAGE: &str = "dayz-community-hub";
 
 const USAGE: &str = "\
 usage: cargo xtask <command>
 
 commands:
-  ci              fmt --check, clippy -D warnings, tests (dz-hub, dayz-community-hub-egui,
+  ci              fmt --check, clippy -D warnings, tests (dz-hub, dayz-community-hub,
                   xtask), assets, layers, parity --check, cargo xwin check when installed;
                   stops at the first failure
   assets          every file under apps/desktop/assets has a row in ATTRIBUTION.md
-  layers          no workspace crate but dayz-community-hub-egui reaches egui, eframe,
+  layers          no workspace crate but dayz-community-hub reaches egui, eframe,
                   egui_extras, winit, rfd, arboard or egui_kittest
   parity [--check]
                   write docs/parity-checklist.md from apps/desktop/src/catalog.rs;
@@ -48,6 +50,12 @@ commands:
                   write var/shots/<view>-diff.png and the table in docs/ui-parity.md
   visual-diff --pair <shot.png> <reference.png> [diff.png]
                   compare two PNG files and print the numbers (docs untouched)
+  sign --key <key file> <file>...
+                  write <file>.sig, the updater's signature (Tauri's format), with the
+                  key's password from TAURI_SIGNING_PRIVATE_KEY_PASSWORD (empty if unset)
+  keygen --write <key file>
+                  a new updater key pair without a password (<key file>, <key file>.pub);
+                  refuses to replace an existing file
 ";
 
 fn main() -> ExitCode {
@@ -60,6 +68,7 @@ fn main() -> ExitCode {
         Some("parity") => parity::run(&root, rest.contains(&"--check")),
         Some("shots") => shots::run(&root, &rest),
         Some("visual-diff") => visual_diff::run(&root, &rest),
+        Some(c @ ("sign" | "keygen")) => sign::run(c, &rest),
         Some("-h" | "--help" | "help") | None => {
             print!("{USAGE}");
             Ok(())
@@ -140,7 +149,9 @@ pub fn on_path(name: &str) -> bool {
 
 fn cmd_ci(root: &Path) -> Result<(), String> {
     type Step<'a> = (&'static str, Box<dyn Fn() -> Result<(), String> + 'a>);
-    let tested = &NEW_CRATES[..2];
+    // xtask's own tests include the signer's, checked against dz-hub's updater.
+    let tested = NEW_CRATES;
+    let windows = &NEW_CRATES[..2];
     let steps: Vec<Step> = vec![
         (
             "fmt",
@@ -181,7 +192,7 @@ fn cmd_ci(root: &Path) -> Result<(), String> {
                 let (c, what) = cargo_for(
                     root,
                     &["xwin", "check"],
-                    tested,
+                    windows,
                     &["--target", "x86_64-pc-windows-msvc"],
                 );
                 run(c, &what)

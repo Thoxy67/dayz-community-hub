@@ -1,7 +1,8 @@
-//! The SVG icons of the Svelte interface (lucide, game-icons, boxicons, circle-flags).
+//! The SVG icons (lucide, game-icons, boxicons, circle-flags), the ones the Svelte interface used.
 //!
 //! The SVG files live in `assets/icons/<set>/<name>.svg` and the constants that embed them
-//! in `icons/list.rs`; both are written by `scripts/icons.py`, which rescans `apps/gui/src`.
+//! in `icons/list.rs`. The folder is the source: drop an SVG there and run
+//! `python3 scripts/icons.py`, which rewrites `list.rs` (a test fails when they disagree).
 //! An icon is rasterised with resvg once per (icon, pixel size), uploaded as a texture and
 //! cached in the context's data; monochrome icons are white and take their colour from the
 //! mesh tint, flags (`colored`) are drawn as they are.
@@ -225,6 +226,31 @@ mod tests {
         let cache = cache.lock();
         assert!(cache.broken.contains_key("test/broken"));
         assert_eq!(cache.textures.len(), 1);
+    }
+
+    /// `list.rs` names every SVG file of the icon folder, and nothing else (rerun
+    /// `scripts/icons.py` after adding or removing one).
+    #[test]
+    fn list_matches_the_svg_folder() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/icons");
+        let mut on_disk = Vec::new();
+        for set in ["lucide", "game-icons", "boxicons", "circle-flags"] {
+            let Ok(entries) = std::fs::read_dir(root.join(set)) else {
+                continue;
+            };
+            for e in entries.flatten() {
+                let p = e.path();
+                if p.extension().is_some_and(|x| x == "svg")
+                    && let Some(stem) = p.file_stem().and_then(|s| s.to_str())
+                {
+                    on_disk.push(format!("{set}/{stem}"));
+                }
+            }
+        }
+        on_disk.sort();
+        let mut listed: Vec<String> = all().map(|i| i.name.to_string()).collect();
+        listed.sort();
+        assert_eq!(listed, on_disk, "run python3 scripts/icons.py");
     }
 
     #[test]

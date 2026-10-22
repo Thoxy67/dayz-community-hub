@@ -1,5 +1,5 @@
 //! Numbers, sizes, durations and times, formatted in the current language
-//! (= `apps/gui/src/lib/format.ts` and `units.ts`).
+//! (ported from the Svelte interface's `format.ts` and `units.ts`).
 //!
 //! The Svelte side used the browser's `Intl`; these reproduce what it printed for the five
 //! shipped languages (separators, compact suffixes, month names, date orders), checked

@@ -1,7 +1,7 @@
 //! Every app part (`dzch_ui::parts`) with realistic data, rendered headless (egui_kittest +
 //! wgpu) into PNGs to compare with the Svelte interface (`var/reference/*.png`).
 //!
-//! `cargo run -p dayz-community-hub-egui --example parts_gallery -- /abs/out.png`
+//! `cargo run -p dayz-community-hub --example parts_gallery -- /abs/out.png`
 //!
 //! Writes, beside `out.png` (every part, chernarus) and `out-light.png` (the light preset):
 //! `out-servers.png`, `out-history.png`, `out-settings.png`, `out-stats.png` and

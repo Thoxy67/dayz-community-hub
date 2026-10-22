@@ -37,10 +37,10 @@ Feature counts are entries of `apps/desktop/src/catalog.rs` ([checklist](parity-
 | G20 | Updater | M3.2 | G16 | done | [ui-parity › about](ui-parity.md#about) |
 | G21 | Gamepad | M3.3 | G4, views | done | [ui-parity › shell](ui-parity.md#shell) |
 | G22 | Window: size, position, maximise, Windows icon, fatal box | M3.4 | G4 | done | [ui-parity › shell](ui-parity.md#shell) |
-| G23 | Packaging and release tooling for the egui binary | M4.1 | M3 | 8–14 h + owner | — |
-| G24 | Remove apps/gui, rename, update docs | M4.2 | all above | 4–8 h | — |
+| G23 | Packaging and release tooling for the egui binary | M4.1 | M3 | done (owner: first release) | [build](build.md) |
+| G24 | Remove the Svelte interface and Tauri, rename, update docs | M4.2 | all above | done | [build](build.md) |
 | G25 | Visual polish: shared `Field` rows, page header, chip tints, `Copy` colours, Play lettering, symbol glyphs, wizard, palette search | M2 follow-up | — | done | [ui-parity](ui-parity.md) |
-| | **Total left** | | | **~12–22 h + owner checks** | |
+| | **Total left** | | | **owner checks on a real release** | |
 
 About 70% parallelizes: the M2 views fan out once the shell and parts exist; G1–G4 and M4 are
 the serial path.
@@ -254,12 +254,21 @@ bundled subsets lack `→`. Fix in the shared widget, re-run `cargo xtask shots`
 
 ### G23. Packaging (M4.1)
 
-- **Missing:** `dzch release`, Makefile, AppImage, Windows zip and AUR build the egui binary
-  under the old name. Publishing stays the owner's.
-- **Estimate:** 8–14 h + owner.
+- **Done:** `dzch release`, Makefile, AppImage (container, appimagetool pinned), Windows zip
+  and AUR build the egui binary `dayz-community-hub` with cargo only; signatures by
+  `cargo xtask sign` (Tauri's format, same key). Publishing stays the owner's.
+- **Left for the owner:** the first egui release: an installed Tauri AppImage and Windows zip
+  update to it and restart into one window; AUR builds; `latest.json` keys and signatures.
 
 ### G24. Remove the Svelte interface (M4.2)
 
-- **Missing:** delete `apps/gui`, the bun toolchain in `make check` and `bindings`; rename the
-  package; update CLAUDE.md, README, docs/build.md, CHANGELOG.
-- **Estimate:** 4–8 h.
+- **Done:** `apps/gui` (Svelte, bun, Tauri shell) deleted, with specta and the Tauri crates;
+  the package and binary are `dayz-community-hub`; the JSON words, `presets.rs` and the SVG
+  icon folder are the sources (tests check the words are complete and `list.rs` matches the
+  folder); `scripts/screenshots.sh` and `tools/i18n-export` retired; `var/reference/` and the
+  catalog are the record; the release secrets' `.env` moved to the repository root; CI and
+  its image run the Rust checks only; CLAUDE.md, AGENTS.md, README, docs/build.md and the
+  CHANGELOG's Unreleased notes updated.
+- **Left for the owner:** rebuild the CI image (push `.forgejo/ci-image/Dockerfile`); move a
+  release `.env`, if one is kept, to the repository root; replace the README screenshot
+  (`.forgejo/assets/screenshot.png` shows the Svelte interface); the release checks of G23.

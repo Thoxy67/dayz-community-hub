@@ -1,4 +1,4 @@
-//! The generic kit: `apps/gui/src/lib/components/ui` as egui widgets, dressed from
+//! The generic kit: the Svelte interface's `lib/components/ui` as egui widgets, dressed from
 //! `ui.tokens()` only. App-aware parts live in `parts/`. Call [`install`] once at start
 //! (tooltip delays). Widgets are builders implementing `egui::Widget` (`ui.add(…)`)
 //! unless they hold content (`show(…)`); state lives in egui memory by id.

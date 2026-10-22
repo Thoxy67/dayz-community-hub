@@ -1,4 +1,5 @@
-//! The parity catalog: every user-visible feature of the Svelte interface (`apps/gui/src`),
+//! The parity catalog: every user-visible feature of the Svelte interface (removed in
+//! M4.2; this list and `var/reference/*.png` are its record),
 //! one entry each, as five inventory agents listed them view by view (M0.7).
 //!
 //! A [`Kind::Command`] feature names the command id that will carry it in the command
@@ -103,7 +104,7 @@ pub fn checklist_markdown() -> String {
     out.push_str("# Svelte → egui parity checklist\n\n");
     out.push_str(
         "Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or \
-         `cargo test -p dayz-community-hub-egui catalog::tests::write_checklist -- --ignored`). \
+         `cargo test -p dayz-community-hub catalog::tests::write_checklist -- --ignored`). \
          Do not edit by hand.\n\n",
     );
     out.push_str(&format!(

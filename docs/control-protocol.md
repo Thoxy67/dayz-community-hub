@@ -7,7 +7,7 @@ in a live window (`--control <port>`) and in the headless `ui_shot` example. The
 ## Starting
 
 ```sh
-cargo run -p dayz-community-hub-egui -- --mock --control 7981
+cargo run -p dayz-community-hub -- --mock --control 7981
 ```
 
 The window listens on `127.0.0.1:<port>` only. The server runs on the tokio runtime, never on
@@ -105,7 +105,7 @@ tree to the app. `ui_shot` offers it through AccessKit: `{"click": "Rafraîchir"
 ## Headless: `ui_shot`
 
 ```sh
-cargo run -p dayz-community-hub-egui --example ui_shot -- script.jsonl
+cargo run -p dayz-community-hub --example ui_shot -- script.jsonl
 ```
 
 This renders the whole window offscreen with wgpu, on a fresh mock hub, with default preferences

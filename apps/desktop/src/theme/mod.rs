@@ -1,5 +1,5 @@
 //! The tokens: every colour, size and measure the interface is made of, as
-//! `apps/gui/src/styles/tokens.css` defined them.
+//! the Svelte interface's `styles/tokens.css` defined them.
 //!
 //! A theme is twelve raw colours ([`Raw`], in oklch); everything else is mixed
 //! from them in [`Tokens::derive`] exactly as the CSS mixed them (`color-mix(in

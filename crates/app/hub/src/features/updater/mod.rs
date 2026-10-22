@@ -27,6 +27,14 @@ mod windows;
 use serde::Serialize;
 use std::sync::{LazyLock, Mutex};
 
+/// The check every downloaded update passes before it is installed: `data` against
+/// the base64 `.sig` text (`latest.json`'s `signature`) and a base64 minisign public
+/// key (the launcher's own is built in). Public so the release tooling's signer
+/// (`cargo xtask sign`) is tested against exactly this.
+pub fn verify_update_signature(data: &[u8], signature: &str, pubkey: &str) -> Result<(), String> {
+    release::verify_signature(data, signature, pubkey, false, None)
+}
+
 use crate::{Hub, HubEvent};
 pub(crate) use release::Update;
 
@@ -191,7 +199,7 @@ impl Hub {
         #[cfg(windows)]
         windows::remove_leftovers();
         let installer = (kind() == UpdateKind::Appimage).then_some("appimage");
-        let update = release::check(env!("CARGO_PKG_VERSION"), installer)
+        let update = release::check(crate::VERSION, installer)
             .await
             .map_err(|e| format!("Update check: {e}"))?;
         let info = update.as_ref().map(|u| UpdateInfo {

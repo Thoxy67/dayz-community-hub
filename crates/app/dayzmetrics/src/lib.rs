@@ -162,7 +162,7 @@ struct RawRank {
 // ── what the app gets ────────────────────────────────────────────────────────
 
 /// When the server restarts, as the site has measured it.
-#[derive(Serialize, Clone, Debug, specta::Type)]
+#[derive(Serialize, Clone, Debug)]
 pub struct RestartSchedule {
     pub period_hours: Option<f64>,
     /// ISO 8601.
@@ -184,7 +184,7 @@ pub struct RestartSchedule {
 }
 
 /// One wipe the site noticed or was told about.
-#[derive(Serialize, Clone, Debug, specta::Type)]
+#[derive(Serialize, Clone, Debug)]
 pub struct WipeEvent {
     /// "YYYY-MM-DD".
     pub on: Option<String>,
@@ -197,7 +197,7 @@ pub struct WipeEvent {
 }
 
 /// When the server wipes: the last one and the next, each announced or guessed.
-#[derive(Serialize, Clone, Debug, specta::Type)]
+#[derive(Serialize, Clone, Debug)]
 pub struct WipeSchedule {
     /// "YYYY-MM-DD".
     pub last: Option<String>,
@@ -219,7 +219,7 @@ pub struct WipeSchedule {
 }
 
 /// Average players at one hour of one weekday, over the server's history.
-#[derive(Serialize, Clone, Debug, specta::Type)]
+#[derive(Serialize, Clone, Debug)]
 pub struct HeatCell {
     /// 0 is Sunday.
     pub dow: u8,
@@ -229,14 +229,14 @@ pub struct HeatCell {
 }
 
 /// A link the server lists on its page.
-#[derive(Serialize, Clone, Debug, specta::Type)]
+#[derive(Serialize, Clone, Debug)]
 pub struct MetricsLink {
     pub label: String,
     pub url: String,
 }
 
 /// What DayZ Metrics knows about a server, for the server panel's Stats tab.
-#[derive(Serialize, Clone, Debug, specta::Type)]
+#[derive(Serialize, Clone, Debug)]
 pub struct ServerMetrics {
     /// The site's id for the server.
     pub id: u64,

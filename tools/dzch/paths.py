@@ -3,7 +3,5 @@
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-GUI = REPO / "apps" / "gui"
-TAURI = GUI / "src-tauri"
 VAR = REPO / "var"
 DIST = VAR / "dist"

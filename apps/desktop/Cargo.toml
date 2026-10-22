@@ -1,6 +1,6 @@
 [package]
-name = "dayz-community-hub-egui"
-description = "DayZ Community Hub: the egui window (replaces apps/gui)"
+name = "dayz-community-hub"
+description = "DayZ Community Hub: a server browser, mod manager and launcher for DayZ"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -14,8 +14,11 @@ workspace = true
 name = "dzch_ui"
 path = "src/lib.rs"
 
+# The executable keeps the name every release has shipped (`dayz-community-hub`, `.exe`
+# on Windows): the AppImage, the Windows zip, the AUR package, the updater's swap and the
+# `dzch://` registrations all name it.
 [[bin]]
-name = "dayz-community-hub-egui"
+name = "dayz-community-hub"
 path = "src/main.rs"
 
 [features]
