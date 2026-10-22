@@ -33,11 +33,16 @@ serde.workspace = true
 serde_json.workspace = true
 clap.workspace = true
 rustc-hash.workspace = true
-eframe = { workspace = true, features = ["wgpu", "wayland", "x11", "accesskit", "default_fonts"] }
+# persistence: the window's size, position and maximised state (`platform::window`).
+eframe = { workspace = true, features = ["wgpu", "wayland", "x11", "accesskit", "default_fonts", "persistence"] }
+# Reads the saved window geometry (eframe's file) to drop values that would hurt startup.
+ron = "0.12.2"
 egui = { workspace = true, features = ["default_fonts"] }
 resvg.workspace = true
 rfd.workspace = true
 open.workspace = true
+# platform: the per-user directory of the single-instance files.
+dirs.workspace = true
 # i18n: the OS language on first run, and local dates.
 sys-locale = "0.3.2"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
@@ -48,6 +53,10 @@ getrandom = "0.3.4"
 image = { workspace = true, features = ["jpeg", "webp"] }
 base64.workspace = true
 reqwest.workspace = true
+
+[build-dependencies]
+# Windows only (build.rs returns early elsewhere): icon, VERSIONINFO and manifest.
+winresource = { version = "0.1.34", default-features = false }
 
 [dev-dependencies]
 egui_kittest = { workspace = true, features = ["wgpu", "snapshot"] }
