@@ -9,13 +9,12 @@ use egui::{Area, Context, Id, Order, Rect, Sense, Stroke, Vec2, pos2, vec2};
 
 use super::{PAD_HINTS_HEIGHT, STATUSBAR_HEIGHT};
 use crate::app::Ctx;
-use crate::commands::{self, PadButton as Btn, SHORTCUTS, Scope};
+use crate::commands;
 use crate::i18n::t;
 use crate::icons::lucide;
 use crate::parts::{PadButton, PadGlyph};
 use crate::store::pad::InputMode;
 use crate::theme::{TokensExt, font, fonts::Face, size};
-use crate::views::ViewId;
 
 const MAX: usize = 5;
 
@@ -24,30 +23,6 @@ fn hint_of(id: &str) -> &'static str {
     commands::shortcut(id)
         .and_then(|s| s.hint)
         .map_or("", |h| t("pad", h))
-}
-
-/// The scopes whose pad buttons work on a view.
-fn scopes(v: ViewId) -> &'static [Scope] {
-    match v {
-        ViewId::Servers => &[Scope::Servers, Scope::List],
-        ViewId::Favorites | ViewId::History => &[Scope::List, Scope::Saved],
-        ViewId::Mods => &[Scope::Mods],
-        ViewId::News => &[Scope::News],
-        ViewId::Connect => &[Scope::Connect],
-        ViewId::Offline => &[Scope::Offline],
-        ViewId::Options => &[Scope::Options],
-        _ => &[],
-    }
-}
-
-/// The shortcut a view gives `b`, if any.
-fn view_button(v: ViewId, b: Btn) -> Option<&'static str> {
-    scopes(v).iter().find_map(|s| {
-        SHORTCUTS
-            .iter()
-            .find(|x| x.scope == *s && x.pad == [b])
-            .map(|x| x.id)
-    })
 }
 
 /// The hints as they stand: buttons and words.
@@ -66,12 +41,27 @@ fn hints(ctx: &Context, cx: &Ctx) -> Vec<(Vec<PadButton>, &'static str)> {
         }
         return out;
     }
-    let typing = ctx.egui_wants_keyboard_input();
+    // A text field, not any focused widget: the controller's focus is egui's focus.
+    let typing = ctx.text_edit_focused();
     let confirm = d.pending().is_some();
     let in_dialog = d.open() || ctx.memory(|m| m.top_modal_layer().is_some());
+    let view = if in_dialog {
+        crate::pad::ViewHints::default()
+    } else {
+        crate::pad::view_hints(cx)
+    };
     out.push((
         vec![PadButton::A],
-        t("pad", if typing { "type" } else { "select" }),
+        t(
+            "pad",
+            if typing {
+                "type"
+            } else if view.join {
+                "join"
+            } else {
+                "select"
+            },
+        ),
     ));
     out.push((
         vec![PadButton::B],
@@ -92,15 +82,14 @@ fn hints(ctx: &Context, cx: &Ctx) -> Vec<(Vec<PadButton>, &'static str)> {
         }
         return out;
     }
-    let v = cx.nav.view;
-    for (b, pb) in [(Btn::X, PadButton::X), (Btn::Y, PadButton::Y)] {
-        if let Some(id) = view_button(v, b) {
+    for (id, pb) in [(view.x, PadButton::X), (view.y, PadButton::Y)] {
+        if let Some(id) = id {
             out.push((vec![pb], hint_of(id)));
         }
     }
     out.push((vec![PadButton::Menu], hint_of("palette.toggle")));
     out.push((vec![PadButton::Lb, PadButton::Rb], hint_of("view.prev")));
-    if let Some(id) = view_button(v, Btn::R3) {
+    if let Some(id) = view.r3 {
         out.push((vec![PadButton::R3], hint_of(id)));
     }
     out.push((vec![PadButton::View], hint_of("sheet.toggle")));

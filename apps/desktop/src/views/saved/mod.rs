@@ -916,12 +916,16 @@ fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCac
     };
     let sel = st.sel.clone();
     let scroll_to = st.scroll_to.take();
+    let cursor = sel
+        .as_ref()
+        .and_then(|k| st.shown.iter().position(|s| s == k));
     let mut acts: Vec<(RowAction, usize)> = Vec::new();
     let out = VirtualList::new(("saved-list", kind.id()), d.order.len())
         .row_height(ROW_PX)
         .overscan(OVERSCAN)
         .header(HEAD_H)
         .scroll_to(scroll_to)
+        .cursor(cursor)
         .show(
             ui,
             |ui| heading(ui, kind, st, run),

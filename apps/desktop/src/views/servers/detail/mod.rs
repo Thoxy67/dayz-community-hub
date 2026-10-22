@@ -345,6 +345,8 @@ fn draw_panel(
                         DetailTab::Mods => tabs::mods(ui, st, m, run),
                         _ => stats::show(ui, cx, st, m, run),
                     }
+                    // What a controller's right stick scrolls.
+                    crate::pad::reading_pane(ui);
                 });
         }
     }

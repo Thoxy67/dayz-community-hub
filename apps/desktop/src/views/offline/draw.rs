@@ -313,6 +313,8 @@ fn card(
     let tk = ui.tokens();
     let id = ui.id().with(("offline-card", &m.id));
     let resp = ui.interact(rect, id, Sense::click());
+    // A controller's X launches the card its focus is on.
+    crate::pad::tag(ui.ctx(), rect, json!({ "mission": m.id }));
     let hovered = ui.rect_contains_pointer(rect);
     if resp.double_clicked() {
         run.push(("offline.launch", json!({ "mission": m.id })));

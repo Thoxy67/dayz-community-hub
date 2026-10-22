@@ -276,7 +276,8 @@ impl<'a> SettingsSection<'a> {
                     Pos2::new(left, top),
                     Vec2::new(w, 28.0),
                 ))
-                .layout(Layout::right_to_left(Align::Center)),
+                // `items-start`: the aside's top on the title's.
+                .layout(Layout::right_to_left(Align::Min)),
         );
         aui.spacing_mut().item_spacing.x = 6.0;
         aside(&mut aui);
@@ -306,16 +307,19 @@ impl<'a> SettingsSection<'a> {
             .galley(Pos2::new(x, top + (line_h - tg.size().y) / 2.0), tg, ink);
         let mut y = top + line_h;
         if !self.description.is_empty() {
-            let dg = paint::galley_wrap(
+            // `mt-0.5 text-xs` (line height 1.45).
+            y += 2.0;
+            let (dg, off) = paint::galley_lh(
                 ui,
                 self.description,
                 font(Face::Sans, size::TEXT_XS),
                 Color32::PLACEHOLDER,
                 room,
+                size::TEXT_XS * 1.45,
             );
             ui.painter()
-                .galley(Pos2::new(x, y), dg.clone(), tk.fg_muted);
-            y += 2.0 + dg.size().y;
+                .galley(Pos2::new(x, y + off), dg.clone(), tk.fg_muted);
+            y += dg.size().y;
         }
         let head_bottom = y.max(top + 26.0) + 8.0;
         ui.allocate_rect(
@@ -323,10 +327,13 @@ impl<'a> SettingsSection<'a> {
             Sense::hover(),
         );
         let slot = ground(ui);
-        let r = egui::Frame::new().show(ui, |ui| {
-            ui.set_width(w);
-            body(ui);
-        });
+        // The panel's 1px border is outside its rows, as the CSS box has it.
+        let r = egui::Frame::new()
+            .inner_margin(egui::Margin::same(1))
+            .show(ui, |ui| {
+                ui.set_width(w - 2.0);
+                body(ui);
+            });
         let panel = r.response.rect;
         ui.painter().set(
             slot,
@@ -402,6 +409,8 @@ impl<'a> SectionNav<'a> {
         let full = ui.available_rect_before_wrap();
         let rect = Rect::from_min_size(full.min, Vec2::new(208.0, full.height()));
         ui.allocate_rect(rect, Sense::hover());
+        // An index: a controller's moves stay in it until it has nothing more that way.
+        crate::pad::region(ui.ctx(), rect);
         let p = ui.painter();
         p.rect_filled(rect, CornerRadius::ZERO, alpha(tk.bg, 0.4));
         p.vline(
@@ -705,8 +714,10 @@ impl MasterDetail {
                 dr.y_range(),
                 Stroke::new(1.0, tk.border_strong),
             );
-            // The drawer takes the pointer over the list.
-            let _ = ui.interact(dr, self.id.with("drawer-bg"), Sense::click());
+            // The drawer takes the pointer over the list, and the controller's moves.
+            let bg = ui.interact(dr, self.id.with("drawer-bg"), Sense::click());
+            crate::pad::cover(ui.ctx(), bg.id, ui.layer_id(), dr);
+            crate::pad::region(ui.ctx(), dr);
             let mut dui = ui.new_child(
                 UiBuilder::new()
                     .max_rect(dr)

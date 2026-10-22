@@ -2,7 +2,7 @@
 
 Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo test -p dayz-community-hub-egui catalog::tests::write_checklist -- --ignored`). Do not edit by hand.
 
-**701 of 716 features done (97.9%).**
+**714 of 719 features done (99.3%).**
 
 | View | Done | Total | % |
 |---|---:|---:|---:|
@@ -14,12 +14,12 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | offline | 27 | 27 | 100% |
 | mods | 116 | 116 | 100% |
 | options | 33 | 33 | 100% |
-| news | 40 | 41 | 98% |
+| news | 41 | 41 | 100% |
 | stats | 52 | 52 | 100% |
 | settings | 73 | 77 | 95% |
 | about | 38 | 38 | 100% |
 | setup | 28 | 28 | 100% |
-| shell | 67 | 77 | 87% |
+| shell | 79 | 80 | 99% |
 
 ## servers (99/99)
 
@@ -464,7 +464,7 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `options.linux.raw` | Disclosure 'As written in Steam' reveals the raw launch options string. | `options.linux_raw` | ✅ |
 | `options.layout.aside` | Right column w-80 scrolling independently (hardware, command line, linux cards keep height); main grid scrolls. | display | ✅ |
 
-## news (40/41)
+## news (41/41)
 
 | id | what | kind / command | |
 |---|---|---|---|
@@ -507,7 +507,7 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `news.lightbox.close` | Lightbox closes on click anywhere, on the X button, or on Escape [keys: Esc] | `news.close_lightbox` | ✅ |
 | `news.key.move` | Previous/next article in the (filtered) list, clamped at ends; only while the news view shows, no dialog/lightbox open, not typing, no Ctrl/Alt/Meta [keys: Up/Down, J/K; gamepad D-pad] | `news.move` | ✅ |
 | `news.key.open` | Open the selected article on dayz.com (shown in shortcut sheet as 'Open the article on dayz.com'; pad hint bar shows it when an article has a URL) [keys: O; gamepad X] | `news.open` | ✅ |
-| `news.reader.pad_scroll` | Reader pane is the gamepad scroll target (data-pad-scroll) | display | ⬜ |
+| `news.reader.pad_scroll` | Reader pane is the gamepad scroll target (data-pad-scroll) | display | ✅ |
 | `news.images.cache` | Images: already-cached ones resolved in one batch when the list arrives, then missing thumbnails downloaded max 6 concurrently, deduplicated in-flight | display | ✅ |
 
 ## stats (52/52)
@@ -725,7 +725,7 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `setup.done.summary` | Summary card rows (icon green check / amber warning / dashed grey): DayZ path or not found; Downloads (Steam client or 'SteamCMD · path'/missing); Username (only SteamCMD); In-game name or 'not set'; API key 'configured'/'not set'; Language; Theme; then hints about Settings and the About tab | display | ✅ |
 | `setup.done.finish` | Done footer: 'Go to Mods', 'Go to Favorites' (only if favorites exist), and large play 'Go to servers' (spinner 'Saving…'); saves account + downloader, closes wizard, reloads profile/stats/avatar, opens the chosen view | `setup.finish` | ✅ |
 
-## shell (67/77)
+## shell (79/80)
 
 | id | what | kind / command | |
 |---|---|---|---|
@@ -775,7 +775,7 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `shell.palette.row` | Row: icon (tinted), label, mono sub-text, active row raised with accent left bar and '<verb> ↵' (Open/Run/Join/Show), shortcut kbd on the right; hovering sets the active row; 'nothing for <query>' when empty | display | ✅ |
 | `shell.palette.keys` | ↑/↓ move (wrap), PgUp/PgDn by 5, Tab/Shift+Tab jump to next/previous section start, Enter runs and records to recent; footer key hints ↑↓ move, Enter run, Tab section, Esc close | `palette.navigate` | ✅ |
 | `shell.shortcuts_dialog` | Keyboard shortcuts dialog (large): Keys \| Controller tabs (default by input mode), groups in 2 columns: global, views (2-col chips), server lists, saved, mods, news, palette, dialogs (controller tab adds pad, servers, connect, offline, options); key chips joined by + with '/' or 'or'; footer note about typing/right-click or pad [keys: ?] | `sheet.toggle` | ✅ |
-| `shell.pad_hints` | In gamepad mode, a 28px hint bar above the status bar: up to 5 glyph+word hints in fixed order (A select/type/join, B back/done/close, view's X and Y when applicable, Menu search, LB/RB views, R3, View shortcuts); palette shows A/B/LB-RB/(Y keyboard); dialogs show A, B, X confirm; first pad name at the right | display | ⬜ |
+| `shell.pad_hints` | In gamepad mode, a 28px hint bar above the status bar: up to 5 glyph+word hints in fixed order (A select/type/join, B back/done/close, view's X and Y when applicable, Menu search, LB/RB views, R3, View shortcuts); palette shows A/B/LB-RB/(Y keyboard); dialogs show A, B, X confirm; first pad name at the right | display | ✅ |
 | `shortcuts.global.palette` | Toggle command palette from anywhere, even over dialogs/fields (closes shortcut sheet) [keys: Ctrl+K / pad Menu] | `palette.toggle` | ✅ |
 | `shortcuts.global.search` | Focus and select the current view's visible search field [keys: Ctrl+F or /] | `view.focus_search` | ✅ |
 | `shortcuts.global.sheet` | Toggle keyboard shortcut sheet (closes palette) [keys: ? / pad View] | `sheet.toggle` | ✅ |
@@ -784,25 +784,28 @@ Generated from `apps/desktop/src/catalog.rs` (`cargo xtask parity`, or `cargo te
 | `shortcuts.global.rejoin` | Rejoin last played server; toast warn 'no history' if none [keys: Ctrl+L / pad L3] | `rejoin` | ✅ |
 | `shortcuts.views.jump` | Ctrl+1 Servers, 2 Favorites, 3 History, 4 Friends, 5 Direct connect, 6 Offline, 7 Mods, 8 Options, 9 News, 0 Stats, Ctrl+, Settings, F1 About; digits also match physical key (AZERTY) [keys: Ctrl+1..9, Ctrl+0, Ctrl+, , F1] | `view.<id>` | ✅ |
 | `shortcuts.views.cycle` | Previous/next view in rail order, wrapping [keys: Ctrl+PgUp / Ctrl+PgDn, pad LB/RB] | `view.next` | ✅ |
-| `shortcuts.list` | Registry list keys (handled by views): ↑↓ move, Home/End, PgUp/PgDn (LT/RT), Enter join (A), F favorite (X), P ping (Y), I details (R3), C copy address, L copy link, D direct connect, Esc deselect (B), Del remove (favorites/history); mods: ↑↓, Home/End, Space tick (X), U update (Y), M managed, Del delete, Esc; news: ↑↓/J/K, O open (X); pad-only: servers Y refresh, connect X query / Y join (Enter), offline X launch / Y install, options X apply recommended / Y active only; dialog X confirm, B close | display | ⬜ |
+| `shortcuts.list` | Registry list keys (handled by views): ↑↓ move, Home/End, PgUp/PgDn (LT/RT), Enter join (A), F favorite (X), P ping (Y), I details (R3), C copy address, L copy link, D direct connect, Esc deselect (B), Del remove (favorites/history); mods: ↑↓, Home/End, Space tick (X), U update (Y), M managed, Del delete, Esc; news: ↑↓/J/K, O open (X); pad-only: servers Y refresh, connect X query / Y join (Enter), offline X launch / Y install, options X apply recommended / Y active only; dialog X confirm, B close | display | ✅ |
 | `shortcuts.escape` | Esc closes topmost overlay only; in a view's search field with text it clears it, otherwise leaves (blurs) the field [keys: Esc] | `field.escape` | ✅ |
 | `shortcuts.field_guard` | Shortcuts without Ctrl (and not F-keys) never fire while a text field has focus; nothing but Ctrl+K fires while any dialog/popup/menu is open | display | ✅ |
 | `shortcuts.browser_keys` | Release builds swallow browser keys: F5, F3, F7, BrowserBack/Forward, Alt+←/→, Ctrl+R/P/F/G/J/S/O/0 (Ctrl+R/F still run the app's own); in egui only the app's own keys remain | display | ✅ |
-| `pad.move` | D-pad/stick moves focus spatially to nearest focusable in that direction within the topmost dialog/popup or the app; prefers staying in the current region (title bar, rail, status bar, nav/aside); in lists goes row by row (scrolls virtual list); held direction accelerates 1→3→10 rows; sliders take left/right; menus/selects/palette receive arrow keys | `pad.move` | ⬜ |
-| `pad.accept` | A clicks the focused element; on a text field focuses it and opens Steam's on-screen keyboard in Steam big-screen; on a list row first selects, second A on selected row joins (double-click); focus restored after redraw | `pad.accept` | ⬜ |
-| `pad.back` | B closes topmost popup/dialog; on a text field leaves it downward; else sends Escape to the view (deselect/close details) | `pad.back` | ⬜ |
-| `pad.page_scroll` | LT/RT page a list by its page size (else 10) or scroll the focused scroller by 85% height, refocusing what is on screen; right stick scrolls the reading pane by 140px | `pad.page` | ⬜ |
-| `pad.landing` | When nothing is focused, a press lands on the element last focused in this view, else the view's list at its remembered/selected row, else the top-left focusable; switching view with LB/RB waits for it to load then lands | display | ⬜ |
-| `pad.view_buttons` | X/Y/R3/L3/Menu/View run the current view's registered command when it applies (first applicable wins), else app-wide (Menu palette, View sheet, L3 rejoin); in a dialog X clicks the confirm (or last footer button); in the palette Menu closes, Y opens Steam keyboard, LB/RB = Shift+Tab/Tab | display | ⬜ |
-| `pad.input_mode` | Input mode follows last input (pad action → gamepad; real pointer move/press → pointer) unless forced; gamepad mode shows focus ring, hint bar, zoom at pad scale, hides rail kill-game block; Steam big-screen starts in gamepad mode | display | ⬜ |
+| `pad.move` | D-pad/stick moves focus spatially to nearest focusable in that direction within the topmost dialog/popup or the app; prefers staying in the current region (title bar, rail, status bar, nav/aside); in lists goes row by row (scrolls virtual list); held direction accelerates 1→3→10 rows; sliders take left/right; menus/selects/palette receive arrow keys | `pad.move` | ✅ |
+| `pad.accept` | A clicks the focused element; on a text field focuses it and opens Steam's on-screen keyboard in Steam big-screen; on a list row first selects, second A on selected row joins (double-click); focus restored after redraw | `pad.accept` | ✅ |
+| `pad.back` | B closes topmost popup/dialog; on a text field leaves it downward; else sends Escape to the view (deselect/close details) | `pad.back` | ✅ |
+| `pad.page_scroll` | LT/RT page a list by its page size (else 10) or scroll the focused scroller by 85% height, refocusing what is on screen; right stick scrolls the reading pane by 140px | `pad.page` | ✅ |
+| `pad.landing` | When nothing is focused, a press lands on the element last focused in this view, else the view's list at its remembered/selected row, else the top-left focusable; switching view with LB/RB waits for it to load then lands | display | ✅ |
+| `pad.view_buttons` | X/Y/R3/L3/Menu/View run the current view's registered command when it applies (first applicable wins), else app-wide (Menu palette, View sheet, L3 rejoin); in a dialog X clicks the confirm (or last footer button); in the palette Menu closes, Y opens Steam keyboard, LB/RB = Shift+Tab/Tab | display | ✅ |
+| `pad.input_mode` | Input mode follows last input (pad action → gamepad; real pointer move/press → pointer) unless forced; gamepad mode shows focus ring, hint bar, zoom at pad scale, hides rail kill-game block; Steam big-screen starts in gamepad mode | display | ✅ |
 | `app.init_screen` | Until initialised the main area shows topo texture with spinner 'Initializing…'; on failure red triangle 'Initialization Failed', selectable mono error and 'Retry' | display | ✅ |
 | `app.views_kept` | Views load on first visit and stay mounted (scroll, filters, selection kept); shown with a short rise-in animation; current view restored after a reload (session) | display | ✅ |
 | `app.paste_connect` | Pasting outside a text field: 'dzch://' link opens it in Direct connect; 'host:port' (IPv4 or hostname, port 1–65535) opens Direct connect prefilled with toast 'pasted address' | `connect.paste` | ✅ |
 | `app.no_context_menu` | Release builds suppress the webview's right-click menu except on inputs, textareas and selectable text (egui: no stray context menu; text fields keep copy/paste) | display | ✅ |
 | `app.launch_toasts` | Toasts on backend launch events: ok 'launched <name>' (then watches for game, reloads profile), error 'launch error: …' | display | ✅ |
 | `app.cli` | Command-line/second-instance args: --connect host[:port] opens Direct connect and connects, --reconnect rejoins (warn if no history), open dzch:// or .dzch file; queued until initialised | display | ✅ |
+| `app.single_instance` | Single instance (Tauri single-instance plugin): a second launch hands its args (dzch:// link, .dzch path made absolute, --connect, --reconnect) to the running window, which unminimises and focuses, then exits | display | ✅ |
+| `app.link_registration` | At start, dzch:// links and .dzch files are pointed at this executable when they differ (deep-link register_all, fileAssociations): Linux handler .desktop + mime package + xdg-mime default, Windows HKCU classes; never in --mock | display | ✅ |
 | `app.focus_return` | Window blur/hidden marks away; on return after ≥5 min refreshes the server list, after ≥10 min checks mod updates; focus state also drives window border colour and status polling | display | ✅ |
 | `app.periodic_mod_check` | Every 30 min while the window is focused, mods are force-checked for Workshop updates (needs API key); status bar shows 'Checking mods' | display | ✅ |
 | `app.frame` | Window frame: rounded corners (theme radius, 0 when maximised) and optional border in focus/blur colour; maximised state tracked on resize (once per frame) | display | ⬜ |
+| `app.window` | The window (src-tauri: tauri.conf.json, main.rs, build.rs): 1280x800 centred, at least 900x600, no system decorations; app icon; Windows exe icon, VERSIONINFO and manifest; a panic or start-up failure in a Windows release build shows a message box; size, position and maximised state remembered from one start to the next | display | ✅ |
 | `app.toasts` | Toaster for info/ok/warn/err messages used across the app | display | ✅ |
 | `app.mod_op_dialog` | Mod operation dialog mounted whenever an operation is active (lazy); wizard mounted when showWizard | display | ✅ |

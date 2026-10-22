@@ -34,12 +34,12 @@ Feature counts are entries of `apps/desktop/src/catalog.rs` ([checklist](parity-
 | G17 | Offline view (27) | M2 | G4 | done | [ui-parity › offline](ui-parity.md#offline) |
 | G18 | History view (14) | M2 | G14 | done | [ui-parity › history](ui-parity.md#history) |
 | G19 | Single instance, dzch:// and .dzch, paste-to-connect | M3.1 | G4, G11 | 8–14 h | [ui-parity › shell](ui-parity.md#shell) |
-| G20 | Updater | M3.2 | G16 | 8–14 h | [ui-parity › about](ui-parity.md#about) |
+| G20 | Updater | M3.2 | G16 | done | [ui-parity › about](ui-parity.md#about) |
 | G21 | Gamepad | M3.3 | G4, views | 15–25 h | [ui-parity › shell](ui-parity.md#shell) |
-| G22 | Window: size, position, maximise, Windows icon, fatal box | M3.4 | G4 | 5–8 h | [ui-parity › shell](ui-parity.md#shell) |
+| G22 | Window: size, position, maximise, Windows icon, fatal box | M3.4 | G4 | done | [ui-parity › shell](ui-parity.md#shell) |
 | G23 | Packaging and release tooling for the egui binary | M4.1 | M3 | 8–14 h + owner | — |
 | G24 | Remove apps/gui, rename, update docs | M4.2 | all above | 4–8 h | — |
-| G25 | Visual polish: shared `Field` rows 4–5 px short, page header 2 px low, chip tints, `Copy` muted text, Play-button lettering width, `→` glyph | M2 follow-up | — | 8–15 h | [ui-parity](ui-parity.md) |
+| G25 | Visual polish: shared `Field` rows, page header, chip tints, `Copy` colours, Play lettering, symbol glyphs, wizard, palette search | M2 follow-up | — | done | [ui-parity](ui-parity.md) |
 | | **Total left** | | | **~56–98 h** | |
 
 About 70% parallelizes: the M2 views fan out once the shell and parts exist; G1–G4 and M4 are
@@ -176,28 +176,56 @@ is compared with `var/reference/<view>.png`.
 
 ### G19. Single instance and links (M3.1)
 
-- **Missing:** local-socket single instance and argument hand-off (`--connect`,
-  `--reconnect`, `dzch://`, `.dzch`), registration (Linux .desktop + xdg-mime, Windows
-  registry), paste-to-connect.
-- **Estimate:** 8–14 h.
+- **Done (M3.1):** `apps/desktop/src/platform/`: single instance (per-user lock file +
+  127.0.0.1 port file with a random token; a second launch hands its arguments over, the
+  window unminimises and focuses), `file://` and relative `.dzch` paths normalised,
+  registration at start on a background thread, only when it differs (Linux handler
+  `.desktop`, `application/x-dzch` mime package, `xdg-mime default`; Windows HKCU scheme
+  and `.dzch` class), never in `--mock` or debug builds. Paste-to-connect was already in
+  `Ctx::paste`.
+- **Left:** raising the window on Wayland needs an activation token (winit
+  `ActivationToken`), not passed yet: GNOME may only flag the window.
 
 ### G20. Updater (M3.2)
 
-- **Missing:** latest.json, minisign verification, AppImage replace and Windows zip install,
-  wired to the About update card and the status bar.
-- **Estimate:** 8–14 h.
+- **Done:** latest.json (same endpoint and format), semver compare, download with
+  `HubEvent::UpdateDownload` progress, minisign verification against the same public key
+  (checked on the published v0.5.4 Windows zip), AppImage replaced atomically (temp file +
+  rename, the plugin's move-aside as fallback), Windows zip swap, restart that closes the
+  window normally while the new instance waits for it (`DZCH_RESTART_OF`); About card and
+  status bar. Tests run on a local HTTP server with a throwaway key.
+- **Owner checks on a real release:** see the M3.2 report (AppImage and zip from a release
+  built with the egui binary).
 
 ### G21. Gamepad (M3.3)
 
-- **Missing:** gilrs in the hub, spatial focus navigation with regions, view commands on
-  X/Y/R3/L3, hint bar, larger scale in pad mode, controller settings test.
-- **Estimate:** 15–25 h.
+- **Done (M3.3a, `apps/desktop/src/pad`):** gilrs in the hub, the input mode, spatial focus
+  navigation over egui's widget rects with regions (shell parts, split panes, section
+  index, the narrow drawer), lists walked row by row (`VirtualList::cursor`, 1→3→10),
+  A/B, LB/RB with landing, LT/RT paging, the right stick on reading panes, the views'
+  X/Y/R3 and the app's Menu/View/L3, the focus ring, pad scale, rail auto-collapse,
+  `ui.pad` / `{"pad": …}` for tests.
+- **Done (M3.3b):** the hint bar says what applies now (`pad::view_hints`: X/Y/R3 only
+  when the view's command applies, as Svelte's `when`; A says Join on a server list's
+  row), the `?` sheet in two balanced columns (one below 640 points), Ctrl+F / `/` in
+  Mods and Statistics, the page header's figures no longer grow without end when they
+  wrap (pad scale).
+- **Missing:** the settings' live test polish.
 
 ### G22. Window (M3.4)
 
-- **Missing:** remembered size and position, maximise state, Windows icon and VERSIONINFO,
-  fatal error box on Windows.
-- **Estimate:** 5–8 h.
+- **Done:** Tauri's default (1280×800 centred) and minimum (900×600) size; size, position
+  and maximised state restored from eframe's `window.ron` beside the data (off the UI thread,
+  written only on change; on Windows moved onto a connected monitor; minimised or corrupt
+  geometry never restored, a maximised window gets back its earlier size), see
+  `apps/desktop/src/platform/window.rs`; window icon (`assets/app/icon-256.png`); Windows
+  icon, VERSIONINFO and the Tauri manifest embedded by `apps/desktop/build.rs` (winresource,
+  `llvm-rc` under cargo-xwin, `DZCH_REQUIRE_WINRES=1` for releases); the fatal message box
+  (panic hook, start-up failures and a window that cannot open) in Windows release builds,
+  stderr elsewhere, as Tauri did.
+- **Left:** on X11 a position on a since-unplugged monitor is left to the window manager
+  (eframe clamps on Windows only); Wayland places windows itself. Not run live here (an
+  agent-launched window gets no frames on this machine); covered by unit tests.
 
 ## Polish
 
@@ -209,6 +237,18 @@ label/hint lines are 4–5 px shorter than the web version (settings, options ro
 `Copy` uses faint where Svelte uses muted; the Play button's lettering is ~12 px wider; the
 bundled subsets lack `→`. Fix in the shared widget, re-run `cargo xtask shots` and
 `visual-diff`, check every view.
+
+- **Done:** `Field` and `SettingsSection` text on CSS line heights (`paint::galley_lh`), their
+  1px borders outside the rows; the header's name row as tall as its tallest cell (30 px
+  without figures) and its `border-b` a pixel of its own; `Button::tint`, used by the server
+  panel's Missing / To update chips; `Copy::color` / `text_size` per use site; Play lettering
+  at the size's own text size; a DejaVu Sans subset for `← → ↵ ⋯ ✓ ✕ □ △ ○` (a test checks
+  every face); the view is not drawn under the setup wizard; the palette's server search
+  filters the store's snapshot (`browser::order`). Settings SSIM 0.758 → 0.819, connect
+  0.764 → 0.817; the other views unchanged.
+- **Left:** the toolbars of mods, news, friends (1 px tall) and stats (1 px short) were tuned
+  against the old header height and now land on the same border by compensation; the
+  figures row is 32.5 px where the browser makes 33.
 
 ## Switch-over (M4)
 

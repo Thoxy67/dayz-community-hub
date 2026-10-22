@@ -73,7 +73,7 @@ fn count_of(cx: &Ctx, id: ViewId, tk: &Tokens) -> Option<Count> {
 pub(super) fn show(ui: &mut Ui, cx: &mut Ctx) {
     let tk = ui.tokens();
     let rect = ui.max_rect();
-    let collapsed = cx.prefs.get().ui.rail_collapsed;
+    let collapsed = crate::pad::rail_collapsed(ui.ctx(), cx.stores, cx.prefs);
     // (The right border is the panel's separator line.)
     let inner = rect;
     let foot_h = foot_height(cx, collapsed, ui.ctx().content_rect().height());

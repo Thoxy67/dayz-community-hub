@@ -99,6 +99,8 @@ impl Widget for Slider<'_> {
                     f64::from(((pos.x - track.left()) / track.width().max(1.0)).clamp(0.0, 1.0));
                 *self.value = self.snap(self.min + k * span);
             }
+            // A controller's Left and Right move it rather than the focus.
+            crate::pad::slider(ui.ctx(), resp.id);
             if resp.has_focus() {
                 let step = if self.step > 0.0 {
                     self.step

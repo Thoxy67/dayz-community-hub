@@ -238,6 +238,11 @@ impl Direct {
         self.port.trim().parse::<u16>().ok().filter(|p| *p >= 1)
     }
 
+    /// An address and a port are filled in (what `resolve` calls valid).
+    pub fn valid(&self) -> bool {
+        !self.address.trim().is_empty() && self.port_num().is_some()
+    }
+
     /// The listed entry, the favourite, the ports and the name, now. Strict IPv4 only is
     /// looked up in the list, so typing does not ask for every prefix.
     pub fn resolve(&self, servers: &mut Servers, profile: &Profile) -> Resolved {

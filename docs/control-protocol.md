@@ -73,7 +73,7 @@ printf '{"id":1,"key":"%s","method":"ui.state"}\n' "$KEY" | nc -q1 127.0.0.1 798
 | Method | Params | Result |
 |---|---|---|
 | `auth` | `key` | `{}`; the connection is authorised |
-| `ui.state` | — | `view`, `focus`, `locale`, `theme` (worn), `themeSelected` (chosen; `null` = follow the system), `railCollapsed`, `scale`, `window` [w, h], `initialized`, `initError`, `wizard`, `dialogs` {palette, shortcuts, confirm}, `counts` {servers, maps, favorites, history, mods, pinged}, `busy` {servers, mods} |
+| `ui.state` | — | `view`, `focus`, `locale`, `theme` (worn), `themeSelected` (chosen; `null` = follow the system), `railCollapsed`, `scale`, `window` [w, h], `initialized`, `initError`, `wizard`, `dialogs` {palette, shortcuts, confirm}, `counts` {servers, maps, favorites, history, mods, pinged}, `busy` {servers, mods}, `pad` {mode (`gamepad`/`pointer`), focus {kind (`widget`/`text`/`list`), rect [x, y, w, h], cursor}, pads} |
 | `ui.commands` | — | every command of the registry: `id`, `label` (current language), `group`, `enabled` |
 | `ui.view` | `id` (a rail id: `servers`, `favorites`, `history`, `friends`, `connect`, `offline`, `mods`, `options`, `news`, `stats`, `settings`, `about`), `focus?` (a part, as in `settings#apis`) | `{"view": id}` |
 | `ui.command` | `id`, `args?` (JSON object) | `{}`, or the command's error. Unknown and disabled commands are refused |
@@ -87,6 +87,7 @@ printf '{"id":1,"key":"%s","method":"ui.state"}\n' "$KEY" | nc -q1 127.0.0.1 798
 | `ui.wheel` | `x`, `y`, `dx?`, `dy` (points; `dy` < 0 scrolls down), modifiers | `{"queued": true}` |
 | `ui.key` | `key` (`Enter`, `Escape`, `F1`, `A`, `ArrowDown`…), `ctrl?` `shift?` `alt?` | `{"queued": true}`; shortcuts apply |
 | `ui.text` | `text` (≤ 64 KiB) | `{"queued": true}`: typed into the focused field |
+| `ui.pad` | `button` (`dpad_up` `dpad_down` `dpad_left` `dpad_right` `a` `b` `x` `y` `lb` `rb` `lt` `rt` `menu` `view` `l3` `r3` `rs_up` `rs_down`, or an action's name: `down`, `accept`, `prevTab`…), `repeat?` | `{"queued": true}`: acted on next frame as if a pad sent it (the input mode follows unless the setting is Never); `ui.state`'s `pad` says where the focus went |
 | `hub.servers_query` | a `ServerQuery`, camelCase; every field is optional (`search`, `map`, `firstPerson` / `password` / `battleye` / `modded` / `official`: `all` `only` `none`, `hideEmpty`, `hideFull`, `maxPing`, `showExcluded`, `sort`: `none` `ping` `players` `name` `map` `mods` `time`, `asc`, `offset`, `limit` ≤ 1000, 50 by default) | a `ServerPage`: `total`, `rows`, `stats`, `generation` |
 | `hub.servers_lookup` | `keys`: `["ip:port", …]` (≤ 1000) | a row or `null` per key |
 | `hub.server_maps` | — | `[{map, count}, …]` |

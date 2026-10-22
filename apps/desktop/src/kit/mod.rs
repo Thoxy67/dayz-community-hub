@@ -33,7 +33,7 @@
 //! Slider                    | `Slider::new(&mut f64, 0.0..=1.0).step(0.05).label("aria")` (`drag_stopped()` = commit)
 //! Separator                 | `Separator::horizontal()`, `Separator::vertical()`
 //! Split / Splitter          | `Split::new("id", 340.0).pane(Pane::End).range(180.0, 640.0).keep(340.0).stacked().show(ui, \|ui\| main, \|ui\| aside)`; `Splitter::new(id, vertical).show(ui, rect) -> SplitterOutput`
-//! VirtualList               | `VirtualList::new("id", n).row_height(44.0).header(28.0).stick_to_end().scroll_to(Some(i)).show(ui, \|ui\| header, \|ui, i\| row) -> VirtualOutput`
+//! VirtualList               | `VirtualList::new("id", n).row_height(44.0).header(28.0).stick_to_end().scroll_to(Some(i)).cursor(Some(i)).show(ui, \|ui\| header, \|ui, i\| row) -> VirtualOutput`
 //! Panel                     | `Panel::new("id").title("Filters").no_scroll().padded().show(ui, \|ui\| …)` / `.show_with(ui, \|ui\| toolbar, \|ui\| body)`
 //! Field (settings row)      | `Field::new("Label").hint("…").stacked().last().show(ui, \|ui\| control)`
 //! SectionLabel              | `SectionLabel::new("Maps").icon(i).no_tick()`; `.show_with(ui, \|ui\| actions)`

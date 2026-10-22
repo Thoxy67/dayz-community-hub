@@ -73,6 +73,8 @@ pub fn show(ui: &mut Ui, cx: &Ctx, st: &mut NewsState, run: &mut Vec<(&'static s
         ui.multiply_opacity(1.0 - (1.0 - p).powi(3));
         ui.spacing_mut().item_spacing = Vec2::ZERO;
         article(ui, cx, st, item, run);
+        // What a controller's right stick scrolls.
+        crate::pad::reading_pane(ui);
     });
 }
 

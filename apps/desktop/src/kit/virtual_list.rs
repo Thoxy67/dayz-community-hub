@@ -5,6 +5,11 @@
 //! side). The list takes the whole space on offer (a bounded scroller: never one that
 //! grows with its content). A header stays at the top while the rows scroll under it;
 //! `stick_to_end` follows the end as a log does, while the reader is at it.
+//!
+//! `cursor(Some(i))` names the row the list's keys are on (the selection): the list is
+//! then one stop for a controller, walked row by row by the view's keys (`crate::pad`),
+//! and the row wears the controller's ring. `cursor(None)` is such a list with no row
+//! picked yet.
 
 use std::ops::Range;
 
@@ -32,6 +37,9 @@ pub struct VirtualList {
     stick_to_end: bool,
     scroll_to: Option<usize>,
     offset: Option<f32>,
+    /// `Some` for a list the controller walks: the cursor row, if any.
+    cursor: Option<Option<usize>>,
+    cursor_first: Option<bool>,
 }
 
 impl VirtualList {
@@ -45,6 +53,8 @@ impl VirtualList {
             stick_to_end: false,
             scroll_to: None,
             offset: None,
+            cursor: None,
+            cursor_first: None,
         }
     }
 
@@ -73,6 +83,20 @@ impl VirtualList {
     /// Brings a row into view (the selection, a row a controller walked to).
     pub fn scroll_to(mut self, index: Option<usize>) -> Self {
         self.scroll_to = index;
+        self
+    }
+
+    /// The row the list's keys (and a controller) are on; `None` when none is picked.
+    /// Makes the list one stop for the controller, walked row by row.
+    pub fn cursor(mut self, row: Option<usize>) -> Self {
+        self.cursor = Some(row);
+        self
+    }
+
+    /// Whether the cursor row is the first a move can reach (a list whose first rows
+    /// are headings says so); by default, row 0 is.
+    pub fn cursor_first(mut self, first: bool) -> Self {
+        self.cursor_first = Some(first);
         self
     }
 
@@ -148,6 +172,32 @@ impl VirtualList {
         });
         let offset = out.state.offset.y;
         ui.data_mut(|d| d.insert_temp(self.id.with("view"), (offset, out.inner_rect.height())));
+        if let Some(cursor) = self.cursor {
+            let vp = out.inner_rect;
+            let cursor_rect = cursor
+                .filter(|i| *i < count)
+                .map(|i| {
+                    Rect::from_min_size(
+                        Pos2::new(vp.left(), vp.top() + i as f32 * h - offset),
+                        Vec2::new(vp.width(), h),
+                    )
+                })
+                .filter(|r| r.intersects(vp));
+            crate::pad::list(
+                ui.ctx(),
+                crate::pad::ListSlot {
+                    id: self.id,
+                    layer: ui.layer_id(),
+                    viewport: vp,
+                    count,
+                    row_height: h,
+                    cursor,
+                    at_top: self.cursor_first.unwrap_or(cursor == Some(0)),
+                    cursor_rect,
+                    first_visible: out.inner.start,
+                },
+            );
+        }
         VirtualOutput {
             visible: out.inner,
             offset,

@@ -184,6 +184,9 @@ impl<'a> Split<'a> {
             (a, h, b)
         };
 
+        // Each pane is a region a controller's moves prefer to stay in.
+        crate::pad::region(ui.ctx(), flexible);
+        crate::pad::region(ui.ctx(), sized);
         let mut main_ui = ui.new_child(UiBuilder::new().id_salt((self.id, 0u8)).max_rect(flexible));
         main_ui.set_clip_rect(flexible.intersect(ui.clip_rect()));
         main(&mut main_ui);

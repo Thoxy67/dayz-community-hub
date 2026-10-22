@@ -1,7 +1,7 @@
 //! Whether a controller or the pointer is driving the window, and the pads connected
 //! (= `lib/gamepad/state.svelte.ts`). `mode` follows the last input used ("auto"), or is
 //! held by the setting. In gamepad mode the interface is drawn larger
-//! (`prefs.ui.pad_scale`); the focus navigation itself is M3.3's.
+//! (`prefs.ui.pad_scale`); the focus navigation is `crate::pad`'s, its state kept here.
 
 use dz_hub::features::gamepad::{GamepadStatus, PadAction, PadInfo, PadKind};
 use dz_hub::{Hub, HubEvent};
@@ -28,8 +28,11 @@ pub struct Pad {
     pub steam_deck: bool,
     /// The last action a pad sent and when (egui time), for the settings' live test.
     pub last_action: Option<(PadAction, f64)>,
-    /// Pad actions not yet handled by the focus navigation, oldest first.
-    pub queue: Vec<PadAction>,
+    /// Pad actions not yet handled by the focus navigation, oldest first, each with
+    /// whether it is a held repeat.
+    pub queue: Vec<(PadAction, bool)>,
+    /// The focus navigation's state (`crate::pad::nav`).
+    pub nav: crate::pad::PadNav,
     status: Option<Task<GamepadStatus>>,
 }
 
@@ -44,6 +47,7 @@ impl Pad {
             steam_deck: false,
             last_action: None,
             queue: Vec::new(),
+            nav: crate::pad::PadNav::default(),
             status: None,
         }
     }
@@ -86,16 +90,24 @@ impl Pad {
         self.last = InputMode::Pointer;
     }
 
+    /// A pad action as if a pad had sent it (the control channel, `ui_shot`, the
+    /// `pad.*` commands). The next frame acts on it.
+    pub fn inject(&mut self, action: PadAction, repeat: bool) {
+        self.last_action = Some((action, now_secs()));
+        if self.queue.len() < 64 {
+            self.queue.push((action, repeat));
+        }
+    }
+
+    /// The input mode follows a pad once the navigation acts on its action (not when
+    /// the setting says Never).
     pub fn on_event(&mut self, ev: &HubEvent) {
         match ev {
-            HubEvent::GamepadPads(p) => self.pads = p.0.clone(),
-            HubEvent::GamepadInput(i) => {
-                self.used_pad();
-                self.last_action = Some((i.action, now_secs()));
-                if self.queue.len() < 64 {
-                    self.queue.push(i.action);
-                }
+            HubEvent::GamepadPads(p) => {
+                self.available = true;
+                self.pads = p.0.clone();
             }
+            HubEvent::GamepadInput(i) => self.inject(i.action, i.repeat),
             _ => {}
         }
     }
@@ -108,6 +120,10 @@ impl Pad {
                 self.pads = s.pads;
                 self.steam_ui = s.steam_ui;
                 self.steam_deck = s.steam_deck;
+                // Game Mode on a Steam Deck: there is no mouse to start with.
+                if s.steam_ui {
+                    self.used_pad();
+                }
                 true
             }
             None => false,

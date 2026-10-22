@@ -53,7 +53,7 @@ pub const VIEWS: &[&str] = &[
 ];
 
 /// Done features; only rises.
-pub const FLOOR: usize = 701;
+pub const FLOOR: usize = 714;
 
 /// Whether a feature counts as done.
 pub fn is_done(feature: &Feature) -> bool {
@@ -620,7 +620,7 @@ pub const CATALOG: &[Feature] = &[
         view: "servers",
         what: "Gamepad: X favourite / Y ping the focused (or selected) row, Y refreshes the list when no row, R3 toggles details, D-pad/LT/RT move through the list",
         kind: Kind::Command("list.fav"),
-        done: false,
+        done: true,
     },
     Feature {
         id: "servers.detail.empty",
@@ -1725,7 +1725,7 @@ pub const CATALOG: &[Feature] = &[
         view: "shell",
         what: "Pasting outside any text field: a dzch:// link opens it (join); an 'ipv4|hostname:port' opens it in Direct Connect with info toast 'Pasted {address}: opened in Direct Connect' [keys: Ctrl+V]",
         kind: Kind::Command("connect.paste"),
-        done: false,
+        done: true,
     },
     // ---- connect ----
     Feature {
@@ -3263,7 +3263,7 @@ pub const CATALOG: &[Feature] = &[
         view: "news",
         what: "Reader pane is the gamepad scroll target (data-pad-scroll)",
         kind: Kind::Display,
-        done: false,
+        done: true,
     },
     Feature {
         id: "news.images.cache",
@@ -4738,7 +4738,7 @@ pub const CATALOG: &[Feature] = &[
         view: "shell",
         what: "'Collapse menu' / expand button at the foot toggles icon-only rail (persisted prefs.railCollapsed); auto-collapsed in gamepad mode when window < 1200px",
         kind: Kind::Command("rail.toggle_collapse"),
-        done: false,
+        done: true,
     },
     Feature {
         id: "shell.rail.kill_game",
@@ -4948,77 +4948,77 @@ pub const CATALOG: &[Feature] = &[
         view: "shell",
         what: "Keyboard shortcuts dialog (large): Keys | Controller tabs (default by input mode), groups in 2 columns: global, views (2-col chips), server lists, saved, mods, news, palette, dialogs (controller tab adds pad, servers, connect, offline, options); key chips joined by + with '/' or 'or'; footer note about typing/right-click or pad [keys: ?]",
         kind: Kind::Command("sheet.toggle"),
-        done: false,
+        done: true,
     },
     Feature {
         id: "shell.pad_hints",
         view: "shell",
         what: "In gamepad mode, a 28px hint bar above the status bar: up to 5 glyph+word hints in fixed order (A select/type/join, B back/done/close, view's X and Y when applicable, Menu search, LB/RB views, R3, View shortcuts); palette shows A/B/LB-RB/(Y keyboard); dialogs show A, B, X confirm; first pad name at the right",
         kind: Kind::Display,
-        done: false,
+        done: true,
     },
     Feature {
         id: "shortcuts.global.palette",
         view: "shell",
         what: "Toggle command palette from anywhere, even over dialogs/fields (closes shortcut sheet) [keys: Ctrl+K / pad Menu]",
         kind: Kind::Command("palette.toggle"),
-        done: false,
+        done: true,
     },
     Feature {
         id: "shortcuts.global.search",
         view: "shell",
         what: "Focus and select the current view's visible search field [keys: Ctrl+F or /]",
         kind: Kind::Command("view.focus_search"),
-        done: false,
+        done: true,
     },
     Feature {
         id: "shortcuts.global.sheet",
         view: "shell",
         what: "Toggle keyboard shortcut sheet (closes palette) [keys: ? / pad View]",
         kind: Kind::Command("sheet.toggle"),
-        done: false,
+        done: true,
     },
     Feature {
         id: "shortcuts.global.refresh",
         view: "shell",
         what: "Refresh the server list (browser reload swallowed) [keys: Ctrl+R]",
         kind: Kind::Command("servers.refresh"),
-        done: false,
+        done: true,
     },
     Feature {
         id: "shortcuts.global.update_mods",
         view: "shell",
         what: "If mods are behind: open Mods and update them all; else toast 'mods up to date' [keys: Ctrl+U]",
         kind: Kind::Command("mods.update_behind"),
-        done: false,
+        done: true,
     },
     Feature {
         id: "shortcuts.global.rejoin",
         view: "shell",
         what: "Rejoin last played server; toast warn 'no history' if none [keys: Ctrl+L / pad L3]",
         kind: Kind::Command("rejoin"),
-        done: false,
+        done: true,
     },
     Feature {
         id: "shortcuts.views.jump",
         view: "shell",
         what: "Ctrl+1 Servers, 2 Favorites, 3 History, 4 Friends, 5 Direct connect, 6 Offline, 7 Mods, 8 Options, 9 News, 0 Stats, Ctrl+, Settings, F1 About; digits also match physical key (AZERTY) [keys: Ctrl+1..9, Ctrl+0, Ctrl+, , F1]",
         kind: Kind::Command("view.<id>"),
-        done: false,
+        done: true,
     },
     Feature {
         id: "shortcuts.views.cycle",
         view: "shell",
         what: "Previous/next view in rail order, wrapping [keys: Ctrl+PgUp / Ctrl+PgDn, pad LB/RB]",
         kind: Kind::Command("view.next"),
-        done: false,
+        done: true,
     },
     Feature {
         id: "shortcuts.list",
         view: "shell",
         what: "Registry list keys (handled by views): ↑↓ move, Home/End, PgUp/PgDn (LT/RT), Enter join (A), F favorite (X), P ping (Y), I details (R3), C copy address, L copy link, D direct connect, Esc deselect (B), Del remove (favorites/history); mods: ↑↓, Home/End, Space tick (X), U update (Y), M managed, Del delete, Esc; news: ↑↓/J/K, O open (X); pad-only: servers Y refresh, connect X query / Y join (Enter), offline X launch / Y install, options X apply recommended / Y active only; dialog X confirm, B close",
         kind: Kind::Display,
-        done: false,
+        done: true,
     },
     Feature {
         id: "shortcuts.escape",
@@ -5046,49 +5046,49 @@ pub const CATALOG: &[Feature] = &[
         view: "shell",
         what: "D-pad/stick moves focus spatially to nearest focusable in that direction within the topmost dialog/popup or the app; prefers staying in the current region (title bar, rail, status bar, nav/aside); in lists goes row by row (scrolls virtual list); held direction accelerates 1→3→10 rows; sliders take left/right; menus/selects/palette receive arrow keys",
         kind: Kind::Command("pad.move"),
-        done: false,
+        done: true,
     },
     Feature {
         id: "pad.accept",
         view: "shell",
         what: "A clicks the focused element; on a text field focuses it and opens Steam's on-screen keyboard in Steam big-screen; on a list row first selects, second A on selected row joins (double-click); focus restored after redraw",
         kind: Kind::Command("pad.accept"),
-        done: false,
+        done: true,
     },
     Feature {
         id: "pad.back",
         view: "shell",
         what: "B closes topmost popup/dialog; on a text field leaves it downward; else sends Escape to the view (deselect/close details)",
         kind: Kind::Command("pad.back"),
-        done: false,
+        done: true,
     },
     Feature {
         id: "pad.page_scroll",
         view: "shell",
         what: "LT/RT page a list by its page size (else 10) or scroll the focused scroller by 85% height, refocusing what is on screen; right stick scrolls the reading pane by 140px",
         kind: Kind::Command("pad.page"),
-        done: false,
+        done: true,
     },
     Feature {
         id: "pad.landing",
         view: "shell",
         what: "When nothing is focused, a press lands on the element last focused in this view, else the view's list at its remembered/selected row, else the top-left focusable; switching view with LB/RB waits for it to load then lands",
         kind: Kind::Display,
-        done: false,
+        done: true,
     },
     Feature {
         id: "pad.view_buttons",
         view: "shell",
         what: "X/Y/R3/L3/Menu/View run the current view's registered command when it applies (first applicable wins), else app-wide (Menu palette, View sheet, L3 rejoin); in a dialog X clicks the confirm (or last footer button); in the palette Menu closes, Y opens Steam keyboard, LB/RB = Shift+Tab/Tab",
         kind: Kind::Display,
-        done: false,
+        done: true,
     },
     Feature {
         id: "pad.input_mode",
         view: "shell",
         what: "Input mode follows last input (pad action → gamepad; real pointer move/press → pointer) unless forced; gamepad mode shows focus ring, hint bar, zoom at pad scale, hides rail kill-game block; Steam big-screen starts in gamepad mode",
         kind: Kind::Display,
-        done: false,
+        done: true,
     },
     Feature {
         id: "app.init_screen",
@@ -5109,7 +5109,7 @@ pub const CATALOG: &[Feature] = &[
         view: "shell",
         what: "Pasting outside a text field: 'dzch://' link opens it in Direct connect; 'host:port' (IPv4 or hostname, port 1–65535) opens Direct connect prefilled with toast 'pasted address'",
         kind: Kind::Command("connect.paste"),
-        done: false,
+        done: true,
     },
     Feature {
         id: "app.no_context_menu",
@@ -5133,6 +5133,20 @@ pub const CATALOG: &[Feature] = &[
         done: true,
     },
     Feature {
+        id: "app.single_instance",
+        view: "shell",
+        what: "Single instance (Tauri single-instance plugin): a second launch hands its args (dzch:// link, .dzch path made absolute, --connect, --reconnect) to the running window, which unminimises and focuses, then exits",
+        kind: Kind::Display,
+        done: true,
+    },
+    Feature {
+        id: "app.link_registration",
+        view: "shell",
+        what: "At start, dzch:// links and .dzch files are pointed at this executable when they differ (deep-link register_all, fileAssociations): Linux handler .desktop + mime package + xdg-mime default, Windows HKCU classes; never in --mock",
+        kind: Kind::Display,
+        done: true,
+    },
+    Feature {
         id: "app.focus_return",
         view: "shell",
         what: "Window blur/hidden marks away; on return after ≥5 min refreshes the server list, after ≥10 min checks mod updates; focus state also drives window border colour and status polling",
@@ -5152,6 +5166,13 @@ pub const CATALOG: &[Feature] = &[
         what: "Window frame: rounded corners (theme radius, 0 when maximised) and optional border in focus/blur colour; maximised state tracked on resize (once per frame)",
         kind: Kind::Display,
         done: false,
+    },
+    Feature {
+        id: "app.window",
+        view: "shell",
+        what: "The window (src-tauri: tauri.conf.json, main.rs, build.rs): 1280x800 centred, at least 900x600, no system decorations; app icon; Windows exe icon, VERSIONINFO and manifest; a panic or start-up failure in a Windows release build shows a message box; size, position and maximised state remembered from one start to the next",
+        kind: Kind::Display,
+        done: true,
     },
     Feature {
         id: "app.toasts",

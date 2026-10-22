@@ -18,6 +18,7 @@
 //! | `{"steps": n}` | settle (below), then run `n` frames |
 //! | `{"wait": ms}` | run frames for `ms` of real time |
 //! | `{"click": "label"}` | click the widget with that accessible label (AccessKit) |
+//! | `{"pad": "dpad_down"}` | a controller button, as if a pad sent it (`"repeat": true` for a held one): `dpad_up/down/left/right`, `a`, `b`, `x`, `y`, `lb`, `rb`, `lt`, `rt`, `menu`, `view`, `l3`, `r3`, `rs_up`, `rs_down` (or the action's name: `down`, `accept`, `prevTab`…) |
 //! | `{"method": "ui.…", "params": {…}}` | a control-channel request (`docs/control-protocol.md`) |
 //! | `{"shot": "/abs/path.png"}` | settle, then save the frame as a PNG |
 //!
@@ -229,6 +230,16 @@ fn run_line(h: &mut H, tx: &mpsc::Sender<ControlRequest>, l: &Value) -> Result<(
         while Instant::now() < end {
             step(h);
         }
+        return Ok(());
+    }
+    if let Some(b) = s("pad") {
+        let a = dzch_ui::pad::action_named(b).ok_or_else(|| format!("unknown pad button `{b}`"))?;
+        let repeat = l.get("repeat").and_then(Value::as_bool).unwrap_or(false);
+        with_ctx(h, |cx| {
+            cx.stores.pad.inject(a, repeat);
+            cx.egui.request_repaint();
+        })?;
+        step_n(h, 4);
         return Ok(());
     }
     if let Some(label) = s("click") {

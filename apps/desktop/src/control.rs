@@ -325,6 +325,15 @@ impl Control {
                 Some(_) => err("`text` is too long"),
                 None => err("missing `text`"),
             },
+            "ui.pad" => match s("button").and_then(crate::pad::action_named) {
+                Some(a) => {
+                    let repeat = p.get("repeat").and_then(Value::as_bool).unwrap_or(false);
+                    app.stores_mut().pad.inject(a, repeat);
+                    ctx.request_repaint();
+                    ok(json!({"queued": true}))
+                }
+                None => err("unknown `button`"),
+            },
             other if commands::registered(other) => run(app, ctx, other, p),
             other => err(format!("unknown method `{other}`")),
         };
@@ -398,6 +407,7 @@ pub fn state(app: &mut HubApp, ctx: &egui::Context) -> Value {
                 "servers": s.servers.loading || s.servers.refreshing,
                 "mods": s.mods.loading || s.mods.busy(),
             },
+            "pad": crate::pad::describe(ctx, cx),
         })
     })
 }

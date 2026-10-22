@@ -450,6 +450,10 @@ impl View for StatsView {
         {
             let mut st = shared.lock();
             st.poll(cx.hub, ui.ctx(), &cx.stores.bus);
+            // Ctrl+F / `/`: the history's search field (when the history is drawn).
+            if cx.nav.take_focus_search() {
+                ui.memory_mut(|m| m.request_focus(egui::Id::new("stats-history-search")));
+            }
             draw(ui, cx, &mut st, &mut run);
         }
         for (id, args) in run {

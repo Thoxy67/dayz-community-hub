@@ -175,6 +175,10 @@ pub fn show(ui: &mut Ui, cx: &Ctx, st: &mut UiState, cache: &mut RowCache, run: 
         .header(HEAD_H)
         .offset(offset)
         .scroll_to(scroll_to)
+        .cursor(
+            sel.as_ref()
+                .and_then(|s| super::index_of(&order, &s.ip, s.port, s.index)),
+        )
         .show(
             ui,
             |ui| heading(ui, st, run),

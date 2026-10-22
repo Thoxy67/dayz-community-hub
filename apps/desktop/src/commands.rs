@@ -19,6 +19,8 @@
 use egui::{Context, Key, KeyboardShortcut, Modifiers};
 use serde_json::Value;
 
+use dz_hub::features::gamepad::PadAction;
+
 use crate::app::Ctx;
 use crate::i18n::{Locale, t};
 use crate::prefs::{GlyphChoice, PadMode};
@@ -1023,6 +1025,40 @@ pub static COMMANDS: &[CommandSpec] = &[
             _ => return,
         };
         cx.prefs.edit().pad_glyphs = g;
+    }),
+    // ── the controller's own moves (`crate::pad`): as if a pad had sent them ──
+    cmd!("pad.move", ("keys", "move"), "pad", |cx, a| {
+        let action = match arg_str(a, "dir") {
+            Some("up") => PadAction::Up,
+            Some("left") => PadAction::Left,
+            Some("right") => PadAction::Right,
+            _ => PadAction::Down,
+        };
+        cx.stores
+            .pad
+            .inject(action, arg_bool(a, "repeat").unwrap_or(false));
+    }),
+    cmd!("pad.accept", ("keys", "press"), "pad", |cx, _| {
+        cx.stores.pad.inject(PadAction::Accept, false);
+    }),
+    cmd!("pad.back", ("keys", "back"), "pad", |cx, _| {
+        cx.stores.pad.inject(PadAction::Back, false);
+    }),
+    cmd!("pad.page", ("keys", "page"), "pad", |cx, a| {
+        let down = arg_bool(a, "down").unwrap_or(true);
+        let action = if down {
+            PadAction::PageDown
+        } else {
+            PadAction::PageUp
+        };
+        cx.stores.pad.inject(action, false);
+    }),
+    cmd!("pad.press", ("keys", "press"), "pad", |cx, a| {
+        if let Some(action) = arg_str(a, "button").and_then(crate::pad::action_named) {
+            cx.stores
+                .pad
+                .inject(action, arg_bool(a, "repeat").unwrap_or(false));
+        }
     }),
     // ── the theme ──
     cmd!("theme.use_preset", ("theme", "scheme"), "theme", |cx, a| {

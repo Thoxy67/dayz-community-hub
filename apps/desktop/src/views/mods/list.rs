@@ -229,10 +229,23 @@ fn table(ui: &mut Ui, cx: &Ctx, st: &mut UiState, run: &mut Run) {
     let mut opened: Option<u64> = None;
     let menu_for = *open_menu;
     let count = listing.items.len();
+    // The open mod is the list's cursor; headings above it are not stops.
+    let cursor = focus
+        .and_then(|id| listing.row_by_id(id))
+        .and_then(|r| listing.item_of(r));
+    let first = cursor.is_some_and(|c| {
+        !listing
+            .items
+            .iter()
+            .take(c)
+            .any(|i| matches!(i, model::Item::Row(_)))
+    });
     let out = VirtualList::new("mods-list", count)
         .row_height(ROW_H)
         .header(HEAD_H)
         .scroll_to(scroll)
+        .cursor(cursor)
+        .cursor_first(first)
         .show(
             ui,
             |ui| {

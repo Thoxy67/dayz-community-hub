@@ -194,6 +194,10 @@ impl View for ModsView {
         {
             let mut st = shared.lock();
             poll_steam(ui, cx, &mut st);
+            // Ctrl+F / `/`: the search field (drawn when there are mods to search).
+            if cx.nav.take_focus_search() {
+                ui.memory_mut(|m| m.request_focus(egui::Id::new("mods-search")));
+            }
             let UiState {
                 listing,
                 query,
@@ -216,7 +220,12 @@ impl View for ModsView {
             // Forget ticks for mods that are gone.
             let mods = &cx.stores.mods;
             st.ticked.retain(|id| mods.by_id(*id).is_some());
-            if st.focus.is_some_and(|id| mods.by_id(id).is_none()) {
+            // A row still listed keeps the keys' place, installed or not (an incoming
+            // mod has no details, as in the Svelte view, but ↓ walks past it).
+            if st
+                .focus
+                .is_some_and(|id| mods.by_id(id).is_none() && st.listing.row_by_id(id).is_none())
+            {
                 st.focus = None;
             }
             keys(ui.ctx(), cx, &mut st, &mut run);
@@ -591,6 +600,12 @@ fn with<R>(cx: &Ctx, f: impl FnOnce(&mut UiState) -> R) -> R {
     let s = shared(cx.egui);
     let mut st = s.lock();
     f(&mut st)
+}
+
+/// Whether `mods.update` has something to do: ticked mods, the open one, or mods behind.
+pub fn can_update(cx: &Ctx) -> bool {
+    let (ticked, focus) = with(cx, |st| (!st.ticked.is_empty(), st.focus.is_some()));
+    ticked || focus || cx.stores.mods.stale_count() > 0
 }
 
 fn review(cx: &mut Ctx, r: Option<Review>) {

@@ -250,6 +250,10 @@ pub struct HubApp {
     reduced: Option<bool>,
     /// The control channel (`--control`, `ui_shot`).
     control: Option<crate::control::Control>,
+    /// Minimised now: eframe's save keeps the last geometry ([`eframe::App::save`]).
+    minimized: bool,
+    /// The last geometry eframe saved while the window was not minimised.
+    saved_window: Option<String>,
 }
 
 fn cx<'a>(
@@ -296,12 +300,20 @@ impl HubApp {
             focused: None,
             reduced: None,
             control: None,
+            minimized: false,
+            saved_window: None,
         }
     }
 
     /// Take requests from the control channel ([`crate::control`]).
     pub fn set_control(&mut self, control: crate::control::Control) {
         self.control = Some(control);
+    }
+
+    /// The window geometry eframe restored (its storage's `window`), kept in case the
+    /// window is minimised before the first save.
+    pub fn set_saved_window(&mut self, saved: Option<String>) {
+        self.saved_window = saved;
     }
 
     /// Before a frame: the control channel's synthetic input joins the window's.
@@ -378,6 +390,9 @@ impl HubApp {
                 &mut self.prefs,
                 &mut self.nav,
             );
+            // The pads' actions first: what they send (an Escape, an arrow for the
+            // palette) is the window's input like any key.
+            crate::pad::frame(&mut c);
             commands::handle_keys(&mut c);
         }
         self.draw(ui, &ctx);
@@ -507,6 +522,7 @@ impl HubApp {
         });
         let maximized = maximized.unwrap_or(false);
         self.stores.app.maximized = maximized;
+        self.minimized = minimized == Some(true);
         if minimized == Some(true) {
             return;
         }
@@ -534,6 +550,9 @@ impl HubApp {
         }
         if prev != Some(w) {
             self.prefs.edit().window = Some(w);
+            // A frame after eframe's save interval, so it writes the new geometry even
+            // if the window then sits idle (`auto_save_interval`).
+            ctx.request_repaint_after(std::time::Duration::from_millis(2_100));
         }
     }
 
@@ -545,7 +564,7 @@ impl HubApp {
         let full = ctx.content_rect();
         let mut root = outer.new_child(UiBuilder::new().id_salt("hubapp").max_rect(full));
         let ui = &mut root;
-        let rail_w = if self.prefs.get().ui.rail_collapsed {
+        let rail_w = if crate::pad::rail_collapsed(ctx, &self.stores, &self.prefs) {
             size::RAIL_COLLAPSED
         } else {
             size::RAIL
@@ -581,6 +600,8 @@ impl HubApp {
         if let Some(line) = toast::host(ctx, t("common", "close")) {
             let _ = c.run_line(&line);
         }
+        // The controller's focus ring, over what this frame drew.
+        crate::pad::paint(ctx, &mut c);
     }
 }
 
@@ -589,6 +610,10 @@ impl HubApp {
 fn main_area(ui: &mut egui::Ui, c: &mut Ctx, views: &mut Vec<(ViewId, Box<dyn View>)>) {
     if !c.stores.app.initialized {
         init_screen(ui, c);
+        return;
+    }
+    // Under the setup wizard the view is hidden: not drawn at all.
+    if shell::wizard_covers(c) {
         return;
     }
     let id = c.nav.view;
@@ -696,6 +721,33 @@ impl eframe::App for HubApp {
 
     fn on_exit(&mut self) {
         self.flush();
+    }
+
+    /// The window's geometry is the only thing eframe keeps (`platform::window`); egui's
+    /// own memory is not (the preferences hold the panes).
+    fn persist_egui_memory(&self) -> bool {
+        false
+    }
+
+    /// eframe writes its file (off this thread) only when the geometry changed, so a
+    /// short interval saves a move or resize soon after it, at no cost when idle.
+    fn auto_save_interval(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(2)
+    }
+
+    /// eframe has just put the window's geometry in `storage`: a minimised window's
+    /// (parked off screen, zero size on Windows) is replaced by the last one before.
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        const KEY: &str = "window";
+        if self.minimized {
+            if let Some(w) = &self.saved_window {
+                storage.set_string(KEY, w.clone());
+            } else {
+                storage.remove_string(KEY);
+            }
+        } else {
+            self.saved_window = storage.get_string(KEY);
+        }
     }
 }
 

@@ -221,6 +221,12 @@ pub fn statusbar(ui: &mut egui::Ui, cx: &mut Ctx) {
     statusbar::show(ui, cx, &mut st.status);
 }
 
+/// Whether the setup wizard covers the window below the title bar this frame: the main
+/// area's view is then not drawn (nobody would see it, and it would cost a frame).
+pub fn wizard_covers(cx: &Ctx) -> bool {
+    cx.stores.app.show_wizard && WIZARD_HOST.get().is_some()
+}
+
 /// Everything that floats: dialogs, palette, sheet, mod operation, wizard, pad hints,
 /// and the window's resize edges.
 pub fn overlays(ctx: &egui::Context, cx: &mut Ctx) {

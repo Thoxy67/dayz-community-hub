@@ -522,7 +522,7 @@ pub(super) fn shortcuts(ctx: &Context, cx: &mut Ctx, st: &mut DialogState) {
             ctx,
             &mut open,
             |ui, _| {
-                shortcut_list(ui, mode, kind);
+                shortcut_columns(ui, mode, kind, 2);
             },
             |_, _| {},
         );
@@ -534,6 +534,16 @@ pub(super) fn shortcuts(ctx: &Context, cx: &mut Ctx, st: &mut DialogState) {
 /// Every shortcut by where it works, keyboard or controller, from the one registry
 /// (the `?` sheet and the About page's card both draw it).
 pub(crate) fn shortcut_list(ui: &mut Ui, mode: &mut ShortcutMode, kind: crate::parts::PadKind) {
+    shortcut_columns(ui, mode, kind, 1);
+}
+
+/// [`shortcut_list`] in `columns` columns (the `?` sheet's two).
+fn shortcut_columns(
+    ui: &mut Ui,
+    mode: &mut ShortcutMode,
+    kind: crate::parts::PadKind,
+    columns: usize,
+) {
     // The rows, owned for this frame (only while the sheet shows).
     struct Owned {
         label: &'static str,
@@ -627,6 +637,7 @@ pub(crate) fn shortcut_list(ui: &mut Ui, mode: &mut ShortcutMode, kind: crate::p
         .collect();
     ShortcutList::new(&key_groups, &pad_groups, mode)
         .pad_kind(kind)
+        .columns(columns)
         .show(ui);
 }
 

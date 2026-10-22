@@ -317,6 +317,7 @@ pub struct ShortcutList<'a> {
     mode: &'a mut ShortcutMode,
     tabs: bool,
     kind: PadKind,
+    columns: usize,
 }
 
 impl<'a> ShortcutList<'a> {
@@ -332,7 +333,15 @@ impl<'a> ShortcutList<'a> {
             mode,
             tabs: true,
             kind: PadKind::Xbox,
+            columns: 1,
         }
+    }
+
+    /// Lays the groups out in this many columns (the `?` sheet's two; one below a
+    /// 640-point window).
+    pub fn columns(mut self, n: usize) -> Self {
+        self.columns = n.clamp(1, 2);
+        self
     }
 
     pub fn tabs(mut self, on: bool) -> Self {
@@ -358,58 +367,53 @@ impl<'a> ShortcutList<'a> {
         }
         let keys_mode = *self.mode == ShortcutMode::Keys;
         let groups = if keys_mode { self.keys } else { self.pad };
-        for g in groups {
-            let has = |r: &ShortcutRow<'_>| {
-                if keys_mode {
-                    !r.keys.is_empty()
-                } else {
-                    !r.pad.is_empty()
-                }
-            };
-            if !g.rows.iter().any(has) {
-                continue;
+        let has = |r: &ShortcutRow<'_>| {
+            if keys_mode {
+                !r.keys.is_empty()
+            } else {
+                !r.pad.is_empty()
             }
-            ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing.y = 0.0;
-                let tg = paint::tracked(
-                    ui,
-                    g.title,
-                    font(Face::Mono, size::TEXT_3XS),
-                    Color32::PLACEHOLDER,
-                    0.08,
-                    true,
-                    None,
+        };
+        let shown: Vec<(&ShortcutGroup<'_>, Vec<&ShortcutRow<'_>>)> = groups
+            .iter()
+            .map(|g| (g, g.rows.iter().filter(|r| has(r)).collect::<Vec<_>>()))
+            .filter(|(_, rows)| !rows.is_empty())
+            .collect();
+        // `columns-2 max-[640px]:columns-1`: groups flow down the first column, then the
+        // second, never split, the columns as even as the groups allow.
+        let two = self.columns > 1 && ui.ctx().content_rect().width() > 640.0;
+        if two {
+            let heights: Vec<f32> = shown
+                .iter()
+                .map(|(g, rows)| group_height(g, rows.len(), keys_mode))
+                .collect();
+            let split = balance(&heights, ui.spacing().item_spacing.y);
+            let gap = 24.0;
+            let w = ui.available_width();
+            let cw = ((w - gap) / 2.0).max(0.0);
+            let top = ui.cursor().min;
+            let mut bottom = top.y;
+            for (col, part) in [&shown[..split], &shown[split..]].into_iter().enumerate() {
+                let rect = Rect::from_min_size(
+                    Pos2::new(top.x + col as f32 * (cw + gap), top.y),
+                    Vec2::new(cw, f32::INFINITY),
                 );
-                let (r, _) = ui.allocate_exact_size(Vec2::new(tg.size().x, 12.0), Sense::hover());
-                draw(ui.painter(), &tg, r.left(), r.center().y, tk.fg_faint);
-                ui.add_space(4.0);
-                let rows: Vec<&ShortcutRow<'_>> = g.rows.iter().filter(|r| has(r)).collect();
-                if g.views && keys_mode {
-                    let w = ui.available_width();
-                    let cw = (w - 12.0) / 2.0;
-                    for pair in rows.chunks(2) {
-                        let (line, _) = ui.allocate_exact_size(Vec2::new(w, 25.0), Sense::hover());
-                        for (k, r) in pair.iter().enumerate() {
-                            let cell = Rect::from_min_size(
-                                Pos2::new(line.left() + k as f32 * (cw + 12.0), line.top()),
-                                Vec2::new(cw, 25.0),
-                            );
-                            self.key_row(ui, cell, r, true, &tk);
-                        }
-                    }
-                } else {
-                    let n = rows.len();
-                    for (i, r) in rows.iter().enumerate() {
-                        let w = ui.available_width();
-                        let (line, _) = ui.allocate_exact_size(Vec2::new(w, 25.0), Sense::hover());
-                        if keys_mode {
-                            self.key_row(ui, line, r, i + 1 < n, &tk);
-                        } else {
-                            self.pad_row(ui, line, r, i + 1 < n, &tk);
-                        }
-                    }
+                let mut c = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(rect)
+                        .layout(egui::Layout::top_down(egui::Align::Min)),
+                );
+                c.spacing_mut().item_spacing.y = 12.0;
+                for (g, rows) in part {
+                    self.group(&mut c, g, rows, keys_mode, &tk);
                 }
-            });
+                bottom = bottom.max(c.min_rect().bottom());
+            }
+            ui.allocate_exact_size(Vec2::new(w, (bottom - top.y).max(0.0)), Sense::hover());
+        } else {
+            for (g, rows) in &shown {
+                self.group(ui, g, rows, keys_mode, &tk);
+            }
         }
         let note = if keys_mode {
             format!("{} {}", t("keys", "typingNote"), t("keys", "rightClick"))
@@ -425,6 +429,57 @@ impl<'a> ShortcutList<'a> {
         );
         let (r, _) = ui.allocate_exact_size(g.size(), Sense::hover());
         ui.painter().galley(r.min, g, tk.fg_faint);
+    }
+
+    /// One group: its title, then its rows.
+    fn group(
+        &self,
+        ui: &mut Ui,
+        g: &ShortcutGroup<'_>,
+        rows: &[&ShortcutRow<'_>],
+        keys_mode: bool,
+        tk: &Tokens,
+    ) {
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            let tg = paint::tracked(
+                ui,
+                g.title,
+                font(Face::Mono, size::TEXT_3XS),
+                Color32::PLACEHOLDER,
+                0.08,
+                true,
+                None,
+            );
+            let (r, _) = ui.allocate_exact_size(Vec2::new(tg.size().x, 12.0), Sense::hover());
+            draw(ui.painter(), &tg, r.left(), r.center().y, tk.fg_faint);
+            ui.add_space(4.0);
+            if g.views && keys_mode {
+                let w = ui.available_width();
+                let cw = (w - 12.0) / 2.0;
+                for pair in rows.chunks(2) {
+                    let (line, _) = ui.allocate_exact_size(Vec2::new(w, ROW_H), Sense::hover());
+                    for (k, r) in pair.iter().enumerate() {
+                        let cell = Rect::from_min_size(
+                            Pos2::new(line.left() + k as f32 * (cw + 12.0), line.top()),
+                            Vec2::new(cw, ROW_H),
+                        );
+                        self.key_row(ui, cell, r, true, tk);
+                    }
+                }
+            } else {
+                let n = rows.len();
+                for (i, r) in rows.iter().enumerate() {
+                    let w = ui.available_width();
+                    let (line, _) = ui.allocate_exact_size(Vec2::new(w, ROW_H), Sense::hover());
+                    if keys_mode {
+                        self.key_row(ui, line, r, i + 1 < n, tk);
+                    } else {
+                        self.pad_row(ui, line, r, i + 1 < n, tk);
+                    }
+                }
+            }
+        });
     }
 
     /// Lays out a row's key combos from the right; returns their left edge.
@@ -516,6 +571,34 @@ impl<'a> ShortcutList<'a> {
     }
 }
 
+/// A shortcut row's height.
+const ROW_H: f32 = 25.0;
+
+/// How tall a group draws: its title, then its rows (the views' keys two by two).
+fn group_height(g: &ShortcutGroup<'_>, rows: usize, keys_mode: bool) -> f32 {
+    let lines = if g.views && keys_mode {
+        rows.div_ceil(2)
+    } else {
+        rows
+    };
+    12.0 + 4.0 + lines as f32 * ROW_H
+}
+
+/// Where the second column starts: the split that keeps the taller column shortest
+/// (`gap` between groups).
+fn balance(heights: &[f32], gap: f32) -> usize {
+    let col = |hs: &[f32]| hs.iter().sum::<f32>() + gap * hs.len().saturating_sub(1) as f32;
+    // Ties go to the first column, as a browser fills it first.
+    (0..=heights.len())
+        .rev()
+        .min_by(|a, b| {
+            let ha = col(&heights[..*a]).max(col(&heights[*a..]));
+            let hb = col(&heights[..*b]).max(col(&heights[*b..]));
+            ha.total_cmp(&hb)
+        })
+        .unwrap_or(0)
+}
+
 /// `PadLegend`: what a controller's buttons do, in the glyphs of the one plugged in: the
 /// controller's shortcuts without the keyboard tab.
 pub fn pad_legend(ui: &mut Ui, pad: &[ShortcutGroup<'_>], kind: PadKind) {
@@ -540,6 +623,15 @@ mod tests {
         assert_eq!(pad_text(PadButton::Menu, PadKind::Nintendo), Some("+"));
         assert_eq!(pad_text(PadButton::Menu, PadKind::Xbox), None);
         assert_eq!(pad_text(PadButton::R3, PadKind::PlayStation), Some("R3"));
+    }
+
+    #[test]
+    fn columns_balance() {
+        assert_eq!(balance(&[], 12.0), 0);
+        assert_eq!(balance(&[100.0], 12.0), 1);
+        assert_eq!(balance(&[100.0, 100.0], 12.0), 1);
+        assert_eq!(balance(&[300.0, 50.0, 50.0, 50.0, 50.0], 12.0), 1);
+        assert_eq!(balance(&[50.0, 50.0, 50.0, 200.0], 12.0), 3);
     }
 
     #[test]
