@@ -36,7 +36,7 @@ pub struct Updater {
     check: Option<Task<CheckAnswer>>,
     install: Option<Task<Result<(), String>>>,
     resume: Option<Task<DownloadState>>,
-    restart: Option<Task<Result<(), String>>>,
+    restart: Option<Task<Result<bool, String>>>,
 }
 
 impl Updater {
@@ -107,10 +107,15 @@ impl Updater {
         self.resume = Some(rt::spawn(async move { hub.update_download_state().await }));
     }
 
-    /// Start the new version: the hub relaunches the replaced executable or AppImage.
+    /// Start the new version: the hub starts the replaced executable or AppImage,
+    /// then this window closes the normal way (its preferences and size saved); the
+    /// new instance waits for this one to be gone. The mock starts nothing.
     pub fn restart(&mut self) {
+        if self.restart.is_some() {
+            return;
+        }
         let hub = self.hub.clone();
-        self.restart = Some(rt::spawn(async move { hub.restart_app().await }));
+        self.restart = Some(rt::spawn(async move { hub.relaunch_app().await }));
     }
 
     pub fn on_event(&mut self, ev: &HubEvent) {
@@ -191,9 +196,17 @@ impl Updater {
         {
             self.restart = None;
             changed = true;
-            if let Err(e) = r {
-                self.error = e;
-                self.state = UpdateState::Error;
+            match r {
+                Ok(true) => {
+                    if let Some(rt) = rt::Rt::get() {
+                        rt.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    self.error = e;
+                    self.state = UpdateState::Error;
+                }
             }
         }
         changed

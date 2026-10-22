@@ -19,6 +19,8 @@
 //! losing the bar or starting the download again.
 
 mod release;
+#[cfg(test)]
+mod testkit;
 #[cfg(windows)]
 mod windows;
 
@@ -79,14 +81,21 @@ fn download() -> std::sync::MutexGuard<'static, DownloadState> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// Where a download's steps go: the state above, then the window.
+/// Where a download's steps go: the state above, then the window (or, in a
+/// test, wherever the test listens).
 #[derive(Clone)]
-pub(crate) struct Reporter(Hub);
+pub(crate) struct Reporter(std::sync::Arc<dyn Fn(DownloadEvent) + Send + Sync>);
 
 impl Reporter {
+    fn hub(hub: Hub) -> Self {
+        Self(std::sync::Arc::new(move |ev| {
+            download().apply(&ev);
+            hub.emit(HubEvent::UpdateDownload(ev));
+        }))
+    }
+
     pub(crate) fn send(&self, ev: DownloadEvent) {
-        download().apply(&ev);
-        self.0.emit(HubEvent::UpdateDownload(ev));
+        (self.0)(ev);
     }
 }
 
@@ -220,7 +229,7 @@ impl Hub {
                 ..DownloadState::default()
             };
         }
-        let on_event = Reporter(self.clone());
+        let on_event = Reporter::hub(self.clone());
 
         #[cfg(windows)]
         let r = windows::install(&update, on_event).await;
@@ -237,6 +246,16 @@ impl Hub {
     /// The update's download as it stands, for a window that has just loaded.
     pub async fn update_download_state(&self) -> DownloadState {
         download().clone()
+    }
+
+    /// Start a new instance of this copy (the updated one after an install),
+    /// without exiting: `true` when one was started and this window should
+    /// now close (its preferences saved, as a restart from Tauri did). The new
+    /// instance waits for this one to be gone before it takes over. The mock
+    /// starts nothing and answers `false`.
+    pub async fn relaunch_app(&self) -> Result<bool, String> {
+        mocked!(self => Ok(false));
+        relaunch().map(|()| true)
     }
 }
 
@@ -256,7 +275,7 @@ async fn mock_install(hub: &Hub) -> Result<(), String> {
             ..DownloadState::default()
         };
     }
-    let reporter = Reporter(hub.clone());
+    let reporter = Reporter::hub(hub.clone());
     tokio::spawn(async move {
         reporter.send(DownloadEvent::Started {
             content_length: Some(TOTAL),
@@ -279,12 +298,28 @@ async fn install_appimage(update: &Update, on_event: Reporter) -> Result<(), Str
     let image = std::env::var_os("APPIMAGE")
         .map(std::path::PathBuf::from)
         .ok_or("Not started as an AppImage ($APPIMAGE is not set)")?;
+    // Through a link, the file it names is the one replaced.
+    let image = std::fs::canonicalize(&image).unwrap_or(image);
+    release::require_https(&update.download_url)
+        .map_err(|e| format!("Update install failed: {e}"))?;
+    install_appimage_at(update, &image, release::PUBKEY, on_event).await
+}
+
+/// [`install_appimage`] onto `image`, checked against `pubkey`.
+#[cfg(not(windows))]
+async fn install_appimage_at(
+    update: &Update,
+    image: &std::path::Path,
+    pubkey: &str,
+    on_event: Reporter,
+) -> Result<(), String> {
     let bytes = release::download(&update.download_url, &on_event)
         .await
         .map_err(|e| format!("Update install failed: {e}"))?;
     let (signature, version) = (update.signature.clone(), update.version.clone());
+    let (image, pubkey) = (image.to_path_buf(), pubkey.to_owned());
     tokio::task::spawn_blocking(move || {
-        release::verify_signature(&bytes, &signature, release::PUBKEY, true, Some(&version))?;
+        release::verify_signature(&bytes, &signature, &pubkey, true, Some(&version))?;
         release::replace_appimage(&image, &bytes)
     })
     .await
@@ -294,25 +329,89 @@ async fn install_appimage(update: &Update, on_event: Reporter) -> Result<(), Str
     Ok(())
 }
 
-/// Start this executable again with the same arguments, and exit. An
+/// Set by a restart for the instance it starts: the process id to wait for.
+const RESTART_OF: &str = "DZCH_RESTART_OF";
+/// How long a restarted instance waits for the previous one to be gone.
+const RESTART_WAIT: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// The executable a restart starts when an update put the new one at a path
+/// the running process may no longer report as its own (Windows: the running
+/// file was renamed aside).
+static RELAUNCH_TARGET: Mutex<Option<std::path::PathBuf>> = Mutex::new(None);
+
+#[cfg(windows)]
+fn set_relaunch_target(exe: std::path::PathBuf) {
+    *RELAUNCH_TARGET
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(exe);
+}
+
+/// Start this copy again with the same arguments, without exiting. An
 /// AppImage runs from a mount that goes away with the process, so the image
 /// itself (`$APPIMAGE`, the new one after an update) is started instead.
-pub(crate) fn restart() -> Result<(), String> {
+pub(crate) fn relaunch() -> Result<(), String> {
     let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
     #[cfg(target_os = "linux")]
     if let Some(image) = std::env::var_os("APPIMAGE")
         && spawn_detached(std::path::Path::new(&image), &args).is_ok()
     {
-        std::process::exit(0);
+        return Ok(());
     }
-    let exe = std::env::current_exe().map_err(|e| format!("Restart: {e}"))?;
-    spawn_detached(&exe, &args).map_err(|e| format!("Restart: {e}"))?;
+    let target = RELAUNCH_TARGET
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    let exe = match target {
+        Some(t) => t,
+        None => std::env::current_exe().map_err(|e| format!("Restart: {e}"))?,
+    };
+    spawn_detached(&exe, &args).map_err(|e| format!("Restart: {e}"))
+}
+
+/// Start this executable again with the same arguments, and exit at once
+/// (the control channel's and a profile import's restart).
+pub(crate) fn restart() -> Result<(), String> {
+    relaunch()?;
     std::process::exit(0);
+}
+
+/// At start: when a restart started this instance, wait (at most 15 s) for
+/// the previous one to be gone, so it does not find that one still running
+/// and hand its arguments over to a window about to close.
+pub fn wait_for_previous_instance() {
+    let Some(pid) = std::env::var(RESTART_OF)
+        .ok()
+        .and_then(|p| p.trim().parse::<u32>().ok())
+    else {
+        return;
+    };
+    if pid == std::process::id() {
+        return;
+    }
+    wait_for_exit(pid, RESTART_WAIT);
+}
+
+/// Wait until process `pid` is gone, at most `timeout`; whether it is.
+fn wait_for_exit(pid: u32, timeout: std::time::Duration) -> bool {
+    let pid = sysinfo::Pid::from_u32(pid);
+    let mut sys = sysinfo::System::new();
+    let until = std::time::Instant::now() + timeout;
+    loop {
+        sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
+        if sys.process(pid).is_none() {
+            return true;
+        }
+        if std::time::Instant::now() >= until {
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
 }
 
 fn spawn_detached(program: &std::path::Path, args: &[std::ffi::OsString]) -> std::io::Result<()> {
     std::process::Command::new(program)
         .args(args)
+        .env(RESTART_OF, std::process::id().to_string())
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -368,5 +467,154 @@ mod tests {
             json,
             r#"["appimage","windows-zip","package-manager","dev"]"#
         );
+    }
+
+    fn collector() -> (Reporter, std::sync::Arc<Mutex<Vec<DownloadEvent>>>) {
+        let seen = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let s = seen.clone();
+        let r = Reporter(std::sync::Arc::new(move |ev| s.lock().unwrap().push(ev)));
+        (r, seen)
+    }
+
+    /// The whole Linux path against a local release server: the manifest
+    /// read, a newer version found, the AppImage downloaded with progress,
+    /// its signature checked, the image replaced. A tampered download leaves
+    /// the old image alone.
+    #[cfg(not(windows))]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn an_update_installs_end_to_end_from_a_local_release() {
+        use testkit::{TAURI_COMMENT, TestKey, serve};
+        let key = TestKey::new(11);
+        let payload: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
+        let good = key.sign(&payload, true, TAURI_COMMENT);
+        let mut bad_payload = payload.clone();
+        bad_payload[1234] ^= 0xff;
+        // The manifest is built after the server knows its own address.
+        let platform = format!(
+            "{}-{}",
+            "linux",
+            if cfg!(target_arch = "aarch64") {
+                "aarch64"
+            } else {
+                "x86_64"
+            }
+        );
+        let base = serve(vec![
+            ("/good.AppImage".into(), payload.clone()),
+            ("/bad.AppImage".into(), bad_payload),
+        ])
+        .await;
+        let manifest = serde_json::json!({
+            "version": "99.0.0",
+            "notes": "What is new",
+            "pub_date": "2026-10-13T01:13:52Z",
+            "platforms": {
+                "windows-x86_64": { "signature": "x", "url": format!("{base}/win.zip") },
+                platform.clone(): { "signature": good, "url": format!("{base}/good.AppImage") },
+            }
+        });
+        let latest = serve(vec![(
+            "/latest.json".into(),
+            serde_json::to_vec(&manifest).unwrap(),
+        )])
+        .await;
+
+        let endpoint = format!("{latest}/latest.json");
+        let update = release::check_at(&endpoint, "0.5.4", Some("appimage"))
+            .await
+            .unwrap()
+            .expect("a newer version");
+        assert_eq!(update.version, "99.0.0");
+        assert_eq!(update.body.as_deref(), Some("What is new"));
+        // Already the latest: nothing.
+        assert!(
+            release::check_at(&endpoint, "99.0.0", None)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        // A missing manifest is an error the card shows.
+        assert!(
+            release::check_at(&format!("{latest}/nope.json"), "0.5.4", None)
+                .await
+                .is_err()
+        );
+
+        let dir = std::env::temp_dir().join(format!("dzch-update-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let image = dir.join("DayZ-Community-Hub.AppImage");
+        std::fs::write(&image, b"old image").unwrap();
+
+        let (reporter, seen) = collector();
+        install_appimage_at(&update, &image, &key.pubkey(), reporter)
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read(&image).unwrap(), payload);
+        let seen = seen.lock().unwrap().clone();
+        assert!(matches!(
+            seen.first(),
+            Some(DownloadEvent::Started { content_length: Some(n) }) if *n == payload.len() as u64
+        ));
+        assert!(matches!(seen.last(), Some(DownloadEvent::Finished)));
+        let mut state = DownloadState {
+            running: true,
+            ..DownloadState::default()
+        };
+        for ev in &seen {
+            state.apply(ev);
+        }
+        assert_eq!(state.received, payload.len() as u64);
+        assert!(state.done);
+
+        // The tampered download: refused, the image as it was, no Finished.
+        std::fs::write(&image, b"old image").unwrap();
+        let tampered = Update {
+            download_url: format!("{base}/bad.AppImage"),
+            ..update.clone()
+        };
+        let (reporter, seen) = collector();
+        let err = install_appimage_at(&tampered, &image, &key.pubkey(), reporter)
+            .await
+            .unwrap_err();
+        assert!(err.contains("signature"), "{err}");
+        assert_eq!(std::fs::read(&image).unwrap(), b"old image");
+        assert!(
+            !seen
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|e| matches!(e, DownloadEvent::Finished))
+        );
+        // Signed by another key: refused too.
+        let (reporter, _) = collector();
+        assert!(
+            install_appimage_at(&update, &image, &TestKey::new(12).pubkey(), reporter)
+                .await
+                .is_err()
+        );
+        assert_eq!(std::fs::read(&image).unwrap(), b"old image");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_restarted_instance_waits_for_the_previous_one() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("0.3")
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        // Reaped as soon as it ends, as the previous instance's exit is.
+        let reaper = std::thread::spawn(move || child.wait());
+        let t = std::time::Instant::now();
+        assert!(wait_for_exit(pid, std::time::Duration::from_secs(10)));
+        assert!(t.elapsed() >= std::time::Duration::from_millis(200));
+        reaper.join().unwrap().unwrap();
+        // Still running past the wait: gives up.
+        assert!(!wait_for_exit(
+            std::process::id(),
+            std::time::Duration::from_millis(100)
+        ));
     }
 }

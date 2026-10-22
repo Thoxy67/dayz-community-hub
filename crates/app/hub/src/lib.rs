@@ -146,6 +146,8 @@
 //!   - `check_for_update(&self) -> Result<Option<UpdateInfo>, String>`
 //!   - `install_update(&self) -> Result<(), String>`
 //!   - `update_download_state(&self) -> DownloadState`
+//!   - `relaunch_app(&self) -> Result<bool, String>` (new: starts the updated
+//!     copy without exiting, so the window closes itself and saves its state)
 //!
 //! # What changed on the way
 //!
@@ -167,7 +169,10 @@
 //!   `resolve_cached_images` `(url, PathBuf)` pairs (no asset-protocol URLs);
 //!   the cache is the shell's (`paths::images_cache_dir`).
 //! - **`restart_app`** starts this executable (or `$APPIMAGE`) again with the
-//!   same arguments and exits; it returns only an error.
+//!   same arguments and exits; it returns only an error. The started instance
+//!   waits for this one to be gone (`updater::wait_for_previous_instance`,
+//!   first thing in `main`), so it does not hand its arguments to a window
+//!   about to close.
 //! - **The updater** is plain Rust (`features::updater`): the same
 //!   `latest.json`, the same minisign public key, the AppImage written over
 //!   `$APPIMAGE` on Linux, the zip swap on Windows.

@@ -78,8 +78,17 @@ pub(crate) async fn check(
     current: &str,
     installer: Option<&str>,
 ) -> Result<Option<Update>, String> {
+    check_at(ENDPOINT, current, installer).await
+}
+
+/// [`check`] against another endpoint (a test's local server).
+pub(crate) async fn check_at(
+    endpoint: &str,
+    current: &str,
+    installer: Option<&str>,
+) -> Result<Option<Update>, String> {
     let resp = crate::net::api()
-        .get(ENDPOINT)
+        .get(endpoint)
         .header(reqwest::header::ACCEPT, "application/json")
         .send()
         .await
@@ -92,6 +101,17 @@ pub(crate) async fn check(
         .map_err(|e| e.without_url().to_string())?;
     let manifest: Manifest = resp.json().await.map_err(|e| e.without_url().to_string())?;
     from_manifest(manifest, current, installer)
+}
+
+/// A release download must come over HTTPS, as the plugin required
+/// (`dangerousInsecureTransportProtocol: false`). The signature is what
+/// makes it trusted; this keeps the manifest's links honest too.
+pub(crate) fn require_https(url: &str) -> Result<(), String> {
+    match reqwest::Url::parse(url) {
+        Ok(u) if u.scheme() == "https" => Ok(()),
+        Ok(u) => Err(format!("the release link is {}, not https", u.scheme())),
+        Err(e) => Err(format!("the release link is not a URL: {e}")),
+    }
 }
 
 fn from_manifest(
@@ -254,14 +274,70 @@ pub(crate) fn verify_signature(
     Ok(())
 }
 
-/// Write `bytes` over the AppImage at `image`, keeping its permissions. The
-/// old image is moved aside first, into a private directory on the same
-/// filesystem (a rename cannot cross filesystems), and moved back if the new
-/// one cannot be written; it is removed once the new one is in place.
+/// Write `bytes` over the AppImage at `image`, keeping its permissions.
+///
+/// First atomically: the new image is written and synced beside the old one,
+/// then renamed over it, so `image` is at every moment either the whole old
+/// image or the whole new one (the running copy keeps its own, unlinked, file).
+/// When the folder takes no new file, what tauri-plugin-updater did: the old
+/// image is moved aside into a private directory on the same filesystem (a
+/// rename cannot cross filesystems), moved back if the new one cannot be
+/// written, and removed once it is in place.
 #[cfg(unix)]
 pub(crate) fn replace_appimage(image: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
     let meta = std::fs::metadata(image).map_err(|e| format!("{}: {e}", image.display()))?;
+    let permissions = meta.permissions();
+    match replace_atomically(image, bytes, &permissions) {
+        Ok(()) => Ok(()),
+        Err(_) => replace_via_backup(image, bytes, &meta),
+    }
+}
+
+/// The new image beside the old one, then renamed over it.
+#[cfg(unix)]
+fn replace_atomically(
+    image: &std::path::Path,
+    bytes: &[u8],
+    permissions: &std::fs::Permissions,
+) -> std::io::Result<()> {
+    use std::io::Write;
+    let dir = image
+        .parent()
+        .ok_or_else(|| std::io::Error::other("the image has no folder"))?;
+    let name = image
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let tmp = dir.join(format!(".{name}.update-{}", std::process::id()));
+    let written = (|| {
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)?;
+        f.write_all(bytes)?;
+        f.set_permissions(permissions.clone())?;
+        f.sync_all()?;
+        drop(f);
+        std::fs::rename(&tmp, image)?;
+        // The rename itself, on disk.
+        if let Ok(d) = std::fs::File::open(dir) {
+            let _ = d.sync_all();
+        }
+        Ok(())
+    })();
+    if written.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    written
+}
+
+#[cfg(unix)]
+fn replace_via_backup(
+    image: &std::path::Path,
+    bytes: &[u8],
+    meta: &std::fs::Metadata,
+) -> Result<(), String> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
     let permissions = meta.permissions();
     let candidates = [
         Some(std::env::temp_dir()),
@@ -298,6 +374,43 @@ pub(crate) fn replace_appimage(image: &std::path::Path, bytes: &[u8]) -> Result<
         };
     }
     Err("no temporary directory on the AppImage's filesystem".into())
+}
+
+/// The executable inside the Windows release zip (the release zips one
+/// `.exe`), found by name rather than assumed to be the first entry.
+#[cfg(any(windows, test))]
+pub(crate) fn exe_from_zip(zip_bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let cursor = std::io::Cursor::new(zip_bytes);
+    let mut archive = zip::ZipArchive::new(cursor).map_err(|e| format!("zip open: {e}"))?;
+    let is_exe = |n: &str| n.to_ascii_lowercase().ends_with(".exe");
+    let at_root = |n: &str| !n.contains('/') && !n.contains('\\');
+    let names: Vec<(usize, String)> = (0..archive.len())
+        .filter_map(|i| archive.name_for_index(i).map(|n| (i, n.to_owned())))
+        .collect();
+    // The one at the root first (where the release puts it), else any.
+    let exe_index = names
+        .iter()
+        .find(|(_, n)| is_exe(n) && at_root(n))
+        .or_else(|| names.iter().find(|(_, n)| is_exe(n)))
+        .map(|(i, _)| *i)
+        .ok_or_else(|| "the update archive holds no .exe".to_string())?;
+    let mut entry = archive
+        .by_index(exe_index)
+        .map_err(|e| format!("zip entry: {e}"))?;
+    let size = usize::try_from(entry.size()).unwrap_or(usize::MAX);
+    if size > MAX_DOWNLOAD {
+        return Err("the update's executable is far too large".into());
+    }
+    let mut exe_bytes: Vec<u8> = Vec::with_capacity(size);
+    std::io::Read::read_to_end(
+        &mut std::io::Read::take(&mut entry, MAX_DOWNLOAD as u64 + 1),
+        &mut exe_bytes,
+    )
+    .map_err(|e| format!("zip read: {e}"))?;
+    if exe_bytes.len() > MAX_DOWNLOAD || exe_bytes.is_empty() {
+        return Err("the update's executable is empty or far too large".into());
+    }
+    Ok(exe_bytes)
 }
 
 #[cfg(test)]
@@ -386,5 +499,87 @@ mod tests {
         assert!(
             minisign_verify::PublicKey::decode(&base64_text("pubkey", PUBKEY).unwrap()).is_ok()
         );
+    }
+
+    #[test]
+    fn a_signature_made_like_the_release_tooling_verifies() {
+        use crate::features::updater::testkit::{TAURI_COMMENT, TestKey};
+        let key = TestKey::new(7);
+        let data = b"the new AppImage".repeat(1000);
+        let sig = key.sign(&data, true, TAURI_COMMENT);
+        // Prehashed: accepted by both the Linux and the Windows path.
+        verify_signature(&data, &sig, &key.pubkey(), true, Some("0.6.0")).unwrap();
+        verify_signature(&data, &sig, &key.pubkey(), false, Some("0.6.0")).unwrap();
+        // One byte changed: refused.
+        let mut tampered = data.clone();
+        tampered[10] ^= 1;
+        assert!(verify_signature(&tampered, &sig, &key.pubkey(), true, None).is_err());
+        // Another key: refused, and so is the owner's key for a test key's file.
+        let other = TestKey::new(9);
+        assert!(verify_signature(&data, &sig, &other.pubkey(), true, None).is_err());
+        assert!(verify_signature(&data, &sig, PUBKEY, true, None).is_err());
+        // The legacy form only where it is allowed.
+        let legacy = key.sign(&data, false, TAURI_COMMENT);
+        verify_signature(&data, &legacy, &key.pubkey(), true, None).unwrap();
+        assert!(verify_signature(&data, &legacy, &key.pubkey(), false, None).is_err());
+        // A trusted comment that names another version: refused.
+        let wrong = key.sign(&data, true, "timestamp:1\tversion:0.5.0");
+        assert!(verify_signature(&data, &wrong, &key.pubkey(), true, Some("0.6.0")).is_err());
+        let right = key.sign(&data, true, "timestamp:1\tversion:0.6.0");
+        verify_signature(&data, &right, &key.pubkey(), true, Some("0.6.0")).unwrap();
+        // A signature that is not base64: an error, not a crash.
+        assert!(verify_signature(&data, "%%%", &key.pubkey(), true, None).is_err());
+    }
+
+    fn zip_of(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        for (name, data) in entries {
+            w.start_file(*name, opts).unwrap();
+            std::io::Write::write_all(&mut w, data).unwrap();
+        }
+        w.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn the_windows_zip_gives_up_its_executable() {
+        let z = zip_of(&[("README.txt", b"hi"), ("dayz-community-hub.exe", b"MZ new")]);
+        assert_eq!(exe_from_zip(&z).unwrap(), b"MZ new");
+        // The one at the root wins over one in a folder.
+        let z = zip_of(&[("tools/x.exe", b"MZ tool"), ("app.EXE", b"MZ app")]);
+        assert_eq!(exe_from_zip(&z).unwrap(), b"MZ app");
+        assert!(exe_from_zip(&zip_of(&[("a.txt", b"x")])).is_err());
+        assert!(exe_from_zip(b"not a zip").is_err());
+    }
+
+    #[test]
+    fn only_https_release_links_are_followed() {
+        assert!(require_https("https://git.thoxy.xyz/a.AppImage").is_ok());
+        assert!(require_https("http://git.thoxy.xyz/a.AppImage").is_err());
+        assert!(require_https("file:///etc/passwd").is_err());
+        assert!(require_https("nonsense").is_err());
+        assert!(require_https(ENDPOINT).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_appimage_is_replaced_whole_keeping_its_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("dzch-replace-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let image = dir.join("Hub.AppImage");
+        std::fs::write(&image, b"old").unwrap();
+        std::fs::set_permissions(&image, std::fs::Permissions::from_mode(0o751)).unwrap();
+        replace_appimage(&image, b"new image").unwrap();
+        assert_eq!(std::fs::read(&image).unwrap(), b"new image");
+        let mode = std::fs::metadata(&image).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o751);
+        // Nothing left beside it.
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        // A missing image is an error, not a new file.
+        assert!(replace_appimage(&dir.join("gone.AppImage"), b"x").is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

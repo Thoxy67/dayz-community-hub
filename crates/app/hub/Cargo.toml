@@ -51,3 +51,8 @@ openssl = { version = "0.10.81", features = ["vendored"] }
 
 [target."cfg(windows)".dependencies]
 zstd = "0.14.0"
+
+[dev-dependencies]
+# Signs test updates with a throwaway key, in the minisign format the release uses.
+ed25519-dalek = "2.2.0"
+blake2 = "0.10.6"
