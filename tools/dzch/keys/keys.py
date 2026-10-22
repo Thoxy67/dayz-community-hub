@@ -1,15 +1,16 @@
 """Make a new updater signing key: `make keys`.
 
-    uv run --project tools dzch keys              # new key pair, public half into tauri.conf.json
+    uv run --project tools dzch keys              # new key pair, public half into the updater
     uv run --project tools dzch keys --dry-run    # say what would happen
 
 The private key goes where `make publish` reads it: TAURI_SIGNING_KEY_FILE
-(environment, then apps/gui/.env), else ~/.config/dayz-community-hub/updater.key
-(or $DZCH_CONFIG_DIR/updater.key); made by `tauri signer generate` without a
-password. A key already there is kept beside it as
-updater.key.bak-<timestamp> (and its .pub likewise): nothing is deleted.
-The public key is written into apps/gui/src-tauri/tauri.conf.json
-(plugins.updater.pubkey), which both updaters check every download against.
+(environment, then ./.env), else ~/.config/dayz-community-hub/updater.key
+(or $DZCH_CONFIG_DIR/updater.key); made by `cargo xtask keygen` without a
+password, in the format `tauri signer generate` wrote (xtask/src/sign.rs). A
+key already there is kept beside it as updater.key.bak-<timestamp> (and its
+.pub likewise): nothing is deleted. The public key is written into
+crates/app/hub/src/features/updater/release.rs (`PUBKEY`), which the updater
+checks every download against.
 
 A new key means every copy already installed, which carries the old public
 key, refuses the updates signed with the new one: those copies have to be
@@ -20,7 +21,6 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-import json
 import os
 import re
 import shutil
@@ -30,7 +30,16 @@ from pathlib import Path
 
 from dzch import paths
 
-TAURI_CONF = paths.TAURI / "tauri.conf.json"
+UPDATER = (
+    paths.REPO
+    / "crates"
+    / "app"
+    / "hub"
+    / "src"
+    / "features"
+    / "updater"
+    / "release.rs"
+)
 
 
 def config_dir() -> Path:
@@ -43,17 +52,16 @@ def config_dir() -> Path:
 # ── pure parts, tested in test_keys.py ──────────────────────────────────────
 
 
-def with_pubkey(conf_text: str, pubkey: str) -> str:
-    """tauri.conf.json with plugins.updater.pubkey replaced, edited as text so
-    the file keeps its layout."""
-    data = json.loads(conf_text)
-    if "pubkey" not in data.get("plugins", {}).get("updater", {}):
-        raise ValueError("tauri.conf.json has no plugins.updater.pubkey")
+def with_rust_pubkey(source: str, pubkey: str) -> str:
+    """release.rs with its `PUBKEY` constant replaced and nothing else."""
     new, n = re.subn(
-        r'("pubkey"\s*:\s*")[^"]*(")', rf"\g<1>{pubkey}\g<2>", conf_text, count=1
+        r'(pub\(crate\) const PUBKEY: &str = ")[^"]*(";)',
+        rf"\g<1>{pubkey}\g<2>",
+        source,
+        count=1,
     )
     if n != 1:
-        raise ValueError("could not find the pubkey value to replace")
+        raise ValueError("release.rs has no `PUBKEY` constant")
     return new
 
 
@@ -74,20 +82,20 @@ def backup(path: Path, now: dt.datetime) -> Path | None:
 
 
 def generate(key: Path) -> str:
-    """Run the tauri signer; return the public key (base64, as tauri.conf wants it)."""
-    key.parent.mkdir(parents=True, exist_ok=True)
+    """Run `cargo xtask keygen`; return the public key (base64, as the updater
+    holds it)."""
     r = subprocess.run(
-        ["bunx", "tauri", "signer", "generate", "--ci", "-p", "", "-w", str(key)],
-        cwd=paths.GUI,
+        ["cargo", "xtask", "keygen", "--write", str(key)],
+        cwd=paths.REPO,
         text=True,
         capture_output=True,
         check=False,
     )
     if r.returncode != 0:
-        sys.exit(f"tauri signer generate failed: {(r.stderr or r.stdout).strip()}")
+        sys.exit(f"cargo xtask keygen failed: {(r.stderr or r.stdout).strip()}")
     pub = key.with_name(key.name + ".pub")
     if not pub.is_file():
-        sys.exit(f"tauri signer generate left no {pub}")
+        sys.exit(f"cargo xtask keygen left no {pub}")
     os.chmod(key, 0o600)
     return pub.read_text(encoding="utf-8").strip()
 
@@ -116,18 +124,18 @@ def main() -> None:
     for existing in (key, pub):
         if existing.exists():
             print(f"kept aside    {existing} -> {backup_name(existing, now)}")
-    print(f"public key -> {TAURI_CONF} (plugins.updater.pubkey)")
+    print(f"public key -> {UPDATER} (PUBKEY)")
     if cli.dry_run:
         print("dry run: nothing changed")
         return
     for existing in (key, pub):
         backup(existing, now)
     pubkey = generate(key)
-    TAURI_CONF.write_text(
-        with_pubkey(TAURI_CONF.read_text(encoding="utf-8"), pubkey), encoding="utf-8"
+    UPDATER.write_text(
+        with_rust_pubkey(UPDATER.read_text(encoding="utf-8"), pubkey), encoding="utf-8"
     )
     print(
-        "\ndone. Commit apps/gui/src-tauri/tauri.conf.json before the next `make publish`.\n"
+        f"\ndone. Commit {UPDATER.relative_to(paths.REPO)} before the next `make publish`.\n"
         "Copies installed before this key cannot verify updates signed with it:\n"
         "they need one manual update to a release built with the new key."
     )

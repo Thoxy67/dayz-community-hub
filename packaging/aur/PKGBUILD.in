@@ -9,26 +9,39 @@ pkgdesc="DayZ launcher: server browser, mod manager and offline mode"
 arch=('x86_64')
 url="https://git.thoxy.xyz/thoxy/dayz-community-hub"
 license=('MIT')
+# The executable links only glibc, libgcc, zstd and libudev (ldd). The rest is
+# loaded with dlopen at run time: keyboard maps (libxkbcommon) and OpenGL/EGL
+# (libglvnd) always, Vulkan when there is a driver for it, Wayland or X11 for
+# the session the window opens on. File dialogs go through the desktop portal.
+# There is no web view any more, so none of its toolkit either.
 depends=(
-    'webkit2gtk-4.1'
-    'gtk3'
-    'libayatana-appindicator'
-    'openssl'
     'zstd'
     # libudev, for the controllers (gilrs)
     'systemd-libs'
+    'libxkbcommon'
+    'libglvnd'
+    'hicolor-icon-theme'
+)
+optdepends=(
+    'vulkan-icd-loader: the Vulkan renderer (OpenGL is used otherwise)'
+    'wayland: a Wayland session'
+    'libxcursor: an X11 session'
+    'libxrandr: an X11 session'
+    'libxi: an X11 session'
+    'xdg-desktop-portal: file and folder dialogs'
 )
 # `cargo` is provided by both `rust` and `rustup`; with rustup, the version
 # pinned in rust-toolchain.toml is installed on the first build. aws-lc-sys
-# (the TLS used for dayz.com news) needs cmake and nasm to compile.
+# (the TLS used for dayz.com news) needs cmake and nasm to compile; OpenSSL is
+# vendored (built from source, perl).
 makedepends=(
     'cargo'
-    'bun'
     'git'
     'python'
     'cmake'
     'nasm'
     'clang'
+    'perl'
 )
 provides=('dayz-community-hub')
 conflicts=('dayz-community-hub')
@@ -41,20 +54,18 @@ sha256sums=('SKIP')
 pkgver() {
     cd "$pkgname"
     local ver
-    ver="$(python3 -c "import json; print(json.load(open('apps/gui/src-tauri/tauri.conf.json'))['version'])")"
-    printf "%s.r%s.g%s" "$ver" "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+    ver="$(python3 -c "import tomllib; print(tomllib.load(open('Cargo.toml', 'rb'))['workspace']['package']['version'])")"
+    printf "%s.r%s.g%s" "${ver//-/_}" "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
 }
 
 prepare() {
     cd "$pkgname"
     export CARGO_HOME="$srcdir/cargo-home"
     cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
-    cd apps/gui
-    bun install --frozen-lockfile
 }
 
 build() {
-    cd "$pkgname/apps/gui"
+    cd "$pkgname"
     export CARGO_HOME="$srcdir/cargo-home"
     export CARGO_TARGET_DIR="$srcdir/$pkgname/target"
     # aws-lc-sys compiles its jitter entropy source at -O0, which it requires
@@ -62,9 +73,10 @@ build() {
     # after its own flags and win. That source is an extra one on top of the
     # system's getrandom, which stays: leave it out.
     export AWS_LC_SYS_NO_JITTER_ENTROPY=1
-    # No updater artefacts and no bundles: pacman owns this installation, and
-    # the in-app updater only ever replaces an AppImage.
-    bun run tauri build --no-bundle
+    # The egui window, under the launcher's name. pacman owns this
+    # installation: the in-app updater only ever replaces an AppImage or the
+    # Windows executable, and here it declines with a reason.
+    cargo build --frozen --release -p dayz-community-hub --bin dayz-community-hub
 }
 
 package() {
@@ -72,14 +84,16 @@ package() {
 
     install -Dm755 "target/release/dayz-community-hub" "$pkgdir/usr/bin/dayz-community-hub"
 
-    local icons=apps/gui/src-tauri/icons
-    install -Dm644 "$icons/32x32.png" "$pkgdir/usr/share/icons/hicolor/32x32/apps/dayz-community-hub.png"
-    install -Dm644 "$icons/64x64.png" "$pkgdir/usr/share/icons/hicolor/64x64/apps/dayz-community-hub.png"
-    install -Dm644 "$icons/128x128.png" "$pkgdir/usr/share/icons/hicolor/128x128/apps/dayz-community-hub.png"
-    install -Dm644 "$icons/128x128@2x.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/dayz-community-hub.png"
+    local size
+    for size in 32 64 128 256; do
+        install -Dm644 "apps/desktop/assets/app/icon-$size.png" \
+            "$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/dayz-community-hub.png"
+    done
 
-    install -Dm644 apps/gui/src-tauri/assets/linux/dayz-community-hub.desktop \
+    install -Dm644 packaging/linux/dayz-community-hub.desktop \
         "$pkgdir/usr/share/applications/dayz-community-hub.desktop"
+    install -Dm644 packaging/linux/dayz-community-hub.xml \
+        "$pkgdir/usr/share/mime/packages/dayz-community-hub.xml"
 
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

@@ -1,34 +1,27 @@
-"""keys.py without running the tauri signer."""
+"""keys.py without running the signer."""
 
 import datetime as dt
-import json
 import tempfile
 import unittest
 from pathlib import Path
 
 from dzch.keys import keys as k
 
-CONF = """{
-  "productName": "DayZ Community Hub",
-  "plugins": {
-    "updater": {
-      "pubkey": "OLDKEY",
-      "endpoints": ["https://example/latest.json"]
-    }
-  }
-}
-"""
 
+class RustPubkey(unittest.TestCase):
+    SRC = 'x\npub(crate) const PUBKEY: &str = "OLD";\nconst OTHER: &str = "OLD";\n'
 
-class Pubkey(unittest.TestCase):
-    def test_the_pubkey_is_replaced_and_nothing_else(self):
-        out = k.with_pubkey(CONF, "NEWKEY")
-        self.assertEqual(json.loads(out)["plugins"]["updater"]["pubkey"], "NEWKEY")
-        self.assertEqual(out.replace("NEWKEY", "OLDKEY"), CONF)
+    def test_only_the_constant_is_replaced(self):
+        out = k.with_rust_pubkey(self.SRC, "NEW")
+        self.assertEqual(out, self.SRC.replace('= "OLD";\nconst', '= "NEW";\nconst'))
 
-    def test_a_config_without_an_updater_is_refused(self):
+    def test_the_shipped_updater_has_the_constant(self):
+        src = k.UPDATER.read_text(encoding="utf-8")
+        self.assertEqual(k.with_rust_pubkey(src, "X").count('PUBKEY: &str = "X";'), 1)
+
+    def test_a_source_without_it_is_refused(self):
         with self.assertRaises(ValueError):
-            k.with_pubkey('{"plugins": {}}', "X")
+            k.with_rust_pubkey("nothing here", "X")
 
 
 class Backup(unittest.TestCase):

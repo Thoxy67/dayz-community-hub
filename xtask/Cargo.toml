@@ -1,6 +1,6 @@
 [package]
 name = "xtask"
-description = "Workspace tooling for the egui window: cargo xtask ci, assets, layers, parity, shots, visual-diff"
+description = "Workspace tooling: cargo xtask ci, assets, layers, parity, shots, visual-diff, and the updater signatures (sign, keygen)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,3 +12,11 @@ workspace = true
 [dependencies]
 serde_json.workspace = true
 image.workspace = true
+# `cargo xtask sign` / `keygen`: the updater's signatures, made the way `tauri signer`
+# made them (the same crate Tauri's CLI uses), from the same key file and password.
+minisign = "0.10"
+base64.workspace = true
+
+[dev-dependencies]
+# The signer's test checks its output with the updater's own verification.
+dz-hub.workspace = true

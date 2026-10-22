@@ -1,88 +1,75 @@
 # Build
 
-One Rust workspace (`crates/`, `apps/gui/src-tauri`), one Svelte interface
-(`apps/gui`), one Python project (`tools/`, run through
-[uv](https://docs.astral.sh/uv/)). `make` alone lists the targets; this page
-explains what each one does and why.
+One Rust workspace (`crates/`, `apps/desktop`, `xtask`) and one Python
+project (`tools/`, run through [uv](https://docs.astral.sh/uv/)). The launcher
+is the egui window `apps/desktop` (package `dayz-community-hub`) on the
+backend `crates/app/hub`; it builds the executable `dayz-community-hub`
+(`.exe` on Windows), the name every release has shipped (the Tauri/Svelte
+interface it replaced is gone). `make` alone lists the targets;
+this page explains what each one does and why.
 
 ## Layout
 
 ```
-apps/gui/            the interface (Svelte 5, Vite, bits-ui, intlayer)
-apps/gui/src-tauri/  the Tauri shell: commands, windows, the updater
-crates/<role>/<name> the Rust libraries: server list, A2S, SteamCMD, profile…
-tools/dzch/          the release tool (`dzch release`)
-scripts/             helpers the Makefile and the release tool call
-docs/                this page
+apps/desktop/        the egui window (the launcher's executable)
+crates/app/hub/      the backend the window talks to: state, commands, updater
+crates/<role>/<name> the domain libraries: server list, A2S, SteamCMD, profile…
+xtask/               cargo xtask: ci, shots, parity, visual-diff, the updater's signer
+packaging/           the AppImage container, the AUR PKGBUILD, the .desktop and MIME files
+tools/dzch/          the release tool (`dzch release`, `aur`, `keys`)
+scripts/             helpers the Makefile and the release tool call; icons.py
+                     rewrites apps/desktop/src/icons/list.rs from the SVG folder
 var/                 what builds leave behind (git-ignored): var/dist/
 ```
 
 ## Install
 
-- Rust, as pinned in `rust-toolchain.toml` when there is one (rustup picks it
-  up on its own), with `clippy` and `rustfmt`.
-- [bun](https://bun.sh), then `cd apps/gui && bun install`. The interface is
-  its own bun project with its own `bun.lock`; there is no package.json at the
-  root.
-- [Tauri's system dependencies](https://tauri.app/start/prerequisites/)
-  (webkit2gtk-4.1 and friends on Linux).
+- Rust, as pinned in `rust-toolchain.toml` (rustup picks it up on its own),
+  with `clippy` and `rustfmt`.
 - On Linux, libudev's headers for the controller support (gilrs, through
   `libudev-sys`): `libudev-dev` on Debian/Ubuntu, `systemd-libs` on Arch
-  (always installed), `systemd-devel` on Fedora. At run time the app reads
-  pads from `/dev/input/event*`; without access to them it starts anyway and
-  says so on stderr ("controllers unavailable").
+  (always installed), `systemd-devel` on Fedora; and zstd's (`libzstd-dev`).
+  At run time the app reads pads from `/dev/input/event*`; without access to
+  them it starts anyway and says so on stderr ("controllers unavailable").
 - uv for everything under `tools/`: `tools/pyproject.toml` and `tools/uv.lock`
   are the one Python project, and every `make` target that needs it runs it as
   `uv run --project tools ...`. Nothing here touches the system Python.
 - For releases only: `podman` (the AppImage is built in a container, see
   below), `cargo install cargo-xwin` and `rustup target add
-x86_64-pc-windows-msvc` (Windows), `zip`. `zig` and `cargo install
-cargo-zigbuild` for `make build` (Linux glibc floor).
+  x86_64-pc-windows-msvc` (Windows). `zig` and `cargo install
+  cargo-zigbuild` for `make build` (Linux glibc floor). No bun, no Tauri CLI.
 
 ## Every day
 
-### `make dev`
+### `make dev`, `make dev-mock`
 
-Runs the app, rebuilding as you edit (`cd apps/gui && bun run tauri dev`).
-Plain cargo, for the host, into `target/debug`: no zig and no glibc floor, a
-dev build only has to run here. A debug build also rewrites
-`apps/gui/src/lib/ipc/bindings.ts` at start-up (see `make bindings`).
+`cargo run -p dayz-community-hub`, the window on the real backend, into
+`target/debug`: plain cargo for the host, no zig and no glibc floor, a dev
+build only has to run here. `make dev-mock` adds `--mock`, an invented world
+(9 500 servers, mods, a profile) in a temporary directory.
 
 ### `make check`
 
-Everything a commit must pass, fastest first so a failure shows before the
-long Rust build: `cargo fmt --check`, `ruff check tools`, `pytest` over
-`tools/`, `bunx svelte-check --threshold error` and `bun test` in `apps/gui`,
-then `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test
---workspace` (both with an absolute `CARGO_TARGET_DIR=$(CURDIR)/target/check`,
-so a check never fights `make dev` over the build lock or leaves artifacts it
-cannot use). CI runs the same Rust and interface steps.
+Everything a commit must pass, fastest first: `cargo fmt --all --check`,
+`ruff check tools`, `pytest` over `tools/`, then `cargo xtask ci` (fmt,
+clippy `-D warnings`, the tests of `dz-hub`, the window and `xtask`, the
+assets, layers and parity checks, and `cargo xwin check` for Windows when
+cargo-xwin is installed), then clippy and the tests of the domain crates
+`xtask ci` does not cover. All with an absolute
+`CARGO_TARGET_DIR=$(CURDIR)/target/check`, so a check never fights `make dev`
+over the build lock.
 
 ### `make fmt`
 
-Formats everything: `cargo fmt --all`, prettier over the interface and the
-Markdown files (run from `apps/gui` because that is where its plugins are
-resolved), and `ruff format tools`.
+`cargo fmt --all` and `ruff format tools`.
 
 ### `make screenshots`
 
-Photographs every view without Tauri (`scripts/screenshots.sh`): builds the
-interface on its pretend backend (`VITE_MOCK=1`, `lib/ipc/mock.ts`) into
-`apps/gui/dist-mock-shots`, serves it with `vite preview` and has a headless
-Chromium (brave, chromium or google-chrome; `BROWSER=` to choose) write
-`var/screenshots/<view>.png`. `VIEWS="servers mods"` limits the views,
-`QUERY="theme=…&rail=collapsed"` adds URL flags, `SIZE=1400,860` sets the
-window.
-
-### `make bindings`
-
-The interface calls the Rust commands through
-`apps/gui/src/lib/ipc/bindings.ts`, generated by
-[tauri-specta](https://github.com/specta-rs/tauri-specta) from the commands'
-own signatures: never edit it by hand. `make bindings` regenerates it without
-launching the app, by running the `export_bindings` test of the
-`dayz-community-hub` crate. Run it after changing a command, a DTO or an
-event, and commit the result with the Rust change.
+`cargo xtask shots`: every view rendered headless on the mock hub (the
+`ui_shot` example) into `var/shots/<view>.png`; `VIEWS="servers mods"` limits
+the views. `cargo xtask visual-diff` compares them with `var/reference/`, the
+Svelte interface's screenshots kept as the visual record (files: nothing
+regenerates them now).
 
 ## Publish
 
@@ -99,14 +86,30 @@ It builds the **AppImage** and the **Windows zip** (no .deb/.rpm: Arch users
 have the AUR package), signs both, and publishes the release on
 git.thoxy.xyz/thoxy/dayz-community-hub **and** its GitHub mirror
 (Thoxy67/dayz-community-hub; both tokens are required unless `SKIP_GITHUB=1`).
-`latest.json` (the manifest both updaters read: `platforms.linux-x86_64` is the
-AppImage, `platforms.windows-x86_64` the zip) goes on the release and on the
-rolling `latest` release, the endpoint in tauri.conf.json.
+`latest.json` (the manifest the updater reads: `platforms.linux-x86_64` is the
+AppImage, `platforms.windows-x86_64` the zip, each with its signature) goes on
+the release and on the rolling `latest` release, the endpoint built into
+`dz-hub` (`crates/app/hub/src/features/updater/release.rs`, `ENDPOINT`). Names,
+format and endpoint are the Tauri build's, so a copy of the Tauri launcher
+updates to the egui one like to any other release.
 
 **Notes** come from CHANGELOG.md: a `## x.y.z` section, else the `## Unreleased`
 one (renamed to the version on release), else the jj log since the last tag
 (`scripts/changelog.sh`). They are the release body on both forges and the
 update banner's text.
+
+### Signatures: `cargo xtask sign`
+
+Every file the updater downloads has a `.sig` beside it: base64 of a minisign
+signature (prehashed, trusted comment `timestamp:…\tfile:<name>`), the format
+`tauri signer sign` wrote. `cargo xtask sign --key <key file> <file>` makes it
+(`xtask/src/sign.rs`, the `minisign` crate the Tauri CLI uses), from the same
+key file (base64 of a minisign secret key, scrypt-encrypted) and the same
+password, read from `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; it never prompts,
+prints or copies the key. Its tests sign with a throwaway key and check the
+result with `dz-hub`'s updater verification and, when installed, the
+`minisign` CLI. `dzch release` signs on the host after each build: the key
+never enters the AppImage container.
 
 ### AUR: `make aur`
 
@@ -118,131 +121,137 @@ make aur FORCE=1   # push even when nothing changed
 ```
 
 The PKGBUILD lives in `packaging/aur/PKGBUILD.in`; `make aur` fills in the
-version (`<app version>.r<commits on master>.g<hash>`, what its pkgver()
-computes), writes `.SRCINFO` with `makepkg --printsrcinfo`, and pushes from a
-clone in var/aur/ (over SSH; `DZCH_AUR_REMOTE` overrides the remote). Publish
-the source first (`make publish` pushes `master`): the package builds what is
-on `master`.
+version (`<workspace version>.r<commits on master>.g<hash>`, what its
+pkgver() computes from `Cargo.toml`), writes `.SRCINFO` with `makepkg
+--printsrcinfo`, and pushes from a clone in var/aur/ (over SSH;
+`DZCH_AUR_REMOTE` overrides the remote). The package builds with cargo only
+(`cargo build --frozen --release -p dayz-community-hub --bin
+dayz-community-hub`) and installs the executable, the .desktop and MIME files
+(`packaging/linux/`), the hicolor icons (`apps/desktop/assets/app/icon-*.png`)
+and the licence. The executable links glibc, libgcc, zstd and libudev only;
+libxkbcommon, OpenGL/EGL (libglvnd), Vulkan, Wayland and X11 are loaded with
+dlopen, hence `depends`/`optdepends`. Publish the source first (`make
+publish` pushes `master`): the package builds what is on `master`.
 
 ### Keys: `make keys`
 
-`make keys` makes a new updater signing key with `tauri signer generate`, where
-publish reads it (`TAURI_SIGNING_KEY_FILE`, else
-`~/.config/dayz-community-hub/updater.key`), moving any existing key aside as
-`updater.key.bak-<timestamp>`, and writes the public half into tauri.conf.json.
-Commit tauri.conf.json before the next publish. **Every copy installed before
-the new key refuses updates signed with it**: those need one manual update.
+`make keys` makes a new updater signing key with `cargo xtask keygen` (no
+password, Tauri's format), where publish reads it (`TAURI_SIGNING_KEY_FILE`,
+else `~/.config/dayz-community-hub/updater.key`), moving any existing key
+aside as `updater.key.bak-<timestamp>`, and writes the public half into
+`crates/app/hub/src/features/updater/release.rs` (`PUBKEY`). Commit that before the next publish.
+**Every copy installed before the new key refuses updates signed with it**:
+those need one manual update.
 
-`tools/dzch/release/release.py` (`dzch release`) bumps the version, builds
-both platforms, signs them for the updater, commits and tags the version,
-pushes, and publishes. Run it again after anything fails and it carries on
-from where it stopped: a version already tagged is not bumped again, files
-already built and signed in `var/dist/vX.Y.Z/` are not rebuilt, an asset
-already uploaded is not sent again.
+### `dzch release`
 
-**Always on this machine, never in CI.** The old tag-triggered Forgejo
-workflows (`release.yml`, `prerelease.yml`) are gone: they built each platform
-in a separate job and stitched `latest.json` together from whatever signatures
-had been uploaded, which is what the local tool now does in one place, with
-the key never leaving this machine. `mirror-releases.yml` stays, a manual
+`tools/dzch/release/release.py` bumps the version, builds both platforms,
+signs them for the updater, commits and tags the version, pushes, and
+publishes. Run it again after anything fails and it carries on from where it
+stopped: a version already tagged is not bumped again, files already built and
+signed in `var/dist/vX.Y.Z/` are not rebuilt, an asset already uploaded is not
+sent again.
+
+**Always on this machine, never in CI**: it needs the signing key, and one
+host building both platforms (Windows through cargo-xwin) is what makes the
+two halves of `latest.json` agree. `mirror-releases.yml` stays, a manual
 workflow that back-fills every past Forgejo release onto GitHub.
 
-**What it needs** (each looked up in the environment, then `apps/gui/.env`,
-then `~/.config/dayz-community-hub/`):
+**What it needs** (each looked up in the environment, then a git-ignored
+`.env` at the repository root, names in `.env.example`, then
+`~/.config/dayz-community-hub/`):
 
 - **The signing key.** `TAURI_SIGNING_KEY_FILE` (its password, if any, in
   `TAURI_SIGNING_KEY_PASS`), else `~/.config/dayz-community-hub/updater.key`.
-  Its public half is baked into `apps/gui/src-tauri/tauri.conf.json`
-  (`plugins.updater.pubkey`); every installed copy refuses an update not signed
-  by it, so regenerating it means every copy already out there has to be
-  updated by hand.
+  Its public half is built into `dz-hub` (`release.rs`, `PUBKEY`); every
+  installed copy refuses an update not signed by it.
 - **A Forgejo token** that can write releases on `thoxy/dayz-community-hub`:
   `FORGEJO_TOKEN`, else `~/.config/dayz-community-hub/forge-token`.
-- **A GitHub token** for the `Thoxy67/dayz-community-hub` mirror, optional:
+- **A GitHub token** for the `Thoxy67/dayz-community-hub` mirror:
   `GH_PAT` (or `GITHUB_TOKEN`), else `~/.config/dayz-community-hub/github-token`.
-  Without one the mirror is skipped, with a notice.
 - **A clean working copy.** A release carries only its version bump, its
   changelog and the lock file; anything else stops it. The tool commits with jj
   (the repository is a colocated jj + git repo) and falls back to git.
 
 **What it does:** picks the version (the current one if never released,
-otherwise the next patch) and writes it to `Cargo.toml`, `tauri.conf.json` and
-`apps/gui/package.json`; writes the notes into `CHANGELOG.md`; builds
+otherwise the next patch) and writes it to `Cargo.toml` (the one place it
+lives); writes
+the notes into `CHANGELOG.md`; builds
 
-- Linux: `tauri build --bundles appimage` in the Ubuntu 22.04 container (the
-  same build as `make appimage`, see below), `NO_STRIP` and
-  `createUpdaterArtifacts`, which signs the AppImage;
-- Windows: `tauri build --runner cargo-xwin --no-bundle`, then zips
-  `dayz-community-hub.exe` and signs the zip with `tauri signer sign`. The zip
-  is what the Windows updater (`src-tauri`'s updater module) downloads, checks
-  against the public key and unpacks over the running executable;
+- Linux: `scripts/appimage.sh` in the Ubuntu 22.04 container (the same build
+  as `make appimage`, see below), then `cargo xtask sign` on the AppImage;
+- Windows: `cargo xwin build --release -p dayz-community-hub --bin
+  dayz-community-hub` (with `DZCH_REQUIRE_WINRES=1`: no executable without its
+  icon, version information and manifest), zips `dayz-community-hub.exe` and
+  signs the zip. The zip is what the Windows updater downloads, checks against
+  the public key and swaps over the running executable;
 
 stages everything in `var/dist/vX.Y.Z/` under the names releases have always
 used (`dayz-community-hub-vX.Y.Z-x86_64-windows.zip`, `…-x86_64.AppImage` and
-their two `.sig`); commits `release: vX.Y.Z`, tags it,
-pushes `master` and the tag; publishes the release on Forgejo with every file
-and `latest.json`, uploads `latest.json` to the rolling `latest` release (the
-endpoint installed copies poll:
+their two `.sig`); commits `release: vX.Y.Z`, tags it, pushes `master` and the
+tag; publishes the release on Forgejo with every file and `latest.json`,
+uploads `latest.json` to the rolling `latest` release (the endpoint installed
+copies poll:
 `https://git.thoxy.xyz/thoxy/dayz-community-hub/releases/download/latest/latest.json`),
 then does the same on the GitHub mirror.
 
-Write the changelog section by hand under `## x.y.z` in `CHANGELOG.md` before
-publishing (it becomes the release notes and the update's notes); without one,
-`scripts/changelog.sh` fills it in from the commit titles since the last tag.
-
 **Previews** (`make prerelease`) build the same files with the preview's
-version given to the build, and publish them as a Forgejo (and GitHub)
-pre-release `vX.Y.Z-pre`. They touch nothing in the repository (no version,
-commit, tag or changelog; uncommitted changes are allowed, and said so in the
-notes) and **never `latest.json`**: the updater has a single channel, so a
-preview is only ever installed by hand. Publishing the same preview again
-replaces it, and each new preview or release removes the previews before it;
-stable releases are never removed.
+version given to the build as `DZCH_VERSION` (what the executable reports and
+the updater compares; `dz_hub::VERSION`), and publish them as a Forgejo (and
+GitHub) pre-release `vX.Y.Z-pre`. They touch nothing in the repository and
+**never `latest.json`**: the updater has a single channel, so a preview is
+only ever installed by hand. Publishing the same preview again replaces it,
+and each new preview or release removes the previews before it; stable
+releases are never removed.
 
 `--dry-run` (`uv run --project tools dzch release --dry-run`) says which
 version would go out and with which notes, and changes nothing.
 
 ## The AppImage (container)
 
-An AppImage carries the libraries it was built against: webkit2gtk, gtk, glib
-and some 200 more. Each asks for the glibc of the system that built it, and
-the host's own glibc must be at least that. Built on this machine (Arch), the
-v0.5.0 AppImage needed **glibc 2.44** and so ran on a current Arch only.
+`make appimage` (`scripts/appimage.sh [output]`, default
+`var/dist/dayz-community-hub-x86_64.AppImage`) builds the executable in an
+**Ubuntu 22.04** container (`packaging/appimage/Containerfile`), so it asks
+for glibc 2.35 and runs on any distribution with glibc 2.35 or newer (Ubuntu
+22.04+, Debian 12+, Fedora 36+, Mint 21+, Arch, a current SteamOS…), then
+`packaging/appimage/build.sh` assembles the AppDir and runs appimagetool.
 
-`make appimage` and `make publish` therefore build it in an **Ubuntu 22.04**
-container (`packaging/appimage/Containerfile`, run by `scripts/appimage.sh`):
-glibc 2.35, the oldest mainstream release that ships webkit2gtk-4.1, which
-Tauri 2 needs. The AppImage runs on any distribution with glibc 2.35 or newer
-(Ubuntu 22.04+, Debian 12+, Fedora 36+, Mint 21+, Arch, a current SteamOS…).
-
+- **What is in it:** `usr/bin/dayz-community-hub`, the .desktop
+  (`packaging/linux/dayz-community-hub.desktop`: same name, `Exec`, icon and
+  MIME types `x-scheme-handler/dzch;application/x-dzch` as before), the MIME
+  package for `.dzch` files, the hicolor icons (32 to 256) and `AppRun` (a
+  link to the executable). **No library**: the executable needs only glibc,
+  libgcc, libzstd and libudev, which every desktop has (Mesa itself links
+  libzstd), and wgpu/winit load Vulkan, OpenGL, Wayland, X11 and xkbcommon
+  with dlopen, which must be the host's own (its drivers, its compositor).
+- **appimagetool** 1.9.1 and the static type 2 runtime (no libfuse2 needed on
+  the user's machine) are downloaded when the image is built, pinned by
+  version and sha256 in the Containerfile; nothing is fetched at AppImage
+  build time.
 - **Needs** `podman` (`CONTAINER_ENGINE=docker` for docker). The first run
   builds the image (tagged with the Containerfile's hash, so editing it
   rebuilds it) and installs the toolchain `rust-toolchain.toml` names into a
-  volume; later runs reuse both, plus the cargo registry and linuxdeploy
-  (volumes `dzch-appimage-*`; `podman volume rm` them to start clean).
-- The repository is mounted at `/src`, `apps/gui/node_modules` included, so
-  `bun install` on the host first. Cargo writes to `target/appimage/`, the
-  AppImage lands in `target/appimage/release/bundle/appimage/`.
-- **Check an AppImage:** `./x.AppImage --appimage-extract`, then
-  `for f in squashfs-root/usr/bin/* $(find squashfs-root -name '*.so*' -type f); do objdump -T $f | grep -o 'GLIBC_[0-9.]*'; done | sort -Vu | tail -1`
+  volume; later runs reuse both, plus the cargo registry (volumes
+  `dzch-appimage-*`; `podman volume rm` them to start clean). The repository
+  is mounted at `/src`; cargo writes to `target/appimage/`.
+- **Nothing is signed in the container**: the key stays on the host.
+- **Check an AppImage:** `./x.AppImage --version` prints the version;
+  `./x.AppImage --appimage-extract`, then
+  `objdump -T squashfs-root/usr/bin/dayz-community-hub | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1`
   must print `GLIBC_2.35` or lower.
 
 ## glibc floor (zig)
 
 A binary linked on this machine (Arch) asks for the newest glibc symbol
 versions the host has and refuses to start on anything older. `make build`
-therefore links the app with
+therefore links the executable with
 [`cargo-zigbuild`](https://github.com/rust-cross/cargo-zigbuild) against zig's
-glibc stubs at **2.35** (Ubuntu 22.04, the oldest mainstream release that ships
-webkit2gtk-4.1, which Tauri 2 needs anyway).
-
-How it is wired: `cargo zigbuild` takes the floor only as a suffix on the
-triple (`--target x86_64-unknown-linux-gnu.2.35`), and `tauri build` refuses
-that triple. So tauri gets `--runner scripts/cargo-zigbuild.sh --target
-x86_64-unknown-linux-gnu`, and the script adds the suffix before handing the
-command to `cargo zigbuild`. The output lands in
-`target/x86_64-unknown-linux-gnu/release/`, and the bundles in
-`target/x86_64-unknown-linux-gnu/release/bundle/`, not `target/release/bundle/`.
+glibc stubs at **2.35**, the AppImage's floor:
+`scripts/cargo-zigbuild.sh build --release -p dayz-community-hub --bin
+dayz-community-hub --target x86_64-unknown-linux-gnu`. The script adds the
+floor as the triple's suffix (`x86_64-unknown-linux-gnu.2.35`, the only way
+cargo-zigbuild takes it); the output lands in
+`target/x86_64-unknown-linux-gnu/release/dayz-community-hub`.
 
 - **Needs** `zig` and `cargo-zigbuild`. Without either, the script says so in
   one line and runs plain cargo with the same arguments.
@@ -250,14 +259,12 @@ command to `cargo zigbuild`. The output lands in
   machine's glibc: fine for a local build, never for one handed to others.
 - **No system library that needs a newer glibc.** zig refuses to link one
   (`referenced by /usr/lib/libssl.so (disallowed by
---no-allow-shlib-undefined)`). That is why OpenSSL, which native-tls uses on
-  Linux, is `vendored` in `apps/gui/src-tauri/Cargo.toml`: built from source
-  by zig and linked statically.
+  --no-allow-shlib-undefined)`). That is why OpenSSL, which native-tls uses on
+  Linux, is `vendored` in `crates/app/hub/Cargo.toml`: built from source by
+  zig and linked statically.
 - **Check a binary's floor:**
   `objdump -T target/x86_64-unknown-linux-gnu/release/dayz-community-hub | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1`
   must print `GLIBC_2.35` or lower.
-- It covers the binary only, not libraries bundled next to it: that is why
-  the AppImage is built in the container instead.
 
 ## Windows
 
@@ -269,46 +276,30 @@ cargo install cargo-xwin                   # once
 make windows
 ```
 
-`make windows` runs `bunx tauri build --runner cargo-xwin --target
-x86_64-pc-windows-msvc --no-bundle`, which leaves a plain executable in
-`target/x86_64-pc-windows-msvc/release/` rather than MSI/NSIS bundles (those
-need Windows-only tooling), and zips it into
+`make windows` runs `cargo xwin build --release -p dayz-community-hub
+--bin dayz-community-hub --target x86_64-pc-windows-msvc` with
+`DZCH_REQUIRE_WINRES=1`, and zips the executable into
 `var/dist/dayz-community-hub-x86_64-windows.zip`. That zip is unsigned: the
 signed one a release ships is made by `make publish`.
 
 What makes the one executable enough on a bare Windows 10/11:
 
-- **The C runtime is linked in.** Tauri's `build > windows > staticVCRuntime`
-  defaults to true, so the exe imports only the Universal CRT (part of
-  Windows 10+) and no `vcruntime140.dll`: no Visual C++ redistributable to
-  install. Check with `llvm-objdump -p <exe> | grep "DLL Name"`: no
-  `vcruntime`, no `msvcp`.
-- **No console window**: `windows_subsystem = "windows"` in `src/main.rs`
-  for release builds. With no console a panic would close the window without
-  a word, so a release build on Windows shows it in a message box first
-  (with what to do when the WebView2 runtime is missing or broken).
-- **The manifest** is `apps/gui/src-tauri/windows/app.manifest`, embedded by
-  `build.rs`: Common Controls v6 (the native dialogs), `asInvoker`, Windows
-  10/11 `supportedOS`, per-monitor-v2 DPI awareness and `longPathAware`.
-- **The window** differs on Windows through `tauri.windows.conf.json`, which
-  Tauri merges over `tauri.conf.json` when building for Windows (a merge
-  patch: the `app.windows` array is replaced whole, so keep both entries in
-  step). It is opaque there, painted `#111310` (the default theme's
-  background) until the page draws: a transparent window costs WebView2 and
-  DWM an alpha-blended composition on every frame, and the interface paints
-  an opaque surface over all of it anyway.
-- **WebView2** is not in the zip: Windows 10 and 11 ship the Evergreen
-  runtime. Its profile (cache, local storage) is in
-  `%LOCALAPPDATA%\com.thoxy.dayz-community-hub\EBWebView`, Tauri's default,
-  never beside the exe. The launcher's own data is in
-  `%APPDATA%\dayz-community-hub`, the Steamworks library in
-  `%LOCALAPPDATA%\dayz-community-hub\steamworks`.
+- **The resources** are embedded by `apps/desktop/build.rs` (winresource,
+  `llvm-rc` under cargo-xwin): the icon (`apps/desktop/assets/app/icon.ico`,
+  icon 0, which Explorer and the `dzch://`/`.dzch` registrations show), the
+  VERSIONINFO (product "DayZ Community Hub", `OriginalFilename`
+  `dayz-community-hub.exe`) and the manifest `apps/desktop/windows/app.manifest`
+  (Common Controls v6, `asInvoker`, Windows 10/11 `supportedOS`,
+  per-monitor-v2 DPI awareness, `longPathAware`). Check with
+  `llvm-readobj --coff-resources <exe>`.
+- **No console window**: `windows_subsystem = "windows"` in release builds; a
+  panic or a start-up failure (no graphics adapter) is shown in a message box.
+- **The window** is drawn with wgpu (Direct3D 12, else Vulkan): no WebView2.
+- **The data** is where the Tauri build kept it: `%APPDATA%\dayz-community-hub`,
+  the Steamworks library in `%LOCALAPPDATA%\dayz-community-hub\steamworks`.
 - **Only the executable** goes in the zip. The updater swaps it in place: the
   running exe is renamed to `dayz-community-hub.old.exe` (removed at the next
   start), the new one moved in, and the old one moved back if that fails.
-- The library crate is built as an `rlib` only: Tauri's template also asks
-  for a `staticlib` and a `cdylib` (for mobile), each another full LTO link
-  in a release build.
 
 ## Steamworks library
 
@@ -337,24 +328,17 @@ lets an application ship the redistributable.
 
 ## CI
 
-`.forgejo/workflows/ci.yml` runs on every push to `master`: the interface
-check, `cargo test --workspace` and a no-bundle build, in the image built by
-`ci-image.yml` from `.forgejo/ci-image/Dockerfile`. It builds nothing that is
+`.forgejo/workflows/ci.yml` runs on every push to `master`, in the image
+`.forgejo/ci-image/Dockerfile` builds (rebuilt by `ci-image.yml` when that
+file changes): `cargo fmt --check`, the workspace's tests and clippy
+`-D warnings`, `cargo xtask assets`, `layers` and `parity --check`, and
+`cargo xwin check` of the window and its backend. It builds nothing that is
 published.
 
 ## Known failures
 
-- **`NO_STRIP=true`** is set by `make build`/`make appimage`/`make publish`
-  because linuxdeploy (which makes the AppImage) carries its own `strip` from
-  an old binutils that cannot read the `.relr.dyn` sections a current Arch
-  toolchain writes into every system library: it fails on each one and the
-  AppImage is never made, with an error that only says linuxdeploy failed. The
-  binary itself is already stripped by cargo (`strip = true` in the release
-  profile).
 - **Packaging with C LTO** (`makepkg` with `lto` on) breaks the link of
   `aws-lc-sys`: the AUR PKGBUILD sets `options=(!lto)`.
-- **`bun run build` while `make dev` is running** can break the open window:
-  intlayer's Vite plugin regenerates its dictionaries, and a full build racing
-  that corrupts the running session. Check a frontend change with `bunx
-svelte-check --threshold error` instead, and restart `make dev` if the
-  window breaks.
+- **A release build without `-p dayz-community-hub --bin dayz-community-hub`**
+  builds every crate of the workspace (xtask too): every build command here
+  names both.

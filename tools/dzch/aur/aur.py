@@ -19,7 +19,6 @@ PKGBUILD's own pkgver() computes on a user's machine, read here from
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import shutil
 import subprocess
@@ -32,7 +31,7 @@ TEMPLATE = paths.REPO / "packaging" / "aur" / "PKGBUILD.in"
 README = paths.REPO / "packaging" / "aur" / "README.md"
 GITIGNORE = paths.REPO / "packaging" / "aur" / "gitignore"
 LICENSE = paths.REPO / "LICENSE"
-TAURI_CONF = paths.TAURI / "tauri.conf.json"
+CARGO_TOML = paths.REPO / "Cargo.toml"
 AUR_DIR = paths.VAR / "aur"
 CLONE = AUR_DIR / PKG
 BUILD = AUR_DIR / "build"
@@ -96,7 +95,11 @@ def source_ref() -> str:
 
 def current_pkgver() -> tuple[str, str]:
     ref = source_ref()
-    version = json.loads(TAURI_CONF.read_text(encoding="utf-8"))["version"]
+    # The workspace version, as the PKGBUILD's pkgver() reads it (Cargo.toml is
+    # the one place the version lives).
+    from dzch.release.release import read_version
+
+    version = read_version(CARGO_TOML.read_text(encoding="utf-8"))
     count = int(sh("git", "rev-list", "--count", ref, cwd=paths.REPO).strip())
     short = sh("git", "rev-parse", "--short=7", ref, cwd=paths.REPO).strip()
     subject = sh("git", "log", "-1", "--format=%s", ref, cwd=paths.REPO).strip()

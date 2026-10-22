@@ -16,13 +16,14 @@ running it again after a failure carries on from where it stopped:
   1. check    the working copy holds nothing but a release in progress, the
               signing key is there, and so is the Forgejo token
   2. version  the current one if it has never been tagged, else the patch + 1;
-              written to Cargo.toml, tauri.conf.json and package.json, and the
-              notes since the last tag written into CHANGELOG.md
-  3. build    the Linux AppImage (signed by tauri: what the Linux updater
-              downloads) and Windows (the .exe through cargo-xwin, zipped and
-              signed: what the Windows updater downloads), staged in
-              var/dist/vX.Y.Z (skipped when the signed files of this version
-              are already there). Arch users get the AUR package (make aur).
+              written to Cargo.toml (the one place it lives), and the notes
+              since the last tag written into CHANGELOG.md
+  3. build    the egui executable `dayz-community-hub`: the Linux AppImage
+              (Ubuntu 22.04 container) and Windows (the .exe through
+              cargo-xwin, zipped), each signed with `cargo xtask sign` (what
+              the updaters download and check), staged in var/dist/vX.Y.Z
+              (skipped when the signed files of this version are already
+              there). Arch users get the AUR package (make aur).
   4. tag      commit `release: vX.Y.Z`, tag it, push master and the tag
   5. publish  release vX.Y.Z on thoxy/dayz-community-hub with every file,
               `latest.json` on it and on the rolling `latest` release, which is
@@ -41,7 +42,7 @@ repository and never `latest.json`: the updater has no preview channel, so a
 preview is for downloading by hand. Publishing the same preview again replaces
 it, and a new preview or release removes the previews before it.
 
-Secrets, each from the environment, else apps/gui/.env, else ~/.config:
+Secrets, each from the environment, else ./.env (see .env.example), else ~/.config:
 
   signing key   TAURI_SIGNING_KEY_FILE    ~/.config/dayz-community-hub/updater.key
   key password  TAURI_SIGNING_KEY_PASS    (empty when unset)
@@ -53,7 +54,6 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-import glob
 import json
 import mimetypes
 import os
@@ -71,21 +71,19 @@ import zipfile
 from dzch import paths
 
 REPO = str(paths.REPO)
-GUI = str(paths.GUI)
 CARGO = os.path.join(REPO, "Cargo.toml")
-TAURI_CONF = os.path.join(REPO, "apps", "gui", "src-tauri", "tauri.conf.json")
-PACKAGE_JSON = os.path.join(REPO, "apps", "gui", "package.json")
 CHANGELOG = os.path.join(REPO, "CHANGELOG.md")
-DOTENV = os.path.join(GUI, ".env")
+# Secrets the environment does not set, as `KEY=value` lines (git-ignored; the
+# names are in .env.example). It lived in apps/gui/ until that went (M4.2).
+DOTENV = os.path.join(REPO, ".env")
 DIST = str(paths.DIST)
 
-# The AppImage is built in an Ubuntu 22.04 container (scripts/appimage.sh),
-# into its own target directory.
+# The launcher's package (apps/desktop) and its executable, under the name
+# every release has used. The AppImage is built in an Ubuntu 22.04 container
+# (scripts/appimage.sh), into its own target directory.
+PACKAGE = "dayz-community-hub"
+BIN = "dayz-community-hub"
 WINDOWS_TARGET = "x86_64-pc-windows-msvc"
-LINUX_BUNDLE = os.path.join(REPO, "target", "appimage", "release", "bundle")
-WINDOWS_EXE = os.path.join(
-    REPO, "target", WINDOWS_TARGET, "release", "dayz-community-hub.exe"
-)
 
 FORGE = "https://git.thoxy.xyz"
 OWNER = "thoxy"
@@ -101,8 +99,6 @@ RELEASE_FILES = {
     "Cargo.toml",
     "Cargo.lock",
     "CHANGELOG.md",
-    "apps/gui/package.json",
-    "apps/gui/src-tauri/tauri.conf.json",
 }
 
 
@@ -110,7 +106,7 @@ RELEASE_FILES = {
 
 
 def read_dotenv(text: str) -> dict[str, str]:
-    """`KEY=value` lines, as apps/gui/.env holds them: comments and blank
+    """`KEY=value` lines, as .env holds them: comments and blank
     lines skipped, one level of matching quotes removed."""
     out = {}
     for raw in text.splitlines():
@@ -132,7 +128,7 @@ def setting(
     file: str | None = None,
 ) -> str:
     """The first of `names` set (non-empty) in the environment, then in
-    apps/gui/.env, then the contents of `file`; "" when none is."""
+    .env, then the contents of `file`; "" when none is."""
     for source in (env, dotenv):
         for name in names:
             value = source.get(name, "").strip()
@@ -147,7 +143,7 @@ def key_path(
     env: dict[str, str], dotenv: dict[str, str], config_dir: str = CONFIG_DIR
 ) -> str:
     """Where the updater's signing key is: `TAURI_SIGNING_KEY_FILE` (the name
-    apps/gui/.env.example has always used), else the config directory."""
+    .env.example has always used), else the config directory."""
     named = setting(("TAURI_SIGNING_KEY_FILE",), env, dotenv)
     return (
         os.path.expanduser(named) if named else os.path.join(config_dir, "updater.key")
@@ -186,12 +182,6 @@ def set_cargo_version(cargo_toml: str, version: str) -> str:
         count=1,
         flags=re.MULTILINE | re.DOTALL,
     )
-
-
-def set_json_version(text: str, version: str) -> str:
-    """The first `"version": "…"` of a JSON file (tauri.conf.json,
-    package.json), edited as text so the file keeps its layout."""
-    return re.sub(r'("version":\s*")[^"]+(")', rf"\g<1>{version}\g<2>", text, count=1)
 
 
 def next_version(
@@ -331,8 +321,9 @@ def asset_url(version: str, name: str) -> str:
 def manifest(
     version: str, notes: str, windows_sig: str, linux_sig: str, now: dt.datetime
 ) -> dict:
-    """`latest.json` as the updater reads it: the Windows zip (what
-    src-tauri's updater downloads, verifies and unpacks) and the AppImage."""
+    """`latest.json` as the updater reads it (Tauri's format, which dz-hub's
+    updater keeps): the Windows zip (downloaded, verified and unpacked over
+    the running executable) and the AppImage."""
     names = asset_names(version)
     return {
         "version": version,
@@ -372,6 +363,19 @@ def staged_complete(stage: str, version: str) -> bool:
     )
 
 
+def windows_exe(env: dict[str, str]) -> str:
+    """Where cargo-xwin leaves the executable: under CARGO_TARGET_DIR when set."""
+    target = env.get("CARGO_TARGET_DIR") or os.path.join(REPO, "target")
+    return os.path.join(target, WINDOWS_TARGET, "release", f"{BIN}.exe")
+
+
+def build_env(env: dict[str, str], version: str, pre: bool) -> dict[str, str]:
+    """The environment of a build: a preview's version given to it as
+    DZCH_VERSION (what the executable reports and the updater compares),
+    a release's left to Cargo.toml (an inherited DZCH_VERSION is cleared)."""
+    return dict(env, DZCH_VERSION=version if pre else "")
+
+
 def plan(version: str, tag: str, notes: str, pre: bool, skip_github: bool) -> str:
     """What a run would do, for `--dry-run`: every file, every upload and the
     manifest, and nothing else touched."""
@@ -382,13 +386,13 @@ def plan(version: str, tag: str, notes: str, pre: bool, skip_github: bool) -> st
     lines = [
         f"version      {version}{' (preview: nothing in the repository changes)' if pre else ''}",
         f"stage        {os.path.join(DIST, 'v' + version)}",
-        "build        Linux AppImage (Ubuntu 22.04 container, signed by tauri)",
-        "             Windows exe (cargo-xwin), zipped and signed",
+        f"build        {BIN} (package {PACKAGE}): Linux AppImage (Ubuntu 22.04 container),",
+        "             Windows exe (cargo-xwin) zipped; both signed with `cargo xtask sign`",
         "files        " + "\n             ".join(names.values()),
     ]
     if not pre:
         lines += [
-            f"repository   version -> {version} in Cargo.toml, tauri.conf.json, package.json;",
+            f"repository   version -> {version} in Cargo.toml;",
             f"             CHANGELOG.md section; commit `release: {tag}`; tag {tag}; push {BRANCH} + tag",
         ]
     for forge in forges:
@@ -725,85 +729,80 @@ class Secrets:
         )
 
     def signing_env(self) -> dict[str, str]:
-        return dict(
-            os.environ,
-            TAURI_SIGNING_PRIVATE_KEY=open(self.key, encoding="utf-8").read(),
-            TAURI_SIGNING_PRIVATE_KEY_PASSWORD=self.key_pass,
-        )
+        """`cargo xtask sign` reads the key's password where `tauri signer`
+        did; the key file itself is named on its command line."""
+        return dict(os.environ, TAURI_SIGNING_PRIVATE_KEY_PASSWORD=self.key_pass)
 
 
-def tauri(*args: str, env: dict) -> None:
-    sh("bun", "run", "tauri", *args, cwd=GUI, env=env, capture=False)
-
-
-def build_linux(version: str, secrets: Secrets, config: dict, stage: str) -> None:
-    """The AppImage (signed by tauri: createUpdaterArtifacts), built in an
-    Ubuntu 22.04 container so it and every library it carries need glibc 2.35
-    at most, not this machine's (scripts/appimage.sh)."""
-    print(f"== building Linux {version}")
-    sh(
-        os.path.join(REPO, "scripts", "appimage.sh"),
-        "--config",
-        json.dumps(config),
-        cwd=REPO,
-        env=secrets.signing_env(),
-        capture=False,
-    )
-    names = asset_names(version)
-
-    def one(kind: str, pattern: str) -> str:
-        found = sorted(
-            glob.glob(os.path.join(LINUX_BUNDLE, kind, pattern)), key=os.path.getmtime
-        )
-        if not found:
-            sys.exit(
-                f"the Linux build left no {pattern} in {os.path.join(LINUX_BUNDLE, kind)}"
-            )
-        return found[-1]
-
-    # Tauri names bundles after the product name and version.
-    appimage = one("appimage", f"*_{version}_*.AppImage")
-    for src, dst in (
-        (appimage, names["appimage"]),
-        (appimage + ".sig", names["appimage_sig"]),
-    ):
-        if not os.path.isfile(src):
-            sys.exit(f"the Linux build left no {src} (is the signing key right?)")
-        shutil.copy2(src, os.path.join(stage, dst))
-
-
-def build_windows(version: str, secrets: Secrets, config: dict, stage: str) -> None:
-    """The .exe through cargo-xwin, zipped and signed: the updater downloads
-    the zip, checks its minisign signature against tauri.conf.json's pubkey
-    and replaces the running executable with the one inside."""
-    print(f"== building Windows {version}")
-    tauri(
-        "build",
-        "--runner",
-        "cargo-xwin",
-        "--target",
-        WINDOWS_TARGET,
-        "--no-bundle",
-        "--config",
-        json.dumps(config),
-        env=dict(
-            os.environ,
-            TAURI_SIGNING_PRIVATE_KEY="",
-            TAURI_SIGNING_PRIVATE_KEY_PASSWORD="",
-        ),
-    )
-    if not os.path.isfile(WINDOWS_EXE):
-        sys.exit(f"the Windows build left no {WINDOWS_EXE}")
-    names = asset_names(version)
-    zip_path = os.path.join(stage, names["windows"])
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
-        z.write(WINDOWS_EXE, os.path.basename(WINDOWS_EXE))
-    sig = zip_path + ".sig"
+def sign(path: str, secrets: Secrets) -> None:
+    """`<path>.sig`, the updater's minisign signature in Tauri's format (base64
+    of the signature file), made from the same key file and password
+    `tauri signer sign` used (xtask/src/sign.rs)."""
+    sig = path + ".sig"
     if os.path.exists(sig):
         os.remove(sig)
-    tauri("signer", "sign", zip_path, env=secrets.signing_env())
-    if not signed_pair_ready(zip_path, sig):
+    sh(
+        "cargo",
+        "xtask",
+        "sign",
+        "--key",
+        secrets.key,
+        path,
+        env=secrets.signing_env(),
+    )
+    if not signed_pair_ready(path, sig):
         sys.exit(f"signing left no {sig}")
+
+
+def build_linux(version: str, secrets: Secrets, stage: str, pre: bool) -> None:
+    """The AppImage, built in an Ubuntu 22.04 container so it needs glibc 2.35
+    at most, not this machine's (scripts/appimage.sh), then signed here: the
+    key never enters the container."""
+    print(f"== building Linux {version}")
+    appimage = os.path.join(stage, asset_names(version)["appimage"])
+    if os.path.exists(appimage):
+        os.remove(appimage)
+    sh(
+        os.path.join(REPO, "scripts", "appimage.sh"),
+        appimage,
+        cwd=REPO,
+        env=build_env(dict(os.environ), version, pre),
+        capture=False,
+    )
+    if not os.path.isfile(appimage):
+        sys.exit(f"the Linux build left no {appimage}")
+    sign(appimage, secrets)
+
+
+def build_windows(version: str, secrets: Secrets, stage: str, pre: bool) -> None:
+    """The .exe through cargo-xwin, zipped and signed: the updater downloads
+    the zip, checks its minisign signature against the public key built into
+    dz-hub and replaces the running executable with the one inside."""
+    print(f"== building Windows {version}")
+    env = build_env(dict(os.environ), version, pre)
+    # No executable without its icon, version information and manifest.
+    env["DZCH_REQUIRE_WINRES"] = "1"
+    sh(
+        "cargo",
+        "xwin",
+        "build",
+        "--release",
+        "-p",
+        PACKAGE,
+        "--bin",
+        BIN,
+        "--target",
+        WINDOWS_TARGET,
+        env=env,
+        capture=False,
+    )
+    exe = windows_exe(env)
+    if not os.path.isfile(exe):
+        sys.exit(f"the Windows build left no {exe}")
+    zip_path = os.path.join(stage, asset_names(version)["windows"])
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        z.write(exe, os.path.basename(exe))
+    sign(zip_path, secrets)
 
 
 def build(version: str, secrets: Secrets, pre: bool) -> str:
@@ -815,11 +814,8 @@ def build(version: str, secrets: Secrets, pre: bool) -> str:
         print(f"== v{version} is built and signed already ({stage})")
         return stage
     os.makedirs(stage, exist_ok=True)
-    config: dict = {"bundle": {"createUpdaterArtifacts": True}}
-    if pre:
-        config["version"] = version
-    build_linux(version, secrets, config, stage)
-    build_windows(version, secrets, config, stage)
+    build_linux(version, secrets, stage, pre)
+    build_windows(version, secrets, stage, pre)
     if not staged_complete(stage, version):
         sys.exit(f"the build finished without every file in {stage}")
     return stage
@@ -968,10 +964,6 @@ def main() -> None:
         if version != current:
             with open(CARGO, "w", encoding="utf-8") as fh:
                 fh.write(set_cargo_version(cargo, version))
-            for path in (TAURI_CONF, PACKAGE_JSON):
-                text = open(path, encoding="utf-8").read()
-                with open(path, "w", encoding="utf-8") as fh:
-                    fh.write(set_json_version(text, version))
             print(f"  version {current} -> {version}")
         log = open(CHANGELOG, encoding="utf-8").read()
         with open(CHANGELOG, "w", encoding="utf-8") as fh:

@@ -69,12 +69,6 @@ class Versions(unittest.TestCase):
         self.assertEqual(r.read_version(out), "0.5.0")
         self.assertIn('serde = { version = "1" }', out)
 
-    def test_json_version_keeps_the_layout(self):
-        conf = '{\n  "productName": "x",\n  "version": "0.4.1",\n  "deps": {"version": "9"}\n}'
-        out = r.set_json_version(conf, "0.4.2")
-        self.assertIn('"version": "0.4.2"', out)
-        self.assertIn('"deps": {"version": "9"}', out)
-
     def test_bump_and_parse(self):
         self.assertEqual(r.bump("0.4.9"), "0.4.10")
         with self.assertRaises(ValueError):
@@ -227,6 +221,89 @@ class Staging(unittest.TestCase):
             self.assertTrue(r.staged_complete(d, "0.4.2"))
             os.remove(os.path.join(d, names["appimage_sig"]))
             self.assertFalse(r.staged_complete(d, "0.4.2"))
+
+
+class Build(unittest.TestCase):
+    def test_a_preview_gives_its_version_to_the_build_a_release_does_not(self):
+        env = {"PATH": "/bin", "DZCH_VERSION": "stale"}
+        self.assertEqual(
+            r.build_env(env, "0.5.5-pre", True)["DZCH_VERSION"], "0.5.5-pre"
+        )
+        self.assertEqual(r.build_env(env, "0.5.5", False)["DZCH_VERSION"], "")
+        self.assertEqual(r.build_env(env, "0.5.5", False)["PATH"], "/bin")
+        self.assertEqual(env["DZCH_VERSION"], "stale")
+
+    def test_the_windows_exe_follows_cargo_target_dir(self):
+        self.assertEqual(
+            r.windows_exe({"CARGO_TARGET_DIR": "/t"}),
+            "/t/x86_64-pc-windows-msvc/release/dayz-community-hub.exe",
+        )
+        self.assertTrue(
+            r.windows_exe({}).endswith(
+                "/target/x86_64-pc-windows-msvc/release/dayz-community-hub.exe"
+            )
+        )
+
+    def test_the_version_lives_in_cargo_toml_only(self):
+        self.assertEqual(r.RELEASE_FILES, {"Cargo.toml", "Cargo.lock", "CHANGELOG.md"})
+        self.assertEqual(r.DOTENV, os.path.join(r.REPO, ".env"))
+        text = r.plan("0.4.2", "v0.4.2", "n", pre=False, skip_github=True)
+        self.assertIn("version -> 0.4.2 in Cargo.toml;", text)
+
+    def test_nothing_on_the_release_path_runs_bun_or_tauri(self):
+        source = open(r.__file__, encoding="utf-8").read()
+        for argv0 in ('"bun"', '"bunx"', '"tauri"'):
+            self.assertNotIn(argv0, source)
+        text = r.plan("0.4.2", "v0.4.2", "n", pre=False, skip_github=True)
+        self.assertIn("cargo xtask sign", text)
+        self.assertIn("dayz-community-hub", text)
+
+
+class Sign(unittest.TestCase):
+    """`sign` hands the key file and its password to `cargo xtask sign` the way
+    the Tauri signer took them, and refuses a run that left no fresh `.sig`.
+    Nothing is signed: `sh` is replaced, and the key is a made-up path."""
+
+    def secrets(self):
+        s = r.Secrets.__new__(r.Secrets)
+        s.key, s.key_pass = "/made/up/updater.key", "made-up password"
+        return s
+
+    def test_the_signer_gets_the_key_file_and_the_password(self):
+        calls = []
+        with tempfile.TemporaryDirectory() as d:
+            target = os.path.join(d, "a.zip")
+            open(target, "w").close()
+            open(target + ".sig", "w").close()
+
+            def fake_sh(*argv, env=None, **_):
+                calls.append((argv, env))
+                with open(target + ".sig", "w") as fh:
+                    fh.write("sig")
+                return ""
+
+            real, r.sh = r.sh, fake_sh
+            try:
+                r.sign(target, self.secrets())
+            finally:
+                r.sh = real
+        ((argv, env),) = calls
+        self.assertEqual(
+            argv, ("cargo", "xtask", "sign", "--key", "/made/up/updater.key", target)
+        )
+        self.assertEqual(env["TAURI_SIGNING_PRIVATE_KEY_PASSWORD"], "made-up password")
+        self.assertNotIn("TAURI_SIGNING_PRIVATE_KEY", env)
+
+    def test_no_sig_left_is_an_error(self):
+        with tempfile.TemporaryDirectory() as d:
+            target = os.path.join(d, "a.zip")
+            open(target, "w").close()
+            real, r.sh = r.sh, lambda *a, **k: ""
+            try:
+                with self.assertRaises(SystemExit):
+                    r.sign(target, self.secrets())
+            finally:
+                r.sh = real
 
 
 class Retry(unittest.TestCase):

@@ -25,9 +25,30 @@ class Render(unittest.TestCase):
         text = a.render(a.TEMPLATE.read_text(encoding="utf-8"), "0.5.0.r1.gabc")
         self.assertIn("pkgname=dayz-community-hub-git", text)
         self.assertIn("pkgver=0.5.0.r1.gabc", text)
-        self.assertIn("apps/gui/src-tauri/tauri.conf.json", text)
         self.assertIn("options=(!lto)", text)
         self.assertNotIn("dayz-community-hub-ui", text)
+
+    def test_the_package_builds_the_egui_binary_with_cargo_only(self):
+        text = a.TEMPLATE.read_text(encoding="utf-8")
+        self.assertIn("--bin dayz-community-hub", text)
+        self.assertIn("-p dayz-community-hub", text)
+        # Nothing of the old Tauri/Svelte build.
+        for gone in ("bun", "tauri", "apps/gui", "webkit2gtk"):
+            self.assertNotIn(gone, text)
+        # Every file the package installs is in the repository.
+        for path in (
+            "packaging/linux/dayz-community-hub.desktop",
+            "packaging/linux/dayz-community-hub.xml",
+            "apps/desktop/assets/app/icon-32.png",
+            "apps/desktop/assets/app/icon-256.png",
+        ):
+            self.assertIn(path.split("/icon-")[0], text)
+            self.assertTrue((a.paths.REPO / path).is_file(), path)
+
+    def test_pkgver_reads_the_workspace_version(self):
+        text = a.TEMPLATE.read_text(encoding="utf-8")
+        self.assertIn("tomllib", text)
+        self.assertIn("['workspace']['package']['version']", text)
 
 
 class Changes(unittest.TestCase):
