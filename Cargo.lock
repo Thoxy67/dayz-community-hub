@@ -1379,6 +1379,7 @@ name = "dz-steamworks"
 version = "0.5.4"
 dependencies = [
  "dz-common",
+ "dz-steamcmd",
  "libloading 0.9.0",
  "serde",
  "serde_json",

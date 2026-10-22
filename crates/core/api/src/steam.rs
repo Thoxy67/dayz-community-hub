@@ -18,6 +18,7 @@
 //! keep its data.
 
 use rustc_hash::{FxHashMap, FxHashSet};
+use std::sync::Arc;
 
 use crate::{Endpoint, Mod, Server, tags_say_official};
 
@@ -123,62 +124,110 @@ impl FarmCounter {
     }
 }
 
+/// A [`SteamListed`] with the app's model of it, made once: a list is put
+/// together from the same rows every time one more answers, and making
+/// each row's [`Server`] again every time copied every string of every row.
+#[derive(Debug, Clone)]
+pub struct SteamRow {
+    listed: SteamListed,
+    server: Arc<Server>,
+}
+
+impl SteamRow {
+    pub fn listed(&self) -> &SteamListed {
+        &self.listed
+    }
+
+    pub fn server(&self) -> &Arc<Server> {
+        &self.server
+    }
+}
+
+impl From<SteamListed> for SteamRow {
+    fn from(listed: SteamListed) -> Self {
+        let server = Arc::new(listed.to_server());
+        Self { listed, server }
+    }
+}
+
 /// Add to `list` the servers Steam listed that it lacks, those on farm
 /// addresses left out (unless Steam counts players on them), and mark
 /// official the listed ones Steam's tags say are. Returns how many were
 /// added.
-pub fn merge_steam(list: &mut Vec<Server>, listed: &[SteamListed], farms: &FarmCounter) -> usize {
-    let (mark, add) = plan(list, listed, farms);
+pub fn merge_steam(
+    list: &mut Vec<Arc<Server>>,
+    listed: &[SteamListed],
+    farms: &FarmCounter,
+) -> usize {
+    let (mark, add) = plan(list, listed.iter(), farms);
     for i in mark {
-        list[i].official = true;
+        if let Some(s) = list.get_mut(i) {
+            Arc::make_mut(s).official = true;
+        }
     }
     let added = add.len();
     list.reserve(added);
-    list.extend(add.into_iter().map(steam_server));
+    list.extend(add.into_iter().filter_map(|(j, official)| {
+        let mut server = listed.get(j)?.to_server();
+        server.official |= official;
+        Some(Arc::new(server))
+    }));
     added
 }
 
 /// [`merge_steam`] into a new list, `base` left as it is: one allocation of
-/// the final size and one copy of each server, where cloning `base` and then
-/// merging grew (and moved) the whole list a second time.
-pub fn merged_steam(base: &[Server], listed: &[SteamListed], farms: &FarmCounter) -> Vec<Server> {
-    let (mark, add) = plan(base, listed, farms);
+/// the final size and a refcount for each server; only a server marked
+/// official here is copied.
+pub fn merged_steam(
+    base: &[Arc<Server>],
+    rows: &[SteamRow],
+    farms: &FarmCounter,
+) -> Vec<Arc<Server>> {
+    let (mark, add) = plan(base, rows.iter().map(SteamRow::listed), farms);
     let mut out = Vec::with_capacity(base.len() + add.len());
     out.extend_from_slice(base);
     for i in mark {
-        out[i].official = true;
+        if let Some(s) = out.get_mut(i)
+            && !s.official
+        {
+            Arc::make_mut(s).official = true;
+        }
     }
-    out.extend(add.into_iter().map(steam_server));
+    out.extend(add.into_iter().filter_map(|(j, official)| {
+        let row = rows.get(j)?;
+        Some(if official && !row.server.official {
+            let mut server = Server::clone(&row.server);
+            server.official = true;
+            Arc::new(server)
+        } else {
+            Arc::clone(&row.server)
+        })
+    }));
     out
 }
 
-/// One server to add, and whether a repeat of it says it is official.
-type Addition<'a> = (&'a SteamListed, bool);
-
-fn steam_server((s, official): Addition<'_>) -> Server {
-    let mut server = s.to_server();
-    server.official |= official;
-    server
-}
+/// One server to add, by its position in what was listed, and whether a
+/// repeat of it says it is official.
+type Addition = (usize, bool);
 
 /// What merging `listed` into `list` does: the positions to mark official
 /// and the servers to add, decided with keys borrowed from both lists (an
 /// index keyed by a copy of every address made ten thousand strings or more
 /// for each merge).
 fn plan<'a>(
-    list: &[Server],
-    listed: &'a [SteamListed],
+    list: &[Arc<Server>],
+    listed: impl Iterator<Item = &'a SteamListed>,
     farms: &FarmCounter,
-) -> (Vec<usize>, Vec<Addition<'a>>) {
+) -> (Vec<usize>, Vec<Addition>) {
     let at: FxHashMap<(&str, i64), usize> = list
         .iter()
         .enumerate()
         .map(|(i, s)| ((s.endpoint.ip.as_str(), s.endpoint.port), i))
         .collect();
     let mut mark: Vec<usize> = Vec::new();
-    let mut add: Vec<Addition<'a>> = Vec::new();
+    let mut add: Vec<Addition> = Vec::new();
     let mut added: FxHashMap<(&str, i64), usize> = FxHashMap::default();
-    for s in listed {
+    for (j, s) in listed.enumerate() {
         let key = (s.ip.as_str(), s.query_port);
         if let Some(&i) = at.get(&key) {
             if tags_say_official(&s.tags) {
@@ -186,9 +235,11 @@ fn plan<'a>(
             }
             continue;
         }
-        if let Some(&j) = added.get(&key) {
-            if tags_say_official(&s.tags) {
-                add[j].1 = true;
+        if let Some(&k) = added.get(&key) {
+            if tags_say_official(&s.tags)
+                && let Some(a) = add.get_mut(k)
+            {
+                a.1 = true;
             }
             continue;
         }
@@ -196,7 +247,7 @@ fn plan<'a>(
             continue;
         }
         added.insert(key, add.len());
-        add.push((s, false));
+        add.push((j, false));
     }
     (mark, add)
 }
@@ -230,19 +281,19 @@ mod tests {
         f
     }
 
-    fn merge(list: &mut Vec<Server>, rows: &[SteamListed]) -> usize {
+    fn merge(list: &mut Vec<Arc<Server>>, rows: &[SteamListed]) -> usize {
         merge_steam(list, rows, &counted(rows))
     }
 
-    fn known(ip: &str, port: i64) -> Server {
-        Server {
+    fn known(ip: &str, port: i64) -> Arc<Server> {
+        Arc::new(Server {
             endpoint: Endpoint {
                 ip: ip.into(),
                 port,
             },
             name: "known".into(),
             ..Default::default()
-        }
+        })
     }
 
     #[test]
@@ -299,8 +350,25 @@ mod tests {
         ];
         let mut in_place = base.clone();
         merge(&mut in_place, &rows);
-        assert_eq!(merged_steam(&base, &rows, &counted(&rows)), in_place);
+        let steam: Vec<SteamRow> = rows.iter().cloned().map(SteamRow::from).collect();
+        let merged = merged_steam(&base, &steam, &counted(&rows));
+        assert_eq!(merged, in_place);
         assert_eq!(base.len(), 1);
+        // The servers are shared, not copied.
+        assert!(Arc::ptr_eq(&merged[0], &base[0]));
+        assert!(Arc::ptr_eq(&merged[1], steam[1].server()));
+    }
+
+    #[test]
+    fn merged_marks_official_on_a_copy_and_leaves_the_base_alone() {
+        let base = vec![known("9.9.9.9", 27016)];
+        let mut official = listed("9.9.9.9", 27016, Some(false));
+        official.tags = "battleye,shard000,lqs0,20:16".into();
+        let rows = [official];
+        let steam: Vec<SteamRow> = rows.iter().cloned().map(SteamRow::from).collect();
+        let merged = merged_steam(&base, &steam, &counted(&rows));
+        assert!(merged[0].official);
+        assert!(!base[0].official, "the base list is shared and unchanged");
     }
 
     #[test]

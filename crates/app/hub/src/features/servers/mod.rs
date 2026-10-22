@@ -36,6 +36,9 @@ static SESSION: LazyLock<String> =
 /// it again (tauri-apps/tauri#14154), and the second must find the first's
 /// state rather than build its own beside it.
 static INIT: Mutex<()> = Mutex::const_new(());
+/// The load [`Hub::prewarm`] started, for the window's first `initialize`.
+type Prewarm = tokio::task::JoinHandle<Result<InitResult, String>>;
+static PREWARM: std::sync::Mutex<Option<Prewarm>> = std::sync::Mutex::new(None);
 
 /// Create the controller and load the server list: from the on-disk cache
 /// when there is one (the window refreshes it in the background), else from
@@ -202,6 +205,8 @@ async fn refresh_list(hub: &Hub, state: &SharedState) -> Result<u32, String> {
     dzsa_done(&community);
     let fresh = dedup(with_official(community.cmd_err()?, official));
     let list = {
+        // In order with the lists Steam's listing puts in (see LIST_WRITER).
+        let _order = steam::LIST_WRITER.lock().await;
         let mut s = state.write().await;
         // What the list had and no longer lists stays while it answers.
         let list = steam::refreshed(&s.servers, fresh);
@@ -317,10 +322,28 @@ impl Hub {
         first_launch().await
     }
 
+    /// Start [`Hub::initialize`] now, before any window exists: the profile and
+    /// the cached list load while the window and its GPU are set up. The
+    /// window's own call then gets this first answer (not a `resumed` one).
+    /// Needs a tokio runtime entered.
+    pub fn prewarm(&self) {
+        let hub = self.clone();
+        let task = tokio::spawn(async move { initialize(&hub).await });
+        if let Ok(mut p) = PREWARM.lock() {
+            *p = Some(task);
+        }
+    }
+
     /// Create the controller and load the server list (see the module).
     /// Called when the window starts; a second call finds the state as it
     /// is, with the work running on it, and says `resumed`.
     pub async fn initialize(&self) -> Result<InitResult, String> {
+        let early = PREWARM.lock().ok().and_then(|mut p| p.take());
+        if let Some(task) = early
+            && let Ok(r) = task.await
+        {
+            return r;
+        }
         initialize(self).await
     }
 

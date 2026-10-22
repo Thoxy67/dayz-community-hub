@@ -307,9 +307,12 @@ pub fn status() -> (Result<(), String>, bool) {
     }
 }
 
-/// Whether the Steam client is running, as Valve's library sees it.
+/// Whether the Steam client is running: its process is in the process
+/// table (shared, at most a second old). No worker is started and the
+/// library is not loaded, so asking often costs nothing and Steam never
+/// shows DayZ running for it; [`status`] still asks Valve's library.
 pub fn steam_running() -> bool {
-    status().1
+    dz_steamcmd::SteamClient::is_running()
 }
 
 /// [`session::download`], in a worker.

@@ -76,19 +76,11 @@ pub(crate) fn profile_view(s: &AppState) -> snapshot::ProfileView {
     }
 }
 
-/// The list was replaced in `s`: build its snapshot and publish it.
-pub(crate) fn publish_snapshot(s: &AppState) {
-    let snap = ServerSnapshot::build(Arc::clone(&s.servers), &profile_view(s));
-    live::store().publish(Arc::new(snap));
-}
-
 /// The profile's flags (favourites, exclusions, mods on disk) may have
-/// changed in `s`: write them into the snapshot again.
-pub(crate) fn profile_changed(s: &AppState) {
-    let snap = live::store().snapshot();
-    if Arc::ptr_eq(snap.list(), &s.servers) {
-        snap.apply_profile(&profile_view(s));
-    }
+/// changed in `s`: write them into its snapshot again (`snap`, the one the
+/// state holds, which is the one published).
+pub(crate) fn profile_changed(snap: &ServerSnapshot, s: &AppState) {
+    snap.apply_profile(&profile_view(s));
     live::store().touch();
 }
 
@@ -236,14 +228,12 @@ pub(crate) fn list_replaced(list: Arc<ServerList>) {
 }
 
 /// Emit `servers-changed` whenever the generation moved, at most every
-/// [`CHANGED_INTERVAL`]. Runs for the life of the app.
+/// [`CHANGED_INTERVAL`]. Runs for the life of the app, asleep while nothing
+/// changes (the live store wakes it).
 pub(crate) fn spawn_change_notifier(hub: Hub) {
     tokio::spawn(async move {
         let mut last = 0;
-        let mut tick = tokio::time::interval(CHANGED_INTERVAL);
-        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        loop {
-            tick.tick().await;
+        crate::wake::on_change(live::store().changed(), CHANGED_INTERVAL, || {
             let generation = live::store().tick();
             if generation != last {
                 last = generation;
@@ -252,7 +242,9 @@ pub(crate) fn spawn_change_notifier(hub: Hub) {
                     hub.emit(HubEvent::ServersChanged(ServersChanged { generation }));
                 }
             }
-        }
+            true
+        })
+        .await;
     });
 }
 

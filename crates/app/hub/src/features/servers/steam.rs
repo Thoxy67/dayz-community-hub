@@ -36,7 +36,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::Hub;
-use dz_api::{FarmCounter, Mod, Server, ServerList, SteamListed, WebPartition};
+use dz_api::{FarmCounter, Mod, Server, ServerList, SteamListed, SteamRow, WebPartition};
 use futures_util::stream::FuturesUnordered;
 use futures_util::{StreamExt, stream};
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -84,13 +84,14 @@ const KEPT_TRIES: usize = 2;
 struct Found {
     /// The launcher list, before Steam's servers are merged in.
     base: Arc<ServerList>,
-    /// Every server Steam listed that answered, once each.
-    rows: Vec<SteamListed>,
+    /// Every server Steam listed that answered, once each, with its
+    /// [`Server`] made once.
+    rows: Vec<SteamRow>,
     keys: FxHashSet<(String, i64)>,
     farms: FarmCounter,
     /// Servers an earlier list had that the current one lacks, kept while
     /// they answer.
-    kept: Vec<Server>,
+    kept: Vec<Arc<Server>>,
     /// Entries combed out as duplicates, by (ip, query port), and the join
     /// addresses (ip, game port) already combed.
     dropped: FxHashSet<(String, i64)>,
@@ -112,7 +113,8 @@ fn found() -> std::sync::MutexGuard<'static, Found> {
 /// An (ip, port) pair.
 type Addr = (String, i64);
 
-fn key(s: &Server) -> Addr {
+fn key<S: std::borrow::Borrow<Server>>(s: &S) -> Addr {
+    let s = s.borrow();
     (s.endpoint.ip.clone(), s.endpoint.port)
 }
 
@@ -142,10 +144,10 @@ pub(crate) fn refreshed(previous: &ServerList, base: Arc<ServerList>) -> Arc<Ser
         let mut known: FxHashSet<(String, i64)> = base.result.iter().map(key).collect();
         known.extend(f.keys.iter().cloned());
         f.kept.retain(|s| known.insert(key(s)));
-        let more: Vec<Server> = previous
+        let more: Vec<Arc<Server>> = previous
             .result
             .iter()
-            .filter(|s| known.insert(key(s)))
+            .filter(|s| known.insert(key(*s)))
             .cloned()
             .collect();
         f.kept.extend(more);
@@ -166,6 +168,9 @@ pub(crate) fn refreshed(previous: &ServerList, base: Arc<ServerList>) -> Arc<Ser
     compose()
 }
 
+/// The base, Steam's rows and the kept servers as one list. The servers are
+/// shared with `base` and the rows (refcounts, no copies), and the keys
+/// compared are borrowed: this runs every time more servers answer.
 fn compose() -> Arc<ServerList> {
     let f = found();
     if f.rows.is_empty() && f.kept.is_empty() && f.dropped.is_empty() {
@@ -178,20 +183,44 @@ fn compose() -> Arc<ServerList> {
         result: dz_api::merged_steam(&f.base.result, &f.rows, &f.farms),
     };
     if !f.kept.is_empty() {
-        let mut have: FxHashSet<(String, i64)> = list.result.iter().map(key).collect();
-        list.result
-            .extend(f.kept.iter().filter(|s| have.insert(key(s))).cloned());
+        let mut have: FxHashSet<(&str, i64)> = list
+            .result
+            .iter()
+            .map(|s| (s.endpoint.ip.as_str(), s.endpoint.port))
+            .collect();
+        let more: Vec<Arc<Server>> = f
+            .kept
+            .iter()
+            .filter(|s| have.insert((s.endpoint.ip.as_str(), s.endpoint.port)))
+            .cloned()
+            .collect();
+        drop(have);
+        list.result.extend(more);
     }
     if !f.dropped.is_empty() {
-        list.result.retain(|s| !f.dropped.contains(&key(s)));
+        let dropped: FxHashSet<(&str, i64)> =
+            f.dropped.iter().map(|(ip, p)| (ip.as_str(), *p)).collect();
+        list.result
+            .retain(|s| !dropped.contains(&(s.endpoint.ip.as_str(), s.endpoint.port)));
     }
     Arc::new(list)
 }
 
-/// Put the composed list in the app, and comb it.
+/// Held from composing a list to putting it in the app, so lists go in in
+/// the order they were composed: one composed earlier (with fewer servers,
+/// or before a refresh) never replaces a later one. Taken before the state's
+/// lock, never while holding it.
+pub(super) static LIST_WRITER: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// Put the composed list in the app (its snapshot built off the state's
+/// lock), and comb it.
 async fn show(hub: &Hub, state: &SharedState) -> Arc<ServerList> {
-    let list = compose();
-    state.write().await.set_servers(Arc::clone(&list));
+    let list = {
+        let _order = LIST_WRITER.lock().await;
+        let list = compose();
+        crate::state::replace_servers(state, Arc::clone(&list)).await;
+        list
+    };
     live::store().touch();
     comb(hub.clone());
     list
@@ -293,8 +322,12 @@ async fn comb_once(hub: &Hub) {
     }
     sources::update(|s| s.duplicates += removed as u32);
     if removed > 0 {
-        let list = compose();
-        state.write().await.set_servers(Arc::clone(&list));
+        let list = {
+            let _order = LIST_WRITER.lock().await;
+            let list = compose();
+            crate::state::replace_servers(&state, Arc::clone(&list)).await;
+            list
+        };
         live::store().touch();
         super::save_cache_in_background(Arc::clone(&list));
         crate::features::browser::list_replaced(list);
@@ -561,7 +594,7 @@ async fn publish(
         for r in rows {
             if f.keys.insert((r.ip.clone(), r.query_port)) {
                 added.push(format!("{}:{}", r.ip, r.query_port));
-                f.rows.push(r);
+                f.rows.push(SteamRow::from(r));
             }
         }
         added

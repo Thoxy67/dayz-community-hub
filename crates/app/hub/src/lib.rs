@@ -242,6 +242,7 @@ mod mock;
 mod net;
 pub mod paths;
 mod state;
+mod wake;
 
 pub use events::HubEvent;
 

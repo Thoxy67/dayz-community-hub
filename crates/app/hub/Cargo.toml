@@ -53,6 +53,8 @@ openssl = { version = "0.10.81", features = ["vendored"] }
 zstd = "0.14.0"
 
 [dev-dependencies]
+# Paused clocks for the wake-on-change loops' tests.
+tokio = { workspace = true, features = ["test-util"] }
 # Signs test updates with a throwaway key, in the minisign format the release uses.
 ed25519-dalek = "2.2.0"
 blake2 = "0.10.6"

@@ -15,21 +15,27 @@ pub use master::{
 pub use official::{
     fetch_official_servers, merge_official, name_looks_official, tags_say_official,
 };
-pub use steam::{FARM_ADDRESS, FarmCounter, SteamListed, merge_steam, merged_steam};
+pub use steam::{FARM_ADDRESS, FarmCounter, SteamListed, SteamRow, merge_steam, merged_steam};
 
 use dz_common::{Error, Result};
 use serde::{Deserialize, Serialize};
+use std::borrow::Borrow;
+use std::sync::Arc;
 
 /// The server list as the launcher API returns it.
 ///
 /// Only the fields the app reads are kept: serde ignores the rest, which
 /// saves parsing and holding a dozen unused strings for each of the ~18 000
 /// servers.
+///
+/// Each server sits behind an `Arc`: a list put together from another (the
+/// Steam servers merged in, a refresh keeping what it lost) shares the
+/// servers instead of copying every string of every one of them.
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerList {
     pub status: i64,
-    pub result: Vec<Server>,
+    pub result: Vec<Arc<Server>>,
 }
 
 /// One server of the list.
@@ -104,13 +110,16 @@ impl Server {
 
 /// Keep the first server for each (ip, query port) and drop the repeats the
 /// API sometimes lists.
-pub fn dedup_servers(mut servers: Vec<Server>) -> Vec<Server> {
+pub fn dedup_servers<S: Borrow<Server>>(mut servers: Vec<S>) -> Vec<S> {
     let keep: Vec<bool> = {
         let mut seen: rustc_hash::FxHashSet<(&str, i64)> =
             rustc_hash::FxHashSet::with_capacity_and_hasher(servers.len(), Default::default());
         servers
             .iter()
-            .map(|s| seen.insert((s.endpoint.ip.as_str(), s.endpoint.port)))
+            .map(|s| {
+                let s = s.borrow();
+                seen.insert((s.endpoint.ip.as_str(), s.endpoint.port))
+            })
             .collect()
     };
     let mut keep = keep.into_iter();
@@ -124,10 +133,11 @@ pub fn dedup_servers(mut servers: Vec<Server>) -> Vec<Server> {
 /// order. Servers on one address with the same name but their own game
 /// ports are not here: they are separate servers (hosts give many
 /// customers the same default name).
-pub fn join_conflicts(servers: &[Server]) -> Vec<Vec<(String, i64)>> {
+pub fn join_conflicts<S: Borrow<Server>>(servers: &[S]) -> Vec<Vec<(String, i64)>> {
     let mut by_join: rustc_hash::FxHashMap<(&str, i64), Vec<usize>> =
         rustc_hash::FxHashMap::default();
     for (i, s) in servers.iter().enumerate() {
+        let s = s.borrow();
         if s.game_port > 0 {
             by_join
                 .entry((s.endpoint.ip.as_str(), s.game_port))
@@ -140,7 +150,8 @@ pub fn join_conflicts(servers: &[Server]) -> Vec<Vec<(String, i64)>> {
         .filter(|g| g.len() > 1)
         .map(|g| {
             g.into_iter()
-                .map(|i| (servers[i].endpoint.ip.clone(), servers[i].endpoint.port))
+                .filter_map(|i| servers.get(i).map(Borrow::borrow))
+                .map(|s: &Server| (s.endpoint.ip.clone(), s.endpoint.port))
                 .collect()
         })
         .collect();
@@ -200,26 +211,62 @@ struct ServerListCacheRef<'a> {
 }
 
 /// Persist a freshly-fetched server list. Serialized from a reference (no
-/// clone of the list) on the blocking pool, then written asynchronously.
+/// clone of the list) and written on the blocking pool, through a file
+/// beside the cache renamed over it, so a crash or a power cut mid-write
+/// leaves the previous cache whole rather than a truncated one.
 /// Failures are ignored: the cache only speeds up the next start.
 pub async fn save_server_list_cache(
     cache_path: &std::path::Path,
     list: std::sync::Arc<ServerList>,
 ) {
     let fetched_at = dz_common::time::now_secs();
-    let data = tokio::task::spawn_blocking(move || {
-        serde_json::to_vec(&ServerListCacheRef {
+    let path = cache_path.to_path_buf();
+    let _ = tokio::task::spawn_blocking(move || {
+        let data = serde_json::to_vec(&ServerListCacheRef {
             fetched_at,
             list: &list,
         })
+        .map_err(std::io::Error::other)?;
+        write_atomic(&path, &data)
     })
     .await;
-    if let Ok(Ok(data)) = data {
-        if let Some(parent) = cache_path.parent() {
-            let _ = tokio::fs::create_dir_all(parent).await;
-        }
-        let _ = tokio::fs::write(cache_path, data).await;
+}
+
+/// Write `data` to `path` atomically: into a new file in the same directory
+/// (so the rename stays on one file system), flushed, then renamed over
+/// `path`, which replaces it on every platform. A reader sees the old file
+/// or the new one, never half of it. The temporary file is removed if
+/// anything fails.
+pub fn write_atomic(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+
+    let dir = match path.parent() {
+        Some(d) if !d.as_os_str().is_empty() => d,
+        _ => std::path::Path::new("."),
+    };
+    std::fs::create_dir_all(dir)?;
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "cache".to_owned());
+    // Unique per process and per write: two saves in flight never share one.
+    let tmp = dir.join(format!(
+        ".{name}.{}.{}.tmp",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let written = std::fs::File::create(&tmp)
+        .and_then(|mut f| {
+            f.write_all(data)?;
+            f.sync_all()
+        })
+        .and_then(|()| std::fs::rename(&tmp, path));
+    if written.is_err() {
+        let _ = std::fs::remove_file(&tmp);
     }
+    written
 }
 
 /// Fetch the full server list from the DayZSA Launcher API.
@@ -287,8 +334,61 @@ mod tests {
             server("1.1.1.1", 27017, 2402, "c"),
         ];
         let out = dedup_servers(list);
+        let shared = dedup_servers(vec![
+            Arc::new(server("1.1.1.1", 27016, 2302, "a")),
+            Arc::new(server("1.1.1.1", 27016, 2302, "b")),
+        ]);
+        assert_eq!(shared.len(), 1);
         let names: Vec<_> = out.iter().map(|s| s.name.as_str()).collect();
         assert_eq!(names, ["a", "c"]);
+    }
+
+    #[test]
+    fn atomic_write_replaces_the_file_and_leaves_no_temporary() {
+        let dir = std::env::temp_dir().join(format!("dz-api-atomic-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("nested").join("cache.json");
+        write_atomic(&path, b"first").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"first");
+        write_atomic(&path, b"second, longer").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"second, longer");
+        let left: Vec<_> = std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name())
+            .collect();
+        assert_eq!(left, vec![std::ffi::OsString::from("cache.json")]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn atomic_write_failing_keeps_the_old_file() {
+        let dir = std::env::temp_dir().join(format!("dz-api-atomic-fail-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // A directory in the way of the rename: the write fails, the
+        // directory stays, and no temporary file is left.
+        let path = dir.join("cache.json");
+        std::fs::create_dir_all(path.join("inside")).unwrap();
+        assert!(write_atomic(&path, b"data").is_err());
+        assert!(path.join("inside").is_dir());
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn the_cache_round_trips() {
+        let dir = std::env::temp_dir().join(format!("dz-api-cache-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("servers.json");
+        let list = Arc::new(ServerList {
+            status: 0,
+            result: vec![Arc::new(server("1.1.1.1", 27016, 2302, "a"))],
+        });
+        save_server_list_cache(&path, Arc::clone(&list)).await;
+        let back = load_server_list_cache(&path).await.unwrap();
+        assert_eq!(back.list, *list);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

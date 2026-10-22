@@ -96,6 +96,8 @@ fn main() -> eframe::Result {
     {
         let _guard = runtime.enter();
         hub.start();
+        // The profile and the cached list load while the window is being made.
+        hub.prewarm();
     }
     // `dzch://` links and `.dzch` files open this executable (the AppImage and the zip
     // have no installer, and a moved executable needs it pointed at its new place).

@@ -573,6 +573,8 @@ impl Hub {
             // Cleared only if still this operation's: after a cancel, a new one
             // may have started before this loop saw its channel close.
             let mut st = state.write().await;
+            // Whatever it did to the mods on disk, the next check reads them.
+            st.mod_scan = None;
             if st
                 .pty_input_tx
                 .as_ref()
@@ -699,7 +701,7 @@ mod tests {
         let installed = vec![on_disk(1, "CF")];
         let list = dz_api::ServerList {
             status: 0,
-            result: vec![listed(&[(2, "Expansion"), (3, "")])],
+            result: vec![listed(&[(2, "Expansion"), (3, "")]).into()],
         };
         let mut op = ModOperation::InstallManual {
             mods: vec![(1, "1".into()), (2, "2".into()), (3, "3".into())],

@@ -24,10 +24,11 @@ struct Slot {
 
 impl ServerIndex {
     /// Index `servers` by position.
-    pub fn build(servers: &[Server]) -> Self {
+    pub fn build<S: std::borrow::Borrow<Server>>(servers: &[S]) -> Self {
         let mut by_ip: FxHashMap<Box<str>, Vec<Slot>> =
             FxHashMap::with_capacity_and_hasher(servers.len(), Default::default());
         for (idx, s) in servers.iter().enumerate() {
+            let s = s.borrow();
             let slot = Slot {
                 query_port: s.endpoint.port,
                 game_port: s.game_port,

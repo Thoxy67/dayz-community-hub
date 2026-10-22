@@ -105,6 +105,9 @@ pub(crate) struct LiveStore {
     /// so a scan landing hundreds of results a second moves the generation
     /// (and invalidates the query cache) at most at the tick rate.
     dirty: AtomicBool,
+    /// Poked by every write and [`LiveStore::touch`]: wakes the notifier
+    /// that turns them into `servers-changed`.
+    changed: tokio::sync::Notify,
 }
 
 static STORE: LazyLock<LiveStore> = LazyLock::new(|| LiveStore {
@@ -112,6 +115,7 @@ static STORE: LazyLock<LiveStore> = LazyLock::new(|| LiveStore {
     snapshot: RwLock::new(Arc::new(ServerSnapshot::empty())),
     generation: AtomicU64::new(1),
     dirty: AtomicBool::new(false),
+    changed: tokio::sync::Notify::const_new(),
 });
 
 pub(crate) fn store() -> &'static LiveStore {
@@ -159,6 +163,7 @@ impl LiveStore {
         self.snapshot().put_live(ip, port, &live);
         drop(map);
         self.dirty.store(true, Ordering::Release);
+        self.changed.notify_one();
     }
 
     /// Update only the player counts (from an A2S details query), keeping
@@ -198,12 +203,19 @@ impl LiveStore {
         self.snapshot().put_live(ip, port, &live);
         drop(map);
         self.dirty.store(true, Ordering::Release);
+        self.changed.notify_one();
     }
 
     /// Something other than live data changed (the list, the profile): move
     /// the generation now.
     pub(crate) fn touch(&self) {
         self.generation.fetch_add(1, Ordering::AcqRel);
+        self.changed.notify_one();
+    }
+
+    /// Notified when the generation may have moved.
+    pub(crate) fn changed(&self) -> &tokio::sync::Notify {
+        &self.changed
     }
 
     /// Fold pending writes into the generation. Returns the generation.

@@ -94,27 +94,20 @@ impl SteamClient {
         )
     }
 
-    /// Check if the Steam client is currently running.
+    /// Check if the Steam client is currently running: a look at the
+    /// process table (shared, at most a second old), without connecting to
+    /// Steam. Blocking.
     pub fn is_running() -> bool {
-        use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
-        // Names only. The default refresh also reads each process's memory,
-        // CPU, disk use and executable path: on Windows that opens every
-        // process in the table, a hundred milliseconds and more per poll,
-        // and launching polls this every second while Steam starts.
-        let mut system = System::new();
-        system.refresh_processes_specifics(
-            ProcessesToUpdate::All,
-            true,
-            ProcessRefreshKind::nothing(),
-        );
-        system.processes().values().any(|process| {
-            let name = process.name().to_string_lossy();
-            // "steam" — native Linux / macOS / Flatpak entry-point.
-            // "steam.exe" — Windows and Wine/Proton on Linux.
-            // Exclude "steamwebhelper" — it can outlive a crashed client.
-            // Case-insensitive compare avoids allocating a lowercased String
-            // for every process in the table on every poll.
-            name.eq_ignore_ascii_case("steam") || name.eq_ignore_ascii_case("steam.exe")
+        with_processes(STEAM_MAX_AGE, |system| {
+            system.processes().values().any(|process| {
+                let name = process.name().to_string_lossy();
+                // "steam" — native Linux / macOS / Flatpak entry-point.
+                // "steam.exe" — Windows and Wine/Proton on Linux.
+                // Exclude "steamwebhelper" — it can outlive a crashed client.
+                // Case-insensitive compare avoids allocating a lowercased String
+                // for every process in the table on every poll.
+                name.eq_ignore_ascii_case("steam") || name.eq_ignore_ascii_case("steam.exe")
+            })
         })
     }
 
@@ -228,56 +221,113 @@ impl DayzGame {
             })
     }
 
-    fn processes() -> sysinfo::System {
-        use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
-        let mut system = System::new();
-        // Names only on Windows, where they suffice (and reading command
-        // lines opens every process: see `SteamClient::is_running`). On Unix
-        // the command lines too, for Proton's games.
-        let kind = ProcessRefreshKind::nothing();
-        #[cfg(not(windows))]
-        let kind = kind.with_cmd(sysinfo::UpdateKind::OnlyIfNotSet);
-        system.refresh_processes_specifics(ProcessesToUpdate::All, true, kind);
-        system
+    /// DayZ is running. Blocking (a look at the shared process table, at
+    /// most two seconds old: the window, the play tracker and BattlEye's
+    /// repair all ask, and share one scan).
+    pub fn is_running() -> bool {
+        with_processes(GAME_MAX_AGE, |system| {
+            system.processes().values().any(Self::is_game)
+        })
     }
 
-    /// DayZ is running. Blocking (a scan of the process table).
-    pub fn is_running() -> bool {
-        Self::processes().processes().values().any(Self::is_game)
+    /// The game's processes, from a table read now.
+    fn game_pids() -> Vec<sysinfo::Pid> {
+        with_processes(std::time::Duration::ZERO, |system| {
+            system
+                .processes()
+                .iter()
+                .filter(|(_, p)| Self::is_game(p))
+                .map(|(pid, _)| *pid)
+                .collect()
+        })
     }
 
     /// Close DayZ: asked to quit first where the system allows it, then
     /// killed if it is still there a moment later. Returns how many processes
     /// were stopped. Blocking.
     pub fn kill() -> usize {
-        let system = Self::processes();
-        let targets: Vec<_> = system
-            .processes()
-            .iter()
-            .filter(|(_, p)| Self::is_game(p))
-            .map(|(pid, _)| *pid)
-            .collect();
+        let targets = Self::game_pids();
         if targets.is_empty() {
             return 0;
         }
         // SIGTERM on Unix lets Wine and the game close cleanly; Windows has
         // no such request, so `kill_with` returns None and it is killed below.
-        for pid in &targets {
-            if let Some(p) = system.process(*pid) {
-                let _ = p.kill_with(sysinfo::Signal::Term);
+        with_processes(std::time::Duration::MAX, |system| {
+            for pid in &targets {
+                if let Some(p) = system.process(*pid) {
+                    let _ = p.kill_with(sysinfo::Signal::Term);
+                }
             }
-        }
+        });
         std::thread::sleep(std::time::Duration::from_millis(1500));
-        let system = Self::processes();
-        for pid in &targets {
-            if let Some(p) = system.process(*pid)
-                && Self::is_game(p)
-            {
-                p.kill();
+        with_processes(std::time::Duration::ZERO, |system| {
+            for pid in &targets {
+                if let Some(p) = system.process(*pid)
+                    && Self::is_game(p)
+                {
+                    p.kill();
+                }
             }
-        }
+        });
         targets.len()
     }
+}
+
+// ── the process table ───────────────────────────────────────────────────
+
+/// How old the table may be when asked whether Steam runs: launching asks
+/// every second while Steam starts.
+const STEAM_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(1);
+/// How old it may be when asked whether DayZ runs.
+const GAME_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// One process table for the whole app, read again only when a caller finds
+/// it older than it allows. Callers at the same moment wait for one read
+/// instead of each building a table of its own; and a table kept between
+/// reads only reads what is new (a command line is read once per process).
+struct Table {
+    system: sysinfo::System,
+    read_at: Option<std::time::Instant>,
+}
+
+static TABLE: std::sync::LazyLock<std::sync::Mutex<Table>> = std::sync::LazyLock::new(|| {
+    std::sync::Mutex::new(Table {
+        system: sysinfo::System::new(),
+        read_at: None,
+    })
+});
+
+/// What to read of each process. Names only on Windows, where they suffice
+/// (reading more opens every process in the table, a hundred milliseconds
+/// and more per read). On Unix the command lines too, for Proton's games
+/// (see [`DayzGame`]); read once per process.
+fn refresh_kind() -> sysinfo::ProcessRefreshKind {
+    let kind = sysinfo::ProcessRefreshKind::nothing();
+    #[cfg(not(windows))]
+    let kind = kind.with_cmd(sysinfo::UpdateKind::OnlyIfNotSet);
+    kind
+}
+
+/// Run `f` on the process table, read again first if it is `max_age` old or
+/// more (never read, or `Duration::ZERO`: always). Blocking.
+fn with_processes<R>(max_age: std::time::Duration, f: impl FnOnce(&sysinfo::System) -> R) -> R {
+    let mut table = TABLE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if is_stale(table.read_at, max_age) {
+        table.system.refresh_processes_specifics(
+            sysinfo::ProcessesToUpdate::All,
+            true,
+            refresh_kind(),
+        );
+        table.read_at = Some(std::time::Instant::now());
+    }
+    f(&table.system)
+}
+
+/// A table read at `read_at` is too old for a caller allowing `max_age`.
+fn is_stale(read_at: Option<std::time::Instant>, max_age: std::time::Duration) -> bool {
+    read_at.is_none_or(|t| max_age.is_zero() || t.elapsed() >= max_age)
 }
 
 #[cfg(test)]
@@ -290,6 +340,47 @@ mod tests {
     #[ignore = "reads this machine's processes"]
     fn running_here() {
         println!("running: {}", DayzGame::is_running());
+    }
+
+    #[test]
+    fn the_table_is_read_again_only_when_too_old() {
+        use super::is_stale;
+        use std::time::{Duration, Instant};
+        let now = Instant::now();
+        assert!(is_stale(None, Duration::MAX), "never read");
+        assert!(!is_stale(Some(now), Duration::from_secs(2)));
+        assert!(is_stale(Some(now), Duration::ZERO), "asked for a fresh one");
+        if let Some(past) = now.checked_sub(Duration::from_secs(3)) {
+            assert!(is_stale(Some(past), Duration::from_secs(2)));
+        }
+    }
+
+    #[test]
+    #[ignore = "reads this machine's processes"]
+    fn callers_share_one_read() {
+        use std::time::{Duration, Instant};
+        super::with_processes(Duration::ZERO, |_| ());
+        let t = Instant::now();
+        for _ in 0..100 {
+            DayzGame::is_running();
+            super::SteamClient::is_running();
+        }
+        println!("100 checks on a fresh table: {:?}", t.elapsed());
+        let t = Instant::now();
+        for _ in 0..10 {
+            super::with_processes(Duration::ZERO, |_| ());
+        }
+        println!("10 reads of a kept table: {:?}", t.elapsed());
+        let t = Instant::now();
+        for _ in 0..10 {
+            let mut s = sysinfo::System::new();
+            s.refresh_processes_specifics(
+                sysinfo::ProcessesToUpdate::All,
+                true,
+                super::refresh_kind(),
+            );
+        }
+        println!("10 reads of a new table: {:?}", t.elapsed());
     }
 
     #[test]

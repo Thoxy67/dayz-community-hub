@@ -165,7 +165,7 @@ impl World {
                         &format!("Workshop Mod {}", k + 1),
                     ));
                 }
-                Server {
+                std::sync::Arc::new(Server {
                     game_port: s.game_port,
                     endpoint: Endpoint {
                         ip: s.ip.clone(),
@@ -184,7 +184,7 @@ impl World {
                     time: s.time.clone(),
                     mods,
                     official: s.official,
-                }
+                })
             })
             .collect();
         ServerList { status: 0, result }

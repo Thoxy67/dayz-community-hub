@@ -159,7 +159,7 @@ pub async fn fetch_official_servers(
 
 /// Put the official servers into a list: a server already listed at the same
 /// query address is marked official, the others are added.
-pub fn merge_official(list: &mut Vec<Server>, official: Vec<Server>) {
+pub fn merge_official(list: &mut Vec<std::sync::Arc<Server>>, official: Vec<Server>) {
     // Which to mark and which to add, decided with borrowed keys first: no
     // copy of every address in the list.
     let mut mark: Vec<usize> = Vec::new();
@@ -181,13 +181,15 @@ pub fn merge_official(list: &mut Vec<Server>, official: Vec<Server>) {
         }
     }
     for i in mark {
-        list[i].official = true;
+        if let Some(s) = list.get_mut(i) {
+            std::sync::Arc::make_mut(s).official = true;
+        }
     }
     list.extend(
         official
             .into_iter()
             .zip(keep)
-            .filter_map(|(o, keep)| keep.then_some(o)),
+            .filter_map(|(o, keep)| keep.then(|| std::sync::Arc::new(o))),
     );
 }
 
@@ -249,14 +251,14 @@ mod tests {
 
     #[test]
     fn merge_marks_known_and_adds_new() {
-        let mut list = vec![Server {
+        let mut list = vec![std::sync::Arc::new(Server {
             endpoint: Endpoint {
                 ip: "1.1.1.1".into(),
                 port: 27016,
             },
             name: "listed".into(),
             ..Default::default()
-        }];
+        })];
         let official = |ip: &str, port| Server {
             endpoint: Endpoint {
                 ip: ip.into(),

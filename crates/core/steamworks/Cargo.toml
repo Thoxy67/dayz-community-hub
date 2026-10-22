@@ -12,6 +12,8 @@ workspace = true
 
 [dependencies]
 dz-common.workspace = true
+# The shared process table: whether Steam runs, without a worker.
+dz-steamcmd.workspace = true
 libloading.workspace = true
 serde.workspace = true
 serde_json.workspace = true

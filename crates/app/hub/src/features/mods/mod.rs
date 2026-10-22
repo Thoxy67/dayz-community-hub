@@ -6,6 +6,8 @@ use dz_game::mods::{self, DeleteOutcome, InstalledMod, ModSource};
 use futures_util::StreamExt;
 use rustc_hash::FxHashMap;
 use serde::Serialize;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use crate::error::{HttpResultExt, send_ok};
 use crate::error::{ResultExt, spawn_blocking_mapped};
@@ -79,6 +81,21 @@ pub struct ModUsageDto {
 /// Each mod's id and `local_updated`, for [`crate::state::AppState::mods_on_disk`].
 fn on_disk(mods: &[InstalledMod]) -> FxHashMap<u64, i64> {
     mods.iter().map(|m| (m.id, m.local_updated)).collect()
+}
+
+/// How long a read of the mods on disk serves `check_mod_updates`.
+const SCAN_FRESH: Duration = Duration::from_secs(10);
+
+/// The last read of the mods on disk, if it is recent enough to use again.
+fn recent_scan(scan: Option<&(Instant, Arc<Vec<InstalledMod>>)>) -> Option<Arc<Vec<InstalledMod>>> {
+    scan.filter(|(at, _)| at.elapsed() < SCAN_FRESH)
+        .map(|(_, mods)| Arc::clone(mods))
+}
+
+/// The mods on disk changed (deleted, made managed, cleaned up, an
+/// operation ran): the next check reads them again.
+pub(crate) async fn mods_changed(state: &crate::state::SharedState) {
+    state.write().await.mod_scan = None;
 }
 
 /// `time_updated` of each of `ids`, from the Workshop's Web API.
@@ -206,10 +223,11 @@ impl Hub {
             (s.ctl.clone_for_task(), s.mod_update_cache.clone())
         };
 
-        let mods = spawn_blocking_mapped(move || ctl_clone.get_installed_mods()).await?;
+        let mods = Arc::new(spawn_blocking_mapped(move || ctl_clone.get_installed_mods()).await?);
         {
             let mut s = state.write().await;
             s.mods_on_disk = Some(on_disk(&mods));
+            s.mod_scan = Some((Instant::now(), Arc::clone(&mods)));
             s.profile_changed();
         }
 
@@ -225,12 +243,22 @@ impl Hub {
     pub async fn check_mod_updates(&self) -> Result<Vec<InstalledModDto>, String> {
         mocked!(self, w => Ok(w.installed_mods()));
         let state = self.state()?;
-        let ctl_clone = state.read().await.ctl.clone_for_task();
+        let (ctl_clone, recent) = {
+            let s = state.read().await;
+            (s.ctl.clone_for_task(), recent_scan(s.mod_scan.as_ref()))
+        };
         let api_key = crate::features::steam::access::web_key(&state).await;
 
-        let installed_mods = spawn_blocking_mapped(move || ctl_clone.get_installed_mods())
-            .await
-            .unwrap_or_default();
+        // The window reads the disk (`get_installed_mods`) just before it
+        // asks: that read serves, unless it is old or the mods changed since.
+        let installed_mods = match recent {
+            Some(mods) => mods,
+            None => Arc::new(
+                spawn_blocking_mapped(move || ctl_clone.get_installed_mods())
+                    .await
+                    .unwrap_or_default(),
+            ),
+        };
 
         if installed_mods.is_empty() {
             let mut s = state.write().await;
@@ -260,6 +288,7 @@ impl Hub {
             let mut s = state.write().await;
             s.mod_update_cache = remote_map;
             s.mods_on_disk = Some(on_disk(&installed_mods));
+            s.mod_scan = Some((Instant::now(), installed_mods));
             s.profile_changed();
         }
         Ok(dtos)
@@ -281,7 +310,7 @@ impl Hub {
         mocked!(self, w => Ok(w.kept_in_steam(&mod_ids)));
         let state = self.state()?;
         let ctl_clone = { state.read().await.ctl.clone_for_task() };
-        spawn_blocking_mapped(move || -> std::result::Result<Vec<u64>, String> {
+        let kept = spawn_blocking_mapped(move || -> std::result::Result<Vec<u64>, String> {
             let mut deleted = Vec::new();
             let mut in_steam = Vec::new();
             let mut failed = None;
@@ -320,7 +349,9 @@ impl Hub {
             }
             Ok(in_steam)
         })
-        .await
+        .await;
+        mods_changed(&state).await;
+        kept
     }
 
     /// Toggle managed status of a mod.
@@ -328,7 +359,9 @@ impl Hub {
         mocked!(self, w => Ok(w.toggled_managed(mod_id)));
         let state = self.state()?;
         let ctl_clone = { state.read().await.ctl.clone_for_task() };
-        spawn_blocking_mapped(move || ctl_clone.toggle_mod_managed(mod_id)).await
+        let managed = spawn_blocking_mapped(move || ctl_clone.toggle_mod_managed(mod_id)).await;
+        mods_changed(&state).await;
+        managed
     }
 
     /// Delete every mod the launcher downloaded and every `@` link; mods in
@@ -337,7 +370,9 @@ impl Hub {
         mocked!(self => Ok("Removed 0 mods (0 B) and 0 symlinks".to_string()));
         let state = self.state()?;
         let ctl_clone = { state.read().await.ctl.clone_for_task() };
-        let stats = spawn_blocking_mapped(move || ctl_clone.cleanup_mods()).await?;
+        let stats = spawn_blocking_mapped(move || ctl_clone.cleanup_mods()).await;
+        mods_changed(&state).await;
+        let stats = stats?;
         Ok(format!(
             "Removed {} mods ({}) and {} symlinks",
             stats.removed_count,
@@ -383,6 +418,25 @@ impl Hub {
                 .ok_or_else(|| "Server not found".to_string())?;
             (server, state.ctl.clone_for_task())
         };
-        spawn_blocking_mapped(move || ctl.setup_mod_symlinks(&server).map(|_| ())).await
+        let linked =
+            spawn_blocking_mapped(move || ctl.setup_mod_symlinks(&server).map(|_| ())).await;
+        mods_changed(&state).await;
+        linked
+    }
+}
+
+#[cfg(test)]
+mod scan_tests {
+    use super::*;
+
+    #[test]
+    fn a_recent_read_serves_and_an_old_one_does_not() {
+        let mods = Arc::new(Vec::new());
+        assert!(recent_scan(None).is_none(), "nothing known: read the disk");
+        let now = (Instant::now(), Arc::clone(&mods));
+        assert!(recent_scan(Some(&now)).is_some_and(|m| Arc::ptr_eq(&m, &mods)));
+        if let Some(past) = Instant::now().checked_sub(SCAN_FRESH + Duration::from_secs(1)) {
+            assert!(recent_scan(Some(&(past, mods))).is_none());
+        }
     }
 }

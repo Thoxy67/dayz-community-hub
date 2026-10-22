@@ -102,6 +102,8 @@ pub struct SourcesChanged {
 
 static STATUS: LazyLock<Mutex<SourcesChanged>> = LazyLock::new(Mutex::default);
 static DIRTY: AtomicBool = AtomicBool::new(false);
+/// Poked by every [`update`]: wakes the notifier.
+static CHANGED: tokio::sync::Notify = tokio::sync::Notify::const_new();
 
 /// Change the status; the window hears of it shortly.
 pub(crate) fn update(f: impl FnOnce(&mut SourcesChanged)) {
@@ -110,6 +112,8 @@ pub(crate) fn update(f: impl FnOnce(&mut SourcesChanged)) {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     f(&mut s);
     DIRTY.store(true, Ordering::Release);
+    drop(s);
+    CHANGED.notify_one();
 }
 
 /// Count what `list` holds.
@@ -135,17 +139,17 @@ impl Hub {
     }
 }
 
-/// Emit `sources-changed` when the status moved. Runs for the life of the app.
+/// Emit `sources-changed` when the status moved, at most every
+/// [`EMIT_EVERY`]. Runs for the life of the app, asleep while nothing moves.
 pub(crate) fn spawn_notifier(hub: Hub) {
     tokio::spawn(async move {
-        let mut tick = tokio::time::interval(EMIT_EVERY);
-        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        loop {
-            tick.tick().await;
+        crate::wake::on_change(&CHANGED, EMIT_EVERY, || {
             if DIRTY.swap(false, Ordering::AcqRel) {
                 let s = STATUS.lock().map(|s| s.clone()).unwrap_or_default();
                 hub.emit(HubEvent::SourcesChanged(Box::new(s)));
             }
-        }
+            true
+        })
+        .await;
     });
 }
