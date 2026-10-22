@@ -409,6 +409,7 @@ fn list(
         id: 1,
         icon: lucide::PLUG_ZAP,
         label: t("servers", "directConnect"),
+        exclude: false,
         danger: false,
         tint: None,
     }];
@@ -750,6 +751,7 @@ fn parts(ui: &mut Ui, s: &mut State) {
                 id: 1,
                 icon: lucide::PLUG_ZAP,
                 label: "Direct",
+                exclude: false,
                 danger: false,
                 tint: None,
             },
@@ -757,6 +759,7 @@ fn parts(ui: &mut Ui, s: &mut State) {
                 id: 2,
                 icon: lucide::BAN,
                 label: "Exclude",
+                exclude: false,
                 danger: true,
                 tint: Some(tk.err),
             },

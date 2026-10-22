@@ -10,7 +10,7 @@
 use dz_hub::Hub;
 use dz_hub::features::profile::{ProfileDto, ProfileSettingsInput};
 use dz_hub::features::steamworks::ModDownloaderDto;
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::{Bus, ConfirmRequest, Signal};
 use crate::i18n::{t, tf};
@@ -60,10 +60,6 @@ pub struct PingSettings {
     pub scan_servers: bool,
 }
 
-fn addr_key(ip: &str, port: u16) -> String {
-    format!("{ip}:{port}")
-}
-
 /// A write's outcome: the toast for success, or the message for failure.
 type WriteResult = Result<Option<String>, String>;
 
@@ -77,10 +73,17 @@ pub struct Profile {
     pub data: Option<ProfileDto>,
     pub favorites: Vec<Favorite>,
     pub history: Vec<History>,
+    /// The Steam avatar as the hub gives it (a `data:` URI, kilobytes); set through
+    /// [`Profile::set_avatar`], which works out [`Profile::avatar_key`] with it.
     pub avatar_url: Option<String>,
+    /// The avatar's key for `parts::image::paint_keyed`, worked out once per avatar so
+    /// the frame does not hash the URI.
+    pub avatar_key: u64,
     /// Account writes that failed (the settings form puts the player's edits back).
     pub account_failures: u32,
-    favorite_keys: FxHashSet<String>,
+    /// The favourites' ports by address, asked by every row on screen each frame
+    /// (looked up by `&str`: no key is formatted).
+    favorite_keys: FxHashMap<String, Vec<u16>>,
     excluded: FxHashSet<String>,
     load: Option<Task<Result<ProfileDto, String>>>,
     avatar: Option<Task<Option<String>>>,
@@ -100,8 +103,9 @@ impl Profile {
             favorites: Vec::new(),
             history: Vec::new(),
             avatar_url: None,
+            avatar_key: 0,
             account_failures: 0,
-            favorite_keys: FxHashSet::default(),
+            favorite_keys: FxHashMap::default(),
             excluded: FxHashSet::default(),
             load: None,
             avatar: None,
@@ -140,11 +144,13 @@ impl Profile {
     }
 
     fn derive(&mut self) {
-        self.favorite_keys = self
-            .favorites
-            .iter()
-            .map(|f| addr_key(&f.ip, f.port))
-            .collect();
+        self.favorite_keys.clear();
+        for f in &self.favorites {
+            self.favorite_keys
+                .entry(f.ip.clone())
+                .or_default()
+                .push(f.port);
+        }
         self.excluded = self
             .data
             .as_ref()
@@ -153,7 +159,27 @@ impl Profile {
     }
 
     pub fn is_favorite(&self, ip: &str, port: u16) -> bool {
-        self.favorite_keys.contains(&addr_key(ip, port))
+        self.favorite_keys
+            .get(ip)
+            .is_some_and(|ports| ports.contains(&port))
+    }
+
+    /// A cheap fingerprint of the favourites, the history and the excluded addresses
+    /// (no allocation): what a view caches from them is made again when it moves,
+    /// optimistic edits included.
+    pub fn stamp(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        self.favorites.len().hash(&mut h);
+        for f in &self.favorites {
+            (&f.ip, f.port, &f.name, &f.password).hash(&mut h);
+        }
+        self.history.len().hash(&mut h);
+        for e in &self.history {
+            (&e.ip, e.port, &e.name, e.ts).hash(&mut h);
+        }
+        self.excluded.len().hash(&mut h);
+        h.finish()
     }
 
     pub fn is_excluded(&self, ip: &str) -> bool {
@@ -198,9 +224,18 @@ impl Profile {
         self.load = Some(rt::spawn(async move { hub.get_profile().await }));
     }
 
+    /// A new avatar (or none), and its key.
+    pub fn set_avatar(&mut self, a: Option<String>) {
+        if a == self.avatar_url {
+            return;
+        }
+        self.avatar_key = a.as_deref().map_or(0, crate::parts::image::key_of);
+        self.avatar_url = a;
+    }
+
     pub fn load_avatar(&mut self) {
         if !self.has_web_api() {
-            self.avatar_url = None;
+            self.set_avatar(None);
             return;
         }
         let hub = self.hub.clone();
@@ -588,7 +623,7 @@ impl Profile {
             && let Some(a) = task.poll()
         {
             self.avatar = None;
-            self.avatar_url = a;
+            self.set_avatar(a);
             changed = true;
         }
         let mut reload = false;

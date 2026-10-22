@@ -98,6 +98,8 @@ pub struct DetailState {
     copied_at: Option<f64>,
     /// The server the commands act on: (ip, query port, game port, search name).
     pub target: Option<Target>,
+    /// The model last gathered, and the key it was gathered under.
+    model: Option<(u64, Arc<Model>)>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -191,21 +193,30 @@ fn tick(cx: &mut Ctx, st: &mut DetailState, ip: &str, port: i64, m: &Model) {
 
 /// Gather the server's model and run the debounced fetches (before drawing, while the
 /// context can be borrowed mutably).
-pub fn prepare(cx: &mut Ctx, ip: &str, port: i64, name: &str) -> Model {
+pub fn prepare(cx: &mut Ctx, ip: &str, port: i64, name: &str) -> Arc<Model> {
     let shared = shared(cx.egui);
     let mut st = shared.lock();
-    let m = Model::of(cx, ip, port, name);
+    // Made again only when something it reads has moved (`model::key`).
+    let key = model::key(cx, ip, port, name);
+    let m = match &st.model {
+        Some((k, m)) if *k == key && st.target.is_some() => Arc::clone(m),
+        _ => {
+            let m = Arc::new(Model::of(cx, ip, port, name));
+            st.target = Some(Target {
+                ip: m.ip.clone(),
+                query_port: m.query_port,
+                game_port: m.game_port,
+                name: m.search_name.clone(),
+                listed: m.listed.is_some(),
+                metrics_id: m.metrics_data().map(|x| x.id),
+                missing: m.missing_ids(),
+                stale: m.stale_ids(),
+            });
+            st.model = Some((key, Arc::clone(&m)));
+            m
+        }
+    };
     tick(cx, &mut st, ip, port, &m);
-    st.target = Some(Target {
-        ip: m.ip.clone(),
-        query_port: m.query_port,
-        game_port: m.game_port,
-        name: m.search_name.clone(),
-        listed: m.listed.is_some(),
-        metrics_id: m.metrics_data().map(|x| x.id),
-        missing: m.missing_ids(),
-        stale: m.stale_ids(),
-    });
     m
 }
 
@@ -928,7 +939,7 @@ fn action_bar(ui: &mut Ui, st: &mut DetailState, m: &Model, foot: Rect, run: &mu
     }
     if c.add(b).clicked() {
         st.copied_at = Some(now);
-        ui.ctx().copy_text(m.address());
+        ui.ctx().copy_text(m.address().to_owned());
     }
 }
 pub use stats::range_of as stats_range_of;

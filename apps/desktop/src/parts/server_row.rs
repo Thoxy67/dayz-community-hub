@@ -18,9 +18,10 @@ use egui::{
 use rustc_hash::{FxHashMap, FxHasher};
 
 use super::cells::{
-    BARS_W, FlagWords, Flags, PlayersText, dash_color, day_phase, flags_width, mods_extra,
-    mods_tip, mods_tone, mods_width, paint_bars, paint_flags, paint_join_quiet, paint_mods,
-    paint_players, paint_star, paint_time, ping_text, ping_timed_out, same_version, star_label,
+    BARS_W, FlagWords, Flags, PlayersText, dash_color, day_phase, exclude_label, flags_width,
+    mods_extra, mods_tip, mods_tone, mods_width, paint_bars, paint_flags, paint_join_quiet,
+    paint_mods, paint_players, paint_star, paint_time, ping_text, ping_timed_out, same_version,
+    star_label,
 };
 use super::text::{draw, ph, ph_trunc};
 use crate::i18n::{self, t, tf};
@@ -277,6 +278,9 @@ pub struct RowButton<'a> {
     pub id: u32,
     pub icon: Icon,
     pub label: &'a str,
+    /// The label is the row's "exclude / include this address", worked out only when
+    /// the buttons show (the hovered or picked row), not for every row each frame.
+    pub exclude: bool,
     /// Removes or hides something: red under the pointer.
     pub danger: bool,
     /// Colours the icon (an exclusion in force is red).
@@ -1135,7 +1139,14 @@ impl<'a> ServerListRow<'a> {
                 action = Some(RowAction::CopyLink);
             }
             for b in self.buttons {
-                let mut ib = IconButton::new(b.icon, b.label).size(Size::IconXs);
+                let words;
+                let label = if b.exclude {
+                    words = exclude_label(d.ip, d.excluded);
+                    words.as_str()
+                } else {
+                    b.label
+                };
+                let mut ib = IconButton::new(b.icon, label).size(Size::IconXs);
                 if b.danger {
                     ib = ib.danger_hover();
                 }

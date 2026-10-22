@@ -6,6 +6,10 @@
 //! and decoding run on the runtime, never on the frame; the upload goes straight to
 //! egui's texture manager from there and the window repaints once it is in. Textures
 //! are kept by source, a few hundred at most.
+//!
+//! A long source (the avatar's `data:` URI, kilobytes) is better kept by a key its
+//! owner works out once ([`texture_keyed`], [`paint_keyed`]): the frame then hashes a
+//! number, not the whole string.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -26,7 +30,13 @@ enum Entry {
     Failed,
 }
 
-type Cache = Arc<Mutex<HashMap<String, Entry>>>;
+#[derive(Default)]
+struct Store {
+    by_src: HashMap<String, Entry>,
+    by_key: HashMap<u64, Entry>,
+}
+
+type Cache = Arc<Mutex<Store>>;
 
 fn cache(ctx: &Context) -> Cache {
     ctx.data_mut(|d| {
@@ -41,37 +51,98 @@ pub fn texture(ctx: &Context, src: &str) -> Option<TextureHandle> {
         return None;
     }
     let cache = cache(ctx);
-    let mut map = cache.lock();
-    match map.get(src) {
+    let mut store = cache.lock();
+    match store.by_src.get(src) {
         Some(Entry::Ready(t)) => return Some(t.clone()),
         Some(Entry::Loading | Entry::Failed) => return None,
         None => {}
     }
-    if map.len() >= KEEP {
-        map.retain(|_, e| matches!(e, Entry::Loading));
+    if store.by_src.len() >= KEEP {
+        store.by_src.retain(|_, e| matches!(e, Entry::Loading));
     }
-    map.insert(src.to_owned(), Entry::Loading);
-    drop(map);
+    store.by_src.insert(src.to_owned(), Entry::Loading);
+    drop(store);
     let (ctx, src, cache) = (ctx.clone(), src.to_owned(), Arc::clone(&cache));
     crate::rt::fire(async move {
-        let entry = match load(&src).await {
-            Ok(img) => Entry::Ready(ctx.load_texture(&src, img, TextureOptions::LINEAR)),
-            Err(e) => {
-                eprintln!("image {}: {e}", short(&src));
-                Entry::Failed
-            }
-        };
-        cache.lock().insert(src, entry);
+        let entry = fetch(&ctx, &src).await;
+        cache.lock().by_src.insert(src, entry);
     });
     None
+}
+
+/// The picture at `src`, kept by `key` (a hash of `src` its owner worked out once): the
+/// same as [`texture`] without hashing `src` each frame. A new key is a new picture.
+pub fn texture_keyed(ctx: &Context, key: u64, src: &str) -> Option<TextureHandle> {
+    if src.is_empty() {
+        return None;
+    }
+    let cache = cache(ctx);
+    let mut store = cache.lock();
+    match store.by_key.get(&key) {
+        Some(Entry::Ready(t)) => return Some(t.clone()),
+        Some(Entry::Loading | Entry::Failed) => return None,
+        None => {}
+    }
+    if store.by_key.len() >= KEEP {
+        store.by_key.retain(|_, e| matches!(e, Entry::Loading));
+    }
+    store.by_key.insert(key, Entry::Loading);
+    drop(store);
+    let (ctx, src, cache) = (ctx.clone(), src.to_owned(), Arc::clone(&cache));
+    crate::rt::fire(async move {
+        let entry = fetch(&ctx, &src).await;
+        cache.lock().by_key.insert(key, entry);
+    });
+    None
+}
+
+/// A key for [`texture_keyed`]: worked out once per source, by its owner.
+pub fn key_of(src: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = rustc_hash::FxHasher::default();
+    src.hash(&mut h);
+    h.finish()
+}
+
+async fn fetch(ctx: &Context, src: &str) -> Entry {
+    match load(src).await {
+        Ok(img) => Entry::Ready(ctx.load_texture(short(src), img, TextureOptions::LINEAR)),
+        Err(e) => {
+            eprintln!("image {}: {e}", short(src));
+            Entry::Failed
+        }
+    }
 }
 
 /// Draw the picture at `src` into `rect`, cropped to fill it, rounded. False while
 /// it is not there (the caller draws its placeholder).
 pub fn paint(painter: &Painter, rect: Rect, src: &str, radius: impl Into<CornerRadius>) -> bool {
-    let Some(tex) = texture(painter.ctx(), src) else {
-        return false;
-    };
+    match texture(painter.ctx(), src) {
+        Some(tex) => paint_texture(painter, rect, &tex, radius),
+        None => false,
+    }
+}
+
+/// [`paint`], for a picture kept by key ([`texture_keyed`]).
+pub fn paint_keyed(
+    painter: &Painter,
+    rect: Rect,
+    key: u64,
+    src: &str,
+    radius: impl Into<CornerRadius>,
+) -> bool {
+    match texture_keyed(painter.ctx(), key, src) {
+        Some(tex) => paint_texture(painter, rect, &tex, radius),
+        None => false,
+    }
+}
+
+fn paint_texture(
+    painter: &Painter,
+    rect: Rect,
+    tex: &TextureHandle,
+    radius: impl Into<CornerRadius>,
+) -> bool {
     let [w, h] = tex.size().map(|v| v.max(1) as f32);
     // `object-cover`: the middle of the picture, at the box's proportions.
     let (bw, bh) = (rect.width().max(1.0), rect.height().max(1.0));

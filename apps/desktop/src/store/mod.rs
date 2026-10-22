@@ -211,6 +211,10 @@ pub struct Stores {
     pub sources: sources::Sources,
     pub pad: pad::Pad,
     pub theme: theme::Theme,
+    /// Moves whenever a poll took something in or the hub said something: what a view
+    /// derives from the stores and caches across frames is made again when it moves
+    /// (with the view's own key for what actions change at once).
+    pub generation: u64,
     signals: Vec<Signal>,
 }
 
@@ -232,6 +236,7 @@ impl Stores {
             sources: sources::Sources::new(hub.clone()),
             pad: pad::Pad::new(hub.clone()),
             theme: theme::Theme::default(),
+            generation: 0,
             signals: Vec::new(),
             bus,
         }
@@ -239,6 +244,7 @@ impl Stores {
 
     /// What the hub said, to every store that listens.
     pub fn on_event(&mut self, ev: &HubEvent) {
+        self.generation = self.generation.wrapping_add(1);
         let bus = self.bus.clone();
         match ev {
             HubEvent::LaunchDone(name) => {
@@ -323,6 +329,9 @@ impl Stores {
             for s in signals {
                 self.route(s);
             }
+        }
+        if changed {
+            self.generation = self.generation.wrapping_add(1);
         }
         changed
     }

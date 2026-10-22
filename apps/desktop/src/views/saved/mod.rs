@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use egui::mutex::Mutex;
 use egui::{CornerRadius, Id, Sense, Ui, UiBuilder, Vec2};
-use rustc_hash::FxHasher;
+use rustc_hash::{FxHashMap, FxHasher};
 use serde_json::{Value, json};
 
 use crate::app::Ctx;
@@ -343,6 +343,11 @@ pub struct State {
     on_screen_hash: u64,
     on_screen_since: f64,
     pinged_hash: u64,
+    /// The list as last made, and the key it was made under.
+    listing: Option<(u64, Arc<Listing>)>,
+    /// History: each join's "how long ago" and date, by its time, with the second and
+    /// the language they were written in (written again when either moves).
+    times: FxHashMap<i64, (u64, String, String)>,
 }
 
 impl State {
@@ -368,6 +373,8 @@ impl State {
             on_screen_hash: 0,
             on_screen_since: 0.0,
             pinged_hash: 0,
+            listing: None,
+            times: FxHashMap::default(),
         }
     }
 
@@ -410,19 +417,45 @@ pub fn shared(ctx: &egui::Context, kind: Kind) -> Shared {
 }
 
 /// The rows to show: those matching the search (and listed, if asked), in order.
-/// Indices into `entries` / `lines`.
+/// Indices into `entries` / `lines`. Each word is lowercased once, not in the comparator.
 pub fn shown(entries: &[Entry], lines: &[Line], st: &State) -> Vec<usize> {
     let q = st.query.trim().to_lowercase();
-    let mut out: Vec<usize> = (0..entries.len().min(lines.len()))
+    let n = entries.len().min(lines.len());
+    let by_name = st.sort == SortCol::Name;
+    let names: Vec<String> = if q.is_empty() && !by_name {
+        Vec::new()
+    } else {
+        entries
+            .iter()
+            .take(n)
+            .map(|e| e.name.to_lowercase())
+            .collect()
+    };
+    let maps: Vec<String> = if q.is_empty() {
+        Vec::new()
+    } else {
+        lines
+            .iter()
+            .take(n)
+            .map(|l| {
+                if l.listed {
+                    l.map.to_lowercase()
+                } else {
+                    String::new()
+                }
+            })
+            .collect()
+    };
+    let mut out: Vec<usize> = (0..n)
         .filter(|&i| {
-            let (Some(e), Some(l)) = (entries.get(i), lines.get(i)) else {
+            let Some(l) = lines.get(i) else {
                 return false;
             };
             (!st.listed_only || l.listed)
                 && (q.is_empty()
-                    || e.name.to_lowercase().contains(&q)
+                    || names.get(i).is_some_and(|n| n.contains(&q))
                     || l.key.contains(&q)
-                    || (l.listed && l.map.to_lowercase().contains(&q)))
+                    || (l.listed && maps.get(i).is_some_and(|m| m.contains(&q))))
         })
         .collect();
     // Unlisted servers have no map, clock or mods: they go after the others.
@@ -433,6 +466,11 @@ pub fn shown(entries: &[Entry], lines: &[Line], st: &State) -> Vec<usize> {
             "~".to_string()
         }
     };
+    let words: Vec<String> = match st.sort {
+        SortCol::Map => lines.iter().take(n).map(|l| text(l, &l.map)).collect(),
+        SortCol::Time => lines.iter().take(n).map(|l| text(l, &l.time)).collect(),
+        _ => Vec::new(),
+    };
     let cmp = |a: usize, b: usize| -> std::cmp::Ordering {
         let (Some(ea), Some(eb), Some(la), Some(lb)) =
             (entries.get(a), entries.get(b), lines.get(a), lines.get(b))
@@ -440,15 +478,13 @@ pub fn shown(entries: &[Entry], lines: &[Line], st: &State) -> Vec<usize> {
             return std::cmp::Ordering::Equal;
         };
         match st.sort {
-            SortCol::Name => ea
-                .name
-                .to_lowercase()
-                .cmp(&eb.name.to_lowercase())
+            SortCol::Name => names
+                .get(a)
+                .cmp(&names.get(b))
                 .then_with(|| ea.name.cmp(&eb.name)),
             SortCol::Players => la.live.players.cmp(&lb.live.players),
             SortCol::Ping => la.ping_rank().cmp(&lb.ping_rank()),
-            SortCol::Map => text(la, &la.map).cmp(&text(lb, &lb.map)),
-            SortCol::Time => text(la, &la.time).cmp(&text(lb, &lb.time)),
+            SortCol::Map | SortCol::Time => words.get(a).cmp(&words.get(b)),
             SortCol::Mods => la.mods.cmp(&lb.mods),
             SortCol::Recent => ea.ts.unwrap_or(0).cmp(&eb.ts.unwrap_or(0)),
         }
@@ -458,6 +494,54 @@ pub fn shown(entries: &[Entry], lines: &[Line], st: &State) -> Vec<usize> {
         if st.asc { o } else { o.reverse() }
     });
     out
+}
+
+/// A list as last made: its entries, how each stands, the order shown.
+#[derive(Default)]
+pub struct Listing {
+    pub entries: Vec<Entry>,
+    pub lines: Vec<Line>,
+    pub order: Vec<usize>,
+}
+
+/// The list for this frame: the one made before while nothing it reads has moved (the
+/// stores' generation, the list's, the profile's favourites and history, the search, the
+/// order, "in the list only"), else made again, with the keys the commands walk.
+fn listing(cx: &mut Ctx, kind: Kind, st: &mut State) -> Arc<Listing> {
+    let key = {
+        let mut h = FxHasher::default();
+        (
+            kind,
+            cx.stores.generation,
+            cx.stores.servers.generation,
+            cx.stores.profile.stamp(),
+            &st.query,
+            st.listed_only,
+            st.sort.id(),
+            st.asc,
+        )
+            .hash(&mut h);
+        h.finish()
+    };
+    if let Some((k, l)) = &st.listing
+        && *k == key
+    {
+        return Arc::clone(l);
+    }
+    let entries = entries(cx, kind);
+    let lines = lines(cx, &entries);
+    let order = shown(&entries, &lines, st);
+    st.shown = order
+        .iter()
+        .filter_map(|&i| lines.get(i).map(|l| l.key.clone()))
+        .collect();
+    let l = Arc::new(Listing {
+        entries,
+        lines,
+        order,
+    });
+    st.listing = Some((key, Arc::clone(&l)));
+    l
 }
 
 /// Words a list's empty state says (it has no entries at all).
@@ -491,26 +575,23 @@ pub fn show_with_actions(
     actions: impl FnOnce(&mut Ui, &Stats, &mut Run),
     empty: EmptyWords<'_>,
 ) {
-    let entries = entries(cx, kind);
-    let lines = lines(cx, &entries);
     let shared = shared(ui.ctx(), kind);
     let mut run = Run::new();
-    let order;
+    let list;
     let selected;
     {
         let mut st = shared.lock();
-        if st.focus_last && st.open_last(&entries) {
+        let mut l = listing(cx, kind, &mut st);
+        if st.focus_last && st.open_last(&l.entries) {
             st.focus_last = false;
+            l = listing(cx, kind, &mut st);
         }
-        order = shown(&entries, &lines, &st);
-        st.shown = order
-            .iter()
-            .filter_map(|&i| lines.get(i).map(|l| l.key.clone()))
-            .collect();
+        list = l;
+        let (entries, lines, order) = (&list.entries, &list.lines, &list.order);
         if cx.nav.take_focus_search() {
             st.focus_search = true;
         }
-        keys(ui.ctx(), cx, kind, &mut st, &entries, &lines, &mut run);
+        keys(ui.ctx(), cx, kind, &mut st, entries, lines, &mut run);
         selected = st.sel.as_ref().and_then(|k| {
             order
                 .iter()
@@ -518,19 +599,20 @@ pub fn show_with_actions(
                 .find(|&i| lines.get(i).is_some_and(|l| l.key == *k))
         });
     }
+    let (entries, lines, order) = (&list.entries, &list.lines, &list.order);
     // The panel's model and its debounced fetches, before the frame borrows.
     let model = selected
         .and_then(|i| entries.get(i))
         .map(|e| detail::prepare(cx, &e.ip, i64::from(e.port), &e.name));
     let now_s = crate::store::now_ms() / 1000;
-    let st_figures = stats(&entries, &lines, now_s);
+    let st_figures = stats(entries, lines, now_s);
     {
         let mut st = shared.lock();
         let data = Frame {
             kind,
-            entries: &entries,
-            lines: &lines,
-            order: &order,
+            entries,
+            lines,
+            order,
             selected,
             stats: &st_figures,
         };
@@ -540,7 +622,7 @@ pub fn show_with_actions(
             &mut st,
             &data,
             cache,
-            model.as_ref(),
+            model.as_deref(),
             figures,
             actions,
             empty,
@@ -918,6 +1000,7 @@ fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCac
             id: BTN_DIRECT,
             icon: lucide::PLUG_ZAP,
             label: direct,
+            exclude: false,
             danger: false,
             tint: None,
         },
@@ -925,6 +1008,7 @@ fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCac
             id: BTN_REMOVE,
             icon: lucide::TRASH_2,
             label: remove,
+            exclude: false,
             danger: true,
             tint: None,
         },
@@ -951,6 +1035,15 @@ fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCac
         .as_ref()
         .and_then(|k| st.shown.iter().position(|s| s == k));
     let mut acts: Vec<(RowAction, usize)> = Vec::new();
+    let mut times = std::mem::take(&mut st.times);
+    if times.len() > 512 {
+        times.clear();
+    }
+    let times_stamp = {
+        let mut h = FxHasher::default();
+        (crate::i18n::locale(), chrono::Local::now().timestamp()).hash(&mut h);
+        h.finish()
+    };
     let out = VirtualList::new(("saved-list", kind.id()), d.order.len())
         .row_height(ROW_PX)
         .overscan(OVERSCAN)
@@ -1002,8 +1095,14 @@ fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCac
                     Vec::new()
                 };
                 let (top, bottom) = match e.ts.filter(|_| wide) {
-                    Some(ts) => (format::relative(ts), format::date_time(ts)),
-                    None => (String::new(), String::new()),
+                    Some(ts) => {
+                        let cell = times.entry(ts).or_default();
+                        if cell.0 != times_stamp || cell.1.is_empty() {
+                            *cell = (times_stamp, format::relative(ts), format::date_time(ts));
+                        }
+                        (cell.1.as_str(), cell.2.as_str())
+                    }
+                    None => ("", ""),
                 };
                 let w = ui.available_width();
                 let cols = ListColumns::new(
@@ -1020,9 +1119,9 @@ fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCac
                 }
                 if wide && !top.is_empty() {
                     row = row.extra(RowExtra {
-                        top: &top,
-                        bottom: &bottom,
-                        tip: &bottom,
+                        top,
+                        bottom,
+                        tip: bottom,
                     });
                 }
                 let resp = row.show(ui, &cols, cache);
@@ -1031,6 +1130,7 @@ fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCac
                 }
             },
         );
+    st.times = times;
     st.page_rows = ((out.viewport.height() / ROW_PX).floor() as usize).max(1);
     // The rows on screen, for their pings.
     let on: Vec<String> = out

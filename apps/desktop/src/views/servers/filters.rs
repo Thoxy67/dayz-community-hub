@@ -7,6 +7,8 @@
 //! hub's order answers it. Buttons here push commands (`servers.filter.*`), so the
 //! palette, the keys and the control channel change the same thing.
 
+use std::sync::Arc;
+
 use dz_hub::features::browser::{ServerQuery, SortCol, Tri};
 use egui::{CornerRadius, Pos2, Rect, Response, Sense, Stroke, Ui, Vec2, Widget};
 use serde_json::{Value, json};
@@ -297,31 +299,29 @@ pub fn toolbar(ui: &mut Ui, f: &mut Filters, d: &ToolbarData, run: &mut Run) {
 
         // The maps: "<map> · <count>", busiest first, several at once, found by typing;
         // the placeholder clears them.
-        let labels: Vec<String> = d
+        let names = map_names(ui.ctx(), d.maps);
+        let opts: Vec<SelectOption<&str>> = d
             .maps
             .iter()
-            .map(|m| format!("{} · {}", m.map, m.count))
-            .collect();
-        let opts: Vec<SelectOption<String>> = d
-            .maps
-            .iter()
-            .zip(&labels)
-            .map(|(m, l)| SelectOption::new(m.map.clone(), l.as_str()))
+            .zip(&names.labels)
+            .map(|(m, l)| SelectOption::new(m.map.as_str(), l.as_str()))
             .collect();
         // As the list spells them (a command may have named one in another case).
-        let mut maps: Vec<String> = f
+        let mut maps: Vec<&str> = f
             .maps
             .iter()
             .map(|m| {
+                let low = m.to_lowercase();
                 d.maps
                     .iter()
-                    .find(|c| c.map.to_lowercase() == m.to_lowercase())
-                    .map_or_else(|| m.clone(), |c| c.map.clone())
+                    .zip(&names.lower)
+                    .find(|(_, l)| **l == low)
+                    .map_or(m.as_str(), |(c, _)| c.map.as_str())
             })
             .collect();
         let summary = match maps.as_slice() {
             [] => String::new(),
-            [one] => one.clone(),
+            [one] => (*one).to_string(),
             many => tf("servers", "mapsCount", &[("count", &many.len())]),
         };
         let r = ui.add(
@@ -335,7 +335,7 @@ pub fn toolbar(ui: &mut Ui, f: &mut Filters, d: &ToolbarData, run: &mut Run) {
                 .label(t("servers", "colMap")),
         );
         // A change, or a name a command gave in another case, now spelled as listed.
-        if r.changed() || maps != f.maps {
+        if r.changed() || !maps.iter().copied().eq(f.maps.iter().map(String::as_str)) {
             run.push(("servers.filter.map", json!({ "maps": maps })));
         }
 
@@ -355,6 +355,41 @@ pub fn toolbar(ui: &mut Ui, f: &mut Filters, d: &ToolbarData, run: &mut Run) {
             );
         });
     });
+}
+
+/// The map choices' words, made once per list of maps (not each frame): each map's
+/// label ("<map> · <count>") and its name lowercased.
+#[derive(Default)]
+struct MapNames {
+    key: u64,
+    labels: Vec<String>,
+    lower: Vec<String>,
+}
+
+fn map_names(ctx: &egui::Context, maps: &[dz_hub::features::browser::MapCount]) -> Arc<MapNames> {
+    use std::hash::{Hash, Hasher};
+    let mut h = rustc_hash::FxHasher::default();
+    maps.len().hash(&mut h);
+    for m in maps {
+        (&m.map, m.count).hash(&mut h);
+    }
+    let key = h.finish();
+    let id = egui::Id::new("dzch.servers.map_names");
+    if let Some(n) = ctx.data(|d| d.get_temp::<Arc<MapNames>>(id))
+        && n.key == key
+    {
+        return n;
+    }
+    let n = Arc::new(MapNames {
+        key,
+        labels: maps
+            .iter()
+            .map(|m| format!("{} · {}", m.map, m.count))
+            .collect(),
+        lower: maps.iter().map(|m| m.map.to_lowercase()).collect(),
+    });
+    ctx.data_mut(|d| d.insert_temp(id, Arc::clone(&n)));
+    n
 }
 
 /// The chips' width, for the search to take what is left.

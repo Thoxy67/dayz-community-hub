@@ -186,7 +186,7 @@ impl View for ServersView {
                 cx,
                 &mut st,
                 &mut self.cache,
-                model.as_ref(),
+                model.as_deref(),
                 focus_search,
                 &mut run,
             );

@@ -4,6 +4,8 @@
 //! Nothing is paged: scrolling 9 500 rows costs the rows on screen, laid out once per
 //! server in the view's [`RowCache`].
 
+use std::fmt::Write as _;
+
 use dz_hub::features::browser::SortCol;
 use egui::{Pos2, Rect, Ui, Vec2};
 use serde_json::{Value, json};
@@ -15,7 +17,7 @@ use crate::icons::lucide;
 use crate::kit::{Button, Skeleton, Variant, VirtualList};
 use crate::parts::{
     Empty, ListColumns, ROW_PX, RowAction, RowButton, RowCache, RowData, ServerListRow, SortHead,
-    TableHead, exclude_label, head_cell,
+    TableHead, head_cell,
 };
 use crate::theme::TokensExt;
 
@@ -198,6 +200,8 @@ pub fn show(ui: &mut Ui, cx: &Ctx, st: &mut UiState, cache: &mut RowCache, run: 
     let profile = &cx.stores.profile;
     let direct = t("servers", "directConnect");
     let mut acts: Vec<(RowAction, usize)> = Vec::new();
+    // One address buffer for every row (the stores are asked by "ip:port").
+    let mut key = String::new();
     let out = VirtualList::new("servers-list", total)
         .row_height(ROW_PX)
         .overscan(OVERSCAN)
@@ -216,7 +220,8 @@ pub fn show(ui: &mut Ui, cx: &Ctx, st: &mut UiState, cache: &mut RowCache, run: 
                     return;
                 };
                 let mut d = RowData::from_server(&r);
-                let key = format!("{}:{}", d.ip, d.query_port);
+                key.clear();
+                let _ = write!(key, "{}:{}", d.ip, d.query_port);
                 d.ping_pending = pending.contains(&key);
                 d.players_loading = data.a2s_loading(&key);
                 // The profile's own state, changed at once by a click (the snapshot's
@@ -236,20 +241,21 @@ pub fn show(ui: &mut Ui, cx: &Ctx, st: &mut UiState, cache: &mut RowCache, run: 
                 } else {
                     Vec::new()
                 };
-                let ex = exclude_label(d.ip, d.excluded);
                 let tk = ui.tokens();
                 let buttons = [
                     RowButton {
                         id: BTN_DIRECT,
                         icon: lucide::PLUG_ZAP,
                         label: direct,
+                        exclude: false,
                         danger: false,
                         tint: None,
                     },
                     RowButton {
                         id: BTN_EXCLUDE,
                         icon: lucide::BAN,
-                        label: &ex,
+                        label: "",
+                        exclude: true,
                         danger: true,
                         tint: d.excluded.then_some(tk.err),
                     },

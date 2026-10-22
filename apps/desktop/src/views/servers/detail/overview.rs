@@ -270,7 +270,7 @@ pub fn show(ui: &mut Ui, cx: &Ctx, m: &Model, run: &mut Run) {
                     row(ui, t("detail", "address"), &mut |ui| {
                         let _ = ui
                             .add(
-                                Copy::new(&address)
+                                Copy::new(address)
                                     .labels(t("common", "copy"), t("common", "copied"))
                                     .text_size(size::TEXT_XS)
                                     .color(ui.tokens().fg),
@@ -292,8 +292,7 @@ pub fn show(ui: &mut Ui, cx: &Ctx, m: &Model, run: &mut Run) {
                     row(ui, t("detail", "shareLink"), &mut |ui| {
                         let _ = ui
                             .add(
-                                Copy::new(&share)
-                                    .labels(t("common", "copy"), t("common", "copied")),
+                                Copy::new(share).labels(t("common", "copy"), t("common", "copied")),
                             )
                             .tip_kbd(t("detail", "shareLinkHint"), "", Side::Top);
                     });

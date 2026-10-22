@@ -85,11 +85,54 @@ pub struct Model {
     pub excluded: bool,
     pub ping: Option<u32>,
     pub ping_pending: bool,
+    /// "ip:game port" and the `dzch://` link, written once per model.
+    address: String,
+    share: String,
+}
+
+/// What [`Model::of`] reads, as a cheap key (a few lookups, one formatted address, no
+/// copy): the stores' generation and the list's (answers taken in, live data), the
+/// profile's favourites and history, the mods on disk, and this server's own state that
+/// actions change at once (a query or a ping asked, an address excluded).
+pub fn key(cx: &Ctx, ip: &str, port: i64, name: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let s = &cx.stores;
+    let mut h = rustc_hash::FxHasher::default();
+    (
+        ip,
+        port,
+        name,
+        s.generation,
+        s.servers.generation,
+        s.profile.stamp(),
+        s.profile.is_excluded(ip),
+    )
+        .hash(&mut h);
+    let qp = s.servers.row(ip, port).map_or(port, |r| r.query_port());
+    let key = format!("{ip}:{qp}");
+    if let Some(e) = s.server_data.a2s_entry(&key) {
+        (
+            e.data.as_ref().map(|d| Arc::as_ptr(d) as usize),
+            e.loading,
+            &e.error,
+        )
+            .hash(&mut h);
+    }
+    (
+        s.server_data.a2s_loading(&key),
+        s.servers.pending.contains(&key),
+    )
+        .hash(&mut h);
+    s.mods.installed.len().hash(&mut h);
+    for m in &s.mods.installed {
+        (m.id, m.update_available, m.size, &m.name).hash(&mut h);
+    }
+    h.finish()
 }
 
 impl Model {
-    pub fn address(&self) -> String {
-        format!("{}:{}", self.ip, self.game_port)
+    pub fn address(&self) -> &str {
+        &self.address
     }
 
     pub fn metrics_data(&self) -> Option<&ServerMetricsDto> {
@@ -114,7 +157,11 @@ impl Model {
 
     /// The server as a `dzch://` link, which opens this app straight on it, with the
     /// mods it runs.
-    pub fn share_link(&self) -> String {
+    pub fn share_link(&self) -> &str {
+        &self.share
+    }
+
+    fn make_share_link(&self) -> String {
         let gp = u16::try_from(self.game_port).unwrap_or(0);
         let qp = u16::try_from(self.query_port).ok();
         let mut link = crate::store::connect::dzch_link(&self.ip, gp, qp, Some(&self.title));
@@ -284,7 +331,9 @@ impl Model {
         let excluded = s.profile.is_excluded(ip);
         let ping = s.servers.ping_ms(ip, query_port);
         let ping_pending = s.servers.pending.contains(&key);
-        Self {
+        let mut m = Self {
+            address: format!("{ip}:{game_port}"),
+            share: String::new(),
             ip: ip.to_string(),
             query_port,
             game_port,
@@ -312,7 +361,9 @@ impl Model {
             excluded,
             ping,
             ping_pending,
-        }
+        };
+        m.share = m.make_share_link();
+        m
     }
 }
 

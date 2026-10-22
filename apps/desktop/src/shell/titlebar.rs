@@ -270,11 +270,26 @@ fn figure_values(ui: &Ui, cx: &Ctx) -> [Figure; 3] {
     ]
 }
 
+/// The figures laid out, once per pass: the bar's centring and its drawing both ask.
 fn figure_galleys(ui: &Ui, cx: &Ctx) -> ([Figure; 3], [Arc<egui::Galley>; 3]) {
+    type Laid = (u64, [&'static str; 3], [Arc<egui::Galley>; 3]);
+    let id = egui::Id::new("dzch.titlebar.figures-laid");
+    let pass = ui.ctx().cumulative_pass_nr();
+    let figure = |tip: &'static str| Figure {
+        value: String::new(),
+        tip,
+    };
+    if let Some((p, tips, g)) = ui.data(|d| d.get_temp::<Arc<Laid>>(id)).as_deref()
+        && *p == pass
+    {
+        return (tips.map(figure), g.clone());
+    }
     let tk = ui.tokens();
     let f = figure_values(ui, cx);
     let mk = |s: &str| paint::galley(ui, s, font(Face::MonoMedium, size::TEXT_2XS), tk.fg);
     let g = [mk(&f[0].value), mk(&f[1].value), mk(&f[2].value)];
+    let tips = [f[0].tip, f[1].tip, f[2].tip];
+    ui.data_mut(|d| d.insert_temp(id, Arc::new((pass, tips, g.clone()))));
     (f, g)
 }
 
@@ -412,8 +427,11 @@ fn profile(ui: &mut Ui, cx: &mut Ctx, right: f32, rect: Rect, win_w: f32) -> f32
         ),
     };
     // The avatar is drawn at `size-5`, the icon at `size-icon`.
+    let avatar_key = cx.stores.profile.avatar_key;
     let lead = match cx.stores.profile.avatar_url.as_deref() {
-        Some(src) if crate::parts::image::texture(ui.ctx(), src).is_some() => AVATAR,
+        Some(src) if crate::parts::image::texture_keyed(ui.ctx(), avatar_key, src).is_some() => {
+            AVATAR
+        }
         _ => size::ICON,
     };
     let w = 10.0 + lead + 8.0 + ng.size().x + lg.as_ref().map_or(0.0, |g| g.size().x + 8.0) + 10.0;
@@ -434,7 +452,8 @@ fn profile(ui: &mut Ui, cx: &mut Ctx, right: f32, rect: Rect, win_w: f32) -> f32
     // The Steam avatar (`size-5 rounded-full ring-1 ring-border-strong`), else the icon.
     let avatar = cx.stores.profile.avatar_url.as_deref().and_then(|src| {
         let a = Rect::from_min_size(pos2(x, cy - AVATAR / 2.0), Vec2::splat(AVATAR));
-        crate::parts::image::paint(p, a, src, CornerRadius::same(255)).then_some(a)
+        crate::parts::image::paint_keyed(p, a, avatar_key, src, CornerRadius::same(255))
+            .then_some(a)
     });
     match avatar {
         Some(a) => {

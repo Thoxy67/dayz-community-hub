@@ -70,6 +70,7 @@ impl SettingsView {
     pub(super) fn account(&mut self, ui: &mut Ui, cx: &mut Ctx) {
         let tk = ui.tokens();
         let avatar = cx.stores.profile.avatar_url.as_deref().unwrap_or("");
+        let avatar_key = cx.stores.profile.avatar_key;
         SettingsSection::new(t("settings", "sectionAccount"))
             .description(t("settings", "identity"))
             .icon(lucide::USER_ROUND)
@@ -83,7 +84,13 @@ impl SettingsView {
                             let (r, _) = ui.allocate_exact_size(Vec2::splat(48.0), Sense::hover());
                             let p = ui.painter();
                             p.circle_filled(r.center(), 24.0, tk.raised);
-                            if !crate::parts::image::paint(p, r, avatar, CornerRadius::same(255)) {
+                            if !crate::parts::image::paint_keyed(
+                                p,
+                                r,
+                                avatar_key,
+                                avatar,
+                                CornerRadius::same(255),
+                            ) {
                                 lucide::USER_ROUND.paint(
                                     p,
                                     Rect::from_center_size(r.center(), Vec2::splat(24.0)),

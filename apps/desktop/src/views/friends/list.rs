@@ -441,6 +441,7 @@ fn direct_button() -> RowButton<'static> {
         id: BTN_DIRECT,
         icon: lucide::PLUG_ZAP,
         label: t("servers", "directConnect"),
+        exclude: false,
         danger: false,
         tint: None,
     }
@@ -475,6 +476,7 @@ fn server_row(
             id: BTN_SHOW,
             icon: lucide::LIST,
             label: t("friends", "showInList"),
+            exclude: false,
             danger: false,
             tint: None,
         },

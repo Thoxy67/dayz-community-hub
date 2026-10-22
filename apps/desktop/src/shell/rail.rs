@@ -273,8 +273,9 @@ fn entry(ui: &mut Ui, cx: &mut Ctx, p: &Place, collapsed: bool, w: f32) -> Rect 
         paint::text_at(painter, &g, x, cy, ink);
     }
     super::ring(ui, &resp, r, size::RADIUS_SM);
-    let kbd = commands::view_key(p.id).unwrap_or_default();
+    // The hint (and its shortcut, written out) is the collapsed rail's only.
     let resp = if collapsed {
+        let kbd = commands::view_key(p.id).unwrap_or_default();
         resp.tip_kbd(label, &kbd, Side::Right)
     } else {
         resp
