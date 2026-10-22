@@ -40,6 +40,7 @@ mod rail;
 mod statusbar;
 mod titlebar;
 mod window;
+pub use window::release_after_hand_over;
 
 pub(crate) use dialogs::shortcut_list;
 
@@ -118,7 +119,7 @@ fn arg<'a>(a: &'a serde_json::Value, k: &str) -> Option<&'a str> {
 
 /// `window.drag`: move the window with the pointer (as a press on the title bar does).
 pub fn cmd_window_drag(cx: &mut Ctx, _: &serde_json::Value) {
-    cx.egui.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+    window::hand_over(cx.egui, egui::ViewportCommand::StartDrag);
 }
 
 /// `window.minimize_maximize_close {"action": "minimize" | "maximize" | "close"}`; the

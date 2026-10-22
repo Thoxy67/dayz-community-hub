@@ -715,7 +715,8 @@ impl eframe::App for HubApp {
         HubApp::ui(self, ui);
     }
 
-    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        shell::release_after_hand_over(ctx, raw_input);
         self.control_input(raw_input);
     }
 
@@ -894,5 +895,20 @@ mod tests {
         // The paste's navigation lands on the next frame.
         h.run_steps(3);
         assert_eq!(h.state().as_ref().unwrap().nav().view, ViewId::Connect);
+
+        // The window's edges and corners show the resize cursor, wherever they are.
+        for (pos, want) in [
+            (egui::pos2(1.0, 400.0), egui::CursorIcon::ResizeWest),
+            (egui::pos2(1398.5, 400.0), egui::CursorIcon::ResizeEast),
+            (egui::pos2(700.0, 1.0), egui::CursorIcon::ResizeNorth),
+            (egui::pos2(700.0, 858.5), egui::CursorIcon::ResizeSouth),
+            (egui::pos2(300.0, 858.5), egui::CursorIcon::ResizeSouth),
+            (egui::pos2(1399.0, 859.0), egui::CursorIcon::ResizeSouthEast),
+            (egui::pos2(1.0, 1.0), egui::CursorIcon::ResizeNorthWest),
+        ] {
+            h.hover_at(pos);
+            h.run_steps(2);
+            assert_eq!(h.output().platform_output.cursor_icon, want, "at {pos:?}");
+        }
     }
 }

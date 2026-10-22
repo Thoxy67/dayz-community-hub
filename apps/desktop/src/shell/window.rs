@@ -3,15 +3,61 @@
 //! the window manager (`ViewportCommand::BeginResize`). None while maximised or
 //! full-screen. Read from the raw pointer at the end of the frame, so it wins over what
 //! is drawn under the edge.
+//!
+//! A move or resize handed to the window manager ([`hand_over`]) takes the pointer: the
+//! button's release goes to the window manager, not to the window (Wayland, Windows).
+//! egui would then think the button held for good (no resize cursor, no new drag), so
+//! the next frame is given the release ([`release_after_hand_over`]).
 
 use egui::viewport::ResizeDirection;
-use egui::{Context, CursorIcon, Pos2, Rect, ViewportCommand};
+use egui::{Context, CursorIcon, Id, PointerButton, Pos2, RawInput, Rect, ViewportCommand};
 
 use crate::app::Ctx;
 
 /// How thick an edge is, and how far a corner reaches along its sides (points).
 const EDGE: f32 = 4.0;
 const CORNER: f32 = 10.0;
+
+fn handed_over_id() -> Id {
+    Id::new("dzch.window.handed_over")
+}
+
+/// Hand the pointer to the window manager: a move (`StartDrag`) or a resize
+/// (`BeginResize`).
+pub fn hand_over(ctx: &Context, cmd: ViewportCommand) {
+    ctx.send_viewport_cmd(cmd);
+    ctx.data_mut(|d| d.insert_temp(handed_over_id(), true));
+}
+
+/// Before a frame: after a hand-over, the primary button's release the window will not
+/// get (unless this input already has it).
+pub fn release_after_hand_over(ctx: &Context, raw: &mut RawInput) {
+    let handed = ctx.data_mut(|d| d.remove_temp::<bool>(handed_over_id()));
+    if handed != Some(true) {
+        return;
+    }
+    let released = raw.events.iter().any(|e| {
+        matches!(
+            e,
+            egui::Event::PointerButton {
+                button: PointerButton::Primary,
+                pressed: false,
+                ..
+            }
+        )
+    });
+    let down = ctx.input(|i| i.pointer.primary_down());
+    if released || !down {
+        return;
+    }
+    let pos = ctx.input(|i| i.pointer.latest_pos()).unwrap_or_default();
+    raw.events.push(egui::Event::PointerButton {
+        pos,
+        button: PointerButton::Primary,
+        pressed: false,
+        modifiers: ctx.input(|i| i.modifiers),
+    });
+}
 
 /// The edge or corner under `p` in a window of `r`, if any.
 pub fn direction(r: Rect, p: Pos2) -> Option<ResizeDirection> {
@@ -82,7 +128,7 @@ pub(super) fn resize_edges(ctx: &Context, cx: &Ctx) {
     };
     ctx.set_cursor_icon(cursor(d));
     if pressed {
-        ctx.send_viewport_cmd(ViewportCommand::BeginResize(d));
+        hand_over(ctx, ViewportCommand::BeginResize(d));
     }
 }
 
@@ -108,5 +154,35 @@ mod tests {
             Some(ResizeDirection::SouthEast)
         );
         assert_eq!(direction(r, pos2(200.0, 50.0)), None);
+    }
+
+    /// After a hand-over, a button the window manager kept is released; without one,
+    /// nothing is made up.
+    #[test]
+    fn a_hand_over_releases_the_button() {
+        let ctx = Context::default();
+        let press = |pressed| egui::Event::PointerButton {
+            pos: pos2(5.0, 5.0),
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let mut raw = RawInput {
+            events: vec![egui::Event::PointerMoved(pos2(5.0, 5.0)), press(true)],
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(raw, |ui| hand_over(ui.ctx(), ViewportCommand::StartDrag));
+        out.textures_delta.clear();
+        assert!(ctx.input(|i| i.pointer.primary_down()));
+        raw = RawInput::default();
+        release_after_hand_over(&ctx, &mut raw);
+        assert_eq!(raw.events, [press(false)]);
+        let mut out = ctx.run_ui(raw, |_| {});
+        out.textures_delta.clear();
+        assert!(!ctx.input(|i| i.pointer.primary_down()));
+        // Once only.
+        let mut raw = RawInput::default();
+        release_after_hand_over(&ctx, &mut raw);
+        assert!(raw.events.is_empty());
     }
 }
