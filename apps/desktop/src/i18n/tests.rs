@@ -381,6 +381,17 @@ fn dates_match_intl() {
 }
 
 #[test]
+fn short_ago() {
+    let now = 1_000_000_000;
+    let r = |l, secs: i64| ago_short_in(l, now, now - secs);
+    assert_eq!(r(Locale::En, 5), "just now");
+    assert_eq!(r(Locale::En, 600), "10 min");
+    assert_eq!(r(Locale::Fr, 7_200), "2 h");
+    assert_eq!(r(Locale::Fr, 3 * 86_400), "3 j");
+    assert_eq!(r(Locale::En, 30 * 86_400), "4 wk");
+}
+
+#[test]
 fn relative_times() {
     let now = 1_000_000_000;
     let r = |secs: i64| relative_in(Locale::En, now, now - secs);

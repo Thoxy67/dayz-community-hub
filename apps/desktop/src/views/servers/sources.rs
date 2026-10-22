@@ -240,23 +240,30 @@ pub fn bar(ui: &mut Ui, s: &SourcesChanged, open: bool) {
             let s = tf("sources", "waiting", &[("secs", &w)]);
             text(ui, &s, &small, tk.warn);
         } else if steam.phase != Phase::Off && rect.width() >= 900.0 {
+            // What Steam brought, in words; the counts behind it in the tip (and in
+            // Details).
             let room = ui.available_width();
             let added = format!("+{}", format::num(f64::from(steam.added)));
-            let rest = format!(
-                " · {}/{} A2S · {} {}",
+            let word = format!(" {}", t("sources", "added").to_lowercase());
+            let tip = format!(
+                "{} {} · {} {}/{} · {} {}",
+                t("sources", "added"),
+                format::num(f64::from(steam.added)),
+                t("sources", "answered"),
                 format::num(f64::from(steam.answered)),
                 format::num(f64::from(steam.queried)),
+                t("sources", "listed"),
                 format::num(f64::from(steam.listed)),
-                t("sources", "listed").to_lowercase()
             );
             let ga = ph(ui, &added, mono.clone());
-            let gr = ph_trunc(ui, &rest, small.clone(), (room - ga.size().x).max(0.0));
-            let (r, _) = ui.allocate_exact_size(
+            let gr = ph_trunc(ui, &word, small.clone(), (room - ga.size().x).max(0.0));
+            let (r, resp) = ui.allocate_exact_size(
                 Vec2::new((ga.size().x + gr.size().x).min(room.max(0.0)), BAR_H),
                 Sense::hover(),
             );
             draw(ui.painter(), &ga, r.left(), cy, tk.ok);
             draw(ui.painter(), &gr, r.left() + ga.size().x, cy, tk.fg_muted);
+            let _ = resp.tip_kbd(&tip, "", Side::Bottom);
         }
     });
 

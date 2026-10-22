@@ -599,7 +599,7 @@ fn scan_segment(cx: &Ctx) -> Option<Segment> {
                 t("nav", "sbRescan").to_string(),
             )
             .act(Act::Scan)
-            .piece(Piece::text(t("nav", "sbPing")).word()),
+            .piece(Piece::text(t("nav", "sbPingAgain")).word()),
         )
     } else {
         None

@@ -205,6 +205,25 @@ pub fn relative_in(l: Locale, now: i64, ts: i64) -> String {
     }
 }
 
+/// How long ago, short ("10 min", "3 h", "2 j"): for a label with little room, under
+/// a heading that says it is a past moment. Under a minute is "just now".
+pub fn ago_short(ts: i64) -> String {
+    ago_short_in(locale(), Local::now().timestamp(), ts)
+}
+
+/// [`ago_short`] in a given language, as seen at `now`.
+pub fn ago_short_in(l: Locale, now: i64, ts: i64) -> String {
+    let diff = now.saturating_sub(ts);
+    let count = |k: &str, unit: i64| fill(t_in(l, "shell", k), &[("count", &(diff / unit))]);
+    match diff {
+        d if d < 60 => t_in(l, "shell", "timeJustNow").to_owned(),
+        d if d < 3_600 => count("timeShortMinutes", 60),
+        d if d < 86_400 => count("timeShortHours", 3_600),
+        d if d < 1_209_600 => count("timeShortDays", 86_400),
+        _ => count("timeShortWeeks", 604_800),
+    }
+}
+
 fn local(ts: i64) -> Option<DateTime<Local>> {
     Local.timestamp_opt(ts, 0).earliest()
 }

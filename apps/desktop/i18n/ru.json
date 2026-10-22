@@ -837,6 +837,7 @@
     "sbListDown": "Список серверов недоступен",
     "sbModsChecking": "Проверка модов…",
     "sbPing": "Пинг",
+    "sbPingAgain": "Пинговать снова",
     "sbRescan": "Снова опросить все серверы",
     "sbSteamHint": "Через запущенный клиент Steam",
     "sbSteamSettings": "Настройки Steam…",
@@ -1053,6 +1054,7 @@
     "title": "Параметры запуска",
     "unitMb": "МБ",
     "useRecommended": "Использовать значение",
+    "valueMissing": "Включена, но без значения не действует. Укажите значение или выключите.",
     "valuePlaceholder": "значение"
   },
   "pad": {
@@ -1586,6 +1588,10 @@
     "timeLongAgo": "давно",
     "timeMinuteAgo": "1 минуту назад",
     "timeMinutesAgo": "{count} минут назад",
+    "timeShortDays": "{count} д",
+    "timeShortHours": "{count} ч",
+    "timeShortMinutes": "{count} мин",
+    "timeShortWeeks": "{count} нед.",
     "timeWeekAgo": "1 неделю назад",
     "timeWeeksAgo": "{count} недель назад",
     "titlebarEditAccount": "Редактировать настройки аккаунта",

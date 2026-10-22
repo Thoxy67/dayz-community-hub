@@ -837,6 +837,7 @@
     "sbListDown": "Lista de servidores no disponible",
     "sbModsChecking": "Comprobando mods…",
     "sbPing": "Ping",
+    "sbPingAgain": "Repetir ping",
     "sbRescan": "Volver a hacer ping a todos los servidores",
     "sbSteamHint": "A través del cliente de Steam abierto",
     "sbSteamSettings": "Ajustes de Steam…",
@@ -1053,6 +1054,7 @@
     "title": "Opciones de inicio",
     "unitMb": "MB",
     "useRecommended": "Usar este valor",
+    "valueMissing": "Activada sin valor no tiene efecto. Escribe un valor o desactívala.",
     "valuePlaceholder": "valor"
   },
   "pad": {
@@ -1586,6 +1588,10 @@
     "timeLongAgo": "hace mucho tiempo",
     "timeMinuteAgo": "hace 1 minuto",
     "timeMinutesAgo": "hace {count} minutos",
+    "timeShortDays": "{count} d",
+    "timeShortHours": "{count} h",
+    "timeShortMinutes": "{count} min",
+    "timeShortWeeks": "{count} sem.",
     "timeWeekAgo": "hace 1 semana",
     "timeWeeksAgo": "hace {count} semanas",
     "titlebarEditAccount": "Editar configuración de cuenta",

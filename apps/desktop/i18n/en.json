@@ -837,6 +837,7 @@
     "sbListDown": "Server list unavailable",
     "sbModsChecking": "Checking mods…",
     "sbPing": "Ping",
+    "sbPingAgain": "Ping again",
     "sbRescan": "Ping every server again",
     "sbSteamHint": "Through the running Steam client",
     "sbSteamSettings": "Steam settings…",
@@ -1053,6 +1054,7 @@
     "title": "Launch options",
     "unitMb": "MB",
     "useRecommended": "Use this value",
+    "valueMissing": "On, but without a value it has no effect. Enter a value or turn it off.",
     "valuePlaceholder": "value"
   },
   "pad": {
@@ -1586,6 +1588,10 @@
     "timeLongAgo": "a long time ago",
     "timeMinuteAgo": "1 minute ago",
     "timeMinutesAgo": "{count} minutes ago",
+    "timeShortDays": "{count} d",
+    "timeShortHours": "{count} h",
+    "timeShortMinutes": "{count} min",
+    "timeShortWeeks": "{count} wk",
     "timeWeekAgo": "1 week ago",
     "timeWeeksAgo": "{count} weeks ago",
     "titlebarEditAccount": "Edit account settings",

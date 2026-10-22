@@ -837,6 +837,7 @@
     "sbListDown": "Liste des serveurs indisponible",
     "sbModsChecking": "Vérification des mods…",
     "sbPing": "Ping",
+    "sbPingAgain": "Relancer le ping",
     "sbRescan": "Pinger à nouveau tous les serveurs",
     "sbSteamHint": "Via le client Steam lancé",
     "sbSteamSettings": "Réglages Steam…",
@@ -1053,6 +1054,7 @@
     "title": "Options de lancement",
     "unitMb": "Mo",
     "useRecommended": "Utiliser cette valeur",
+    "valueMissing": "Activée sans valeur, elle n'a aucun effet. Saisissez une valeur ou désactivez-la.",
     "valuePlaceholder": "valeur"
   },
   "pad": {
@@ -1586,6 +1588,10 @@
     "timeLongAgo": "il y a longtemps",
     "timeMinuteAgo": "il y a 1 minute",
     "timeMinutesAgo": "il y a {count} minutes",
+    "timeShortDays": "{count} j",
+    "timeShortHours": "{count} h",
+    "timeShortMinutes": "{count} min",
+    "timeShortWeeks": "{count} sem.",
     "timeWeekAgo": "il y a 1 semaine",
     "timeWeeksAgo": "il y a {count} semaines",
     "titlebarEditAccount": "Modifier les paramètres du compte",

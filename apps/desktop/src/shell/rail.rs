@@ -509,7 +509,8 @@ fn rejoin(ui: &mut Ui, cx: &mut Ctx, collapsed: bool, foot: Rect, y: f32) -> f32
         let _ = cx.run("rejoin.dismiss", &serde_json::Value::Null);
     }
     let ago_x = head.left() + 8.0 + sg.size().x + 6.0;
-    let ago = format::relative(ts);
+    // Short: the heading already says it is the last game, and the room is narrow.
+    let ago = format::ago_short(ts);
     let ag = paint::galley_trunc(
         ui,
         &ago,

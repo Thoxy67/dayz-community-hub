@@ -277,6 +277,16 @@ pub fn show(
             .char_limit(1024)
             .id_salt(("opt-value", &opt.key)),
     );
+    // On without a value: the flag goes out bare and does nothing; the field says so.
+    if opt.enabled && saved.is_empty() && draft.text.trim().is_empty() && !fr.has_focus() {
+        p.rect_stroke(
+            field,
+            CornerRadius::same(size::RADIUS_SM),
+            Stroke::new(1.0, tk.warn),
+            StrokeKind::Inside,
+        );
+        let _ = fr.clone().tip(t("options", "valueMissing"));
+    }
     if kind.numeric() && fr.changed() {
         // `type="number"`: figures only.
         draft.text.retain(|c| c.is_ascii_digit());
