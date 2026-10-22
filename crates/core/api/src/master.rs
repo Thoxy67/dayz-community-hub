@@ -23,8 +23,8 @@
 //! every request `200` with no servers, exactly as for a filter that
 //! matches nothing. [`web_throttled`] tells the two apart.
 
-use rustc_hash::FxHashSet;
-use serde::Deserialize;
+use rustc_hash::{FxHashMap, FxHashSet};
+use serde::{Deserialize, Serialize};
 
 /// Steam's ceiling for one request.
 pub const WEB_LIST_CAP: usize = 10_000;
@@ -37,16 +37,19 @@ const LIST_URL: &str = "https://api.steampowered.com/IGameServersService/GetServ
 
 /// One request: DayZ, the master's own player count, more filters, and,
 /// once split, how the names start.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WebPartition {
     /// What Steam's master counts: `Some(true)` no player (`\noplayers\1`),
     /// `Some(false)` players (`\empty\1`, "not empty").
     pub empty: Option<bool>,
     /// More filters, already written (`\map\enoch`).
+    #[serde(default)]
     pub extra: String,
     /// The start of the names asked for.
+    #[serde(default)]
     pub prefix: String,
     /// Starts left out: the parts split off before this rest.
+    #[serde(default)]
     pub excluded: Vec<String>,
 }
 
@@ -200,6 +203,201 @@ pub fn web_partitions(maps: &[String]) -> Vec<WebPartition> {
         ));
     }
     parts
+}
+
+// ── the plan a listing leaves ──────────────────────────────────────────
+
+/// Below this many servers, parts of one request are asked as one again: a
+/// fifth of the cap left for the master to grow before the next listing
+/// (which splits again what overflows).
+pub const PLAN_MARGIN: usize = WEB_LIST_CAP * 4 / 5;
+
+/// One request a listing asked that did not need splitting, and how many
+/// servers it answered: what the next listing asks straight away rather than
+/// hitting the cap again to find the same splits.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlannedPart {
+    pub part: WebPartition,
+    #[serde(default)]
+    pub rows: u32,
+}
+
+impl WebPartition {
+    /// Whether `other` was split from the same request of a listing (the
+    /// same player filter and filters).
+    pub fn same_base(&self, other: &WebPartition) -> bool {
+        self.empty == other.empty && self.extra == other.extra
+    }
+
+    /// This request before any split.
+    pub fn base(&self) -> WebPartition {
+        WebPartition::new(self.empty, self.extra.clone())
+    }
+}
+
+/// Whether `parts`, all split from one request, are every name exactly
+/// once below `prefix`: one part asks for `prefix` (the whole of it, or
+/// its rest), and each start that rest leaves out is itself such a set one
+/// character deeper. A plan read from disk is checked so: one that does
+/// not hold is not used (the request is asked whole and split again).
+fn covers(parts: &[&WebPartition], prefix: &str, depth: usize) -> bool {
+    if depth > MAX_SPLIT_DEPTH {
+        return false;
+    }
+    let mut level = parts.iter().filter(|p| p.prefix == prefix);
+    let (Some(rest), None) = (level.next(), level.next()) else {
+        return false;
+    };
+    let mut accounted = 1;
+    for start in &rest.excluded {
+        // One character deeper than `prefix`, and not asked twice.
+        let deeper = start
+            .strip_prefix(prefix)
+            .is_some_and(|c| c.chars().count() == 1);
+        if !deeper || rest.excluded.iter().filter(|e| *e == start).count() > 1 {
+            return false;
+        }
+        let below: Vec<&WebPartition> = parts
+            .iter()
+            .copied()
+            .filter(|p| p.prefix.starts_with(start.as_str()))
+            .collect();
+        if !covers(&below, start, depth + 1) {
+            return false;
+        }
+        accounted += below.len();
+    }
+    // Nothing else below `prefix`: a part under no excluded start but its
+    // own is asked twice or for nothing.
+    accounted == parts.len()
+}
+
+/// The requests of a listing over `bases` ([`web_partitions`]), with the
+/// splits an earlier listing found: a base the plan has a sound set of
+/// parts for is asked as those parts, any other whole. Saved parts of a
+/// base no longer asked are dropped.
+pub fn planned_partitions(bases: Vec<WebPartition>, plan: &[PlannedPart]) -> Vec<WebPartition> {
+    let mut out = Vec::with_capacity(bases.len().max(plan.len()));
+    for base in bases {
+        let parts: Vec<&WebPartition> = plan
+            .iter()
+            .map(|p| &p.part)
+            .filter(|p| p.same_base(&base))
+            .collect();
+        if !parts.is_empty() && covers(&parts, "", 0) {
+            out.extend(parts.into_iter().cloned());
+        } else {
+            out.push(base);
+        }
+    }
+    out
+}
+
+/// The plan to keep from what a listing asked (`done`: every request that
+/// did not need splitting, with its servers), with as few requests as the
+/// cap allows, each kept under [`PLAN_MARGIN`]:
+///
+/// - the parts of a start (or of a whole base) that fit in one request
+///   together become that request;
+/// - otherwise its small starts go back into its rest (a rest leaves out
+///   only the starts asked apart), the biggest kept apart until the rest
+///   fits, and each of those is planned the same way one character deeper.
+///
+/// A plan only ever saves requests, never servers: the parts still cover
+/// every name exactly once, and a part that has grown is split by the next
+/// listing as it would be anyway. Parts of one base whose set does not
+/// hold together are left as they were.
+pub fn compact_plan(done: Vec<PlannedPart>) -> Vec<PlannedPart> {
+    // Bases in the order they were first asked.
+    let mut order: Vec<WebPartition> = Vec::new();
+    let mut by_base: FxHashMap<(Option<bool>, String), Vec<PlannedPart>> = FxHashMap::default();
+    for p in done {
+        let key = (p.part.empty, p.part.extra.clone());
+        if !by_base.contains_key(&key) {
+            order.push(p.part.base());
+        }
+        by_base.entry(key).or_default().push(p);
+    }
+    let mut out = Vec::new();
+    for base in order {
+        let Some(parts) = by_base.remove(&(base.empty, base.extra.clone())) else {
+            continue;
+        };
+        let refs: Vec<&WebPartition> = parts.iter().map(|p| &p.part).collect();
+        if covers(&refs, "", 0) {
+            let all: Vec<&PlannedPart> = parts.iter().collect();
+            compact_below(&base, &all, "", &mut out);
+        } else {
+            out.extend(parts);
+        }
+    }
+    out
+}
+
+fn rows_of(parts: &[&PlannedPart]) -> u64 {
+    parts.iter().map(|p| u64::from(p.rows)).sum()
+}
+
+/// [`compact_plan`] for the `parts` below `prefix` (a set [`covers`] holds
+/// for), into `out`.
+fn compact_below(
+    base: &WebPartition,
+    parts: &[&PlannedPart],
+    prefix: &str,
+    out: &mut Vec<PlannedPart>,
+) {
+    let total = rows_of(parts);
+    let Some(rest) = parts.iter().find(|p| p.part.prefix == prefix) else {
+        return;
+    };
+    if total < PLAN_MARGIN as u64 || rest.part.excluded.is_empty() {
+        out.push(PlannedPart {
+            part: WebPartition {
+                prefix: prefix.to_owned(),
+                excluded: Vec::new(),
+                ..base.clone()
+            },
+            rows: u32::try_from(total).unwrap_or(u32::MAX),
+        });
+        return;
+    }
+    // Each start the rest leaves out, with its parts and their servers.
+    let mut starts: Vec<(&str, Vec<&PlannedPart>, u64)> = rest
+        .part
+        .excluded
+        .iter()
+        .map(|e| {
+            let below: Vec<&PlannedPart> = parts
+                .iter()
+                .copied()
+                .filter(|p| p.part.prefix.starts_with(e.as_str()))
+                .collect();
+            let n = rows_of(&below);
+            (e.as_str(), below, n)
+        })
+        .collect();
+    // The biggest apart until what is left fits in the rest.
+    starts.sort_by(|a, b| b.2.cmp(&a.2).then(a.0.cmp(b.0)));
+    let mut left = total;
+    let mut apart = Vec::new();
+    for (start, below, n) in starts {
+        if left < PLAN_MARGIN as u64 {
+            break;
+        }
+        left -= n;
+        apart.push((start, below));
+    }
+    for (start, below) in &apart {
+        compact_below(base, below, start, out);
+    }
+    out.push(PlannedPart {
+        part: WebPartition {
+            prefix: prefix.to_owned(),
+            excluded: apart.iter().map(|(s, _)| (*s).to_owned()).collect(),
+            ..base.clone()
+        },
+        rows: u32::try_from(left).unwrap_or(u32::MAX),
+    });
 }
 
 /// One server as the master lists it.
@@ -388,6 +586,95 @@ mod tests {
         assert_eq!(p.len(), 4);
         assert_eq!(p[3].extra, "\\nor\\2\\map\\enoch\\map\\banov");
         assert_eq!(p[3].label(), "empty · other maps");
+    }
+
+    fn done(part: &WebPartition, rows: u32) -> PlannedPart {
+        PlannedPart {
+            part: part.clone(),
+            rows,
+        }
+    }
+
+    /// A base split twice: `d` split again into `da` and its rest.
+    fn split_twice() -> (WebPartition, Vec<WebPartition>) {
+        let base = WebPartition::new(Some(true), "\\map\\enoch");
+        let top = base.split(["Dark", "Fire", "Alpha"]);
+        let d = top[0].split(["Dark", "Dawn"]);
+        let mut leaves: Vec<WebPartition> = d;
+        leaves.extend(top[1..].iter().cloned());
+        (base, leaves)
+    }
+
+    #[test]
+    fn a_saved_plan_is_asked_as_it_was_split() {
+        let (base, leaves) = split_twice();
+        let plan: Vec<PlannedPart> = leaves.iter().map(|p| done(p, 9_000)).collect();
+        let other = WebPartition::new(Some(false), "");
+        let asked = planned_partitions(vec![other.clone(), base], &plan);
+        assert_eq!(asked[0], other, "a base the plan lacks is asked whole");
+        assert_eq!(&asked[1..], &leaves[..]);
+        // Round trip through the disk.
+        let json = serde_json::to_string(&plan).unwrap();
+        let back: Vec<PlannedPart> = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, plan);
+    }
+
+    #[test]
+    fn a_plan_that_misses_or_repeats_a_part_is_not_used() {
+        let (base, leaves) = split_twice();
+        let plan = |parts: &[WebPartition]| -> Vec<PlannedPart> {
+            parts.iter().map(|p| done(p, 9_000)).collect()
+        };
+        for broken in [
+            leaves[1..].to_vec(),
+            [leaves.clone(), vec![leaves[0].clone()]].concat(),
+            leaves[..leaves.len() - 1].to_vec(),
+            vec![WebPartition {
+                prefix: "abc".into(),
+                ..base.clone()
+            }],
+        ] {
+            assert_eq!(
+                planned_partitions(vec![base.clone()], &plan(&broken)),
+                vec![base.clone()]
+            );
+        }
+    }
+
+    #[test]
+    fn parts_that_fit_in_one_request_again_are_merged() {
+        let (base, leaves) = split_twice();
+        // Everything fits: the base alone.
+        let small: Vec<PlannedPart> = leaves.iter().map(|p| done(p, 100)).collect();
+        assert_eq!(compact_plan(small), vec![done(&base, 500)]);
+        // Only `a` is big: the other starts go back into the rest.
+        let rows = [100, 100, 100, 9_000, 500];
+        let mixed: Vec<PlannedPart> = leaves.iter().zip(rows).map(|(p, n)| done(p, n)).collect();
+        let kept = compact_plan(mixed);
+        let shape: Vec<(&str, Vec<&str>, u32)> = kept
+            .iter()
+            .map(|p| {
+                let ex = p.part.excluded.iter().map(String::as_str).collect();
+                (p.part.prefix.as_str(), ex, p.rows)
+            })
+            .collect();
+        assert_eq!(shape, [("a", vec![], 9_000), ("", vec!["a"], 800)]);
+        // Still a sound plan.
+        let asked = planned_partitions(vec![base.clone()], &kept);
+        assert_eq!(asked.len(), 2);
+        // Big starts stay apart, `d` planned a level deeper; `f` fits in the rest.
+        let rows = [9_000, 100, 7_000, 9_000, 500];
+        let big: Vec<PlannedPart> = leaves.iter().zip(rows).map(|(p, n)| done(p, n)).collect();
+        let kept = compact_plan(big);
+        let shape: Vec<(&str, usize)> = kept
+            .iter()
+            .map(|p| (p.part.prefix.as_str(), p.part.excluded.len()))
+            .collect();
+        assert_eq!(shape, [("da", 0), ("d", 1), ("a", 0), ("", 2)]);
+        assert_eq!(planned_partitions(vec![base], &kept).len(), 4);
+        // A set that does not hold is kept as it came.
+        let broken = vec![done(&leaves[0], 5)];
+        assert_eq!(compact_plan(broken.clone()), broken);
     }
 
     #[test]

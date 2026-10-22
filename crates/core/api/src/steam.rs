@@ -143,6 +143,37 @@ impl SteamRow {
     }
 }
 
+impl SteamRow {
+    /// A row an earlier listing added, as the list on disk holds it: its
+    /// server as it was (shared, not copied), what Steam listed rebuilt
+    /// from it. The gametags are not kept on disk; the server's `official`
+    /// stands for them.
+    pub fn from_server(server: Arc<Server>) -> Self {
+        let listed = SteamListed {
+            ip: server.endpoint.ip.clone(),
+            query_port: server.endpoint.port,
+            game_port: server.game_port,
+            name: server.name.clone(),
+            map: server.map.clone(),
+            tags: if server.official {
+                // What `tags_say_official` reads: an official server's shard.
+                "shard000".to_owned()
+            } else {
+                String::new()
+            },
+            players: server.players,
+            max_players: server.max_players,
+            password: server.password,
+            secure: server.vac,
+            version: server.version.clone(),
+            environment: server.environment.clone(),
+            mods: Vec::new(),
+            empty: None,
+        };
+        Self { listed, server }
+    }
+}
+
 impl From<SteamListed> for SteamRow {
     fn from(listed: SteamListed) -> Self {
         let server = Arc::new(listed.to_server());

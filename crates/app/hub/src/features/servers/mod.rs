@@ -2,6 +2,7 @@
 //! the counters the title bar shows.
 
 mod dto;
+mod memory;
 pub(crate) mod refresh;
 pub(crate) mod sources;
 mod steam;
@@ -40,9 +41,32 @@ static INIT: Mutex<()> = Mutex::const_new(());
 type Prewarm = tokio::task::JoinHandle<Result<InitResult, String>>;
 static PREWARM: std::sync::Mutex<Option<Prewarm>> = std::sync::Mutex::new(None);
 
+/// A cached launcher list fetched less than this ago is not fetched again
+/// at start (a restart, one after an update included): the list is shown
+/// as fetched then, and the ping scan brings its counts up to date. As long
+/// as the window leaves a list unrefreshed while it is away.
+const LIST_FRESH: u64 = 5 * 60;
+
+/// When the launcher list on hand was fetched, and its size: written with
+/// every save of the cache.
+static LAUNCHER: std::sync::Mutex<dz_api::CacheStamp> = std::sync::Mutex::new(dz_api::CacheStamp {
+    fetched_at: 0,
+    launcher_count: None,
+});
+
+fn launcher() -> dz_api::CacheStamp {
+    LAUNCHER.lock().map(|s| *s).unwrap_or_default()
+}
+
+fn set_launcher(stamp: dz_api::CacheStamp) {
+    if let Ok(mut s) = LAUNCHER.lock() {
+        *s = stamp;
+    }
+}
+
 /// Create the controller and load the server list: from the on-disk cache
-/// when there is one (the window refreshes it in the background), else from
-/// the API. The profile and the cache are read at the same time.
+/// when there is one (the window refreshes it in the background, unless it
+/// was fetched less than [`LIST_FRESH`] ago), else from the API. The profile and the cache are read at the same time.
 ///
 /// Called when the window mounts. When the window reloads (F5, a crash
 /// recovery, the "Retry" after a failed start) the state already exists: it
@@ -72,18 +96,30 @@ async fn initialize(hub: &Hub) -> Result<InitResult, String> {
     let is_first_launch = !tokio::fs::try_exists(&profile_path).await.unwrap_or(false);
     let cache_path = paths::server_list_cache_path();
 
-    let (ctl, cache) = tokio::join!(
+    let memory_path = memory::path();
+    let (ctl, cache, memory) = tokio::join!(
         DayzCtl::new(&profile_path),
-        dz_api::load_server_list_cache(&cache_path)
+        dz_api::load_server_list_cache(&cache_path),
+        memory::load(&memory_path)
     );
     let ctl = ctl.map_err(|e| format!("Could not load the profile: {e}"))?;
     crate::features::stats::open(&ctl.profile().history);
 
     // The cache holds the official servers merged last time; a cold start
     // fetches both lists at once.
+    let now = dz_common::time::now_secs();
+    let mut fresh = false;
     let (list, from_cache, list_error) = match cache {
         Some(cache) if !cache.list.result.is_empty() => {
-            (steam::with_steam(dedup(cache.list)), true, None)
+            set_launcher(dz_api::CacheStamp {
+                fetched_at: cache.fetched_at,
+                launcher_count: cache.launcher_count,
+            });
+            fresh =
+                cache.fetched_at <= now + 60 && now.saturating_sub(cache.fetched_at) < LIST_FRESH;
+            let list = dedup(cache.list);
+            steam::remember(memory, &list);
+            (steam::with_steam(list), true, None)
         }
         _ => {
             let key = ctl.profile().steam_api_key.clone();
@@ -95,7 +131,9 @@ async fn initialize(hub: &Hub) -> Result<InitResult, String> {
             dzsa_done(&community);
             match community {
                 Ok(list) => {
-                    let list = steam::with_steam(dedup(with_official(list, official)));
+                    let list = dedup(with_official(list, official));
+                    steam::remember(memory, &list);
+                    let list = steam::with_steam(list);
                     save_cache_in_background(Arc::clone(&list));
                     (list, false, None)
                 }
@@ -104,10 +142,25 @@ async fn initialize(hub: &Hub) -> Result<InitResult, String> {
         }
     };
 
+    let stamp = launcher();
     refresh::initialized(match &list_error {
         Some(e) => Err(e.clone()),
+        None if fresh => Ok(Some(
+            i64::try_from(stamp.fetched_at.saturating_mul(1000)).unwrap_or(i64::MAX),
+        )),
         None => Ok((!from_cache).then(crate::features::ping::now_ms)),
     });
+    if fresh {
+        // The window takes the list as fetched then and starts no refresh.
+        let count = stamp
+            .launcher_count
+            .unwrap_or(u32::try_from(list.result.len()).unwrap_or(u32::MAX));
+        sources::update(|s| {
+            s.dzsa.phase = sources::Phase::Done;
+            s.dzsa.count = count;
+            s.dzsa.at = i64::try_from(stamp.fetched_at).ok();
+        });
+    }
     let server_count = list.result.len();
     let mut app_state = AppState::new(ctl);
     app_state.set_servers(Arc::clone(&list));
@@ -115,9 +168,10 @@ async fn initialize(hub: &Hub) -> Result<InitResult, String> {
     crate::features::browser::list_replaced(list);
     // The cached list too.
     steam::comb(hub.clone());
-    // A cached start refreshes in the background, which starts it too; a
-    // cold one does not.
-    if !from_cache {
+    // Steam's listing: a cached start's background refresh starts it; a
+    // cold start and a fresh cache (no refresh) start it here. Either way
+    // it is skipped if it finished minutes ago, before a restart.
+    if !from_cache || fresh {
         steam::start(hub.clone());
     }
 
@@ -284,6 +338,12 @@ fn dzsa_starts() {
 }
 
 fn dzsa_done(r: &dz_common::Result<ServerList>) {
+    if let Ok(list) = r {
+        set_launcher(dz_api::CacheStamp {
+            fetched_at: dz_common::time::now_secs(),
+            launcher_count: u32::try_from(list.result.len()).ok(),
+        });
+    }
     sources::update(|s| match r {
         Ok(list) => {
             s.dzsa.phase = sources::Phase::Done;
@@ -309,8 +369,9 @@ fn dedup(mut list: ServerList) -> Arc<ServerList> {
 
 /// Write the cache without making the caller wait for a multi-MB write.
 pub(super) fn save_cache_in_background(list: Arc<ServerList>) {
+    let stamp = launcher();
     tokio::spawn(async move {
-        dz_api::save_server_list_cache(&paths::server_list_cache_path(), list).await;
+        dz_api::save_server_list_cache(&paths::server_list_cache_path(), list, stamp).await;
     });
 }
 

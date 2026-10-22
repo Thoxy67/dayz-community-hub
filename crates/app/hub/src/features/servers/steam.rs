@@ -30,18 +30,30 @@
 //! Every list put together is combed for duplicates ([`comb`]): entries
 //! that share an address to join (ip, game port) under different query
 //! ports are asked, and only the one that answers for that game port stays.
+//!
+//! What a listing learned outlives the process (`super::memory`): a
+//! listing finished less than [`memory::MIN_INTERVAL`] ago is not run again
+//! after a restart (the sources bar says when it ran), the next one asks
+//! the requests the last one found under the cap rather than splitting
+//! again, addresses that answered as fakes, without mods, as duplicates or
+//! not at all are not queried again for a while, and the servers it added
+//! are its own again ([`remember`]), not kept servers to check.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::Hub;
-use dz_api::{FarmCounter, Mod, Server, ServerList, SteamListed, SteamRow, WebPartition};
+use dz_api::{
+    FarmCounter, MasterAddr, Mod, PlannedPart, Server, ServerList, SteamListed, SteamRow,
+    WebPartition,
+};
 use futures_util::stream::FuturesUnordered;
 use futures_util::{StreamExt, stream};
 use rustc_hash::{FxHashMap, FxHashSet};
 use tokio::sync::mpsc;
 
+use super::memory::{self, ListingMemory, Memo, Verdict};
 use super::sources::{self, Phase};
 use crate::features::browser::live::{self, Live};
 use crate::state::SharedState;
@@ -75,8 +87,9 @@ const WEB_THROTTLE_GIVE_UP: u32 = 8;
 /// at least this many servers on, at most [`WEB_MAX_MAPS`].
 const WEB_MIN_SERVERS: usize = 2;
 const WEB_MAX_MAPS: usize = 60;
-/// A listing is not started again sooner than this.
-const MIN_INTERVAL: Duration = Duration::from_secs(10 * 60);
+/// A listing is not started again sooner than this after the last started
+/// in this process (whether it finished or not).
+const MIN_INTERVAL: Duration = Duration::from_secs(memory::MIN_INTERVAL as u64);
 /// Times a kept server is asked before it is taken for gone.
 const KEPT_TRIES: usize = 2;
 
@@ -98,6 +111,10 @@ struct Found {
     combed: FxHashSet<(String, i64)>,
     /// When the last listing started.
     last: Option<Instant>,
+    /// What listings learned of each address they queried.
+    memo: FxHashMap<Addr, Memo>,
+    /// The last complete listing (its addresses are in `memo`).
+    saved: ListingMemory,
 }
 
 static FOUND: LazyLock<Mutex<Found>> = LazyLock::new(Mutex::default);
@@ -110,8 +127,7 @@ fn found() -> std::sync::MutexGuard<'static, Found> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// An (ip, port) pair.
-type Addr = (String, i64);
+use memory::Addr;
 
 fn key<S: std::borrow::Borrow<Server>>(s: &S) -> Addr {
     let s = s.borrow();
@@ -134,6 +150,35 @@ struct Candidate {
 pub(crate) fn with_steam(base: Arc<ServerList>) -> Arc<ServerList> {
     found().base = base;
     compose()
+}
+
+/// Take in what the last listings learned (`super::memory`), read at start
+/// with the cached `list`: the servers the last complete listing added are
+/// its rows again (kept by a refresh, not checked as kept servers), while
+/// it finished in the last day and Steam listed them then. Called before
+/// [`with_steam`].
+pub(crate) fn remember(memory: Option<ListingMemory>, list: &ServerList) {
+    let Some(mut m) = memory else {
+        return;
+    };
+    let since = m.restorable_since(sources::now());
+    let mut f = found();
+    f.memo = m.take_addresses().collect();
+    if let Some(since) = since {
+        let mut rows = Vec::new();
+        for s in &list.result {
+            let k = key(s);
+            let ours = f
+                .memo
+                .get(&k)
+                .is_some_and(|m| m.verdict == Verdict::Answered && m.seen >= since);
+            if ours && f.keys.insert(k) {
+                rows.push(SteamRow::from_server(Arc::clone(s)));
+            }
+        }
+        f.rows.extend(rows);
+    }
+    f.saved = m;
 }
 
 /// [`with_steam`] for a refresh: the servers of `previous` that the new
@@ -314,9 +359,17 @@ async fn comb_once(hub: &Hub) {
     let mut removed = 0;
     {
         let mut f = found();
+        let now = sources::now();
         for ((ip, gp), losers) in verdicts {
             f.combed.insert((ip, gp));
             removed += losers.len();
+            // A listing does not query them again for a while.
+            for k in &losers {
+                if let Some(m) = f.memo.get_mut(k) {
+                    m.verdict = Verdict::Duplicate;
+                    m.at = now;
+                }
+            }
             f.dropped.extend(losers);
         }
     }
@@ -466,11 +519,48 @@ async fn run(hub: &Hub) {
         });
         return;
     };
+    let started_at = sources::now();
+    // A listing finished minutes ago (before a restart, say): its servers
+    // are in the list already, and the master would answer the same.
+    let (recent, plan, remembered) = {
+        let f = found();
+        let recent = f.saved.next_listing(started_at).map(|next| {
+            (
+                next,
+                f.saved.status.clone(),
+                f.saved.started_at,
+                f.saved.completed_at,
+            )
+        });
+        let remembered: FxHashSet<Addr> = f
+            .memo
+            .iter()
+            .filter(|(_, m)| m.holds(started_at))
+            .map(|(a, _)| a.clone())
+            .collect();
+        (recent, f.saved.plan.clone(), remembered)
+    };
+    if let Some((next, last, from, to)) = recent {
+        sources::update(|s| {
+            s.steam = sources::SteamStatus {
+                phase: Phase::Done,
+                recent: true,
+                next_at: Some(next),
+                note: None,
+                current: None,
+                waiting_until: None,
+                started: from,
+                finished: to,
+                ..last
+            };
+        });
+        return;
+    }
     found().last = Some(started);
     sources::update(|s| {
         s.steam = sources::SteamStatus {
             phase: Phase::Running,
-            started: Some(sources::now()),
+            started: Some(started_at),
             ..Default::default()
         };
     });
@@ -483,7 +573,7 @@ async fn run(hub: &Hub) {
     let (tx, rx) = mpsc::unbounded_channel::<Candidate>();
     let lister = {
         let maps = maps.clone();
-        tokio::spawn(async move { list(web_key, &maps, &tx).await })
+        tokio::spawn(async move { list(web_key, &maps, &plan, &tx).await })
     };
 
     let mut seen = known;
@@ -491,11 +581,19 @@ async fn run(hub: &Hub) {
     let mut answers = Box::pin(
         candidates
             .filter_map(move |c| {
-                let fresh = seen.insert((c.ip.clone(), i64::from(c.query_port)));
-                if !fresh {
+                let k = (c.ip.clone(), i64::from(c.query_port));
+                let ask = if !seen.insert(k.clone()) {
                     sources::update(|s| s.steam.known += 1);
-                }
-                std::future::ready(fresh.then_some(c))
+                    false
+                } else if remembered.contains(&k) {
+                    // Answered as a fake, without mods, as a duplicate or
+                    // not at all, a short while ago.
+                    sources::update(|s| s.steam.remembered += 1);
+                    false
+                } else {
+                    true
+                };
+                std::future::ready(ask.then_some(c))
             })
             .map(|c| query(Arc::clone(&client), c, false))
             .buffer_unordered(CONCURRENCY)
@@ -523,21 +621,58 @@ async fn run(hub: &Hub) {
     let list = Arc::clone(&state.read().await.servers);
     super::save_cache_in_background(Arc::clone(&list));
     crate::features::browser::list_replaced(list);
+    let cancelled = CANCEL.load(Ordering::SeqCst);
     sources::update(|s| {
         s.steam.finished = Some(sources::now());
         s.steam.current = None;
         s.steam.waiting_until = None;
-        match outcome {
-            Ok(()) => s.steam.phase = Phase::Done,
+        match &outcome {
+            Ok(_) => s.steam.phase = Phase::Done,
             Err(e) => {
                 s.steam.phase = Phase::Failed;
-                s.steam.note = Some(e);
+                s.steam.note = Some(e.clone());
             }
         }
-        if CANCEL.load(Ordering::SeqCst) {
+        if cancelled {
             s.steam.phase = Phase::Off;
         }
     });
+    let complete = match outcome {
+        Ok(web) if !web.cancelled && !cancelled => Some(web),
+        _ => None,
+    };
+    let memory = learned(complete, started_at);
+    if let Err(e) = memory::save(memory::path(), memory).await {
+        eprintln!("steam servers: the listing's memory was not saved: {e}");
+    }
+}
+
+/// What to keep on disk after a listing: the addresses it judged, and, if
+/// it went through (`complete`), when it ran, its figures and its plan. A
+/// base with a request that failed keeps the plan it had.
+fn learned(complete: Option<WebOutcome>, started_at: i64) -> ListingMemory {
+    let now = sources::now();
+    let mut f = found();
+    if let Some(web) = complete {
+        let mut done = web.leaves;
+        for base in &web.failed {
+            done.retain(|p| !p.part.same_base(base));
+            done.extend(
+                f.saved
+                    .plan
+                    .iter()
+                    .filter(|p| p.part.same_base(base))
+                    .cloned(),
+            );
+        }
+        f.saved.plan = dz_api::compact_plan(done);
+        f.saved.started_at = Some(started_at);
+        f.saved.completed_at = Some(now);
+        f.saved.status = sources::steam();
+    }
+    let mut m = f.saved.clone();
+    m.set_addresses(f.memo.iter(), now);
+    m
 }
 
 /// How the profile has the list pinged.
@@ -549,7 +684,7 @@ struct PingSettings {
 }
 
 /// Put the servers `answers` yields in the list as they come; returns the
-/// candidates that did not answer.
+/// candidates that did not answer. How each answered is remembered.
 async fn take_answers(
     hub: &Hub,
     state: &SharedState,
@@ -563,9 +698,12 @@ async fn take_answers(
     loop {
         tokio::select! {
             next = answers.next() => match next {
-                Some(Outcome::Row(row)) => fresh.push(row),
+                Some(Outcome::Row(row)) => {
+                    judged((row.ip.clone(), row.query_port), Verdict::Answered);
+                    fresh.push(row);
+                }
                 Some(Outcome::Silent(c)) => silent.push(c),
-                Some(Outcome::Rejected) => {}
+                Some(Outcome::Rejected(addr, verdict)) => judged(addr, verdict),
                 None => break,
             },
             _ = tick.tick() => publish(hub, state, std::mem::take(&mut fresh), ping).await,
@@ -573,6 +711,19 @@ async fn take_answers(
     }
     publish(hub, state, fresh, ping).await;
     silent
+}
+
+/// Remember how `addr`, listed now, answered.
+fn judged(addr: Addr, verdict: Verdict) {
+    let now = sources::now();
+    found().memo.insert(
+        addr,
+        Memo {
+            seen: now,
+            verdict,
+            at: now,
+        },
+    );
 }
 
 static LAST_SAVE: Mutex<Option<Instant>> = Mutex::new(None);
@@ -635,26 +786,47 @@ fn maps_by_size(list: &ServerList) -> Vec<(String, usize)> {
 }
 
 /// Ask the master through the Web API: every map with servers enough, the
-/// busiest first.
+/// busiest first, as the last listing's `plan` split them.
 async fn list(
     key: String,
     maps: &[(String, usize)],
+    plan: &[PlannedPart],
     tx: &mpsc::UnboundedSender<Candidate>,
-) -> Result<(), String> {
+) -> Result<WebOutcome, String> {
     let names: Vec<String> = maps
         .iter()
         .filter(|(_, n)| *n >= WEB_MIN_SERVERS)
         .take(WEB_MAX_MAPS)
         .map(|(m, _)| m.clone())
         .collect();
-    list_web(&key, &names, tx).await
+    let parts = dz_api::planned_partitions(dz_api::web_partitions(&names), plan);
+    let web = SteamWeb {
+        http: crate::net::api(),
+        key,
+    };
+    list_web(&web, parts, |part, rows| {
+        hand_on(
+            rows.into_iter()
+                .map(|r| Candidate {
+                    ip: r.ip,
+                    query_port: r.query_port,
+                    game_port: r.game_port,
+                    empty: part.empty,
+                })
+                .collect(),
+            tx,
+        );
+    })
+    .await
 }
 
 /// Hand on what a request listed: at once for servers Steam counts players
-/// on, the others unless they sit on a farm address.
+/// on, the others unless they sit on a farm address. An address remembered
+/// is marked as listed now.
 fn hand_on(rows: Vec<Candidate>, tx: &mpsc::UnboundedSender<Candidate>) {
     let n = rows.len() as u32;
     let mut farms = 0;
+    let now = sources::now();
     {
         let mut f = found();
         for c in &rows {
@@ -664,6 +836,11 @@ fn hand_on(rows: Vec<Candidate>, tx: &mpsc::UnboundedSender<Candidate>) {
             if c.empty != Some(false) && f.farms.is_farm(&c.ip) {
                 farms += 1;
             } else {
+                if !f.memo.is_empty()
+                    && let Some(m) = f.memo.get_mut(&(c.ip.clone(), i64::from(c.query_port)))
+                {
+                    m.seen = now;
+                }
                 let _ = tx.send(c);
             }
         }
@@ -674,30 +851,77 @@ fn hand_on(rows: Vec<Candidate>, tx: &mpsc::UnboundedSender<Candidate>) {
     });
 }
 
-/// Through the Web API, splitting what hits the cap. `Err` when the very
-/// first request fails (a refused key, Steam unreachable) or the master
-/// keeps withholding answers.
-async fn list_web(
-    key: &str,
-    maps: &[String],
-    tx: &mpsc::UnboundedSender<Candidate>,
-) -> Result<(), String> {
-    let http = crate::net::api();
-    let mut queue: std::collections::VecDeque<WebPartition> = dz_api::web_partitions(maps).into();
+/// Where the master's lists come from: Steam's Web API, or a made-up master
+/// in the tests.
+trait WebSource: Sync {
+    /// One request's servers.
+    fn fetch(
+        &self,
+        part: &WebPartition,
+    ) -> impl Future<Output = Result<Vec<MasterAddr>, String>> + Send;
+    /// Whether an empty answer was the master withholding it.
+    fn throttled(&self) -> impl Future<Output = bool> + Send;
+}
+
+struct SteamWeb {
+    http: &'static reqwest::Client,
+    key: String,
+}
+
+impl WebSource for SteamWeb {
+    fn fetch(
+        &self,
+        part: &WebPartition,
+    ) -> impl Future<Output = Result<Vec<MasterAddr>, String>> + Send {
+        dz_api::fetch_web_partition(self.http, &self.key, part)
+    }
+
+    fn throttled(&self) -> impl Future<Output = bool> + Send {
+        dz_api::web_throttled(self.http, &self.key)
+    }
+}
+
+/// What the requests of a listing came to.
+#[derive(Debug, Default)]
+struct WebOutcome {
+    /// Every request that did not need splitting, with its servers: the
+    /// plan of the next listing.
+    leaves: Vec<PlannedPart>,
+    /// The bases (requests before any split) one of whose requests failed.
+    failed: Vec<WebPartition>,
+    /// Stopped before the end.
+    cancelled: bool,
+    /// Requests answered (splits and retries after a pause included), and
+    /// pauses the master imposed.
+    requests: u32,
+    pauses: u32,
+}
+
+/// Ask `parts` of the master, splitting what hits the cap; `on_rows` gets
+/// each answer. `Err` when the very first request fails (a refused key,
+/// Steam unreachable) or the master keeps withholding answers.
+async fn list_web<S: WebSource>(
+    src: &S,
+    parts: Vec<WebPartition>,
+    mut on_rows: impl FnMut(&WebPartition, Vec<MasterAddr>),
+) -> Result<WebOutcome, String> {
+    let mut queue: std::collections::VecDeque<WebPartition> = parts.into();
     sources::update(|s| s.steam.requests_total = queue.len() as u32);
+    let mut out = WebOutcome::default();
     let mut running = FuturesUnordered::new();
     let mut answered_once = false;
     // While the master withholds answers: until when, how long the next
     // pause is, and how many there have been in a row.
-    let mut paused_until: Option<Instant> = None;
+    let mut paused_until: Option<tokio::time::Instant> = None;
     let mut backoff = WEB_THROTTLE_FIRST;
     let mut pauses = 0;
     loop {
         if CANCEL.load(Ordering::SeqCst) {
-            return Ok(());
+            out.cancelled = true;
+            return Ok(out);
         }
         if let Some(until) = paused_until {
-            if Instant::now() < until {
+            if tokio::time::Instant::now() < until {
                 if running.is_empty() {
                     tokio::time::sleep(Duration::from_millis(200)).await;
                     continue;
@@ -713,10 +937,10 @@ async fn list_web(
         {
             sources::update(|s| s.steam.current = Some(part.label()));
             running.push(async move {
-                let mut r = dz_api::fetch_web_partition(http, key, &part).await;
+                let mut r = src.fetch(&part).await;
                 // One lost request should not cost a partition.
                 if r.as_ref().is_err_and(|e| !e.contains("API key")) {
-                    r = dz_api::fetch_web_partition(http, key, &part).await;
+                    r = src.fetch(&part).await;
                 }
                 (part, r)
             });
@@ -731,52 +955,57 @@ async fn list_web(
         match result {
             // Nothing: matched nothing, or withheld. Asking for one server
             // with players tells which.
-            Ok(rows) if rows.is_empty() && dz_api::web_throttled(http, key).await => {
+            Ok(rows) if rows.is_empty() && src.throttled().await => {
                 queue.push_front(part);
                 // Its fellows in flight withheld too: one pause for all.
                 if paused_until.is_some() {
                     continue;
                 }
                 pauses += 1;
+                out.pauses += 1;
                 if pauses > WEB_THROTTLE_GIVE_UP {
                     return Err("Steam kept withholding the server list".into());
                 }
-                let until = Instant::now() + backoff;
                 let shown = sources::now() + backoff.as_secs() as i64;
                 sources::update(|s| s.steam.waiting_until = Some(shown));
-                paused_until = Some(until);
+                paused_until = Some(tokio::time::Instant::now() + backoff);
                 backoff = (backoff * 2).min(WEB_THROTTLE_MAX);
             }
             Ok(rows) => {
                 answered_once = true;
                 pauses = 0;
                 backoff = WEB_THROTTLE_FIRST;
+                out.requests += 1;
                 sources::update(|s| s.steam.requests_done += 1);
-                if rows.len() >= dz_api::WEB_LIST_CAP {
-                    let more = part.split(rows.iter().map(|r| r.name.as_str()));
+                let more = if rows.len() >= dz_api::WEB_LIST_CAP {
+                    part.split(rows.iter().map(|r| r.name.as_str()))
+                } else {
+                    Vec::new()
+                };
+                if more.is_empty() {
+                    out.leaves.push(PlannedPart {
+                        part: part.clone(),
+                        rows: u32::try_from(rows.len()).unwrap_or(u32::MAX),
+                    });
+                } else {
                     sources::update(|s| s.steam.requests_total += more.len() as u32);
                     queue.extend(more);
                 }
-                hand_on(
-                    rows.into_iter()
-                        .map(|r| Candidate {
-                            ip: r.ip,
-                            query_port: r.query_port,
-                            game_port: r.game_port,
-                            empty: part.empty,
-                        })
-                        .collect(),
-                    tx,
-                );
+                on_rows(&part, rows);
             }
             Err(e) if !answered_once => return Err(e),
             Err(e) => {
+                out.requests += 1;
                 sources::update(|s| s.steam.requests_done += 1);
                 eprintln!("steam servers: {}: {e}", part.label());
+                let base = part.base();
+                if !out.failed.contains(&base) {
+                    out.failed.push(base);
+                }
             }
         }
     }
-    Ok(())
+    Ok(out)
 }
 
 // ── the servers themselves ──────────────────────────────────────────────
@@ -786,8 +1015,9 @@ enum Outcome {
     Row(SteamListed),
     /// No answer: asked again in the second pass.
     Silent(Candidate),
-    /// A fake, or modded with mods that cannot be read.
-    Rejected,
+    /// A fake, or modded with mods that cannot be read, or silent on the
+    /// last pass: why.
+    Rejected(Addr, Verdict),
 }
 
 /// A2S_INFO, and A2S_RULES for a modded server's mods. A server that does
@@ -802,7 +1032,7 @@ async fn query(client: Arc<dz_a2s::Client>, c: Candidate, last: bool) -> Outcome
     let addr = format!("{}:{port}", c.ip);
     let Ok((info, _)) = client.info(addr.as_str(), None).await else {
         return if last {
-            Outcome::Rejected
+            Outcome::Rejected((c.ip, port), Verdict::Silent)
         } else {
             Outcome::Silent(c)
         };
@@ -814,7 +1044,7 @@ async fn query(client: Arc<dz_a2s::Client>, c: Candidate, last: bool) -> Outcome
     // listed, 324 reported as many bots as players.
     if info.bots > 0 {
         sources::update(|s| s.steam.fakes += 1);
-        return Outcome::Rejected;
+        return Outcome::Rejected((c.ip, port), Verdict::Fake);
     }
     let players = dz_a2s::human_player_count(&info);
     // Its counts now; its ping from the scan, once it is in the list.
@@ -842,7 +1072,7 @@ async fn query(client: Arc<dz_a2s::Client>, c: Candidate, last: bool) -> Outcome
                 return Outcome::Silent(c);
             }
             sources::update(|s| s.steam.no_mods += 1);
-            return Outcome::Rejected;
+            return Outcome::Rejected((c.ip, port), Verdict::NoMods);
         }
         mods
     } else {
@@ -864,4 +1094,359 @@ async fn query(client: Arc<dz_a2s::Client>, c: Candidate, last: bool) -> Outcome
         empty: c.empty,
         ip: c.ip,
     })
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unreachable
+)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicU32;
+
+    /// One server of the made-up master.
+    struct Listed {
+        addr: MasterAddr,
+        map: String,
+        empty: bool,
+    }
+
+    /// Steam's master as the Web API shows it: filters as it reads them,
+    /// the 10 000 cap, and its rationing (a burst, then one request every
+    /// few seconds; withheld answers are empty).
+    struct FakeMaster {
+        servers: Vec<Listed>,
+        /// HTTP requests made, the throttle checks included.
+        http: AtomicU32,
+        tokens: Mutex<(f64, tokio::time::Instant)>,
+    }
+
+    const BURST: f64 = 40.0;
+    const REFILL_PER_SEC: f64 = 1.0 / 3.0;
+
+    /// A small deterministic generator.
+    struct Lcg(u64);
+    impl Lcg {
+        fn next(&mut self) -> u64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            self.0 >> 33
+        }
+        fn pick<'a>(&mut self, of: &[&'a str]) -> &'a str {
+            of[(self.next() as usize) % of.len()]
+        }
+    }
+
+    impl FakeMaster {
+        /// About 80 000 servers, as on 2026-10-08: thousands with players,
+        /// farms crowding empty Chernarus under a few names.
+        fn realistic() -> Self {
+            let mut rng = Lcg(7);
+            let mut servers = Vec::new();
+            let words = [
+                "Alpha",
+                "Bear",
+                "Cold",
+                "Echo",
+                "Frost",
+                "Ghost",
+                "Hard",
+                "Iron",
+                "Jolly",
+                "Kill",
+                "Lost",
+                "Mad",
+                "Night",
+                "Old",
+                "Pvp",
+                "Quiet",
+                "Raid",
+                "Storm",
+                "Toxic",
+                "Ultra",
+                "Vybor",
+                "Wolf",
+                "Zone",
+                "Чернарусь",
+                "Выживание",
+                "末日",
+                "🔥 Hot",
+                "[EU]",
+                "=FARM=",
+                "1PP",
+                "#1",
+            ];
+            let mut add = |n: usize, map: &str, empty: bool, names: &dyn Fn(&mut Lcg) -> String| {
+                for _ in 0..n {
+                    let i = servers.len() as u32;
+                    servers.push(Listed {
+                        addr: MasterAddr {
+                            ip: format!("10.{}.{}.{}", i >> 16, (i >> 8) & 255, i & 255),
+                            name: names(&mut rng),
+                            query_port: 27016,
+                            game_port: 2302,
+                        },
+                        map: map.to_owned(),
+                        empty,
+                    });
+                }
+            };
+            let plain = |r: &mut Lcg| format!("{} {}", r.pick(&words), r.next() % 1000);
+            let farm = |r: &mut Lcg| {
+                let start = r.pick(&["DayZ", "Dark", "Deer", "Dead", "Dz", "Dawn"]);
+                format!("{start} Farm #{}", r.next() % 100_000)
+            };
+            add(7_000, "chernarusplus", false, &plain);
+            add(30_000, "chernarusplus", true, &farm);
+            add(15_000, "chernarusplus", true, &plain);
+            add(12_000, "enoch", true, &plain);
+            add(3_000, "sakhal", true, &plain);
+            add(2_000, "deerisle", true, &plain);
+            add(1_500, "namalsk", true, &plain);
+            add(900, "banov", true, &plain);
+            add(600, "pripyat", true, &plain);
+            add(500, "takistanplus", true, &plain);
+            add(700, "elsewhere", true, &plain);
+            // Steam's order is not the names': shuffled once.
+            for i in (1..servers.len()).rev() {
+                let j = (rng.next() as usize) % (i + 1);
+                servers.swap(i, j);
+            }
+            FakeMaster {
+                servers,
+                http: AtomicU32::new(0),
+                tokens: Mutex::new((BURST, tokio::time::Instant::now())),
+            }
+        }
+
+        fn maps() -> Vec<String> {
+            [
+                "chernarusplus",
+                "enoch",
+                "sakhal",
+                "deerisle",
+                "namalsk",
+                "banov",
+                "pripyat",
+                "takistanplus",
+            ]
+            .map(String::from)
+            .to_vec()
+        }
+
+        /// Whether the master answers now; spends a token if so.
+        fn allowed(&self, spend: bool) -> bool {
+            let mut t = self.tokens.lock().unwrap();
+            let now = tokio::time::Instant::now();
+            t.0 = (t.0 + (now - t.1).as_secs_f64() * REFILL_PER_SEC).min(BURST);
+            t.1 = now;
+            if t.0 < 1.0 {
+                return false;
+            }
+            if spend {
+                t.0 -= 1.0;
+            }
+            true
+        }
+
+        fn starts(name: &str, prefix: &str) -> bool {
+            let mut chars = name.chars();
+            prefix
+                .chars()
+                .all(|p| chars.next().is_some_and(|c| c.to_ascii_lowercase() == p))
+        }
+
+        fn matches(s: &Listed, part: &WebPartition) -> bool {
+            if part.empty.is_some_and(|e| e != s.empty) {
+                return false;
+            }
+            let maps: Vec<&str> = part.extra.split("\\map\\").skip(1).collect();
+            let on_map = maps.contains(&s.map.as_str());
+            let map_ok = if part.extra.starts_with("\\nor\\") {
+                !on_map
+            } else {
+                maps.is_empty() || on_map
+            };
+            map_ok
+                && Self::starts(&s.addr.name, &part.prefix)
+                && !part.excluded.iter().any(|e| Self::starts(&s.addr.name, e))
+        }
+    }
+
+    impl WebSource for FakeMaster {
+        fn fetch(
+            &self,
+            part: &WebPartition,
+        ) -> impl Future<Output = Result<Vec<MasterAddr>, String>> + Send {
+            self.http.fetch_add(1, Ordering::SeqCst);
+            let rows = if self.allowed(true) {
+                self.servers
+                    .iter()
+                    .filter(|s| Self::matches(s, part))
+                    .take(dz_api::WEB_LIST_CAP)
+                    .map(|s| s.addr.clone())
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            std::future::ready(Ok(rows))
+        }
+
+        fn throttled(&self) -> impl Future<Output = bool> + Send {
+            self.http.fetch_add(1, Ordering::SeqCst);
+            std::future::ready(!self.allowed(false))
+        }
+    }
+
+    /// A listing over the made-up master: what it found, and its outcome.
+    async fn listing(
+        master: &FakeMaster,
+        plan: &[PlannedPart],
+    ) -> (FxHashSet<String>, WebOutcome, u32) {
+        master.http.store(0, Ordering::SeqCst);
+        let parts = dz_api::planned_partitions(dz_api::web_partitions(&FakeMaster::maps()), plan);
+        let mut found = FxHashSet::default();
+        let out = list_web(master, parts, |_, rows| {
+            found.extend(rows.into_iter().map(|r| r.ip));
+        })
+        .await
+        .unwrap();
+        (found, out, master.http.load(Ordering::SeqCst))
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_saved_plan_lists_the_same_servers_with_far_fewer_requests() {
+        let master = FakeMaster::realistic();
+        let t0 = tokio::time::Instant::now();
+        let (cold, first, http_cold) = listing(&master, &[]).await;
+        let took_cold = t0.elapsed();
+        let plan = dz_api::compact_plan(first.leaves);
+
+        // Refilled, as ten minutes later.
+        tokio::time::advance(Duration::from_secs(600)).await;
+        let t1 = tokio::time::Instant::now();
+        let (warm, second, http_warm) = listing(&master, &plan).await;
+        let took_warm = t1.elapsed();
+        eprintln!(
+            "cold: {} requests answered, {} HTTP, {} pauses, {:?}; \
+             with the plan ({} parts): {} answered, {} HTTP, {} pauses, {:?}; {} servers",
+            first.requests,
+            http_cold,
+            first.pauses,
+            took_cold,
+            plan.len(),
+            second.requests,
+            http_warm,
+            second.pauses,
+            took_warm,
+            warm.len(),
+        );
+        assert_eq!(warm, cold, "the same servers either way");
+        assert!(
+            second.requests * 3 / 2 < first.requests,
+            "a third fewer at least"
+        );
+        assert!(http_warm * 2 < http_cold, "half the HTTP requests at most");
+        assert!(second.pauses <= first.pauses);
+        assert!(second.failed.is_empty() && !second.cancelled);
+        // What the master holds, but for the names two characters deep that
+        // still pass the cap (the farms' "da"): missed alike either way.
+        assert!(cold.len() > master.servers.len() * 9 / 10);
+    }
+
+    #[test]
+    fn after_a_restart_the_last_listings_servers_are_its_own_again() {
+        let now = sources::now();
+        let server = |ip: &str| {
+            Arc::new(Server {
+                endpoint: dz_api::Endpoint {
+                    ip: ip.into(),
+                    port: 27016,
+                },
+                name: ip.into(),
+                ..Default::default()
+            })
+        };
+        let list = ServerList {
+            status: 0,
+            result: vec![
+                server("192.0.2.1"),
+                server("192.0.2.2"),
+                server("192.0.2.3"),
+            ],
+        };
+        let memo = |seen: i64, verdict| Memo {
+            seen,
+            verdict,
+            at: seen,
+        };
+        let mut m = ListingMemory::default();
+        m.started_at = Some(now - 600);
+        m.completed_at = Some(now - 300);
+        let addrs: Vec<(Addr, Memo)> = vec![
+            // Added and listed by the last listing: Steam's.
+            (
+                ("192.0.2.1".into(), 27016),
+                memo(now - 500, Verdict::Answered),
+            ),
+            // Added long before, not listed since: a kept server to check.
+            (
+                ("192.0.2.2".into(), 27016),
+                memo(now - 7200, Verdict::Answered),
+            ),
+            (("192.0.2.3".into(), 27016), memo(now - 500, Verdict::Fake)),
+        ];
+        m.set_addresses(addrs.iter().map(|(a, m)| (a, m)), now);
+        remember(Some(m), &list);
+        let f = found();
+        assert!(f.keys.contains(&("192.0.2.1".to_string(), 27016)));
+        assert!(!f.keys.contains(&("192.0.2.2".to_string(), 27016)));
+        assert!(!f.keys.contains(&("192.0.2.3".to_string(), 27016)));
+        assert!(
+            f.rows
+                .iter()
+                .any(|r| Arc::ptr_eq(r.server(), &list.result[0]))
+        );
+        assert!(f.memo[&("192.0.2.3".to_string(), 27016)].holds(now));
+        assert_eq!(
+            f.saved.next_listing(now),
+            Some(now - 300 + memory::MIN_INTERVAL)
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_saved_part_that_overflows_is_split_again() {
+        let mut master = FakeMaster::realistic();
+        let (_, first, _) = listing(&master, &[]).await;
+        let plan = dz_api::compact_plan(first.leaves);
+        // Sakhal grows past the cap: one request last time.
+        let n = master.servers.len() as u32;
+        for i in 0..9_000u32 {
+            let k = n + i;
+            master.servers.push(Listed {
+                addr: MasterAddr {
+                    ip: format!("11.{}.{}.{}", k >> 16, (k >> 8) & 255, k & 255),
+                    name: format!("{} new", ["Ash", "Birch", "Cedar"][(i % 3) as usize]),
+                    query_port: 27016,
+                    game_port: 2302,
+                },
+                map: "sakhal".into(),
+                empty: true,
+            });
+        }
+        tokio::time::advance(Duration::from_secs(600)).await;
+        let (found, again, _) = listing(&master, &plan).await;
+        let sakhal = master
+            .servers
+            .iter()
+            .filter(|s| s.map == "sakhal")
+            .all(|s| found.contains(&s.addr.ip));
+        assert!(sakhal, "every Sakhal server found once split");
+        assert!(again.requests > plan.len() as u32);
+    }
 }

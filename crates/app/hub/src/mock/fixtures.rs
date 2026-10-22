@@ -52,6 +52,8 @@ pub(super) fn sources(now: i64) -> SourcesChanged {
         },
         steam: SteamStatus {
             phase: Phase::Running,
+            recent: false,
+            next_at: None,
             needs_key: false,
             note: None,
             requests_done: 37,
@@ -61,6 +63,7 @@ pub(super) fn sources(now: i64) -> SourcesChanged {
             listed: 41_230,
             farms: 31_884,
             known: 6210,
+            remembered: 0,
             retried: 265,
             queried: 3136,
             answered: 2871,

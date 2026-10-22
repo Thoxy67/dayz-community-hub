@@ -9,8 +9,8 @@ mod steam;
 
 pub use index::ServerIndex;
 pub use master::{
-    MAX_SPLIT_DEPTH, MasterAddr, WEB_LIST_CAP, WebPartition, fetch_web_partition, web_partitions,
-    web_throttled,
+    MAX_SPLIT_DEPTH, MasterAddr, PLAN_MARGIN, PlannedPart, WEB_LIST_CAP, WebPartition,
+    compact_plan, fetch_web_partition, planned_partitions, web_partitions, web_throttled,
 };
 pub use official::{
     fetch_official_servers, merge_official, name_looks_official, tags_say_official,
@@ -187,9 +187,22 @@ pub async fn fetch_steam_player_count(client: &reqwest::Client) -> Result<u32> {
 /// On-disk cache envelope for the server list.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ServerListCache {
-    /// Unix timestamp (seconds) when the list was fetched.
+    /// Unix timestamp (seconds) when the launcher list in it was fetched.
+    /// Older caches hold when they were last written, which is no earlier.
     pub fetched_at: u64,
+    /// Servers the launcher list itself had then (before Steam's and the
+    /// kept ones); absent from older caches.
+    #[serde(default)]
+    pub launcher_count: Option<u32>,
     pub list: ServerList,
+}
+
+/// When the launcher list in a cache was fetched, and how many servers it
+/// had, for [`save_server_list_cache`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CacheStamp {
+    pub fetched_at: u64,
+    pub launcher_count: Option<u32>,
 }
 
 /// Load the cached server list. `None` if the file is missing, unreadable, or
@@ -207,10 +220,13 @@ pub async fn load_server_list_cache(cache_path: &std::path::Path) -> Option<Serv
 #[derive(Serialize)]
 struct ServerListCacheRef<'a> {
     fetched_at: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    launcher_count: Option<u32>,
     list: &'a ServerList,
 }
 
-/// Persist a freshly-fetched server list. Serialized from a reference (no
+/// Persist the server list, with when its launcher list was fetched
+/// (`stamp`; a zero time is taken as now). Serialized from a reference (no
 /// clone of the list) and written on the blocking pool, through a file
 /// beside the cache renamed over it, so a crash or a power cut mid-write
 /// leaves the previous cache whole rather than a truncated one.
@@ -218,12 +234,18 @@ struct ServerListCacheRef<'a> {
 pub async fn save_server_list_cache(
     cache_path: &std::path::Path,
     list: std::sync::Arc<ServerList>,
+    stamp: CacheStamp,
 ) {
-    let fetched_at = dz_common::time::now_secs();
+    let fetched_at = if stamp.fetched_at == 0 {
+        dz_common::time::now_secs()
+    } else {
+        stamp.fetched_at
+    };
     let path = cache_path.to_path_buf();
     let _ = tokio::task::spawn_blocking(move || {
         let data = serde_json::to_vec(&ServerListCacheRef {
             fetched_at,
+            launcher_count: stamp.launcher_count,
             list: &list,
         })
         .map_err(std::io::Error::other)?;
@@ -385,9 +407,23 @@ mod tests {
             status: 0,
             result: vec![Arc::new(server("1.1.1.1", 27016, 2302, "a"))],
         });
-        save_server_list_cache(&path, Arc::clone(&list)).await;
+        let stamp = CacheStamp {
+            fetched_at: 1_700_000_000,
+            launcher_count: Some(1),
+        };
+        save_server_list_cache(&path, Arc::clone(&list), stamp).await;
         let back = load_server_list_cache(&path).await.unwrap();
         assert_eq!(back.list, *list);
+        assert_eq!(back.fetched_at, 1_700_000_000);
+        assert_eq!(back.launcher_count, Some(1));
+        // A cache written before the count was kept still loads.
+        std::fs::write(
+            &path,
+            br#"{"fetched_at":5,"list":{"status":0,"result":[]}}"#,
+        )
+        .unwrap();
+        let old = load_server_list_cache(&path).await.unwrap();
+        assert_eq!((old.fetched_at, old.launcher_count), (5, None));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

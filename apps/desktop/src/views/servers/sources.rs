@@ -260,7 +260,12 @@ pub fn bar(ui: &mut Ui, s: &SourcesChanged, open: bool) {
                 tk.fg_muted,
             );
         } else if steam.phase != Phase::Running {
-            text(ui, phase_word(steam.phase), &small, tk.fg_faint);
+            // A listing skipped because the last one is recent says when that was.
+            let word = match steam.finished.filter(|_| steam.recent) {
+                Some(at) => tf("sources", "listedAgo", &[("ago", &format::relative(at))]),
+                None => phase_word(steam.phase).to_owned(),
+            };
+            text(ui, &word, &small, tk.fg_faint);
         }
         if let Some(w) = wait_left {
             let s = tf("sources", "waiting", &[("secs", &w)]);
@@ -429,6 +434,14 @@ fn details(ui: &mut Ui, s: &SourcesChanged, now: i64) {
             line(ui, t("sources", "retried"), &n(st.retried), tk.fg_muted);
             line(ui, t("sources", "noMods"), &n(st.no_mods), tk.fg_faint);
             line(ui, t("sources", "fakes"), &n(st.fakes), tk.fg_faint);
+            if st.remembered > 0 {
+                line(
+                    ui,
+                    t("sources", "remembered"),
+                    &n(st.remembered),
+                    tk.fg_faint,
+                );
+            }
             line(
                 ui,
                 t("sources", "added"),

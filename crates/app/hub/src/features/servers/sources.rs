@@ -37,9 +37,19 @@ pub struct DzsaStatus {
     pub at: Option<i64>,
 }
 
+/// Steam's listing as it stands. Also kept on disk with what the last
+/// listing learned (`memory`): unknown fields are ignored, missing ones
+/// default.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(default)]
 pub struct SteamStatus {
     pub phase: Phase,
+    /// Not listed again: the last listing (its figures here, `finished`
+    /// when it ended) is less than ten minutes old, maybe from before a
+    /// restart. `phase` is `Done`.
+    pub recent: bool,
+    /// While `recent`: when a listing may run again (Unix seconds).
+    pub next_at: Option<i64>,
     /// Off because the profile has no Steam Web API key: the only way the
     /// master is asked.
     pub needs_key: bool,
@@ -58,6 +68,10 @@ pub struct SteamStatus {
     pub farms: u32,
     /// Of those, already in the list.
     pub known: u32,
+    /// Of those, not queried: they answered as fakes, without readable
+    /// mods, as duplicates or not at all, recently (the verdict is kept a
+    /// few hours).
+    pub remembered: u32,
     /// Asked again, patiently, after not answering the first time.
     pub retried: u32,
     /// Queried (A2S), and of those answered.
@@ -114,6 +128,11 @@ pub(crate) fn update(f: impl FnOnce(&mut SourcesChanged)) {
     DIRTY.store(true, Ordering::Release);
     drop(s);
     CHANGED.notify_one();
+}
+
+/// Steam's listing as it stands.
+pub(crate) fn steam() -> SteamStatus {
+    STATUS.lock().map(|s| s.steam.clone()).unwrap_or_default()
 }
 
 /// Count what `list` holds.
