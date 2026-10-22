@@ -7,7 +7,7 @@
 //! summary was closed, gets it back with its queue, results and log ([`Mods::resume`]).
 
 use std::collections::VecDeque;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use dz_hub::events::ModProgressEvent;
 use dz_hub::features::mods::{InstalledModDto, ModUsageDto};
@@ -23,6 +23,13 @@ use crate::i18n::{plural, t, tf};
 use crate::rt::{self, Task};
 
 const UPDATES_TTL_MS: u128 = 5 * 60 * 1000;
+/// After a removal, how often the disk and Steam are read again while Steam's copy of
+/// a removed mod is still there, and for how long.
+const RECHECK: Duration = Duration::from_secs(3);
+const RECHECK_FOR: Duration = Duration::from_secs(120);
+/// A removed mod Steam calls subscribed again after this long was subscribed again
+/// (an earlier answer can predate the removal).
+const RESUBSCRIBED_AFTER: Duration = Duration::from_secs(30);
 /// Lines of SteamCMD output kept for the dialog; past this the oldest go.
 pub const LOG_MAX: usize = 5000;
 
@@ -211,11 +218,25 @@ pub struct Mods {
     /// What goes on once every mod came through.
     on_success: Option<Launch>,
     mutate: Vec<Task<Result<MutateDone, String>>>,
+    /// Mods the player removed this run, and when. Steam deletes its copy of an
+    /// unsubscribed item in its own time: until then the folder is still on disk and
+    /// Steam's answers may still name it, so these are kept out of the list.
+    removed: FxHashMap<u64, Instant>,
+    /// A read was asked for while one was under way: read again once it is in.
+    load_again: bool,
+    /// When the disk and Steam are next read for the removed mods still on disk.
+    recheck_at: Option<Instant>,
 }
 
 /// What a write to the mods did, for the toast and the follow-up.
 enum MutateDone {
     Reload(Vec<String>),
+    /// Mods removed (`removed`), those whose Steam copy stays (`kept`), the toasts.
+    Removed {
+        removed: Vec<u64>,
+        kept: Vec<u64>,
+        says: Vec<String>,
+    },
     Managed(u64, bool, String),
     /// The link could not be changed: the optimistic flip is undone by a re-read.
     ManagedFailed(String),
@@ -254,12 +275,25 @@ impl Mods {
             last_was_progress: false,
             on_success: None,
             mutate: Vec::new(),
+            removed: FxHashMap::default(),
+            load_again: false,
+            recheck_at: None,
         }
     }
 
     // ── derived ─────────────────────────────────────────────────────────────
 
-    fn set_installed(&mut self, list: Vec<InstalledModDto>) {
+    fn set_installed(&mut self, mut list: Vec<InstalledModDto>) {
+        // A removed mod whose folder is gone is gone for good; one still on disk is
+        // Steam's copy waiting to be deleted: kept out of the list, read again soon.
+        let on_disk: Vec<u64> = list.iter().map(|m| m.id).collect();
+        self.removed.retain(|id, _| on_disk.contains(id));
+        list.retain(|m| !self.removed.contains_key(&m.id));
+        self.recheck_at = self
+            .removed
+            .values()
+            .any(|at| at.elapsed() < RECHECK_FOR)
+            .then(|| Instant::now() + RECHECK);
         self.installed = list;
         self.by_id = self
             .installed
@@ -271,7 +305,18 @@ impl Mods {
         self.total_size = self.installed.iter().map(|m| m.size).sum();
     }
 
-    fn set_steam(&mut self, s: SteamSubscriptionsDto) {
+    fn set_steam(&mut self, mut s: SteamSubscriptionsDto) {
+        // A removed mod Steam still lists: an answer from before the removal, unless
+        // it is subscribed again well after it.
+        let removed = &mut self.removed;
+        s.items.retain(|i| match removed.get(&i.id) {
+            Some(at) if i.subscribed && at.elapsed() > RESUBSCRIBED_AFTER => {
+                removed.remove(&i.id);
+                true
+            }
+            Some(_) => false,
+            None => true,
+        });
         self.steam_by_id = s.items.iter().enumerate().map(|(i, x)| (x.id, i)).collect();
         self.workshop = s
             .details
@@ -375,6 +420,8 @@ impl Mods {
     /// Read what is on disk. Callers at the same moment share one read.
     pub fn load(&mut self) {
         if self.load_task.is_some() {
+            // The read under way may predate what changed: read again after it.
+            self.load_again = true;
             return;
         }
         self.loading = true;
@@ -442,11 +489,15 @@ impl Mods {
                     .delete_mod(id)
                     .await
                     .map_err(|e| format!("{}: {e}", t("shell", "errorFailed")))?;
-                Ok(MutateDone::Reload(vec![if kept {
-                    tf("mods", "keptInSteam", &[("name", &name)])
-                } else {
-                    tf("mods", "deletedSingle", &[("name", &name)])
-                }]))
+                Ok(MutateDone::Removed {
+                    removed: vec![id],
+                    kept: if kept { vec![id] } else { Vec::new() },
+                    says: vec![if kept {
+                        tf("mods", "keptInSteam", &[("name", &name)])
+                    } else {
+                        tf("mods", "deletedSingle", &[("name", &name)])
+                    }],
+                })
             });
             cx.stores.mods.mutate.push(task);
         });
@@ -480,6 +531,7 @@ impl Mods {
         self.bus.confirm_then(req, move |cx| {
             let hub = cx.hub.clone();
             let task = rt::spawn(async move {
+                let removed = ids.clone();
                 let kept = hub
                     .delete_mods_bulk(ids)
                     .await
@@ -493,7 +545,11 @@ impl Mods {
                 if !kept.is_empty() {
                     says.push(tf("mods", "keptInSteamMany", &[("count", &kept.len())]));
                 }
-                Ok(MutateDone::Reload(says))
+                Ok(MutateDone::Removed {
+                    removed,
+                    kept,
+                    says,
+                })
             });
             cx.stores.mods.mutate.push(task);
         });
@@ -635,6 +691,10 @@ impl Mods {
             (None, None, ModOpType::UpdateAll) => self.installed.iter().map(|m| m.id).collect(),
             _ => Vec::new(),
         };
+        // Installing or updating a removed mod brings it back.
+        for id in &ids {
+            self.removed.remove(id);
+        }
         let mut op = ModOp::idle();
         op.active = true;
         op.kind = kind;
@@ -859,6 +919,9 @@ impl Mods {
             self.loading = false;
             self.loaded = true;
             changed = true;
+            if std::mem::take(&mut self.load_again) {
+                self.load();
+            }
             match r {
                 Ok(list) => {
                     self.set_installed(list);
@@ -962,13 +1025,28 @@ impl Mods {
             match r {
                 Ok(MutateDone::Reload(says)) => {
                     self.load();
-                    for (i, s) in says.into_iter().enumerate() {
-                        if i == 0 {
-                            self.bus.ok(s);
-                        } else {
-                            self.bus.info(s);
-                        }
+                    self.toasts(says);
+                }
+                Ok(MutateDone::Removed {
+                    removed,
+                    kept,
+                    says,
+                }) => {
+                    // Out of the list now; the disk and Steam are read again until
+                    // Steam has deleted its copies.
+                    let now = Instant::now();
+                    for id in removed.into_iter().filter(|id| !kept.contains(id)) {
+                        self.removed.insert(id, now);
                     }
+                    let list = std::mem::take(&mut self.installed);
+                    self.set_installed(list);
+                    if let Some(s) = self.steam.take() {
+                        self.set_steam(s);
+                    }
+                    self.load();
+                    self.load_steam();
+                    signals.push(Signal::ModsChanged);
+                    self.toasts(says);
                 }
                 Ok(MutateDone::Managed(id, managed, name)) => {
                     if let Some(m) = self.by_id.get(&id).and_then(|i| self.installed.get_mut(*i)) {
@@ -985,6 +1063,28 @@ impl Mods {
                 Err(e) => self.bus.err(e),
             }
         }
+        // The removed mods Steam has not deleted yet: read again in a moment.
+        if let Some(at) = self.recheck_at {
+            let now = Instant::now();
+            if now >= at {
+                self.recheck_at = None;
+                self.load();
+                self.load_steam();
+            } else if let Some(r) = rt::Rt::get() {
+                r.ctx().request_repaint_after(at - now);
+            }
+        }
         changed
+    }
+
+    /// The first toast says it worked, the others add to it.
+    fn toasts(&self, says: Vec<String>) {
+        for (i, s) in says.into_iter().enumerate() {
+            if i == 0 {
+                self.bus.ok(s);
+            } else {
+                self.bus.info(s);
+            }
+        }
     }
 }
