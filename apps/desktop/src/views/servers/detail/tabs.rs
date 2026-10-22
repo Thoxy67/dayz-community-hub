@@ -320,7 +320,9 @@ pub fn rules(ui: &mut Ui, st: &mut DetailState, m: &Model) {
                     c.add(
                         Copy::new(&r.value)
                             .labels(t("detail", "copyValue"), t("common", "copied"))
-                            .max_width(vr.width()),
+                            .max_width(vr.width())
+                            .text_size(size::TEXT_3XS)
+                            .color(c.tokens().fg_muted),
                     );
                 }
             });
@@ -415,14 +417,20 @@ fn rows(ui: &mut Ui, st: &mut DetailState, m: &Model, run: &mut Run) {
         }
         let miss = format!("{} · {}", t("detail", "filterMissing"), m.missing);
         if ui
-            .add(Button::chip(&miss, st.mods_filter == ModsFilter::Missing))
+            .add(
+                Button::chip(&miss, st.mods_filter == ModsFilter::Missing)
+                    .tint((m.missing > 0).then_some(tk.err)),
+            )
             .clicked()
         {
             st.mods_filter = ModsFilter::Missing;
         }
         let stale = format!("{} · {}", t("detail", "filterStale"), m.stale);
         if ui
-            .add(Button::chip(&stale, st.mods_filter == ModsFilter::Stale))
+            .add(
+                Button::chip(&stale, st.mods_filter == ModsFilter::Stale)
+                    .tint((m.stale > 0).then_some(tk.warn)),
+            )
             .clicked()
         {
             st.mods_filter = ModsFilter::Stale;

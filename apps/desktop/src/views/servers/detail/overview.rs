@@ -271,7 +271,9 @@ pub fn show(ui: &mut Ui, cx: &Ctx, m: &Model, run: &mut Run) {
                         let _ = ui
                             .add(
                                 Copy::new(&address)
-                                    .labels(t("common", "copy"), t("common", "copied")),
+                                    .labels(t("common", "copy"), t("common", "copied"))
+                                    .text_size(size::TEXT_XS)
+                                    .color(ui.tokens().fg),
                             )
                             .tip_kbd(t("detail", "copyIp"), "", Side::Top);
                     });

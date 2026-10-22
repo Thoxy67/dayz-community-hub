@@ -191,7 +191,8 @@ fn share_left(ui: &mut Ui) {
                         Copy::new(url)
                             .wrap()
                             .max_width(ui.available_width())
-                            .labels(t("common", "copy"), t("common", "copied")),
+                            .labels(t("common", "copy"), t("common", "copied"))
+                            .color(ui.tokens().fg_muted),
                     );
                 });
             }

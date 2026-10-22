@@ -112,6 +112,9 @@ fn files(face: Face) -> [Subset; 4] {
     }
 }
 
+/// The key of the symbols fallback face.
+const SYMBOLS: &str = "DejaVuSans-symbols";
+
 /// The font definitions: every face, each falling back on egui's emoji faces and its
 /// sans (for signs the subsets lack).
 pub fn definitions() -> FontDefinitions {
@@ -129,6 +132,14 @@ pub fn definitions() -> FontDefinitions {
             defs.font_data.insert(n.clone(), Arc::clone(d));
         }
     }
+    // The signs no bundled face has (`→`, `✓`, the PlayStation shapes), from a DejaVu Sans
+    // subset, before egui's faces: a browser finds them in a system font.
+    defs.font_data.insert(
+        SYMBOLS.into(),
+        Arc::new(FontData::from_static(include_bytes!(
+            "../../assets/fonts/DejaVuSans-symbols.ttf"
+        ))),
+    );
     for face in Face::ALL {
         let mut chain = Vec::new();
         for (stem, sub, bytes) in files(face) {
@@ -137,6 +148,7 @@ pub fn definitions() -> FontDefinitions {
                 .insert(key.clone(), Arc::new(FontData::from_static(bytes)));
             chain.push(key);
         }
+        chain.push(SYMBOLS.to_owned());
         chain.extend(emoji.iter().cloned());
         defs.families.insert(face.family(), chain);
     }
@@ -154,4 +166,28 @@ pub fn text_styles() -> std::collections::BTreeMap<TextStyle, FontId> {
         (TextStyle::Heading, font(Face::DisplayBold, TEXT_XL)),
     ]
     .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every sign the interface's words and glyphs use has a glyph in every face: the
+    /// subsets, the symbols fallback or egui's own faces (a missing one draws as a box).
+    #[test]
+    fn every_face_has_the_signs_the_words_use() {
+        let ctx = egui::Context::default();
+        ctx.set_fonts(definitions());
+        let mut out = ctx.run_ui(egui::RawInput::default(), |_| {});
+        out.textures_delta.clear();
+        let signs = "àéèêçœ «»–—‘’“”„•…‹›™−≤≥ ←↑→↓↵⋯ ✓✕○□△ ЁЖЩ";
+        for face in Face::ALL {
+            let missing: String = signs
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .filter(|c| !ctx.fonts_mut(|f| f.has_glyphs(&font(face, 12.0), &c.to_string())))
+                .collect();
+            assert!(missing.is_empty(), "{face:?} lacks {missing}");
+        }
+    }
 }

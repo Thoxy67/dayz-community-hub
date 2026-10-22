@@ -484,7 +484,7 @@ fn mod_row(ui: &mut Ui, m: &ModRef, last: bool, w: f32) -> bool {
         .tip_kbd(t("detail", "openWorkshop"), "", Side::Top)
         .clicked();
     right = wr.left() - 8.0;
-    let cg = ph(ui, &m.id_text, font(Face::Mono, size::TEXT_2XS));
+    let cg = ph(ui, &m.id_text, font(Face::Mono, size::TEXT_3XS));
     let cw = cg.size().x + 16.0;
     let mut cui = ui.new_child(
         egui::UiBuilder::new()
@@ -497,7 +497,11 @@ fn mod_row(ui: &mut Ui, m: &ModRef, last: bool, w: f32) -> bool {
     if !row.contains_pointer() {
         cui.multiply_opacity(0.6);
     }
-    cui.add(Copy::new(&m.id_text).labels(t("detail", "copyId"), t("common", "copied")));
+    cui.add(
+        Copy::new(&m.id_text)
+            .labels(t("detail", "copyId"), t("common", "copied"))
+            .text_size(size::TEXT_3XS),
+    );
     right -= cw + 8.0;
     if m.state == ModState::Missing {
         lucide::DOWNLOAD.paint(

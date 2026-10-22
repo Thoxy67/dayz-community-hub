@@ -278,7 +278,10 @@ impl<'a> PageHeader<'a> {
 
         // The actions' width is last frame's: placed in reading order from the right.
         let actions_w: f32 = ui.data(|d| d.get_temp(id.with("aw"))).unwrap_or(0.0);
-        let row_h = 32.5_f32;
+        // The name row is as tall as its tallest cell (`items-end`): the name (30px,
+        // `leading-none`), the figures, the actions; last frame's heights.
+        let cells_h: f32 = ui.data(|d| d.get_temp(id.with("ch"))).unwrap_or(0.0);
+        let row_h = cells_h.max(30.0);
         let title_g = paint::tracked(
             ui,
             self.title,
@@ -315,6 +318,7 @@ impl<'a> PageHeader<'a> {
         aui.spacing_mut().item_spacing.x = 4.0;
         actions(&mut aui);
         let used = aui.min_rect().width().max(0.0);
+        let actions_h = aui.min_rect().height().max(0.0);
         if (used - actions_w).abs() > 0.5 {
             ui.data_mut(|d| d.insert_temp(id.with("aw"), used));
             ui.ctx().request_discard("page header actions width");
@@ -327,17 +331,44 @@ impl<'a> PageHeader<'a> {
             let x = title_rect.right() + 24.0;
             (x, inner.top(), (inner.right() - used - 24.0 - x).max(0.0))
         };
+        // The figures' rows are each one figure tall (last frame's, at least 30): egui
+        // gives every wrapped row the first row's height, so a first row as tall as the
+        // name row would make the block taller each frame once the figures wrap. The
+        // block sits on the row's bottom (`items-end`), at last frame's height.
+        let band: f32 = ui.data(|d| d.get_temp(id.with("fb"))).unwrap_or(30.0);
+        let block: f32 = ui.data(|d| d.get_temp(id.with("sh"))).unwrap_or(band);
+        let top = if narrow {
+            sy
+        } else {
+            sy + (row_h - block).max(0.0)
+        };
         let mut sui = ui.new_child(
             UiBuilder::new()
                 .max_rect(Rect::from_min_size(
-                    Pos2::new(sx, sy),
-                    Vec2::new(sw.max(1.0), row_h),
+                    Pos2::new(sx, top),
+                    Vec2::new(sw.max(1.0), band),
                 ))
                 .layout(Layout::left_to_right(Align::Max).with_main_wrap(true))
                 .id_salt("stats"),
         );
         sui.spacing_mut().item_spacing = Vec2::new(20.0, 4.0);
         stats(&mut sui);
+        let measured = sui.min_rect().height().max(0.0);
+        let one_row = ((measured + 4.0) / (band + 4.0)).round() <= 1.0;
+        if one_row && measured > 0.0 && (measured.max(30.0) - band).abs() > 0.5 {
+            ui.data_mut(|d| d.insert_temp(id.with("fb"), measured.max(30.0)));
+            ui.ctx().request_discard("page header figure height");
+        }
+        if (measured - block).abs() > 0.5 {
+            ui.data_mut(|d| d.insert_temp(id.with("sh"), measured));
+            ui.ctx().request_discard("page header figures height");
+        }
+        let stats_h = if narrow { 0.0 } else { measured };
+        let cells = actions_h.max(stats_h);
+        if (cells - cells_h).abs() > 0.5 {
+            ui.data_mut(|d| d.insert_temp(id.with("ch"), cells));
+            ui.ctx().request_discard("page header row height");
+        }
         let stats_bottom = if sui.min_rect().height() > 0.0 {
             sui.min_rect().bottom()
         } else {
@@ -358,7 +389,8 @@ impl<'a> PageHeader<'a> {
             toolbar(&mut tui);
             bottom = tui.min_rect().bottom().max(bottom + 8.0);
         }
-        let rect = Rect::from_min_max(full.min, Pos2::new(full.right(), bottom + 8.0));
+        // `pb-2` and the 1px `border-b` under it, on whole pixels as the browser snaps it.
+        let rect = Rect::from_min_max(full.min, Pos2::new(full.right(), (bottom + 9.0).floor()));
         let resp = ui.allocate_rect(rect, Sense::hover());
         ui.painter().set(
             ground,

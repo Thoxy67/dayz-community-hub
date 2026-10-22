@@ -427,7 +427,7 @@ impl SettingsView {
                             let keep = button_w(ui, open, true) + 8.0;
                             if let Some(dir) = &self.content_dir.value {
                                 let w = room(ui, keep);
-                                ui.add(Copy::new(dir).max_width(w));
+                                ui.add(Copy::new(dir).max_width(w).color(ui.tokens().fg_muted));
                             }
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                 let c = ui
@@ -570,7 +570,7 @@ impl SettingsView {
                                             },
                                         );
                                         ui.add_space(4.0);
-                                        ui.add(Copy::new(cmd));
+                                        ui.add(Copy::new(cmd).color(ui.tokens().fg_muted));
                                     });
                                 }
                             }

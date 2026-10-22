@@ -998,13 +998,14 @@ pub(crate) fn block<R>(
     let tk = ui.tokens();
     let w = ui.available_width();
     let slot = ui.painter().add(Shape::Noop);
-    let r = Frame::new()
-        .inner_margin(Margin::symmetric(size::PAD as i8, py))
-        .show(ui, |ui| {
-            ui.set_width(w - 2.0 * size::PAD);
-            ui.spacing_mut().item_spacing = Vec2::new(8.0, 6.0);
-            body(ui)
-        });
+    // The `border-b` is a pixel of its own under the padding.
+    let mut margin = Margin::symmetric(size::PAD as i8, py);
+    margin.bottom = py.saturating_add(i8::from(line_under));
+    let r = Frame::new().inner_margin(margin).show(ui, |ui| {
+        ui.set_width(w - 2.0 * size::PAD);
+        ui.spacing_mut().item_spacing = Vec2::new(8.0, 6.0);
+        body(ui)
+    });
     let rect = r.response.rect;
     if let Some(f) = fill {
         ui.painter()

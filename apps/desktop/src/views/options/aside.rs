@@ -458,7 +458,8 @@ fn facts(ui: &mut Ui, tk: &Tokens, info: &SteamLaunchInfoDto) {
                     ui.add(
                         Copy::new(prefix)
                             .labels(t("common", "copy"), t("common", "copied"))
-                            .wrap(),
+                            .wrap()
+                            .color(ui.tokens().fg_muted),
                     );
                     para(
                         ui,

@@ -339,6 +339,8 @@ pub struct Copy<'a> {
     copied: &'a str,
     max_width: Option<f32>,
     wrap: bool,
+    color: Option<Color32>,
+    px: f32,
 }
 
 impl<'a> Copy<'a> {
@@ -350,7 +352,22 @@ impl<'a> Copy<'a> {
             copied: "",
             max_width: None,
             wrap: false,
+            color: None,
+            px: size::TEXT_2XS,
         }
+    }
+
+    /// The resting colour when the use site sets one (`class="text-fg-muted"`, `text-fg`);
+    /// `fg_faint` otherwise. Under the pointer it still turns `fg-muted`.
+    pub fn color(mut self, c: Color32) -> Self {
+        self.color = Some(c);
+        self
+    }
+
+    /// The text size when the use site sets one (`text-xs`, `text-3xs`); `text-2xs` otherwise.
+    pub fn text_size(mut self, px: f32) -> Self {
+        self.px = px;
+        self
     }
 
     /// Long text wraps onto more lines (anywhere: a path) instead of being cut.
@@ -381,7 +398,8 @@ impl<'a> Copy<'a> {
 impl Widget for Copy<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
         let t = ui.tokens();
-        let f = font(Face::Mono, size::TEXT_2XS);
+        let f = font(Face::Mono, self.px);
+        let rest = self.color.unwrap_or(t.fg_faint);
         let room = self.max_width.unwrap_or_else(|| ui.available_width()) - 16.0;
         let shown = self.shown.unwrap_or(self.text);
         let g = if self.wrap {
@@ -413,7 +431,7 @@ impl Widget for Copy<'_> {
         let ink = if copied {
             t.ok
         } else {
-            paint::lerp(t.fg_faint, t.fg_muted, hover)
+            paint::lerp(rest, t.fg_muted, hover)
         };
         let p = ui.painter();
         paint::text_at(p, &g, rect.left(), rect.center().y, ink);

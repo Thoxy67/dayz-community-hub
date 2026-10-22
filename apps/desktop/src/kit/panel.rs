@@ -202,23 +202,26 @@ impl<'a> Field<'a> {
         } else {
             176.0
         };
-        let lg = paint::galley_wrap(
+        // `text-xs` (line height 1.45) and `text-2xs leading-snug` (1.375), `mt-0.5`.
+        let (lg, l_off) = paint::galley_lh(
             ui,
             self.label,
             font(Face::SansMedium, size::TEXT_XS),
             t.fg,
             label_w,
+            size::TEXT_XS * 1.45,
         );
         let hg = (!self.hint.is_empty()).then(|| {
-            paint::galley_wrap(
+            paint::galley_lh(
                 ui,
                 self.hint,
                 font(Face::Sans, size::TEXT_2XS),
                 t.fg_faint,
                 label_w,
+                size::TEXT_2XS * 1.375,
             )
         });
-        let text_h = lg.size().y + hg.as_ref().map_or(0.0, |g| g.size().y + 2.0);
+        let text_h = lg.size().y + hg.as_ref().map_or(0.0, |(g, _)| g.size().y + 2.0);
         // The control's height is last frame's (a control rarely changes height), so it
         // can be centred on the name before it is drawn.
         let hid = ui.id().with(("kit-field", self.label));
@@ -252,22 +255,28 @@ impl<'a> Field<'a> {
             ui.data_mut(|d| d.insert_temp(hid, ctl_h));
             ui.ctx().request_repaint();
         }
+        // `py-2`, and the `border-b` a pixel of its own under it unless it is the last.
+        let border = if self.last { 0.0 } else { 1.0 };
         let h = if self.stacked {
-            8.0 + text_h + 6.0 + ctl_h + 8.0
+            8.0 + text_h + 6.0 + ctl_h + 8.0 + border
         } else {
-            8.0 + text_h.max(ctl_h) + 8.0
+            8.0 + text_h.max(ctl_h) + 8.0 + border
         };
         let (rect, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
         let p = ui.painter();
         let ty = if self.stacked {
             rect.top() + 8.0
         } else {
-            rect.center().y - text_h / 2.0
+            (rect.top() + rect.bottom() - border) / 2.0 - text_h / 2.0
         };
-        p.galley(Pos2::new(rect.left() + size::PAD, ty), lg.clone(), t.fg);
-        if let Some(hg) = hg {
+        p.galley(
+            Pos2::new(rect.left() + size::PAD, ty + l_off),
+            lg.clone(),
+            t.fg,
+        );
+        if let Some((hg, h_off)) = hg {
             p.galley(
-                Pos2::new(rect.left() + size::PAD, ty + lg.size().y + 2.0),
+                Pos2::new(rect.left() + size::PAD, ty + lg.size().y + 2.0 + h_off),
                 hg,
                 t.fg_faint,
             );

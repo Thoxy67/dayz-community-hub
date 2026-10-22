@@ -38,6 +38,33 @@ pub fn galley_wrap(ui: &Ui, text: &str, font: FontId, color: Color32, width: f32
         .layout(text.to_owned(), font, color, width.max(1.0))
 }
 
+/// Text wrapped at `width` with a CSS line height `lh` (px, e.g. `text-xs` = 12 × 1.45):
+/// rows are `lh` apart and the galley is `lines × lh` tall, as the browser lays it out.
+/// The second value is the half-leading: add it to the top when drawing so the glyphs sit
+/// mid-row where CSS puts them (egui sets them at the top of a taller row).
+pub fn galley_lh(
+    ui: &Ui,
+    text: &str,
+    font: FontId,
+    color: Color32,
+    width: f32,
+    lh: f32,
+) -> (Arc<Galley>, f32) {
+    let natural = ui.fonts_mut(|f| f.row_height(&font));
+    let mut job = LayoutJob::single_section(
+        text.to_owned(),
+        TextFormat {
+            font_id: font,
+            color,
+            line_height: Some(lh.max(1.0)),
+            ..Default::default()
+        },
+    );
+    job.wrap.max_width = width.max(1.0);
+    let g = ui.painter().layout_job(job);
+    (g, ((lh - natural) / 2.0).max(0.0))
+}
+
 /// One line with letter spacing (`tracking`, in em) and optionally upper-cased
 /// (`uppercase tracking-[0.08em]`), cut at `max_width` when given.
 pub fn tracked(

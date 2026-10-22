@@ -3,9 +3,9 @@
 //!
 //! Empty, it offers what was picked last, the actions and the views. Typed into, it
 //! matches views, actions (with their keys), settings sections, favourites, history and
-//! installed mods here, fuzzily ([`super::fuzzy`]), and asks the hub for servers (120 ms
-//! after typing pauses, six at most, the newest request winning); an address
-//! ("1.2.3.4:2302") offers to connect to it. Sections are ordered by their best match;
+//! installed mods here, fuzzily ([`super::fuzzy`]), and filters the servers store's
+//! snapshot for servers (120 ms after typing pauses, six at most, the newest winning);
+//! an address ("1.2.3.4:2302") offers to connect to it. Sections are ordered by their best match;
 //! ↑↓ move, PgUp/PgDn jump, Tab changes section, Enter does the obvious thing, Esc closes.
 //!
 //! The sections are rebuilt only when the query, the language or what they list changes,
@@ -14,7 +14,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use dz_hub::features::browser::{ServerPage, ServerQuery, ServerRow};
+use dz_hub::features::browser::{ServerQuery, ServerRow, ServerSnapshot, order};
 use egui::text::{LayoutJob, TextFormat};
 use egui::{
     Align2, Color32, Context, CornerRadius, Key, Modifiers, Rect, Sense, Stroke, Ui, Vec2, pos2,
@@ -166,7 +166,7 @@ pub(crate) struct Palette {
     asking: bool,
     search_due: Option<f64>,
     searched: String,
-    search: Option<Task<(u64, Result<ServerPage, String>)>>,
+    search: Option<Task<(u64, Vec<ServerRow>)>>,
     generation: u64,
     sections: Vec<Section>,
     sig: Option<Sig>,
@@ -199,7 +199,7 @@ pub(super) fn show(ctx: &Context, cx: &mut Ctx, st: &mut Palette) {
         st.search = None;
         return;
     }
-    poll_search(ctx, st, now, cx.hub);
+    poll_search(ctx, st, now, cx.stores.servers.snapshot());
     rebuild(cx, st);
     let flat_len: usize = st.sections.iter().map(|s| s.items.len()).sum();
     let mut chosen: Option<Item> = None;
@@ -668,13 +668,13 @@ fn section(st: &mut Palette, delta: i32) {
 }
 
 /// The server search: debounced, superseded by a newer one.
-fn poll_search(ctx: &Context, st: &mut Palette, now: f64, hub: &dz_hub::Hub) {
+fn poll_search(ctx: &Context, st: &mut Palette, now: f64, snap: &Arc<ServerSnapshot>) {
     if let Some(task) = &mut st.search
         && let Some((generation, r)) = task.poll()
     {
         st.search = None;
         if generation == st.generation {
-            st.found = r.map(|p| p.rows).unwrap_or_default();
+            st.found = r;
             st.found_gen = st.found_gen.wrapping_add(1);
             st.asking = false;
         }
@@ -704,20 +704,29 @@ fn poll_search(ctx: &Context, st: &mut Palette, now: f64, hub: &dz_hub::Hub) {
             st.search_due = None;
             st.generation = st.generation.wrapping_add(1);
             let generation = st.generation;
+            // The browser's own filter and sort over the list in process (the store's
+            // snapshot), off the UI thread; full rows only for the six shown.
             let q = query_for(&st.searched);
-            let hub = hub.clone();
+            let snap = Arc::clone(snap);
             st.search = Some(rt::spawn(async move {
-                let r = match q {
-                    Some(q) => hub.servers_query(q).await,
-                    None => Err("bad query".to_string()),
-                };
-                (generation, r)
+                let rows = q.map_or_else(Vec::new, |q| {
+                    let o = order(&snap, &q);
+                    o.order
+                        .iter()
+                        .take(FOUND_MAX)
+                        .filter_map(|&i| snap.get(i).map(|r| r.to_row()))
+                        .collect()
+                });
+                (generation, rows)
             }));
         } else {
             ctx.request_repaint_after(Duration::from_secs_f64(due - now));
         }
     }
 }
+
+/// Servers the palette lists at most.
+const FOUND_MAX: usize = 6;
 
 /// The browser's own query: matching servers, the most populated first, six at most.
 fn query_for(term: &str) -> Option<ServerQuery> {

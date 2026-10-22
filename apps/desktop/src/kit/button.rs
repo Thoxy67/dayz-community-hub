@@ -199,6 +199,7 @@ pub struct Button<'a> {
     tip: Option<(&'a str, &'a str, Side)>,
     spinning: bool,
     start: bool,
+    tint: Option<Color32>,
 }
 
 impl<'a> Button<'a> {
@@ -218,7 +219,15 @@ impl<'a> Button<'a> {
             tip: None,
             spinning: false,
             start: false,
+            tint: None,
         }
+    }
+
+    /// The label in its own colour whatever the state (a chip's count in `text-err`
+    /// or `text-warn`, as a `<span class>` inside the Svelte chip); `None` keeps the ink.
+    pub fn tint(mut self, c: Option<Color32>) -> Self {
+        self.tint = c;
+        self
     }
 
     /// Icon and label from the left edge, not centred (`justify-start`, with a width).
@@ -309,7 +318,8 @@ impl Widget for Button<'_> {
         let s = self.size;
         let play = self.variant == Variant::Play && !self.active;
         let text_font = if play {
-            font(Face::DisplayBold, s.text() + 1.0)
+            // `font-display font-extrabold` at the size's own text size.
+            font(Face::DisplayBold, s.text())
         } else {
             font(Face::SansMedium, s.text())
         };
@@ -425,6 +435,7 @@ impl Widget for Button<'_> {
                 x += icon_px + gap;
             }
             if let Some(g) = &g {
+                let ink = self.tint.map_or(ink, |c| fade(c, en));
                 let room = (r.right() - s.pad() - x).max(0.0);
                 if g.size().x > room + 0.5 && self.width.is_some() {
                     // A fixed width narrower than the label: lay it out again, cut.
