@@ -260,7 +260,15 @@ impl Widget for MiniSwitch<'_> {
 }
 
 /// Paints the 14px box (`ui/checkbox`); `tick` is the eased 0→1 of the mark.
-fn paint_box(ui: &Ui, r: Rect, checked: bool, mixed: bool, tick: f32, hover: f32, en: bool) {
+pub(crate) fn paint_box(
+    ui: &Ui,
+    r: Rect,
+    checked: bool,
+    mixed: bool,
+    tick: f32,
+    hover: f32,
+    en: bool,
+) {
     let t = ui.tokens();
     let p = ui.painter();
     let on = checked || mixed;

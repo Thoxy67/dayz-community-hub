@@ -16,7 +16,8 @@ use crate::i18n::{format, t, tf};
 use crate::icons::{Icon, lucide};
 use crate::kit::paint::{self, alpha};
 use crate::kit::{
-    Align, FieldSize, Input, Segment, Segmented, Select, SelectOption, Side, Switch, TipExt, menu,
+    Align, FieldSize, Input, MultiSelect, Segment, Segmented, SelectOption, Side, Switch, TipExt,
+    menu,
 };
 use crate::parts::{draw, ph};
 use crate::theme::{TokensExt, font, fonts::Face, size};
@@ -28,7 +29,8 @@ pub const PINGS: [u32; 5] = [0, 50, 100, 150, 250];
 #[derive(Clone, Debug, PartialEq)]
 pub struct Filters {
     pub search: String,
-    pub map: Option<String>,
+    /// The maps shown (none for every map).
+    pub maps: Vec<String>,
     pub first_person: Tri,
     pub password: Tri,
     pub battleye: Tri,
@@ -47,7 +49,7 @@ impl Default for Filters {
     fn default() -> Self {
         Self {
             search: String::new(),
-            map: None,
+            maps: Vec::new(),
             first_person: Tri::All,
             password: Tri::All,
             battleye: Tri::All,
@@ -91,7 +93,7 @@ impl Filters {
     pub fn query(&self) -> ServerQuery {
         ServerQuery {
             search: self.search.trim().to_string(),
-            map: self.map.clone(),
+            maps: self.maps.clone(),
             first_person: self.first_person,
             password: self.password,
             battleye: self.battleye,
@@ -111,7 +113,7 @@ impl Filters {
     /// Any filter in force (not the order, not "show excluded").
     pub fn active(&self) -> bool {
         !self.search.trim().is_empty()
-            || self.map.is_some()
+            || !self.maps.is_empty()
             || self.first_person != Tri::All
             || self.password != Tri::All
             || self.battleye != Tri::All
@@ -124,7 +126,7 @@ impl Filters {
 
     pub fn clear(&mut self) {
         self.search.clear();
-        self.map = None;
+        self.maps.clear();
         self.first_person = Tri::All;
         self.password = Tri::All;
         self.battleye = Tri::All;
@@ -173,7 +175,7 @@ impl Filters {
     pub fn remove(&mut self, key: &str) {
         match key {
             "search" => self.search.clear(),
-            "map" => self.map = None,
+            "map" => self.maps.clear(),
             "ping" => self.max_ping = 0,
             "empty" => self.hide_empty = false,
             "full" => self.hide_full = false,
@@ -293,28 +295,48 @@ pub fn toolbar(ui: &mut Ui, f: &mut Filters, d: &ToolbarData, run: &mut Run) {
             );
         });
 
-        // The map: "<map> · <count>", busiest first; the placeholder clears it.
+        // The maps: "<map> · <count>", busiest first, several at once, found by typing;
+        // the placeholder clears them.
         let labels: Vec<String> = d
             .maps
             .iter()
             .map(|m| format!("{} · {}", m.map, m.count))
             .collect();
-        let opts: Vec<SelectOption<Option<String>>> = d
+        let opts: Vec<SelectOption<String>> = d
             .maps
             .iter()
             .zip(&labels)
-            .map(|(m, l)| SelectOption::new(Some(m.map.clone()), l.as_str()))
+            .map(|(m, l)| SelectOption::new(m.map.clone(), l.as_str()))
             .collect();
-        let mut map = f.map.clone();
+        // As the list spells them (a command may have named one in another case).
+        let mut maps: Vec<String> = f
+            .maps
+            .iter()
+            .map(|m| {
+                d.maps
+                    .iter()
+                    .find(|c| c.map.to_lowercase() == m.to_lowercase())
+                    .map_or_else(|| m.clone(), |c| c.map.clone())
+            })
+            .collect();
+        let summary = match maps.as_slice() {
+            [] => String::new(),
+            [one] => one.clone(),
+            many => tf("servers", "mapsCount", &[("count", &many.len())]),
+        };
         let r = ui.add(
-            Select::new("servers-map", &mut map, &opts)
+            MultiSelect::new("servers-map", &mut maps, &opts)
                 .placeholder(t("servers", "allMaps"))
-                .none(None)
+                .summary(&summary)
+                .search(t("servers", "mapSearch"), t("servers", "clearSearch"))
+                .empty(t("servers", "mapNoMatch"))
                 .width(160.0)
+                .list_width(240.0)
                 .label(t("servers", "colMap")),
         );
-        if r.changed() || map != f.map {
-            run.push(("servers.filter.map", json!({ "map": map })));
+        // A change, or a name a command gave in another case, now spelled as listed.
+        if r.changed() || maps != f.maps {
+            run.push(("servers.filter.map", json!({ "maps": maps })));
         }
 
         more_filters(ui, f, d, win_w, run);
@@ -475,6 +497,9 @@ impl Widget for TriChip<'_> {
             if let Some(g) = &g {
                 draw(p, g, x, cy, ink);
             }
+            if paint::keyboard_focus(ui, &resp) {
+                paint::focus_ring(p, rect, size::RADIUS_SM, &tk);
+            }
         }
         let pressed = match self.value {
             Tri::All => false,
@@ -549,6 +574,9 @@ fn more_filters(ui: &mut Ui, f: &Filters, d: &ToolbarData, win_w: f32, run: &mut
                 Rect::from_center_size(c, Vec2::splat(16.0)),
                 tk.accent_fg,
             );
+        }
+        if paint::keyboard_focus(ui, &resp) {
+            paint::focus_ring(p, rect, size::RADIUS_SM, &tk);
         }
     }
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
@@ -675,6 +703,9 @@ fn excluded_row(ui: &mut Ui, shown: bool, n: usize) -> Response {
         cy,
         tk.fg_faint,
     );
+    if paint::keyboard_focus(ui, &resp) {
+        paint::focus_ring(p, rect.shrink(2.0), size::RADIUS_XS, &tk);
+    }
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, words));
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
@@ -684,18 +715,28 @@ fn excluded_row(ui: &mut Ui, shown: bool, n: usize) -> Response {
 /// `ActiveFilters.svelte`: each filter in force as a sentence with its own ✕, and one
 /// button that clears them all. Nothing while none is on.
 pub fn active_line(ui: &mut Ui, f: &Filters, run: &mut Run) {
+    let chips = chips(f);
+    if chips.is_empty() {
+        return;
+    }
+    chip_line(ui, &chips, run);
+}
+
+/// Each filter in force, by its key, in words (the chips' text; the empty list's reason).
+pub fn chips(f: &Filters) -> Vec<(&'static str, String)> {
     let mut chips: Vec<(&'static str, String)> = Vec::new();
     let q = f.search.trim();
     if !q.is_empty() {
         chips.push(("search", tf("servers", "filterSearch", &[("query", &q)])));
     }
-    if let Some(m) = &f.map {
+    if !f.maps.is_empty() {
+        let value = f.maps.join(", ");
         chips.push((
             "map",
             tf(
                 "servers",
                 "filterValue",
-                &[("label", &t("servers", "colMap")), ("value", m)],
+                &[("label", &t("servers", "colMap")), ("value", &value)],
             ),
         ));
     }
@@ -726,13 +767,14 @@ pub fn active_line(ui: &mut Ui, f: &Filters, run: &mut Run) {
     if f.hide_full {
         chips.push(("full", t("servers", "hideFull").to_string()));
     }
-    if chips.is_empty() {
-        return;
-    }
+    chips
+}
+
+fn chip_line(ui: &mut Ui, chips: &[(&'static str, String)], run: &mut Run) {
     let tk = ui.tokens();
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
-        for (key, text) in &chips {
+        for (key, text) in chips {
             let g = ph(ui, text, font(Face::Sans, size::TEXT_2XS));
             let w = 8.0 + g.size().x + 4.0 + 16.0 + 2.0;
             let (rect, _) = ui.allocate_exact_size(Vec2::new(w, size::CONTROL_SM), Sense::hover());
@@ -763,6 +805,9 @@ pub fn active_line(ui: &mut Ui, f: &Filters, run: &mut Run) {
                 Rect::from_center_size(xr.center(), Vec2::splat(12.0)),
                 paint::lerp(tk.fg_faint, tk.fg, h),
             );
+            if paint::keyboard_focus(ui, &x) {
+                paint::focus_ring(p, xr, size::RADIUS_XS, &tk);
+            }
             x.widget_info(|| {
                 egui::WidgetInfo::labeled(egui::WidgetType::Button, true, remove.as_str())
             });
@@ -797,6 +842,9 @@ pub fn active_line(ui: &mut Ui, f: &Filters, run: &mut Run) {
             tk.accent,
         );
         draw(p, &g, rect.left() + 22.0, rect.center().y, tk.accent);
+        if paint::keyboard_focus(ui, &resp) {
+            paint::focus_ring(p, rect, size::RADIUS_SM, &tk);
+        }
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
         if resp
             .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -845,5 +893,30 @@ mod tests {
         assert!(!f.active());
         // "Show excluded" is not a filter the clear button resets.
         assert!(f.show_excluded);
+    }
+
+    #[test]
+    fn the_map_command_takes_one_map_a_list_or_none() {
+        use super::super::cmds::map_args;
+        assert_eq!(map_args(&json!({ "map": "enoch" })), ["enoch"]);
+        assert!(map_args(&json!({ "map": null })).is_empty());
+        assert!(map_args(&json!({ "map": "  " })).is_empty());
+        assert!(map_args(&Value::Null).is_empty());
+        assert_eq!(
+            map_args(&json!({ "maps": ["enoch", " Sakhal ", "ENOCH", 3] })),
+            ["enoch", "Sakhal"]
+        );
+        assert_eq!(map_args(&json!({ "map": ["a", "b"] })), ["a", "b"]);
+        let many: Vec<String> = (0..100).map(|i| format!("m{i}")).collect();
+        assert_eq!(map_args(&json!({ "maps": many })).len(), 64);
+
+        let mut f = Filters {
+            maps: vec!["enoch".into(), "sakhal".into()],
+            ..Filters::default()
+        };
+        assert!(f.active());
+        assert_eq!(f.query().maps, ["enoch", "sakhal"]);
+        f.remove("map");
+        assert!(f.maps.is_empty() && !f.active());
     }
 }

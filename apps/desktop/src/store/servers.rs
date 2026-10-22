@@ -65,7 +65,7 @@ type PingList = (Vec<String>, Task<Result<(), String>>);
 pub fn default_query() -> ServerQuery {
     ServerQuery {
         search: String::new(),
-        map: None,
+        maps: Vec::new(),
         first_person: Tri::All,
         password: Tri::All,
         battleye: Tri::All,

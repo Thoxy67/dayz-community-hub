@@ -432,11 +432,40 @@ pub fn cycle_official(cx: &mut Ctx, a: &Value) {
     cycle_key(cx, "off", a);
 }
 
+/// `servers.filter.map {maps: [..]}`, or the old `{map: "enoch" | null}`: the maps shown
+/// (none for all). `map` may be a list too.
 pub fn map(cx: &mut Ctx, a: &Value) {
-    let m = arg_str(a, "map")
-        .map(|m| m.chars().take(128).collect::<String>())
-        .filter(|m| !m.is_empty());
-    filters(cx, |f| f.map = m);
+    let maps = map_args(a);
+    filters(cx, |f| f.maps = maps);
+}
+
+/// Most maps a filter holds.
+const MAPS_MAX: usize = 64;
+
+/// The maps named by `maps` or `map` (a name, a list, or null), trimmed, each once
+/// whatever its case, bounded.
+pub fn map_args(a: &Value) -> Vec<String> {
+    let v = a
+        .get("maps")
+        .or_else(|| a.get("map"))
+        .unwrap_or(&Value::Null);
+    let names: Vec<&str> = match v {
+        Value::String(s) => vec![s.as_str()],
+        Value::Array(items) => items.iter().filter_map(Value::as_str).collect(),
+        _ => Vec::new(),
+    };
+    let mut out: Vec<String> = Vec::new();
+    for n in names {
+        let n: String = n.trim().chars().take(128).collect();
+        if n.is_empty() || out.iter().any(|o| o.to_lowercase() == n.to_lowercase()) {
+            continue;
+        }
+        out.push(n);
+        if out.len() >= MAPS_MAX {
+            break;
+        }
+    }
+    out
 }
 
 pub fn more_popover(cx: &mut Ctx, _: &Value) {

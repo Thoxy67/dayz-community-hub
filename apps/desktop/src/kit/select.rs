@@ -133,26 +133,7 @@ impl<V: PartialEq + Clone> Widget for Select<'_, V> {
             self.label
         };
         resp.widget_info(|| WidgetInfo::labeled(WidgetType::ComboBox, true, label));
-        if ui.is_rect_visible(rect) {
-            let hover = paint::ease(ui, resp.id.with("hover"), self.enabled && resp.hovered());
-            let border = if open || paint::keyboard_focus(ui, &resp) {
-                alpha(t.accent, 0.6)
-            } else {
-                paint::lerp(t.border, t.border_strong, hover)
-            };
-            let en = self.enabled;
-            let p = ui.painter();
-            paint::plate(p, rect, size::RADIUS_SM, fade(t.bg, en), fade(border, en));
-            let room = rect.width() - 2.0 * PAD - 4.0 - size::ICON_SM;
-            let ink = if chosen.is_some() { t.fg } else { t.fg_faint };
-            let g = paint::galley_trunc(ui, shown, f, ink, room);
-            paint::text_at(p, &g, rect.left() + PAD, rect.center().y, fade(ink, en));
-            let ir = Rect::from_center_size(
-                egui::pos2(rect.right() - PAD - size::ICON_SM / 2.0, rect.center().y),
-                Vec2::splat(size::ICON_SM),
-            );
-            lucide::CHEVRON_DOWN.paint(p, ir, fade(t.fg_faint, en));
-        }
+        trigger(ui, rect, &resp, shown, chosen.is_some(), open, self.enabled);
         if !self.enabled {
             return resp;
         }
@@ -275,6 +256,43 @@ impl<V: PartialEq + Clone> Widget for Select<'_, V> {
         }
         resp.on_hover_cursor(egui::CursorIcon::PointingHand)
     }
+}
+
+/// The closed control: the value (faint while it is the placeholder) and the chevron,
+/// accent-edged while open or focused from the keys.
+pub(super) fn trigger(
+    ui: &Ui,
+    rect: Rect,
+    resp: &Response,
+    shown: &str,
+    set: bool,
+    open: bool,
+    en: bool,
+) {
+    if !ui.is_rect_visible(rect) {
+        return;
+    }
+    let t = ui.tokens();
+    let hover = paint::ease(ui, resp.id.with("hover"), en && resp.hovered());
+    let border = if open || paint::keyboard_focus(ui, resp) {
+        alpha(t.accent, 0.6)
+    } else {
+        paint::lerp(t.border, t.border_strong, hover)
+    };
+    let p = ui.painter();
+    paint::plate(p, rect, size::RADIUS_SM, fade(t.bg, en), fade(border, en));
+    if !open && paint::keyboard_focus(ui, resp) {
+        paint::focus_ring(p, rect, size::RADIUS_SM, &t);
+    }
+    let room = rect.width() - 2.0 * PAD - 4.0 - size::ICON_SM;
+    let ink = if set { t.fg } else { t.fg_faint };
+    let g = paint::galley_trunc(ui, shown, font(Face::Sans, size::TEXT_XS), ink, room);
+    paint::text_at(p, &g, rect.left() + PAD, rect.center().y, fade(ink, en));
+    let ir = Rect::from_center_size(
+        egui::pos2(rect.right() - PAD - size::ICON_SM / 2.0, rect.center().y),
+        Vec2::splat(size::ICON_SM),
+    );
+    lucide::CHEVRON_DOWN.paint(p, ir, fade(t.fg_faint, en));
 }
 
 /// A row of the list.

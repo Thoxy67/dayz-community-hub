@@ -18,6 +18,8 @@
 //! | `{"steps": n}` | settle (below), then run `n` frames |
 //! | `{"wait": ms}` | run frames for `ms` of real time |
 //! | `{"click": "label"}` | click the widget with that accessible label (AccessKit) |
+//! | `{"type": "cher"}` | type text into what has the keys |
+//! | `{"key": "ArrowDown"}` | press a key (egui's name: `Enter`, `Escape`, `Space`…) |
 //! | `{"pad": "dpad_down"}` | a controller button, as if a pad sent it (`"repeat": true` for a held one): `dpad_up/down/left/right`, `a`, `b`, `x`, `y`, `lb`, `rb`, `lt`, `rt`, `menu`, `view`, `l3`, `r3`, `rs_up`, `rs_down` (or the action's name: `down`, `accept`, `prevTab`…) |
 //! | `{"method": "ui.…", "params": {…}}` | a control-channel request (`docs/control-protocol.md`) |
 //! | `{"shot": "/abs/path.png"}` | settle, then save the frame as a PNG |
@@ -240,6 +242,17 @@ fn run_line(h: &mut H, tx: &mpsc::Sender<ControlRequest>, l: &Value) -> Result<(
             cx.egui.request_repaint();
         })?;
         step_n(h, 4);
+        return Ok(());
+    }
+    if let Some(text) = s("type") {
+        h.event(egui::Event::Text(text.to_string()));
+        step_n(h, 3);
+        return Ok(());
+    }
+    if let Some(name) = s("key") {
+        let key = egui::Key::from_name(name).ok_or_else(|| format!("unknown key `{name}`"))?;
+        h.key_press(key);
+        step_n(h, 3);
         return Ok(());
     }
     if let Some(label) = s("click") {

@@ -561,18 +561,23 @@ pub fn order(snap: &Arc<ServerSnapshot>, q: &ServerQuery) -> ServerOrder {
     let profile_generation = snap.profile_generation();
     let live_stamp = snap.live_stamp();
     let search = q.search.trim().to_lowercase();
-    let map_filter: Option<Option<u32>> = q
-        .map
-        .as_deref()
-        .map(str::trim)
+    // The maps wanted, as a mask over the snapshot's maps (one spelling per map); none
+    // for every map. A name no server runs adds nothing.
+    let wanted: Vec<String> = q
+        .maps
+        .iter()
+        .map(|m| m.trim().to_lowercase())
         .filter(|m| !m.is_empty())
-        .map(|m| {
-            let m = m.to_lowercase();
-            snap.maps
-                .iter()
-                .position(|c| c.map.to_lowercase() == m)
-                .map(|p| p as u32)
-        });
+        .collect();
+    let map_filter: Option<Vec<bool>> = (!wanted.is_empty()).then(|| {
+        snap.maps
+            .iter()
+            .map(|c| {
+                let c = c.map.to_lowercase();
+                wanted.contains(&c)
+            })
+            .collect()
+    });
     // Maps whose name holds the search: one check per map, not per server.
     let map_hits: Vec<bool> = if search.is_empty() {
         Vec::new()
@@ -599,8 +604,8 @@ pub fn order(snap: &Arc<ServerSnapshot>, q: &ServerQuery) -> ServerOrder {
             continue;
         }
         let map = snap.map_of.get(i).copied().unwrap_or(NONE_U32);
-        if let Some(want) = map_filter
-            && (want.is_none() || want != Some(map))
+        if let Some(mask) = &map_filter
+            && !mask.get(map as usize).copied().unwrap_or(false)
         {
             continue;
         }

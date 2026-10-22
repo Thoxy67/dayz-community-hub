@@ -49,7 +49,10 @@ pub enum SortCol {
 pub struct ServerQuery {
     /// Case-insensitive, over name, IP and map.
     pub search: String,
-    pub map: Option<String>,
+    /// The maps shown, matched case-insensitively; empty for every map. Reads the
+    /// old single `map` too (a name or null), and a name alone as a set of one.
+    #[serde(default, alias = "map", deserialize_with = "one_or_many")]
+    pub maps: Vec<String>,
     pub first_person: Tri,
     pub password: Tri,
     pub battleye: Tri,
@@ -66,6 +69,20 @@ pub struct ServerQuery {
     pub asc: bool,
     pub offset: u32,
     pub limit: u32,
+}
+
+/// A map filter as written: null, one name, or a list of names.
+fn one_or_many<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(Option<String>),
+        Many(Vec<String>),
+    }
+    Ok(match OneOrMany::deserialize(d)? {
+        OneOrMany::One(m) => m.into_iter().collect(),
+        OneOrMany::Many(v) => v,
+    })
 }
 
 /// One row of the browser: the server with its freshest known state.
@@ -169,7 +186,7 @@ mod tests {
     fn query() -> ServerQuery {
         ServerQuery {
             search: String::new(),
-            map: None,
+            maps: Vec::new(),
             first_person: Tri::All,
             password: Tri::All,
             battleye: Tri::All,
@@ -255,9 +272,9 @@ mod tests {
         ServerList {
             status: 0,
             result: vec![
-                server("1.1.1.1", 2, 10, 0),
-                server("2.2.2.2", 2, 20, 3),
-                server("3.3.3.3", 2, 30, 0),
+                server("1.1.1.1", 2, 10, 0).into(),
+                server("2.2.2.2", 2, 20, 3).into(),
+                server("3.3.3.3", 2, 30, 0).into(),
             ],
         }
     }
@@ -267,9 +284,9 @@ mod tests {
         let list = ServerList {
             status: 0,
             result: vec![
-                timed("Bravo", 1, 0, 60, "12:00"),
-                timed("alpha", 2, 60, 60, "06:30"),
-                timed("Charlie", 3, 10, 60, ""),
+                timed("Bravo", 1, 0, 60, "12:00").into(),
+                timed("alpha", 2, 60, 60, "06:30").into(),
+                timed("Charlie", 3, 10, 60, "").into(),
             ],
         };
         let s = snap(list, &ProfileView::default(), &[("1.1.1.1", 3, 40)]);
@@ -334,9 +351,9 @@ mod tests {
     #[test]
     fn maps_spelled_in_several_cases_are_one_map() {
         let mut l = list();
-        l.result[0].map = "ChernarusPlus".into();
-        l.result[1].map = "chernarusplus".into();
-        l.result[2].map = " chernarusplus".into();
+        std::sync::Arc::make_mut(&mut l.result[0]).map = "ChernarusPlus".into();
+        std::sync::Arc::make_mut(&mut l.result[1]).map = "chernarusplus".into();
+        std::sync::Arc::make_mut(&mut l.result[2]).map = " chernarusplus".into();
         let s = snap(l, &ProfileView::default(), &[]);
         assert_eq!(s.maps().len(), 1);
         assert_eq!(s.maps()[0].map, "chernarusplus");
@@ -345,10 +362,63 @@ mod tests {
             assert_eq!(s.get(i).unwrap().map, "chernarusplus");
         }
         let mut q = query();
-        q.map = Some("CHERNARUSPLUS".into());
+        q.maps = vec!["CHERNARUSPLUS".into()];
         assert_eq!(compute(&s, &q).0.len(), 3);
-        q.map = Some("enoch".into());
+        q.maps = vec!["enoch".into()];
         assert!(compute(&s, &q).0.is_empty());
+    }
+
+    #[test]
+    fn several_maps_at_once_and_none_for_all() {
+        let mut l = list();
+        std::sync::Arc::make_mut(&mut l.result[0]).map = "ChernarusPlus".into();
+        std::sync::Arc::make_mut(&mut l.result[1]).map = "sakhal".into();
+        let s = snap(l, &ProfileView::default(), &[]);
+        let mut q = query();
+        q.maps = vec!["chernarusplus".into(), "Enoch".into()];
+        let (order, stats) = compute(&s, &q);
+        assert_eq!(order, [0, 2]);
+        assert_eq!(stats.shown, 2);
+        q.maps = vec!["sakhal".into(), "nowhere".into()];
+        assert_eq!(compute(&s, &q).0, [1], "an unknown map adds nothing");
+        q.maps = vec!["nowhere".into()];
+        assert!(compute(&s, &q).0.is_empty());
+        q.maps = vec![" ".into()];
+        assert_eq!(compute(&s, &q).0.len(), 3, "a blank name is no filter");
+        q.maps.clear();
+        assert_eq!(compute(&s, &q).0.len(), 3);
+    }
+
+    #[test]
+    fn the_map_filter_reads_the_old_single_map_and_a_list() {
+        let base = || {
+            serde_json::json!({
+                "search": "", "firstPerson": "all", "password": "all",
+                "battleye": "all", "modded": "all", "official": "all",
+                "hideEmpty": false, "hideFull": false, "maxPing": 0,
+                "showExcluded": false, "sort": "none", "asc": true,
+                "offset": 0, "limit": 10,
+            })
+        };
+        let with = |k: &str, v: serde_json::Value| {
+            let mut q = base();
+            q[k] = v;
+            serde_json::from_value::<ServerQuery>(q).unwrap().maps
+        };
+        assert!(
+            serde_json::from_value::<ServerQuery>(base())
+                .unwrap()
+                .maps
+                .is_empty()
+        );
+        assert!(with("map", serde_json::Value::Null).is_empty());
+        assert_eq!(with("map", "enoch".into()), ["enoch"]);
+        assert_eq!(
+            with("map", serde_json::json!(["enoch", "sakhal"])),
+            ["enoch", "sakhal"]
+        );
+        assert_eq!(with("maps", serde_json::json!(["sakhal"])), ["sakhal"]);
+        assert_eq!(with("maps", "sakhal".into()), ["sakhal"]);
     }
 
     #[test]
@@ -405,9 +475,9 @@ mod tests {
     #[test]
     fn official_filter_and_lookalikes() {
         let mut l = list();
-        l.result[0].official = true;
-        l.result[0].name = "4193 | EUROPE - DE".into();
-        l.result[1].name = "4193 | EUROPE - DE | 100x loot".into();
+        std::sync::Arc::make_mut(&mut l.result[0]).official = true;
+        std::sync::Arc::make_mut(&mut l.result[0]).name = "4193 | EUROPE - DE".into();
+        std::sync::Arc::make_mut(&mut l.result[1]).name = "4193 | EUROPE - DE | 100x loot".into();
         let s = snap(l, &ProfileView::default(), &[]);
         let mut q = query();
         q.official = Tri::Only;
@@ -442,7 +512,7 @@ mod tests {
         // The server runs mods 0, 1, 2: 0 is current, 1 is behind, 2 is not on disk.
         let one = || ServerList {
             status: 0,
-            result: vec![server("1.1.1.1", 2, 5, 3)],
+            result: vec![server("1.1.1.1", 2, 5, 3).into()],
         };
         let s = snap(one(), &ProfileView::default(), &[]);
         let r = s.get(0).unwrap().to_row();

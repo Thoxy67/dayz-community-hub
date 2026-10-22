@@ -88,7 +88,7 @@ printf '{"id":1,"key":"%s","method":"ui.state"}\n' "$KEY" | nc -q1 127.0.0.1 798
 | `ui.key` | `key` (`Enter`, `Escape`, `F1`, `A`, `ArrowDown`…), `ctrl?` `shift?` `alt?` | `{"queued": true}`; shortcuts apply |
 | `ui.text` | `text` (≤ 64 KiB) | `{"queued": true}`: typed into the focused field |
 | `ui.pad` | `button` (`dpad_up` `dpad_down` `dpad_left` `dpad_right` `a` `b` `x` `y` `lb` `rb` `lt` `rt` `menu` `view` `l3` `r3` `rs_up` `rs_down`, or an action's name: `down`, `accept`, `prevTab`…), `repeat?` | `{"queued": true}`: acted on next frame as if a pad sent it (the input mode follows unless the setting is Never); `ui.state`'s `pad` says where the focus went |
-| `hub.servers_query` | a `ServerQuery`, camelCase; every field is optional (`search`, `map`, `firstPerson` / `password` / `battleye` / `modded` / `official`: `all` `only` `none`, `hideEmpty`, `hideFull`, `maxPing`, `showExcluded`, `sort`: `none` `ping` `players` `name` `map` `mods` `time`, `asc`, `offset`, `limit` ≤ 1000, 50 by default) | a `ServerPage`: `total`, `rows`, `stats`, `generation` |
+| `hub.servers_query` | a `ServerQuery`, camelCase; every field is optional (`search`, `maps` (a list of maps, none for all; `map`, one name or null, still reads), `firstPerson` / `password` / `battleye` / `modded` / `official`: `all` `only` `none`, `hideEmpty`, `hideFull`, `maxPing`, `showExcluded`, `sort`: `none` `ping` `players` `name` `map` `mods` `time`, `asc`, `offset`, `limit` ≤ 1000, 50 by default) | a `ServerPage`: `total`, `rows`, `stats`, `generation` |
 | `hub.servers_lookup` | `keys`: `["ip:port", …]` (≤ 1000) | a row or `null` per key |
 | `hub.server_maps` | — | `[{map, count}, …]` |
 | `hub.get_profile` | — | the profile |

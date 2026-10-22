@@ -304,9 +304,12 @@ fn refilter_timings() {
         cases.push((name.into(), q));
     }
     let mut q = query();
-    q.map = Some("ChernarusPlus".into());
+    q.maps = vec!["ChernarusPlus".into()];
     q.sort = SortCol::Ping;
     cases.push(("map + sort ping".into(), q));
+    let mut q = query();
+    q.maps = vec!["chernarusplus".into(), "Enoch".into()];
+    cases.push(("two maps".into(), q));
 
     eprintln!("snapshot build: {build:?}");
     for (name, q) in &cases {

@@ -90,6 +90,55 @@ fn select_opens_and_picks() {
 }
 
 #[test]
+fn multi_select_ticks_several_and_finds_by_typing() {
+    let mut h = harness(vec!["enoch"], |ui, v| {
+        let opts = [
+            SelectOption::new("chernarusplus", "chernarusplus"),
+            SelectOption::new("enoch", "enoch"),
+            SelectOption::new("sakhal", "sakhal"),
+        ];
+        ui.add(
+            MultiSelect::new("maps", v, &opts)
+                .placeholder("All maps")
+                .search("Find a map", "Clear search")
+                .empty("No map matches")
+                .label("Map"),
+        );
+    });
+    h.get_by_label("Map").click();
+    h.run_steps(3);
+    // The list stays open while rows are ticked.
+    h.get_by_label("sakhal").click();
+    h.run_steps(3);
+    assert_eq!(h.state().1, ["enoch", "sakhal"]);
+    h.get_by_label("enoch").click();
+    h.run_steps(3);
+    assert_eq!(h.state().1, ["sakhal"]);
+    // The field has the keys: typing narrows the list, Enter ticks the first match.
+    h.event(egui::Event::Text("CHER".into()));
+    h.run_steps(3);
+    assert!(h.query_by_label("sakhal").is_none());
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+    assert_eq!(h.state().1, ["sakhal", "chernarusplus"]);
+    // Escape closes; "All maps" clears.
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    assert!(h.query_by_label("chernarusplus").is_none());
+    h.get_by_label("Map").click();
+    h.run_steps(3);
+    h.get_by_label("All maps").click();
+    h.run_steps(3);
+    assert!(h.state().1.is_empty());
+    // The arrows move on from the row clicked ("All maps"); Space then ticks.
+    for key in [egui::Key::ArrowDown, egui::Key::Space] {
+        h.key_press(key);
+        h.run_steps(2);
+    }
+    assert_eq!(h.state().1, ["chernarusplus"]);
+}
+
+#[test]
 fn virtual_list_lays_out_only_what_shows() {
     let mut h = harness(0usize, |ui, drawn| {
         *drawn = 0;

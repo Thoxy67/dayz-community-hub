@@ -732,7 +732,7 @@ const FOUND_MAX: usize = 6;
 fn query_for(term: &str) -> Option<ServerQuery> {
     serde_json::from_value(json!({
         "search": term,
-        "map": null,
+        "maps": [],
         "firstPerson": "all",
         "password": "all",
         "battleye": "all",

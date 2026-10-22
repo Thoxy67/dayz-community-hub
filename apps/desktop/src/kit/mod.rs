@@ -14,6 +14,7 @@
 //! NumberInput               | `NumberInput::new(&mut f64).range(1.0, 65535.0).step(1.0).decimals(0)`
 //! TextArea                  | `TextArea::new(&mut s).rows(4).mono().placeholder("…")`
 //! Select                    | `Select::new("map", &mut v, &[SelectOption::new(v, "Label").group("G")]).placeholder("All").none(v0).width(w).label(aria)`
+//! MultiSelect               | `MultiSelect::new("maps", &mut vec, &[SelectOption::new(v, "Label")]).placeholder("All maps").summary("2 maps").search("Find…", "Clear").empty("No match").width(w).list_width(w).label(aria)`
 //! Switch                    | `Switch::new(&mut on, "Label").hint("…").tone(Tone::Warn)`
 //! MiniSwitch                | `MiniSwitch::new(&mut on).label("aria")`
 //! Checkbox                  | `Checkbox::new(&mut on).indeterminate(b).label("aria")`
@@ -57,6 +58,7 @@ pub mod input;
 pub mod kbd;
 pub mod marks;
 pub mod menu;
+pub mod multi_select;
 pub mod paint;
 pub mod panel;
 pub mod progress;
@@ -85,6 +87,7 @@ pub use marks::{
     signal_level,
 };
 pub use menu::{Align, MenuItem};
+pub use multi_select::MultiSelect;
 pub use panel::{Disclosure, EmptyState, Field, Panel, SectionLabel, Stat, StatStrip};
 pub use progress::{Meter, MeterSize, Skeleton, SkeletonRows, Spinner};
 pub use segmented::{Segment, Segmented};

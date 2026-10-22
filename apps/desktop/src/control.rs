@@ -489,8 +489,9 @@ fn to_reply<T: serde::Serialize>(r: Result<T, String>) -> Value {
 
 /// The browser's query with every field defaulted, `params` over it.
 fn server_query(p: &Value) -> Result<dz_hub::features::browser::ServerQuery, String> {
+    // The map filter is left out: a caller sends `map` (one, the old form) or `maps`.
     let mut q = json!({
-        "search": "", "map": null,
+        "search": "",
         "firstPerson": "all", "password": "all", "battleye": "all", "modded": "all",
         "official": "all", "hideEmpty": false, "hideFull": false, "maxPing": 0,
         "showExcluded": false, "sort": "none", "asc": true, "offset": 0, "limit": 50,

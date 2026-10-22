@@ -262,7 +262,7 @@ pub const CATALOG: &[Feature] = &[
     Feature {
         id: "servers.filter.map",
         view: "servers",
-        what: "Map select (w-40, placeholder 'All maps'), options from backend server_maps as '<map> · <count>'; selecting filters to that map; null = all",
+        what: "Map select (w-40, placeholder 'All maps'), options from backend server_maps as '<map> · <count>'; selecting filters to that map; null = all. Now several maps at once (ticked rows, 'N maps' on the control) and a search field at the top of the list that narrows it as one types",
         kind: Kind::Command("servers.filter.map"),
         done: true,
     },
