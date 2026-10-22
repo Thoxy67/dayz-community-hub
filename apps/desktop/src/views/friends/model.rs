@@ -46,12 +46,32 @@ pub struct Block {
     pub map: Option<String>,
     /// Every friend on it (search or not), for the row's "friends here" badge.
     pub here: Vec<String>,
+    /// The server list has its row: the full server row can be drawn (ping, players,
+    /// map, mods). Without it those columns mean nothing, and the row is the short one.
+    pub known: bool,
 }
 
 impl Block {
     pub fn key(&self) -> String {
         format!("{}:{}", self.ip, self.port)
     }
+
+    /// The full server row (the list knows it), else the short one (its address, why it
+    /// is short, Join).
+    pub fn full(&self) -> bool {
+        self.listed && self.known
+    }
+}
+
+/// How a friend row joins the server under it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tie {
+    /// Not on a known server: a row on its own.
+    Alone,
+    /// The first friend of a block: the guide starts under its avatar.
+    First,
+    /// Another friend of the same block: the guide runs through.
+    Next,
 }
 
 /// One row of the list.
@@ -59,24 +79,29 @@ impl Block {
 pub enum Item {
     /// A group's heading and how many it holds.
     Head(Group, usize),
-    /// A friend, by index into the friend list.
-    Friend(usize),
-    /// The server of a block, by index into [`Model::blocks`].
-    Server(usize),
+    /// A friend, by index into the friend list, and how it joins its server.
+    Friend(usize, Tie),
+    /// The server of a block, by index into [`Model::blocks`]; `full` as
+    /// [`Block::full`].
+    Server { block: usize, full: bool },
 }
 
 /// `h-row`, the sticky heading (`py-1.5` around the section label, its border), the
-/// server's row (`LIST_ROW_PX`).
+/// server's row (`LIST_ROW_PX`), the short row of a server the list does not know, and
+/// the room left after a block so blocks part more than a friend and its server.
 pub const FRIEND_H: f32 = 44.0;
 pub const HEAD_H: f32 = 28.0;
 pub const SERVER_H: f32 = 48.0;
+pub const SHORT_H: f32 = 36.0;
+pub const BLOCK_GAP: f32 = 10.0;
 
 impl Item {
     pub fn height(self) -> f32 {
         match self {
             Item::Head(..) => HEAD_H,
-            Item::Friend(_) => FRIEND_H,
-            Item::Server(_) => SERVER_H,
+            Item::Friend(..) => FRIEND_H,
+            Item::Server { full: true, .. } => SERVER_H + BLOCK_GAP,
+            Item::Server { full: false, .. } => SHORT_H + BLOCK_GAP,
         }
     }
 }
@@ -165,6 +190,7 @@ impl Model {
                     name: s.name.clone(),
                     map: s.map.clone(),
                     here: Vec::new(),
+                    known: server_of(&s.ip, s.port).is_some(),
                 }),
             }
         }
@@ -201,10 +227,17 @@ impl Model {
         if dayz > 0 {
             items.push(Item::Head(Group::Dayz, dayz));
             for (n, b) in blocks.iter().enumerate() {
-                items.extend(b.who.iter().map(|&i| Item::Friend(i)));
-                items.push(Item::Server(n));
+                items.extend(
+                    b.who.iter().enumerate().map(|(k, &i)| {
+                        Item::Friend(i, if k == 0 { Tie::First } else { Tie::Next })
+                    }),
+                );
+                items.push(Item::Server {
+                    block: n,
+                    full: b.full(),
+                });
             }
-            items.extend(lost.iter().map(|&i| Item::Friend(i)));
+            items.extend(lost.iter().map(|&i| Item::Friend(i, Tie::Alone)));
         }
 
         // The others, in their fixed order.
@@ -245,7 +278,7 @@ impl Model {
                 continue;
             }
             items.push(Item::Head(g, rows.len()));
-            items.extend(rows.into_iter().map(Item::Friend));
+            items.extend(rows.into_iter().map(|i| Item::Friend(i, Tie::Alone)));
         }
         Model {
             items,
@@ -324,23 +357,44 @@ mod tests {
         assert_eq!(m.blocks[0].ip, "2.2.2.2");
         assert_eq!(m.blocks[0].who, vec![2, 1]);
         assert_eq!(m.blocks[0].here.len(), 2);
+        // Steam named both servers but the (empty) list knows neither: short rows.
+        let short = |block| Item::Server { block, full: false };
         assert_eq!(
             m.items,
             vec![
                 Item::Head(Group::Dayz, 4),
-                Item::Friend(2),
-                Item::Friend(1),
-                Item::Server(0),
-                Item::Friend(0),
-                Item::Server(1),
-                Item::Friend(3),
+                Item::Friend(2, Tie::First),
+                Item::Friend(1, Tie::Next),
+                short(0),
+                Item::Friend(0, Tie::First),
+                short(1),
+                Item::Friend(3, Tie::Alone),
                 Item::Head(Group::InGame, 1),
-                Item::Friend(4),
+                Item::Friend(4, Tie::Alone),
                 Item::Head(Group::Away, 1),
-                Item::Friend(5),
+                Item::Friend(5, Tie::Alone),
                 Item::Head(Group::Offline, 1),
-                Item::Friend(6),
+                Item::Friend(6, Tie::Alone),
             ]
+        );
+        // A server the list knows gets the full row, and room after it.
+        let known = |_: &str, _: u16| Some(("Frontline".to_string(), "enoch".to_string()));
+        let k = Model::build(&list, "", &known);
+        assert!(k.blocks.iter().all(Block::full));
+        assert_eq!(
+            k.items.get(3),
+            Some(&Item::Server {
+                block: 0,
+                full: true
+            })
+        );
+        assert!(
+            Item::Server {
+                block: 0,
+                full: true
+            }
+            .height()
+                > SERVER_H
         );
         let (tops, total) = m.offsets();
         assert_eq!(tops.len(), m.items.len());
@@ -374,6 +428,10 @@ mod tests {
         )];
         let m = Model::build(&list, "", &none);
         assert!(!m.blocks[0].listed);
+        assert!(!m.blocks[0].full());
         assert_eq!(m.blocks[0].key(), "9.9.9.9:2302");
+        // Even if the list had a row at that address, an unnamed server stays short.
+        let any = |_: &str, _: u16| Some((String::new(), String::new()));
+        assert!(!Model::build(&list, "", &any).blocks[0].full());
     }
 }

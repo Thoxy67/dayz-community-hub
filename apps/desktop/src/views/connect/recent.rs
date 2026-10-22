@@ -1,5 +1,6 @@
 //! Addresses to start from (= `RecentList.svelte`): favourites first (they carry saved
-//! passwords), then the servers joined most recently. A click fills the form and asks the
+//! passwords), then the servers joined most recently, each group under its own heading
+//! with its count. A click fills the form and asks the
 //! server. Wide: cards over the right pane with what the list knows of each (map,
 //! players); compact: a list under the form.
 
@@ -12,7 +13,7 @@ use crate::app::Ctx;
 use crate::i18n::{format, t};
 use crate::icons::lucide;
 use crate::kit::paint::{self, alpha};
-use crate::kit::{EmptyState, Signal, SignalSize, TipExt};
+use crate::kit::{EmptyState, SectionLabel, Signal, SignalSize, TipExt};
 use crate::store::servers::key_of;
 use crate::theme::{TokensExt, font, fonts::Face, size};
 
@@ -111,10 +112,39 @@ pub fn list(ui: &mut Ui, cx: &mut Ctx, wide: bool) {
         })
         .collect();
     let mut chosen = None;
-    if wide {
-        cards(ui, &picks, &rows, &pings, &mut chosen);
-    } else {
-        compact(ui, &picks, &rows, &pings, &mut chosen);
+    // Favourites come first in `picks`: split there, each group under its own heading.
+    let favs = picks.iter().take_while(|p| p.fav).count();
+    let groups = [
+        (0..favs, lucide::STAR, t("connect", "groupFavorites")),
+        (
+            favs..picks.len(),
+            lucide::HISTORY,
+            t("connect", "groupRecent"),
+        ),
+    ];
+    let mut first = true;
+    for (range, icon, title) in groups {
+        if range.is_empty() {
+            continue;
+        }
+        if !first {
+            ui.add_space(if wide { 16.0 } else { 8.0 });
+        }
+        first = false;
+        group_heading(ui, icon, title, range.len(), wide);
+        let base = range.start;
+        let (Some(gp), Some(gr), Some(gs)) = (
+            picks.get(range.clone()),
+            rows.get(range.clone()),
+            pings.get(range),
+        ) else {
+            continue;
+        };
+        if wide {
+            cards(ui, base, gp, gr, gs, &mut chosen);
+        } else {
+            compact(ui, base, gp, gr, gs, &mut chosen);
+        }
     }
     if let Some(i) = chosen
         && let Some(p) = picks.get(i)
@@ -127,6 +157,29 @@ pub fn list(ui: &mut Ui, cx: &mut Ctx, wide: bool) {
         let qp = row.as_ref().and_then(|r| u16::try_from(r.query_port).ok());
         cx.stores.direct_load(&p.ip, port, qp, p.password.clone());
     }
+}
+
+/// "Favourites 3" / "Recent 12": a section label with the group's count at its end.
+fn group_heading(ui: &mut Ui, icon: crate::icons::Icon, title: &str, n: usize, wide: bool) {
+    let tk = ui.tokens();
+    let r = ui.available_rect_before_wrap();
+    // Under the form, inset like the rows' contents.
+    let (inset, top) = if wide { (0.0, 0.0) } else { (12.0, 6.0) };
+    let mut lui = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_max(
+        Pos2::new(r.left() + inset, r.top() + top),
+        Pos2::new(r.right() - inset, r.bottom()),
+    )));
+    let count = n.to_string();
+    SectionLabel::new(title)
+        .icon(icon)
+        .show_with(&mut lui, |ui| {
+            let g = paint::galley(ui, &count, font(Face::Mono, size::TEXT_2XS), tk.fg_faint);
+            let (rr, _) = ui.allocate_exact_size(g.size(), Sense::hover());
+            ui.painter().galley(rr.min, g, tk.fg_faint);
+        });
+    let h = (lui.min_rect().bottom() - r.top()).max(0.0);
+    ui.allocate_exact_size(Vec2::new(r.width(), h), Sense::hover());
+    ui.add_space(if wide { 8.0 } else { 4.0 });
 }
 
 fn star_or_clock(
@@ -150,6 +203,7 @@ fn star_or_clock(
 /// `grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-2`.
 fn cards(
     ui: &mut Ui,
+    base: usize,
     picks: &[Pick],
     rows: &[Option<Arc<ServerRow>>],
     pings: &[Option<u32>],
@@ -203,7 +257,11 @@ fn cards(
             let Some(p) = picks.get(i) else { continue };
             let x = start.x + ci as f32 * (cw + gap);
             let rect = Rect::from_min_size(Pos2::new(x, y), Vec2::new(cw, row_h));
-            let resp = ui.interact(rect, ui.id().with(("recent-card", i)), Sense::click());
+            let resp = ui.interact(
+                rect,
+                ui.id().with(("recent-card", base + i)),
+                Sense::click(),
+            );
             let label = p.name.clone();
             resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
             let hover = paint::ease(ui, resp.id.with("h"), resp.hovered());
@@ -285,7 +343,7 @@ fn cards(
                 resp
             };
             if resp.clicked() {
-                *chosen = Some(i);
+                *chosen = Some(base + i);
             }
             let _ = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
         }
@@ -298,6 +356,7 @@ fn cards(
 /// One line each, under the form.
 fn compact(
     ui: &mut Ui,
+    base: usize,
     picks: &[Pick],
     rows: &[Option<Arc<ServerRow>>],
     pings: &[Option<u32>],
@@ -364,7 +423,7 @@ fn compact(
         }
         let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
         if resp.clicked() {
-            *chosen = Some(i);
+            *chosen = Some(base + i);
         }
     }
 }

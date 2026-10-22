@@ -273,7 +273,7 @@ fn missions(ui: &mut Ui, st: &mut OfflineState, run: &mut Run) {
                     let w = ui.available_width().max(1.0);
                     let cols = (((w + GAP) / (CARD_MIN + GAP)).floor() as usize).max(1);
                     let card_w = ((w - GAP * (cols - 1) as f32) / cols as f32).max(1.0);
-                    let card_h = BANNER_H + 16.0 + FACT_H * 4.0 + FACT_GAP * 3.0 + FOOT_H;
+                    let card_h = BANNER_H + 16.0 + FACT_H * 3.0 + FACT_GAP * 2.0 + FOOT_H;
                     let rows = st.missions.len().div_ceil(cols);
                     let total = rows as f32 * card_h + rows.saturating_sub(1) as f32 * GAP;
                     let (grid, _) = ui.allocate_exact_size(vec2(w, total), Sense::hover());
@@ -377,11 +377,10 @@ fn card(
     let top = inset.bottom() - fs - (name.size().y - fs) / 2.0 + 1.0;
     p.galley(pos2(inset.left(), top), name, tk.fg);
 
-    // The facts.
+    // The facts (the kind is the banner's tag, not a line of its own).
     let small = font(Face::Sans, size::TEXT_2XS);
     let labels = [
         t("offline", "terrain"),
-        t("offline", "mode"),
         t("offline", "save"),
         t("offline", "folder"),
     ];
@@ -402,9 +401,6 @@ fn card(
     lucide::MAP.paint(&p, ir, tk.map);
     let g = paint::galley(ui, m.terrain.unwrap_or(format::NONE), small.clone(), tk.map);
     paint::text_at(&p, &g, ir.right() + 4.0, row_cy(0), tk.map);
-    // Mode.
-    let g = paint::galley(ui, m.kind.label(), small.clone(), tk.fg_muted);
-    paint::text_at(&p, &g, x1, row_cy(1), tk.fg_muted);
     // Save.
     let (text, ink) = match save {
         Some((bytes, written)) => (
@@ -424,11 +420,11 @@ fn card(
         None => (t("offline", "noSave").to_owned(), tk.fg_faint),
     };
     let g = paint::galley_trunc(ui, &text, small, ink, (right - x1).max(0.0));
-    paint::text_at(&p, &g, x1, row_cy(2), ink);
+    paint::text_at(&p, &g, x1, row_cy(1), ink);
     // Folder: mono, cut, the whole id on hover, selectable.
     let fr = Rect::from_min_max(
-        pos2(x1, row_cy(3) - FACT_H / 2.0),
-        pos2(right.max(x1), row_cy(3) + FACT_H / 2.0),
+        pos2(x1, row_cy(2) - FACT_H / 2.0),
+        pos2(right.max(x1), row_cy(2) + FACT_H / 2.0),
     );
     let mut fui = ui.new_child(
         UiBuilder::new()

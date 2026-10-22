@@ -164,6 +164,12 @@ impl DayzCtl {
         Ok(self.steam_root.join("common").join("DayZ"))
     }
 
+    /// The installed game's version (`1.30.164200`). Blocking: reads the
+    /// executable.
+    pub fn game_version(&self) -> Option<String> {
+        crate::version::installed(&self.steam_root.join("common").join("DayZ"))
+    }
+
     /// Where BattlEye stands. Blocking: see [`crate::battleye::status`].
     pub fn battleye_status(&self) -> crate::battleye::BattlEyeStatus {
         crate::battleye::status(

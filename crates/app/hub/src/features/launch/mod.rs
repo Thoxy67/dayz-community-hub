@@ -245,6 +245,42 @@ impl Hub {
             .map_err(|e| format!("Task join error: {e}"))
     }
 
+    /// The installed game's version, as servers give theirs (`1.30.164200`), or
+    /// `None` when DayZ is not found. Read from the executable once per change
+    /// of it (its size and time), so asking often costs a file's metadata.
+    pub async fn game_version(&self) -> Result<Option<String>, String> {
+        mocked!(self => Ok(Some(crate::mock::fixtures::GAME_VERSION.to_owned())));
+        type Seen = Option<((u64, std::time::SystemTime), Option<String>)>;
+        static LAST: std::sync::Mutex<Seen> = std::sync::Mutex::new(None);
+        let state = self.state()?;
+        let dayz = state
+            .read()
+            .await
+            .ctl
+            .dayz_path()
+            .map_err(|e| e.to_string())?;
+        tokio::task::spawn_blocking(move || {
+            let exe = dayz.join("DayZ_x64.exe");
+            let Ok(meta) = std::fs::metadata(&exe) else {
+                return None;
+            };
+            let key = (meta.len(), meta.modified().unwrap_or(std::time::UNIX_EPOCH));
+            if let Ok(last) = LAST.lock()
+                && let Some((k, v)) = last.as_ref()
+                && *k == key
+            {
+                return v.clone();
+            }
+            let v = dz_game::version::installed(&dayz);
+            if let Ok(mut last) = LAST.lock() {
+                *last = Some((key, v.clone()));
+            }
+            v
+        })
+        .await
+        .map_err(|e| format!("Task join error: {e}"))
+    }
+
     /// Repair BattlEye: reinstall its service as administrator (a UAC prompt) on
     /// Windows, have Steam install the Proton runtime on Linux. With `clear`,
     /// first delete the game's data outside its folder (DayZ must be closed).

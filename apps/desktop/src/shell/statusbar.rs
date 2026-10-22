@@ -376,6 +376,8 @@ fn clock(ui: &Ui, cx: &mut Ctx, st: &mut StatusState, now: f64) {
     if cx.stores.app.initialized && (focused || running) && now >= st.be_next {
         st.be_next = now + every;
         cx.stores.battleye.refresh();
+        // An update of the game while the launcher is open changes its version.
+        cx.stores.game.read_version();
     }
     if running || focused {
         ctx.request_repaint_after(Duration::from_secs_f64((st.be_next - now).max(0.05)));
@@ -854,6 +856,11 @@ fn battleye_segment(cx: &Ctx, st: &StatusState, now: f64, tk: &Tokens) -> Option
         .piece(Piece::text("BattlEye").word());
     seg = if not_started || broken {
         seg.piece(Piece::text(t("shell", "sbBeOff")))
+    } else if !service {
+        // Under Proton the runtime being there is all that can be seen (not whether
+        // BattlEye started with the game): installed is the good state.
+        seg.piece(Piece::text(t("shell", "sbBeRuntime")))
+            .piece(Piece::dot(tk.ok))
     } else {
         seg.piece(Piece::dot(if be == BattlEyeState::Running {
             tk.ok

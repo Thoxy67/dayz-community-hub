@@ -268,7 +268,12 @@ fn servers(rng: &mut Rng) -> Vec<MockServer> {
                 max_players: max,
                 environment,
                 password,
-                version: "1.28.162391",
+                // A few servers still on the version before (one of them the mock game's).
+                version: if i % 17 == 5 {
+                    "1.27.159674"
+                } else {
+                    "1.28.162391"
+                },
                 first_person_only: fp,
                 time: format!("{hours:02}:{minutes:02}"),
                 mods_count,

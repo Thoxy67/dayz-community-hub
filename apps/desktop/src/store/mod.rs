@@ -291,7 +291,13 @@ impl Stores {
         changed |= self.server_data.poll(&mut self.servers);
         changed |= self.profile.poll(&mut self.signals);
         changed |= self.mods.poll(&mut self.signals);
-        changed |= self.game.poll();
+        if self.game.poll() {
+            changed = true;
+            crate::parts::server_row::set_game_version(
+                self.bus.ctx(),
+                self.game.version.as_deref(),
+            );
+        }
         changed |= self.battleye.poll();
         changed |= self.updater.poll();
         changed |= self.sources.poll();

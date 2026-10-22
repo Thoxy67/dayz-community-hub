@@ -269,6 +269,14 @@ pub fn show(ui: &mut Ui, cx: &mut Ctx, r: &Resolved) {
                             ui.spacing_mut().item_spacing.x = 6.0;
                             let w = ui.available_width() - 6.0;
                             let qw = (w * 158.0 / 368.0).floor();
+                            // While a button is disabled, its hint says what is missing.
+                            let missing = if !has_address {
+                                Some(t("connect", "needAddress"))
+                            } else if !r.valid {
+                                Some(t("connect", "needValidAddress"))
+                            } else {
+                                None
+                            };
                             let label = if d.querying {
                                 t("connect", "querying")
                             } else {
@@ -278,7 +286,7 @@ pub fn show(ui: &mut Ui, cx: &mut Ctx, r: &Resolved) {
                                 .size(Size::Lg)
                                 .width(qw)
                                 .enabled(!d.querying && r.valid)
-                                .tip(t("connect", "query"));
+                                .tip(missing.unwrap_or(t("connect", "query")));
                             if !d.querying {
                                 b = b.icon(lucide::SEARCH);
                             }
@@ -306,7 +314,11 @@ pub fn show(ui: &mut Ui, cx: &mut Ctx, r: &Resolved) {
                                         .size(Size::Lg)
                                         .width(w - qw)
                                         .enabled(r.valid && has_profile)
-                                        .tip(t("connect", "enterToConnect")),
+                                        .tip(missing.unwrap_or(if has_profile {
+                                            t("connect", "enterToConnect")
+                                        } else {
+                                            t("connect", "needProfile")
+                                        })),
                                 )
                                 .clicked();
                         });

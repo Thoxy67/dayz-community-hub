@@ -10,6 +10,7 @@ pub mod mods;
 pub mod offline;
 pub mod operation;
 pub mod steam_download;
+pub mod version;
 
 pub use ctl::{DayzCtl, run_through_steam};
 pub use dzch::{DzchConfig, DzchMod};

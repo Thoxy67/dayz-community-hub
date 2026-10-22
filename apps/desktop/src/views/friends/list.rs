@@ -1,7 +1,9 @@
 //! The list pane (= `listPane` and its snippets in `View.svelte`): sticky group heads,
 //! friend rows (avatar, status dot, name, what they are doing, Steam buttons on hover)
-//! and, under each DayZ block, the shared server row. Only the rows on screen are drawn;
-//! the model gives every row's place.
+//! and, under each DayZ block, its server: indented, hung from its friends by a guide,
+//! the block set apart from the next. The shared server row when the list knows the
+//! server, else a short row (address, why, Join). Only the rows on screen are drawn; the
+//! model gives every row's place.
 
 use std::sync::Arc;
 
@@ -9,22 +11,28 @@ use dz_hub::features::friends::{FriendDto, FriendStatus};
 use egui::text::{LayoutJob, TextFormat};
 use egui::{CornerRadius, Pos2, Rangef, Rect, Sense, Stroke, Ui, UiBuilder, Vec2};
 
-use super::model::{Block, Group, HEAD_H, Item, Model};
+use super::model::{Block, Group, HEAD_H, Item, Model, SERVER_H, SHORT_H, Tie};
 use super::{Act, now_unix};
 use crate::app::Ctx;
 use crate::i18n::{format, t, tf};
 use crate::icons::lucide;
 use crate::kit::paint::{self, alpha};
-use crate::kit::{IconButton, SectionLabel, Size, TipExt, Tone};
+use crate::kit::{IconButton, SectionLabel, Size, Tag, TipExt, Tone, menu};
 use crate::parts::{
-    Empty, Flags, ListColumns, RowAction, RowButton, RowCache, RowData, RowTag, ServerListRow,
-    image,
+    Empty, JoinButton, ListColumns, RowAction, RowButton, RowCache, RowData, ServerListRow, image,
+    server_menu,
 };
 use crate::store::friends::Selected;
 use crate::theme::{Tokens, TokensExt, font, fonts::Face, size};
 
-/// `pl-6`: the server row sits under its friends, indented.
-const SERVER_INDENT: f32 = 24.0;
+/// The avatar's side; the guide runs down its centre.
+const AVATAR: f32 = 32.0;
+/// The guide's x, from the row's left edge: under the avatars' centres.
+const GUIDE_X: f32 = size::PAD + AVATAR / 2.0;
+/// The server row sits under its friends, right of the guide's elbow.
+const SERVER_INDENT: f32 = GUIDE_X + 14.0;
+/// The guide's room around an avatar.
+const GUIDE_GAP: f32 = 3.0;
 /// Button ids of the server row's own actions.
 const BTN_SHOW: u32 = 1;
 const BTN_DETAILS: u32 = 2;
@@ -99,14 +107,27 @@ pub fn show(ui: &mut Ui, cx: &Ctx, model: &Model, cache: &mut RowCache, acts: &m
                 );
                 match *item {
                     Item::Head(g, count) => head(&mut rui, r, g, count),
-                    Item::Friend(i) => {
+                    Item::Friend(i, tie) => {
                         if let Some(f) = list.get(i) {
-                            friend_row(&mut rui, r, cx, f, acts);
+                            friend_row(&mut rui, r, cx, f, tie, acts);
                         }
                     }
-                    Item::Server(b) => {
-                        if let Some(b) = model.blocks.get(b) {
-                            server_row(&mut rui, r, cx, b, cache, acts);
+                    Item::Server { block, full } => {
+                        if let Some(b) = model.blocks.get(block) {
+                            // The row on top, the block's room under it.
+                            let h = if full { SERVER_H } else { SHORT_H };
+                            let row = Rect::from_min_size(r.min, Vec2::new(w, h));
+                            guide_elbow(&rui, row);
+                            if full {
+                                server_row(&mut rui, row, cx, b, cache, acts);
+                            } else {
+                                short_row(&mut rui, row, cx, b, acts);
+                            }
+                            rui.painter().hline(
+                                r.x_range(),
+                                r.bottom() - 0.5,
+                                Stroke::new(1.0, alpha(tk.border, 0.5)),
+                            );
                         }
                     }
                 }
@@ -171,7 +192,7 @@ fn ago(ts: i64) -> String {
 }
 
 /// One friend: avatar and dot, name, what they are doing, Steam buttons on hover.
-fn friend_row(ui: &mut Ui, r: Rect, cx: &Ctx, f: &FriendDto, acts: &mut Vec<Act>) {
+fn friend_row(ui: &mut Ui, r: Rect, cx: &Ctx, f: &FriendDto, tie: Tie, acts: &mut Vec<Act>) {
     let tk = ui.tokens();
     let id = ui.id().with(("friend", &f.steam_id));
     let row = ui.interact(r, id, Sense::hover());
@@ -181,22 +202,43 @@ fn friend_row(ui: &mut Ui, r: Rect, cx: &Ctx, f: &FriendDto, acts: &mut Vec<Act>
         ui.painter()
             .rect_filled(r, 0.0, alpha(tk.raised, 0.5 * hover));
     }
-    ui.painter().hline(
-        r.x_range(),
-        r.bottom() - 0.5,
-        Stroke::new(1.0, alpha(tk.border, 0.5)),
-    );
+    let cy = r.center().y;
+    // A friend on a server and that server are one block: no line parts them, the guide
+    // joins them (from under the first avatar, through the others, down to the server).
+    match tie {
+        Tie::Alone => {
+            ui.painter().hline(
+                r.x_range(),
+                r.bottom() - 0.5,
+                Stroke::new(1.0, alpha(tk.border, 0.5)),
+            );
+        }
+        Tie::First | Tie::Next => {
+            let x = r.left() + GUIDE_X;
+            ui.painter().vline(
+                x,
+                Rangef::new(cy + AVATAR / 2.0 + GUIDE_GAP, r.bottom()),
+                guide_stroke(&tk),
+            );
+            if tie == Tie::Next {
+                ui.painter().vline(
+                    x,
+                    Rangef::new(r.top(), cy - AVATAR / 2.0 - GUIDE_GAP),
+                    guide_stroke(&tk),
+                );
+            }
+        }
+    }
     let _ = row;
     if f.status == FriendStatus::Offline && f.game.is_none() {
         ui.multiply_opacity(0.6);
     }
     let p = ui.painter().clone();
-    let cy = r.center().y;
 
     // The avatar, or the first letter on a plate.
     let av = Rect::from_min_size(
-        Pos2::new(r.left() + size::PAD, cy - 16.0),
-        Vec2::splat(32.0),
+        Pos2::new(r.left() + size::PAD, cy - AVATAR / 2.0),
+        Vec2::splat(AVATAR),
     );
     let drawn = f
         .avatar
@@ -320,142 +362,307 @@ fn subline(ui: &Ui, cx: &Ctx, f: &FriendDto, tk: &Tokens, width: f32) -> Arc<egu
     ui.painter().layout_job(job)
 }
 
-/// The server under a DayZ block, as every server list shows it.
+/// The guide's stroke: the accent, quieted, so it reads as a link and not as a control.
+fn guide_stroke(tk: &Tokens) -> Stroke {
+    Stroke::new(1.5, alpha(tk.accent, 0.7))
+}
+
+/// The guide's last stretch, in a server's `row`: down from the friend above, then right
+/// into the indented row, so the server hangs under its friends.
+fn guide_elbow(ui: &Ui, row: Rect) {
+    let tk = ui.tokens();
+    let x = row.left() + GUIDE_X;
+    let cy = row.center().y;
+    let s = guide_stroke(&tk);
+    let p = ui.painter();
+    p.vline(x, Rangef::new(row.top(), cy), s);
+    p.hline(Rangef::new(x, row.left() + SERVER_INDENT), cy, s);
+    p.circle_filled(egui::pos2(x, cy), s.width / 2.0, s.color);
+}
+
+/// The server's part of `row`, right of the guide.
+fn indented(row: Rect) -> Rect {
+    Rect::from_min_max(Pos2::new(row.left() + SERVER_INDENT, row.top()), row.max)
+}
+
+/// Whether the details show this block's server.
+fn is_selected(cx: &Ctx, b: &Block) -> bool {
+    cx.stores
+        .friends
+        .selected
+        .as_ref()
+        .is_some_and(|s| s.ip == b.ip && s.port == b.port)
+}
+
+/// What a server row's action asks for. `query_port` and `game_port` as the list knows
+/// them (else the friends' port).
+struct Target<'a> {
+    b: &'a Block,
+    name: &'a str,
+    query_port: i64,
+    game_port: i64,
+    favorite: bool,
+    excluded: bool,
+}
+
+impl Target<'_> {
+    fn act(&self, a: RowAction) -> Option<Act> {
+        let b = self.b;
+        let qp = u16::try_from(self.query_port).unwrap_or(b.port);
+        let gp = u16::try_from(self.game_port).unwrap_or(b.port);
+        let name = self.name.to_string();
+        Some(match a {
+            RowAction::Select | RowAction::Details | RowAction::Custom(BTN_DETAILS) => {
+                Act::Select(Selected {
+                    ip: b.ip.clone(),
+                    port: b.port,
+                    name,
+                })
+            }
+            RowAction::Join => Act::Join(b.ip.clone(), b.port),
+            RowAction::Custom(BTN_SHOW) => Act::ShowInList(b.ip.clone(), b.port),
+            RowAction::Custom(BTN_DIRECT) | RowAction::DirectConnect => {
+                Act::Direct(b.ip.clone(), gp, qp)
+            }
+            RowAction::Custom(_) | RowAction::ShowMods => return None,
+            RowAction::ToggleFavorite => Act::Favorite(name, b.ip.clone(), b.port, self.favorite),
+            RowAction::Ping => Act::Ping(b.ip.clone(), self.query_port),
+            RowAction::RefreshPlayers => Act::Players(b.ip.clone(), self.query_port),
+            RowAction::CopyLink => Act::CopyLink(b.ip.clone(), gp, qp, name),
+            RowAction::CopyAddress => Act::CopyAddress(format!("{}:{}", b.ip, gp)),
+            RowAction::ToggleExclude => Act::Exclude(b.ip.clone(), !self.excluded),
+        })
+    }
+}
+
+/// The direct-connect button, as every friend's server offers it.
+fn direct_button() -> RowButton<'static> {
+    RowButton {
+        id: BTN_DIRECT,
+        icon: lucide::PLUG_ZAP,
+        label: t("servers", "directConnect"),
+        danger: false,
+        tint: None,
+    }
+}
+
+/// The server under a DayZ block, as every server list shows it (the list knows it).
 fn server_row(
     ui: &mut Ui,
-    r: Rect,
+    row: Rect,
     cx: &Ctx,
     b: &Block,
     cache: &mut RowCache,
     acts: &mut Vec<Act>,
 ) {
+    let port = i64::from(b.port);
+    let Some(lr) = cx.stores.servers.row(&b.ip, port) else {
+        // The list lost it since the model was built: the short row until it is rebuilt.
+        short_row(ui, row, cx, b, acts);
+        return;
+    };
     let tk = ui.tokens();
-    ui.painter().rect_filled(r, 0.0, alpha(tk.bg, 0.4));
-    ui.painter()
-        .hline(r.x_range(), r.bottom() - 0.5, Stroke::new(1.0, tk.border));
-    let rr = Rect::from_min_max(Pos2::new(r.left() + SERVER_INDENT, r.top()), r.max);
+    let rr = indented(row);
+    ui.painter().rect_filled(rr, 0.0, alpha(tk.bg, 0.4));
     let mut sui = ui.new_child(
         UiBuilder::new()
             .max_rect(rr)
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     let cols = ListColumns::new(Rangef::new(rr.left(), rr.right()), false);
-    let selected = cx
-        .stores
-        .friends
-        .selected
-        .as_ref()
-        .is_some_and(|s| s.ip == b.ip && s.port == b.port);
-    let unlisted = t("friends", "unlisted");
     let buttons = [
-        if b.listed {
-            RowButton {
-                id: BTN_SHOW,
-                icon: lucide::LIST,
-                label: t("friends", "showInList"),
-                danger: false,
-                tint: None,
-            }
-        } else {
-            RowButton {
-                id: BTN_DETAILS,
-                icon: lucide::SCAN_SEARCH,
-                label: t("friends", "details"),
-                danger: false,
-                tint: None,
-            }
-        },
         RowButton {
-            id: BTN_DIRECT,
-            icon: lucide::PLUG_ZAP,
-            label: t("servers", "directConnect"),
+            id: BTN_SHOW,
+            icon: lucide::LIST,
+            label: t("friends", "showInList"),
             danger: false,
             tint: None,
         },
+        direct_button(),
     ];
-    let port = i64::from(b.port);
-    let listed_row = cx.stores.servers.row(&b.ip, port);
-    let fallback = b
-        .name
-        .clone()
-        .unwrap_or_else(|| format!("{}:{}", b.ip, b.port));
-    let map = b.map.clone().unwrap_or_default();
-    let key = format!("{}:{}", b.ip, b.port);
-    let (data, name, query_port, game_port) = match &listed_row {
-        Some(lr) => {
-            let d = RowData::from_server(lr);
-            let name = d.name.to_string();
-            (
-                RowData {
-                    join_port: port,
-                    listed: b.listed,
-                    ping_pending: cx.stores.servers.pending.contains(&key),
-                    ..d
-                },
-                name,
-                d.query_port,
-                d.game_port,
-            )
-        }
-        None => (
-            RowData {
-                ip: &b.ip,
-                query_port: port,
-                game_port: port,
-                join_port: port,
-                name: &fallback,
-                map: &map,
-                flags: Flags::default(),
-                ping_ms: cx.stores.servers.ping_ms(&b.ip, port),
-                ping_pending: cx.stores.servers.pending.contains(&key),
-                favorite: cx.stores.profile.is_favorite(&b.ip, b.port),
-                excluded: cx.stores.profile.is_excluded(&b.ip),
-                listed: b.listed,
-                ..RowData::default()
-            },
-            fallback.clone(),
-            port,
-            port,
-        ),
+    let key = b.key();
+    let d = RowData::from_server(&lr);
+    let name = d.name.to_string();
+    let (query_port, game_port) = (d.query_port, d.game_port);
+    let data = RowData {
+        join_port: port,
+        listed: b.listed,
+        ping_pending: cx.stores.servers.pending.contains(&key),
+        ..d
     };
-    let favorite = data.favorite;
-    let excluded = data.excluded;
-    let mut row = ServerListRow::new(data)
-        .selected(selected)
+    let target = Target {
+        b,
+        name: &name,
+        query_port,
+        game_port,
+        favorite: data.favorite,
+        excluded: data.excluded,
+    };
+    let out = ServerListRow::new(data)
+        .selected(is_selected(cx, b))
         .friends(&b.here)
         .buttons(&buttons)
-        .mods_clickable(false);
-    if !b.listed {
-        row = row.tag(RowTag {
-            text: unlisted,
-            tone: Tone::Warn,
-            tip: "",
-        });
+        .mods_clickable(false)
+        .show(&mut sui, &cols, cache);
+    if let Some(a) = out.action.and_then(|a| target.act(a)) {
+        acts.push(a);
     }
-    let out = row.show(&mut sui, &cols, cache);
-    let qp = u16::try_from(query_port).unwrap_or(b.port);
-    let gp = u16::try_from(game_port).unwrap_or(b.port);
-    let pick = || {
-        Act::Select(Selected {
-            ip: b.ip.clone(),
-            port: b.port,
-            name: name.clone(),
-        })
-    };
-    let Some(a) = out.action else { return };
-    acts.push(match a {
-        RowAction::Select | RowAction::Details | RowAction::Custom(BTN_DETAILS) => pick(),
-        RowAction::Join => Act::Join(b.ip.clone(), b.port),
-        RowAction::Custom(BTN_SHOW) => Act::ShowInList(b.ip.clone(), b.port),
-        RowAction::Custom(BTN_DIRECT) | RowAction::DirectConnect => {
-            Act::Direct(b.ip.clone(), gp, qp)
+}
+
+/// The server of a block the list does not know: ping, players, map and mods would be
+/// blanks, so the row is short. Its address (and its name, when Steam gave one), why it
+/// is short, Join; Details and Direct connect on hover, the server menu on a right click.
+fn short_row(ui: &mut Ui, row: Rect, cx: &Ctx, b: &Block, acts: &mut Vec<Act>) {
+    let tk = ui.tokens();
+    let rr = indented(row);
+    let key = b.key();
+    let id = ui.id().with(("friend-server", &key));
+    let resp = ui.interact(rr, id, Sense::click());
+    let selected = is_selected(cx, b);
+    let hovered = resp.contains_pointer() || resp.has_focus();
+    let hover = paint::ease(ui, id.with("hover"), hovered);
+    {
+        let p = ui.painter();
+        p.rect_filled(rr, 0.0, alpha(tk.bg, 0.4));
+        let ground = if selected {
+            alpha(tk.accent, 0.10)
+        } else {
+            alpha(tk.raised, 0.5 * hover)
+        };
+        if ground.a() > 0 {
+            p.rect_filled(rr, 0.0, ground);
         }
-        RowAction::Custom(_) | RowAction::ShowMods => return,
-        RowAction::ToggleFavorite => Act::Favorite(name.clone(), b.ip.clone(), b.port, favorite),
-        RowAction::Ping => Act::Ping(b.ip.clone(), query_port),
-        RowAction::RefreshPlayers => Act::Players(b.ip.clone(), query_port),
-        RowAction::CopyLink => Act::CopyLink(b.ip.clone(), gp, qp, name.clone()),
-        RowAction::CopyAddress => Act::CopyAddress(format!("{}:{}", b.ip, gp)),
-        RowAction::ToggleExclude => Act::Exclude(b.ip.clone(), !excluded),
-    });
+        if selected {
+            p.vline(rr.left() + 1.0, rr.y_range(), Stroke::new(2.0, tk.accent));
+        }
+        p.hline(
+            rr.x_range(),
+            rr.bottom() - 0.5,
+            Stroke::new(1.0, alpha(tk.border, 0.5)),
+        );
+    }
+    let cols = ListColumns::new(Rangef::new(rr.left(), rr.right()), false);
+    let cy = rr.center().y;
+    let favorite = cx.stores.profile.is_favorite(&b.ip, b.port);
+    let excluded = cx.stores.profile.is_excluded(&b.ip);
+    let address = key;
+    let name = b
+        .name
+        .clone()
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or_else(|| address.clone());
+    let target = Target {
+        b,
+        name: &name,
+        query_port: i64::from(b.port),
+        game_port: i64::from(b.port),
+        favorite,
+        excluded,
+    };
+    let mut action = None;
+    if resp.clicked() {
+        action = Some(RowAction::Select);
+    }
+    if resp.double_clicked() {
+        action = Some(RowAction::Join);
+    }
+
+    // Join, where the full rows have it.
+    let join = Rect::from_min_size(
+        Pos2::new(cols.actions.max - size::CONTROL, cy - size::CONTROL / 2.0),
+        Vec2::splat(size::CONTROL),
+    );
+    if ui
+        .put(
+            join,
+            JoinButton::new()
+                .compact()
+                .quiet()
+                .lit(selected)
+                .group_hover(hovered),
+        )
+        .clicked()
+    {
+        action = Some(RowAction::Join);
+    }
+
+    // Details and Direct connect, on hover (as the full rows' actions).
+    let shown = paint::ease(ui, id.with("actions"), hovered || selected);
+    let mut text_end = join.left() - 8.0;
+    if shown > 0.0 {
+        let bw = size::CONTROL_SM;
+        let gw = 2.0 + 2.0 * bw + 1.0 + 2.0;
+        let g = Rect::from_min_size(
+            Pos2::new(join.left() - 6.0 - gw, cy - (bw + 4.0) / 2.0),
+            Vec2::new(gw, bw + 4.0),
+        );
+        text_end = g.left() - 8.0;
+        let mut gui = ui.new_child(
+            UiBuilder::new()
+                .max_rect(g.shrink(2.0))
+                .layout(egui::Layout::left_to_right(egui::Align::Center))
+                .id_salt("short-actions"),
+        );
+        gui.multiply_opacity(shown);
+        gui.spacing_mut().item_spacing.x = 1.0;
+        paint::plate(gui.painter(), g, size::RADIUS_SM, tk.panel, tk.border);
+        let direct = direct_button();
+        if gui
+            .add(IconButton::new(lucide::SCAN_SEARCH, t("friends", "details")).size(Size::IconXs))
+            .clicked()
+        {
+            action = Some(RowAction::Custom(BTN_DETAILS));
+        }
+        if gui
+            .add(IconButton::new(direct.icon, direct.label).size(Size::IconXs))
+            .clicked()
+        {
+            action = Some(RowAction::Custom(direct.id));
+        }
+    }
+
+    // The address (after Steam's name for it, when there is one), then why it is short,
+    // from the row's start: the columns they would line up with are not drawn.
+    let x0 = rr.left() + size::PAD;
+    let room = (text_end - x0).max(0.0);
+    let mut tui = ui.new_child(
+        UiBuilder::new()
+            .max_rect(Rect::from_min_max(
+                Pos2::new(x0, rr.top()),
+                Pos2::new(x0 + room, rr.bottom()),
+            ))
+            .layout(egui::Layout::left_to_right(egui::Align::Center))
+            .id_salt("short-text"),
+    );
+    tui.set_clip_rect(tui.max_rect().intersect(ui.clip_rect()));
+    tui.spacing_mut().item_spacing.x = 8.0;
+    let tag_w = if b.listed { 0.0 } else { 160.0 };
+    if name != address {
+        let g = paint::galley_trunc(
+            &tui,
+            &name,
+            font(Face::SansSemibold, size::TEXT_XS),
+            tk.fg,
+            (room - tag_w - 160.0).max(40.0),
+        );
+        let (r, _) = tui.allocate_exact_size(g.size(), Sense::hover());
+        tui.painter().galley(r.min, g, tk.fg);
+    }
+    let ink = if b.listed { tk.fg_muted } else { tk.fg };
+    let g = paint::galley(&tui, &address, font(Face::Mono, size::TEXT_XS), ink);
+    let (r, _) = tui.allocate_exact_size(g.size(), Sense::hover());
+    tui.painter().galley(r.min, g, ink);
+    if !b.listed {
+        tui.add(Tag::new(t("friends", "unlisted")).tone(Tone::Warn));
+    }
+
+    if let Some(inner) = menu::context(&resp, |ui| {
+        server_menu(ui, &b.ip, favorite, excluded, false, &[])
+    }) && let Some(a) = inner.inner
+    {
+        action = Some(a);
+    }
+    if let Some(a) = action.and_then(|a| target.act(a)) {
+        acts.push(a);
+    }
 }

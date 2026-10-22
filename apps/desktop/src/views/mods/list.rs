@@ -409,11 +409,11 @@ fn group_head(ui: &mut Ui, status: i8, count: usize, bytes: u64, folded: bool) -
         tk.fg_faint,
     );
     x += 14.0 + 8.0;
-    let (key, ink) = match status {
-        INCOMING => ("groupSteam", tk.accent),
-        BEHIND => ("groupUpdates", tk.warn),
-        model::UNCHECKED => ("detailsUnknown", tk.fg_muted),
-        _ => ("detailsUpToDate", tk.fg_muted),
+    let (key, meaning, ink) = match status {
+        INCOMING => ("groupSteam", "steamDownloadsTitle", tk.accent),
+        BEHIND => ("groupUpdates", "stateTipUpdate", tk.warn),
+        model::UNCHECKED => ("detailsUnknown", "stateTipUnchecked", tk.fg_muted),
+        _ => ("detailsUpToDate", "stateTipUpToDate", tk.fg_muted),
     };
     let g = crate::shell::stencil(ui, t("mods", key), egui::Color32::PLACEHOLDER, None);
     draw(p, &g, x, cy, ink);
@@ -434,7 +434,9 @@ fn group_head(ui: &mut Ui, status: i8, count: usize, bytes: u64, folded: bool) -
             tk.fg_faint,
         );
     }
-    let _ = resp.clone().tip(t("mods", "groupCollapse"));
+    // What the group means, then what a click does.
+    let tip = format!("{}\n{}", t("mods", meaning), t("mods", "groupCollapse"));
+    let _ = resp.clone().tip(&tip);
     resp.clicked()
 }
 
@@ -606,16 +608,20 @@ fn mod_row(
                 let d = format::date(m.local_updated);
                 let g = ph_trunc(ui, &d, font(Face::Mono, size::TEXT_2XS), x.span());
                 draw(ui.painter(), &g, x.min, cy, tk.fg_muted);
+                // The date is your copy's; the Workshop's, when known, on hover.
+                let mut tip = format!("{}: {d}", t("mods", "yourCopy"));
                 if let Some(remote) = m.remote_updated {
-                    let tip = format!("{}: {}", t("mods", "workshopCopy"), format::date(remote));
-                    let vr = Rect::from_min_size(
-                        Pos2::new(x.min, cy - 8.0),
-                        Vec2::new(g.size().x, 16.0),
-                    );
-                    let _ = ui
-                        .interact(vr, ui.id().with(("ver", row.id)), Sense::hover())
-                        .tip(&tip);
+                    tip.push_str(&format!(
+                        "\n{}: {}",
+                        t("mods", "workshopCopy"),
+                        format::date(remote)
+                    ));
                 }
+                let vr =
+                    Rect::from_min_size(Pos2::new(x.min, cy - 8.0), Vec2::new(g.size().x, 16.0));
+                let _ = ui
+                    .interact(vr, ui.id().with(("ver", row.id)), Sense::hover())
+                    .tip(&tip);
             }
         }
         None => {
@@ -895,7 +901,7 @@ pub(super) fn state_look(mods: &Mods, id: u64, m: Option<&InstalledModDto>) -> S
             format!("{}{}", t("mods", "stateDownloading"), pct(share)),
             Tone::Accent,
             true,
-            "",
+            t("mods", "stateTipDownloading"),
             Second::Bar(share),
         );
     }
@@ -904,7 +910,7 @@ pub(super) fn state_look(mods: &Mods, id: u64, m: Option<&InstalledModDto>) -> S
             t("mods", "stateQueued").into(),
             Tone::Neutral,
             false,
-            "",
+            t("mods", "stateTipQueued"),
             Second::None,
         );
     }
@@ -939,7 +945,7 @@ pub(super) fn state_look(mods: &Mods, id: u64, m: Option<&InstalledModDto>) -> S
                 t("mods", "updateAvailable").into(),
                 Tone::Warn,
                 false,
-                "",
+                t("mods", "stateTipUpdate"),
                 Second::Behind(behind),
             )
         }
@@ -947,14 +953,14 @@ pub(super) fn state_look(mods: &Mods, id: u64, m: Option<&InstalledModDto>) -> S
             t("mods", "detailsUpToDate").into(),
             Tone::Ok,
             false,
-            "",
+            t("mods", "stateTipUpToDate"),
             Second::None,
         ),
         _ => mk(
             t("mods", "detailsUnknown").into(),
             Tone::Neutral,
             false,
-            "",
+            t("mods", "stateTipUnchecked"),
             Second::None,
         ),
     }

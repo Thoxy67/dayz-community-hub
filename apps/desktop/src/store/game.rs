@@ -2,6 +2,10 @@
 //! `stores/game.svelte.ts`). Asked at start, then every few seconds from a launch until
 //! the game has come and gone: a process scan is cheap, but not worth running all day.
 //! The next check is a `request_repaint_after`, not a timer thread.
+//!
+//! Also the installed game's version (`1.30.164200`), which server rows compare theirs
+//! with: read at start and asked again with BattlEye's state (the hub reads the
+//! executable only when it changed).
 
 use std::time::{Duration, Instant};
 
@@ -24,6 +28,9 @@ pub struct Game {
     next: Option<Instant>,
     check: Option<Task<bool>>,
     kill: Option<Task<Result<u32, String>>>,
+    /// The installed game's version; `None` until known (or DayZ is not found).
+    pub version: Option<String>,
+    version_task: Option<Task<Option<String>>>,
 }
 
 impl Game {
@@ -38,12 +45,26 @@ impl Game {
             next: None,
             check: None,
             kill: None,
+            version: None,
+            version_task: None,
         }
     }
 
     /// At start: the game may already be open.
     pub fn init(&mut self) {
         self.check_now();
+        self.read_version();
+    }
+
+    /// Ask for the installed game's version (cheap when it has not changed).
+    pub fn read_version(&mut self) {
+        if self.version_task.is_some() {
+            return;
+        }
+        let hub = self.hub.clone();
+        self.version_task = Some(rt::spawn(
+            async move { hub.game_version().await.ok().flatten() },
+        ));
     }
 
     /// A launch was handed to Steam: watch for the game.
@@ -79,6 +100,18 @@ impl Game {
     }
 
     pub fn poll(&mut self) -> bool {
+        let mut version_changed = false;
+        if let Some(t) = &mut self.version_task
+            && let Some(v) = t.poll()
+        {
+            self.version_task = None;
+            version_changed = self.version != v;
+            self.version = v;
+        }
+        self.poll_running() || version_changed
+    }
+
+    fn poll_running(&mut self) -> bool {
         let mut changed = false;
         if let Some(t) = &mut self.kill
             && let Some(_r) = t.poll()

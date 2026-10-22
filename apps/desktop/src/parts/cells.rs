@@ -561,7 +561,7 @@ pub(crate) fn paint_bars(
 ) -> Color32 {
     let (h, bw, gap) = (12.0, 3.0, 2.0);
     let level = signal_level(ms);
-    let timed_out = !pending && ms.is_some_and(|m| m >= PING_TIMEOUT_MS);
+    let timed_out = ping_timed_out(ms, pending);
     let tone = if pending {
         t.fg_faint
     } else {
@@ -583,24 +583,55 @@ pub(crate) fn paint_bars(
         p.rect_filled(r, CornerRadius::same(1), tone.gamma_multiply(a));
     }
     if timed_out {
+        // No answer is common (a server down, a firewall) and says nothing bad about the
+        // player's connection: a faint stroke and a faint dash, not an alarm. Red stays
+        // for slow answers.
         let c = Pos2::new(x + BARS_W / 2.0, bottom - h / 2.0);
         let d = Vec2::angled((-25.0_f32).to_radians()) * (BARS_W / 2.0 + 1.0);
-        p.line_segment([c - d, c + d], Stroke::new(1.0, t.err));
-        return t.err;
+        p.line_segment([c - d, c + d], Stroke::new(1.0, t.fg_faint));
+        return dash_color(t);
     }
     tone
 }
 
-/// The figure a signal shows: `…` pending, `×` timed out, `—` never asked, else the ms.
+/// The server did not answer its last ping (at or past `PING_TIMEOUT_MS`, the backend's
+/// sentinel for a failure), and none is under way.
+pub fn ping_timed_out(ms: Option<u32>, pending: bool) -> bool {
+    !pending && ms.is_some_and(|m| m >= PING_TIMEOUT_MS)
+}
+
+/// The figure a signal shows: `…` pending, `—` never asked or no answer, else the ms.
 pub fn ping_text(ms: Option<u32>, pending: bool) -> (String, bool) {
     if pending {
         ("…".to_owned(), false)
     } else {
         match ms {
-            Some(m) if m >= PING_TIMEOUT_MS => ("×".to_owned(), false),
-            Some(m) => (m.to_string(), true),
-            None => (crate::i18n::format::NONE.to_owned(), false),
+            Some(m) if m < PING_TIMEOUT_MS => (m.to_string(), true),
+            _ => (crate::i18n::format::NONE.to_owned(), false),
         }
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// Version
+
+/// Whether a server's version is the player's: "1.28.162391" against "1.28.162391", or
+/// against a file version with a zero between ("1.28.0.162391"). Compares the numbers
+/// (major, minor, build) and falls back on the trimmed text when they are not numbers.
+pub fn same_version(a: &str, b: &str) -> bool {
+    fn parts(v: &str) -> Option<Vec<u64>> {
+        let n: Option<Vec<u64>> = v.trim().split('.').map(|p| p.parse().ok()).collect();
+        n.map(|mut n| {
+            // A file version's third field is a zero the servers' version leaves out.
+            if n.len() == 4 && n.get(2) == Some(&0) {
+                n.remove(2);
+            }
+            n
+        })
+    }
+    match (parts(a), parts(b)) {
+        (Some(x), Some(y)) => x == y,
+        _ => a.trim() == b.trim(),
     }
 }
 
@@ -1235,7 +1266,21 @@ mod tests {
     #[test]
     fn ping_texts() {
         assert_eq!(ping_text(Some(92), false), ("92".to_owned(), true));
-        assert_eq!(ping_text(Some(9999), false).0, "×");
+        assert_eq!(ping_text(Some(9999), false).0, crate::i18n::format::NONE);
         assert_eq!(ping_text(None, true).0, "…");
+        assert!(ping_timed_out(Some(9999), false));
+        assert!(!ping_timed_out(Some(9999), true));
+        assert!(!ping_timed_out(Some(92), false));
+        assert!(!ping_timed_out(None, false));
+    }
+
+    #[test]
+    fn versions_compare() {
+        assert!(same_version("1.28.162391", "1.28.162391"));
+        assert!(same_version("1.28.162391", " 1.28.0.162391 "));
+        assert!(!same_version("1.28.162391", "1.27.160000"));
+        assert!(!same_version("1.28.162391", "1.28.162392"));
+        assert!(same_version("exp", "exp"));
+        assert!(!same_version("1.28", "1.28.162391"));
     }
 }

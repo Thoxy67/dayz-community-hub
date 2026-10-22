@@ -383,14 +383,17 @@ impl<'a> ShortcutList<'a> {
         // second, never split, the columns as even as the groups allow.
         let two = self.columns > 1 && ui.ctx().content_rect().width() > 640.0;
         if two {
-            let heights: Vec<f32> = shown
-                .iter()
-                .map(|(g, rows)| group_height(g, rows.len(), keys_mode))
-                .collect();
-            let split = balance(&heights, ui.spacing().item_spacing.y);
             let gap = 24.0;
             let w = ui.available_width();
             let cw = ((w - gap) / 2.0).max(0.0);
+            let heights: Vec<f32> = shown
+                .iter()
+                .map(|(g, rows)| {
+                    let paired = g.views && keys_mode && views_fit(ui, rows, cw);
+                    group_height(rows.len(), paired)
+                })
+                .collect();
+            let split = balance(&heights, ui.spacing().item_spacing.y);
             let top = ui.cursor().min;
             let mut bottom = top.y;
             for (col, part) in [&shown[..split], &shown[split..]].into_iter().enumerate() {
@@ -454,7 +457,7 @@ impl<'a> ShortcutList<'a> {
             let (r, _) = ui.allocate_exact_size(Vec2::new(tg.size().x, 12.0), Sense::hover());
             draw(ui.painter(), &tg, r.left(), r.center().y, tk.fg_faint);
             ui.add_space(4.0);
-            if g.views && keys_mode {
+            if g.views && keys_mode && views_fit(ui, rows, ui.available_width()) {
                 let w = ui.available_width();
                 let cw = (w - 12.0) / 2.0;
                 for pair in rows.chunks(2) {
@@ -482,8 +485,8 @@ impl<'a> ShortcutList<'a> {
         });
     }
 
-    /// Lays out a row's key combos from the right; returns their left edge.
-    fn combos(ui: &Ui, right: f32, cy: f32, r: &ShortcutRow<'_>, tk: &Tokens) -> f32 {
+    /// A row's key combos as chips and separators, with their total width.
+    fn combo_parts<'r>(ui: &Ui, r: &ShortcutRow<'r>) -> (Vec<ComboPart<'r>>, f32) {
         let small = font(Face::Sans, size::TEXT_3XS);
         let sep_text = if r.pair { "/" } else { t("keys", "or") };
         let sep = ph(ui, sep_text, small.clone());
@@ -503,6 +506,12 @@ impl<'a> ShortcutList<'a> {
         }
         let n = parts.len();
         let total: f32 = parts.iter().map(|p| p.2).sum::<f32>() + 3.0 * n.saturating_sub(1) as f32;
+        (parts, total)
+    }
+
+    /// Lays out a row's key combos from the right; returns their left edge.
+    fn combos(ui: &Ui, right: f32, cy: f32, r: &ShortcutRow<'_>, tk: &Tokens) -> f32 {
+        let (parts, total) = Self::combo_parts(ui, r);
         let mut x = right - total;
         let left = x;
         for (chip, g, w) in parts {
@@ -574,14 +583,22 @@ impl<'a> ShortcutList<'a> {
 /// A shortcut row's height.
 const ROW_H: f32 = 25.0;
 
-/// How tall a group draws: its title, then its rows (the views' keys two by two).
-fn group_height(g: &ShortcutGroup<'_>, rows: usize, keys_mode: bool) -> f32 {
-    let lines = if g.views && keys_mode {
-        rows.div_ceil(2)
-    } else {
-        rows
-    };
+/// How tall a group draws: its title, then its rows (two by two when `paired`).
+fn group_height(rows: usize, paired: bool) -> f32 {
+    let lines = if paired { rows.div_ceil(2) } else { rows };
     12.0 + 4.0 + lines as f32 * ROW_H
+}
+
+/// Whether the views' keys fit two by two in `w` with every label whole; else they
+/// take a line each (a narrow card, a long word).
+fn views_fit(ui: &Ui, rows: &[&ShortcutRow<'_>], w: f32) -> bool {
+    let cw = (w - 12.0) / 2.0;
+    let face = font(Face::Sans, size::TEXT_2XS);
+    rows.iter().all(|r| {
+        let label = ph(ui, r.label, face.clone()).size().x;
+        let (_, keys) = ShortcutList::combo_parts(ui, r);
+        label + 8.0 + keys <= cw
+    })
 }
 
 /// Where the second column starts: the split that keeps the taller column shortest

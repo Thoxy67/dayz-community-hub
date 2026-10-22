@@ -19,8 +19,8 @@ use rustc_hash::{FxHashMap, FxHasher};
 
 use super::cells::{
     BARS_W, FlagWords, Flags, PlayersText, dash_color, day_phase, flags_width, mods_extra,
-    mods_tip, mods_tone, mods_width, os_brand, os_label, paint_bars, paint_flags, paint_join_quiet,
-    paint_mods, paint_players, paint_star, paint_time, ping_text, star_label,
+    mods_tip, mods_tone, mods_width, paint_bars, paint_flags, paint_join_quiet, paint_mods,
+    paint_players, paint_star, paint_time, ping_text, ping_timed_out, same_version, star_label,
 };
 use super::text::{draw, ph, ph_trunc};
 use crate::i18n::{self, t, tf};
@@ -142,6 +142,9 @@ pub struct RowData<'a> {
     pub map: &'a str,
     pub time: &'a str,
     pub version: &'a str,
+    /// The player's installed game version; `None` when not known. Known, the row shows
+    /// the server's version only when it differs (in the warning tone); unknown, always.
+    pub game_version: Option<&'a str>,
     pub environment: &'a str,
     pub mods_count: usize,
     /// Of its mods, how many you have not installed; `None` when not known.
@@ -178,6 +181,7 @@ impl<'a> RowData<'a> {
             map: r.map,
             time: &s.time,
             version: &s.version,
+            game_version: None,
             environment: &s.environment,
             mods_count: s.mods.len(),
             mods_missing: r.mods_missing(),
@@ -214,6 +218,7 @@ impl<'a> RowData<'a> {
             map: &r.map,
             time: &r.time,
             version: &r.version,
+            game_version: None,
             environment: &r.environment,
             mods_count: r.mods_count,
             mods_missing: r.mods_missing,
@@ -341,6 +346,8 @@ struct Laid {
     name: Arc<Galley>,
     address: Arc<Galley>,
     version: Option<Arc<Galley>>,
+    /// The version shown is not the player's.
+    version_other: bool,
     map: Option<Arc<Galley>>,
     time: Option<Arc<Galley>>,
     phase: Icon,
@@ -489,7 +496,16 @@ impl<'a> ServerListRow<'a> {
         self
     }
 
-    fn stamp(&self, cols: &ListColumns, name_w: f32) -> u64 {
+    /// The player's game version: the row's own, else the one the app keeps in the
+    /// context ([`set_game_version`]).
+    fn game(&self, ctx: &egui::Context) -> Option<Arc<str>> {
+        self.data
+            .game_version
+            .map(Arc::from)
+            .or_else(|| installed_version(ctx))
+    }
+
+    fn stamp(&self, cols: &ListColumns, name_w: f32, game: Option<&str>) -> u64 {
         let d = &self.data;
         let mut h = FxHasher::default();
         (
@@ -510,7 +526,7 @@ impl<'a> ServerListRow<'a> {
             d.bots,
         )
             .hash(&mut h);
-        (d.ping_ms, d.ping_pending).hash(&mut h);
+        (d.ping_ms, d.ping_pending, game).hash(&mut h);
         self.friends.len().hash(&mut h);
         self.tag.map(|t| t.text).hash(&mut h);
         self.extra.map(|e| (e.top, e.bottom)).hash(&mut h);
@@ -521,6 +537,7 @@ impl<'a> ServerListRow<'a> {
     }
 
     fn lay_out(&self, ui: &Ui, cols: &ListColumns, name_w: f32, stamp: u64, pass: u64) -> Laid {
+        let game = self.game(ui.ctx());
         let d = &self.data;
         let mono_2xs = font(Face::Mono, size::TEXT_2XS);
         let mono_3xs = font(Face::Mono, size::TEXT_3XS);
@@ -531,8 +548,13 @@ impl<'a> ServerListRow<'a> {
             mono_2xs.clone(),
             (server_w - 16.0).max(20.0),
         );
-        let version_room = server_w - address.size().x - 16.0 - 8.0 - 20.0;
-        let version = (!d.version.is_empty() && version_room > 8.0)
+        // The version only when it tells something: not the player's, or theirs unknown.
+        let version_other = game
+            .as_deref()
+            .is_some_and(|g| !d.version.is_empty() && !same_version(d.version, g));
+        let version_shown = game.is_none() || version_other;
+        let version_room = server_w - address.size().x - 16.0 - 8.0;
+        let version = (version_shown && !d.version.is_empty() && version_room > 8.0)
             .then(|| ph_trunc(ui, d.version, mono_3xs.clone(), version_room));
         let map = match cols.map {
             Some(m) if !d.map.is_empty() => Some(ph_trunc(
@@ -579,6 +601,7 @@ impl<'a> ServerListRow<'a> {
             ),
             address,
             version,
+            version_other,
             map,
             time,
             phase: day_phase(d.time),
@@ -659,7 +682,7 @@ impl<'a> ServerListRow<'a> {
         }
         let key = d.key();
         let name_w = cols.server.span() - after;
-        let stamp = self.stamp(cols, name_w);
+        let stamp = self.stamp(cols, name_w, self.game(ui.ctx()).as_deref());
         let fresh = cache.rows.get(&key).is_some_and(|l| l.stamp == stamp);
         if !fresh {
             let laid = self.lay_out(ui, cols, name_w, stamp, pass);
@@ -783,9 +806,14 @@ impl<'a> ServerListRow<'a> {
         if d.ping_pending {
             ui.ctx().request_repaint();
         }
+        let ping_tip = if ping_timed_out(d.ping_ms, d.ping_pending) {
+            t("servers", "pingNoAnswer")
+        } else {
+            t("servers", "clickPing")
+        };
         let _ = presp
             .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .tip_kbd(t("servers", "clickPing"), "", Side::Top);
+            .tip_kbd(ping_tip, "", Side::Top);
 
         // Players.
         let plr = Rect::from_min_size(
@@ -839,7 +867,8 @@ impl<'a> ServerListRow<'a> {
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .tip_kbd(t("servers", "clickRefreshPlayers"), "", Side::Top);
 
-        // Server: the name and what follows it, the address, version and OS under.
+        // Server: the name and what follows it, the address and (when it matters) the
+        // version under.
         let top_cy = rect.top() + 15.3;
         let bot_cy = rect.top() + 31.7;
         let mut x = cols.server.min;
@@ -944,19 +973,27 @@ impl<'a> ServerListRow<'a> {
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
                     .tip_kbd(&tip, "", Side::Top);
             }
-            let mut x = ar.right() + 8.0;
             if let Some(v) = &l.version {
-                draw(ui.painter(), v, x, bot_cy, tk.fg_faint);
-                x += v.size().x + 8.0;
-            }
-            if !d.environment.is_empty() {
-                let or = Rect::from_min_size(Pos2::new(x, bot_cy - 6.0), Vec2::splat(12.0));
-                os_brand(d.environment).paint(ui.painter(), or, tk.fg_faint);
-                let _ = ui.interact(or, id.with("os"), Sense::hover()).tip_kbd(
-                    os_label(d.environment),
-                    "",
-                    Side::Top,
-                );
+                let x = ar.right() + 8.0;
+                if l.version_other {
+                    draw(ui.painter(), v, x, bot_cy, tk.warn);
+                    let vr = Rect::from_min_size(Pos2::new(x, bot_cy - v.size().y / 2.0), v.size());
+                    let r = ui.interact(vr, id.with("version"), Sense::hover());
+                    if r.hovered() {
+                        let yours = self.game(ui.ctx()).unwrap_or_default();
+                        let _ = r.tip_kbd(
+                            &tf(
+                                "servers",
+                                "versionOther",
+                                &[("version", &d.version), ("yours", &yours)],
+                            ),
+                            "",
+                            Side::Top,
+                        );
+                    }
+                } else {
+                    draw(ui.painter(), v, x, bot_cy, tk.fg_faint);
+                }
             }
         }
 
@@ -1369,6 +1406,22 @@ impl egui::Widget for SortHead<'_> {
             resp.tip_kbd(self.tip, "", Side::Top)
         }
     }
+}
+
+fn game_version_id() -> Id {
+    Id::new("dzch.game_version")
+}
+
+/// Keep the installed game's version where every server row finds it (the app sets it
+/// when the game store learns it).
+pub fn set_game_version(ctx: &egui::Context, v: Option<&str>) {
+    let v: Option<Arc<str>> = v.map(Arc::from);
+    ctx.data_mut(|d| d.insert_temp(game_version_id(), v));
+}
+
+fn installed_version(ctx: &egui::Context) -> Option<Arc<str>> {
+    ctx.data(|d| d.get_temp::<Option<Arc<str>>>(game_version_id()))
+        .flatten()
 }
 
 #[cfg(test)]

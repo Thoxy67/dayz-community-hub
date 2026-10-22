@@ -8,7 +8,7 @@ use egui::{
     Color32, CornerRadius, Rect, Response, Sense, Ui, Vec2, Widget, WidgetInfo, WidgetType,
 };
 
-use super::paint::{self, alpha, fade, lerp};
+use super::paint::{self, alpha, lerp};
 use super::tooltip::{Side, TipExt};
 use crate::icons::Icon;
 use crate::theme::{Tokens, TokensExt, font, fonts::Face, size};
@@ -180,6 +180,27 @@ fn look(
         l.ink = lerp(l.ink, t.err, hover);
     }
     l
+}
+
+/// The colours of a button that cannot be pressed, whatever its variant: no accent, no
+/// glow, a quiet plate and faint ink, so an unavailable primary action never reads as
+/// ready (a dimmed accent still looks like gold to press).
+fn disabled_look(t: &Tokens, v: Variant) -> Look {
+    let clear = Color32::TRANSPARENT;
+    let (fill, border) = match v {
+        Variant::Ghost => (clear, clear),
+        Variant::Danger => (clear, alpha(t.border, 0.8)),
+        Variant::Default | Variant::Accent | Variant::Play => {
+            (alpha(t.raised, 0.35), alpha(t.border, 0.8))
+        }
+    };
+    Look {
+        fill,
+        border,
+        ink: t.fg_faint,
+        glow: None,
+        ring: None,
+    }
 }
 
 /// A button: `Button::new("Refresh").icon(lucide::REFRESH_CW).variant(Variant::Accent)`.
@@ -368,11 +389,12 @@ impl Widget for Button<'_> {
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), sense);
         let label = self.label;
         let checked = self.active;
+        let on = self.enabled;
         resp.widget_info(|| {
             if checked {
-                WidgetInfo::selected(WidgetType::Button, true, true, label)
+                WidgetInfo::selected(WidgetType::Button, on, true, label)
             } else {
-                WidgetInfo::labeled(WidgetType::Button, true, label)
+                WidgetInfo::labeled(WidgetType::Button, on, label)
             }
         });
         if ui.is_rect_visible(rect) {
@@ -383,14 +405,18 @@ impl Widget for Button<'_> {
             } else {
                 self.variant
             };
-            let l = look(
-                &t,
-                v,
-                hover,
-                press,
-                self.chip && self.active,
-                self.danger_hover,
-            );
+            let l = if self.enabled {
+                look(
+                    &t,
+                    v,
+                    hover,
+                    press,
+                    self.chip && self.active,
+                    self.danger_hover,
+                )
+            } else {
+                disabled_look(&t, v)
+            };
             let scale = if press {
                 match s {
                     Size::Icon => 0.96,
@@ -404,11 +430,11 @@ impl Widget for Button<'_> {
             let radius = size::RADIUS_MD;
             let painter = ui.painter();
             let en = self.enabled;
-            if let Some(glow) = l.glow.filter(|_| en) {
+            if let Some(glow) = l.glow {
                 painter.add(glow.as_shape(r, CornerRadius::same(radius)));
             }
-            paint::plate(painter, r, radius, fade(l.fill, en), fade(l.border, en));
-            if let Some(ring) = l.ring.filter(|_| en) {
+            paint::plate(painter, r, radius, l.fill, l.border);
+            if let Some(ring) = l.ring {
                 painter.rect_stroke(
                     r.expand(1.0),
                     CornerRadius::same(radius + 1),
@@ -416,7 +442,7 @@ impl Widget for Button<'_> {
                     egui::StrokeKind::Outside,
                 );
             }
-            let ink = fade(l.ink, en);
+            let ink = l.ink;
             let mut x = if self.start {
                 r.left() + s.pad()
             } else {
@@ -435,7 +461,7 @@ impl Widget for Button<'_> {
                 x += icon_px + gap;
             }
             if let Some(g) = &g {
-                let ink = self.tint.map_or(ink, |c| fade(c, en));
+                let ink = self.tint.filter(|_| en).unwrap_or(ink);
                 let room = (r.right() - s.pad() - x).max(0.0);
                 if g.size().x > room + 0.5 && self.width.is_some() {
                     // A fixed width narrower than the label: lay it out again, cut.
@@ -561,7 +587,8 @@ impl Widget for IconButton<'_> {
         };
         let (rect, resp) = ui.allocate_exact_size(Vec2::splat(h), sense);
         let label = self.label;
-        resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, label));
+        let on = self.enabled;
+        resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, on, label));
         if ui.is_rect_visible(rect) {
             let hover = paint::ease(ui, resp.id.with("hover"), self.enabled && resp.hovered());
             let press = self.enabled && resp.is_pointer_button_down_on();
@@ -570,7 +597,11 @@ impl Widget for IconButton<'_> {
             } else {
                 self.variant
             };
-            let l = look(&t, v, hover, press, false, self.danger_hover);
+            let l = if self.enabled {
+                look(&t, v, hover, press, false, self.danger_hover)
+            } else {
+                disabled_look(&t, v)
+            };
             let scale = if press && self.size == Size::Icon {
                 0.96
             } else {
@@ -578,26 +609,19 @@ impl Widget for IconButton<'_> {
             };
             let r = Rect::from_center_size(rect.center(), rect.size() * scale);
             let painter = ui.painter();
-            let en = self.enabled;
-            if let Some(glow) = l.glow.filter(|_| en) {
+            if let Some(glow) = l.glow {
                 painter.add(glow.as_shape(r, CornerRadius::same(size::RADIUS_MD)));
             }
-            paint::plate(
-                painter,
-                r,
-                size::RADIUS_MD,
-                fade(l.fill, en),
-                fade(l.border, en),
-            );
+            paint::plate(painter, r, size::RADIUS_MD, l.fill, l.border);
             let ink = match self.tint {
-                Some(c) if !self.active && hover < 0.5 => c,
+                Some(c) if self.enabled && !self.active && hover < 0.5 => c,
                 _ => l.ink,
             };
             let px = self.size.icon();
             self.icon.paint(
                 painter,
                 Rect::from_center_size(r.center(), Vec2::splat(px)),
-                fade(ink, en),
+                ink,
             );
             if paint::keyboard_focus(ui, &resp) {
                 paint::focus_ring(painter, r, size::RADIUS_MD, &t);

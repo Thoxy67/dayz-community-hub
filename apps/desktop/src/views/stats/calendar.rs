@@ -2,6 +2,7 @@
 //! dark as the time played on it, in four steps of one hue. ‹ › move the year shown, back
 //! to the first session. The pointer or the keyboard (focus the grid; ←/→ a week, ↑/↓ a
 //! day) picks a day and shows what was played; a click or Enter narrows the history to it.
+//! The days still to come in the last week are outlines, apart from days not played.
 
 use egui::text::{LayoutJob, TextFormat};
 use egui::{CornerRadius, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
@@ -199,10 +200,17 @@ pub fn show(ui: &mut Ui, l: &Loaded, st: &mut StatsState, run: &mut Run) -> Opti
         let radius = CornerRadius::same(2);
         for i in 0..WEEKS * 7 {
             let day = start + i;
-            if day > today {
-                break;
-            }
             let r = cell_rect(day);
+            if day > today {
+                // Not yet: an outline only, so it never reads as a day without play.
+                p.rect_stroke(
+                    r.shrink(0.5),
+                    radius,
+                    Stroke::new(1.0, alpha(tk.border, 0.6)),
+                    StrokeKind::Inside,
+                );
+                continue;
+            }
             p.rect_filled(r, radius, tk.raised);
             let secs = l.derived.by_day.get(&day).map_or(0, |x| x.0);
             let o = OPACITY.get(l.derived.level(secs)).copied().unwrap_or(0.0);

@@ -683,6 +683,9 @@ pub(crate) fn steam_me() -> SteamMeDto {
     }
 }
 
+/// The mock's installed game: the version its servers run.
+pub(crate) const GAME_VERSION: &str = "1.28.162391";
+
 pub(crate) fn battleye() -> BattlEyeStatus {
     BattlEyeStatus {
         state: BattlEyeState::Ready,
