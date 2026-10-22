@@ -369,12 +369,11 @@ fn articles(now: i64) -> Vec<ArticleDto> {
                 "Survivors, a new update brings changes to vehicles, base building and the economy across every map."
                     .to_string(),
             ),
-            content_text: "Lorem ipsum dolor sit amet.".to_string(),
-            content_html: "<p>Survivors, a new update brings changes to vehicles, base building and the economy.</p><h2>Vehicles</h2><p>Handling was reworked on every terrain type.</p>".to_string(),
             date: super::iso(now_ms - i as i64 * DAY * 1000 * 9),
             url: "https://dayz.com/article/updates/stable-update".to_string(),
             image_url: None,
             category: Some(if i % 2 == 1 { "Status Report" } else { "Updates" }.to_string()),
+            category_code: Some(if i % 2 == 1 { "status-report" } else { "updates" }.to_string()),
             author: Some("Bohemia Interactive".to_string()),
         })
         .collect()

@@ -1,149 +1,59 @@
-//! The dayz.com news feed.
+//! The dayz.com news: the articles, and each one's body and patch notes.
+//!
+//! dayz.com is a React Router site. Its pages' data is served at the same address with
+//! `.data` added, as a turbo-stream ([`turbo`]): `/news.data?page=N` lists ten articles
+//! a page (no bodies), `/article/<category>/<slug>.data` holds one article: its body as
+//! HTML and, for an update, the patch notes of each platform as tiptap documents
+//! ([`tiptap`]). Every request goes through one browser-shaped HTTPS exchange that
+//! Cloudflare lets through ([`get`]).
 
-use dz_common::Result;
-use regex::Regex;
-use serde::Deserialize;
-use std::sync::OnceLock;
+pub mod tiptap;
+pub mod turbo;
 
-/// TTL for the news cache in seconds (1 hour, matching the bash script's default).
-pub const NEWS_CACHE_TTL_SECS: u64 = 3600;
+use dz_common::{Error, Result};
+use serde_json::Value;
 
-/// A single DayZ news article.
-#[derive(Debug, Clone, Deserialize)]
+/// How many pages of ten articles the list reads.
+pub const PAGES: u32 = 5;
+
+/// One article of the list.
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Article {
-    pub id: u64,
-    pub title: String,
+    pub id: String,
     pub slug: String,
+    pub title: String,
+    /// The lead (`intro_text`, else the description dayz.com gives search engines).
     pub excerpt: Option<String>,
-    pub content: Option<String>,
-    pub version: Option<String>,
-    /// Hero image filename (e.g. "0OGKO3k.jpeg") served from /app-static/uploads/article/{id}/
-    pub image: Option<String>,
-    /// ISO 8601 publish date from the API, e.g. "2026-02-05T00:30:00.000Z"
+    pub image_url: Option<String>,
+    /// ISO 8601, e.g. "2026-10-15T10:00:00.000Z".
     pub published_at: Option<String>,
-    #[serde(rename = "ArticleCategory")]
-    pub category: Option<ArticleCategory>,
-    #[serde(rename = "Author")]
-    pub author: Option<ArticleAuthor>,
+    pub category: Option<Category>,
 }
 
-// Regexes for HTML stripping — compiled once.
-static RE_BLOCK: OnceLock<Regex> = OnceLock::new();
-static RE_TAG: OnceLock<Regex> = OnceLock::new();
-static RE_ENTITY: OnceLock<Regex> = OnceLock::new();
-static RE_BLANK: OnceLock<Regex> = OnceLock::new();
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Category {
+    /// In the address (`game-update`, `Dev-blogs`).
+    pub code: String,
+    /// As shown (`Game Update`).
+    pub title: String,
+}
+
+/// An article's body.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ArticleBody {
+    pub html: String,
+    /// An update's patch notes, one per platform, as HTML.
+    pub notes: Vec<PatchNotes>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PatchNotes {
+    /// `Steam`, `Xbox/Microsoft Store`, `PlayStation`.
+    pub platform: String,
+    pub html: String,
+}
 
 impl Article {
-    /// Return the raw HTML content with `<app-picture>` custom elements replaced
-    /// by standard `<img>` tags pointing to dayz.com's CDN at 640 px webp.
-    pub fn content_html(&self) -> String {
-        let html = match self.content.as_deref() {
-            Some(h) if !h.is_empty() => h,
-            _ => return String::new(),
-        };
-        // Match the full opening tag so we can extract all attributes.
-        static RE_PIC: OnceLock<Regex> = OnceLock::new();
-        static RE_CODE: OnceLock<Regex> = OnceLock::new();
-        static RE_SIZES: OnceLock<Regex> = OnceLock::new();
-        static RE_FMTS: OnceLock<Regex> = OnceLock::new();
-        let re = RE_PIC.get_or_init(|| {
-            Regex::new(r#"<app-picture[^>]*\bcode="[^"]+"[^>]*>\s*</app-picture>"#).unwrap()
-        });
-        let re_code = RE_CODE.get_or_init(|| Regex::new(r#"\bcode="([^"]+)""#).unwrap());
-        let re_sizes = RE_SIZES.get_or_init(|| Regex::new(r#"\bthumb-sizes="([^"]+)""#).unwrap());
-        let re_fmts = RE_FMTS.get_or_init(|| Regex::new(r#"\bthumb-formats="([^"]+)""#).unwrap());
-
-        re.replace_all(html, |caps: &regex::Captures| {
-            let tag = caps.get(0).map_or("", |m| m.as_str());
-
-            let code = match re_code.captures(tag).and_then(|c| c.get(1)) {
-                Some(m) => m.as_str(),
-                None => return String::new(),
-            };
-
-            // Parse available sizes (comma-separated, descending) — pick largest for
-            // full-size and the closest to 640 for the inline display version.
-            let sizes_str = re_sizes.captures(tag)
-                .and_then(|c| c.get(1))
-                .map_or("640", |m| m.as_str());
-            let mut sizes: Vec<u32> = sizes_str
-                .split(',')
-                .filter_map(|s| s.trim().parse().ok())
-                .collect();
-            sizes.sort_unstable();
-
-            let display_size = sizes.iter().find(|&&s| s >= 640).copied()
-                .or_else(|| sizes.last().copied())
-                .unwrap_or(640);
-
-            // Prefer webp for inline display (smaller); use original format
-            // (first listed, typically png/jpeg) without size suffix for the
-            // full-resolution lightbox version.
-            let fmts_str = re_fmts.captures(tag)
-                .and_then(|c| c.get(1))
-                .map_or("webp", |m| m.as_str());
-            let display_ext = if fmts_str.split(',').any(|f| f.trim() == "webp") {
-                "webp"
-            } else {
-                fmts_str.split(',').next().unwrap_or("webp").trim()
-            };
-            // Original format is the first listed (e.g. "png" in "png,webp").
-            let original_ext = fmts_str.split(',').next().unwrap_or("png").trim();
-
-            format!(
-                r#"<img src="https://dayz.com/app-static/uploads/{code}_{display_size}.{display_ext}" data-full="https://dayz.com/app-static/uploads/{code}.{original_ext}" alt="" loading="lazy" />"#
-            )
-        })
-        .into_owned()
-    }
-
-    /// Strip HTML tags and decode common entities, returning plain text
-    /// suitable for display in the TUI detail panel.
-    pub fn html_to_text(&self) -> String {
-        let html = match self.content.as_deref() {
-            Some(h) if !h.is_empty() => h,
-            _ => return String::new(),
-        };
-
-        // Replace block-level tags with newlines so paragraphs are preserved.
-        let block_re = RE_BLOCK.get_or_init(|| {
-            Regex::new(r"(?i)</?(p|br|div|h[1-6]|li|tr|blockquote)[^>]*>").unwrap()
-        });
-        let text = block_re.replace_all(html, "\n");
-
-        // Drop all remaining tags (inline, custom, etc.)
-        let tag_re = RE_TAG.get_or_init(|| Regex::new(r"<[^>]+>").unwrap());
-        let text = tag_re.replace_all(&text, "");
-
-        // Decode common HTML entities.
-        let entity_re = RE_ENTITY
-            .get_or_init(|| Regex::new(r"&(amp|lt|gt|quot|apos|nbsp|ndash|mdash|#\d+);").unwrap());
-        let text = entity_re.replace_all(&text, |caps: &regex::Captures| {
-            match &caps[1] {
-                "amp" => "&",
-                "lt" => "<",
-                "gt" => ">",
-                "quot" => "\"",
-                "apos" => "'",
-                "nbsp" => " ",
-                "ndash" => "–",
-                "mdash" => "—",
-                s if s.starts_with('#') => {
-                    // numeric entity — just drop it for now
-                    ""
-                }
-                _ => "",
-            }
-            .to_string()
-        });
-
-        // Collapse runs of blank lines to a single blank line.
-        let blank_re = RE_BLANK.get_or_init(|| Regex::new(r"\n{3,}").unwrap());
-        let text = blank_re.replace_all(&text, "\n\n");
-
-        text.trim().to_string()
-    }
-
     /// Returns the date portion of `published_at` as "YYYY-MM-DD", or empty string.
     pub fn date(&self) -> &str {
         self.published_at
@@ -152,51 +62,102 @@ impl Article {
             .unwrap_or("")
     }
 
-    /// Build the full URL to the article on dayz.com.
-    /// Spaces in slugs (malformed API data) are percent-encoded.
+    /// The article on dayz.com.
     pub fn url(&self) -> String {
-        let cat = self
-            .category
-            .as_ref()
-            .map(|c| c.slug.as_str())
-            .unwrap_or("news");
-        let slug = self.slug.replace(' ', "%20");
-        format!("https://dayz.com/article/{cat}/{slug}")
+        let cat = self.category.as_ref().map_or("news", |c| c.code.as_str());
+        format!("https://dayz.com{}", article_path(cat, &self.slug))
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct ArticleCategory {
-    pub name: String,
-    pub slug: String,
+/// `/article/<category>/<slug>`, each part percent-encoded.
+fn article_path(category: &str, slug: &str) -> String {
+    format!("/article/{}/{}", encode(category), encode(slug))
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct ArticleAuthor {
-    pub name: String,
-    pub role: Option<String>,
+fn encode(part: &str) -> String {
+    let mut out = String::with_capacity(part.len());
+    for b in part.bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
+            out.push(char::from(b));
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
 }
 
-/// Response envelope from `https://dayz.com/api/article`.
-#[derive(Debug, Deserialize)]
-pub struct NewsResponse {
-    pub rows: Vec<Article>,
+fn string(v: &Value, key: &str) -> Option<String> {
+    v.get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
 }
 
-/// The dayz.com news API endpoint (without query string).
-pub const NEWS_API_URL: &str = "https://dayz.com/api/article";
+/// A route's loader data in a decoded `.data` answer.
+fn route<'a>(data: &'a Value, id: &str) -> Option<&'a Value> {
+    data.get(id)?.get("data")
+}
 
-/// Parse the news API response body into a list of articles.
-/// Shared by the direct (`reqwest`) fetch and the WebView fallback, which both
-/// receive the same JSON payload from `…/api/article`.
-pub fn parse_news_json(body: &str) -> Result<Vec<Article>> {
-    let resp: NewsResponse = serde_json::from_str(body)?;
-    Ok(resp.rows)
+fn article(v: &Value) -> Option<Article> {
+    Some(Article {
+        id: string(v, "id")?,
+        slug: string(v, "slug")?,
+        title: string(v, "title")?,
+        excerpt: string(v, "intro_text").or_else(|| string(v, "seoDescription")),
+        image_url: string(v, "preview_image_url").or_else(|| string(v, "image")),
+        published_at: string(v, "published_at"),
+        category: v.get("category").and_then(|c| {
+            Some(Category {
+                code: string(c, "code")?,
+                title: string(c, "title").or_else(|| string(c, "code"))?,
+            })
+        }),
+    })
+}
+
+/// The articles of one `/news.data` page.
+pub fn parse_news_page(stream: &str) -> Result<Vec<Article>> {
+    let data = turbo::decode(stream).ok_or_else(|| Error::Other("not a dayz.com page".into()))?;
+    let list = route(&data, "routes/news/route")
+        .and_then(|r| r.get("articles"))
+        .and_then(Value::as_array)
+        .ok_or_else(|| Error::Other("dayz.com's news page has no articles".into()))?;
+    Ok(list.iter().filter_map(article).collect())
+}
+
+/// One article's body, from its `.data` answer.
+pub fn parse_article(stream: &str) -> Result<ArticleBody> {
+    let data = turbo::decode(stream).ok_or_else(|| Error::Other("not a dayz.com page".into()))?;
+    let r = route(&data, "routes/article/$category/$slug/route")
+        .ok_or_else(|| Error::Other("dayz.com has no such article".into()))?;
+    let html = string(r, "bodyHtml").unwrap_or_default();
+    let notes = r
+        .get("article")
+        .and_then(|a| a.get("changelogs"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|c| {
+            let platform = c
+                .get("platforms")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|p| string(p, "title"))
+                .collect::<Vec<_>>()
+                .join(" · ");
+            let doc: Value = serde_json::from_str(c.get("content")?.as_str()?).ok()?;
+            let html = tiptap::to_html(&doc);
+            (!html.is_empty()).then_some(PatchNotes { platform, html })
+        })
+        .collect();
+    Ok(ArticleBody { html, notes })
 }
 
 /// Heuristic: does this response body look like a Cloudflare bot-protection
-/// challenge page rather than the JSON API payload? dayz.com now serves the
-/// "Just a moment…" managed challenge to non-browser clients.
+/// challenge page rather than the page's data? dayz.com serves the
+/// "Just a moment…" managed challenge to clients it does not trust.
 pub fn looks_like_cloudflare_challenge(body: &str) -> bool {
     // `get` returns None on a non-char-boundary index, so this never panics on
     // a multi-byte body — unlike slicing with `&body[..n]`.
@@ -209,11 +170,11 @@ pub fn looks_like_cloudflare_challenge(body: &str) -> bool {
 
 const NEWS_HOST: &str = "dayz.com";
 /// Browser User-Agent presented to dayz.com. Must look like a real browser for
-/// Cloudflare to serve the API instead of a challenge.
+/// Cloudflare to serve the data instead of a challenge.
 const NEWS_USER_AGENT: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0";
 
-/// Issue the news request over a raw, browser-shaped HTTPS/1.1 connection and
+/// GET `path` on dayz.com over a raw, browser-shaped HTTPS/1.1 connection and
 /// return `(status, body)`.
 ///
 /// Why not `reqwest`? dayz.com's Cloudflare bot filter rejects this endpoint
@@ -232,19 +193,19 @@ const NEWS_USER_AGENT: &str =
 /// 3. **Navigation headers** — `Accept: text/html` + `Sec-Fetch-Mode: navigate`
 ///    make the request look like a top-level page load rather than an XHR/API
 ///    call (which is what gets challenged).
-async fn fetch_news_raw() -> Result<(u16, String)> {
+async fn get(path: &str) -> Result<(u16, String)> {
     use bytes::Bytes;
     use http_body_util::{BodyExt, Empty};
     use hyper_util::rt::TokioIo;
     use std::sync::Arc;
     use tokio_rustls::rustls::{ClientConfig, RootCertStore, pki_types::ServerName};
 
-    let err = |ctx: &str, e: String| dz_common::Error::Other(format!("news fetch {ctx}: {e}"));
+    let err = |ctx: &str, e: String| Error::Other(format!("news fetch {ctx}: {e}"));
 
     // rustls with the aws-lc-rs (BoringSSL) provider: its ClientHello matches a
     // Chrome-like fingerprint that Cloudflare accepts (the `ring` provider is
     // reliably challenged). Pin the provider explicitly so we never depend on a
-    // process-wide default that other crates (tauri, reqwest) might leave unset.
+    // process-wide default that other crates (reqwest) might leave unset.
     let roots = RootCertStore {
         roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
     };
@@ -285,7 +246,7 @@ async fn fetch_news_raw() -> Result<(u16, String)> {
     // that actually defeat the challenge are `Accept: text/html` and
     // `Sec-Fetch-Mode: navigate`; the rest round out the browser fingerprint.
     let req = hyper::Request::builder()
-        .uri("/api/article?rowsPerPage=50")
+        .uri(path)
         .header("Host", NEWS_HOST)
         .header("User-Agent", NEWS_USER_AGENT)
         .header(
@@ -316,46 +277,141 @@ async fn fetch_news_raw() -> Result<(u16, String)> {
     Ok((status, String::from_utf8_lossy(&body).into_owned()))
 }
 
-/// Fetch the latest DayZ news articles.
-///
-/// Performs a single browser-shaped HTTPS request (see [`fetch_news_raw`]) and
-/// parses the JSON payload. If Cloudflare ever changes the rules and serves a
-/// challenge page instead, we surface [`Error::CloudflareChallenge`] so the
-/// caller can fall back to a real WebView.
-pub async fn fetch_news() -> Result<Vec<Article>> {
-    // The whole exchange (connect, TLS, request, body) is bounded: a site that
-    // stops answering must not leave the news tab loading forever.
-    let (status, body) = tokio::time::timeout(std::time::Duration::from_secs(20), fetch_news_raw())
+/// `path` on dayz.com, parsed by `parse`; a challenge or refusal is
+/// [`Error::CloudflareChallenge`]. The whole exchange is bounded: a site that stops
+/// answering must not leave the news loading forever.
+async fn fetch<T>(path: &str, parse: impl FnOnce(&str) -> Result<T>) -> Result<T> {
+    let (status, body) = tokio::time::timeout(std::time::Duration::from_secs(20), get(path))
         .await
-        .map_err(|_| dz_common::Error::Other("dayz.com did not answer in time".into()))??;
-    match parse_news_json(&body) {
-        Ok(rows) => Ok(rows),
-        Err(e) => {
-            if status == 403 || status == 503 || looks_like_cloudflare_challenge(&body) {
-                Err(dz_common::Error::CloudflareChallenge)
+        .map_err(|_| Error::Other("dayz.com did not answer in time".into()))??;
+    if status == 403 || status == 503 || looks_like_cloudflare_challenge(&body) {
+        return Err(Error::CloudflareChallenge);
+    }
+    if status == 404 {
+        return Err(Error::Other(format!("dayz.com has no {path}")));
+    }
+    if !(200..300).contains(&status) {
+        return Err(Error::Other(format!(
+            "dayz.com answered {status} for {path}"
+        )));
+    }
+    parse(&body)
+}
+
+/// The latest articles, newest first: [`PAGES`] pages read at once. The first page
+/// must come; a later one that fails only shortens the list.
+pub async fn fetch_news() -> Result<Vec<Article>> {
+    let mut pages = tokio::task::JoinSet::new();
+    for page in 1..=PAGES {
+        pages.spawn(async move {
+            let path = if page == 1 {
+                "/news.data".to_owned()
             } else {
-                Err(e)
-            }
+                format!("/news.data?page={page}")
+            };
+            (page, fetch(&path, parse_news_page).await)
+        });
+    }
+    let mut got: Vec<(u32, Vec<Article>)> = Vec::new();
+    while let Some(done) = pages.join_next().await {
+        let Ok((page, result)) = done else { continue };
+        match result {
+            Ok(list) => got.push((page, list)),
+            Err(e) if page == 1 => return Err(e),
+            Err(_) => {}
         }
     }
+    got.sort_by_key(|(page, _)| *page);
+    let mut seen = std::collections::HashSet::new();
+    Ok(got
+        .into_iter()
+        .flat_map(|(_, list)| list)
+        .filter(|a| seen.insert(a.id.clone()))
+        .collect())
+}
+
+/// One article's body and patch notes.
+pub async fn fetch_article(category: &str, slug: &str) -> Result<ArticleBody> {
+    let path = format!("{}.data", article_path(category, slug));
+    fetch(&path, parse_article).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Live check that the navigation-header trick still bypasses Cloudflare and
-    /// returns parseable JSON. Network-dependent, so ignored by default. Run with:
-    /// cargo test -p dz-news -- tests::test_live_fetch --ignored --nocapture
+    const PAGE: &str = include_str!("../tests/news.data");
+
+    #[test]
+    fn a_news_page_lists_its_articles() {
+        let list = parse_news_page(PAGE).unwrap();
+        assert_eq!(list.len(), 10);
+        let a = &list[0];
+        assert_eq!(a.title, "DayZ Badlands is Out Now!");
+        assert_eq!(a.date(), "2026-10-15");
+        assert_eq!(
+            a.url(),
+            "https://dayz.com/article/game-update/dayz-badlands-out-now"
+        );
+        assert!(
+            a.image_url
+                .as_deref()
+                .is_some_and(|u| u.starts_with("https://files.bistudio.com/"))
+        );
+        assert!(
+            a.excerpt
+                .as_deref()
+                .is_some_and(|e| e.starts_with("Dear Survivors"))
+        );
+        assert_eq!(
+            a.category.as_ref().map(|c| c.title.as_str()),
+            Some("Game Update")
+        );
+    }
+
+    #[test]
+    fn an_article_has_its_body_and_notes() {
+        let stream = r#"[{"_1":2},"routes/article/$category/$slug/route",{"_3":4},"data",{"_5":6,"_7":8},"bodyHtml","<p>Hi</p>","article",{"_9":10},"changelogs",[11],{"_12":13,"_14":15},"content","{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Fixed\"}]}]}","platforms",[16],{"_17":18},"title","Steam"]"#;
+        let b = parse_article(stream).unwrap();
+        assert_eq!(b.html, "<p>Hi</p>");
+        assert_eq!(
+            b.notes,
+            [PatchNotes {
+                platform: "Steam".into(),
+                html: "<p>Fixed</p>".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn pages_that_are_not_news_are_errors() {
+        assert!(parse_news_page("<!DOCTYPE html><title>404 | DayZ</title>").is_err());
+        assert!(parse_article("[{}]").is_err());
+    }
+
+    #[test]
+    fn addresses_are_encoded() {
+        assert_eq!(article_path("a b", "x/y?"), "/article/a%20b/x%2Fy%3F");
+    }
+
+    /// Live check that the browser-shaped request still gets through Cloudflare and that
+    /// the pages still read. Network-dependent, so ignored by default. Run with:
+    /// cargo test -p dz-news -- tests::live --ignored --nocapture
     #[tokio::test]
     #[ignore = "reaches dayz.com"]
-    async fn test_live_fetch() {
-        match fetch_news().await {
-            Ok(rows) => {
-                println!("fetched {} articles", rows.len());
-                assert!(!rows.is_empty(), "expected at least one article");
-            }
-            Err(e) => panic!("fetch_news failed: {e:?}"),
-        }
+    async fn live() {
+        let list = fetch_news().await.unwrap();
+        println!("fetched {} articles", list.len());
+        assert!(list.len() > 10, "more than one page");
+        let a = &list[0];
+        let cat = a.category.as_ref().map_or("news", |c| c.code.as_str());
+        let body = fetch_article(cat, &a.slug).await.unwrap();
+        println!(
+            "{}: {} bytes, {} notes",
+            a.title,
+            body.html.len(),
+            body.notes.len()
+        );
+        assert!(!body.html.is_empty());
     }
 }

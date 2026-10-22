@@ -78,3 +78,17 @@ pub(crate) fn dayz_cdn() -> &'static Client {
         )
     })
 }
+
+/// Pictures from the rest of the web (an article's pictures and videos): checked
+/// certificates, a browser's name, short limits.
+pub(crate) fn pictures() -> &'static Client {
+    static C: OnceLock<Client> = OnceLock::new();
+    C.get_or_init(|| {
+        build(
+            Client::builder()
+                .user_agent(BROWSER_AGENT)
+                .connect_timeout(Duration::from_secs(10))
+                .timeout(Duration::from_secs(30)),
+        )
+    })
+}

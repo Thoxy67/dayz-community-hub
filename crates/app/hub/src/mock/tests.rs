@@ -159,6 +159,13 @@ async fn a_mock_hub_answers_as_mock_ts_did() {
     let news = hub.fetch_news().await.unwrap();
     assert_eq!(news.len(), 8);
     assert_eq!(news[0].title, "Update 1.28 is live");
+    let body = hub
+        .fetch_article("updates".into(), news[0].slug.clone())
+        .await
+        .unwrap();
+    assert!(body.html.contains("<h2>Vehicles</h2>"));
+    assert_eq!(body.notes.len(), 2);
+    assert!(hub.fetch_article("x".into(), "nope".into()).await.is_err());
 
     // Fixtures for what would leave the machine.
     assert_eq!(hub.steam_friends(false).await.unwrap().friends.len(), 10);

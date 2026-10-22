@@ -46,9 +46,23 @@ fn url_to_cache_filename(url: &str) -> String {
     format!("{hash}.{ext}")
 }
 
+/// Whether `url` is on dayz.com, whose certificate fails validation: only its
+/// pictures go through the client that does not check.
+fn on_dayz(url: &str) -> bool {
+    let rest = url.split_once("://").map_or(url, |(_, r)| r);
+    let host = rest
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or("")
+        .rsplit('@')
+        .next()
+        .unwrap_or("");
+    let host = host.split(':').next().unwrap_or("").to_ascii_lowercase();
+    host == "dayz.com" || host.ends_with(".dayz.com")
+}
+
 impl Hub {
-    /// Fetch an image URL through Rust (bypasses WebKit TLS cert validation),
-    /// cache it to disk, and return the cached file's path.
+    /// Fetch an image URL, cache it to disk, and return the cached file's path.
     pub async fn fetch_image(&self, url: String) -> Result<PathBuf, String> {
         mocked!(self, w => w.news_image(&url).await);
         let cache_dir = image_cache_dir().await?;
@@ -62,9 +76,12 @@ impl Hub {
         if !(url.starts_with("https://") || url.starts_with("http://")) {
             return Err(format!("Not a web image: {url}"));
         }
-        let resp = send_ok(crate::net::dayz_cdn().get(&url))
-            .await
-            .http_err("Image download")?;
+        let client = if on_dayz(&url) {
+            crate::net::dayz_cdn()
+        } else {
+            crate::net::pictures()
+        };
+        let resp = send_ok(client.get(&url)).await.http_err("Image download")?;
         // An image, not the error page some CDNs answer with a 200.
         if let Some(ct) = resp.headers().get(reqwest::header::CONTENT_TYPE)
             && !ct.to_str().unwrap_or("").starts_with("image/")
@@ -102,5 +119,20 @@ impl Hub {
         })
         .await
         .cmd_err()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::on_dayz;
+
+    #[test]
+    fn only_dayz_skips_certificates() {
+        assert!(on_dayz("https://dayz.com/app-static/a.png"));
+        assert!(on_dayz("https://cdn.DayZ.com:443/a.png"));
+        assert!(!on_dayz("https://files.bistudio.com/public/x"));
+        assert!(!on_dayz("https://evil.com/dayz.com"));
+        assert!(!on_dayz("https://dayz.com@evil.com/a.png"));
+        assert!(!on_dayz("https://notdayz.com/a.png"));
     }
 }

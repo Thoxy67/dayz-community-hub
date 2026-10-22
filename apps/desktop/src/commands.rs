@@ -2828,6 +2828,18 @@ pub static COMMANDS: &[CommandSpec] = &[
         crate::views::news::cmd_zoom_image
     ),
     cmd!(
+        "news.retry_article",
+        ("news", "retry"),
+        "news",
+        crate::views::news::cmd_retry_article
+    ),
+    cmd!(
+        "news.patch_notes",
+        ("news", "patchNotes"),
+        "news",
+        crate::views::news::cmd_patch_notes
+    ),
+    cmd!(
         "news.close_lightbox",
         ("news", "close"),
         "news",

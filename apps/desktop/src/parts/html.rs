@@ -1,10 +1,13 @@
 //! `SafeHtml`: somebody else's article in the app's type (`prose.css`). The HTML is read
 //! once into [`HtmlDoc`] blocks, which is the sanitising: scripts, styles, frames, forms and
 //! everything but text, headings, paragraphs, lists, quotes, code, rules, links and
-//! pictures are dropped, and a link is kept only when it resolves to http(s). Drawing it
-//! answers what was clicked: a link to open in the system browser, a picture to enlarge.
+//! pictures are dropped, and a link is kept only when it resolves to http(s). A YouTube
+//! frame becomes its video's picture, a link to the video. Drawing it answers what was
+//! clicked: a link to open in the system browser, a picture to enlarge. Blocks out of
+//! sight are not laid out: their height from the last time they were is skipped.
 
 use std::ops::Range;
+use std::sync::Arc;
 
 use egui::text::LayoutJob;
 use egui::{
@@ -39,7 +42,33 @@ pub enum Block {
         src: String,
         full: String,
     },
+    /// A YouTube video, by id.
+    Video(String),
     Rule,
+}
+
+/// A YouTube video's picture.
+pub fn video_thumb(id: &str) -> String {
+    format!("https://i.ytimg.com/vi/{id}/hqdefault.jpg")
+}
+
+/// A YouTube video's page.
+pub fn video_url(id: &str) -> String {
+    format!("https://www.youtube.com/watch?v={id}")
+}
+
+/// The id of the video a YouTube embed address plays.
+fn youtube_id(src: &str) -> Option<String> {
+    let rest = src.trim().split_once("://").map_or(src, |(_, r)| r);
+    let rest = rest.strip_prefix("www.").unwrap_or(rest);
+    let id = rest
+        .strip_prefix("youtube.com/embed/")
+        .or_else(|| rest.strip_prefix("youtube-nocookie.com/embed/"))?;
+    let id: String = id
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .collect();
+    (6..=32).contains(&id.len()).then_some(id)
 }
 
 /// An article read and made safe, once (`HtmlDoc::parse`), drawn every frame.
@@ -317,10 +346,11 @@ impl Builder {
             first.text = t;
         }
         spans.retain(|s| !s.text.is_empty());
-        let kind = self.kind.take();
         if spans.is_empty() {
+            // Nothing written yet: the block keeps its kind (`<li><p>…`).
             return;
         }
+        let kind = self.kind.take();
         let block = match kind {
             Some(Block::Heading(l, _)) => Block::Heading(l, spans),
             Some(Block::Item(m, d, _)) => Block::Item(m, d, spans),
@@ -419,9 +449,14 @@ impl Builder {
             "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
                 self.flush();
                 self.heading = None;
+                self.kind = None;
             }
             "p" | "div" | "section" | "article" | "header" | "footer" | "figure" | "figcaption"
-            | "tr" | "table" | "li" | "dl" | "dt" | "dd" | "main" | "aside" | "nav" => self.flush(),
+            | "tr" | "table" | "dl" | "dt" | "dd" | "main" | "aside" | "nav" => self.flush(),
+            "li" => {
+                self.flush();
+                self.kind = None;
+            }
             "ul" | "ol" => {
                 self.flush();
                 self.lists.pop();
@@ -497,6 +532,17 @@ impl HtmlDoc {
             if closing {
                 b.close(&name);
             } else if DROP.contains(&name.as_str()) {
+                if name == "iframe" {
+                    let a = attrs(body);
+                    if let Some(id) = a
+                        .iter()
+                        .find(|(n, _)| n == "src")
+                        .and_then(|(_, v)| youtube_id(v))
+                    {
+                        b.flush();
+                        b.doc.blocks.push(Block::Video(id));
+                    }
+                }
                 if !inside.ends_with('/') {
                     drop_until = Some(name);
                 }
@@ -516,12 +562,37 @@ impl HtmlDoc {
         b.doc
     }
 
-    /// Every picture's source, for the caller to fetch and cache before they are drawn.
-    pub fn images(&self) -> impl Iterator<Item = &str> {
+    /// Every picture's source, for the caller to fetch and cache before they are drawn
+    /// (a video's picture included).
+    pub fn images(&self) -> impl Iterator<Item = String> + '_ {
         self.blocks.iter().filter_map(|b| match b {
-            Block::Image { src, .. } => Some(src.as_str()),
+            Block::Image { src, .. } => Some(src.clone()),
+            Block::Video(id) => Some(video_thumb(id)),
             _ => None,
         })
+    }
+
+    /// How many words the text has.
+    pub fn words(&self) -> usize {
+        // Over the block's whole text: a word can run across spans (`<b>rel</b>.`).
+        let count = |spans: &[Span]| {
+            spans
+                .iter()
+                .map(|s| s.text.as_str())
+                .collect::<String>()
+                .split_whitespace()
+                .count()
+        };
+        self.blocks
+            .iter()
+            .map(|b| match b {
+                Block::Heading(_, s) | Block::Para(s) | Block::Item(_, _, s) | Block::Quote(s) => {
+                    count(s)
+                }
+                Block::Pre(t) => t.split_whitespace().count(),
+                _ => 0,
+            })
+            .sum()
     }
 }
 
@@ -608,6 +679,19 @@ impl<'a> SafeHtml<'a> {
         ui.spacing_mut().item_spacing.y = 0.0;
         let mut prev_gap = 0.0_f32;
         let mut first = true;
+        let mut after_list = false;
+        // Each block's height at this width, the last time it was laid out.
+        let key = ui.id().with((
+            "html-heights",
+            std::ptr::from_ref(self.doc) as usize,
+            w.round() as i32,
+        ));
+        let mut heights: Vec<f32> = ui
+            .data(|d| d.get_temp::<Arc<Vec<f32>>>(key))
+            .map(|h| h.as_ref().clone())
+            .unwrap_or_default();
+        heights.resize(self.doc.blocks.len(), 0.0);
+        let clip = ui.clip_rect();
         for (bi, block) in self.doc.blocks.iter().enumerate() {
             // CSS margins collapse: the larger of the two between blocks.
             let (top, bottom) = match block {
@@ -618,14 +702,28 @@ impl<'a> SafeHtml<'a> {
                 Block::Para(_) | Block::Pre(_) => (0.0, BODY),
                 Block::Item(..) => (0.25 * BODY, 0.25 * BODY),
                 Block::Quote(_) => (BODY, BODY),
-                Block::Image { .. } => (1.2 * BODY, 1.2 * BODY),
+                Block::Image { .. } | Block::Video(_) => (1.2 * BODY, 1.2 * BODY),
                 Block::Rule => (2.0 * BODY, 2.0 * BODY),
             };
+            // A list ends with its own margin (`ul { margin-bottom }`).
+            let is_item = matches!(block, Block::Item(..));
+            let top = if after_list && !is_item {
+                top.max(BODY)
+            } else {
+                top
+            };
+            after_list = is_item;
             if !first {
                 ui.add_space(prev_gap.max(top));
             }
             first = false;
             prev_gap = bottom;
+            let start = ui.cursor().top();
+            let known = heights.get(bi).copied().unwrap_or(0.0);
+            if known > 0.0 && (start > clip.bottom() || start + known < clip.top()) {
+                ui.add_space(known);
+                continue;
+            }
             let id = ui.id().with(("html-block", bi));
             match block {
                 Block::Heading(l, spans) => {
@@ -772,13 +870,22 @@ impl<'a> SafeHtml<'a> {
                         }
                     }
                 }
+                Block::Video(vid) => {
+                    if let Some(a) = video(ui, &tk, w, vid, resolve(&video_thumb(vid))) {
+                        out = Some(a);
+                    }
+                }
                 Block::Rule => {
                     let (r, _) = ui.allocate_exact_size(Vec2::new(w, 1.0), Sense::hover());
                     ui.painter()
                         .hline(r.x_range(), r.top() + 0.5, Stroke::new(1.0, tk.border));
                 }
             }
+            if let Some(h) = heights.get_mut(bi) {
+                *h = (ui.cursor().top() - start).max(0.0);
+            }
         }
+        ui.data_mut(|d| d.insert_temp(key, Arc::new(heights)));
         out
     }
 
@@ -822,6 +929,50 @@ impl<'a> SafeHtml<'a> {
         }
         out
     }
+}
+
+/// A video as its picture (16:9, the letterbox of YouTube's 4:3 picture cut off), a play
+/// mark over it; a click opens it on YouTube.
+fn video(
+    ui: &mut Ui,
+    tk: &Tokens,
+    w: f32,
+    id: &str,
+    thumb: Option<egui::ImageSource<'static>>,
+) -> Option<HtmlAction> {
+    let (r, resp) = ui.allocate_exact_size(Vec2::new(w, w * 9.0 / 16.0), Sense::click());
+    let radius = CornerRadius::same(size::RADIUS_MD);
+    ui.painter().rect_filled(r, radius, tk.plot);
+    if let Some(src) = thumb {
+        egui::Image::new(src)
+            .uv(Rect::from_min_max(
+                Pos2::new(0.0, 0.125),
+                Pos2::new(1.0, 0.875),
+            ))
+            .corner_radius(radius)
+            .paint_at(ui, r);
+    }
+    let hover = resp.hovered();
+    ui.painter().rect_filled(
+        r,
+        radius,
+        crate::kit::paint::alpha(tk.scrim, if hover { 0.15 } else { 0.3 }),
+    );
+    let c = r.center();
+    ui.painter()
+        .circle_filled(c, if hover { 30.0 } else { 28.0 }, tk.accent);
+    crate::icons::lucide::PLAY.paint(
+        ui.painter(),
+        Rect::from_center_size(c + Vec2::new(2.0, 0.0), Vec2::splat(24.0)),
+        tk.accent_fg,
+    );
+    ui.painter()
+        .rect_stroke(r, radius, Stroke::new(1.0, tk.border), StrokeKind::Inside);
+    let resp = crate::kit::TipExt::tip(
+        resp.on_hover_cursor(egui::CursorIcon::PointingHand),
+        crate::i18n::t("news", "watchVideo"),
+    );
+    resp.clicked().then(|| HtmlAction::Open(video_url(id)))
 }
 
 fn heading_size(l: u8) -> f32 {
@@ -870,6 +1021,46 @@ mod tests {
         assert!(matches!(&d.blocks[5], Block::Item(Some(1), 1, _)));
         assert!(matches!(d.blocks.last(), Some(Block::Rule)));
         assert_eq!(d.images().count(), 1);
+        assert_eq!(d.words(), 10);
+    }
+
+    #[test]
+    fn paragraphs_in_list_items_keep_the_item() {
+        let d = HtmlDoc::parse(
+            "<ul><li><p>one</p></li><li><p>two</p></li></ul><p>after</p><h2></h2><p>x</p>",
+            BASE,
+        );
+        assert!(
+            matches!(&d.blocks[0], Block::Item(None, 1, s) if s[0].text == "one"),
+            "{d:?}"
+        );
+        assert!(
+            matches!(&d.blocks[1], Block::Item(None, 1, s) if s[0].text == "two"),
+            "{d:?}"
+        );
+        assert!(
+            matches!(&d.blocks[2], Block::Para(s) if s[0].text == "after"),
+            "{d:?}"
+        );
+        assert!(
+            matches!(&d.blocks[3], Block::Para(s) if s[0].text == "x"),
+            "{d:?}"
+        );
+    }
+
+    #[test]
+    fn a_youtube_frame_is_its_video() {
+        let d = HtmlDoc::parse(
+            r#"<p>a</p><iframe src="https://www.youtube-nocookie.com/embed/BnMQS-jrkwI?x=1" allowfullscreen="true"></iframe><iframe src="https://evil.example/embed/x"></iframe><p>b</p>"#,
+            BASE,
+        );
+        assert_eq!(d.blocks.len(), 3, "{d:?}");
+        assert_eq!(d.blocks[1], Block::Video("BnMQS-jrkwI".into()));
+        assert_eq!(
+            d.images().collect::<Vec<_>>(),
+            ["https://i.ytimg.com/vi/BnMQS-jrkwI/hqdefault.jpg"]
+        );
+        assert_eq!(youtube_id("https://youtube.com/embed/"), None);
     }
 
     #[test]

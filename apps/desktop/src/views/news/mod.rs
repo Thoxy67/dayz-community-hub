@@ -3,8 +3,10 @@
 //! chips under the header.
 //!
 //! The articles load once per run, the first time the view shows; Refresh forces. The
-//! answer is read off the frame: each article's HTML is parsed into an [`HtmlDoc`] and
-//! its date and reading time worked out on the runtime, so drawing only lays out text.
+//! list has no bodies: the article on screen fetches its own (and the next one's, ahead
+//! of the reader), kept for the run. Each answer is read off the frame: the HTML is
+//! parsed into an [`HtmlDoc`] (the body, and an update's patch notes per platform) and
+//! the reading time worked out on the runtime, so drawing only lays out text.
 //! When dayz.com turns the request away (Cloudflare, the hub's `blocked:` errors) the
 //! reader says so and offers the site in the system browser (the Tauri WebView fallback
 //! is not ported).
@@ -18,10 +20,11 @@ mod images;
 mod list;
 mod reader;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use dz_hub::Hub;
-use dz_hub::features::news::{ArticleDto, BLOCKED_PREFIX};
+use dz_hub::features::news::{ArticleBodyDto, ArticleDto, BLOCKED_PREFIX};
 use egui::mutex::Mutex;
 use egui::{Id, Ui, UiBuilder, Vec2};
 use serde_json::Value;
@@ -41,6 +44,8 @@ pub use images::Images;
 
 /// "Open every article on dayz.com".
 pub const SITE: &str = "https://dayz.com/news";
+/// How many articles' pictures are fetched with the list.
+const WARM: usize = 10;
 /// The list's width (`w-[22rem]`).
 const LIST_W: f32 = 352.0;
 
@@ -49,10 +54,43 @@ pub struct Item {
     pub a: ArticleDto,
     /// Unix seconds (0 when the date cannot be read).
     pub ts: i64,
+}
+
+/// An article's body, read once, when it arrives.
+pub struct Body {
+    /// Sanitised; `None` when the article has no text.
+    pub doc: Option<HtmlDoc>,
     /// Minutes to read, at 200 words a minute (at least 1).
     pub minutes: usize,
-    /// The body, sanitised; `None` when the article has no HTML.
-    pub doc: Option<HtmlDoc>,
+    /// An update's patch notes: the platform, and its notes.
+    pub notes: Vec<(String, HtmlDoc)>,
+}
+
+impl Body {
+    fn new(b: &ArticleBodyDto, base: &str, excerpt: Option<&str>) -> Self {
+        let doc = HtmlDoc::parse(&b.html, base);
+        let words = doc.words();
+        let words = if words == 0 {
+            excerpt.unwrap_or("").split_whitespace().count()
+        } else {
+            words
+        };
+        Self {
+            minutes: read_minutes(words),
+            doc: (!doc.blocks.is_empty()).then_some(doc),
+            notes: b
+                .notes
+                .iter()
+                .map(|n| (n.platform.clone(), HtmlDoc::parse(&n.html, base)))
+                .filter(|(_, d)| !d.blocks.is_empty())
+                .collect(),
+        }
+    }
+
+    /// Every picture the body shows.
+    fn images(&self) -> Vec<String> {
+        self.doc.iter().flat_map(HtmlDoc::images).collect()
+    }
 }
 
 /// The articles and their categories (in order of first appearance).
@@ -73,12 +111,8 @@ impl Feed {
                 {
                     categories.push(c.to_owned());
                 }
-                let doc = (!a.content_html.trim().is_empty())
-                    .then(|| HtmlDoc::parse(&a.content_html, &a.url));
                 Item {
                     ts: timestamp(&a.date),
-                    minutes: read_minutes(&a),
-                    doc,
                     a,
                 }
             })
@@ -86,10 +120,12 @@ impl Feed {
         Self { items, categories }
     }
 
-    /// The pictures to have at hand: every article's hero.
+    /// The pictures to have at hand: the first page's heroes (dayz.com's are the
+    /// full-size originals, a megabyte or more; the others come as their rows show).
     fn thumbs(&self) -> Vec<String> {
         self.items
             .iter()
+            .take(WARM)
             .filter_map(|i| i.a.image_url.clone())
             .filter(|u| !u.is_empty())
             .collect()
@@ -109,14 +145,8 @@ impl Feed {
     }
 }
 
-/// Minutes to read, at 200 words a minute (`readMinutes`).
-pub fn read_minutes(a: &ArticleDto) -> usize {
-    let text = if a.content_text.is_empty() {
-        a.excerpt.as_deref().unwrap_or("")
-    } else {
-        &a.content_text
-    };
-    let words = text.split_whitespace().count();
+/// Minutes to read `words`, at 200 words a minute (`readMinutes`).
+pub fn read_minutes(words: usize) -> usize {
     ((words as f64 / 200.0).round() as usize).max(1)
 }
 
@@ -143,6 +173,10 @@ pub struct NewsState {
     /// The picture enlarged: what was shown, and the original to swap in once it is here.
     pub lightbox: Option<(String, String)>,
     pub images: Images,
+    /// The bodies asked for, by slug.
+    pub bodies: HashMap<String, Fetch<Arc<Body>>>,
+    /// The patch notes shown (by platform); `None`: Steam's, else the first.
+    pub platform: Option<String>,
     /// The article the reader shows, and when it came (egui time): its fade and the
     /// scroll back to the top.
     shown_slug: Option<String>,
@@ -170,11 +204,52 @@ impl NewsState {
         });
     }
 
-    /// Take a finished load in; a new list starts at its first article.
-    fn poll(&mut self) {
+    /// Take finished loads in; a new list starts at its first article, and its bodies
+    /// are fetched again. The article on screen and the next one have theirs asked for.
+    fn poll(&mut self, hub: &Hub) {
         if self.feed.poll() && self.feed.error.is_none() {
             self.selected = 0;
+            self.bodies.clear();
         }
+        for b in self.bodies.values_mut() {
+            b.poll();
+        }
+        let shown = self.shown();
+        let at = self.selected.min(shown.len().saturating_sub(1));
+        for i in shown.into_iter().skip(at).take(2) {
+            self.want_body(hub, i, false);
+        }
+    }
+
+    /// Fetch article `i`'s body: once, unless `retry` and it failed.
+    pub fn want_body(&mut self, hub: &Hub, i: usize, retry: bool) {
+        let Some(a) = self.item(i).map(|x| x.a.clone()) else {
+            return;
+        };
+        if let Some(b) = self.bodies.get(&a.slug)
+            && (b.loading() || b.value.is_some() || (b.error.is_some() && !retry))
+        {
+            return;
+        }
+        let (hub, images) = (hub.clone(), self.images.clone());
+        let slot = self.bodies.entry(a.slug.clone()).or_default();
+        slot.error = None;
+        slot.load(async move {
+            let cat = a.category_code.clone().unwrap_or_else(|| "news".into());
+            let dto = hub.fetch_article(cat, a.slug.clone()).await?;
+            let body =
+                tokio::task::spawn_blocking(move || Body::new(&dto, &a.url, a.excerpt.as_deref()))
+                    .await
+                    .map_err(|e| e.to_string())?;
+            let urls = body.images();
+            crate::rt::fire(async move { images.warm(&hub, urls).await });
+            Ok(Arc::new(body))
+        });
+    }
+
+    /// Article `i`'s body: what came, whether it is coming, what failed.
+    pub fn body(&self, i: usize) -> Option<&Fetch<Arc<Body>>> {
+        self.bodies.get(&self.item(i)?.a.slug)
     }
 
     pub fn loading(&self) -> bool {
@@ -293,7 +368,7 @@ impl View for NewsView {
         let mut run: Vec<(&'static str, Value)> = Vec::new();
         {
             let mut st = shared.lock();
-            st.poll();
+            st.poll(cx.hub);
             keys(ui.ctx(), cx, &mut st, &mut run);
             draw(ui, cx, &mut st, &mut run);
         }
@@ -590,6 +665,21 @@ pub fn cmd_zoom_image(cx: &mut Ctx, a: &Value) {
     });
 }
 
+/// `news.retry_article`: fetch the body of the article on screen again.
+pub fn cmd_retry_article(cx: &mut Ctx, _: &Value) {
+    with(cx, |st| {
+        if let Some(i) = st.current() {
+            st.want_body(cx.hub, i, true);
+        }
+    });
+}
+
+/// `news.patch_notes {"platform": "Steam"}`: whose patch notes to show.
+pub fn cmd_patch_notes(cx: &mut Ctx, a: &Value) {
+    let p = a.get("platform").and_then(Value::as_str).map(str::to_owned);
+    with(cx, |st| st.platform = p);
+}
+
 /// `news.close_lightbox`: put the picture away.
 pub fn cmd_close_lightbox(cx: &mut Ctx, _: &Value) {
     with(cx, |st| st.lightbox = None);
@@ -600,17 +690,16 @@ pub fn cmd_close_lightbox(cx: &mut Ctx, _: &Value) {
 mod tests {
     use super::*;
 
-    fn article(slug: &str, cat: Option<&str>, text: &str) -> ArticleDto {
+    fn article(slug: &str, cat: Option<&str>) -> ArticleDto {
         ArticleDto {
             title: slug.into(),
             slug: slug.into(),
             excerpt: Some("one two three".into()),
-            content_text: text.into(),
-            content_html: String::new(),
             date: "2026-10-21T10:00:00Z".into(),
             url: "https://dayz.com/article/x".into(),
             image_url: None,
             category: cat.map(Into::into),
+            category_code: None,
             author: None,
         }
     }
@@ -618,10 +707,10 @@ mod tests {
     #[test]
     fn categories_keep_their_first_order() {
         let f = Feed::new(vec![
-            article("a", Some("Updates"), ""),
-            article("b", Some("Status Report"), ""),
-            article("c", Some("Updates"), ""),
-            article("d", None, ""),
+            article("a", Some("Updates")),
+            article("b", Some("Status Report")),
+            article("c", Some("Updates")),
+            article("d", None),
         ]);
         assert_eq!(f.categories, ["Updates", "Status Report"]);
         assert_eq!(f.shown(Some("Updates")), [0, 2]);
@@ -630,9 +719,17 @@ mod tests {
 
     #[test]
     fn reading_time_and_dates() {
-        assert_eq!(read_minutes(&article("a", None, "")), 1);
-        let long = "word ".repeat(1000);
-        assert_eq!(read_minutes(&article("a", None, &long)), 5);
+        assert_eq!(read_minutes(0), 1);
+        assert_eq!(read_minutes(1000), 5);
+        let long = format!("<p>{}</p>", "word ".repeat(1000));
+        let b = ArticleBodyDto {
+            html: long,
+            notes: Vec::new(),
+        };
+        assert_eq!(Body::new(&b, "https://dayz.com/", None).minutes, 5);
+        let empty = Body::new(&ArticleBodyDto::default(), "https://dayz.com/", Some("a b"));
+        assert!(empty.doc.is_none());
+        assert_eq!(empty.minutes, 1);
         assert_eq!(timestamp("1970-01-02"), 86_400);
         assert_eq!(timestamp("1970-01-01T00:01:00Z"), 60);
         assert_eq!(timestamp("garbage"), 0);
@@ -645,8 +742,8 @@ mod tests {
         st.step(true);
         assert_eq!(st.selected, 0);
         st.feed.value = Some(Arc::new(Feed::new(vec![
-            article("a", Some("U"), ""),
-            article("b", Some("S"), ""),
+            article("a", Some("U")),
+            article("b", Some("S")),
         ])));
         st.step(true);
         st.step(true);

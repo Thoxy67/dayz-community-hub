@@ -853,6 +853,7 @@
   },
   "news": {
     "allCategories": "Все",
+    "articleFailed": "Не удалось загрузить эту статью.",
     "blockedHint": "dayz.com требует проверку браузера. Читайте новости на сайте или повторите позже.",
     "by": "Автор: {author}",
     "close": "Закрыть",
@@ -860,16 +861,19 @@
     "latest": "Новое",
     "loadFailedHint": "dayz.com не ответил или отклонил запрос. Проверьте подключение и повторите.",
     "loadFailedTitle": "Не удалось загрузить новости",
+    "loadingArticle": "Загрузка статьи…",
     "noContent": "Нет контента.",
     "openAllOnSite": "Открыть все статьи на dayz.com",
     "openBrowser": "Открыть в браузере",
     "openSite": "Открыть dayz.com",
+    "patchNotes": "Список изменений",
     "readTime": "{minutes} мин чтения",
     "refresh": "Обновить",
     "retry": "Повторить",
     "selectArticle": "Выберите статью для чтения",
     "statArticles": "Статьи",
     "title": "Новости DayZ",
+    "watchVideo": "Смотреть на YouTube",
     "zoomImage": "Увеличить изображение"
   },
   "offline": {

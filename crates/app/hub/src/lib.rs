@@ -70,6 +70,7 @@
 //!   - `resolve_cached_images(&self, urls: Vec<String>) -> Result<Vec<(String, PathBuf)>, String>`
 //! - `news`:
 //!   - `fetch_news(&self) -> Result<Vec<ArticleDto>, String>`
+//!   - `fetch_article(&self, category: String, slug: String) -> Result<ArticleBodyDto, String>`
 //! - `offline`:
 //!   - `get_offline_missions(&self) -> Result<Vec<String>, String>`
 //!   - `update_offline_mode(&self) -> Result<(), String>`

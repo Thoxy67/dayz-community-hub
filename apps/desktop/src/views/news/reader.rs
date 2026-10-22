@@ -1,6 +1,8 @@
 //! The article being read: the hero picture (or a band of contour lines), the category,
-//! the title, the date, reading time and author, then the excerpt and the body. Each
-//! article fades in as it is picked and starts at the top.
+//! the title, the date, reading time and author, then the excerpt and the body (fetched
+//! when the article is picked: a spinner until it is in, a retry if it fails) and an
+//! update's patch notes, one platform at a time. Each article fades in as it is picked
+//! and starts at the top.
 
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
@@ -8,13 +10,13 @@ use egui::{
 };
 use serde_json::{Value, json};
 
-use super::{Item, NewsState};
+use super::{Body, Item, NewsState};
 use crate::app::Ctx;
 use crate::i18n::{format, t, tf};
 use crate::icons::{Icon, lucide};
 use crate::kit::paint::{self, alpha};
-use crate::kit::{Button, Size, Tag, Tone, Variant, topo};
-use crate::parts::{Empty, HtmlAction, SafeHtml};
+use crate::kit::{Button, Size, Spinner, Tag, Tone, Variant, topo};
+use crate::parts::{Empty, HtmlAction, HtmlDoc, SafeHtml};
 use crate::theme::{TokensExt, font, fonts::Face, motion, size};
 
 /// `max-w-3xl`, `px-8`.
@@ -72,7 +74,9 @@ pub fn show(ui: &mut Ui, cx: &Ctx, st: &mut NewsState, run: &mut Vec<(&'static s
     area.show(ui, |ui| {
         ui.multiply_opacity(1.0 - (1.0 - p).powi(3));
         ui.spacing_mut().item_spacing = Vec2::ZERO;
-        article(ui, cx, st, item, run);
+        if let Some(i) = current {
+            article(ui, cx, st, i, item, run);
+        }
         // What a controller's right stick scrolls.
         crate::pad::reading_pane(ui);
     });
@@ -122,6 +126,7 @@ fn article(
     ui: &mut Ui,
     cx: &Ctx,
     st: &NewsState,
+    idx: usize,
     item: &Item,
     run: &mut Vec<(&'static str, Value)>,
 ) {
@@ -185,16 +190,23 @@ fn article(
         ui.vertical(|ui| {
             ui.set_width(text_w);
             ui.spacing_mut().item_spacing = Vec2::ZERO;
-            head(ui, item, text_w, run);
+            let body_in = st.body(idx).and_then(|f| f.value.clone());
+            head(ui, item, body_in.as_ref().map(|b| b.minutes), text_w, run);
             ui.add_space(20.0);
-            body(ui, cx, st, item, text_w, run);
+            body(ui, cx, st, idx, item, text_w, run);
             ui.add_space(48.0);
         });
     });
 }
 
-/// Category, title, the meta row.
-fn head(ui: &mut Ui, item: &Item, w: f32, run: &mut Vec<(&'static str, Value)>) {
+/// Category, title, the meta row (the reading time once the body is in).
+fn head(
+    ui: &mut Ui,
+    item: &Item,
+    minutes: Option<usize>,
+    w: f32,
+    run: &mut Vec<(&'static str, Value)>,
+) {
     let tk = ui.tokens();
     let a = &item.a;
     if let Some(c) = a.category.as_deref().filter(|c| !c.is_empty()) {
@@ -226,7 +238,7 @@ fn head(ui: &mut Ui, item: &Item, w: f32, run: &mut Vec<(&'static str, Value)>) 
 
     // `flex flex-wrap gap-x-4 gap-y-1 text-2xs text-fg-muted`, the button at the end.
     let date = format::date_str(&a.date);
-    let read = tf("news", "readTime", &[("minutes", &item.minutes)]);
+    let read = minutes.map(|m| tf("news", "readTime", &[("minutes", &m)]));
     let by = a
         .author
         .as_deref()
@@ -235,7 +247,9 @@ fn head(ui: &mut Ui, item: &Item, w: f32, run: &mut Vec<(&'static str, Value)>) 
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = Vec2::new(16.0, 4.0);
         meta(ui, lucide::CALENDAR_DAYS, &date);
-        meta(ui, lucide::CLOCK, &read);
+        if let Some(r) = &read {
+            meta(ui, lucide::CLOCK, r);
+        }
         if let Some(b) = &by {
             meta(ui, lucide::PEN_LINE, b);
         }
@@ -273,6 +287,7 @@ fn body(
     ui: &mut Ui,
     cx: &Ctx,
     st: &NewsState,
+    idx: usize,
     item: &Item,
     w: f32,
     run: &mut Vec<(&'static str, Value)>,
@@ -306,44 +321,145 @@ fn body(
             .galley(Pos2::new(r.left() + 14.0, r.top()), g, tk.fg_muted);
         ui.add_space(20.0);
     }
-    match &item.doc {
-        Some(doc) => {
-            let (ctx, hub, images) = (ui.ctx().clone(), cx.hub, st.images.clone());
-            let action = SafeHtml::new(doc).zoomable().show(ui, |src| {
-                let tex = images.texture(&ctx, hub, src)?;
-                Some(egui::ImageSource::Texture(
-                    egui::load::SizedTexture::from_handle(&tex),
-                ))
-            });
-            match action {
-                Some(HtmlAction::Open(url)) => run.push(("news.open_link", json!({ "url": url }))),
-                Some(HtmlAction::Image { shown, original }) => {
-                    // The original is asked for now, to swap in once it is here.
-                    let _ = st.images.want(cx.hub, &original);
-                    run.push((
-                        "news.zoom_image",
-                        json!({ "src": shown, "original": original }),
-                    ));
+    let fetch = st.body(idx);
+    match fetch.and_then(|f| f.value.clone()) {
+        Some(b) => {
+            match &b.doc {
+                Some(doc) => html(ui, cx, st, doc, run),
+                None => {
+                    ui.label(
+                        egui::RichText::new(t("news", "noContent"))
+                            .font(font(Face::Sans, size::TEXT_SM))
+                            .color(tk.fg_muted),
+                    );
                 }
-                None => {}
             }
+            notes(ui, cx, st, &b, run);
         }
-        None => {
-            let text = if a.content_text.trim().is_empty() {
-                t("news", "noContent")
-            } else {
-                a.content_text.as_str()
-            };
-            ui.add(
-                egui::Label::new(
-                    egui::RichText::new(text)
-                        .font(font(Face::Sans, size::TEXT_SM))
-                        .color(tk.fg_muted),
-                )
-                .wrap()
-                .selectable(true),
-            );
+        None => match fetch.and_then(|f| f.error.clone()) {
+            Some(err) => failed_body(ui, &err, fetch.is_some_and(|f| f.loading()), run),
+            None => {
+                // Asked for, or about to be.
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    ui.add(Spinner::new().size(14.0).color(tk.fg_muted));
+                    ui.label(
+                        egui::RichText::new(t("news", "loadingArticle"))
+                            .font(font(Face::Sans, size::TEXT_SM))
+                            .color(tk.fg_muted),
+                    );
+                });
+                ui.ctx().request_repaint();
+            }
+        },
+    }
+}
+
+/// An article's HTML, its links and pictures answered.
+fn html(
+    ui: &mut Ui,
+    cx: &Ctx,
+    st: &NewsState,
+    doc: &HtmlDoc,
+    run: &mut Vec<(&'static str, Value)>,
+) {
+    let (ctx, hub, images) = (ui.ctx().clone(), cx.hub, st.images.clone());
+    let action = SafeHtml::new(doc).zoomable().show(ui, |src| {
+        let tex = images.texture(&ctx, hub, src)?;
+        Some(egui::ImageSource::Texture(
+            egui::load::SizedTexture::from_handle(&tex),
+        ))
+    });
+    match action {
+        Some(HtmlAction::Open(url)) => run.push(("news.open_link", json!({ "url": url }))),
+        Some(HtmlAction::Image { shown, original }) => {
+            // The original is asked for now, to swap in once it is here.
+            let _ = st.images.want(cx.hub, &original);
+            run.push((
+                "news.zoom_image",
+                json!({ "src": shown, "original": original }),
+            ));
         }
+        None => {}
+    }
+}
+
+/// The body could not be fetched: why, and a retry.
+fn failed_body(ui: &mut Ui, err: &str, loading: bool, run: &mut Vec<(&'static str, Value)>) {
+    let tk = ui.tokens();
+    ui.label(
+        egui::RichText::new(t("news", "articleFailed"))
+            .font(font(Face::Sans, size::TEXT_SM))
+            .color(tk.fg),
+    );
+    ui.add_space(4.0);
+    ui.add(
+        egui::Label::new(
+            egui::RichText::new(err)
+                .font(font(Face::Mono, size::TEXT_2XS))
+                .color(tk.fg_faint),
+        )
+        .wrap(),
+    );
+    ui.add_space(12.0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        let retry = Button::new(t("news", "retry"))
+            .icon(lucide::REFRESH_CW)
+            .size(Size::Sm)
+            .spinner(loading)
+            .enabled(!loading)
+            .variant(Variant::Accent);
+        if ui.add(retry).clicked() {
+            run.push(("news.retry_article", Value::Null));
+        }
+        let open = Button::new(t("news", "openBrowser"))
+            .icon(lucide::EXTERNAL_LINK)
+            .size(Size::Sm);
+        if ui.add(open).clicked() {
+            run.push(("news.open_article", Value::Null));
+        }
+    });
+}
+
+/// An update's patch notes: a chip per platform, the chosen one's notes under them.
+fn notes(ui: &mut Ui, cx: &Ctx, st: &NewsState, b: &Body, run: &mut Vec<(&'static str, Value)>) {
+    if b.notes.is_empty() {
+        return;
+    }
+    let tk = ui.tokens();
+    let chosen = st
+        .platform
+        .as_deref()
+        .and_then(|p| b.notes.iter().position(|(n, _)| n == p))
+        .or_else(|| b.notes.iter().position(|(n, _)| n.contains("Steam")))
+        .unwrap_or(0);
+    ui.add_space(40.0);
+    let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 1.0), Sense::hover());
+    ui.painter()
+        .hline(r.x_range(), r.center().y, Stroke::new(1.0, tk.border));
+    ui.add_space(24.0);
+    let s = size::TEXT_XL;
+    ui.label(
+        egui::RichText::new(t("news", "patchNotes").to_uppercase())
+            .font(font(Face::DisplayBold, s))
+            .extra_letter_spacing(s * 0.02)
+            .color(tk.fg),
+    );
+    ui.add_space(10.0);
+    if b.notes.len() > 1 {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
+            for (i, (platform, _)) in b.notes.iter().enumerate() {
+                if ui.add(Button::chip(platform, i == chosen)).clicked() {
+                    run.push(("news.patch_notes", json!({ "platform": platform })));
+                }
+            }
+        });
+        ui.add_space(16.0);
+    }
+    if let Some((_, doc)) = b.notes.get(chosen) {
+        html(ui, cx, st, doc, run);
     }
 }
 

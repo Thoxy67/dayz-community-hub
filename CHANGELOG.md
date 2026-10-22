@@ -17,6 +17,11 @@ notes; without one, the notes are the commit titles since the last release.
 - **Controller support everywhere.** A gamepad (Steam Deck, Xbox,
   PlayStation) moves through every view and dialog, with a focus ring and
   a hint bar showing what each button does.
+- **The news works again.** dayz.com moved to a new site and the news
+  view stopped loading. It now reads the new site: the latest 50
+  articles, each opened with its pictures, its videos (a click opens them
+  on YouTube) and, for an update, its patch notes for Steam, Xbox and
+  PlayStation, one platform at a time.
 - **The AppImage no longer bundles libraries**: it uses your system's
   graphics drivers and desktop directly.
 - **Removed:** the news feed's built-in browser fallback when dayz.com's

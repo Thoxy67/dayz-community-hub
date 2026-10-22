@@ -5,10 +5,13 @@
 //! - `news-images`: the articles carry pictures (a hero each, one inline picture in the
 //!   body), and `fetch_image` paints them into the mock's data directory: invented
 //!   gradients written as uncompressed PNGs, so nothing goes over the network.
+//!
+//! Every body is the same short text; the first article (an update) also has patch
+//! notes for two platforms.
 
 use std::path::PathBuf;
 
-use crate::features::news::{ArticleDto, BLOCKED_PREFIX};
+use crate::features::news::{ArticleBodyDto, ArticleDto, BLOCKED_PREFIX, PatchNotesDto};
 
 use super::{World, switch};
 
@@ -35,12 +38,34 @@ impl World {
             .map(|(i, a)| {
                 let mut a = a.clone();
                 a.image_url = Some(format!("{IMAGE_BASE}{i}.png"));
-                a.content_html.push_str(&format!(
-                    r#"<p><img src="{IMAGE_BASE}{i}-inline.png" alt=""></p><p>Read the <a href="/article/updates/notes">full notes</a>.</p>"#
-                ));
                 a
             })
             .collect())
+    }
+
+    /// `fetch_article` in the mock.
+    pub(crate) fn article(&self, slug: &str) -> Result<ArticleBodyDto, String> {
+        let Some(i) = self.articles.iter().position(|a| a.slug == slug) else {
+            return Err(format!("dayz.com has no /article/{slug}"));
+        };
+        let mut html = "<p>Survivors, a new update brings changes to vehicles, base building and the economy.</p><h2>Vehicles</h2><p>Handling was reworked on every terrain type.</p>".to_owned();
+        if switch("news-images") {
+            html.push_str(&format!(
+                r#"<p><img src="{IMAGE_BASE}{i}-inline.png" alt=""></p><p>Read the <a href="/article/updates/notes">full notes</a>.</p>"#
+            ));
+        }
+        let notes = if i == 0 {
+            ["Steam", "Xbox/Microsoft Store"]
+                .into_iter()
+                .map(|platform| PatchNotesDto {
+                    platform: platform.to_owned(),
+                    html: format!("<p><strong>{platform} Stable 1.28 - Version 1.28.160000</strong></p><p><strong>FIXED</strong></p><ul><li><p>Vehicles could clip through fences</p></li><li><p>A rare crash when opening the map</p></li></ul><p><strong>CHANGED</strong></p><ul><li><p>Wolves hear footsteps from further away</p></li></ul>"),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        Ok(ArticleBodyDto { html, notes })
     }
 
     /// `fetch_image` in the mock: a picture painted into the data directory.

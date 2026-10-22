@@ -853,6 +853,7 @@
   },
   "news": {
     "allCategories": "Todo",
+    "articleFailed": "No se pudo cargar este artículo.",
     "blockedHint": "dayz.com pide una verificación del navegador. Lee las noticias en el sitio o inténtalo más tarde.",
     "by": "Por {author}",
     "close": "Cerrar",
@@ -860,16 +861,19 @@
     "latest": "Nuevo",
     "loadFailedHint": "dayz.com no respondió o rechazó la solicitud. Comprueba la conexión e inténtalo de nuevo.",
     "loadFailedTitle": "No se pudieron cargar las noticias",
+    "loadingArticle": "Cargando el artículo…",
     "noContent": "Sin contenido disponible.",
     "openAllOnSite": "Abrir todos los artículos en dayz.com",
     "openBrowser": "Abrir en navegador",
     "openSite": "Abrir dayz.com",
+    "patchNotes": "Notas del parche",
     "readTime": "{minutes} min de lectura",
     "refresh": "Actualizar",
     "retry": "Reintentar",
     "selectArticle": "Selecciona un artículo para leer",
     "statArticles": "Artículos",
     "title": "Noticias de DayZ",
+    "watchVideo": "Ver en YouTube",
     "zoomImage": "Ampliar la imagen"
   },
   "offline": {
