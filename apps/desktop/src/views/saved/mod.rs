@@ -24,7 +24,7 @@ use serde_json::{Value, json};
 
 use crate::app::Ctx;
 use crate::commands::{self, Scope};
-use crate::i18n::{format, t};
+use crate::i18n::{format, t, tf};
 use crate::icons::{Icon, lucide};
 use crate::kit::{Button, IconButton, Input, Side, Tone, Variant, VirtualList};
 use crate::parts::{
@@ -82,11 +82,13 @@ impl Kind {
         match (self, what) {
             (Kind::Favorites, Cmd::Detail) => "favorites.toggle_detail",
             (Kind::Favorites, Cmd::Listed) => "favorites.toggle_listed_only",
+            (Kind::Favorites, Cmd::Search) => "favorites.search",
             (Kind::Favorites, Cmd::Sort) => "favorites.sort_by",
             (Kind::Favorites, Cmd::Remove) => "favorites.remove",
             (Kind::Favorites, Cmd::Select) => "favorites.select",
             (Kind::History, Cmd::Detail) => "history.toggle_detail",
             (Kind::History, Cmd::Listed) => "history.toggle_listed_only",
+            (Kind::History, Cmd::Search) => "history.search",
             (Kind::History, Cmd::Sort) => "history.sort_by",
             (Kind::History, Cmd::Remove) => "history.remove",
             (Kind::History, Cmd::Select) => "history.select",
@@ -98,6 +100,7 @@ impl Kind {
 enum Cmd {
     Detail,
     Listed,
+    Search,
     Sort,
     Remove,
     Select,
@@ -864,11 +867,39 @@ fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCac
     let wide = kind == Kind::History;
     if d.order.is_empty() {
         heading(ui, kind, st, run);
+        // What hides every entry (the search, "in the list only"), and the way out.
+        let query = st.query.trim().to_string();
+        let mut why: Vec<String> = Vec::new();
+        if !query.is_empty() {
+            why.push(tf("servers", "filterSearch", &[("query", &query)]));
+        }
+        if st.listed_only {
+            why.push(t("favorites", "onlineOnly").to_string());
+        }
+        let text = tf(
+            "servers",
+            "noMatchFilters",
+            &[("filters", &why.join(" · "))],
+        );
+        let listed_only = st.listed_only;
         Empty::new()
-            .icon(lucide::SEARCH)
+            .icon(lucide::SEARCH_X)
             .title(t("favorites", "noMatch"))
-            .compact()
-            .show(ui, |_| {});
+            .text(if why.is_empty() { "" } else { &text })
+            .show(ui, |ui| {
+                if !why.is_empty()
+                    && ui
+                        .add(Button::new(t("servers", "clearFilters")).variant(Variant::Accent))
+                        .clicked()
+                {
+                    if !query.is_empty() {
+                        run.push((kind.cmd(Cmd::Search), json!({ "text": "" })));
+                    }
+                    if listed_only {
+                        run.push((kind.cmd(Cmd::Listed), json!({ "on": false })));
+                    }
+                }
+            });
         st.on_screen.clear();
         return;
     }

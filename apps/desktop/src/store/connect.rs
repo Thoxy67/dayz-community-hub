@@ -18,6 +18,7 @@ use super::mods::{Mods, OpArgs};
 use super::profile::{Favorite, Profile};
 use super::{Bus, ConfirmRequest};
 use crate::i18n::{t, tf};
+use crate::kit::toast::ToastTone;
 use crate::rt;
 use crate::views::ViewId;
 
@@ -639,26 +640,50 @@ async fn do_launch(hub: &Hub, bus: &Bus, l: Launch) {
             name,
             password,
         } => {
-            bus.info(tf("connect", "connectLaunchingServer", &[("name", &name)]));
+            bus.step(
+                "launch",
+                tf("connect", "connectLaunchingServer", &[("name", &name)]),
+                ToastTone::Neutral,
+            );
             let _ = hub.setup_mod_symlinks(ip.clone(), query_port).await;
             match hub.launch_server(ip, query_port, password).await {
-                Ok(()) => bus.info(t("connect", "connectWaitingSteam")),
-                Err(e) => bus.err(tf("connect", "connectLaunchFailed", &[("error", &e)])),
+                Ok(()) => bus.step(
+                    "launch",
+                    t("connect", "connectWaitingSteam"),
+                    ToastTone::Neutral,
+                ),
+                Err(e) => bus.step(
+                    "launch",
+                    tf("connect", "connectLaunchFailed", &[("error", &e)]),
+                    ToastTone::Err,
+                ),
             }
         }
         Launch::Address(t) => {
             let address = format!("{}:{}", t.ip, t.port);
-            bus.info(tf(
-                "connect",
-                "connectLaunchingAddress",
-                &[("address", &address)],
-            ));
+            bus.step(
+                "launch",
+                tf(
+                    "connect",
+                    "connectLaunchingAddress",
+                    &[("address", &address)],
+                ),
+                ToastTone::Neutral,
+            );
             match hub
                 .launch_direct(t.ip, t.port, t.password, t.extra_args)
                 .await
             {
-                Ok(()) => bus.info(crate::i18n::t("connect", "connectWaitingSteam")),
-                Err(e) => bus.err(tf("connect", "connectLaunchFailed", &[("error", &e)])),
+                Ok(()) => bus.step(
+                    "launch",
+                    crate::i18n::t("connect", "connectWaitingSteam"),
+                    ToastTone::Neutral,
+                ),
+                Err(e) => bus.step(
+                    "launch",
+                    tf("connect", "connectLaunchFailed", &[("error", &e)]),
+                    ToastTone::Err,
+                ),
             }
         }
     }

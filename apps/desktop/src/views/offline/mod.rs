@@ -206,6 +206,9 @@ pub struct OfflineState {
     pub installing: bool,
     /// The list was read once (or failed once).
     pub loaded: bool,
+    /// Why the last read of the missions failed: the empty list then says so and offers
+    /// to read again, rather than invite an install.
+    pub load_error: Option<String>,
     pub status: String,
     pub tone: Tone,
     /// The card under the pointer: what `offline.launch` without a mission plays (pad X).
@@ -306,6 +309,7 @@ fn load(cx: &Ctx, after: After) {
                 let ok = r.is_ok();
                 match r {
                     Ok(ids) => {
+                        st.load_error = None;
                         st.set_missions(ids);
                         if let After::Count = after {
                             let n = st.missions.len();
@@ -319,6 +323,7 @@ fn load(cx: &Ctx, after: After) {
                     }
                     Err(e) => {
                         st.missions.clear();
+                        st.load_error = Some(e.clone());
                         st.say(e, Tone::Err);
                     }
                 }

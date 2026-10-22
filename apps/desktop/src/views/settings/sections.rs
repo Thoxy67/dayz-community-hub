@@ -1352,7 +1352,7 @@ impl SettingsView {
                                         ui.add(Checkbox::new(include).label(word));
                                         let r =
                                             line(ui, word, Face::Sans, size::TEXT_2XS, tk.fg_muted)
-                                                .interact(Sense::click());
+                                                .interact(Sense::CLICK);
                                         if r.clicked() {
                                             *include = !*include;
                                         }

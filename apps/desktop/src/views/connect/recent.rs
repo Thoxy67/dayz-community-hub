@@ -264,7 +264,7 @@ fn cards(
             );
             let label = p.name.clone();
             resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
-            let hover = paint::ease(ui, resp.id.with("h"), resp.hovered());
+            let hover = paint::ease(ui, resp.id.with("h"), resp.hovered() || resp.has_focus());
             let painter = ui.painter();
             painter.rect(
                 rect,
@@ -273,6 +273,9 @@ fn cards(
                 Stroke::new(1.0, paint::lerp(tk.border, alpha(tk.accent, 0.5), hover)),
                 StrokeKind::Inside,
             );
+            if paint::keyboard_focus(ui, &resp) {
+                paint::focus_ring(painter, rect, size::RADIUS_MD, &tk);
+            }
             let l = rect.left() + 10.0;
             let r = rect.right() - 10.0;
             let mut cy = rect.top() + 10.0;
@@ -370,9 +373,12 @@ fn compact(
         let row = rows.get(i).cloned().flatten();
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 42.0), Sense::click());
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &p.name));
-        let hover = paint::ease(ui, resp.id.with("h"), resp.hovered());
+        let hover = paint::ease(ui, resp.id.with("h"), resp.hovered() || resp.has_focus());
         let painter = ui.painter();
         painter.rect_filled(rect, CornerRadius::ZERO, alpha(tk.raised, 0.6 * hover));
+        if paint::keyboard_focus(ui, &resp) {
+            paint::focus_ring(painter, rect.shrink(3.0), size::RADIUS_XS, &tk);
+        }
         if i + 1 < n {
             painter.hline(
                 rect.x_range(),

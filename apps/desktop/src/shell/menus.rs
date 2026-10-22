@@ -59,6 +59,9 @@ fn trigger(ui: &mut Ui, rect: Rect, salt: &str, label: &str) -> (Response, f32) 
         CornerRadius::ZERO,
         paint::lerp(Color32::TRANSPARENT, tk.raised, h),
     );
+    if paint::keyboard_focus(ui, &resp) {
+        paint::focus_ring(ui.painter(), rect.shrink(3.0), size::RADIUS_SM, &tk);
+    }
     let resp = if open {
         resp
     } else {
@@ -83,7 +86,7 @@ pub(super) fn language_menu(ui: &mut Ui, cx: &mut Ctx, rect: Rect) {
         let tk = ui.tokens();
         for l in Locale::ALL {
             let (r, item) = ui.allocate_exact_size(Vec2::new(LANG_W, size::ROW), Sense::click());
-            let lit = item.hovered();
+            let lit = item.hovered() || item.has_focus();
             let p = ui.painter();
             if lit {
                 p.rect_filled(r, CornerRadius::same(size::RADIUS_XS), tk.raised);
@@ -166,7 +169,7 @@ fn swatch(ui: &Ui, x: f32, cy: f32, colors: &[Color32; 5], tk: &Tokens) -> f32 {
 fn theme_row(ui: &mut Ui, width: f32, colors: &[Color32; 5], name: &str, on: bool) -> Response {
     let tk = ui.tokens();
     let (r, resp) = ui.allocate_exact_size(Vec2::new(width, size::CONTROL), Sense::click());
-    let lit = resp.hovered();
+    let lit = resp.hovered() || resp.has_focus();
     let p = ui.painter();
     if lit {
         p.rect_filled(r, CornerRadius::same(size::RADIUS_XS), tk.raised);
@@ -201,7 +204,7 @@ fn theme_row(ui: &mut Ui, width: f32, colors: &[Color32; 5], name: &str, on: boo
 fn icon_row(ui: &mut Ui, icon: Icon, label: &str, on: bool) -> Response {
     let tk = ui.tokens();
     let (r, resp) = ui.allocate_exact_size(Vec2::new(THEME_W, size::CONTROL), Sense::click());
-    let lit = resp.hovered();
+    let lit = resp.hovered() || resp.has_focus();
     let p = ui.painter();
     if lit {
         p.rect_filled(r, CornerRadius::same(size::RADIUS_XS), tk.raised);
@@ -235,7 +238,7 @@ fn pair_choice(ui: &mut Ui, cx: &mut Ctx, scheme: Scheme) {
     let (r, resp) = ui.allocate_exact_size(Vec2::new(THEME_W, size::CONTROL), Sense::click());
     let sub_id = egui::containers::menu::SubMenu::id_from_widget_id(resp.id);
     let open = Popup::is_id_open(ui.ctx(), sub_id);
-    let lit = resp.hovered() || open;
+    let lit = resp.hovered() || resp.has_focus() || open;
     let pair = &cx.prefs.get().theme.pair;
     let current = match scheme {
         Scheme::Dark => pair.dark.clone(),

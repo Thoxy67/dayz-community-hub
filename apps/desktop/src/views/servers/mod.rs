@@ -534,6 +534,9 @@ fn stale_strip(ui: &mut Ui, cx: &Ctx, run: &mut Run) {
         alpha(tk.warn, 0.15 * h),
     );
     draw(ui.painter(), &bg, br.left() + 6.0, cy, tk.warn);
+    if paint::keyboard_focus(ui, &b) {
+        paint::focus_ring(ui.painter(), br, size::RADIUS_XS, &tk);
+    }
     b.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
     if b.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
         run.push(("servers.refresh", Value::Null));

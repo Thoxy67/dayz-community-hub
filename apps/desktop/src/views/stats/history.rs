@@ -90,7 +90,10 @@ fn toolbar(ui: &mut Ui, st: &mut StatsState, run: &mut Run) {
                     Vec2::splat(16.0),
                 );
                 let x = ui.interact(xr, Id::new("stats-day-chip-x"), Sense::click());
-                let hv = x.hovered();
+                let hv = x.hovered() || x.has_focus();
+                if paint::keyboard_focus(ui, &x) {
+                    paint::focus_ring(ui.painter(), xr, size::RADIUS_XS, &tk);
+                }
                 if hv {
                     ui.painter().rect_filled(
                         xr,

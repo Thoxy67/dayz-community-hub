@@ -154,7 +154,7 @@ pub fn show(ui: &mut Ui, cx: &Ctx, model: &Model, cache: &mut RowCache, acts: &m
             {
                 let y = at.min(next_top - HEAD_H);
                 let r = Rect::from_min_size(origin + Vec2::new(0.0, y), Vec2::new(w, HEAD_H));
-                let _ = ui.interact(r, ui.id().with("friends-sticky"), Sense::click());
+                let _ = ui.interact(r, ui.id().with("friends-sticky"), Sense::CLICK);
                 head(ui, r, *g, *count);
             }
         });

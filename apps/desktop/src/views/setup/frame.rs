@@ -63,7 +63,7 @@ pub(super) fn show(ctx: &egui::Context, cx: &mut Ctx, w: &mut Wizard, acts: &mut
                 ui.set_opacity(fade);
             }
             // The whole region answers the pointer: nothing behind it does.
-            let _ = ui.allocate_rect(rect, Sense::click());
+            let _ = ui.allocate_rect(rect, Sense::CLICK);
             let tk = ui.tokens();
             ui.painter().rect_filled(rect, 0, tk.bg);
             let aside_r =
@@ -197,6 +197,9 @@ fn step_row(
         alpha(tk.raised, 0.5 * hover)
     };
     p.rect_filled(row, CornerRadius::same(size::RADIUS_SM), fill);
+    if paint::keyboard_focus(ui, &resp) {
+        paint::focus_ring(p, row, size::RADIUS_SM, tk);
+    }
     // Steps ahead are dimmed (`opacity-60`).
     let dim = |c: Color32| if i > cur { c.gamma_multiply(0.6) } else { c };
     let cy = row.center().y;

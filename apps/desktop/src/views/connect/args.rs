@@ -93,7 +93,12 @@ fn tiny(ui: &mut Ui, icon: Icon, label: &str, enabled: bool, danger: bool, shown
     };
     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(20.0), sense);
     let resp = resp.tip(label);
-    let hover = paint::ease(ui, resp.id.with("h"), enabled && resp.hovered());
+    // Focus shows it as a hover does: a Tab onto a hidden button finds it there.
+    let hover = paint::ease(
+        ui,
+        resp.id.with("h"),
+        enabled && (resp.hovered() || resp.has_focus()),
+    );
     let a = shown.max(hover);
     if a <= 0.0 {
         return false;
@@ -116,6 +121,9 @@ fn tiny(ui: &mut Ui, icon: Icon, label: &str, enabled: bool, danger: bool, shown
         Rect::from_center_size(rect.center(), Vec2::splat(12.0)),
         alpha(ink, a * ink.a() as f32 / 255.0),
     );
+    if paint::keyboard_focus(ui, &resp) {
+        paint::focus_ring(p, rect, size::RADIUS_XS, &tk);
+    }
     enabled && resp.clicked()
 }
 

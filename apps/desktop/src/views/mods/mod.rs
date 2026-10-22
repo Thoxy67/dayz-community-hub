@@ -413,12 +413,45 @@ fn header(ui: &mut Ui, cx: &Ctx, st: &mut UiState, out: &mut Vec<(&'static str, 
         ui.add_space(1.0);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
+            // A narrow window leaves the right end little room past the filters: the
+            // Steam chips shrink to the count / the logo (their words move to the tip)
+            // and the search narrows, rather than the chips sliding under the filters.
+            let no_answer = t("mods", "steamNoAnswer");
+            let steam_short = steam_active.to_string();
+            let wide = |s: &str, f: egui::FontId| crate::parts::ph(ui, s, f).size().x;
+            let mono = || font(Face::Mono, size::TEXT_2XS);
+            let segs_w: f32 = labels
+                .iter()
+                .map(|l| 16.0 + wide(l, font(Face::Sans, size::TEXT_XS)))
+                .sum::<f32>()
+                + 2.0;
+            let chips = |dl: &str, err: &str| {
+                let dl = if steam_active > 0 {
+                    wide(dl, mono()) + 40.0 + 8.0
+                } else {
+                    0.0
+                };
+                let err = if mods.steam_error.is_some() {
+                    wide(err, mono()) + 40.0 + 8.0
+                } else {
+                    0.0
+                };
+                dl + err
+            };
+            let fixed = segs_w + wide(&counter, mono()) + 3.0 * 8.0;
+            let full = ui.available_width();
+            let tight = 288.0 + fixed + chips(&steam_dl, no_answer) > full;
+            let search_w = if tight {
+                (full - fixed - chips(&steam_short, "")).clamp(120.0, 288.0)
+            } else {
+                288.0
+            };
             ui.add(
                 Input::new(query)
                     .search()
                     .placeholder(t("mods", "searchPlaceholder"))
                     .clear_label(t("common", "clear"))
-                    .width(288.0_f32.min(ui.available_width()))
+                    .width(search_w.min(ui.available_width()))
                     .id_salt("mods-search"),
             );
             let segs = [
@@ -433,25 +466,38 @@ fn header(ui: &mut Ui, cx: &Ctx, st: &mut UiState, out: &mut Vec<(&'static str, 
                 let (r, _) = ui.allocate_exact_size(g.size(), egui::Sense::hover());
                 crate::parts::draw(ui.painter(), &g, r.left(), r.center().y, tk.fg_faint);
                 if steam_active > 0 {
+                    let tip = if tight {
+                        format!("{steam_dl}\n{}", t("mods", "steamDownloadsTitle"))
+                    } else {
+                        t("mods", "steamDownloadsTitle").to_string()
+                    };
                     ui.add(
-                        Tag::new(&steam_dl)
+                        Tag::new(if tight { &steam_short } else { &steam_dl })
                             .tone(Tone::Accent)
                             .spinner()
                             .brand(Brand::Steam)
-                            .tip(t("mods", "steamDownloadsTitle")),
+                            .tip(&tip),
                     );
                 }
                 if let Some(err) = &mods.steam_error {
+                    let tip = if tight {
+                        format!("{no_answer}\n{err}")
+                    } else {
+                        err.clone()
+                    };
                     let r = ui.add(
-                        Tag::new(t("mods", "steamNoAnswer"))
+                        Tag::new(if tight { "" } else { no_answer })
                             .tone(Tone::Warn)
                             .brand(Brand::Steam)
                             .trailing(lucide::ROTATE_CW)
-                            .tip(err),
+                            .tip(&tip),
                     );
                     let r = ui
                         .interact(r.rect, r.id.with("retry"), egui::Sense::click())
                         .on_hover_cursor(egui::CursorIcon::PointingHand);
+                    if crate::kit::paint::keyboard_focus(ui, &r) {
+                        crate::kit::paint::focus_ring(ui.painter(), r.rect, size::RADIUS_SM, &tk);
+                    }
                     if r.clicked() {
                         run.borrow_mut().push(("mods.steam_retry", Value::Null));
                     }

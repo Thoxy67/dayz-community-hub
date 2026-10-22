@@ -48,8 +48,9 @@ pub enum SignalSize {
 }
 
 /// The ping, read the way a field radio reads a signal: four bars lit by how quickly
-/// the server answered, the figure beside them. `pending` pulses the bars; a timeout is
-/// four dark bars struck through and a red ×. `Signal::new(Some(92))`.
+/// the server answered, the figure beside them. `pending` pulses the bars; no answer is
+/// four faint bars struck through and a faint "—" (as the server rows draw it: on a
+/// list of many, red would alarm for what is common). `Signal::new(Some(92))`.
 #[must_use = "add it with ui.add(…)"]
 pub struct Signal {
     ms: Option<u32>,
@@ -95,7 +96,7 @@ impl Widget for Signal {
         };
         let level = signal_level(self.ms);
         let timed_out = !self.pending && self.ms.is_some_and(|m| m >= PING_TIMEOUT_MS);
-        let tone = if self.pending {
+        let tone = if self.pending || timed_out {
             t.fg_faint
         } else {
             signal_color(&t, level)
@@ -106,7 +107,7 @@ impl Widget for Signal {
         } else if self.pending {
             ("…".to_owned(), false)
         } else if timed_out {
-            ("×".to_owned(), false)
+            ("—".to_owned(), false)
         } else {
             match self.ms {
                 None => ("—".to_owned(), false),
@@ -150,12 +151,11 @@ impl Widget for Signal {
         if timed_out {
             let c = Pos2::new(rect.left() + bars_w / 2.0, bottom - h / 2.0);
             let d = Vec2::angled((-25.0_f32).to_radians()) * (bars_w / 2.0 + 1.0);
-            p.line_segment([c - d, c + d], Stroke::new(1.0, t.err));
+            p.line_segment([c - d, c + d], Stroke::new(1.0, t.fg_faint));
         }
         let mut x = rect.left() + bars_w + 6.0;
         if let Some(g) = &g {
-            let ink = if timed_out { t.err } else { tone };
-            paint::text_at(p, g, x, rect.center().y, ink);
+            paint::text_at(p, g, x, rect.center().y, tone);
             x += g.size().x;
         }
         if let Some(u) = &ug {

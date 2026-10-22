@@ -635,6 +635,10 @@ impl<'a> ServerListRow<'a> {
         {
             action = Some(a);
         }
+        if paint::keyboard_focus(ui, &row) {
+            let tk = ui.tokens();
+            paint::focus_ring(ui.painter(), rect.shrink(2.0), 0, &tk);
+        }
         let d = self.data;
         let menu_items = self.menu;
         let show_mods = d.mods_count > 0 && self.mods_clickable;
@@ -1094,6 +1098,9 @@ impl<'a> ServerListRow<'a> {
             let jh = paint::ease(ui, jr.id.with("hover"), jr.hovered());
             let lit = paint::ease(ui, id.with("lit"), self.selected || hovered || jr.hovered());
             paint_join_quiet(ui, join, lit, jh, jr.is_pointer_button_down_on());
+            if paint::keyboard_focus(ui, &jr) {
+                paint::focus_ring(ui.painter(), join, size::RADIUS_SM, &tk);
+            }
         }
         let _ = jr.on_hover_cursor(egui::CursorIcon::PointingHand).tip_kbd(
             t("servers", "connectTitle"),
@@ -1398,6 +1405,9 @@ impl egui::Widget for SortHead<'_> {
             (false, _) => lucide::ARROW_UP_DOWN.paint(p, ir, ink.gamma_multiply(0.4)),
             (true, true) => lucide::ARROW_UP.paint(p, ir, ink),
             (true, false) => lucide::ARROW_DOWN.paint(p, ir, ink),
+        }
+        if paint::keyboard_focus(ui, &resp) {
+            paint::focus_ring(ui.painter(), rect, size::RADIUS_XS, &tk);
         }
         let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
         if self.tip.is_empty() {

@@ -12,8 +12,8 @@ use crate::i18n::{self, t};
 use crate::icons::{Icon, lucide};
 use crate::kit::paint::{self, alpha};
 use crate::kit::{
-    Button, IconButton, Input, Segment, Segmented, Select, SelectOption, Side, Tag, TipExt, Tone,
-    Variant,
+    Button, Field, IconButton, Input, Segment, Segmented, Select, SelectOption, Side, Tag, TipExt,
+    Tone, Variant,
 };
 use crate::parts::{ColorToken, LanguagePicker, SettingsSection, preset_name, theme_preview};
 use crate::store::theme::{TOKEN_NAMES, raw_get};
@@ -97,6 +97,9 @@ fn grid(ui: &mut Ui, cards: &[Card<'_>], worn: Option<&str>) -> Option<String> {
                 alpha(tk.raised, 0.4 * h),
                 paint::lerp(tk.border, tk.border_strong, h),
             );
+        }
+        if paint::keyboard_focus(ui, &b) {
+            paint::focus_ring(p, r, size::RADIUS_MD, &tk);
         }
         let inner = r.shrink(6.0);
         let pr = Rect::from_min_size(inner.min, Vec2::new(inner.width(), 72.0));
@@ -199,6 +202,26 @@ impl SettingsView {
                     ui.add(Tag::new(&worn_name).tone(Tone::Accent));
                 },
                 |ui| {
+                    // The interface's size (also Ctrl+ / Ctrl−), kept for the next start.
+                    let mut pct = (cx.prefs.get().scale * 100.0).round() as i32;
+                    Field::new(t("settings", "uiScale"))
+                        .hint(t("settings", "uiScaleHint"))
+                        .show(ui, |ui| {
+                            let opts = [
+                                Segment::new(75, "75 %"),
+                                Segment::new(90, "90 %"),
+                                Segment::new(100, "100 %"),
+                                Segment::new(110, "110 %"),
+                                Segment::new(125, "125 %"),
+                                Segment::new(150, "150 %"),
+                            ];
+                            if ui.add(Segmented::new(&mut pct, &opts)).changed() {
+                                let _ = cx.run(
+                                    "ui.set_scale",
+                                    &json!({ "scale": f64::from(pct) / 100.0 }),
+                                );
+                            }
+                        });
                     // Follow the system, and which dark and light preset that means.
                     block(ui, 10, false, None, |ui| {
                         ui.horizontal_wrapped(|ui| {
@@ -539,6 +562,9 @@ fn follow_button(ui: &mut Ui, on: bool) -> bool {
             Color32::TRANSPARENT,
             paint::lerp(tk.border, tk.border_strong, h),
         );
+    }
+    if paint::keyboard_focus(ui, &resp) {
+        paint::focus_ring(p, r, size::RADIUS_MD, &tk);
     }
     let ink = if on {
         tk.fg

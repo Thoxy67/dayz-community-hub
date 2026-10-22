@@ -132,7 +132,14 @@ pub fn show(
     );
     let flag_g = mono(ui, &catalog::flag_text(&opt.key, None), size::TEXT_3XS);
     let code_w = flag_g.size().x + 8.0;
-    let desc_w = (text_w - code_w - 6.0).max(20.0);
+    // Beside the flag while it has room for a few words; under it in a narrow window,
+    // where beside it would leave one word per line.
+    let stacked = text_w - code_w - 6.0 < 110.0;
+    let desc_w = if stacked {
+        text_w
+    } else {
+        (text_w - code_w - 6.0).max(20.0)
+    };
     let desc_g = {
         let mut job = LayoutJob::default();
         let fmt = |c: Color32| TextFormat {
@@ -151,7 +158,11 @@ pub fn show(
         job.wrap.overflow_character = Some('…');
         ui.fonts_mut(|f| f.layout_job(job))
     };
-    let lines_h = desc_g.size().y.max(CODE_H);
+    let lines_h = if stacked {
+        CODE_H + 2.0 + desc_g.size().y
+    } else {
+        desc_g.size().y.max(CODE_H)
+    };
     let content_h = LABEL_H + 2.0 + lines_h;
     let h = (content_h.max(size::CONTROL_SM) + 2.0 * PAD_Y).round();
 
@@ -199,8 +210,12 @@ pub fn show(
     };
     p.rect_filled(code, CornerRadius::same(size::RADIUS_XS), code_bg);
     paint::text_at(&p, &flag_g, code.left() + 4.0, code.center().y, code_ink);
-    let dx = code.right() + 6.0;
-    let desc_rect = Rect::from_min_size(Pos2::new(dx, ly), desc_g.size());
+    let desc_at = if stacked {
+        Pos2::new(tx, code.bottom() + 2.0)
+    } else {
+        Pos2::new(code.right() + 6.0, ly)
+    };
+    let desc_rect = Rect::from_min_size(desc_at, desc_g.size());
     p.galley(desc_rect.min, desc_g, tk.fg_faint);
     ui.interact(
         Rect::from_min_max(code.min, desc_rect.max.max(code.max)),
@@ -243,6 +258,9 @@ pub fn show(
                 .interact(r, ui.id().with("rec"), Sense::click())
                 .on_hover_cursor(egui::CursorIcon::PointingHand);
             let hv = paint::ease(ui, b.id.with("hover"), b.hovered());
+            if paint::keyboard_focus(ui, &b) {
+                paint::focus_ring(&p, r, size::RADIUS_SM, &tk);
+            }
             p.rect(
                 r,
                 CornerRadius::same(size::RADIUS_SM),

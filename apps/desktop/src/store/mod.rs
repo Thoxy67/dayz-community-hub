@@ -100,6 +100,13 @@ impl Bus {
 
     // ── toasts (= `say`) ────────────────────────────────────────────────────
 
+    /// The next step of a story told in one toast (`"launch"`: starting, waiting for
+    /// Steam, started): replaces the step before.
+    pub fn step(&self, topic: &'static str, text: impl Into<String>, tone: ToastTone) {
+        toast::say_topic(&self.ctx, topic, text, tone);
+        self.ctx.request_repaint();
+    }
+
     pub fn info(&self, text: impl Into<String>) {
         toast::say(&self.ctx, text, ToastTone::Neutral);
         self.ctx.request_repaint();
@@ -235,20 +242,20 @@ impl Stores {
         let bus = self.bus.clone();
         match ev {
             HubEvent::LaunchDone(name) => {
-                bus.ok(crate::i18n::tf(
-                    "shell",
-                    "statusLaunched",
-                    &[("name", name)],
-                ));
+                bus.step(
+                    "launch",
+                    crate::i18n::tf("shell", "statusLaunched", &[("name", name)]),
+                    ToastTone::Ok,
+                );
                 self.game.launched();
                 self.profile.load();
             }
             HubEvent::LaunchError(error) => {
-                bus.err(crate::i18n::tf(
-                    "shell",
-                    "statusLaunchError",
-                    &[("error", error)],
-                ));
+                bus.step(
+                    "launch",
+                    crate::i18n::tf("shell", "statusLaunchError", &[("error", error)]),
+                    ToastTone::Err,
+                );
             }
             HubEvent::CliArgs(args) => self.connect.cli(args.clone(), self.cli_snapshot()),
             _ => {}

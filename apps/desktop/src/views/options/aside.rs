@@ -509,6 +509,9 @@ fn command_block(
             .interact(br, ui.id().with("linux-copy"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand);
         let hv = paint::ease(ui, b.id.with("hover"), b.hovered());
+        if paint::keyboard_focus(ui, &b) {
+            paint::focus_ring(ui.painter(), br, size::RADIUS_SM, tk);
+        }
         if hv > 0.0 {
             ui.painter().rect_filled(
                 br,

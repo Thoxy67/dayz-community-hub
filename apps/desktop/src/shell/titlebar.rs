@@ -78,7 +78,8 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx, menus_state: &mut MenuState) {
     // Click, not drag: egui hands a drag to the drag-sensing widget under the pointer
     // even below a button, so a press on a title-bar button also moved the window and
     // the button never saw its release. Sensing clicks, the topmost control wins.
-    let drag = ui.interact(rect, ui.id().with("titlebar-drag"), Sense::click());
+    // (Not focusable: the bar is no stop for Tab.)
+    let drag = ui.interact(rect, ui.id().with("titlebar-drag"), Sense::CLICK);
     if let Some(press) = drag_press(ui, &drag) {
         match press {
             Press::Second => toggle_maximized(ui.ctx()),
@@ -111,7 +112,12 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx, menus_state: &mut MenuState) {
         Stroke::new(1.0, tk.border_strong),
     );
     x += 1.0 + 10.0;
-    let here = cx.nav.view.label();
+    // Under the setup wizard the view is hidden: the crumb names the wizard, not it.
+    let here = if super::wizard_covers(cx) {
+        t("shell", "titlebarSetup")
+    } else {
+        cx.nav.view.label()
+    };
     let left_end = x;
 
     // ── the right side, from the window's edge inwards ──
@@ -160,6 +166,7 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx, menus_state: &mut MenuState) {
             Rect::from_center_size(r.center(), Vec2::splat(px)),
             ink,
         );
+        super::ring(ui, &resp, r.shrink(3.0), size::RADIUS_SM);
         if resp.clicked() {
             let action = match i {
                 0 => "close",
@@ -351,6 +358,7 @@ fn search_pill(ui: &mut Ui, cx: &mut Ctx, right: f32, rect: Rect, win_w: f32) ->
         x += g.size().x + 8.0;
     }
     Kbd::paint_at(ui, "Ctrl K", x, cy - 0.5);
+    super::ring(ui, &resp, r, size::RADIUS_SM);
     let resp = resp.tip_kbd(t("shell", "paletteOpen"), "", Side::Bottom);
     if resp.clicked() {
         cx.stores.dialogs.shortcuts = false;
@@ -454,6 +462,7 @@ fn profile(ui: &mut Ui, cx: &mut Ctx, right: f32, rect: Rect, win_w: f32) -> f32
     if let Some(lg) = &lg {
         paint::text_at(p, lg, x, cy + 0.5, tk.fg_faint);
     }
+    super::ring(ui, &resp, r.shrink(3.0), size::RADIUS_SM);
     let resp = resp.tip_kbd(t("shell", "titlebarEditAccount"), "", Side::Bottom);
     if resp.clicked() {
         let _ = cx.run("settings.open_account", &serde_json::Value::Null);

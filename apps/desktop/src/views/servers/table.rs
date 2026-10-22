@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 
 use super::{Run, UiState};
 use crate::app::Ctx;
-use crate::i18n::t;
+use crate::i18n::{t, tf};
 use crate::icons::lucide;
 use crate::kit::{Button, Skeleton, Variant, VirtualList};
 use crate::parts::{
@@ -111,7 +111,8 @@ pub fn show(ui: &mut Ui, cx: &Ctx, st: &mut UiState, cache: &mut RowCache, run: 
         Empty::new()
             .icon(lucide::CLOUD_OFF)
             .title(t("servers", "listUnavailable"))
-            .text(&err)
+            .error(&err)
+            .text(t("servers", "listUnavailableHint"))
             .show(ui, |ui| {
                 let b = Button::new(t("servers", "refresh"))
                     .icon(lucide::REFRESH_CW)
@@ -142,19 +143,47 @@ pub fn show(ui: &mut Ui, cx: &Ctx, st: &mut UiState, cache: &mut RowCache, run: 
     };
     if order.total() == 0 {
         heading(ui, st, run);
-        let active = st.f.active();
-        Empty::new()
-            .icon(lucide::SEARCH_X)
-            .title(t("servers", "noMatch"))
-            .show(ui, |ui| {
-                if active
-                    && ui
+        if st.f.active() {
+            // Which filters hide everything, in the chips' words, and the way out.
+            let names: Vec<String> = super::filters::chips(&st.f)
+                .into_iter()
+                .map(|(_, w)| w)
+                .collect();
+            let why = tf(
+                "servers",
+                "noMatchFilters",
+                &[("filters", &names.join(" · "))],
+            );
+            Empty::new()
+                .icon(lucide::SEARCH_X)
+                .title(t("servers", "noMatch"))
+                .text(&why)
+                .show(ui, |ui| {
+                    if ui
                         .add(Button::new(t("servers", "clearFilters")).variant(Variant::Accent))
                         .clicked()
-                {
-                    run.push(("servers.filter.clear", Value::Null));
-                }
-            });
+                    {
+                        run.push(("servers.filter.clear", Value::Null));
+                    }
+                });
+        } else {
+            // No filter, no server: the sources brought nothing (yet); ask again.
+            let refreshing = servers.refreshing;
+            Empty::new()
+                .icon(lucide::SERVER)
+                .title(t("servers", "listEmpty"))
+                .text(t("servers", "listEmptyText"))
+                .show(ui, |ui| {
+                    let b = Button::new(t("servers", "refresh"))
+                        .icon(lucide::REFRESH_CW)
+                        .spinner(refreshing)
+                        .enabled(!refreshing)
+                        .variant(Variant::Accent);
+                    if ui.add(b).clicked() {
+                        run.push(("servers.refresh", Value::Null));
+                    }
+                });
+        }
         return;
     }
 

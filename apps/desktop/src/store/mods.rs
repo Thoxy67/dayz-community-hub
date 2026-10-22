@@ -23,8 +23,8 @@ use crate::i18n::{plural, t, tf};
 use crate::rt::{self, Task};
 
 const UPDATES_TTL_MS: u128 = 5 * 60 * 1000;
-/// After a removal, how often the disk and Steam are read again while Steam's copy of
-/// a removed mod is still there, and for how long.
+/// After a removal, how often the disk is read again while Steam's copy of a removed
+/// mod is still there, and for how long.
 const RECHECK: Duration = Duration::from_secs(3);
 const RECHECK_FOR: Duration = Duration::from_secs(120);
 /// A removed mod Steam calls subscribed again after this long was subscribed again
@@ -287,7 +287,12 @@ impl Mods {
         // A removed mod whose folder is gone is gone for good; one still on disk is
         // Steam's copy waiting to be deleted: kept out of the list, read again soon.
         let on_disk: Vec<u64> = list.iter().map(|m| m.id).collect();
+        let before = self.removed.len();
         self.removed.retain(|id, _| on_disk.contains(id));
+        if self.removed.len() < before {
+            // Steam deleted a copy: its view of the subscriptions has moved too.
+            self.load_steam();
+        }
         list.retain(|m| !self.removed.contains_key(&m.id));
         self.recheck_at = self
             .removed
@@ -1067,9 +1072,10 @@ impl Mods {
         if let Some(at) = self.recheck_at {
             let now = Instant::now();
             if now >= at {
+                // The disk only: asking Steam starts a session (a worker process),
+                // which is asked once more when the copy is gone.
                 self.recheck_at = None;
                 self.load();
-                self.load_steam();
             } else if let Some(r) = rt::Rt::get() {
                 r.ctx().request_repaint_after(at - now);
             }

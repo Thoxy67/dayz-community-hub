@@ -218,7 +218,7 @@ fn toolbar(ui: &mut Ui, st: &mut UiState, wide: bool, acts: &mut Vec<Act>) {
         let w = if wide {
             room.min(320.0)
         } else {
-            room.clamp(128.0, 176.0)
+            room.clamp(128.0, 240.0)
         };
         ui.add(
             Input::new(&mut st.search)
@@ -371,11 +371,31 @@ fn cards(ui: &mut Ui, st: &mut UiState, opts: &[LaunchOptionDto], acts: &mut Vec
     let q = st.search.trim().to_lowercase();
     let shown = groups(opts, &q, st.active_only);
     if shown.is_empty() {
-        let title = tf("options", "noMatch", &[("search", &st.search)]);
+        // Say which filter emptied the list, with the way back from each.
+        let searching = !q.is_empty();
+        let title = if searching {
+            tf("options", "noMatch", &[("search", &st.search)])
+        } else {
+            t("options", "noneActive").to_string()
+        };
+        let (mut clear, mut show_all) = (false, false);
         Empty::new()
             .icon(lucide::SEARCH_X)
             .title(&title)
-            .show(ui, |_| {});
+            .show(ui, |ui| {
+                if searching && ui.add(Button::new(t("common", "clearSearch"))).clicked() {
+                    clear = true;
+                }
+                if st.active_only && ui.add(Button::new(t("options", "showAll"))).clicked() {
+                    show_all = true;
+                }
+            });
+        if clear {
+            st.search.clear();
+        }
+        if show_all {
+            acts.push(Act::ActiveOnly);
+        }
         return;
     }
     let cols = if ui.ctx().content_rect().width() >= TWO_COLUMNS {

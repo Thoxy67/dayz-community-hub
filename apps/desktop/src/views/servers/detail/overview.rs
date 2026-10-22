@@ -335,6 +335,18 @@ pub fn show(ui: &mut Ui, cx: &Ctx, m: &Model, run: &mut Run) {
                 ui.add(Facts::new(&fs));
                 if m.live_error.is_some() && m.a2s.is_none() {
                     error_box(ui, t("detail", "liveFailed"));
+                    // The way out beside the failure, not only the header's icon.
+                    ui.add_space(6.0);
+                    if ui
+                        .add(
+                            Button::new(t("detail", "retry"))
+                                .icon(lucide::REFRESH_CW)
+                                .size(Size::Sm),
+                        )
+                        .clicked()
+                    {
+                        run.push(("servers.detail.refresh_live", target_args(m)));
+                    }
                 }
             },
         );
@@ -388,6 +400,10 @@ pub(super) fn link(ui: &mut Ui, text: &str) -> egui::Response {
         ui.painter()
             .hline(r.x_range(), r.bottom() + 1.0, Stroke::new(1.0, c));
     }
+    if crate::kit::paint::keyboard_focus(ui, &resp) {
+        crate::kit::paint::focus_ring(ui.painter(), r, size::RADIUS_XS, &tk);
+    }
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Link, true, text));
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 

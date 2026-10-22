@@ -157,7 +157,9 @@ fn place_row(ui: &mut Ui, l: &Loaded, i: usize, p: &PlaceStatDto, last: bool, ru
     // `grid-cols-[1.5rem_minmax(0,1fr)_minmax(6rem,14rem)_5rem_2rem] gap-x-3 px-1`
     let inner = rect.shrink2(Vec2::new(4.0, 0.0));
     let free = (inner.width() - 24.0 - 80.0 - 32.0 - 48.0).max(0.0);
-    let bar_w = free.clamp(96.0, 224.0).min(free.max(0.0));
+    // The bar gives way before the name on a narrow window: at most 45 % of the room
+    // (the full 14rem on a wide one).
+    let bar_w = (free * 0.45).clamp(64.0, 224.0).min(free);
     let name_w = (free - bar_w).max(0.0);
     let x_name = inner.left() + 36.0;
     let x_bar = x_name + name_w + 12.0;

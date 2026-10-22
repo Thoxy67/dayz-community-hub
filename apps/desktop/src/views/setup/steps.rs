@@ -560,6 +560,9 @@ fn choices(ui: &mut Ui, w: &Wizard, acts: &mut Acts) {
                 paint::lerp(tk.border, tk.border_strong, h),
             );
         }
+        if paint::keyboard_focus(ui, &resp) {
+            paint::focus_ring(p, r, size::RADIUS_MD, &tk);
+        }
         let cy = r.top() + 13.0 + head / 2.0;
         let x = r.left() + 13.0;
         icon.paint(
@@ -758,6 +761,9 @@ fn install_linux(ui: &mut Ui, w: &Wizard, acts: &mut Acts) {
                         Rect::from_center_size(b.center(), Vec2::splat(size::ICON_SM)),
                         ink,
                     );
+                    if paint::keyboard_focus(ui, &resp) {
+                        paint::focus_ring(p, b, size::RADIUS_SM, &tk);
+                    }
                     let resp = resp
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .tip(copy);

@@ -338,10 +338,13 @@ fn sources(ui: &mut Ui, run: &mut Run) {
             });
         }
         let hover = if src.url.is_some() {
-            paint::ease(ui, resp.id.with("h"), resp.hovered())
+            paint::ease(ui, resp.id.with("h"), resp.hovered() || resp.has_focus())
         } else {
             0.0
         };
+        if paint::keyboard_focus(ui, &resp) {
+            paint::focus_ring(ui.painter(), rect, size::RADIUS_SM, &tk);
+        }
         let p = ui.painter();
         if hover > 0.0 {
             p.rect_filled(

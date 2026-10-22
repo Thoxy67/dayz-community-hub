@@ -92,14 +92,16 @@ impl Tokens {
             fg_muted: rgb(mix(raw.fg, 0.68, raw.bg)),
             // Faint at half way: at 46% most dark presets fell under 3:1 on their panels.
             fg_faint: rgb(mix(raw.fg, 0.50, raw.bg)),
-            accent: rgb(raw.accent),
+            // The meaning colours are also small text (tags, figures, map names): at
+            // least 4.5:1 on the panel, lightness moved as little as that takes.
+            accent: legible(raw.accent, raw.panel, scheme),
             accent_fg: rgb(raw.accent_fg),
-            ok: rgb(raw.ok),
-            warn: rgb(raw.warn),
-            err: rgb(raw.err),
-            info: rgb(raw.info),
-            map: rgb(raw.map),
-            mods: rgb(raw.mods),
+            ok: legible(raw.ok, raw.panel, scheme),
+            warn: legible(raw.warn, raw.panel, scheme),
+            err: legible(raw.err, raw.panel, scheme),
+            info: legible(raw.info, raw.panel, scheme),
+            map: legible(raw.map, raw.panel, scheme),
+            mods: legible(raw.mods, raw.panel, scheme),
         }
     }
 
@@ -175,6 +177,48 @@ pub fn with_alpha(c: Color32, a: f32) -> Color32 {
 }
 
 /// oklch to 8-bit sRGB, clipped to the gamut (bottosson.github.io/posts/oklab).
+/// Text contrast to aim for (WCAG AA for small text).
+const LEGIBLE: f32 = 4.5;
+
+/// `c`, darkened (light scheme) or lightened (dark) until it reads at [`LEGIBLE`] on
+/// `ground`; unchanged when it already does.
+fn legible(c: Oklch, ground: Oklch, scheme: Scheme) -> Color32 {
+    let ground = rgb(ground);
+    let mut c = c;
+    for _ in 0..60 {
+        let out = rgb(c);
+        if contrast(out, ground) >= LEGIBLE {
+            return out;
+        }
+        let l = match scheme {
+            Scheme::Light => c[0] - 0.01,
+            Scheme::Dark => c[0] + 0.01,
+        };
+        if !(0.0..=1.0).contains(&l) {
+            break;
+        }
+        c[0] = l;
+    }
+    rgb(c)
+}
+
+/// WCAG contrast ratio of two opaque colours (1 to 21).
+pub fn contrast(a: Color32, b: Color32) -> f32 {
+    fn lum(c: Color32) -> f32 {
+        let ch = |v: u8| {
+            let v = f32::from(v) / 255.0;
+            if v <= 0.040_45 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * ch(c.r()) + 0.7152 * ch(c.g()) + 0.0722 * ch(c.b())
+    }
+    let (la, lb) = (lum(a), lum(b));
+    (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+}
+
 pub fn rgb([l, c, h]: Oklch) -> Color32 {
     let (s, co) = h.to_radians().sin_cos();
     let (a, b) = (c * co, c * s);
@@ -339,6 +383,26 @@ pub fn apply(ctx: &egui::Context, t: Tokens) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn meaning_colours_read_on_every_preset() {
+        use super::*;
+        for p in presets::PRESETS {
+            let t = Tokens::derive(&p.raw, p.scheme);
+            for (name, c) in [
+                ("accent", t.accent),
+                ("ok", t.ok),
+                ("warn", t.warn),
+                ("err", t.err),
+                ("info", t.info),
+                ("map", t.map),
+                ("mods", t.mods),
+            ] {
+                let r = contrast(c, t.panel);
+                assert!(r >= 4.4, "{} {name}: {r:.2}", p.name);
+            }
+        }
+    }
+
     use super::*;
 
     #[test]

@@ -166,7 +166,8 @@ pub(super) fn password(ctx: &Context, cx: &mut Ctx, st: &mut DialogState) {
                         font(Face::Sans, size::TEXT_XS),
                         tk.fg_muted,
                     );
-                    let (r, resp) = ui.allocate_exact_size(g.size(), Sense::click());
+                    // The checkbox is the Tab stop; its words only take the click.
+                    let (r, resp) = ui.allocate_exact_size(g.size(), Sense::CLICK);
                     ui.painter().galley(r.min, g, tk.fg_muted);
                     if resp.clicked() {
                         *save = !*save;

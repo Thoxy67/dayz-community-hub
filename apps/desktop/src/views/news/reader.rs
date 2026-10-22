@@ -168,6 +168,9 @@ fn article(
         let hit = ui
             .interact(r, ui.id().with("hero"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::ZoomIn);
+        if paint::keyboard_focus(ui, &hit) {
+            paint::focus_ring(ui.painter(), r.shrink(3.0), size::RADIUS_SM, &tk);
+        }
         let hit = crate::kit::TipExt::tip(hit, t("news", "zoomImage"));
         if hit.clicked() {
             run.push(("news.zoom_image", json!({ "src": url, "original": url })));

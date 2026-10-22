@@ -162,6 +162,9 @@ pub fn bar(ui: &mut Ui, s: &SourcesChanged, open: bool) {
             ink,
         );
         draw(p, &dg, dr.left() + 20.0, cy, ink);
+        if paint::keyboard_focus(ui, &dresp) {
+            paint::focus_ring(p, dr, size::RADIUS_XS, &tk);
+        }
     }
     dresp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, details_label));
     let dresp = dresp.on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -196,6 +199,22 @@ pub fn bar(ui: &mut Ui, s: &SourcesChanged, open: bool) {
         text(ui, &format::num(f64::from(s.dzsa.count)), &mono, tk.fg);
     });
 
+    // Kept: the servers earlier lists had, checked again; its room is kept from Steam's
+    // figures, and it is left out whole when it does not fit (a word cut by the right
+    // end reads as a different one).
+    let kept_n = if s.kept.alive > 0 {
+        s.kept.alive
+    } else {
+        s.kept.total
+    };
+    let kept_w = {
+        let name =
+            crate::views::servers::stencil_galley(ui, t("sources", "kept"), tk.fg_muted, None);
+        let num = ph(ui, &format::num(f64::from(kept_n)), mono.clone());
+        12.0 + name.size().x + 8.0 + num.size().x
+    };
+    let kept_room = if s.kept.total > 0 { kept_w + 20.0 } else { 0.0 };
+
     // Steam: via, the requests' meter or the phase, then its figures (first to go).
     let via = if steam.needs_key {
         t("sources", "needsKey")
@@ -213,7 +232,14 @@ pub fn bar(ui: &mut Ui, s: &SourcesChanged, open: bool) {
             t("sources", "steamHint"),
         );
         if !via.is_empty() {
-            text(ui, via, &small, tk.fg_faint);
+            // A missing key is the reason Steam brings nothing: said in the warning
+            // tone, not as faint as a detail.
+            let tone = if steam.needs_key {
+                tk.warn
+            } else {
+                tk.fg_faint
+            };
+            text(ui, via, &small, tone);
         }
         if steam.phase == Phase::Running && steam.requests_total > 0 {
             let frac = steam.requests_done as f32 / steam.requests_total.max(1) as f32;
@@ -242,7 +268,7 @@ pub fn bar(ui: &mut Ui, s: &SourcesChanged, open: bool) {
         } else if steam.phase != Phase::Off && rect.width() >= 900.0 {
             // What Steam brought, in words; the counts behind it in the tip (and in
             // Details).
-            let room = ui.available_width();
+            let room = (ui.available_width() - kept_room).max(0.0);
             let added = format!("+{}", format::num(f64::from(steam.added)));
             let word = format!(" {}", t("sources", "added").to_lowercase());
             let tip = format!(
@@ -256,19 +282,22 @@ pub fn bar(ui: &mut Ui, s: &SourcesChanged, open: bool) {
                 format::num(f64::from(steam.listed)),
             );
             let ga = ph(ui, &added, mono.clone());
-            let gr = ph_trunc(ui, &word, small.clone(), (room - ga.size().x).max(0.0));
-            let (r, resp) = ui.allocate_exact_size(
-                Vec2::new((ga.size().x + gr.size().x).min(room.max(0.0)), BAR_H),
-                Sense::hover(),
-            );
-            draw(ui.painter(), &ga, r.left(), cy, tk.ok);
-            draw(ui.painter(), &gr, r.left() + ga.size().x, cy, tk.fg_muted);
-            let _ = resp.tip_kbd(&tip, "", Side::Bottom);
+            // The figure whole or nothing; its word may shorten.
+            if room >= ga.size().x {
+                let gr = ph_trunc(ui, &word, small.clone(), room - ga.size().x);
+                let (r, resp) = ui.allocate_exact_size(
+                    Vec2::new((ga.size().x + gr.size().x).min(room), BAR_H),
+                    Sense::hover(),
+                );
+                draw(ui.painter(), &ga, r.left(), cy, tk.ok);
+                draw(ui.painter(), &gr, r.left() + ga.size().x, cy, tk.fg_muted);
+                let _ = resp.tip_kbd(&tip, "", Side::Bottom);
+            }
         }
     });
 
     // Kept: the servers earlier lists had, checked again.
-    if s.kept.total > 0 {
+    if s.kept.total > 0 && ui.available_width() >= kept_room {
         ui.scope(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
             cell(
@@ -277,12 +306,7 @@ pub fn bar(ui: &mut Ui, s: &SourcesChanged, open: bool) {
                 s.kept.phase,
                 t("sources", "keptHint"),
             );
-            let n = if s.kept.alive > 0 {
-                s.kept.alive
-            } else {
-                s.kept.total
-            };
-            text(ui, &format::num(f64::from(n)), &mono, tk.fg);
+            text(ui, &format::num(f64::from(kept_n)), &mono, tk.fg);
             if s.kept.removed > 0 {
                 text(
                     ui,

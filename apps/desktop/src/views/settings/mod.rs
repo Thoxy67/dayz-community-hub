@@ -878,7 +878,7 @@ impl SettingsView {
         p.add(paint::shadow_pop().as_shape(rect, CornerRadius::same(size::RADIUS_MD)));
         paint::plate(&p, rect, size::RADIUS_MD, tk.overlay, alpha(tk.warn, 0.5));
         // Clicks on the bar never reach the page under it.
-        bui.interact(rect, Id::new("settings-unsaved-bg"), Sense::click());
+        bui.interact(rect, Id::new("settings-unsaved-bg"), Sense::CLICK);
         bui.add_space(12.0);
         let (ir, _) = bui.allocate_exact_size(Vec2::splat(size::ICON), Sense::hover());
         lucide::TRIANGLE_ALERT.paint(&p, ir, tk.warn);
@@ -1062,6 +1062,9 @@ pub(crate) fn link(ui: &mut Ui, label: &str, url: &str) {
             r.center().y + g.size().y / 2.0,
             Stroke::new(1.0, tk.accent),
         );
+    }
+    if paint::keyboard_focus(ui, &resp) {
+        paint::focus_ring(p, r, size::RADIUS_XS, &tk);
     }
     if resp
         .on_hover_cursor(egui::CursorIcon::PointingHand)

@@ -291,6 +291,10 @@ pub fn show(ui: &mut Ui, cx: &Ctx, st: &mut DetailState, m: &Model, run: &mut Ru
                 c,
             );
             draw(ui.painter(), &g, r.left() + 18.0, r.center().y, c);
+            if paint::keyboard_focus(ui, &resp) {
+                paint::focus_ring(ui.painter(), r, size::RADIUS_XS, &tk);
+            }
+            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Link, true, label));
             if resp
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .clicked()
@@ -817,6 +821,10 @@ fn link_button(ui: &mut Ui, label: &str, url: &str) -> egui::Response {
         ink,
     );
     draw(p, &g, r.left() + 24.0, r.center().y, ink);
+    if paint::keyboard_focus(ui, &resp) {
+        paint::focus_ring(p, r, size::RADIUS_SM, &tk);
+    }
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Link, true, label));
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
         .tip_kbd(url, "", Side::Top)
 }

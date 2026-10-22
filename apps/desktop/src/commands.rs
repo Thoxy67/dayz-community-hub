@@ -174,7 +174,9 @@ impl Combo {
         if (m.ctrl || m.command || m.mac_cmd) != self.ctrl || m.alt != self.alt {
             return false;
         }
-        if (self.shift || !self.printable() || self.ctrl) && m.shift != self.shift {
+        // The zoom keys: `+` is a shifted key on many layouts, so Shift does not count.
+        let zoom_key = matches!(self.key, Key::Plus | Key::Equals | Key::Minus);
+        if !zoom_key && (self.shift || !self.printable() || self.ctrl) && m.shift != self.shift {
             return false;
         }
         if key == self.key {
@@ -219,6 +221,9 @@ pub fn key_name(k: Key) -> &'static str {
         Key::Questionmark => "?",
         Key::Slash => "/",
         Key::Comma => ",",
+        Key::Plus => "+",
+        Key::Equals => "=",
+        Key::Minus => "−",
         other => other.symbol_or_name(),
     }
 }
@@ -348,6 +353,19 @@ pub const SHORTCUTS: &[Shortcut] = &[
         sc("rejoin", S::Global, &[Combo::ctrl(Key::L)], "rejoin"),
         &[P::L3],
         Some("rejoin"),
+    ),
+    // The interface's size, as browsers do (Ctrl+0 is the statistics view).
+    sc(
+        "ui.zoom_in",
+        S::Global,
+        &[Combo::ctrl(Key::Plus), Combo::ctrl(Key::Equals)],
+        "zoomIn",
+    ),
+    sc(
+        "ui.zoom_out",
+        S::Global,
+        &[Combo::ctrl(Key::Minus)],
+        "zoomOut",
     ),
     pad(
         sc("back", S::Global, &[Combo::key(Key::Escape)], "back"),
@@ -779,6 +797,37 @@ fn arg_bool(a: &Value, k: &str) -> Option<bool> {
     a.get(k).and_then(Value::as_bool)
 }
 
+/// The interface sizes Ctrl+ and Ctrl− step through.
+pub const ZOOM_STEPS: [f32; 11] = [0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5];
+
+/// The next size up (`dir` 1) or down (-1) from `now`.
+pub fn zoom_next(now: f32, dir: i32) -> f32 {
+    let next = if dir > 0 {
+        ZOOM_STEPS.iter().find(|s| **s > now + 0.005)
+    } else {
+        ZOOM_STEPS.iter().rev().find(|s| **s < now - 0.005)
+    };
+    next.copied().unwrap_or(now)
+}
+
+fn zoom_step(cx: &mut Ctx, dir: i32) {
+    let now = cx.prefs.get().scale;
+    set_zoom(cx, zoom_next(now, dir));
+}
+
+/// Set the interface size (kept in the preferences), and say it.
+fn set_zoom(cx: &mut Ctx, s: f32) {
+    let s = s.clamp(ZOOM_STEPS[0], ZOOM_STEPS[ZOOM_STEPS.len() - 1]);
+    if (cx.prefs.get().scale - s).abs() < 1e-3 {
+        return;
+    }
+    cx.prefs.edit().scale = s;
+    let pct = (s * 100.0).round() as i32;
+    cx.stores
+        .bus
+        .info(crate::i18n::tf("shell", "zoomNow", &[("percent", &pct)]));
+}
+
 fn arg_f32(a: &Value, k: &str) -> Option<f32> {
     a.get(k)
         .and_then(Value::as_f64)
@@ -1010,6 +1059,30 @@ pub static COMMANDS: &[CommandSpec] = &[
         };
         cx.prefs.edit().ui.pad_mode = mode;
     }),
+    cmd!("ui.zoom_in", ("keys", "zoomIn"), "settings", |cx, _| {
+        zoom_step(cx, 1);
+    }),
+    cmd!("ui.zoom_out", ("keys", "zoomOut"), "settings", |cx, _| {
+        zoom_step(cx, -1);
+    }),
+    cmd!(
+        "ui.zoom_reset",
+        ("keys", "zoomReset"),
+        "settings",
+        |cx, _| {
+            set_zoom(cx, 1.0);
+        }
+    ),
+    cmd!(
+        "ui.set_scale",
+        ("keys", "zoomReset"),
+        "settings",
+        |cx, a| {
+            if let Some(s) = arg_f32(a, "scale") {
+                set_zoom(cx, s);
+            }
+        }
+    ),
     cmd!("pad.set_scale", ("pad", "scale"), "settings", |cx, a| {
         if let Some(s) = arg_f32(a, "scale").filter(|s| (0.5..=3.0).contains(s)) {
             cx.prefs.edit().ui.pad_scale = s;
@@ -3103,6 +3176,22 @@ mod tests {
     use super::*;
     use crate::i18n;
     use rustc_hash::FxHashSet;
+
+    #[test]
+    fn zoom_steps_and_keys() {
+        assert_eq!(zoom_next(1.0, 1), 1.1);
+        assert_eq!(zoom_next(1.0, -1), 0.9);
+        assert_eq!(zoom_next(2.5, 1), 2.5);
+        assert_eq!(zoom_next(0.67, -1), 0.67);
+        // A size between steps goes to the next one.
+        assert_eq!(zoom_next(1.2, 1), 1.25);
+        let ctrl = Modifiers::COMMAND;
+        let shift = Modifiers::COMMAND | Modifiers::SHIFT;
+        assert!(Combo::ctrl(Key::Plus).matches(Key::Plus, None, shift));
+        assert!(Combo::ctrl(Key::Equals).matches(Key::Equals, None, ctrl));
+        assert!(Combo::ctrl(Key::Minus).matches(Key::Minus, None, ctrl));
+        assert!(!Combo::ctrl(Key::Minus).matches(Key::Minus, None, Modifiers::NONE));
+    }
 
     #[test]
     fn ids_are_unique() {

@@ -533,11 +533,13 @@ fn header(ui: &mut Ui, st: &mut StatsState, out: &mut Run) {
                 return;
             };
             let d = &l.data;
-            ui.add(
-                Figure::new(t("stats", "figTime"))
-                    .value(&format::duration(d.total_secs))
-                    .tone(tk.accent),
-            );
+            // No session yet: a dash, not "<1m" (which reads as a session too short to count).
+            let (time, tone) = if d.sessions == 0 && d.total_secs <= 0 {
+                (format::NONE.to_owned(), tk.fg_muted)
+            } else {
+                (format::duration(d.total_secs), tk.accent)
+            };
+            ui.add(Figure::new(t("stats", "figTime")).value(&time).tone(tone));
             ui.add(Figure::new(t("stats", "figSessions")).amount(f64::from(d.sessions)));
             ui.add(Figure::new(t("stats", "figPlaces")).amount(f64::from(d.places)));
             let avg = if d.average_secs > 0 {

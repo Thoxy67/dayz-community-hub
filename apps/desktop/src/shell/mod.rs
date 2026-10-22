@@ -104,6 +104,15 @@ pub(crate) fn stencil(
     )
 }
 
+/// The keyboard's focus ring (`:focus-visible`) on a shell control drawn by hand: `rect`
+/// is where it goes (the control's shape, or inside it where the edge would clip it).
+pub(crate) fn ring(ui: &egui::Ui, resp: &egui::Response, rect: egui::Rect, radius: u8) {
+    if crate::kit::paint::keyboard_focus(ui, resp) {
+        let tk = crate::theme::TokensExt::tokens(ui);
+        crate::kit::paint::focus_ring(ui.painter(), rect, radius, &tk);
+    }
+}
+
 fn state(ctx: &egui::Context) -> Arc<Mutex<State>> {
     ctx.data_mut(|d| {
         d.get_temp_mut_or_default::<Arc<Mutex<State>>>(egui::Id::new("dzch.shell"))

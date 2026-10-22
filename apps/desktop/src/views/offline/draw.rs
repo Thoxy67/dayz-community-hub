@@ -232,6 +232,26 @@ fn missions(ui: &mut Ui, st: &mut OfflineState, run: &mut Run) {
                 .max_rect(ui.max_rect().shrink(size::PAD))
                 .layout(Layout::top_down(Align::Min)),
         );
+        if let Some(err) = &st.load_error {
+            // The folder could not be read: say why, and offer to read it again.
+            Empty::new()
+                .icon(lucide::CIRCLE_ALERT)
+                .title(t("offline", "loadFailed"))
+                .error(err)
+                .show(&mut c, |ui| {
+                    if ui
+                        .add(
+                            Button::new(t("servers", "refresh"))
+                                .icon(lucide::REFRESH_CW)
+                                .enabled(!busy),
+                        )
+                        .clicked()
+                    {
+                        run.push(("offline.refresh", Value::Null));
+                    }
+                });
+            return;
+        }
         let hint = tf(
             "offline",
             "noMissionsHint",
@@ -497,8 +517,14 @@ fn card(
         run.push(("offline.remove_mission", mission));
     }
 
+    // The keyboard's focus on the card: its border becomes the focus ring.
+    let stroke = if paint::keyboard_focus(ui, &resp) {
+        Stroke::new(2.0, tk.accent)
+    } else {
+        Stroke::new(1.0, border)
+    };
     ui.painter()
-        .rect_stroke(rect, radius, Stroke::new(1.0, border), StrokeKind::Inside);
+        .rect_stroke(rect, radius, stroke, StrokeKind::Inside);
     hovered
 }
 

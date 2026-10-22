@@ -82,9 +82,19 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx) {
     let foot = Rect::from_min_max(pos2(inner.left(), split), inner.max);
 
     let mut active: Option<Rect> = None;
+    let mut active_in_foot = false;
     // ── the places, in their groups ──
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(top).id_salt("rail-top"));
     child.set_clip_rect(top.intersect(ui.clip_rect()));
+    // A short window cannot hold every place: the handle shows without a hover, so the
+    // places below the fold are known to be there.
+    child.spacing_mut().scroll.dormant_handle_opacity = 0.6;
+    // The current place is scrolled into sight when it changes (a shortcut, the palette).
+    let seen_id = ui.id().with("rail-seen-view");
+    let changed = ui.data(|d| d.get_temp::<ViewId>(seen_id)) != Some(cx.nav.view);
+    if changed {
+        ui.data_mut(|d| d.insert_temp(seen_id, cx.nav.view));
+    }
     egui::ScrollArea::vertical()
         .id_salt("rail-scroll")
         .auto_shrink([false, false])
@@ -118,6 +128,9 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx) {
                     let r = entry(ui, cx, p, collapsed, w);
                     if cx.nav.view == p.id {
                         active = Some(r);
+                        if changed {
+                            ui.scroll_to_rect(r, None);
+                        }
                     }
                 }
             }
@@ -161,6 +174,7 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx) {
         let r = entry(&mut fui, cx, p, collapsed, w);
         if cx.nav.view == p.id {
             active = Some(r);
+            active_in_foot = true;
         }
         fui.add_space(ENTRY_GAP);
     }
@@ -179,7 +193,9 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx) {
             pos2(rect.left() + PAD_X, y),
             vec2(2.0, (r.height() - 12.0).max(0.0)),
         );
-        ui.painter_at(inner)
+        // A place scrolled out of the places' area takes its bar along (not over the foot).
+        let clip = if active_in_foot { foot } else { top };
+        ui.painter_at(clip)
             .rect_filled(bar, CornerRadius::same(1), tk.accent);
     }
 }
@@ -256,6 +272,7 @@ fn entry(ui: &mut Ui, cx: &mut Ctx, p: &Place, collapsed: bool, w: f32) -> Rect 
         );
         paint::text_at(painter, &g, x, cy, ink);
     }
+    super::ring(ui, &resp, r, size::RADIUS_SM);
     let kbd = commands::view_key(p.id).unwrap_or_default();
     let resp = if collapsed {
         resp.tip_kbd(label, &kbd, Side::Right)
@@ -370,6 +387,7 @@ fn game_block(ui: &mut Ui, cx: &mut Ctx, collapsed: bool, w: f32) {
         );
         paint::text_at(p, &g, x + size::ICON_SM + 6.0, btn.center().y, ink);
     }
+    super::ring(ui, &resp, btn, size::RADIUS_SM);
     if resp.clicked() {
         let _ = cx.run("game.close", &serde_json::Value::Null);
     }
@@ -466,6 +484,7 @@ fn rejoin(ui: &mut Ui, cx: &mut Ctx, collapsed: bool, foot: Rect, y: f32) -> f32
             );
             paint::text_at(p, &g, tx, r.center().y, tk.accent);
         }
+        super::ring(ui, &resp, r, size::RADIUS_SM);
         let tip = format!("{rejoin_label}: {name}");
         if resp.tip_kbd(&tip, "", Side::Right).clicked() {
             let _ = cx.run("rejoin", &serde_json::Value::Null);
@@ -504,6 +523,7 @@ fn rejoin(ui: &mut Ui, cx: &mut Ctx, collapsed: bool, foot: Rect, y: f32) -> f32
         Rect::from_center_size(close_r.center(), Vec2::splat(12.0)),
         paint::lerp(tk.fg_faint, tk.fg, ch),
     );
+    super::ring(ui, &close, close_r, size::RADIUS_XS);
     let close_label = t("common", "close");
     if close.tip_kbd(close_label, "", Side::Top).clicked() {
         let _ = cx.run("rejoin.dismiss", &serde_json::Value::Null);
@@ -543,6 +563,7 @@ fn rejoin(ui: &mut Ui, cx: &mut Ctx, collapsed: bool, foot: Rect, y: f32) -> f32
         name_r.width(),
     );
     paint::text_at(ui.painter(), &ng, left, name_r.center().y, ink);
+    super::ring(ui, &nresp, name_r, size::RADIUS_XS);
     if nresp.tip_kbd(&name, "", Side::Top).clicked() {
         cx.go_focus(ViewId::History, "last");
     }
@@ -596,6 +617,7 @@ fn rejoin(ui: &mut Ui, cx: &mut Ctx, collapsed: bool, foot: Rect, y: f32) -> f32
         br.center().y + 0.5,
         tk.accent_fg,
     );
+    super::ring(ui, &bresp, br, size::RADIUS_SM);
     if bresp.clicked() {
         let _ = cx.run("rejoin", &serde_json::Value::Null);
     }
@@ -635,6 +657,7 @@ fn listed_lines(
     );
     let sresp = sui.add(Signal::new(ms).pending(pending).size(SignalSize::Xs));
     let click = ui.interact(sresp.rect, ui.id().with("rejoin-ping"), Sense::click());
+    super::ring(ui, &click, sresp.rect, size::RADIUS_XS);
     if click.clicked() {
         let timeout = cx.stores.profile.ping_settings().2;
         cx.stores.servers.ping_one(&row.ip, row.query_port, timeout);
@@ -702,6 +725,7 @@ fn collapse_button(ui: &mut Ui, cx: &mut Ctx, collapsed: bool, w: f32) {
         let g = paint::galley(ui, label, font(Face::Sans, size::TEXT_2XS), ink);
         paint::text_at(p, &g, x + size::ICON + 10.0, r.center().y, ink);
     }
+    super::ring(ui, &resp, r, size::RADIUS_SM);
     if resp.clicked() {
         let _ = cx.run("rail.toggle_collapse", &serde_json::Value::Null);
     }

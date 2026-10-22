@@ -155,7 +155,8 @@ impl<'a> Figure<'a> {
 impl Widget for Figure<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
         if self.secondary && ui.ctx().content_rect().width() <= 1240.0 {
-            return ui.allocate_response(Vec2::ZERO, Sense::hover());
+            // Nothing laid out: even an empty allocation would add the row's spacing.
+            return ui.interact(egui::Rect::NOTHING, ui.next_auto_id(), Sense::hover());
         }
         let tk = ui.tokens();
         let id = ui.next_auto_id();
@@ -211,6 +212,10 @@ impl Widget for Figure<'_> {
                     x += 2.0;
                 }
             }
+            if self.clickable && paint::keyboard_focus(ui, &resp) {
+                paint::focus_ring(ui.painter(), rect.expand(2.0), size::RADIUS_XS, &tk);
+            }
+            let p = ui.painter();
             if self.clickable && self.active {
                 p.rect_filled(
                     Rect::from_min_size(

@@ -759,7 +759,14 @@ fn right_segments(cx: &Ctx, st: &StatusState, now: f64, tk: &Tokens) -> Vec<Segm
     let u = &cx.stores.updater;
     match (u.state, &u.info) {
         (UpdateState::Available, Some(info)) => {
-            let tip = tf("shell", "sbUpdateTip", &[("version", &info.version)]);
+            // A copy that cannot update itself (a package, a dev build) is only told.
+            let in_place = u.support.as_ref().is_none_or(|s| s.supported);
+            let key = if in_place {
+                "sbUpdateTip"
+            } else {
+                "sbUpdateElsewhereTip"
+            };
+            let tip = tf("shell", key, &[("version", &info.version)]);
             out.push(
                 Segment::new(SegIcon::Icon(lucide::DOWNLOAD), Tone::Ok, tip)
                     .act(Act::Command("about.open_update"))
@@ -1103,11 +1110,13 @@ fn draw(
             Rect::from_center_size(r.center(), Vec2::splat(12.0)),
             paint::lerp(tk.fg_faint, tk.fg, bh),
         );
+        super::ring(ui, &b, r, size::RADIUS_XS);
         if b.tip_kbd(label, "", Side::Top).clicked() {
             clicked = Some((*act, r));
         }
         bx += 20.0;
     }
+    super::ring(ui, &resp, body, size::RADIUS_XS);
     let resp = if menu::is_open(&resp) {
         resp
     } else {
@@ -1186,7 +1195,7 @@ fn steam_menu(ui: &Ui, cx: &mut Ctx, resp: &egui::Response) {
                     Sense::hover()
                 },
             );
-            let lit = enabled && item.hovered();
+            let lit = enabled && (item.hovered() || item.has_focus());
             let p = ui.painter();
             if lit {
                 p.rect_filled(r, CornerRadius::same(size::RADIUS_XS), tk.raised);

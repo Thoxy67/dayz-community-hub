@@ -368,6 +368,9 @@ pub fn footer(ui: &mut Ui, run: &mut Run) {
                 paint::lerp(tk.border, tk.border_strong, hover),
             );
             paint::text_center(ui.painter(), &g, r, paint::lerp(tk.fg_muted, tk.fg, hover));
+            if paint::keyboard_focus(ui, &resp) {
+                paint::focus_ring(ui.painter(), r, size::RADIUS_SM, &tk);
+            }
             if resp
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .clicked()

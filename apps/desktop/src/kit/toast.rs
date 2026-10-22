@@ -6,6 +6,11 @@
 //! icon, the words, an optional action and a dismiss button. Four seconds, seven with an
 //! action. They slide in from the right edge (8px, `--duration-base`), leave the same way
 //! (160ms), and the others close the gap rather than jump.
+//!
+//! Never the same thing twice: saying what a toast on screen already says (same words,
+//! tone and button) keeps that one up for longer instead. Steps of one story (a launch:
+//! starting, waiting for Steam, started) share a topic ([`say_topic`]): each replaces
+//! the one before in the same toast.
 
 use std::sync::Arc;
 
@@ -43,7 +48,11 @@ pub(crate) struct Toast {
     text: String,
     /// (label, command id) of the button on it.
     action: Option<(String, String)>,
+    /// Steps of one story replace each other ([`say_topic`]).
+    topic: Option<&'static str>,
     born: f64,
+    /// When its time on screen started: its birth, or the last time it was said again.
+    since: f64,
     leaving: Option<f64>,
 }
 
@@ -64,7 +73,17 @@ pub(crate) fn store_id() -> Id {
 
 /// Says something. Returns its id, for [`dismiss`].
 pub fn say(ctx: &Context, text: impl Into<String>, tone: ToastTone) -> u64 {
-    push(ctx, text.into(), tone, None)
+    push(ctx, text.into(), tone, None, None)
+}
+
+/// Says the next step of a story: replaces the toast on screen with the same `topic`.
+pub fn say_topic(
+    ctx: &Context,
+    topic: &'static str,
+    text: impl Into<String>,
+    tone: ToastTone,
+) -> u64 {
+    push(ctx, text.into(), tone, None, Some(topic))
 }
 
 /// Says something with a button on it; pressing it makes [`host`] return `command`
@@ -76,7 +95,13 @@ pub fn say_with_action(
     label: impl Into<String>,
     command: impl Into<String>,
 ) -> u64 {
-    push(ctx, text.into(), tone, Some((label.into(), command.into())))
+    push(
+        ctx,
+        text.into(),
+        tone,
+        Some((label.into(), command.into())),
+        None,
+    )
 }
 
 pub fn ok(ctx: &Context, text: impl Into<String>) -> u64 {
@@ -107,10 +132,28 @@ pub fn dismiss(ctx: &Context, id: u64) {
     ctx.request_repaint();
 }
 
-fn push(ctx: &Context, text: String, tone: ToastTone, action: Option<(String, String)>) -> u64 {
+fn push(
+    ctx: &Context,
+    text: String,
+    tone: ToastTone,
+    action: Option<(String, String)>,
+    topic: Option<&'static str>,
+) -> u64 {
     let now = ctx.input(|i| i.time);
     let id = ctx.data_mut(|d| {
         let s = d.get_temp_mut_or_default::<Toasts>(store_id());
+        // Already said (or the same story): that toast says it, from now.
+        if let Some(t) = s.list.iter_mut().find(|t| {
+            t.leaving.is_none()
+                && (topic.is_some() && t.topic == topic
+                    || (t.text == text && t.tone == tone && t.action == action))
+        }) {
+            t.text = text;
+            t.tone = tone;
+            t.action = action;
+            t.since = now;
+            return t.id;
+        }
         s.next = s.next.wrapping_add(1);
         let id = s.next;
         // The newest four: a burst should not paper over the window.
@@ -130,7 +173,9 @@ fn push(ctx: &Context, text: String, tone: ToastTone, action: Option<(String, St
             tone,
             text,
             action,
+            topic,
             born: now,
+            since: now,
             leaving: None,
         });
         id
@@ -151,7 +196,7 @@ pub fn host(ctx: &Context, dismiss_label: &str) -> Option<String> {
             } else {
                 LIFE
             };
-            if t.leaving.is_none() && now - t.born >= life {
+            if t.leaving.is_none() && now - t.since >= life {
                 t.leaving = Some(now);
             }
         }
@@ -209,7 +254,7 @@ pub fn host(ctx: &Context, dismiss_label: &str) -> Option<String> {
         next_wake = next_wake.min(match toast.leaving {
             Some(_) => 0.0,
             None if now - toast.born < f64::from(motion::BASE) => 0.0,
-            None => toast.born + life - now,
+            None => toast.since + life - now,
         });
         let rect = Rect::from_min_size(
             egui::pos2(screen.right() - 12.0 - w + dx, y),
@@ -309,4 +354,37 @@ pub fn host(ctx: &Context, dismiss_label: &str) -> Option<String> {
         ctx.request_repaint_after(std::time::Duration::from_secs_f64(next_wake.min(60.0)));
     }
     fired
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn live(ctx: &Context) -> Vec<String> {
+        ctx.data_mut(|d| {
+            d.get_temp_mut_or_default::<Toasts>(store_id())
+                .list
+                .iter()
+                .filter(|t| t.leaving.is_none())
+                .map(|t| t.text.clone())
+                .collect()
+        })
+    }
+
+    #[test]
+    fn the_same_thing_is_said_once_and_a_story_in_one_toast() {
+        let ctx = Context::default();
+        ok(&ctx, "Copied");
+        ok(&ctx, "Copied");
+        err(&ctx, "Copied");
+        assert_eq!(
+            live(&ctx),
+            ["Copied", "Copied"],
+            "same words, other tone: two"
+        );
+        say_topic(&ctx, "launch", "Starting", ToastTone::Neutral);
+        say_topic(&ctx, "launch", "Waiting for Steam", ToastTone::Neutral);
+        say_topic(&ctx, "launch", "Started", ToastTone::Ok);
+        assert_eq!(live(&ctx), ["Copied", "Copied", "Started"]);
+    }
 }

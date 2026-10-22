@@ -230,6 +230,9 @@ pub fn show(ui: &mut Ui, run: &mut Run) {
             Rect::from_center_size(pos2(r.left() + 8.0 + 7.0, r.center().y), Vec2::splat(14.0));
         icon.paint(p, ir, ink);
         paint::text_at(p, &g, ir.right() + 6.0, r.center().y, ink);
+        if paint::keyboard_focus(ui, &resp) {
+            paint::focus_ring(p, r, size::RADIUS_SM, &tk);
+        }
         if resp.clicked() {
             run.push((cmd, Value::Null));
         }

@@ -204,8 +204,14 @@ pub fn focus_ring(painter: &Painter, rect: Rect, radius: u8, t: &Tokens) {
 }
 
 /// Whether `r` holds the keyboard focus (the ring is for the keyboard, not a click).
+/// A control the keyboard has just moved to is brought into view: egui's scroll areas
+/// do not follow Tab by themselves.
 pub fn keyboard_focus(ui: &Ui, r: &egui::Response) -> bool {
-    r.has_focus() && !ui.input(|i| i.pointer.any_down())
+    let keyboard = r.has_focus() && !ui.input(|i| i.pointer.any_down());
+    if keyboard && r.gained_focus() {
+        r.scroll_to_me(None);
+    }
+    keyboard
 }
 
 /// A rounded rect filled and edged in one shape (border inside, as CSS `border-box`).

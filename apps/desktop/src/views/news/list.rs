@@ -198,6 +198,9 @@ fn row(
         rect.bottom() - 0.5,
         Stroke::new(1.0, alpha(tk.border, 0.5)),
     );
+    if paint::keyboard_focus(ui, &resp) {
+        paint::focus_ring(p, rect.shrink(3.0), size::RADIUS_XS, &tk);
+    }
 
     // The thumbnail.
     let thumb = Rect::from_min_size(

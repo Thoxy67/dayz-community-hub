@@ -396,6 +396,9 @@ fn group_head(ui: &mut Ui, status: i8, count: usize, bytes: u64, folded: bool) -
         p.rect_filled(r, CornerRadius::ZERO, alpha(tk.raised, 0.4 * h));
     }
     p.hline(r.x_range(), r.bottom() - 0.5, Stroke::new(1.0, tk.border));
+    if paint::keyboard_focus(ui, &resp) {
+        paint::focus_ring(p, r.shrink(2.0), size::RADIUS_XS, &tk);
+    }
     let cy = r.bottom() - 12.5;
     let mut x = r.left() + size::PAD;
     let icon = if folded {
@@ -488,6 +491,9 @@ fn mod_row(
         r.bottom() - 0.5,
         Stroke::new(1.0, alpha(tk.border, 0.4)),
     );
+    if paint::keyboard_focus(ui, &resp) {
+        paint::focus_ring(ui.painter(), r.shrink(2.0), size::RADIUS_XS, &tk);
+    }
     if let Some(m) = m {
         if resp.clicked() {
             act.open = true;
