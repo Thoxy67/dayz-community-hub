@@ -45,8 +45,8 @@ pub struct ServersChanged {
 /// How often `servers-changed` may fire: the window picks the change up on
 /// its next frame, so a scan repaints it at most ~30 times a second.
 const CHANGED_INTERVAL: Duration = Duration::from_millis(33);
-/// Concurrent A2S queries of the full-server check.
-const VERIFY_CONCURRENT: usize = 8;
+/// How long a server of the full-server check has to answer; the engine's
+/// pace sets how many are asked at once.
 const VERIFY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A map and how many servers run it.
@@ -236,21 +236,16 @@ pub(crate) fn verify_full_servers(list: Arc<ServerList>) {
         .map(|s| (s.endpoint.ip.clone(), s.endpoint.port))
         .collect();
     let handle = tokio::spawn(async move {
-        let Ok(client) = dz_a2s::new_client().await else {
-            return;
-        };
-        let client = Arc::new(client);
-        stream::iter(targets)
-            .for_each_concurrent(VERIFY_CONCURRENT, |(ip, port)| {
-                let client = Arc::clone(&client);
-                async move {
-                    let addr = format!("{ip}:{port}");
-                    let r =
-                        tokio::time::timeout(VERIFY_TIMEOUT, dz_a2s::ping_using(&client, &addr))
-                            .await
-                            .unwrap_or_else(|_| Err(dz_common::Error::A2sQuery("timeout".into())));
-                    live::store().record(&ip, port, live::Live::from_result(&r));
-                }
+        let targets = stream::iter(targets.into_iter().filter_map(|(ip, port)| {
+            let addr = dz_a2s::socket_addr(&ip, port)?;
+            Some(((ip, port), addr))
+        }));
+        crate::net::a2s()
+            .infos(targets, VERIFY_TIMEOUT)
+            .for_each(|((ip, port), r)| {
+                let r = r.map(|a| a.ping());
+                live::store().record(&ip, port, live::Live::from_result(&r));
+                std::future::ready(())
             })
             .await;
     });

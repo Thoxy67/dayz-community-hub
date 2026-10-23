@@ -72,8 +72,6 @@ pub struct SteamStatus {
     /// mods, as duplicates or not at all, recently (the verdict is kept a
     /// few hours).
     pub remembered: u32,
-    /// Asked again, patiently, after not answering the first time.
-    pub retried: u32,
     /// Queried (A2S), and of those answered.
     pub queried: u32,
     pub answered: u32,

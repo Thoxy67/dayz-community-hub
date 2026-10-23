@@ -72,7 +72,8 @@ pub struct Profile {
     /// Manual ping timeout in milliseconds (1000-30000, default 10000).
     #[serde(default = "default_ping_timeout_manual")]
     pub ping_timeout_manual: u32,
-    /// Max consecutive timeouts before stopping auto-retry (0-5, default 3; 0 = disable).
+    /// Times the scan asks a silent server again (0-5, default 1; 0 = never).
+    /// One is enough at the A2S engine's pace, which loses few answers.
     #[serde(default = "default_ping_max_retries")]
     pub ping_max_retries: u32,
     /// Whether to include favorites in auto ping scan (default true).
@@ -138,7 +139,7 @@ fn default_ping_timeout_manual() -> u32 {
 }
 
 fn default_ping_max_retries() -> u32 {
-    3
+    1
 }
 
 fn default_true() -> bool {

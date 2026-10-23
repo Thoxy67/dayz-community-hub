@@ -1664,7 +1664,6 @@
     "removed": "Quitados",
     "requests": "{done}/{total} peticiones",
     "requestsLabel": "Peticiones a Steam",
-    "retried": "Consultados de nuevo, con paciencia",
     "running": "en curso",
     "steam": "Steam",
     "steamHint": "Todos los servidores que lista el máster de Steam, con la API web de Steam (una clave en Ajustes › Claves de API; dividido más allá del tope de 10 000). Cada dirección nueva se consulta y las granjas se descartan.",

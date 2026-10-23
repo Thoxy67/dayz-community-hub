@@ -60,17 +60,14 @@ use super::sources::{self, Phase};
 use crate::features::browser::live::{self, Live};
 use crate::state::SharedState;
 
-/// A2S queries in flight at once.
-const CONCURRENCY: usize = 128;
-/// The second pass, for what did not answer the first: slower, more patient.
-/// UDP drops replies under a burst, and a server missed is otherwise
-/// "found" again by the next listing.
-const SLOW_CONCURRENCY: usize = 64;
-const SLOW_TIMEOUT: Duration = Duration::from_secs(3);
 /// How often the list is written to the cache while a listing adds to it,
 /// so closing the launcher midway loses little.
 const SAVE_EVERY: Duration = Duration::from_secs(30);
-/// How long a server has to answer A2S_INFO.
+/// How long a server has to answer A2S_INFO. Each is asked once: the
+/// queries go out at the shared engine's pace (`crate::net::a2s`), which
+/// loses about as few answers as the official launcher (0.4%), so the
+/// slower second pass a burst of sockets once needed is gone. A server
+/// missed is found again by the next listing.
 const INFO_TIMEOUT: Duration = Duration::from_millis(1500);
 /// How long a modded server has to answer A2S_RULES.
 const RULES_TIMEOUT: Duration = Duration::from_secs(2);
@@ -95,8 +92,10 @@ const WEB_MAX_MAPS: usize = 60;
 /// A listing is not started again sooner than this after the last started
 /// in this process (whether it finished or not).
 const MIN_INTERVAL: Duration = Duration::from_secs(memory::MIN_INTERVAL as u64);
-/// Times a kept server is asked before it is taken for gone.
+/// Times a kept server is asked, and how long each time, before it is taken
+/// for gone: patiently, since one wrongly taken leaves the list.
 const KEPT_TRIES: usize = 2;
+const KEPT_TIMEOUT: Duration = Duration::from_secs(3);
 /// A kept server that answered a query (the ping scan's, an earlier check's)
 /// this recently is not asked again: it still runs.
 const KEPT_FRESH: Duration = Duration::from_secs(5 * 60);
@@ -351,31 +350,38 @@ async fn comb_once(hub: &Hub) {
     if groups.is_empty() {
         return;
     }
+    let engine = crate::net::a2s();
+    let window = engine.window(INFO_TIMEOUT);
     let verdicts: Vec<(Addr, Vec<Addr>)> = stream::iter(groups)
-        .map(|(gp, group)| async move {
-            let ip = group[0].0.clone();
-            let mut stating = None;
-            let mut answering = None;
-            for (ip, qp) in &group {
-                let addr = format!("{ip}:{qp}");
-                for _ in 0..KEPT_TRIES {
-                    if let Ok(a) = dz_a2s::info_within(&addr, INFO_TIMEOUT).await {
-                        let port = a.info.extended_server_info.port.map(i64::from);
-                        if stating.is_none() && port.is_none_or(|p| p == gp) {
-                            stating = Some((ip.clone(), *qp));
+        .map(|(gp, group)| {
+            let engine = engine.clone();
+            async move {
+                let ip = group[0].0.clone();
+                let mut stating = None;
+                let mut answering = None;
+                for (ip, qp) in &group {
+                    let Some(addr) = dz_a2s::socket_addr(ip, *qp) else {
+                        continue;
+                    };
+                    for _ in 0..KEPT_TRIES {
+                        if let Ok(a) = engine.info(addr, INFO_TIMEOUT).await {
+                            let port = a.info.extended_server_info.port.map(i64::from);
+                            if stating.is_none() && port.is_none_or(|p| p == gp) {
+                                stating = Some((ip.clone(), *qp));
+                            }
+                            answering.get_or_insert((ip.clone(), *qp));
+                            break;
                         }
-                        answering.get_or_insert((ip.clone(), *qp));
-                        break;
                     }
                 }
+                let losers = match stating.or(answering) {
+                    Some(keep) => group.into_iter().filter(|k| *k != keep).collect(),
+                    None => Vec::new(),
+                };
+                ((ip, gp), losers)
             }
-            let losers = match stating.or(answering) {
-                Some(keep) => group.into_iter().filter(|k| *k != keep).collect(),
-                None => Vec::new(),
-            };
-            ((ip, gp), losers)
         })
-        .buffer_unordered(CONCURRENCY)
+        .buffer_unordered(window)
         .collect()
         .await;
     let mut removed = 0;
@@ -437,9 +443,7 @@ pub(crate) fn check_kept(hub: Hub) {
                 gone.push(addr);
             }
         }
-        // Silent ones are asked again, slowly, before they are taken for gone.
-        let silent = kept_pass(INFO_TIMEOUT, ask, CONCURRENCY, false).await;
-        gone.extend(kept_pass(SLOW_TIMEOUT, silent, SLOW_CONCURRENCY, true).await);
+        gone.extend(kept_pass(ask).await);
         if !gone.is_empty() {
             let gone: FxHashSet<(String, i64)> = gone.into_iter().collect();
             found().kept.retain(|s| !gone.contains(&key(s)));
@@ -473,43 +477,42 @@ fn split_kept(
     (answered, ask)
 }
 
-/// Ping `addrs`; returns those to drop: on the `last` pass the silent and
-/// the fakes, before it the fakes and those to ask again (the silent).
-async fn kept_pass(
-    timeout: Duration,
-    addrs: Vec<Addr>,
-    concurrency: usize,
-    last: bool,
-) -> Vec<Addr> {
+/// Ping `addrs`, each up to [`KEPT_TRIES`] times; returns those to drop: the
+/// silent and the fakes.
+async fn kept_pass(addrs: Vec<Addr>) -> Vec<Addr> {
+    let engine = crate::net::a2s();
+    let window = engine.window(KEPT_TIMEOUT);
     stream::iter(addrs)
-        .map(|(ip, port)| async move {
-            let addr = format!("{ip}:{port}");
-            let mut alive = false;
-            let mut fake = false;
-            for _ in 0..KEPT_TRIES {
-                if let Ok(p) = dz_a2s::info_within(&addr, timeout).await.map(|a| a.ping()) {
-                    live::store().record(&ip, port, Live::from_result(&Ok(p)));
-                    alive = true;
-                    fake = p.bots > 0;
-                    break;
+        .map(|(ip, port)| {
+            let engine = engine.clone();
+            async move {
+                let mut alive = false;
+                let mut fake = false;
+                if let Some(addr) = dz_a2s::socket_addr(&ip, port) {
+                    for _ in 0..KEPT_TRIES {
+                        if let Ok(a) = engine.info(addr, KEPT_TIMEOUT).await {
+                            let p = a.ping();
+                            live::store().record(&ip, port, Live::from_result(&Ok(p)));
+                            alive = true;
+                            fake = p.bots > 0;
+                            break;
+                        }
+                    }
                 }
+                sources::update(|s| {
+                    s.kept.checked += 1;
+                    if fake {
+                        s.kept.fakes += 1;
+                    } else if alive {
+                        s.kept.alive += 1;
+                    } else {
+                        s.kept.removed += 1;
+                    }
+                });
+                (!alive || fake).then_some((ip, port))
             }
-            if !alive && !last {
-                return Some((ip, port));
-            }
-            sources::update(|s| {
-                s.kept.checked += 1;
-                if fake {
-                    s.kept.fakes += 1;
-                } else if alive {
-                    s.kept.alive += 1;
-                } else {
-                    s.kept.removed += 1;
-                }
-            });
-            (!alive || fake).then_some((ip, port))
         })
-        .buffer_unordered(concurrency)
+        .buffer_unordered(window)
         .filter_map(std::future::ready)
         .collect()
         .await
@@ -654,6 +657,8 @@ async fn run(hub: &Hub) {
     };
 
     let mut seen = known;
+    let engine = crate::net::a2s();
+    let window = engine.window(INFO_TIMEOUT);
     let candidates = stream::unfold(rx, |mut rx| async move { rx.recv().await.map(|c| (c, rx)) });
     let mut answers = Box::pin(
         candidates
@@ -679,24 +684,12 @@ async fn run(hub: &Hub) {
                 };
                 std::future::ready(ask.then_some(c))
             })
-            .map(|c| query(c, false))
-            .buffer_unordered(CONCURRENCY)
+            .map(move |c| query(engine.clone(), c))
+            .buffer_unordered(window)
             .fuse(),
     );
-    let silent = take_answers(hub, &state, &mut answers, ping_settings).await;
+    take_answers(hub, &state, &mut answers, ping_settings).await;
     let outcome = lister.await.unwrap_or_else(|e| Err(e.to_string()));
-
-    // What did not answer, once more, patiently.
-    if !silent.is_empty() && !CANCEL.load(Ordering::SeqCst) {
-        sources::update(|s| s.steam.retried += silent.len() as u32);
-        let mut again = Box::pin(
-            stream::iter(silent)
-                .map(|c| query(c, true))
-                .buffer_unordered(SLOW_CONCURRENCY)
-                .fuse(),
-        );
-        take_answers(hub, &state, &mut again, ping_settings).await;
-    }
 
     let list = Arc::clone(&state.read().await.servers);
     super::save_cache_in_background(Arc::clone(&list));
@@ -763,16 +756,15 @@ struct PingSettings {
     retries: u32,
 }
 
-/// Put the servers `answers` yields in the list as they come; returns the
-/// candidates that did not answer. How each answered is remembered.
+/// Put the servers `answers` yields in the list as they come. How each
+/// answered is remembered.
 async fn take_answers(
     hub: &Hub,
     state: &SharedState,
     answers: &mut (impl Unpin + futures_util::stream::FusedStream<Item = Outcome>),
     ping: Option<PingSettings>,
-) -> Vec<Candidate> {
+) {
     let mut fresh: Vec<SteamListed> = Vec::new();
-    let mut silent = Vec::new();
     let mut tick = tokio::time::interval(PUBLISH_EVERY);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
@@ -782,7 +774,6 @@ async fn take_answers(
                     judged((row.ip.clone(), row.query_port), Verdict::Answered);
                     fresh.push(row);
                 }
-                Some(Outcome::Silent(c)) => silent.push(c),
                 Some(Outcome::Rejected(addr, verdict)) => judged(addr, verdict),
                 None => break,
             },
@@ -790,7 +781,6 @@ async fn take_answers(
         }
     }
     publish(hub, state, fresh, ping).await;
-    silent
 }
 
 /// Remember how `addr`, listed now, answered.
@@ -1154,31 +1144,22 @@ async fn list_web<S: WebSource>(
 /// What asking a candidate gave.
 enum Outcome {
     Row(SteamListed),
-    /// No answer: asked again in the second pass.
-    Silent(Candidate),
-    /// A fake, or modded with mods that cannot be read, or silent on the
-    /// last pass: why.
+    /// Silent, a fake, or modded with mods that cannot be read: why.
     Rejected(Addr, Verdict),
 }
 
-/// A2S_INFO, and A2S_RULES for a modded server's mods on the same socket
-/// with the challenge A2S_INFO got. A server that does not answer is silent
-/// (asked again unless this is the `last` pass); a fake, or a modded one
-/// whose mods cannot be read (it could not be joined with them) on the last
-/// pass, is rejected.
-async fn query(c: Candidate, last: bool) -> Outcome {
-    if !last {
-        sources::update(|s| s.steam.queried += 1);
-    }
+/// A2S_INFO, and A2S_RULES for a modded server's mods with the challenge
+/// A2S_INFO got, both through the shared `engine`. A server that does not
+/// answer, a fake, and a modded one whose mods cannot be read (it could not
+/// be joined with them) are rejected.
+async fn query(engine: dz_a2s::Engine, c: Candidate) -> Outcome {
+    sources::update(|s| s.steam.queried += 1);
     let port = i64::from(c.query_port);
-    let addr = format!("{}:{port}", c.ip);
-    let timeout = if last { SLOW_TIMEOUT } else { INFO_TIMEOUT };
-    let Ok(answer) = dz_a2s::info_within(&addr, timeout).await else {
-        return if last {
-            Outcome::Rejected((c.ip, port), Verdict::Silent)
-        } else {
-            Outcome::Silent(c)
-        };
+    let Some(addr) = dz_a2s::socket_addr(&c.ip, port) else {
+        return Outcome::Rejected((c.ip, port), Verdict::Silent);
+    };
+    let Ok(answer) = engine.info(addr, INFO_TIMEOUT).await else {
+        return Outcome::Rejected((c.ip, port), Verdict::Silent);
     };
     sources::update(|s| s.steam.answered += 1);
     let info = &answer.info;
@@ -1214,9 +1195,13 @@ async fn query(c: Candidate, last: bool) -> Outcome {
         ip: c.ip,
     };
     if modded {
-        row.mods = answer
-            .rules(RULES_TIMEOUT)
-            .await
+        // A lost datagram (a modded server's rules take up to a dozen) or a
+        // challenge gone stale: asked once more, from a fresh challenge.
+        let mut rules = engine.rules(addr, answer.challenge(), RULES_TIMEOUT).await;
+        if rules.is_err() {
+            rules = engine.rules(addr, None, RULES_TIMEOUT).await;
+        }
+        row.mods = rules
             .map(|r| {
                 r.mods
                     .into_iter()
@@ -1230,15 +1215,6 @@ async fn query(c: Candidate, last: bool) -> Outcome {
             })
             .unwrap_or_default();
         if row.mods.is_empty() {
-            if !last {
-                return Outcome::Silent(Candidate {
-                    ip: row.ip,
-                    query_port: c.query_port,
-                    game_port: c.game_port,
-                    empty: c.empty,
-                    bots: c.bots,
-                });
-            }
             sources::update(|s| s.steam.no_mods += 1);
             return Outcome::Rejected((row.ip, port), Verdict::NoMods);
         }

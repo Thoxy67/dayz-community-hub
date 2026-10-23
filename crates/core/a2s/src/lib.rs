@@ -1,27 +1,30 @@
 //! A2S (Source query protocol) against DayZ servers: ping, info, players
 //! and rules.
 //!
-//! Every function takes the query address as `"ip:port"`. A2S_RULES and
-//! A2S_PLAYER are read here ([`rules`], [`players`]) rather than by
-//! `async-a2s`, which drops the mods' Workshop ids and fails on the players
-//! of busy servers.
+//! Many servers at once (a scan, a listing) go through one [`Engine`]:
+//! a shared socket, a paced rate, replies routed by address. A one-off
+//! query takes the query address as `"ip:port"` and a socket of its own.
+//! A2S_RULES and A2S_PLAYER are read here ([`rules`], [`players`]) rather
+//! than by `async-a2s`, which drops the mods' Workshop ids and fails on the
+//! players of busy servers; its A2S_INFO reader is kept.
 
+mod engine;
 mod exchange;
 pub mod keywords;
 pub mod players;
 pub mod rules;
 
-pub use exchange::{InfoAnswer, info_within};
+pub use engine::{Engine, Pace};
 pub use keywords::DayzInfo;
 pub use players::{A2sPlayer, query_players};
 pub use rules::{A2sMod, DayzRules, query_dayz_rules};
 
-use async_a2s::{A2SClient, info::Info};
+use async_a2s::info::Info;
 use dz_common::{Error, Result};
+use exchange::info_within;
 
+use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
-
-pub use async_a2s::A2SClient as Client;
 
 /// Sentinel RTT reported when a query fails. The window shows any value
 /// >= 5 000 ms as "TIMEOUT"; 9 999 is clearly not a real RTT.
@@ -45,31 +48,35 @@ fn duration_to_ms_floor1(d: Duration) -> u32 {
     if ms == 0 && d.as_micros() > 0 { 1 } else { ms }
 }
 
-/// A fresh A2S client: queries give up after 5 s, with no retry.
-///
-/// Create one per scan and share it. The client holds only settings:
-/// `async-a2s` binds a socket connected to the server for each query, so
-/// concurrent queries on one client never see each other's answers.
-pub async fn new_client() -> Result<A2SClient> {
-    client_with_timeout(Duration::from_secs(5)).await
+/// The address to query for `ip` and `port`, when they make one.
+pub fn socket_addr(ip: &str, port: i64) -> Option<SocketAddr> {
+    let ip: IpAddr = ip.parse().ok()?;
+    Some(SocketAddr::new(ip, u16::try_from(port).ok()?))
 }
 
-/// A fresh A2S client whose queries give up after `timeout`, with no retry.
-///
-/// `async-a2s` would otherwise send each query up to three times (two
-/// retries by default), each waiting `timeout`: a silent server held a scan
-/// slot three times as long as asked, under the caller's own retries. A
-/// caller that wants another try asks again (`Client::retries` restores
-/// the crate's).
-pub async fn client_with_timeout(timeout: Duration) -> Result<A2SClient> {
-    let mut client = A2SClient::new()
-        .await
-        .map_err(|e| Error::A2sQuery(format!("Failed to create A2S client: {e}")))?;
-    client
-        .set_timeout(timeout)
-        .map_err(|e| Error::A2sQuery(format!("Failed to set timeout: {e}")))?
-        .retries(0);
-    Ok(client)
+/// What A2S_INFO answered.
+pub struct InfoAnswer {
+    pub info: Info,
+    /// The first round trip, from the request leaving to the first reply:
+    /// the challenge's, for a server that sends one.
+    pub latency: Duration,
+    /// The challenge it was asked with, good for A2S_RULES for a while
+    /// (measured on 38 DayZ servers: 37 of 37 answered the rules at once,
+    /// still good 10 s later, gone after 150 s).
+    challenge: Option<[u8; 4]>,
+}
+
+impl InfoAnswer {
+    /// The answer as a ping.
+    pub fn ping(&self) -> Ping {
+        ping_of(&self.info, self.latency)
+    }
+
+    /// The challenge to send A2S_RULES with ([`Engine::rules`]); `None`
+    /// when the server asked for none.
+    pub fn challenge(&self) -> Option<[u8; 4]> {
+        self.challenge
+    }
 }
 
 /// Real (human) player count for an A2S_INFO response.
@@ -83,18 +90,7 @@ pub fn human_player_count(info: &Info) -> u8 {
     info.players.saturating_sub(info.bots)
 }
 
-/// Ping through a caller-owned client (the bulk-scan hot path). The client's
-/// timeout holds for each of A2S_INFO's two round trips: a caller wraps it
-/// in its own timeout for one deadline over both.
-pub async fn ping_using(client: &A2SClient, addr: &str) -> Result<Ping> {
-    let (info, latency) = client
-        .info(addr, None)
-        .await
-        .map_err(|e| Error::A2sQuery(format!("A2S query failed: {e}")))?;
-    Ok(ping_of(&info, latency))
-}
-
-pub(crate) fn ping_of(info: &Info, latency: Duration) -> Ping {
+fn ping_of(info: &Info, latency: Duration) -> Ping {
     Ping {
         ms: duration_to_ms_floor1(latency),
         players: human_player_count(info),
@@ -152,6 +148,20 @@ mod tests {
             Ok(p) => println!("PING ok: {p:?}"),
             Err(e) => println!("PING error: {e}"),
         }
+    }
+
+    #[test]
+    fn addresses_of_either_family() {
+        assert_eq!(
+            socket_addr("1.2.3.4", 27016),
+            Some("1.2.3.4:27016".parse().unwrap())
+        );
+        assert_eq!(
+            socket_addr("::1", 2303),
+            Some("[::1]:2303".parse().unwrap())
+        );
+        assert_eq!(socket_addr("1.2.3.4", 70_000), None);
+        assert_eq!(socket_addr("nope", 1), None);
     }
 
     #[test]

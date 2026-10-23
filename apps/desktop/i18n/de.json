@@ -1664,7 +1664,6 @@
     "removed": "Entfernt",
     "requests": "{done}/{total} Anfragen",
     "requestsLabel": "Anfragen an Steam",
-    "retried": "Erneut gefragt, geduldiger",
     "running": "läuft",
     "steam": "Steam",
     "steamHint": "Alle Server, die Steams Master kennt, über die Steam-Web-API (ein Schlüssel unter Einstellungen › API-Schlüssel; über Steams 10 000er-Grenze hinaus aufgeteilt). Jede neue Adresse wird abgefragt, Farmen bleiben außen vor.",

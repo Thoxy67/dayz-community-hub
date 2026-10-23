@@ -353,7 +353,7 @@ pub const CATALOG: &[Feature] = &[
     Feature {
         id: "servers.sources.details",
         view: "servers",
-        what: "'ⓘ Details' popover (320px) 'Where the list comes from': per source phase, hint, lines — public list count, fetched (relative), error; Steam via/phase, note (warn), requests, client assists, now asking (while running), addresses listed, farms, already in list, queried, answered, retried, modded-unreadable, fakes, +added (green), took (s or 'm min s s'); duplicates text; kept checked/total, still answer, removed, fakes",
+        what: "'ⓘ Details' popover (320px) 'Where the list comes from': per source phase, hint, lines — public list count, fetched (relative), error; Steam via/phase, note (warn), requests, client assists, now asking (while running), addresses listed, farms, already in list, queried, answered, modded-unreadable, fakes, +added (green), took (s or 'm min s s'); duplicates text; kept checked/total, still answer, removed, fakes",
         kind: Kind::Command("servers.sources.details"),
         done: true,
     },

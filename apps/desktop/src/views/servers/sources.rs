@@ -431,7 +431,6 @@ fn details(ui: &mut Ui, s: &SourcesChanged, now: i64) {
             line(ui, t("sources", "known"), &n(st.known), tk.fg_faint);
             line(ui, t("sources", "queried"), &n(st.queried), tk.fg);
             line(ui, t("sources", "answered"), &n(st.answered), tk.fg);
-            line(ui, t("sources", "retried"), &n(st.retried), tk.fg_muted);
             line(ui, t("sources", "noMods"), &n(st.no_mods), tk.fg_faint);
             line(ui, t("sources", "fakes"), &n(st.fakes), tk.fg_faint);
             if st.remembered > 0 {

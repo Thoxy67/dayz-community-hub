@@ -1,14 +1,12 @@
 //! One socket talking to one server: requests, the challenges DayZ guards
-//! them with, and split answers, each request within one deadline.
+//! them with, and split answers, each request within one deadline. What a
+//! one-off query (the details panel, a manual ping) goes through; many
+//! servers at once go through the [`Engine`](crate::Engine).
 //!
-//! A2S_INFO is asked here too, rather than by `async-a2s`, for two reasons.
-//! Its challenge round trip waited a whole timeout again for the answer, so
-//! a server that answered the challenge and dropped the rest held a slot for
-//! twice the time asked: here the challenge and the answer share one
-//! deadline. And the challenge A2S_INFO got is good for A2S_RULES on the
-//! same socket (measured on 38 DayZ servers: 37 of 37 answered the rules at
-//! once, the challenge still good 10 s later, gone after 150 s), so a
-//! modded server's rules cost one round trip instead of two.
+//! A2S_INFO is asked here too, rather than by `async-a2s`, whose challenge
+//! round trip waited a whole timeout again for the answer: a server that
+//! answered the challenge and dropped the rest held a slot for twice the
+//! time asked. Here the challenge and the answer share one deadline.
 
 use std::io::Cursor;
 use std::time::Duration;
@@ -16,17 +14,18 @@ use std::time::Duration;
 use async_a2s::info::Info;
 use dz_common::{Error, Result};
 use tokio::net::UdpSocket;
-use tokio::time::{Instant, sleep};
+use tokio::time::Instant;
 
-use crate::rules::{self, DayzRules};
+use crate::InfoAnswer;
+use crate::rules;
 
-const HEADER: [u8; 4] = [0xFF; 4];
+pub(crate) const HEADER: [u8; 4] = [0xFF; 4];
 /// A2S_INFO's body: the kind byte and its C string.
-const A2S_INFO_REQUEST: &[u8] = b"TSource Engine Query\0";
-const S2A_INFO: u8 = 0x49;
-const S2C_CHALLENGE: u8 = 0x41;
+pub(crate) const A2S_INFO_REQUEST: &[u8] = b"TSource Engine Query\0";
+pub(crate) const S2A_INFO: u8 = 0x49;
+pub(crate) const S2C_CHALLENGE: u8 = 0x41;
 /// A server that keeps answering with a new challenge is not going to answer.
-const MAX_CHALLENGES: usize = 3;
+pub(crate) const MAX_CHALLENGES: usize = 3;
 
 /// A socket connected to one server, and the last challenge it handed out.
 pub(crate) struct Exchange {
@@ -107,55 +106,9 @@ impl Exchange {
     }
 }
 
-/// What A2S_INFO answered, with the socket and challenge it was asked on.
-pub struct InfoAnswer {
-    pub info: Info,
-    /// The first round trip: the challenge's, for a server that sends one.
-    pub latency: Duration,
-    exchange: Exchange,
-}
-
-impl InfoAnswer {
-    /// The answer as a ping.
-    pub fn ping(&self) -> crate::Ping {
-        crate::ping_of(&self.info, self.latency)
-    }
-
-    /// The server's A2S_RULES, asked on the same socket with the challenge
-    /// A2S_INFO got, within `timeout`. If that fails (the challenge expired,
-    /// a datagram was lost), asked once more on a fresh socket after a short
-    /// pause, as [`rules::query_dayz_rules`] would.
-    pub async fn rules(mut self, timeout: Duration) -> Result<DayzRules> {
-        let first = self
-            .exchange
-            .ask(
-                "rules",
-                &[rules::A2S_RULES],
-                true,
-                rules::S2A_RULES,
-                Instant::now() + timeout,
-            )
-            .await;
-        let payload = match first {
-            Ok((payload, _)) => payload,
-            Err(_) => {
-                sleep(Duration::from_millis(300)).await;
-                rules::fetch_once(
-                    &self.exchange.addr,
-                    rules::A2S_RULES,
-                    rules::S2A_RULES,
-                    timeout,
-                )
-                .await?
-            }
-        };
-        rules::parse_rules(&payload)
-    }
-}
-
 /// A2S_INFO from `addr` (`"ip:port"`), the challenge and the answer both
 /// within `timeout`. No retry: a caller that wants another try asks again.
-pub async fn info_within(addr: &str, timeout: Duration) -> Result<InfoAnswer> {
+pub(crate) async fn info_within(addr: &str, timeout: Duration) -> Result<InfoAnswer> {
     let deadline = Instant::now() + timeout;
     let mut exchange = Exchange::open(addr).await?;
     let (payload, latency) = exchange
@@ -166,17 +119,17 @@ pub async fn info_within(addr: &str, timeout: Duration) -> Result<InfoAnswer> {
     Ok(InfoAnswer {
         info,
         latency,
-        exchange,
+        challenge: exchange.challenge,
     })
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// A DayZ server's A2S_INFO answer, from its `0x49` byte.
-    fn info_payload() -> Vec<u8> {
+    pub(crate) fn info_payload() -> Vec<u8> {
         let mut p = vec![S2A_INFO, 17];
         for s in ["Test server", "chernarusplus", "dayz", "DayZ"] {
             p.extend_from_slice(s.as_bytes());
@@ -189,54 +142,6 @@ mod tests {
         p.extend_from_slice(&2302u16.to_le_bytes());
         p.extend_from_slice(b"battleye,mod\0");
         p
-    }
-
-    /// A server that challenges every request, answers A2S_INFO and the
-    /// rules, and counts the requests it got.
-    async fn challenging_server() -> (String, tokio::task::JoinHandle<Vec<Vec<u8>>>) {
-        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        let addr = socket.local_addr().unwrap().to_string();
-        let task = tokio::spawn(async move {
-            let challenge = [1, 2, 3, 4];
-            let mut got = Vec::new();
-            let mut buf = [0u8; 1500];
-            while got.len() < 3 {
-                let (n, from) = socket.recv_from(&mut buf).await.unwrap();
-                let req = buf[..n].to_vec();
-                got.push(req.clone());
-                let mut out = HEADER.to_vec();
-                if !req.ends_with(&challenge) {
-                    out.push(S2C_CHALLENGE);
-                    out.extend_from_slice(&challenge);
-                } else if req[4] == b'T' {
-                    out.extend_from_slice(&info_payload());
-                } else {
-                    // Rules: two plain ones, no mods block.
-                    out.extend_from_slice(&[rules::S2A_RULES, 2, 0]);
-                    out.extend_from_slice(b"dedicated\x001\x00platform\x00win\x00");
-                }
-                socket.send_to(&out, from).await.unwrap();
-            }
-            got
-        });
-        (addr, task)
-    }
-
-    #[tokio::test]
-    async fn the_rules_reuse_the_challenge_info_got() {
-        let (addr, server) = challenging_server().await;
-        let answer = info_within(&addr, Duration::from_secs(2)).await.unwrap();
-        assert_eq!(answer.info.name, "Test server");
-        assert_eq!(answer.info.extended_server_info.port, Some(2302));
-        assert_eq!(answer.ping().players, 3);
-        let rules = answer.rules(Duration::from_secs(2)).await.unwrap();
-        assert_eq!(rules.get("platform"), Some("win"));
-        let got = server.await.unwrap();
-        // Info, info with the challenge, then the rules with it at once.
-        assert_eq!(got.len(), 3);
-        assert_eq!(&got[0][4..], A2S_INFO_REQUEST);
-        assert_eq!(got[2][4], rules::A2S_RULES);
-        assert!(got[2].ends_with(&[1, 2, 3, 4]));
     }
 
     #[tokio::test]

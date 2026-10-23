@@ -96,3 +96,20 @@ pub fn pictures() -> &'static Client {
         )
     })
 }
+
+/// The A2S engine every scan, listing and check shares: one socket per
+/// address family and one pace for the whole app, so a listing running
+/// beside the ping scan does not add a burst of its own. Made again if the
+/// runtime it ran on has gone (a test's).
+pub(crate) fn a2s() -> dz_a2s::Engine {
+    static E: std::sync::Mutex<Option<dz_a2s::Engine>> = std::sync::Mutex::new(None);
+    let mut engine = E.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    match engine.as_ref() {
+        Some(e) if !e.is_closed() => e.clone(),
+        _ => {
+            let e = dz_a2s::Engine::new(dz_a2s::Pace::default());
+            *engine = Some(e.clone());
+            e
+        }
+    }
+}

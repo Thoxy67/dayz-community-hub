@@ -1664,7 +1664,6 @@
     "removed": "Retirés",
     "requests": "{done}/{total} requêtes",
     "requestsLabel": "Requêtes à Steam",
-    "retried": "Réinterrogés, plus patiemment",
     "running": "en cours",
     "steam": "Steam",
     "steamHint": "Tous les serveurs que le master de Steam connaît, via l'API Web de Steam (une clé dans Réglages › Clés d'API ; découpé au-delà du plafond de 10 000). Chaque nouvelle adresse est interrogée, les fermes écartées.",

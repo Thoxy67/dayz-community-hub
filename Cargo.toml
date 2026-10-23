@@ -110,6 +110,8 @@ tar = "0.4.46"
 
 # DayZ A2S queries
 async-a2s = { git = "https://git.thoxy.xyz/thoxy/async-a2s" }
+# The A2S engine's shared sockets: a larger receive buffer, set before bind.
+socket2 = "0.6.5"
 
 # One lint table for the workspace, opted into by every manifest with
 # `lints.workspace = true`.

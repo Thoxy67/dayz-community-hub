@@ -108,41 +108,59 @@ pub(crate) async fn receive(
     buf: &mut [u8],
     deadline: Instant,
 ) -> std::result::Result<Vec<u8>, String> {
-    let mut fragments: Vec<Option<Vec<u8>>> = Vec::new();
-    let mut split_id = None;
+    let mut answer = Reassembly::default();
     loop {
         let n = timeout_at(deadline, socket.recv(buf))
             .await
             .map_err(|_| "timed out".to_string())?
             .map_err(|e| e.to_string())?;
-        let packet = &buf[..n];
+        if let Some(whole) = answer.push(&buf[..n]) {
+            return whole;
+        }
+    }
+}
+
+/// The datagrams of one answer as they come: a single one is the answer, the
+/// fragments of a split one are collected until every one is in.
+#[derive(Default)]
+pub(crate) struct Reassembly {
+    fragments: Vec<Option<Vec<u8>>>,
+    split_id: Option<i32>,
+}
+
+impl Reassembly {
+    /// Take one datagram: the whole answer, without its leading
+    /// `FF FF FF FF`, once it is complete; `None` while fragments are
+    /// missing or for a datagram that is not an answer.
+    pub(crate) fn push(&mut self, packet: &[u8]) -> Option<std::result::Result<Vec<u8>, String>> {
         if packet.starts_with(&HEADER) {
-            return Ok(packet[4..].to_vec());
+            return Some(Ok(packet[4..].to_vec()));
         }
         // Source split header: -2, id (i32), total (u8), number (u8), size (u16).
         if !packet.starts_with(&SPLIT) || packet.len() < 12 {
-            continue;
+            return None;
         }
         let id = i32::from_le_bytes([packet[4], packet[5], packet[6], packet[7]]);
         if id < 0 {
             // Bit 31 marks a bzip2 body; DayZ never compresses.
-            return Err("compressed answer, not supported".into());
+            return Some(Err("compressed answer, not supported".into()));
         }
         let (total, number) = (packet[8] as usize, packet[9] as usize);
         if total == 0 || number >= total {
-            continue;
+            return None;
         }
-        if split_id != Some(id) {
+        if self.split_id != Some(id) {
             // A fragment of another (older) answer resets the collection.
-            split_id = Some(id);
-            fragments = vec![None; total];
+            self.split_id = Some(id);
+            self.fragments = vec![None; total];
         }
-        if fragments.len() == total {
-            fragments[number] = Some(packet[12..].to_vec());
+        if self.fragments.len() == total {
+            self.fragments[number] = Some(packet[12..].to_vec());
         }
-        if fragments.iter().all(Option::is_some) {
-            return join_fragments(&fragments);
+        if self.fragments.iter().all(Option::is_some) {
+            return Some(join_fragments(&self.fragments));
         }
+        None
     }
 }
 

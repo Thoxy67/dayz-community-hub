@@ -1,8 +1,8 @@
 //! The few Win32 calls the app makes itself, declared by hand rather than
 //! through a bindings crate: reading and writing a registry string, making an
 //! NTFS junction, riding out the short locks antivirus scanners take on a
-//! freshly written file, reading a service's state and running a program
-//! as administrator.
+//! freshly written file, reading a service's state, running a program as
+//! administrator and keeping a shared UDP socket alive through ICMP errors.
 //!
 //! Each replaces a helper process (`reg query`, `cmd /c mklink /J`) that cost
 //! a process start, and a Defender scan of it, every time it ran.
@@ -36,6 +36,8 @@ const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
 const FSCTL_SET_REPARSE_POINT: u32 = 0x0009_00A4;
 const IO_REPARSE_TAG_MOUNT_POINT: u32 = 0xA000_0003;
 const INVALID_HANDLE_VALUE: Handle = -1_isize as Handle;
+/// `_WSAIOW(IOC_VENDOR, 12)`.
+const SIO_UDP_CONNRESET: u32 = 0x9800_000C;
 
 #[link(name = "advapi32")]
 unsafe extern "system" {
@@ -103,6 +105,21 @@ unsafe extern "system" {
     fn GetDriveTypeW(root: *const u16) -> u32;
     fn WaitForSingleObject(handle: Handle, millis: u32) -> u32;
     fn GetExitCodeProcess(process: Handle, code: *mut u32) -> i32;
+}
+
+#[link(name = "ws2_32")]
+unsafe extern "system" {
+    fn WSAIoctl(
+        socket: usize,
+        code: u32,
+        input: *const c_void,
+        input_size: u32,
+        output: *mut c_void,
+        output_size: u32,
+        returned: *mut u32,
+        overlapped: *mut c_void,
+        completion: *mut c_void,
+    ) -> i32;
 }
 
 fn wide(s: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
@@ -204,6 +221,36 @@ pub fn is_local_drive(root: &str) -> bool {
     // SAFETY: `root` is NUL-terminated.
     let kind = unsafe { GetDriveTypeW(root.as_ptr()) };
     kind == DRIVE_FIXED || kind == DRIVE_REMOVABLE
+}
+
+/// Stop an ICMP "port unreachable" from failing the next receive on the UDP
+/// `socket`. Windows reports it as WSAECONNRESET on an unconnected socket
+/// too, so one server gone from a list shared over that socket would
+/// otherwise break a receive meant for every other server
+/// (learn.microsoft.com, "SIO_UDP_CONNRESET Control Code").
+pub fn udp_ignore_unreachable(socket: std::os::windows::io::RawSocket) -> io::Result<()> {
+    let off: u32 = 0;
+    let mut returned = 0u32;
+    // SAFETY: `off` is the BOOL the control code reads, nothing is written
+    // back but the byte count, and the call is synchronous (no overlapped).
+    let status = unsafe {
+        WSAIoctl(
+            socket as usize,
+            SIO_UDP_CONNRESET,
+            (&raw const off).cast(),
+            4,
+            std::ptr::null_mut(),
+            0,
+            &mut returned,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    if status == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
 }
 
 /// Tell Explorer that file associations changed, so a new one shows at once.

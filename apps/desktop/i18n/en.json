@@ -1664,7 +1664,6 @@
     "removed": "Removed",
     "requests": "{done}/{total} requests",
     "requestsLabel": "Requests to Steam",
-    "retried": "Asked again, patiently",
     "running": "running",
     "steam": "Steam",
     "steamHint": "Every server Steam's master lists, through the Steam Web API (a key in Settings › API keys; split past Steam's 10 000 cap). Each new address is queried, farms left out.",

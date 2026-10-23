@@ -351,32 +351,26 @@ async fn scan(
         true
     };
 
-    // One client for the whole scan. async-a2s binds a socket per query, so
-    // the sockets open at once are the queries in flight, bounded by
-    // `concurrency`: an unbounded burst runs Winsock out of buffer space
-    // (WSAENOBUFS, 10055, learn.microsoft.com "Windows Sockets Error Codes").
-    // Its own retries are off: a timeout here is retried by the queue.
-    let Ok(mut client) = dz_a2s::client_with_timeout(timeout).await else {
-        end();
-        return;
-    };
-    client.retries(0);
-    let client = Arc::new(client);
+    // The app's one A2S engine: every query goes over its shared socket at
+    // its pace, the challenge and the answer within `timeout` from the send.
+    // `concurrency` bounds the targets handed to it at once, so a pause
+    // leaves no more than that to finish.
+    let engine = crate::net::a2s();
 
     let targets = Box::pin(stream::unfold(rx, |mut rx| async move {
         rx.recv().await.map(|t| (t, rx))
     }));
     let mut results = targets
         .map(|(target, tries)| {
-            let client = Arc::clone(&client);
+            let engine = engine.clone();
             async move {
                 let Some((ip, port)) = parse_target(&target) else {
                     return Asked::Invalid;
                 };
-                // The challenge and its answer, both within `timeout`.
-                let r = tokio::time::timeout(timeout, dz_a2s::ping_using(&client, &target))
-                    .await
-                    .unwrap_or_else(|_| Err(dz_common::Error::A2sQuery("timeout".into())));
+                let Some(addr) = dz_a2s::socket_addr(ip, port) else {
+                    return Asked::Invalid;
+                };
+                let r = engine.info(addr, timeout).await.map(|a| a.ping());
                 if r.is_err() && tries < retries {
                     return Asked::Again(target, tries + 1);
                 }

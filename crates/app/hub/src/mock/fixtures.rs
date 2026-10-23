@@ -64,7 +64,6 @@ pub(super) fn sources(now: i64) -> SourcesChanged {
             farms: 31_884,
             known: 6210,
             remembered: 0,
-            retried: 265,
             queried: 3136,
             answered: 2871,
             no_mods: 94,
