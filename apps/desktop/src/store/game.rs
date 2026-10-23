@@ -1,7 +1,7 @@
 //! Whether DayZ is running, for the rail's "close the game" block (=
-//! `stores/game.svelte.ts`). Asked at start, then every few seconds from a launch until
-//! the game has come and gone: a process scan is cheap, but not worth running all day.
-//! The next check is a `request_repaint_after`, not a timer thread.
+//! `stores/game.svelte.ts`). Asked once at start and once after closing the game; the
+//! hub's play tracker, the app's one watcher of the game, says the rest
+//! (`HubEvent::GameRunning`), launched from here or not.
 //!
 //! Also the installed game's version (`1.30.164200`), which server rows compare theirs
 //! with: read at start and asked again with BattlEye's state (the hub reads the
@@ -9,13 +9,12 @@
 
 use std::time::{Duration, Instant};
 
-use dz_hub::Hub;
+use dz_hub::{Hub, HubEvent};
 
 use crate::rt::{self, Task};
 
-/// How long after a launch the game may take to appear.
+/// How long after a launch the game may take to appear, for its start to be timed.
 const START_WINDOW: Duration = Duration::from_secs(3 * 60);
-const EVERY: Duration = Duration::from_secs(5);
 
 pub struct Game {
     hub: Hub,
@@ -25,7 +24,6 @@ pub struct Game {
     /// When the game was seen to start after a launch from here; `None` when unknown.
     pub since: Option<Instant>,
     watch_until: Option<Instant>,
-    next: Option<Instant>,
     check: Option<Task<bool>>,
     kill: Option<Task<Result<u32, String>>>,
     /// The installed game's version; `None` until known (or DayZ is not found).
@@ -42,7 +40,6 @@ impl Game {
             closing: false,
             since: None,
             watch_until: None,
-            next: None,
             check: None,
             kill: None,
             version: None,
@@ -67,10 +64,17 @@ impl Game {
         ));
     }
 
-    /// A launch was handed to Steam: watch for the game.
+    /// A launch was handed to Steam: the game that appears soon was started from here.
     pub fn launched(&mut self) {
         self.watch_until = Some(Instant::now() + START_WINDOW);
-        self.schedule();
+    }
+
+    /// What the hub said: the tracker saw the game start or stop.
+    pub fn on_event(&mut self, ev: &HubEvent) {
+        if let HubEvent::GameRunning(now) = ev {
+            self.set_running(*now);
+            self.ctx.request_repaint();
+        }
     }
 
     /// Kill the game (the rail asks first).
@@ -87,16 +91,28 @@ impl Game {
         if self.check.is_some() {
             return;
         }
-        self.next = None;
         let hub = self.hub.clone();
         self.check = Some(rt::spawn(async move {
             hub.game_running().await.unwrap_or(false)
         }));
     }
 
-    fn schedule(&mut self) {
-        self.next = Some(Instant::now() + EVERY);
-        self.ctx.request_repaint_after(EVERY);
+    /// The game is running or not, as just learnt. Only a start soon after a launch from
+    /// here has a known time.
+    fn set_running(&mut self, now: bool) -> bool {
+        let was = self.running;
+        self.running = now;
+        let watching = self.watch_until.is_some_and(|u| Instant::now() < u);
+        if !now {
+            self.since = None;
+        } else if !was && watching {
+            self.since = Some(Instant::now());
+            self.watch_until = None;
+        }
+        if !watching {
+            self.watch_until = None;
+        }
+        was != now
     }
 
     pub fn poll(&mut self) -> bool {
@@ -126,29 +142,7 @@ impl Game {
             && let Some(now) = t.poll()
         {
             self.check = None;
-            let was = self.running;
-            self.running = now;
-            // Only a start this window watched for has a known time.
-            if !now {
-                self.since = None;
-            } else if !was && self.watch_until.is_some() {
-                self.since = Some(Instant::now());
-            }
-            let watching = self.watch_until.is_some_and(|u| Instant::now() < u);
-            if now || watching {
-                self.schedule();
-            } else {
-                self.watch_until = None;
-            }
-            changed |= was != now;
-        }
-        if let Some(due) = self.next {
-            let now = Instant::now();
-            if now >= due {
-                self.check_now();
-            } else {
-                self.ctx.request_repaint_after(due - now);
-            }
+            changed |= self.set_running(now);
         }
         changed
     }

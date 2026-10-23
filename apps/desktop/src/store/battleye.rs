@@ -30,7 +30,12 @@ impl BattlEye {
         }
     }
 
+    /// Read the status again, unless a read is still under way (asked every 5 s while
+    /// DayZ runs; a slow service query must not stack reads).
     pub fn refresh(&mut self) {
+        if self.refresh.as_ref().is_some_and(Task::is_pending) {
+            return;
+        }
         let hub = self.hub.clone();
         self.refresh = Some(rt::spawn(async move { hub.battleye_status().await.ok() }));
     }

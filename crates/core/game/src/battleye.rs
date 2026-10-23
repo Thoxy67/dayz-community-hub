@@ -146,7 +146,8 @@ pub fn repair(_dayz: &Path) -> Result<()> {
     for v in dz_steamcmd::appimage_env() {
         cmd.env_remove(v);
     }
-    cmd.spawn()?;
+    // The link is handed to the running Steam and the program exits at once.
+    dz_steamcmd::spawn_detached(&mut cmd)?;
     Ok(())
 }
 

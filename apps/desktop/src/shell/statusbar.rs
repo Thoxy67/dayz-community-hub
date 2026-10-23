@@ -45,17 +45,6 @@ const ANIM_FPS: f32 = 30.0;
 /// Words go below this bar width; then segments, as `class` says.
 const WORDS_MIN: f32 = 1100.0;
 
-/// The phase of Steam's listing (mirror of the hub's private `Phase`).
-#[derive(serde::Deserialize, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-enum SourcePhase {
-    Idle,
-    Running,
-    Done,
-    Failed,
-    Off,
-}
-
 /// What the bar keeps between frames.
 #[derive(Default)]
 pub(crate) struct StatusState {
@@ -457,9 +446,7 @@ fn list_segment(cx: &Ctx, st: &StatusState, tk: &Tokens) -> Segment {
         .sources
         .now
         .as_ref()
-        .filter(|n| {
-            crate::store::mirror::<_, SourcePhase>(&n.steam.phase) == Some(SourcePhase::Running)
-        })
+        .filter(|n| n.steam.phase == dz_hub::events::SourcePhase::Running)
         .map(|n| (n.steam.requests_done, n.steam.requests_total, n.steam.added));
     let (tone, tip, act, progress, note) = if s.refreshing {
         (

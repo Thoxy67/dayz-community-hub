@@ -50,7 +50,7 @@ fn normalize_steamapps(p: PathBuf) -> PathBuf {
 /// or the one found on this machine. A saved folder that is not there (a
 /// drive unplugged, a profile imported from the other OS) does not stop the
 /// search.
-fn resolve_steam_root(profile: &Profile) -> PathBuf {
+fn resolve_steam_root(profile: &SteamInputs) -> PathBuf {
     profile
         .steam_root
         .as_ref()
@@ -70,7 +70,7 @@ fn content_dir() -> PathBuf {
 /// Build a `SteamCmd` from the profile's settings, or `None` when steamcmd is
 /// disabled or cannot be found. It installs into the launcher's own
 /// directory, never into `steam_root`.
-fn build_steamcmd(profile: &Profile, steam_root: &Path) -> Option<Arc<SteamCmd>> {
+fn build_steamcmd(profile: &SteamInputs, steam_root: &Path) -> Option<Arc<SteamCmd>> {
     if !profile.steamcmd_enabled {
         return None;
     }
@@ -92,16 +92,49 @@ fn build_steamcmd(profile: &Profile, steam_root: &Path) -> Option<Arc<SteamCmd>>
     ))
 }
 
-/// The client for the launcher API, Steam and GitHub downloads: a connect
-/// timeout and a stall timeout between reads, but no total limit, since it
-/// also downloads the offline mode's archive.
-fn http_client() -> Client {
-    Client::builder()
-        .user_agent(concat!("DayZCommunityHub/", env!("CARGO_PKG_VERSION")))
-        .connect_timeout(std::time::Duration::from_secs(10))
-        .read_timeout(std::time::Duration::from_secs(30))
-        .build()
-        .unwrap_or_else(|_| Client::new())
+/// What finding Steam and SteamCMD reads from the profile: the Steam root,
+/// SteamCMD on or off, its path, the login and its saved password. Equal
+/// inputs, equal [`SteamSetup`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SteamInputs {
+    pub steam_root: Option<String>,
+    pub steamcmd_enabled: bool,
+    pub steamcmd_path: Option<String>,
+    pub steam_login: Option<String>,
+    pub steam_password: Option<String>,
+}
+
+impl SteamInputs {
+    pub fn of(p: &Profile) -> Self {
+        Self {
+            steam_root: p.steam_root.clone(),
+            steamcmd_enabled: p.steamcmd_enabled,
+            steamcmd_path: p.steamcmd_path.clone(),
+            steam_login: p.steam_login.clone(),
+            steam_password: p.steam_password.clone(),
+        }
+    }
+}
+
+/// Steam's folder and SteamCMD as found for some [`SteamInputs`]. Working it
+/// out probes the disks (every drive on Windows), so a caller on a runtime
+/// resolves it on a blocking thread and swaps it in with
+/// [`DayzCtl::set_steam_setup`], holding no lock meanwhile.
+pub struct SteamSetup {
+    steam_root: PathBuf,
+    steamcmd: Option<Arc<SteamCmd>>,
+}
+
+impl SteamSetup {
+    /// Find Steam and SteamCMD for these settings: blocking.
+    pub fn resolve(inputs: &SteamInputs) -> Self {
+        let steam_root = resolve_steam_root(inputs);
+        let steamcmd = build_steamcmd(inputs, &steam_root);
+        Self {
+            steam_root,
+            steamcmd,
+        }
+    }
 }
 
 pub struct DayzCtl {
@@ -114,16 +147,20 @@ pub struct DayzCtl {
 
 impl DayzCtl {
     /// Load the profile at `profile_path` (creating it if missing) and resolve
-    /// steamcmd from it.
-    pub async fn new(profile_path: impl AsRef<Path>) -> Result<Self> {
+    /// steamcmd from it. `client` is the caller's, so the app keeps one pool
+    /// of connections: it downloads the offline mode's archive, so it needs a
+    /// stall timeout between reads but no total limit.
+    pub async fn new(profile_path: impl AsRef<Path>, client: Client) -> Result<Self> {
         let profile = Profile::load_async(profile_path).await?;
-        let steam_root = resolve_steam_root(&profile);
-        let steamcmd = build_steamcmd(&profile, &steam_root);
+        let inputs = SteamInputs::of(&profile);
+        let setup = tokio::task::spawn_blocking(move || SteamSetup::resolve(&inputs))
+            .await
+            .map_err(|e| Error::Config(format!("finding Steam failed: {e}")))?;
         Ok(Self {
             profile,
-            steam_root,
-            steamcmd,
-            client: http_client(),
+            steam_root: setup.steam_root,
+            steamcmd: setup.steamcmd,
+            client,
         })
     }
 
@@ -225,10 +262,18 @@ impl DayzCtl {
     /// Rebuild the `SteamCmd` instance from the current profile.
     /// Call this after mutating `steam_login`, `steam_password`, `steam_root`,
     /// `steamcmd_path` or `steamcmd_enabled` so the new values take effect
-    /// without restarting the app.
+    /// without restarting the app. Probes the disks: blocking. Under a lock on
+    /// a runtime, resolve a [`SteamSetup`] outside it and swap it in with
+    /// [`DayzCtl::set_steam_setup`] instead.
     pub fn rebuild_steamcmd(&mut self) {
-        self.steam_root = resolve_steam_root(&self.profile);
-        self.steamcmd = build_steamcmd(&self.profile, &self.steam_root);
+        let setup = SteamSetup::resolve(&SteamInputs::of(&self.profile));
+        self.set_steam_setup(setup);
+    }
+
+    /// Take a Steam folder and SteamCMD resolved elsewhere in.
+    pub fn set_steam_setup(&mut self, setup: SteamSetup) {
+        self.steam_root = setup.steam_root;
+        self.steamcmd = setup.steamcmd;
     }
 
     /// The shared HTTP client.
@@ -267,6 +312,21 @@ impl DayzCtl {
         PtyInputTx,
         tokio::task::JoinHandle<ModOpResult>,
     )> {
+        let installed = self.mod_dirs().scan(None);
+        self.start_mod_operation_with(op, installed)
+    }
+
+    /// [`DayzCtl::start_mod_operation`] with the mods on disk the caller has
+    /// already read, so a start does not scan the folders again.
+    pub fn start_mod_operation_with(
+        &self,
+        op: ModOperation,
+        installed: Vec<InstalledMod>,
+    ) -> Result<(
+        mpsc::UnboundedReceiver<ModProgress>,
+        PtyInputTx,
+        tokio::task::JoinHandle<ModOpResult>,
+    )> {
         // Logging in is SteamCMD's alone, whichever downloads.
         let downloader = match (&op, self.profile.mod_downloader) {
             (ModOperation::Login, _) | (_, ModDownloader::Steamcmd) => {
@@ -276,7 +336,6 @@ impl DayzCtl {
         };
         let dirs = self.mod_dirs();
         let dayz_path = self.dayz_path()?;
-        let installed = dirs.scan(None);
         Ok(spawn_mod_operation(
             downloader, dirs, dayz_path, op, installed,
         ))
@@ -389,16 +448,28 @@ pub async fn run_through_steam(args: Vec<String>) -> Result<()> {
 
     // A cold-started Steam discards -applaunch until its IPC socket is up
     // (which is why a second attempt always used to work): wait for the
-    // process, then give it a moment to register the launch handler.
+    // process, then for its login where the system says (Windows), else
+    // give it a moment to register the launch handler.
     if !already_running {
         for _ in 0..30u8 {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            let running = tokio::task::spawn_blocking(SteamClient::is_running)
-                .await
-                .unwrap_or(false);
-            if running {
-                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                break;
+            let (running, ready) = tokio::task::spawn_blocking(|| {
+                (SteamClient::is_running(), SteamClient::is_ready())
+            })
+            .await
+            .unwrap_or((false, None));
+            match (running, ready) {
+                (true, Some(true)) => {
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    break;
+                }
+                (true, None) => {
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                    break;
+                }
+                // Not up, or not logged in yet: at most the 30 s, then the
+                // launch goes anyway.
+                _ => {}
             }
         }
     }

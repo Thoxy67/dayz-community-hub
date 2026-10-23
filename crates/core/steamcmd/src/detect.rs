@@ -188,9 +188,14 @@ pub struct SteamGameConfig {
 }
 
 /// Read DayZ's launch options and compatibility tool from the Steam client's
-/// configuration. Launch options are per Steam account: the account whose
-/// `localconfig.vdf` changed last is taken as the one in use. Blocking.
+/// configuration. Launch options are per Steam account: the one Steam
+/// logged in last (`loginusers.vdf`), else the one whose `localconfig.vdf`
+/// changed last. The answer is kept until one of those files changes, so
+/// asking again costs a few stats. Blocking.
 pub fn dayz_steam_config() -> SteamGameConfig {
+    type Kept = Option<(Vec<FileStamp>, SteamGameConfig)>;
+    static KEPT: std::sync::Mutex<Kept> = std::sync::Mutex::new(None);
+
     let Some(steam) = default_steamapps_candidates()
         .into_iter()
         .find(|c| c.is_dir())
@@ -198,26 +203,43 @@ pub fn dayz_steam_config() -> SteamGameConfig {
     else {
         return SteamGameConfig::default();
     };
-    let id = DAYZ_GAME_ID.to_string();
-    let read = |p: &Path| {
-        std::fs::read_to_string(p)
-            .ok()
-            .map(|t| crate::vdf::parse(&t))
-    };
+    let config = steam.join("config").join("config.vdf");
+    let login_users = steam.join("config").join("loginusers.vdf");
+    let local_configs: Vec<PathBuf> = std::fs::read_dir(steam.join("userdata"))
+        .ok()
+        .into_iter()
+        .flat_map(|d| d.flatten())
+        .map(|user| user.path().join("config").join("localconfig.vdf"))
+        .collect();
+    let stamps: Vec<FileStamp> = [&config, &login_users]
+        .into_iter()
+        .chain(&local_configs)
+        .map(|p| FileStamp::of(p))
+        .collect();
+    if let Ok(kept) = KEPT.lock()
+        && let Some((k, v)) = kept.as_ref()
+        && *k == stamps
+    {
+        return v.clone();
+    }
 
-    let (compat_tool, compat_tool_default) = read(&steam.join("config").join("config.vdf"))
-        .map(|v| {
-            let map = [
-                "InstallConfigStore",
-                "Software",
-                "Valve",
-                "Steam",
-                "CompatToolMapping",
-            ];
+    let id = DAYZ_GAME_ID.to_string();
+    let (compat_tool, compat_tool_default) = std::fs::read_to_string(&config)
+        .map(|text| {
             let tool = |app: &str| {
-                let mut path = map.to_vec();
-                path.extend([app, "name"]);
-                v.str(&path).filter(|s| !s.is_empty()).map(str::to_string)
+                crate::vdf::lookup(
+                    &text,
+                    &[
+                        "InstallConfigStore",
+                        "Software",
+                        "Valve",
+                        "Steam",
+                        "CompatToolMapping",
+                        app,
+                        "name",
+                    ],
+                )
+                .filter(|s| !s.is_empty())
             };
             match tool(&id) {
                 Some(t) => (Some(t), false),
@@ -227,34 +249,82 @@ pub fn dayz_steam_config() -> SteamGameConfig {
         })
         .unwrap_or((None, false));
 
-    let launch_options = std::fs::read_dir(steam.join("userdata"))
+    let recent = std::fs::read_to_string(&login_users)
         .ok()
-        .into_iter()
-        .flat_map(|d| d.flatten())
-        .map(|user| user.path().join("config").join("localconfig.vdf"))
-        .filter_map(|p| Some((std::fs::metadata(&p).ok()?.modified().ok()?, p)))
-        .max_by_key(|(at, _)| *at)
-        .and_then(|(_, p)| read(&p))
-        .and_then(|v| {
-            v.str(&[
-                "UserLocalConfigStore",
-                "Software",
-                "Valve",
-                "Steam",
-                "apps",
-                &id,
-                "LaunchOptions",
-            ])
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
-        });
+        .and_then(|text| most_recent_account(&text))
+        .map(|account| {
+            steam
+                .join("userdata")
+                .join(account.to_string())
+                .join("config")
+                .join("localconfig.vdf")
+        })
+        .filter(|p| p.is_file());
+    let local_config = recent.or_else(|| {
+        local_configs
+            .iter()
+            .filter_map(|p| Some((std::fs::metadata(p).ok()?.modified().ok()?, p)))
+            .max_by_key(|(at, _)| *at)
+            .map(|(_, p)| p.clone())
+    });
+    let launch_options = local_config
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|text| {
+            crate::vdf::lookup(
+                &text,
+                &[
+                    "UserLocalConfigStore",
+                    "Software",
+                    "Valve",
+                    "Steam",
+                    "apps",
+                    &id,
+                    "LaunchOptions",
+                ],
+            )
+        })
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
 
-    SteamGameConfig {
+    let found = SteamGameConfig {
         launch_options,
         compat_tool,
         compat_tool_default,
+    };
+    if let Ok(mut kept) = KEPT.lock() {
+        *kept = Some((stamps, found.clone()));
     }
+    found
+}
+
+/// A file as last seen: its path, and its size and time when it exists.
+#[derive(PartialEq, Eq)]
+struct FileStamp(PathBuf, Option<(u64, std::time::SystemTime)>);
+
+impl FileStamp {
+    fn of(path: &Path) -> Self {
+        let meta = std::fs::metadata(path).ok();
+        Self(
+            path.to_path_buf(),
+            meta.and_then(|m| Some((m.len(), m.modified().ok()?))),
+        )
+    }
+}
+
+/// The account Steam logged in last, from `loginusers.vdf`, as its
+/// `userdata` folder names it (the account id: the SteamID64 less
+/// 76561197960265728).
+fn most_recent_account(login_users: &str) -> Option<u64> {
+    const BASE: u64 = 76_561_197_960_265_728;
+    let doc = crate::vdf::parse(login_users);
+    let Some(crate::vdf::Vdf::Obj(users)) = doc.get(&["users"]) else {
+        return None;
+    };
+    users.iter().find_map(|(id, user)| {
+        (user.str(&["MostRecent"]) == Some("1"))
+            .then(|| id.parse::<u64>().ok()?.checked_sub(BASE))
+            .flatten()
+    })
 }
 
 /// Default `steamapps` directory candidates for the current platform, in
@@ -503,6 +573,21 @@ pub fn find_steamcmd() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_account_steam_logged_in_last() {
+        let users = r#""users"
+{
+	"76561197960287930" { "AccountName" "old" "MostRecent" "0" }
+	"76561198000000000" { "AccountName" "now" "MostRecent" "1" "Timestamp" "1700000000" }
+}"#;
+        assert_eq!(most_recent_account(users), Some(39_734_272));
+        assert_eq!(
+            most_recent_account(r#""users" { "1" { "MostRecent" "1" } }"#),
+            None
+        );
+        assert_eq!(most_recent_account(""), None);
+    }
 
     /// A fresh directory under the system temp dir, removed by the caller.
     fn scratch(name: &str) -> PathBuf {

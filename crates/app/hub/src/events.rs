@@ -44,6 +44,9 @@ pub enum HubEvent {
     PingScanProgress(PingScanProgress),
     /// A play session started or ended.
     PlaySessionsChanged(PlaySessionsChanged),
+    /// DayZ started or stopped (whether launched from here or not), as the
+    /// play tracker saw it; also its first look, at start.
+    GameRunning(bool),
     /// A pad's input, for the gamepad navigation mode.
     GamepadInput(GamepadInput),
     /// The pads connected changed.

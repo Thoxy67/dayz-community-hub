@@ -1,10 +1,15 @@
 //! Watches DayZ run and writes each stretch down as a session.
 //!
-//! Launching only hands Steam a command line, so the game is found the way
-//! the window finds it (`DayzGame::is_running`, a process scan): every 15 s
-//! while it runs or a launch is expected, every 30 s otherwise. A launch
-//! from the launcher says what is being played ([`expect`]); DayZ started
-//! any other way is recorded as played on an unknown server.
+//! Launching only hands Steam a command line, so the game is found by a
+//! process scan (`DayzGame::running_pids`): every 5 s while a launch is
+//! expected, every 30 s otherwise, and not at all while Steam says it is not
+//! running. Once the game's processes are known, only they are looked at,
+//! every 2 s, and one full scan confirms the game is gone when they are
+//! (BattlEye's launcher hands over to the game). The tracker is the app's
+//! one watcher of the game: it tells the window when the game starts or
+//! stops ([`HubEvent::GameRunning`]). A launch from the launcher says what
+//! is being played ([`expect`]); DayZ started any other way is recorded as
+//! played on an unknown server.
 //!
 //! The open session's end is pushed forward as the game is seen running
 //! and written once a minute, so a launcher that is killed loses a minute
@@ -28,6 +33,12 @@ const MAX_GAP: i64 = 90;
 const WRITE_EVERY: i64 = 60;
 /// What DayZ started outside the launcher is called.
 const UNKNOWN_NAME: &str = "DayZ";
+/// How often the game's known processes are looked at while it runs.
+const WATCH_EVERY: Duration = Duration::from_secs(2);
+/// How often the game is looked for while a launch is expected.
+const EXPECTING_EVERY: Duration = Duration::from_secs(5);
+/// How often otherwise.
+const IDLE_EVERY: Duration = Duration::from_secs(30);
 
 /// What a launch is about to play.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -117,14 +128,54 @@ pub(crate) fn step(
     }
 }
 
+/// One look at the game. With the processes it was last seen as, only they
+/// are read; when they are gone (or none were known), the whole table is,
+/// unless `idle` and Steam says it is not running (DayZ cannot run without
+/// it). Returns whether the game runs, and the processes to look at next.
+/// Blocking.
+fn look(known: &[u32], idle: bool) -> (bool, Vec<u32>) {
+    use dz_steamcmd::{DayzGame, SteamClient};
+    if !known.is_empty() && DayzGame::any_alive(known) {
+        return (true, known.to_vec());
+    }
+    if idle && known.is_empty() && SteamClient::known_running() == Some(false) {
+        return (false, Vec::new());
+    }
+    // Processes that just went away may have handed over to one the kept
+    // table has not seen yet: read it again.
+    let pids = DayzGame::running_pids(!known.is_empty());
+    (!pids.is_empty(), pids)
+}
+
+/// How long until the next look.
+fn next_look(watching: bool, expecting: bool) -> Duration {
+    if watching {
+        WATCH_EVERY
+    } else if expecting {
+        EXPECTING_EVERY
+    } else {
+        IDLE_EVERY
+    }
+}
+
 /// Watch the game for as long as the app runs.
 pub(crate) fn spawn(app: Hub) {
     tokio::spawn(async move {
         let mut last_write = 0i64;
+        let mut told: Option<bool> = None;
+        let mut known: Vec<u32> = Vec::new();
         loop {
-            let running = tokio::task::spawn_blocking(dz_steamcmd::DayzGame::is_running)
+            let expecting = PENDING.lock().is_ok_and(|p| p.is_some());
+            let idle = !expecting && told != Some(true);
+            let prev = std::mem::take(&mut known);
+            let (running, pids) = tokio::task::spawn_blocking(move || look(&prev, idle))
                 .await
-                .unwrap_or(false);
+                .unwrap_or((false, Vec::new()));
+            known = pids;
+            if told != Some(running) {
+                told = Some(running);
+                app.emit(HubEvent::GameRunning(running));
+            }
             let now = dz_common::time::now_secs() as i64;
             let mut pending = PENDING.lock().ok().and_then(|mut p| {
                 // A launch that never showed up is forgotten.
@@ -153,8 +204,8 @@ pub(crate) fn spawn(app: Hub) {
                 app.emit(HubEvent::PlaySessionsChanged(PlaySessionsChanged));
             }
 
-            let busy = running || PENDING.lock().is_ok_and(|p| p.is_some());
-            let wait = Duration::from_secs(if busy { 15 } else { 30 });
+            let expecting = PENDING.lock().is_ok_and(|p| p.is_some());
+            let wait = next_look(!known.is_empty(), expecting);
             tokio::select! {
                 () = tokio::time::sleep(wait) => {}
                 () = WAKE.notified() => {
@@ -184,6 +235,14 @@ mod tests {
             port: Some(2302),
             map: Some("enoch".into()),
         }
+    }
+
+    #[test]
+    fn looks_are_close_together_only_while_something_is_happening() {
+        assert_eq!(next_look(true, false), WATCH_EVERY);
+        assert_eq!(next_look(true, true), WATCH_EVERY);
+        assert_eq!(next_look(false, true), EXPECTING_EVERY);
+        assert_eq!(next_look(false, false), IDLE_EVERY);
     }
 
     #[test]
