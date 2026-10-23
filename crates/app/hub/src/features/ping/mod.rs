@@ -137,6 +137,8 @@ pub(crate) fn now_ms() -> i64 {
 pub struct PingState {
     /// Read by every scan loop on every result: an atomic, not a lock.
     paused: AtomicBool,
+    /// Wakes the scan loops waiting while paused when the pause changes.
+    pause_changed: tokio::sync::Notify,
     /// The running scan, so a new one (or a refresh) can abort it.
     background: Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// The running whole-list scan's queue, which servers added to the list
@@ -174,7 +176,35 @@ impl PingState {
     /// a refresh do.
     pub(crate) fn stop(&self) {
         self.abort_background();
-        self.paused.store(false, Ordering::Relaxed);
+        self.set_paused(false);
+    }
+
+    fn set_paused(&self, paused: bool) {
+        self.paused.store(paused, Ordering::Relaxed);
+        self.pause_changed.notify_waiters();
+    }
+
+    /// Pause or resume; returns whether it is now paused.
+    fn toggle_pause(&self) -> bool {
+        let paused = !self.paused.fetch_xor(true, Ordering::Relaxed);
+        self.pause_changed.notify_waiters();
+        paused
+    }
+
+    /// Wait while the scan is paused, without waking until it is resumed
+    /// (or stopped).
+    async fn while_paused(&self) {
+        loop {
+            let changed = self.pause_changed.notified();
+            tokio::pin!(changed);
+            // Registered before the flag is read, so a resume in between
+            // still wakes it.
+            changed.as_mut().enable();
+            if !self.is_paused() {
+                return;
+            }
+            changed.await;
+        }
     }
 
     /// A new whole-list scan's counters, remembered as the last one.
@@ -393,8 +423,10 @@ async fn scan(
             break;
         }
         if ping.is_paused() {
-            flush.tick().await;
+            // Says it is paused, then sleeps until it is not: the results in
+            // flight wait, unpolled, as they did.
             send(&mut batch);
+            ping.while_paused().await;
             continue;
         }
         tokio::select! {
@@ -640,7 +672,7 @@ impl Hub {
 
     /// Pause or resume scanning. Returns whether it is now paused.
     pub async fn toggle_ping_pause(&self) -> Result<bool, String> {
-        Ok(!self.ping().paused.fetch_xor(true, Ordering::Relaxed))
+        Ok(self.ping().toggle_pause())
     }
 }
 
@@ -681,7 +713,7 @@ mod tests {
         assert!(s.started_at.is_some());
 
         // Paused shows; stopped keeps the counts but no longer runs.
-        ping.paused.store(true, Ordering::Relaxed);
+        assert!(ping.toggle_pause());
         assert!(ping.state().progress.paused);
         ping.stop();
         let s = ping.state();
@@ -692,5 +724,22 @@ mod tests {
         let next = ping.begin(ScanKind::Added);
         assert_eq!(next.id, 2);
         assert_eq!(ping.state().kind, Some(ScanKind::Added));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_paused_scan_sleeps_until_it_is_resumed() {
+        let ping = Arc::new(PingState::default());
+        assert!(ping.toggle_pause());
+        let waiting = {
+            let ping = Arc::clone(&ping);
+            tokio::spawn(async move { ping.while_paused().await })
+        };
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        assert!(!waiting.is_finished(), "still paused");
+        assert!(!ping.toggle_pause());
+        tokio::time::timeout(Duration::from_millis(1), waiting)
+            .await
+            .expect("woken at once by the resume")
+            .unwrap();
     }
 }

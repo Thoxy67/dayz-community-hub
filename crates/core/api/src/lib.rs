@@ -9,7 +9,7 @@ mod steam;
 
 pub use index::ServerIndex;
 pub use master::{
-    MAX_SPLIT_DEPTH, MasterAddr, PLAN_MARGIN, PlannedPart, WEB_LIST_CAP, WebPartition,
+    MAX_SPLIT_DEPTH, MasterAddr, PLAN_MARGIN, PlannedPart, WEB_LIST_CAP, WebError, WebPartition,
     compact_plan, fetch_web_partition, planned_partitions, web_partitions, web_throttled,
 };
 pub use official::{
@@ -258,37 +258,9 @@ pub async fn save_server_list_cache(
 /// (so the rename stays on one file system), flushed, then renamed over
 /// `path`, which replaces it on every platform. A reader sees the old file
 /// or the new one, never half of it. The temporary file is removed if
-/// anything fails.
+/// anything fails. The one write of the workspace: [`dz_common::fs::write_atomic`].
 pub fn write_atomic(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
-    use std::io::Write;
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static NEXT: AtomicU64 = AtomicU64::new(0);
-
-    let dir = match path.parent() {
-        Some(d) if !d.as_os_str().is_empty() => d,
-        _ => std::path::Path::new("."),
-    };
-    std::fs::create_dir_all(dir)?;
-    let name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "cache".to_owned());
-    // Unique per process and per write: two saves in flight never share one.
-    let tmp = dir.join(format!(
-        ".{name}.{}.{}.tmp",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    let written = std::fs::File::create(&tmp)
-        .and_then(|mut f| {
-            f.write_all(data)?;
-            f.sync_all()
-        })
-        .and_then(|()| std::fs::rename(&tmp, path));
-    if written.is_err() {
-        let _ = std::fs::remove_file(&tmp);
-    }
-    written
+    dz_common::fs::write_atomic(path, data)
 }
 
 /// Fetch the full server list from the DayZSA Launcher API.

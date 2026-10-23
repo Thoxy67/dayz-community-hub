@@ -6,10 +6,12 @@
 //! `async-a2s`, which drops the mods' Workshop ids and fails on the players
 //! of busy servers.
 
+mod exchange;
 pub mod keywords;
 pub mod players;
 pub mod rules;
 
+pub use exchange::{InfoAnswer, info_within};
 pub use keywords::DayzInfo;
 pub use players::{A2sPlayer, query_players};
 pub use rules::{A2sMod, DayzRules, query_dayz_rules};
@@ -81,43 +83,52 @@ pub fn human_player_count(info: &Info) -> u8 {
     info.players.saturating_sub(info.bots)
 }
 
-/// Ping through a caller-owned client (the bulk-scan hot path).
+/// Ping through a caller-owned client (the bulk-scan hot path). The client's
+/// timeout holds for each of A2S_INFO's two round trips: a caller wraps it
+/// in its own timeout for one deadline over both.
 pub async fn ping_using(client: &A2SClient, addr: &str) -> Result<Ping> {
     let (info, latency) = client
         .info(addr, None)
         .await
         .map_err(|e| Error::A2sQuery(format!("A2S query failed: {e}")))?;
-    Ok(Ping {
+    Ok(ping_of(&info, latency))
+}
+
+pub(crate) fn ping_of(info: &Info, latency: Duration) -> Ping {
+    Ping {
         ms: duration_to_ms_floor1(latency),
-        players: human_player_count(&info),
+        players: human_player_count(info),
         max_players: info.max_players,
         bots: info.bots,
-    })
+    }
 }
 
-/// A client for one query on its own (the detail panel, a manual ping):
-/// two tries of half the usual wait, so one lost UDP packet does not read
-/// as a silent server, and still no longer than 5 s in all. A scan keeps
-/// its own retries ([`client_with_timeout`]).
-async fn one_off_client() -> Result<A2SClient> {
-    let mut client = client_with_timeout(Duration::from_millis(2500)).await?;
-    client.retries(1);
-    Ok(client)
+/// A one-off query's tries (the detail panel, a manual ping): two of half
+/// the usual wait, so one lost UDP packet does not read as a silent server,
+/// and still no longer than 5 s in all, the challenge included. A scan keeps
+/// its own retries.
+const ONE_OFF_TRIES: u32 = 2;
+const ONE_OFF_TIMEOUT: Duration = Duration::from_millis(2500);
+
+async fn one_off_info(addr: &str) -> Result<InfoAnswer> {
+    let mut last = None;
+    for _ in 0..ONE_OFF_TRIES {
+        match info_within(addr, ONE_OFF_TIMEOUT).await {
+            Ok(a) => return Ok(a),
+            Err(e) => last = Some(e),
+        }
+    }
+    Err(last.unwrap_or_else(|| Error::A2sQuery(format!("A2S query to {addr} was never sent"))))
 }
 
-/// Ping with a client of its own.
+/// Ping on a socket of its own.
 pub async fn ping(addr: &str) -> Result<Ping> {
-    ping_using(&one_off_client().await?, addr).await
+    Ok(one_off_info(addr).await?.ping())
 }
 
 /// A2S_INFO.
 pub async fn query_info(addr: &str) -> Result<Info> {
-    let client = one_off_client().await?;
-    let (info, _latency) = client
-        .info(addr, None)
-        .await
-        .map_err(|e| Error::A2sQuery(format!("A2S query failed: {e}")))?;
-    Ok(info)
+    Ok(one_off_info(addr).await?.info)
 }
 
 #[cfg(test)]

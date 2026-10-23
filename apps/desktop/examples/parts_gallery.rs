@@ -745,7 +745,7 @@ fn parts(ui: &mut Ui, s: &mut State) {
                 ui.add(SortHead::new("Server", false, true))
             });
         });
-        let friends = vec!["Hicks".to_owned(), "Vasquez".to_owned()];
+        let friends = ["Hicks", "Vasquez"];
         let ban = [
             RowButton {
                 id: 1,

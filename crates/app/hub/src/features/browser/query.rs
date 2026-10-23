@@ -440,7 +440,7 @@ mod tests {
     fn excluded_ips_are_hidden_unless_asked_and_favorites_are_marked() {
         let profile = ProfileView {
             excluded: ["2.2.2.2".to_string()].into_iter().collect(),
-            favorites: [("3.3.3.3".to_string(), 2)].into_iter().collect(),
+            favorites: [("3.3.3.3".to_string(), vec![2])].into_iter().collect(),
             mods: None,
         };
         let s = snap(list(), &profile, &[]);
@@ -458,6 +458,35 @@ mod tests {
         assert!(!s.get(2).unwrap().favorite());
         q.show_excluded = false;
         assert_eq!(compute(&s, &q).0.len(), 3);
+    }
+
+    #[test]
+    fn the_same_flags_written_again_do_not_move_the_profile_generation() {
+        let profile = ProfileView {
+            excluded: FxHashSet::default(),
+            // The favourite is saved under the game port.
+            favorites: [("2.2.2.2".to_string(), vec![1])].into_iter().collect(),
+            mods: None,
+        };
+        let s = snap(list(), &profile, &[]);
+        assert!(s.get(1).unwrap().favorite());
+        let before = s.profile_generation();
+        assert!(!s.apply_profile(&profile));
+        assert_eq!(s.profile_generation(), before);
+        assert!(s.apply_profile(&ProfileView::default()));
+        assert!(s.profile_generation() > before);
+    }
+
+    #[test]
+    fn the_figures_follow_pings_over_an_order_kept_as_it_is() {
+        let s = snap(list(), &ProfileView::default(), &[]);
+        let o = order(&s, &query());
+        assert_eq!((o.stats.pinged, o.stats.best_ping), (0, None));
+        s.put_live("2.2.2.2", 2, &ping(80));
+        s.put_live("3.3.3.3", 2, &ping(30));
+        let stats = super::super::stats_of(&s, &o.order);
+        assert_eq!((stats.pinged, stats.best_ping), (2, Some(30)));
+        assert_eq!(stats, order(&s, &query()).stats, "the same as a new order");
     }
 
     #[test]
@@ -523,7 +552,7 @@ mod tests {
         );
         let profile = ProfileView {
             excluded: FxHashSet::default(),
-            favorites: FxHashSet::default(),
+            favorites: rustc_hash::FxHashMap::default(),
             mods: Some([(0, false), (1, true)].into_iter().collect()),
         };
         let s = snap(one(), &profile, &[]);

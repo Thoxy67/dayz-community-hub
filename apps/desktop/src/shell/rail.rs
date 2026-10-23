@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use dz_hub::features::browser::ServerRef;
 use egui::{Color32, CornerRadius, Galley, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
 
 use crate::app::Ctx;
@@ -13,7 +14,6 @@ use crate::i18n::{format, t};
 use crate::icons::lucide;
 use crate::kit::{self, Players, Side, Signal, SignalSize, TipExt, paint};
 use crate::store::pad::InputMode;
-use crate::store::servers::{Servers, key_of};
 use crate::theme::{Tokens, TokensExt, font, fonts::Face, motion, size};
 use crate::views::{GROUPS, Group, PLACES, Place, ViewId};
 
@@ -412,7 +412,7 @@ fn foot_height(cx: &mut Ctx, collapsed: bool, window_h: f32) -> f32 {
         None => 0.0,
         Some(_) if collapsed || window_h <= SHORT_WINDOW => ENTRY_H + 8.0,
         Some((ip, port, ..)) => {
-            let listed = cx.stores.servers.find(&ip, i64::from(port)).is_some();
+            let listed = cx.stores.servers.row(&ip, i64::from(port)).is_some();
             card_height(listed) + 8.0
         }
     };
@@ -493,7 +493,9 @@ fn rejoin(ui: &mut Ui, cx: &mut Ctx, collapsed: bool, foot: Rect, y: f32) -> f32
         return r.bottom() + 8.0;
     }
 
-    let listed = cx.stores.servers.find(&ip, i64::from(port));
+    // The snapshot is held here (an `Arc`), so the row borrows it and not the stores.
+    let snap = Arc::clone(cx.stores.servers.snapshot());
+    let listed = snap.lookup(&ip, i64::from(port));
     let card = Rect::from_min_size(
         pos2(foot.left() + 8.0, y),
         vec2(foot.width() - 16.0, card_height(listed.is_some())),
@@ -571,7 +573,7 @@ fn rejoin(ui: &mut Ui, cx: &mut Ctx, collapsed: bool, foot: Rect, y: f32) -> f32
     y = name_r.top() + NAME_H + 6.0;
     match &listed {
         Some(row) => {
-            y = listed_lines(ui, cx, row, left, right, y);
+            y = listed_lines(ui, cx, *row, left, right, y);
         }
         None => {
             let g = paint::galley_trunc(
@@ -636,19 +638,18 @@ fn rejoin(ui: &mut Ui, cx: &mut Ctx, collapsed: bool, foot: Rect, y: f32) -> f32
 fn listed_lines(
     ui: &mut Ui,
     cx: &mut Ctx,
-    row: &Arc<dz_hub::features::browser::ServerRow>,
+    row: ServerRef<'_>,
     left: f32,
     right: f32,
     y: f32,
 ) -> f32 {
     let tk = ui.tokens();
-    let live = Servers::count(row);
     let pr = Rect::from_min_size(pos2(left, y), vec2(64.0, 21.0));
-    let players = u32::try_from(live.players.max(0)).unwrap_or(0);
-    let max = u32::try_from(live.max.max(0)).unwrap_or(0);
-    ui.put(pr, Players::new(players, max).bots(live.bots).compact());
-    let key = key_of(row);
-    let ms = cx.stores.servers.ping_ms(&row.ip, row.query_port);
+    let players = u32::try_from(row.players().max(0)).unwrap_or(0);
+    let max = u32::try_from(row.max_players().max(0)).unwrap_or(0);
+    ui.put(pr, Players::new(players, max).bots(row.bots()).compact());
+    let key = format!("{}:{}", row.ip(), row.query_port());
+    let ms = cx.stores.servers.ping_ms(row.ip(), row.query_port());
     let pending = cx.stores.servers.pending.contains(&key);
     let sr = Rect::from_min_max(pos2(right - 56.0, y), pos2(right, y + 21.0));
     let mut sui = ui.new_child(
@@ -661,7 +662,9 @@ fn listed_lines(
     super::ring(ui, &click, sresp.rect, size::RADIUS_XS);
     if click.clicked() {
         let timeout = cx.stores.profile.ping_settings().2;
-        cx.stores.servers.ping_one(&row.ip, row.query_port, timeout);
+        cx.stores
+            .servers
+            .ping_one(row.ip(), row.query_port(), timeout);
     }
     let y = y + 21.0 + 6.0;
     // Map and time (`text-2xs text-map`).
@@ -672,15 +675,20 @@ fn listed_lines(
         tk.map,
     );
     let mut map_right = right;
-    if !row.time.is_empty() {
-        let tg = paint::galley(ui, &row.time, font(Face::Mono, size::TEXT_2XS), tk.fg_faint);
+    if !row.server.time.is_empty() {
+        let tg = paint::galley(
+            ui,
+            &row.server.time,
+            font(Face::Mono, size::TEXT_2XS),
+            tk.fg_faint,
+        );
         map_right -= tg.size().x;
         paint::text_at(ui.painter(), &tg, map_right, cy, tk.fg_faint);
         map_right -= 6.0;
     }
     let mg: Arc<Galley> = paint::galley_trunc(
         ui,
-        &row.map,
+        row.map,
         font(Face::Sans, size::TEXT_2XS),
         tk.map,
         (map_right - left - 16.0).max(0.0),

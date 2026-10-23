@@ -273,8 +273,7 @@ pub fn refresh_live(cx: &mut Ctx, a: &Value) {
         return no_target(cx);
     };
     let s = &mut *cx.stores;
-    s.server_data
-        .refresh_a2s(&mut s.servers, &tg.ip, tg.query_port);
+    s.server_data.refresh_a2s(&s.servers, &tg.ip, tg.query_port);
 }
 
 pub fn direct(cx: &mut Ctx, a: &Value) {

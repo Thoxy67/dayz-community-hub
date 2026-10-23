@@ -438,7 +438,7 @@ impl RowCache {
 pub struct ServerListRow<'a> {
     data: RowData<'a>,
     selected: bool,
-    friends: &'a [String],
+    friends: &'a [&'a str],
     tag: Option<RowTag<'a>>,
     extra: Option<RowExtra<'a>>,
     buttons: &'a [RowButton<'a>],
@@ -465,8 +465,9 @@ impl<'a> ServerListRow<'a> {
         self
     }
 
-    /// Steam friends on this server, by name (a green badge with their count).
-    pub fn friends(mut self, names: &'a [String]) -> Self {
+    /// Steam friends on this server, by name (a green badge with their count; the names
+    /// are joined only for the tooltip).
+    pub fn friends(mut self, names: &'a [&'a str]) -> Self {
         self.friends = names;
         self
     }
@@ -812,7 +813,7 @@ impl<'a> ServerListRow<'a> {
             }
         }
         if d.ping_pending {
-            ui.ctx().request_repaint();
+            crate::kit::paint::animate(ui.ctx());
         }
         let ping_tip = if ping_timed_out(d.ping_ms, d.ping_pending) {
             t("servers", "pingNoAnswer")

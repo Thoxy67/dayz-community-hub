@@ -12,6 +12,7 @@
 use rustc_hash::FxHashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, RwLock, RwLockReadGuard};
+use std::time::{Duration, Instant};
 
 use super::snapshot::ServerSnapshot;
 
@@ -56,41 +57,51 @@ impl Live {
     }
 }
 
-/// Live entries by IP, then query port. Keyed by IP alone so a lookup
-/// borrows the caller's `&str` instead of formatting "ip:port".
+/// Live entries by IP, then query port, each with when it was recorded.
+/// Keyed by IP alone so a lookup borrows the caller's `&str` instead of
+/// formatting "ip:port".
 #[derive(Default)]
 pub(crate) struct LiveMap {
-    by_ip: FxHashMap<Box<str>, Vec<(i64, Live)>>,
+    by_ip: FxHashMap<Box<str>, Vec<(i64, Live, Instant)>>,
 }
 
 impl LiveMap {
     pub(crate) fn get(&self, ip: &str, port: i64) -> Option<&Live> {
-        self.by_ip
-            .get(ip)?
-            .iter()
-            .find(|(p, _)| *p == port)
-            .map(|(_, l)| l)
+        self.entry(ip, port).map(|(_, l, _)| l)
     }
-}
 
-impl LiveMap {
-    fn put(&mut self, ip: &str, port: i64, live: Live) {
+    /// The entry for `ip:port` if it was recorded less than `within` ago.
+    pub(crate) fn fresh(&self, ip: &str, port: i64, within: Duration) -> Option<&Live> {
+        self.entry(ip, port)
+            .filter(|(_, _, at)| at.elapsed() < within)
+            .map(|(_, l, _)| l)
+    }
+
+    fn entry(&self, ip: &str, port: i64) -> Option<&(i64, Live, Instant)> {
+        self.by_ip.get(ip)?.iter().find(|(p, ..)| *p == port)
+    }
+
+    pub(crate) fn put(&mut self, ip: &str, port: i64, live: Live) {
+        let now = Instant::now();
         if let Some(slots) = self.by_ip.get_mut(ip) {
-            match slots.iter_mut().find(|(p, _)| *p == port) {
-                Some((_, l)) => *l = live,
-                None => slots.push((port, live)),
+            match slots.iter_mut().find(|(p, ..)| *p == port) {
+                Some((_, l, at)) => (*l, *at) = (live, now),
+                None => slots.push((port, live, now)),
             }
         } else {
-            self.by_ip.insert(ip.into(), vec![(port, live)]);
+            self.by_ip.insert(ip.into(), vec![(port, live, now)]);
         }
     }
 
+    /// The entry for `ip:port`, to change, marked as recorded now.
     fn get_mut(&mut self, ip: &str, port: i64) -> Option<&mut Live> {
-        self.by_ip
+        let (_, l, at) = self
+            .by_ip
             .get_mut(ip)?
             .iter_mut()
-            .find(|(p, _)| *p == port)
-            .map(|(_, l)| l)
+            .find(|(p, ..)| *p == port)?;
+        *at = Instant::now();
+        Some(l)
     }
 }
 

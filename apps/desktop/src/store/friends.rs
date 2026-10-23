@@ -100,9 +100,15 @@ impl Friends {
 
     /// The friends on a server, by its query port (or game port when unlisted).
     pub fn on(&self, ip: &str, port: u16) -> impl Iterator<Item = &FriendDto> {
+        self.on_key(&server_key(ip, port))
+    }
+
+    /// [`Friends::on`] by a key the caller already holds ("ip:port", the row's own
+    /// buffer): nothing is formatted, for lists that ask once per row each frame.
+    pub fn on_key<'a>(&'a self, key: &str) -> impl Iterator<Item = &'a FriendDto> + use<'a> {
         let list = self.list();
         self.by_server
-            .get(&server_key(ip, port))
+            .get(key)
             .into_iter()
             .flatten()
             .filter_map(move |i| list.get(*i))

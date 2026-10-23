@@ -407,7 +407,54 @@ pub struct MasterAddr {
     pub name: String,
     pub query_port: u16,
     pub game_port: u16,
+    /// The bots its last heartbeat counted. DayZ has none: a server
+    /// reporting some is a farm's emulator padding its count.
+    pub bots: u8,
 }
+
+/// Why a request to the master failed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WebError {
+    /// The key was refused (401, 403).
+    Key,
+    /// Asked to slow down (429), for as long as `Retry-After` says if it does.
+    RateLimited(Option<std::time::Duration>),
+    /// No answer in time.
+    Timeout,
+    /// Steam could not be reached.
+    Unreachable(String),
+    /// Any other HTTP status.
+    Http(u16),
+    /// An answer cut short or unreadable.
+    Body(String),
+}
+
+impl WebError {
+    /// Worth asking again after a short wait: a lost or garbled answer, or a
+    /// server-side error, not a refused key nor a request to slow down.
+    pub fn transient(&self) -> bool {
+        match self {
+            Self::Timeout | Self::Unreachable(_) | Self::Body(_) => true,
+            Self::Http(code) => *code >= 500,
+            Self::Key | Self::RateLimited(_) => false,
+        }
+    }
+}
+
+impl std::fmt::Display for WebError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Key => f.write_str("Steam rejected the API key"),
+            Self::RateLimited(_) => f.write_str("Steam asks to slow down"),
+            Self::Timeout => f.write_str("Steam did not answer in time"),
+            Self::Unreachable(e) => write!(f, "Steam unreachable: {e}"),
+            Self::Http(code) => write!(f, "Steam answered HTTP {code}"),
+            Self::Body(e) => f.write_str(e),
+        }
+    }
+}
+
+impl std::error::Error for WebError {}
 
 #[derive(Deserialize)]
 struct Response {
@@ -425,11 +472,13 @@ struct Row {
     name: String,
     #[serde(default)]
     gameport: u16,
+    #[serde(default)]
+    bots: u8,
 }
 
-fn parse(body: &[u8]) -> Result<Vec<MasterAddr>, String> {
-    let r: Response =
-        serde_json::from_slice(body).map_err(|e| format!("unreadable Steam server list: {e}"))?;
+fn parse(body: &[u8]) -> Result<Vec<MasterAddr>, WebError> {
+    let r: Response = serde_json::from_slice(body)
+        .map_err(|e| WebError::Body(format!("unreadable Steam server list: {e}")))?;
     Ok(r.response
         .servers
         .into_iter()
@@ -450,6 +499,7 @@ fn parse(body: &[u8]) -> Result<Vec<MasterAddr>, String> {
                 } else {
                     r.gameport
                 },
+                bots: r.bots,
             })
         })
         .collect())
@@ -460,7 +510,7 @@ pub async fn fetch_web_partition(
     client: &reqwest::Client,
     key: &str,
     part: &WebPartition,
-) -> Result<Vec<MasterAddr>, String> {
+) -> Result<Vec<MasterAddr>, WebError> {
     fetch(client, key, &part.filter(), "20000").await
 }
 
@@ -477,7 +527,7 @@ async fn fetch(
     key: &str,
     filter: &str,
     limit: &str,
-) -> Result<Vec<MasterAddr>, String> {
+) -> Result<Vec<MasterAddr>, WebError> {
     let resp = client
         .get(LIST_URL)
         // The key goes as a query parameter, never into an error message.
@@ -487,24 +537,36 @@ async fn fetch(
         .await
         .map_err(|e| {
             if e.is_timeout() {
-                "Steam did not answer in time".to_string()
+                WebError::Timeout
             } else {
-                format!("Steam unreachable: {}", e.without_url())
+                WebError::Unreachable(e.without_url().to_string())
             }
         })?;
     match resp.status().as_u16() {
         200..=299 => {}
-        401 | 403 => return Err("Steam rejected the API key".into()),
-        429 => return Err("Steam asks to slow down".into()),
-        code => return Err(format!("Steam answered HTTP {code}")),
+        401 | 403 => return Err(WebError::Key),
+        429 => return Err(WebError::RateLimited(retry_after(resp.headers()))),
+        code => return Err(WebError::Http(code)),
     }
     let body = resp
         .bytes()
         .await
-        .map_err(|e| format!("Steam server list cut short: {}", e.without_url()))?;
+        .map_err(|e| WebError::Body(format!("Steam server list cut short: {}", e.without_url())))?;
     tokio::task::spawn_blocking(move || parse(&body))
         .await
-        .map_err(|e| format!("server list parse task failed: {e}"))?
+        .map_err(|e| WebError::Body(format!("server list parse task failed: {e}")))?
+}
+
+/// `Retry-After` in seconds (the form Steam would use; a date is ignored).
+fn retry_after(headers: &reqwest::header::HeaderMap) -> Option<std::time::Duration> {
+    let secs: u64 = headers
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse()
+        .ok()?;
+    Some(std::time::Duration::from_secs(secs))
 }
 
 #[cfg(test)]
@@ -678,14 +740,31 @@ mod tests {
     }
 
     #[test]
+    fn retry_after_reads_seconds_only() {
+        let mut h = reqwest::header::HeaderMap::new();
+        assert_eq!(retry_after(&h), None);
+        h.insert(reqwest::header::RETRY_AFTER, "30".parse().unwrap());
+        assert_eq!(retry_after(&h), Some(std::time::Duration::from_secs(30)));
+        h.insert(
+            reqwest::header::RETRY_AFTER,
+            "Wed, 21 Oct 2015 07:28:00 GMT".parse().unwrap(),
+        );
+        assert_eq!(retry_after(&h), None);
+        assert!(!WebError::RateLimited(None).transient());
+        assert!(!WebError::Key.transient());
+        assert!(WebError::Http(502).transient() && !WebError::Http(404).transient());
+    }
+
+    #[test]
     fn rows_read_their_ports() {
         let body = br#"{"response":{"servers":[
-            {"addr":"1.2.3.4:27016","gameport":2302},
+            {"addr":"1.2.3.4:27016","gameport":2302,"bots":12,"players":12},
             {"addr":"1.2.3.4:27017"},
             {"addr":"bad"}]}}"#;
         let r = parse(body).unwrap();
         assert_eq!(r.len(), 2);
         assert_eq!((r[0].query_port, r[0].game_port), (27016, 2302));
+        assert_eq!((r[0].bots, r[1].bots), (12, 0));
         assert_eq!(r[1].game_port, 27017);
         assert!(parse(br#"{"response":{}}"#).unwrap().is_empty());
     }

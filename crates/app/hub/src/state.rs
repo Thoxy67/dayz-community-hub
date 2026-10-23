@@ -23,7 +23,6 @@ pub(crate) type SharedState = Arc<RwLock<AppState>>;
 const A2S_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(200).unwrap();
 /// Max entries in the DayZ Metrics caches (figures, and ids found).
 const DM_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(100).unwrap();
-const DM_IDS_SIZE: NonZeroUsize = NonZeroUsize::new(500).unwrap();
 
 pub struct AppState {
     pub ctl: DayzCtl,
@@ -54,9 +53,6 @@ pub struct AppState {
     pub a2s_cache: LruCache<String, (Arc<A2sDetailsDto>, Instant)>,
     /// DayZ Metrics figures by "ip:game_port:query_port".
     pub dm_cache: LruCache<String, (ServerMetricsDto, Instant)>,
-    /// DayZ Metrics ids found by "ip:game_port:query_port": finding one costs
-    /// a search and a few page reads, so it is kept longer than the figures.
-    pub dm_ids: LruCache<String, (dz_dayzmetrics::Resolved, Instant)>,
     /// Input (password / Steam Guard code) for the running steamcmd PTY.
     pub pty_input_tx: Option<dz_steamcmd::PtyInputTx>,
     /// Abort handle of the running mod operation: aborting drops the PTY
@@ -79,7 +75,6 @@ impl AppState {
             mod_scan: None,
             a2s_cache: LruCache::new(A2S_CACHE_SIZE),
             dm_cache: LruCache::new(DM_CACHE_SIZE),
-            dm_ids: LruCache::new(DM_IDS_SIZE),
             pty_input_tx: None,
             mod_op_abort: None,
             profile_writer: Arc::default(),
@@ -112,6 +107,31 @@ impl AppState {
     pub fn profile_changed(&self) {
         self.profile_epoch.fetch_add(1, Ordering::AcqRel);
         crate::features::browser::profile_changed(&self.snapshot, self);
+    }
+
+    /// A fingerprint of everything the browser's flags are read from: the
+    /// favourites, the excluded IPs, the mods on disk and their updates. Equal
+    /// fingerprints, equal flags (barring a hash collision), so a profile
+    /// change that leaves it alone (settings, history, launch options) skips
+    /// the pass over every server. The maps are folded order-independently.
+    pub(crate) fn flags_fingerprint(&self) -> u64 {
+        use std::hash::{BuildHasher, Hash, Hasher};
+        let build = rustc_hash::FxBuildHasher;
+        let p = self.ctl.profile();
+        let mut h = build.build_hasher();
+        for f in &p.favorites {
+            (f.ip.as_str(), f.port).hash(&mut h);
+        }
+        0xFFu8.hash(&mut h);
+        p.excluded_ips.hash(&mut h);
+        let fold = |map: &FxHashMap<u64, i64>| {
+            map.iter().fold(map.len() as u64, |acc, e| {
+                acc.wrapping_add(build.hash_one(e))
+            })
+        };
+        self.mods_on_disk.as_ref().map(fold).hash(&mut h);
+        fold(&self.mod_update_cache).hash(&mut h);
+        h.finish()
     }
 
     /// The server whose query port is `port`.
@@ -183,9 +203,13 @@ pub(crate) async fn mutate_profile<T>(
 ) -> Result<T, String> {
     let (out, snapshot, writer) = {
         let mut s = state.write().await;
+        let flags = s.flags_fingerprint();
         let out = f(&mut s)?;
-        // Favorites and excluded IPs show in the browser.
-        s.profile_changed();
+        // Favorites and excluded IPs show in the browser; most changes (settings,
+        // history, launch options) touch neither, and cost the browser nothing.
+        if s.flags_fingerprint() != flags {
+            s.profile_changed();
+        }
         let snapshot = s.profile_writer.stamp(s.ctl.profile_snapshot().cmd_err()?);
         (out, snapshot, Arc::clone(&s.profile_writer))
     };

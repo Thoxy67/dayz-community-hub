@@ -12,15 +12,14 @@ use std::time::Duration;
 
 use dz_common::{Error, Result};
 use tokio::net::UdpSocket;
+
+use crate::exchange::Exchange;
 use tokio::time::{Instant, sleep, timeout_at};
 
 const HEADER: [u8; 4] = [0xFF; 4];
 const SPLIT: [u8; 4] = [0xFE, 0xFF, 0xFF, 0xFF];
-const A2S_RULES: u8 = 0x56;
-const S2C_CHALLENGE: u8 = 0x41;
-const S2A_RULES: u8 = 0x45;
-/// A server that keeps answering with a new challenge is not going to answer.
-const MAX_CHALLENGES: usize = 3;
+pub(crate) const A2S_RULES: u8 = 0x56;
+pub(crate) const S2A_RULES: u8 = 0x45;
 
 /// One mod a server runs, as it states it in its rules.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,46 +82,28 @@ pub(crate) async fn fetch(addr: &str, kind: u8, answer: u8, timeout: Duration) -
     Err(last)
 }
 
-async fn fetch_once(addr: &str, kind: u8, answer: u8, timeout: Duration) -> Result<Vec<u8>> {
+/// One try of `kind` on a fresh socket, within `timeout`.
+pub(crate) async fn fetch_once(
+    addr: &str,
+    kind: u8,
+    answer: u8,
+    timeout: Duration,
+) -> Result<Vec<u8>> {
     let what = if kind == A2S_RULES {
         "rules"
     } else {
         "players"
     };
-    let err = |e: String| Error::A2sQuery(format!("A2S {what} query to {addr}: {e}"));
-    let socket = UdpSocket::bind("0.0.0.0:0")
-        .await
-        .map_err(|e| err(e.to_string()))?;
-    socket.connect(addr).await.map_err(|e| err(e.to_string()))?;
-    let deadline = Instant::now() + timeout;
-
-    // One receive buffer for the whole exchange, challenges included.
-    let mut buf = vec![0u8; 65_535];
-    let mut request = [0u8; 9];
-    request[..4].copy_from_slice(&HEADER);
-    request[4] = kind;
-    let mut challenge = [0xFF; 4];
-    for _ in 0..MAX_CHALLENGES {
-        request[5..].copy_from_slice(&challenge);
-        socket
-            .send(&request)
-            .await
-            .map_err(|e| err(e.to_string()))?;
-
-        let payload = receive(&socket, &mut buf, deadline).await.map_err(err)?;
-        match payload.first() {
-            Some(&S2C_CHALLENGE) if payload.len() >= 5 => challenge.copy_from_slice(&payload[1..5]),
-            Some(&b) if b == answer => return Ok(payload),
-            Some(b) => return Err(err(format!("unexpected answer {b:#04x}"))),
-            None => return Err(err("empty answer".into())),
-        }
-    }
-    Err(err("the server keeps sending new challenges".into()))
+    let mut exchange = Exchange::open(addr).await?;
+    let (payload, _) = exchange
+        .ask(what, &[kind], true, answer, Instant::now() + timeout)
+        .await?;
+    Ok(payload)
 }
 
 /// One whole answer: a single datagram, or every fragment of a split one put
 /// back in order. The leading `FF FF FF FF` is stripped.
-async fn receive(
+pub(crate) async fn receive(
     socket: &UdpSocket,
     buf: &mut [u8],
     deadline: Instant,

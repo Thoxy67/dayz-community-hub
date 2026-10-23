@@ -65,6 +65,9 @@ pub struct UiState {
     pub list_offset: f32,
     /// The request last sent: a different one starts at the top.
     last_q: Option<dz_hub::features::browser::ServerQuery>,
+    /// The choices the request was last made from: the request is made again (and
+    /// sent) only when they moved, not each frame.
+    last_f: Option<Filters>,
 }
 
 impl Default for UiState {
@@ -80,6 +83,7 @@ impl Default for UiState {
             page_rows: 10,
             list_offset: 0.0,
             last_q: None,
+            last_f: None,
         }
     }
 }
@@ -162,15 +166,18 @@ impl View for ServersView {
         // once; a different request starts at the top.
         {
             let mut st = shared.lock();
-            let q = st.f.query();
-            let debounce = q.search != cx.stores.servers.query().search;
-            if st.last_q.as_ref() != Some(&q) {
-                if st.last_q.is_some() {
-                    st.scroll_top = Some(0.0);
+            if st.last_f.as_ref() != Some(&st.f) {
+                let q = st.f.query();
+                let debounce = q.search != cx.stores.servers.query().search;
+                if st.last_q.as_ref() != Some(&q) {
+                    if st.last_q.is_some() {
+                        st.scroll_top = Some(0.0);
+                    }
+                    st.last_q = Some(q.clone());
                 }
-                st.last_q = Some(q.clone());
+                cx.stores.servers.set_query(q, debounce);
+                st.last_f = Some(st.f.clone());
             }
-            cx.stores.servers.set_query(q, debounce);
             keys(ui.ctx(), cx, &mut st, &mut run);
         }
         // The panel's model and its debounced fetches, before the frame borrows.
@@ -327,6 +334,7 @@ fn header(ui: &mut Ui, cx: &Ctx, st: &mut UiState, focus_search: bool, run: &mut
         shown,
         total: servers.total,
         maps: &servers.maps,
+        maps_generation: servers.maps_generation,
         has_key: cx.stores.profile.has_api_key(),
         excluded: cx
             .stores

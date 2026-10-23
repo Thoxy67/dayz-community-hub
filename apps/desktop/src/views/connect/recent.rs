@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use dz_hub::features::browser::ServerRow;
+use dz_hub::features::browser::ServerRef;
 use egui::{CornerRadius, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 
 use crate::app::Ctx;
@@ -14,7 +14,6 @@ use crate::i18n::{format, t};
 use crate::icons::lucide;
 use crate::kit::paint::{self, alpha};
 use crate::kit::{EmptyState, SectionLabel, Signal, SignalSize, TipExt};
-use crate::store::servers::key_of;
 use crate::theme::{TokensExt, font, fonts::Face, size};
 
 struct Pick {
@@ -100,16 +99,16 @@ pub fn list(ui: &mut Ui, cx: &mut Ctx, wide: bool) {
             .show(ui, |_| {});
         return;
     }
-    let rows: Vec<Option<Arc<ServerRow>>> = picks
+    // Borrowed from the snapshot (no owned rows); the pings as every list resolves
+    // them, the scan's in the snapshot first.
+    let snap = Arc::clone(cx.stores.servers.snapshot());
+    let rows: Vec<Option<ServerRef<'_>>> = picks
         .iter()
-        .map(|p| cx.stores.servers.find(&p.ip, i64::from(p.port)))
+        .map(|p| snap.lookup(&p.ip, i64::from(p.port)))
         .collect();
-    let pings: Vec<Option<u32>> = rows
+    let pings: Vec<Option<u32>> = picks
         .iter()
-        .map(|r| {
-            r.as_ref()
-                .and_then(|r| cx.stores.servers.ping.get(&key_of(r)).copied())
-        })
+        .map(|p| cx.stores.servers.ping_ms(&p.ip, i64::from(p.port)))
         .collect();
     let mut chosen = None;
     // Favourites come first in `picks`: split there, each group under its own heading.
@@ -149,12 +148,14 @@ pub fn list(ui: &mut Ui, cx: &mut Ctx, wide: bool) {
     if let Some(i) = chosen
         && let Some(p) = picks.get(i)
     {
-        let row = rows.get(i).cloned().flatten();
+        let row = rows.get(i).copied().flatten();
         let port = row
             .as_ref()
-            .and_then(|r| u16::try_from(r.game_port).ok())
+            .and_then(|r| u16::try_from(r.game_port()).ok())
             .unwrap_or(p.port);
-        let qp = row.as_ref().and_then(|r| u16::try_from(r.query_port).ok());
+        let qp = row
+            .as_ref()
+            .and_then(|r| u16::try_from(r.query_port()).ok());
         cx.stores.direct_load(&p.ip, port, qp, p.password.clone());
     }
 }
@@ -205,7 +206,7 @@ fn cards(
     ui: &mut Ui,
     base: usize,
     picks: &[Pick],
-    rows: &[Option<Arc<ServerRow>>],
+    rows: &[Option<ServerRef<'_>>],
     pings: &[Option<u32>],
     chosen: &mut Option<usize>,
 ) {
@@ -227,7 +228,7 @@ fn cards(
             .enumerate()
             .map(|(ci, p)| {
                 let i = ri * cols + ci;
-                let row = rows.get(i).cloned().flatten();
+                let row = rows.get(i).copied().flatten();
                 let name_w = inner - 14.0 - 8.0 - if row.is_some() { 19.0 } else { 0.0 };
                 let mut job = egui::text::LayoutJob::single_section(
                     p.name.clone(),
@@ -298,7 +299,7 @@ fn cards(
             cy += name.size().y.max(17.5) + 5.0;
             let port = row
                 .as_ref()
-                .and_then(|s| u16::try_from(s.game_port).ok())
+                .and_then(|s| u16::try_from(s.game_port()).ok())
                 .unwrap_or(p.port);
             let addr = paint::galley_trunc(
                 ui,
@@ -316,10 +317,10 @@ fn cards(
             }
             cy += 14.0 + 5.0 + 1.0;
             if let Some(s) = &row {
-                let pl = paint::galley(ui, &s.players.to_string(), mono.clone(), tk.fg_muted);
+                let pl = paint::galley(ui, &s.players().to_string(), mono.clone(), tk.fg_muted);
                 let mx = paint::galley(
                     ui,
-                    &format!("/{}", s.max_players),
+                    &format!("/{}", s.max_players()),
                     mono.clone(),
                     tk.fg_faint,
                 );
@@ -333,7 +334,7 @@ fn cards(
                 );
                 let map = paint::galley_trunc(
                     ui,
-                    &s.map,
+                    s.map,
                     small.clone(),
                     tk.map,
                     (inner - pl.size().x - 40.0).max(20.0),
@@ -361,7 +362,7 @@ fn compact(
     ui: &mut Ui,
     base: usize,
     picks: &[Pick],
-    rows: &[Option<Arc<ServerRow>>],
+    rows: &[Option<ServerRef<'_>>],
     pings: &[Option<u32>],
     chosen: &mut Option<usize>,
 ) {
@@ -370,7 +371,7 @@ fn compact(
     let mono = font(Face::Mono, size::TEXT_3XS);
     let n = picks.len();
     for (i, p) in picks.iter().enumerate() {
-        let row = rows.get(i).cloned().flatten();
+        let row = rows.get(i).copied().flatten();
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 42.0), Sense::click());
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &p.name));
         let hover = paint::ease(ui, resp.id.with("h"), resp.hovered() || resp.has_focus());
@@ -400,7 +401,7 @@ fn compact(
         let name = paint::galley_trunc(ui, &p.name, font(Face::Sans, size::TEXT_2XS), tk.fg, tw);
         let port = row
             .as_ref()
-            .and_then(|s| u16::try_from(s.game_port).ok())
+            .and_then(|s| u16::try_from(s.game_port()).ok())
             .unwrap_or(p.port);
         let addr = paint::galley(ui, &format!("{}:{port}", p.ip), mono.clone(), tk.fg_faint);
         let painter = ui.painter();

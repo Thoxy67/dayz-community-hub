@@ -32,8 +32,9 @@ use super::{MapCount, count_maps};
 #[derive(Default)]
 pub(crate) struct ProfileView {
     pub excluded: FxHashSet<String>,
-    /// (ip, port) of each favourite; the port may be the query or game port.
-    pub favorites: FxHashSet<(String, i64)>,
+    /// Each favourite's IP → its ports (query or game port), keyed by IP so a
+    /// server is looked up with its borrowed address, no allocation.
+    pub favorites: FxHashMap<String, Vec<i64>>,
     /// Workshop id of each mod on disk → an update is waiting for it; `None`
     /// while the disk has not been read.
     pub mods: Option<FxHashMap<u64, bool>>,
@@ -41,14 +42,9 @@ pub(crate) struct ProfileView {
 
 impl ProfileView {
     fn is_favorite(&self, s: &Server) -> bool {
-        if self.favorites.is_empty() {
-            return false;
-        }
-        // Borrowed lookups would need a key type; a favourite list is short and
-        // this runs once per server per profile change, not per frame.
-        let ip = s.endpoint.ip.clone();
-        self.favorites.contains(&(ip.clone(), s.endpoint.port))
-            || self.favorites.contains(&(ip, s.game_port))
+        self.favorites
+            .get(s.endpoint.ip.as_str())
+            .is_some_and(|ports| ports.contains(&s.endpoint.port) || ports.contains(&s.game_port))
     }
 
     /// The packed profile word for one server.
@@ -137,6 +133,8 @@ pub struct ServerSnapshot {
     index: ServerIndex,
     /// Each map's spelling (its most common), busiest first.
     maps: Vec<MapCount>,
+    /// Per map in `maps`: its name lowercased, for the map filter.
+    map_lower: Box<[Box<str>]>,
     /// Per server: its map in `maps`, or `NONE_U32`.
     map_of: Box<[u32]>,
     /// Per map in `maps`: its rank by lowercased name.
@@ -182,34 +180,33 @@ impl ServerSnapshot {
         let n = servers.len();
         let index = ServerIndex::build(servers);
 
-        // Maps, one per spelling-insensitive name.
-        let mut maps: Vec<MapCount> = count_maps(servers.iter().map(|s| s.map.as_str()))
+        // Maps, one per spelling-insensitive name, busiest first.
+        let (counted, first_of) = count_maps(servers.iter().map(|s| s.map.as_str()));
+        let mut counted: Vec<(u32, MapCount, Box<str>)> = counted
             .into_iter()
-            .map(|(map, count)| MapCount { map, count })
-            .collect();
-        maps.sort_by(|a, b| {
-            b.count
-                .cmp(&a.count)
-                .then_with(|| a.map.to_lowercase().cmp(&b.map.to_lowercase()))
-        });
-        let key_of: FxHashMap<String, u32> = maps
-            .iter()
             .enumerate()
-            .map(|(i, m)| (m.map.to_lowercase(), i as u32))
-            .collect();
-        let map_of: Box<[u32]> = servers
-            .iter()
-            .map(|s| {
-                let t = s.map.trim();
-                if t.is_empty() {
-                    NONE_U32
-                } else {
-                    key_of.get(&t.to_lowercase()).copied().unwrap_or(NONE_U32)
-                }
+            .map(|(k, (map, count))| {
+                let lower = map.to_lowercase().into_boxed_str();
+                (k as u32, MapCount { map, count }, lower)
             })
             .collect();
+        counted.sort_by(|a, b| b.1.count.cmp(&a.1.count).then_with(|| a.2.cmp(&b.2)));
+        // Where each map, in the order first met, went in the sorted list.
+        let mut moved = vec![NONE_U32; counted.len()];
+        for (at, (k, _, _)) in counted.iter().enumerate() {
+            if let Some(slot) = moved.get_mut(*k as usize) {
+                *slot = at as u32;
+            }
+        }
+        let map_of: Box<[u32]> = first_of
+            .iter()
+            .map(|&k| moved.get(k as usize).copied().unwrap_or(NONE_U32))
+            .collect();
+        let (maps, map_lower): (Vec<MapCount>, Vec<Box<str>>) =
+            counted.into_iter().map(|(_, m, lower)| (m, lower)).unzip();
+        let map_lower = map_lower.into_boxed_slice();
         let mut by_name: Vec<u32> = (0..maps.len() as u32).collect();
-        by_name.sort_by_cached_key(|&i| maps.get(i as usize).map(|m| m.map.to_lowercase()));
+        by_name.sort_by_key(|&i| map_lower.get(i as usize));
         let mut map_rank = vec![0u32; maps.len()].into_boxed_slice();
         for (rank, &i) in by_name.iter().enumerate() {
             if let Some(slot) = map_rank.get_mut(i as usize) {
@@ -263,6 +260,7 @@ impl ServerSnapshot {
             list,
             index,
             maps,
+            map_lower,
             map_of,
             map_rank,
             name_lower,
@@ -368,11 +366,19 @@ impl ServerSnapshot {
     }
 
     /// Write the profile's flags again (favourites, exclusions, mods on disk).
-    pub(crate) fn apply_profile(&self, profile: &ProfileView) {
+    /// The profile generation moves only when a server's flags did change, so
+    /// writing the same flags again does not make the window order the list
+    /// again. Returns whether any changed.
+    pub(crate) fn apply_profile(&self, profile: &ProfileView) -> bool {
+        let mut changed = false;
         for (s, slot) in self.list.result.iter().zip(self.profile.iter()) {
-            slot.store(profile.word(s), Ordering::Relaxed);
+            let w = profile.word(s);
+            changed |= slot.swap(w, Ordering::Relaxed) != w;
         }
-        self.profile_gen.fetch_add(1, Ordering::Release);
+        if changed {
+            self.profile_gen.fetch_add(1, Ordering::Release);
+        }
+        changed
     }
 }
 
@@ -401,6 +407,13 @@ impl<'a> ServerRef<'a> {
     }
     pub fn name(&self) -> &'a str {
         &self.server.name
+    }
+
+    /// Its live and profile words as they were read: equal bits, equal live
+    /// counts, ping and flags, so a cache keyed on them (one server's panel)
+    /// is made again only when this server changed.
+    pub fn state_bits(&self) -> (u64, u64) {
+        (self.live, self.profile)
     }
 
     /// The last query of this server, if any.
@@ -570,12 +583,9 @@ pub fn order(snap: &Arc<ServerSnapshot>, q: &ServerQuery) -> ServerOrder {
         .filter(|m| !m.is_empty())
         .collect();
     let map_filter: Option<Vec<bool>> = (!wanted.is_empty()).then(|| {
-        snap.maps
+        snap.map_lower
             .iter()
-            .map(|c| {
-                let c = c.map.to_lowercase();
-                wanted.contains(&c)
-            })
+            .map(|c| wanted.iter().any(|w| **w == **c))
             .collect()
     });
     // Maps whose name holds the search: one check per map, not per server.
@@ -641,16 +651,7 @@ pub fn order(snap: &Arc<ServerSnapshot>, q: &ServerQuery) -> ServerOrder {
             }
         }
 
-        stats.shown += 1;
-        stats.players += players.max(0) as u64;
-        stats.full += u32::from(full);
-        stats.empty += u32::from(players == 0);
-        stats.modded += u32::from(!s.mods.is_empty());
-        stats.official += u32::from(s.official);
-        if let Some(Some(ms)) = ping {
-            stats.pinged += 1;
-            stats.best_ping = Some(stats.best_ping.map_or(ms, |b| b.min(ms)));
-        }
+        stats.add(players, full, ping, s);
         order.push(i as u32);
     }
 
@@ -663,6 +664,34 @@ pub fn order(snap: &Arc<ServerSnapshot>, q: &ServerQuery) -> ServerOrder {
         profile_generation,
         live_stamp,
     }
+}
+
+impl ServerStats {
+    /// Count one shown server in the header's figures.
+    fn add(&mut self, players: i64, full: bool, ping: Option<Option<u32>>, s: &Server) {
+        self.shown += 1;
+        self.players += players.max(0) as u64;
+        self.full += u32::from(full);
+        self.empty += u32::from(players == 0);
+        self.modded += u32::from(!s.mods.is_empty());
+        self.official += u32::from(s.official);
+        if let Some(Some(ms)) = ping {
+            self.pinged += 1;
+            self.best_ping = Some(self.best_ping.map_or(ms, |b| b.min(ms)));
+        }
+    }
+}
+
+/// The header's figures over an order already worked out, with the live data
+/// as it stands now: no filtering, no sorting. For a query that does not
+/// depend on live data the rows stay where they are while pings land, but
+/// the figures (pinged, best ping, players, full, empty) follow them.
+pub fn stats_of(snap: &ServerSnapshot, order: &[u32]) -> ServerStats {
+    let mut stats = ServerStats::default();
+    for r in order.iter().filter_map(|&i| snap.get(i)) {
+        stats.add(r.players(), r.is_full(), r.ping(), r.server);
+    }
+    stats
 }
 
 fn sort(order: &mut [u32], snap: &ServerSnapshot, col: SortCol, asc: bool) {

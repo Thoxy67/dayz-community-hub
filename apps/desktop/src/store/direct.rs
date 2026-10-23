@@ -245,14 +245,16 @@ impl Direct {
 
     /// The listed entry, the favourite, the ports and the name, now. Strict IPv4 only is
     /// looked up in the list, so typing does not ask for every prefix.
-    pub fn resolve(&self, servers: &mut Servers, profile: &Profile) -> Resolved {
+    pub fn resolve(&self, servers: &Servers, profile: &Profile) -> Resolved {
         let ip = self.address.trim().to_string();
         let port_num = self.port_num();
         let address_error = ip.is_empty();
         let port_error = port_num.is_none();
         let valid = !address_error && !port_error;
         let listed = match port_num {
-            Some(p) if valid && is_ipv4(&ip) => servers.find(&ip, i64::from(p)),
+            Some(p) if valid && is_ipv4(&ip) => {
+                servers.row(&ip, i64::from(p)).map(|r| Arc::new(r.to_row()))
+            }
             _ => None,
         };
         let favorite = port_num.filter(|_| valid).and_then(|p| {
@@ -541,9 +543,6 @@ impl Direct {
             changed = true;
             self.querying = false;
             let typed = self.port_num().map_or(0, i64::from);
-            if let Some(l) = &a.listed {
-                servers.remember([l.clone()]);
-            }
             match a.a2s {
                 Ok(a2s) => {
                     self.resolved_query_port = Some(a2s.query_port);
@@ -733,7 +732,7 @@ impl Direct {
 impl Stores {
     /// What the Direct Connect form resolves to now.
     pub fn direct_resolved(&mut self) -> Resolved {
-        self.direct.resolve(&mut self.servers, &self.profile)
+        self.direct.resolve(&self.servers, &self.profile)
     }
 
     pub fn direct_query(&mut self) {

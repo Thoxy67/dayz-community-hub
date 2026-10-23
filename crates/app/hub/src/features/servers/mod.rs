@@ -97,13 +97,23 @@ async fn initialize(hub: &Hub) -> Result<InitResult, String> {
     let cache_path = paths::server_list_cache_path();
 
     let memory_path = memory::path();
+    // The play log is read as soon as the profile is, beside the cache.
+    let profile = async {
+        let ctl = DayzCtl::new(&profile_path, crate::net::download().clone()).await?;
+        let history = ctl.profile().history.clone();
+        if let Err(e) =
+            tokio::task::spawn_blocking(move || crate::features::stats::open(&history)).await
+        {
+            eprintln!("[stats] the play log was not read: {e}");
+        }
+        Ok::<_, dz_common::Error>(ctl)
+    };
     let (ctl, cache, memory) = tokio::join!(
-        DayzCtl::new(&profile_path),
+        profile,
         dz_api::load_server_list_cache(&cache_path),
         memory::load(&memory_path)
     );
     let ctl = ctl.map_err(|e| format!("Could not load the profile: {e}"))?;
-    crate::features::stats::open(&ctl.profile().history);
 
     // The cache holds the official servers merged last time; a cold start
     // fetches both lists at once.
@@ -125,8 +135,8 @@ async fn initialize(hub: &Hub) -> Result<InitResult, String> {
             let key = ctl.profile().steam_api_key.clone();
             dzsa_starts();
             let (community, official) = tokio::join!(
-                dz_api::fetch_servers(ctl.http_client()),
-                fetch_official(ctl.http_client(), key.as_deref())
+                dz_api::fetch_servers(crate::net::api()),
+                fetch_official(crate::net::api(), key.as_deref())
             );
             dzsa_done(&community);
             match community {
@@ -190,7 +200,7 @@ async fn initialize(hub: &Hub) -> Result<InitResult, String> {
 /// and the sources as mock.ts showed them. Nothing is fetched.
 #[cfg(feature = "mock")]
 async fn initialize_mock(hub: &Hub, world: &crate::mock::World) -> Result<InitResult, String> {
-    let ctl = DayzCtl::new(world.profile_path())
+    let ctl = DayzCtl::new(world.profile_path(), crate::net::download().clone())
         .await
         .map_err(|e| format!("Could not load the profile: {e}"))?;
     crate::features::stats::open_in(world.data_dir(), &ctl.profile().history);
@@ -244,27 +254,24 @@ async fn refresh_list(hub: &Hub, state: &SharedState) -> Result<u32, String> {
         crate::features::browser::live::store().touch();
         Ok(state.read().await.servers.result.len() as u32)
     });
-    let (client, key) = {
-        let s = state.read().await;
-        (
-            s.ctl.http_client().clone(),
-            s.ctl.profile().steam_api_key.clone(),
-        )
-    };
+    let key = state.read().await.ctl.profile().steam_api_key.clone();
     dzsa_starts();
+    let client = crate::net::api();
     let (community, official) = tokio::join!(
-        dz_api::fetch_servers(&client),
-        fetch_official(&client, key.as_deref())
+        dz_api::fetch_servers(client),
+        fetch_official(client, key.as_deref())
     );
     dzsa_done(&community);
     let fresh = dedup(with_official(community.cmd_err()?, official));
     let list = {
-        // In order with the lists Steam's listing puts in (see LIST_WRITER).
+        // In order with the lists Steam's listing puts in (see LIST_WRITER),
+        // so the list read here is the last one put in.
         let _order = steam::LIST_WRITER.lock().await;
-        let mut s = state.write().await;
+        let previous = Arc::clone(&state.read().await.servers);
         // What the list had and no longer lists stays while it answers.
-        let list = steam::refreshed(&s.servers, fresh);
-        s.set_servers(Arc::clone(&list));
+        let list = steam::refreshed(&previous, fresh);
+        // The snapshot built off the state's lock and off this worker.
+        crate::state::replace_servers(state, Arc::clone(&list)).await;
         list
     };
     save_cache_in_background(Arc::clone(&list));
@@ -288,7 +295,7 @@ async fn set_steam_server_list(hub: &Hub, enabled: bool) -> Result<(), String> {
     // The mock's sources never list anything.
     mocked!(hub => Ok(()));
     if enabled {
-        steam::start(hub.clone());
+        steam::resume(hub.clone());
     } else {
         steam::stop();
     }
@@ -368,11 +375,105 @@ fn dedup(mut list: ServerList) -> Arc<ServerList> {
 }
 
 /// Write the cache without making the caller wait for a multi-MB write.
+/// One refresh asks for it several times (the refresh, the comb, the kept
+/// check, the listing as it goes and at its end): the writes are coalesced
+/// by [`CACHE_WRITER`], so the cache is written once for a burst of them,
+/// and always with the newest list. A cache only speeds up the next start,
+/// so an exit within the wait loses nothing that matters.
 pub(super) fn save_cache_in_background(list: Arc<ServerList>) {
-    let stamp = launcher();
-    tokio::spawn(async move {
+    CACHE_WRITER.request((list, launcher()), |(list, stamp)| async move {
         dz_api::save_server_list_cache(&paths::server_list_cache_path(), list, stamp).await;
     });
+}
+
+/// How long the cache writer waits for the asks to settle, and the longest
+/// an ask waits while more keep coming.
+const CACHE_SETTLE: std::time::Duration = std::time::Duration::from_secs(3);
+const CACHE_MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(15);
+
+static CACHE_WRITER: Coalesced<(Arc<ServerList>, dz_api::CacheStamp)> = Coalesced::new();
+
+/// One writer for something written whole: the newest value asked for is
+/// written once the asks have settled ([`CACHE_SETTLE`] without one, or
+/// [`CACHE_MAX_WAIT`] after the first), by one task at a time, so writes
+/// never overlap and an older value never lands after a newer one.
+struct Coalesced<T> {
+    slot: std::sync::Mutex<Pending<T>>,
+}
+
+struct Pending<T> {
+    value: Option<T>,
+    /// When the first ask still unwritten came, and the last.
+    first: Option<tokio::time::Instant>,
+    last: Option<tokio::time::Instant>,
+    /// A task is writing, or waiting to.
+    writer: bool,
+}
+
+impl<T: Send + 'static> Coalesced<T> {
+    const fn new() -> Self {
+        Self {
+            slot: std::sync::Mutex::new(Pending {
+                value: None,
+                first: None,
+                last: None,
+                writer: false,
+            }),
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Pending<T>> {
+        self.slot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Ask for `value` to be written by `write`; a newer ask replaces it.
+    fn request<F, Fut>(&'static self, value: T, write: F)
+    where
+        F: Fn(T) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = ()> + Send,
+    {
+        let now = tokio::time::Instant::now();
+        {
+            let mut p = self.lock();
+            p.value = Some(value);
+            p.first.get_or_insert(now);
+            p.last = Some(now);
+            if std::mem::replace(&mut p.writer, true) {
+                return;
+            }
+        }
+        tokio::spawn(async move {
+            loop {
+                // Wait for the asks to settle.
+                let value = loop {
+                    let due = {
+                        let mut p = self.lock();
+                        let (Some(first), Some(last)) = (p.first, p.last) else {
+                            p.writer = false;
+                            return;
+                        };
+                        let due = (last + CACHE_SETTLE).min(first + CACHE_MAX_WAIT);
+                        if tokio::time::Instant::now() >= due {
+                            p.first = None;
+                            p.last = None;
+                            match p.value.take() {
+                                Some(v) => break v,
+                                None => {
+                                    p.writer = false;
+                                    return;
+                                }
+                            }
+                        }
+                        due
+                    };
+                    tokio::time::sleep_until(due).await;
+                };
+                write(value).await;
+            }
+        });
+    }
 }
 
 impl Hub {
@@ -380,6 +481,9 @@ impl Hub {
     /// `initialize` so the wizard can show at once.
     pub async fn check_first_launch(&self) -> bool {
         mocked!(self, w => !w.profile_path().exists() || crate::mock::switch("wizard"));
+        if let Some(first) = self.take_first_launch() {
+            return first;
+        }
         first_launch().await
     }
 
@@ -388,6 +492,8 @@ impl Hub {
     /// window's own call then gets this first answer (not a `resumed` one).
     /// Needs a tokio runtime entered.
     pub fn prewarm(&self) {
+        // Before `initialize` writes a default profile.
+        self.note_first_launch();
         let hub = self.clone();
         let task = tokio::spawn(async move { initialize(&hub).await });
         if let Ok(mut p) = PREWARM.lock() {
@@ -421,5 +527,59 @@ impl Hub {
     /// The title bar's counters.
     pub async fn get_app_stats(&self) -> Result<AppStatsDto, String> {
         get_app_stats(self).await
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    static WRITER: Coalesced<u32> = Coalesced::new();
+    static WRITTEN: std::sync::Mutex<Vec<(u32, tokio::time::Instant)>> =
+        std::sync::Mutex::new(Vec::new());
+
+    fn ask(v: u32) {
+        WRITER.request(v, |v| async move {
+            // A slow write: asks meanwhile wait for the next one.
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            WRITTEN
+                .lock()
+                .unwrap()
+                .push((v, tokio::time::Instant::now()));
+        });
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cache_writes_are_coalesced_ordered_and_the_newest_wins() {
+        let t0 = tokio::time::Instant::now();
+        // A burst: one write, of the last.
+        for v in 1..=5 {
+            ask(v);
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        assert_eq!(
+            WRITTEN
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|w| w.0)
+                .collect::<Vec<_>>(),
+            [5]
+        );
+        // Asks that never settle are still written, at the longest wait.
+        let t1 = tokio::time::Instant::now();
+        for v in 10..50 {
+            ask(v);
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        let written = WRITTEN.lock().unwrap().clone();
+        assert!(written[0].1 - t0 < Duration::from_secs(8));
+        assert!(written[1].1 - t1 <= CACHE_MAX_WAIT + Duration::from_secs(2));
+        assert_eq!(written.last().unwrap().0, 49, "the newest lands last");
+        assert!(written.windows(2).all(|w| w[0].0 < w[1].0), "{written:?}");
     }
 }

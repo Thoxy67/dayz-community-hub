@@ -500,9 +500,10 @@ fn server_row(
         favorite: data.favorite,
         excluded: data.excluded,
     };
+    let here: Vec<&str> = b.here.iter().map(String::as_str).collect();
     let out = ServerListRow::new(data)
         .selected(is_selected(cx, b))
-        .friends(&b.here)
+        .friends(&here)
         .buttons(&buttons)
         .mods_clickable(false)
         .show(&mut sui, &cols, cache);

@@ -23,7 +23,7 @@ use crate::theme::TokensExt;
 
 const HEAD_H: f32 = 28.0;
 /// Rows laid out past each edge of the screen.
-const OVERSCAN: usize = 8;
+const OVERSCAN: usize = 1;
 
 /// The heading: ping, players, server; map and time together; mods.
 fn heading(ui: &mut Ui, st: &UiState, run: &mut Run) {
@@ -235,9 +235,8 @@ pub fn show(ui: &mut Ui, cx: &Ctx, st: &mut UiState, cache: &mut RowCache, run: 
                 let selected = sel
                     .as_ref()
                     .is_some_and(|s| s.port == d.query_port && s.ip == d.ip);
-                let names: Vec<String> = if has_friends {
-                    let port = u16::try_from(d.query_port).unwrap_or(0);
-                    friends.on(d.ip, port).map(|f| f.name.clone()).collect()
+                let names: Vec<&str> = if has_friends {
+                    friends.on_key(&key).map(|f| f.name.as_str()).collect()
                 } else {
                     Vec::new()
                 };

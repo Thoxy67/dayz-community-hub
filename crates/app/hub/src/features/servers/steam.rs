@@ -13,10 +13,12 @@
 //! Both give addresses only: each new one is queried here (A2S_INFO, and
 //! A2S_RULES for its mods), many at once, and lands in the list as soon as
 //! it answers, joining the ping scan's queue (the burst of queries would
-//! skew a round trip measured here). Farms are left out: many empty servers
-//! on one address before anything is asked of them, and any server
-//! reporting bots (DayZ has none: farm emulators pad their count with them)
-//! once it answers. Kept servers reporting bots leave too.
+//! skew a round trip measured here, so it is shown at once and measured
+//! again). Farms are left out: many empty servers on one address, and any
+//! server whose master row counts bots (DayZ has none: farm emulators pad
+//! their count with them), before anything is asked of them; any server
+//! reporting bots once it answers, for emulators that tell the master
+//! none. Kept servers reporting bots leave too.
 //!
 //! What Steam added is kept apart from the launcher list it is merged into
 //! ([`compose`]), so a refresh of that list keeps it, and so farms found
@@ -45,13 +47,13 @@ use std::time::{Duration, Instant};
 
 use crate::Hub;
 use dz_api::{
-    FarmCounter, MasterAddr, Mod, PlannedPart, Server, ServerList, SteamListed, SteamRow,
+    FarmCounter, MasterAddr, Mod, PlannedPart, Server, ServerList, SteamListed, SteamRow, WebError,
     WebPartition,
 };
 use futures_util::stream::FuturesUnordered;
 use futures_util::{StreamExt, stream};
 use rustc_hash::{FxHashMap, FxHashSet};
-use tokio::sync::mpsc;
+use tokio::sync::{Notify, mpsc};
 
 use super::memory::{self, ListingMemory, Memo, Verdict};
 use super::sources::{self, Phase};
@@ -83,6 +85,9 @@ const WEB_THROTTLE_FIRST: Duration = Duration::from_secs(15);
 const WEB_THROTTLE_MAX: Duration = Duration::from_secs(120);
 /// Pauses in a row after which the listing gives up.
 const WEB_THROTTLE_GIVE_UP: u32 = 8;
+/// The wait before a request that failed on the way (no answer, a cut or
+/// garbled one, a server error) is asked once more.
+const WEB_RETRY_AFTER: Duration = Duration::from_secs(1);
 /// Maps asked for one by one through the Web API: every map the list has
 /// at least this many servers on, at most [`WEB_MAX_MAPS`].
 const WEB_MIN_SERVERS: usize = 2;
@@ -92,6 +97,9 @@ const WEB_MAX_MAPS: usize = 60;
 const MIN_INTERVAL: Duration = Duration::from_secs(memory::MIN_INTERVAL as u64);
 /// Times a kept server is asked before it is taken for gone.
 const KEPT_TRIES: usize = 2;
+/// A kept server that answered a query (the ping scan's, an earlier check's)
+/// this recently is not asked again: it still runs.
+const KEPT_FRESH: Duration = Duration::from_secs(5 * 60);
 
 #[derive(Default)]
 struct Found {
@@ -118,8 +126,27 @@ struct Found {
 }
 
 static FOUND: LazyLock<Mutex<Found>> = LazyLock::new(Mutex::default);
-static RUNNING: AtomicBool = AtomicBool::new(false);
+/// Whether a listing runs, and whether another is to run once it ends
+/// (turned back on while a cancelled one winds down). One lock for both, so
+/// a start never falls between a listing's end and its check for another.
+static LISTING: Mutex<Listing> = Mutex::new(Listing {
+    running: false,
+    again: false,
+});
 static CANCEL: AtomicBool = AtomicBool::new(false);
+/// Wakes a listing waiting out the master's pause when it is cancelled.
+static CANCELLED: Notify = Notify::const_new();
+
+struct Listing {
+    running: bool,
+    again: bool,
+}
+
+fn listing() -> std::sync::MutexGuard<'static, Listing> {
+    LISTING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 fn found() -> std::sync::MutexGuard<'static, Found> {
     FOUND
@@ -141,6 +168,8 @@ struct Candidate {
     query_port: u16,
     game_port: u16,
     empty: Option<bool>,
+    /// Bots the master's row counts.
+    bots: u8,
 }
 
 // ── the list ────────────────────────────────────────────────────────────
@@ -322,36 +351,29 @@ async fn comb_once(hub: &Hub) {
     if groups.is_empty() {
         return;
     }
-    let Ok(client) = dz_a2s::client_with_timeout(INFO_TIMEOUT).await else {
-        return;
-    };
-    let client = Arc::new(client);
     let verdicts: Vec<(Addr, Vec<Addr>)> = stream::iter(groups)
-        .map(|(gp, group)| {
-            let client = Arc::clone(&client);
-            async move {
-                let ip = group[0].0.clone();
-                let mut stating = None;
-                let mut answering = None;
-                for (ip, qp) in &group {
-                    let addr = format!("{ip}:{qp}");
-                    for _ in 0..KEPT_TRIES {
-                        if let Ok((info, _)) = client.info(addr.as_str(), None).await {
-                            let port = info.extended_server_info.port.map(i64::from);
-                            if stating.is_none() && port.is_none_or(|p| p == gp) {
-                                stating = Some((ip.clone(), *qp));
-                            }
-                            answering.get_or_insert((ip.clone(), *qp));
-                            break;
+        .map(|(gp, group)| async move {
+            let ip = group[0].0.clone();
+            let mut stating = None;
+            let mut answering = None;
+            for (ip, qp) in &group {
+                let addr = format!("{ip}:{qp}");
+                for _ in 0..KEPT_TRIES {
+                    if let Ok(a) = dz_a2s::info_within(&addr, INFO_TIMEOUT).await {
+                        let port = a.info.extended_server_info.port.map(i64::from);
+                        if stating.is_none() && port.is_none_or(|p| p == gp) {
+                            stating = Some((ip.clone(), *qp));
                         }
+                        answering.get_or_insert((ip.clone(), *qp));
+                        break;
                     }
                 }
-                let losers = match stating.or(answering) {
-                    Some(keep) => group.into_iter().filter(|k| *k != keep).collect(),
-                    None => Vec::new(),
-                };
-                ((ip, gp), losers)
             }
+            let losers = match stating.or(answering) {
+                Some(keep) => group.into_iter().filter(|k| *k != keep).collect(),
+                None => Vec::new(),
+            };
+            ((ip, gp), losers)
         })
         .buffer_unordered(CONCURRENCY)
         .collect()
@@ -388,7 +410,9 @@ async fn comb_once(hub: &Hub) {
 }
 
 /// Ask every kept server whether it still runs, and drop those that do not
-/// answer (twice). The ones that answer stay, their pings recorded.
+/// answer (twice). The ones that answer stay, their pings recorded. One that
+/// answered a query a moment ago (the ping scan pings the whole list, kept
+/// servers included) is judged on that answer instead of being asked again.
 pub(crate) fn check_kept(hub: Hub) {
     tokio::spawn(async move {
         let kept: Vec<(String, i64)> = found().kept.iter().map(key).collect();
@@ -398,15 +422,24 @@ pub(crate) fn check_kept(hub: Hub) {
         let Some(state) = hub.try_state() else {
             return;
         };
-        let (Ok(fast), Ok(slow)) = (
-            dz_a2s::client_with_timeout(INFO_TIMEOUT).await,
-            dz_a2s::client_with_timeout(SLOW_TIMEOUT).await,
-        ) else {
-            return;
-        };
+        let (answered, ask) = split_kept(kept, &live::store().read(), KEPT_FRESH);
+        let mut gone = Vec::new();
+        for (addr, fake) in answered {
+            sources::update(|s| {
+                s.kept.checked += 1;
+                if fake {
+                    s.kept.fakes += 1;
+                } else {
+                    s.kept.alive += 1;
+                }
+            });
+            if fake {
+                gone.push(addr);
+            }
+        }
         // Silent ones are asked again, slowly, before they are taken for gone.
-        let silent = kept_pass(&fast, kept, CONCURRENCY, false).await;
-        let gone = kept_pass(&slow, silent, SLOW_CONCURRENCY, true).await;
+        let silent = kept_pass(INFO_TIMEOUT, ask, CONCURRENCY, false).await;
+        gone.extend(kept_pass(SLOW_TIMEOUT, silent, SLOW_CONCURRENCY, true).await);
         if !gone.is_empty() {
             let gone: FxHashSet<(String, i64)> = gone.into_iter().collect();
             found().kept.retain(|s| !gone.contains(&key(s)));
@@ -418,10 +451,32 @@ pub(crate) fn check_kept(hub: Hub) {
     });
 }
 
+/// The kept servers that answered a query less than `within` ago, each with
+/// whether it is a fake (it reports bots), and those to ask. A failed query
+/// decides nothing: only the check's own, slower tries take a server for gone.
+fn split_kept(
+    kept: Vec<Addr>,
+    live: &live::LiveMap,
+    within: Duration,
+) -> (Vec<(Addr, bool)>, Vec<Addr>) {
+    let mut answered = Vec::new();
+    let mut ask = Vec::new();
+    for (ip, port) in kept {
+        match live.fresh(&ip, port, within) {
+            Some(l) if l.ms.is_some() && !l.ping_failed() => {
+                let fake = l.bots.is_some_and(|b| b > 0);
+                answered.push(((ip, port), fake));
+            }
+            _ => ask.push((ip, port)),
+        }
+    }
+    (answered, ask)
+}
+
 /// Ping `addrs`; returns those to drop: on the `last` pass the silent and
 /// the fakes, before it the fakes and those to ask again (the silent).
 async fn kept_pass(
-    client: &dz_a2s::Client,
+    timeout: Duration,
     addrs: Vec<Addr>,
     concurrency: usize,
     last: bool,
@@ -432,7 +487,7 @@ async fn kept_pass(
             let mut alive = false;
             let mut fake = false;
             for _ in 0..KEPT_TRIES {
-                if let Ok(p) = dz_a2s::ping_using(client, &addr).await {
+                if let Ok(p) = dz_a2s::info_within(&addr, timeout).await.map(|a| a.ping()) {
                     live::store().record(&ip, port, Live::from_result(&Ok(p)));
                     alive = true;
                     fake = p.bots > 0;
@@ -462,23 +517,51 @@ async fn kept_pass(
 
 // ── the listing ─────────────────────────────────────────────────────────
 
-/// Stop the listing running, if any.
+/// Stop the listing running, if any, and one waiting to run after it.
 pub(crate) fn stop() {
+    listing().again = false;
     CANCEL.store(true, Ordering::SeqCst);
+    CANCELLED.notify_waiters();
     sources::update(|s| s.steam.phase = Phase::Off);
 }
 
-/// List Steam's servers in the background, unless a listing runs, ran in
-/// the last minutes, or the profile turned it off.
+/// List Steam's servers in the background, unless a listing runs, started
+/// in the last minutes, or the profile turned it off.
 pub(crate) fn start(hub: Hub) {
-    if found().last.is_some_and(|t| t.elapsed() < MIN_INTERVAL)
-        || RUNNING.swap(true, Ordering::SeqCst)
-    {
+    if found().last.is_some_and(|t| t.elapsed() < MIN_INTERVAL) {
         return;
     }
+    launch(hub);
+}
+
+/// The listing turned back on: list now, whenever the last one started. A
+/// complete listing minutes old (this run or before a restart) still stands
+/// and is shown as done ([`run`]); one cancelled and still winding down is
+/// followed by a new one.
+pub(crate) fn resume(hub: Hub) {
+    launch(hub);
+}
+
+fn launch(hub: Hub) {
+    {
+        let mut l = listing();
+        if l.running {
+            if CANCEL.load(Ordering::SeqCst) {
+                l.again = true;
+            }
+            return;
+        }
+        l.running = true;
+    }
     tokio::spawn(async move {
-        run(&hub).await;
-        RUNNING.store(false, Ordering::SeqCst);
+        loop {
+            run(&hub).await;
+            let mut l = listing();
+            if !std::mem::take(&mut l.again) {
+                l.running = false;
+                break;
+            }
+        }
     });
 }
 
@@ -564,12 +647,6 @@ async fn run(hub: &Hub) {
             ..Default::default()
         };
     });
-    let Ok(client) = dz_a2s::client_with_timeout(INFO_TIMEOUT).await else {
-        sources::update(|s| s.steam.phase = Phase::Failed);
-        return;
-    };
-    let client = Arc::new(client);
-
     let (tx, rx) = mpsc::unbounded_channel::<Candidate>();
     let lister = {
         let maps = maps.clone();
@@ -590,12 +667,19 @@ async fn run(hub: &Hub) {
                     // not at all, a short while ago.
                     sources::update(|s| s.steam.remembered += 1);
                     false
+                } else if c.bots > 0 {
+                    // Its own heartbeat counts bots: a farm's emulator,
+                    // known as such without a query (`query` checks again
+                    // for those that tell the master none).
+                    sources::update(|s| s.steam.fakes += 1);
+                    judged(k, Verdict::Fake);
+                    false
                 } else {
                     true
                 };
                 std::future::ready(ask.then_some(c))
             })
-            .map(|c| query(Arc::clone(&client), c, false))
+            .map(|c| query(c, false))
             .buffer_unordered(CONCURRENCY)
             .fuse(),
     );
@@ -603,15 +687,11 @@ async fn run(hub: &Hub) {
     let outcome = lister.await.unwrap_or_else(|e| Err(e.to_string()));
 
     // What did not answer, once more, patiently.
-    if !silent.is_empty()
-        && !CANCEL.load(Ordering::SeqCst)
-        && let Ok(slow) = dz_a2s::client_with_timeout(SLOW_TIMEOUT).await
-    {
-        let slow = Arc::new(slow);
+    if !silent.is_empty() && !CANCEL.load(Ordering::SeqCst) {
         sources::update(|s| s.steam.retried += silent.len() as u32);
         let mut again = Box::pin(
             stream::iter(silent)
-                .map(|c| query(Arc::clone(&slow), c, true))
+                .map(|c| query(c, true))
                 .buffer_unordered(SLOW_CONCURRENCY)
                 .fuse(),
         );
@@ -812,6 +892,7 @@ async fn list(
                     query_port: r.query_port,
                     game_port: r.game_port,
                     empty: part.empty,
+                    bots: r.bots,
                 })
                 .collect(),
             tx,
@@ -858,7 +939,7 @@ trait WebSource: Sync {
     fn fetch(
         &self,
         part: &WebPartition,
-    ) -> impl Future<Output = Result<Vec<MasterAddr>, String>> + Send;
+    ) -> impl Future<Output = Result<Vec<MasterAddr>, WebError>> + Send;
     /// Whether an empty answer was the master withholding it.
     fn throttled(&self) -> impl Future<Output = bool> + Send;
 }
@@ -872,7 +953,7 @@ impl WebSource for SteamWeb {
     fn fetch(
         &self,
         part: &WebPartition,
-    ) -> impl Future<Output = Result<Vec<MasterAddr>, String>> + Send {
+    ) -> impl Future<Output = Result<Vec<MasterAddr>, WebError>> + Send {
         dz_api::fetch_web_partition(self.http, &self.key, part)
     }
 
@@ -897,9 +978,70 @@ struct WebOutcome {
     pauses: u32,
 }
 
+/// The master's pauses: until when the listing waits, how long the next
+/// pause is, and how many there have been in a row.
+struct Throttle {
+    until: Option<tokio::time::Instant>,
+    backoff: Duration,
+    pauses: u32,
+}
+
+impl Throttle {
+    fn new() -> Self {
+        Self {
+            until: None,
+            backoff: WEB_THROTTLE_FIRST,
+            pauses: 0,
+        }
+    }
+
+    /// Pause for the next backoff, or for `at_least` if the master asked for
+    /// longer (capped at the last). `false` once it has paused too often in
+    /// a row. A pause under way covers its fellows in flight: no new one.
+    fn hold(&mut self, at_least: Option<Duration>) -> bool {
+        if self.until.is_some() {
+            return true;
+        }
+        self.pauses += 1;
+        if self.pauses > WEB_THROTTLE_GIVE_UP {
+            return false;
+        }
+        let pause = at_least
+            .map_or(self.backoff, |w| w.max(self.backoff))
+            .min(WEB_THROTTLE_MAX);
+        self.until = Some(tokio::time::Instant::now() + pause);
+        self.backoff = (self.backoff * 2).min(WEB_THROTTLE_MAX);
+        true
+    }
+
+    /// An answer came: the next pause starts over.
+    fn answered(&mut self) {
+        self.pauses = 0;
+        self.backoff = WEB_THROTTLE_FIRST;
+    }
+}
+
+/// Wait until `until`, or less if the listing is cancelled meanwhile.
+async fn wait_unless_cancelled(until: tokio::time::Instant) {
+    let cancelled = CANCELLED.notified();
+    tokio::pin!(cancelled);
+    // Registered before the flag is read, so a cancel in between still wakes it.
+    cancelled.as_mut().enable();
+    if CANCEL.load(Ordering::SeqCst) {
+        return;
+    }
+    tokio::select! {
+        () = tokio::time::sleep_until(until) => {}
+        () = cancelled => {}
+    }
+}
+
 /// Ask `parts` of the master, splitting what hits the cap; `on_rows` gets
 /// each answer. `Err` when the very first request fails (a refused key,
-/// Steam unreachable) or the master keeps withholding answers.
+/// Steam unreachable) or the master keeps withholding answers. A request
+/// lost on the way is asked once more after a second; one the master
+/// refuses to answer now (an empty answer while it rations, a 429) goes
+/// back to the front of the queue and the listing pauses.
 async fn list_web<S: WebSource>(
     src: &S,
     parts: Vec<WebPartition>,
@@ -910,28 +1052,24 @@ async fn list_web<S: WebSource>(
     let mut out = WebOutcome::default();
     let mut running = FuturesUnordered::new();
     let mut answered_once = false;
-    // While the master withholds answers: until when, how long the next
-    // pause is, and how many there have been in a row.
-    let mut paused_until: Option<tokio::time::Instant> = None;
-    let mut backoff = WEB_THROTTLE_FIRST;
-    let mut pauses = 0;
+    let mut throttle = Throttle::new();
     loop {
         if CANCEL.load(Ordering::SeqCst) {
             out.cancelled = true;
             return Ok(out);
         }
-        if let Some(until) = paused_until {
+        if let Some(until) = throttle.until {
             if tokio::time::Instant::now() < until {
                 if running.is_empty() {
-                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    wait_unless_cancelled(until).await;
                     continue;
                 }
             } else {
-                paused_until = None;
+                throttle.until = None;
                 sources::update(|s| s.steam.waiting_until = None);
             }
         }
-        while paused_until.is_none()
+        while throttle.until.is_none()
             && running.len() < WEB_CONCURRENCY
             && let Some(part) = queue.pop_front()
         {
@@ -939,7 +1077,8 @@ async fn list_web<S: WebSource>(
             running.push(async move {
                 let mut r = src.fetch(&part).await;
                 // One lost request should not cost a partition.
-                if r.as_ref().is_err_and(|e| !e.contains("API key")) {
+                if r.as_ref().is_err_and(WebError::transient) {
+                    tokio::time::sleep(WEB_RETRY_AFTER).await;
                     r = src.fetch(&part).await;
                 }
                 (part, r)
@@ -952,29 +1091,31 @@ async fn list_web<S: WebSource>(
             }
             continue;
         };
-        match result {
-            // Nothing: matched nothing, or withheld. Asking for one server
-            // with players tells which.
-            Ok(rows) if rows.is_empty() && src.throttled().await => {
-                queue.push_front(part);
-                // Its fellows in flight withheld too: one pause for all.
-                if paused_until.is_some() {
-                    continue;
-                }
-                pauses += 1;
-                out.pauses += 1;
-                if pauses > WEB_THROTTLE_GIVE_UP {
-                    return Err("Steam kept withholding the server list".into());
-                }
-                let shown = sources::now() + backoff.as_secs() as i64;
-                sources::update(|s| s.steam.waiting_until = Some(shown));
-                paused_until = Some(tokio::time::Instant::now() + backoff);
-                backoff = (backoff * 2).min(WEB_THROTTLE_MAX);
+        // Nothing: matched nothing, or withheld. Asking for one server with
+        // players tells which. A 429 says so outright.
+        let refused = match &result {
+            Ok(rows) if rows.is_empty() && src.throttled().await => Some(None),
+            Err(WebError::RateLimited(wait)) => Some(*wait),
+            _ => None,
+        };
+        if let Some(at_least) = refused {
+            queue.push_front(part);
+            let fresh = throttle.until.is_none();
+            if !throttle.hold(at_least) {
+                return Err("Steam kept withholding the server list".into());
             }
+            if fresh && let Some(until) = throttle.until {
+                out.pauses += 1;
+                let left = until.saturating_duration_since(tokio::time::Instant::now());
+                let shown = sources::now() + left.as_secs() as i64;
+                sources::update(|s| s.steam.waiting_until = Some(shown));
+            }
+            continue;
+        }
+        match result {
             Ok(rows) => {
                 answered_once = true;
-                pauses = 0;
-                backoff = WEB_THROTTLE_FIRST;
+                throttle.answered();
                 out.requests += 1;
                 sources::update(|s| s.steam.requests_done += 1);
                 let more = if rows.len() >= dz_api::WEB_LIST_CAP {
@@ -993,7 +1134,7 @@ async fn list_web<S: WebSource>(
                 }
                 on_rows(&part, rows);
             }
-            Err(e) if !answered_once => return Err(e),
+            Err(e) if !answered_once => return Err(e.to_string()),
             Err(e) => {
                 out.requests += 1;
                 sources::update(|s| s.steam.requests_done += 1);
@@ -1020,17 +1161,19 @@ enum Outcome {
     Rejected(Addr, Verdict),
 }
 
-/// A2S_INFO, and A2S_RULES for a modded server's mods. A server that does
-/// not answer is silent (asked again unless this is the `last` pass); a
-/// fake, or a modded one whose mods cannot be read (it could not be joined
-/// with them) on the last pass, is rejected.
-async fn query(client: Arc<dz_a2s::Client>, c: Candidate, last: bool) -> Outcome {
+/// A2S_INFO, and A2S_RULES for a modded server's mods on the same socket
+/// with the challenge A2S_INFO got. A server that does not answer is silent
+/// (asked again unless this is the `last` pass); a fake, or a modded one
+/// whose mods cannot be read (it could not be joined with them) on the last
+/// pass, is rejected.
+async fn query(c: Candidate, last: bool) -> Outcome {
     if !last {
         sources::update(|s| s.steam.queried += 1);
     }
     let port = i64::from(c.query_port);
     let addr = format!("{}:{port}", c.ip);
-    let Ok((info, _)) = client.info(addr.as_str(), None).await else {
+    let timeout = if last { SLOW_TIMEOUT } else { INFO_TIMEOUT };
+    let Ok(answer) = dz_a2s::info_within(&addr, timeout).await else {
         return if last {
             Outcome::Rejected((c.ip, port), Verdict::Silent)
         } else {
@@ -1038,6 +1181,7 @@ async fn query(client: Arc<dz_a2s::Client>, c: Candidate, last: bool) -> Outcome
         };
     };
     sources::update(|s| s.steam.answered += 1);
+    let info = &answer.info;
     // DayZ has no bots: a server reporting some is a farm's emulator
     // padding its count. Measured on 2026-10-08: of 388 dayzsalauncher.com
     // servers that answered, none reported a bot; of 388 only Steam
@@ -1046,14 +1190,32 @@ async fn query(client: Arc<dz_a2s::Client>, c: Candidate, last: bool) -> Outcome
         sources::update(|s| s.steam.fakes += 1);
         return Outcome::Rejected((c.ip, port), Verdict::Fake);
     }
-    let players = dz_a2s::human_player_count(&info);
-    // Its counts now; its ping from the scan, once it is in the list.
-    live::store().record_counts(&c.ip, port, players, info.max_players, info.bots);
+    // Its counts and its round trip now, shown at once; the ping scan
+    // measures it again once it is in the list, away from this burst.
+    let ping = answer.ping();
+    live::store().record(&c.ip, port, Live::from_result(&Ok(ping)));
     let ext = &info.extended_server_info;
     let tags = ext.keywords.clone().unwrap_or_default();
     let modded = tags.split(',').any(|t| t.trim() == "mod");
-    let mods = if modded {
-        let mods: Vec<Mod> = dz_a2s::query_dayz_rules(&addr, RULES_TIMEOUT)
+    let mut row = SteamListed {
+        query_port: port,
+        game_port: ext.port.map_or(i64::from(c.game_port), i64::from),
+        name: info.name.trim().to_owned(),
+        map: info.map.clone(),
+        tags,
+        players: i64::from(ping.players),
+        max_players: i64::from(info.max_players),
+        password: info.visibility,
+        secure: info.vac,
+        version: info.version.clone(),
+        environment: String::from(char::from(info.server_os as u8)),
+        mods: Vec::new(),
+        empty: c.empty,
+        ip: c.ip,
+    };
+    if modded {
+        row.mods = answer
+            .rules(RULES_TIMEOUT)
             .await
             .map(|r| {
                 r.mods
@@ -1067,33 +1229,21 @@ async fn query(client: Arc<dz_a2s::Client>, c: Candidate, last: bool) -> Outcome
                     .collect()
             })
             .unwrap_or_default();
-        if mods.is_empty() {
+        if row.mods.is_empty() {
             if !last {
-                return Outcome::Silent(c);
+                return Outcome::Silent(Candidate {
+                    ip: row.ip,
+                    query_port: c.query_port,
+                    game_port: c.game_port,
+                    empty: c.empty,
+                    bots: c.bots,
+                });
             }
             sources::update(|s| s.steam.no_mods += 1);
-            return Outcome::Rejected((c.ip, port), Verdict::NoMods);
+            return Outcome::Rejected((row.ip, port), Verdict::NoMods);
         }
-        mods
-    } else {
-        Vec::new()
-    };
-    Outcome::Row(SteamListed {
-        query_port: port,
-        game_port: ext.port.map_or(i64::from(c.game_port), i64::from),
-        name: info.name.trim().to_owned(),
-        map: info.map.clone(),
-        tags,
-        players: i64::from(players),
-        max_players: i64::from(info.max_players),
-        password: info.visibility,
-        secure: info.vac,
-        version: info.version.clone(),
-        environment: String::from(char::from(info.server_os as u8)),
-        mods,
-        empty: c.empty,
-        ip: c.ip,
-    })
+    }
+    Outcome::Row(row)
 }
 
 #[cfg(test)]
@@ -1106,6 +1256,50 @@ async fn query(client: Arc<dz_a2s::Client>, c: Candidate, last: bool) -> Outcome
 mod tests {
     use super::*;
     use std::sync::atomic::AtomicU32;
+
+    #[test]
+    fn kept_servers_that_answered_lately_are_not_asked_again() {
+        let ping = |bots: u8| dz_a2s::Ping {
+            ms: 40,
+            players: 3,
+            max_players: 60,
+            bots,
+        };
+        let mut map = live::LiveMap::default();
+        map.put("1.1.1.1", 1, Live::from_result(&Ok(ping(0))));
+        map.put("2.2.2.2", 2, Live::from_result(&Ok(ping(5))));
+        map.put(
+            "3.3.3.3",
+            3,
+            Live::from_result(&Err(dz_common::Error::A2sQuery("timeout".into()))),
+        );
+        let kept: Vec<Addr> = [
+            ("1.1.1.1", 1),
+            ("2.2.2.2", 2),
+            ("3.3.3.3", 3),
+            ("4.4.4.4", 4),
+        ]
+        .into_iter()
+        .map(|(ip, p)| (ip.to_string(), p))
+        .collect();
+        let (answered, ask) = split_kept(kept.clone(), &map, Duration::from_secs(60));
+        assert_eq!(
+            answered,
+            [
+                (("1.1.1.1".to_string(), 1), false),
+                (("2.2.2.2".to_string(), 2), true)
+            ]
+        );
+        // A failure, and a server never asked, are asked by the check itself.
+        assert_eq!(
+            ask,
+            [("3.3.3.3".to_string(), 3), ("4.4.4.4".to_string(), 4)]
+        );
+        // Answers older than the window decide nothing.
+        let (answered, ask) = split_kept(kept, &map, Duration::ZERO);
+        assert!(answered.is_empty());
+        assert_eq!(ask.len(), 4);
+    }
 
     /// One server of the made-up master.
     struct Listed {
@@ -1190,6 +1384,7 @@ mod tests {
                             name: names(&mut rng),
                             query_port: 27016,
                             game_port: 2302,
+                            bots: 0,
                         },
                         map: map.to_owned(),
                         empty,
@@ -1282,7 +1477,7 @@ mod tests {
         fn fetch(
             &self,
             part: &WebPartition,
-        ) -> impl Future<Output = Result<Vec<MasterAddr>, String>> + Send {
+        ) -> impl Future<Output = Result<Vec<MasterAddr>, WebError>> + Send {
             self.http.fetch_add(1, Ordering::SeqCst);
             let rows = if self.allowed(true) {
                 self.servers
@@ -1434,6 +1629,7 @@ mod tests {
                     name: format!("{} new", ["Ash", "Birch", "Cedar"][(i % 3) as usize]),
                     query_port: 27016,
                     game_port: 2302,
+                    bots: 0,
                 },
                 map: "sakhal".into(),
                 empty: true,
@@ -1448,5 +1644,83 @@ mod tests {
             .all(|s| found.contains(&s.addr.ip));
         assert!(sakhal, "every Sakhal server found once split");
         assert!(again.requests > plan.len() as u32);
+    }
+
+    /// A master that answers its first request with a 429 asking for
+    /// `wait`, then lists one server per request; when each request came.
+    struct SlowDown {
+        wait: Option<Duration>,
+        asked: Mutex<Vec<tokio::time::Instant>>,
+    }
+
+    impl WebSource for SlowDown {
+        fn fetch(
+            &self,
+            _: &WebPartition,
+        ) -> impl Future<Output = Result<Vec<MasterAddr>, WebError>> + Send {
+            let mut asked = self.asked.lock().unwrap();
+            asked.push(tokio::time::Instant::now());
+            let r = if asked.len() == 1 {
+                Err(WebError::RateLimited(self.wait))
+            } else {
+                Ok(vec![MasterAddr {
+                    ip: format!("192.0.2.{}", asked.len()),
+                    name: "x".into(),
+                    query_port: 27016,
+                    game_port: 2302,
+                    bots: 0,
+                }])
+            };
+            std::future::ready(r)
+        }
+
+        fn throttled(&self) -> impl Future<Output = bool> + Send {
+            std::future::ready(false)
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_429_pauses_the_listing_and_keeps_the_part() {
+        for (wait, pause) in [
+            (None, WEB_THROTTLE_FIRST),
+            (Some(Duration::from_secs(40)), Duration::from_secs(40)),
+        ] {
+            let master = SlowDown {
+                wait,
+                asked: Mutex::new(Vec::new()),
+            };
+            let part = WebPartition::new(Some(true), "");
+            let mut rows = 0;
+            let out = list_web(&master, vec![part], |_, r| rows += r.len())
+                .await
+                .unwrap();
+            let asked = master.asked.lock().unwrap();
+            // Not asked again at once: after the pause, and then answered.
+            assert_eq!(asked.len(), 2);
+            assert!(asked[1] - asked[0] >= pause, "{:?}", asked[1] - asked[0]);
+            assert_eq!((rows, out.pauses, out.requests), (1, 1, 1));
+            assert!(out.failed.is_empty());
+        }
+    }
+
+    #[test]
+    fn pauses_double_up_to_the_last_and_start_over_after_an_answer() {
+        let mut t = Throttle::new();
+        assert!(t.hold(None));
+        assert_eq!(t.backoff, WEB_THROTTLE_FIRST * 2);
+        // A pause under way covers the requests in flight beside it.
+        assert!(t.hold(None));
+        assert_eq!(t.pauses, 1);
+        for _ in 1..WEB_THROTTLE_GIVE_UP {
+            t.until = None;
+            assert!(t.hold(Some(Duration::from_secs(1))));
+        }
+        assert_eq!(t.backoff, WEB_THROTTLE_MAX);
+        t.until = None;
+        assert!(!t.hold(None), "gives up past the last");
+        t.answered();
+        t.until = None;
+        assert!(t.hold(None));
+        assert_eq!(t.backoff, WEB_THROTTLE_FIRST * 2);
     }
 }

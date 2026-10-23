@@ -70,6 +70,7 @@
 //!   - `resolve_cached_images(&self, urls: Vec<String>) -> Result<Vec<(String, PathBuf)>, String>`
 //! - `news`:
 //!   - `fetch_news(&self) -> Result<Vec<ArticleDto>, String>`
+//!   - `cached_news(&self) -> Option<Vec<ArticleDto>>`
 //!   - `fetch_article(&self, category: String, slug: String) -> Result<ArticleBodyDto, String>`
 //! - `offline`:
 //!   - `get_offline_missions(&self) -> Result<Vec<String>, String>`
@@ -239,12 +240,14 @@ pub mod features;
 mod hub;
 #[cfg(feature = "mock")]
 mod mock;
-mod net;
+pub mod net;
 pub mod paths;
 mod state;
 mod wake;
 
 pub use events::HubEvent;
+/// The list's refresh, as `Hub::refresh_state` answers and `RefreshChanged` carries it.
+pub use features::servers::refresh::{RefreshChanged, RefreshPhase, RefreshState};
 
 /// The launcher's version: the workspace's (`Cargo.toml`), or the one `DZCH_VERSION`
 /// gives the build (a preview, `make prerelease`: `0.5.5-pre`, never written to the

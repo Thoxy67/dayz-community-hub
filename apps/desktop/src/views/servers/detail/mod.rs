@@ -154,7 +154,7 @@ fn tick(cx: &mut Ctx, st: &mut DetailState, ip: &str, port: i64, m: &Model) {
         if age >= A2S_AFTER {
             st.asked_a2s = true;
             let s = &mut *cx.stores;
-            s.server_data.refresh_a2s(&mut s.servers, ip, m.query_port);
+            s.server_data.refresh_a2s(&s.servers, ip, m.query_port);
         } else {
             wait = wait.min(A2S_AFTER - age);
         }

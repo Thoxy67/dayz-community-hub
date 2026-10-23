@@ -19,20 +19,17 @@ use std::time::{Duration, Instant};
 
 use dz_hub::features::browser::{
     MapCount, ServerOrder, ServerQuery, ServerRef, ServerRow, ServerSnapshot, SortCol, Tri, order,
+    stats_of,
 };
 use dz_hub::features::ping::{PingResultDto, ScanProgress, ScanState};
 use dz_hub::features::servers::AppStatsDto;
 use dz_hub::{Hub, HubEvent};
+pub use dz_hub::{RefreshPhase, RefreshState};
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use super::{Bus, Signal, mirror, now_ms};
+use super::{Bus, Signal, now_ms};
 use crate::i18n::{t, tf};
 use crate::rt::{self, Task};
-
-/// A server's key everywhere in the app: "ip:query_port".
-pub fn key_of(r: &ServerRow) -> String {
-    format!("{}:{}", r.ip, r.query_port)
-}
 
 /// The freshest head-count of a row.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -51,12 +48,11 @@ pub const TIMEOUT_MS: u32 = 9999;
 pub const QUERY_DEBOUNCE: Duration = Duration::from_millis(80);
 /// Under a query that depends on live data (ping sort, hide full…), a scan landing
 /// results re-orders the list at most this often: rows show new pings at once, but
-/// do not jump under the pointer on every result.
+/// do not jump under the pointer on every result. Under any other query the header's
+/// figures follow at the same pace, the order kept.
 const LIVE_REORDER: Duration = Duration::from_millis(500);
 /// The title bar's figures that follow a new list, at most this often.
 const COUNTS_DELAY: Duration = Duration::from_secs(2);
-/// Owned rows kept for `find` (favourites, history, the rejoin card).
-const ROWS_MAX: usize = 512;
 
 /// An explicit ping list in flight: its targets (pending until they answer).
 type PingList = (Vec<String>, Task<Result<(), String>>);
@@ -106,34 +102,6 @@ impl Seen {
     }
 }
 
-/// Where a refresh has got (mirror of the hub's `RefreshPhase`, which it does not export).
-#[derive(serde::Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum RefreshPhase {
-    #[default]
-    Idle,
-    Fetching,
-    Done,
-    Failed,
-}
-
-/// The list's refresh as it stands, times in Unix ms (mirror of the hub's
-/// `RefreshState`, read through serde: the hub does not export the type).
-#[derive(serde::Deserialize, Clone, Debug, Default, PartialEq, Eq)]
-#[serde(default)]
-pub struct RefreshState {
-    pub id: u32,
-    pub running: bool,
-    pub phase: RefreshPhase,
-    pub started_at: Option<i64>,
-    pub finished_at: Option<i64>,
-    /// When the list on hand was fetched from the network; `None` while it is the
-    /// on-disk cache's.
-    pub loaded_at: Option<i64>,
-    pub count: u32,
-    pub error: Option<String>,
-}
-
 pub struct Servers {
     hub: Hub,
     bus: Bus,
@@ -143,6 +111,8 @@ pub struct Servers {
     pub list_error: Option<String>,
     /// Every map, busiest first, each named by its most common spelling.
     pub maps: Vec<MapCount>,
+    /// The generation of the list `maps` was taken from: moves only when they are.
+    pub maps_generation: u64,
     pub loading: bool,
     pub refreshing: bool,
     /// When the list on hand was fetched, Unix ms (0 before).
@@ -172,8 +142,6 @@ pub struct Servers {
     /// The last time the order was asked for because of live data.
     live_ordered: Option<Instant>,
 
-    /// Owned rows handed out by `find`, by "ip:port"; let go when anything changes.
-    rows: FxHashMap<String, Arc<ServerRow>>,
     /// Round trips of servers pinged on request (ms; ≥ 5000 is a timeout), for those the
     /// list lacks: a listed server's ping is in the snapshot.
     pub ping: FxHashMap<String, u32>,
@@ -210,6 +178,7 @@ impl Servers {
             total: 0,
             list_error: None,
             maps: Vec::new(),
+            maps_generation: 0,
             loading: false,
             refreshing: false,
             last_refreshed: 0,
@@ -227,7 +196,6 @@ impl Servers {
             order_req: 0,
             query_due: None,
             live_ordered: None,
-            rows: FxHashMap::default(),
             ping: FxHashMap::default(),
             pending: FxHashSet::default(),
             timeouts: FxHashMap::default(),
@@ -353,54 +321,6 @@ impl Servers {
                 .count()
     }
 
-    /// A server by address, whether `port` is its query or its game port, as an owned
-    /// row (for the parts that keep one); `None` for servers the list lacks.
-    pub fn find(&mut self, ip: &str, port: i64) -> Option<Arc<ServerRow>> {
-        let key = format!("{ip}:{port}");
-        if let Some(r) = self.rows.get(&key) {
-            return Some(Arc::clone(r));
-        }
-        let row = Arc::new(self.snapshot.lookup(ip, port)?.to_row());
-        if self.rows.len() >= ROWS_MAX {
-            self.rows.clear();
-        }
-        self.rows.insert(key, Arc::clone(&row));
-        Some(row)
-    }
-
-    /// A listed row, without keeping it.
-    pub fn peek(&self, ip: &str, port: i64) -> Option<Arc<ServerRow>> {
-        self.rows
-            .get(&format!("{ip}:{port}"))
-            .cloned()
-            .or_else(|| self.snapshot.lookup(ip, port).map(|r| Arc::new(r.to_row())))
-    }
-
-    /// Kept for callers that hold rows from a lookup: a listed row is in the snapshot
-    /// already (with its live state), so there is nothing to keep; owned rows handed
-    /// out by `find` are made again.
-    pub fn remember(&mut self, rows: impl IntoIterator<Item = ServerRow>) {
-        for r in rows {
-            self.rows.remove(&key_of(&r));
-        }
-    }
-
-    /// The freshest head-count for a row.
-    pub fn count(r: &ServerRow) -> Live {
-        Live {
-            players: r.players,
-            max: r.max_players,
-            bots: r.bots,
-        }
-    }
-
-    /// A query answered by the server itself: the hub has written it into the
-    /// snapshot; the owned row is made again on the next `find`.
-    pub fn apply_live_count(&mut self, key: &str, _players: i64, _max: i64, _bots: u32) {
-        self.rows.remove(key);
-        self.generation += 1;
-    }
-
     /// Take a new snapshot or new state of it in, and ask for what follows.
     fn follow_snapshot(&mut self) -> bool {
         let snap = self.hub.servers_snapshot();
@@ -412,7 +332,6 @@ impl Servers {
         let flags_moved = list_moved || seen.profile != self.seen.profile;
         self.snapshot = snap;
         self.seen = seen;
-        self.rows.clear();
         self.generation += 1;
         if list_moved && self.first_load_done {
             self.take_list_in();
@@ -425,8 +344,37 @@ impl Servers {
             self.ask_order();
         } else if self.query.depends_on_live() {
             self.order_for_live();
+        } else {
+            self.stats_for_live();
         }
         true
+    }
+
+    /// Live data moved under a query that does not depend on it: the rows stay where
+    /// they are, but the header's figures (pinged, best ping, players, full, empty) are
+    /// counted again over the same order, at most every [`LIVE_REORDER`]. O(shown),
+    /// tens of microseconds: done here.
+    fn stats_for_live(&mut self) {
+        let now = Instant::now();
+        if let Some(at) = self.live_ordered
+            && now < at + LIVE_REORDER
+        {
+            self.bus
+                .ctx()
+                .request_repaint_after(at + LIVE_REORDER - now);
+            return;
+        }
+        let Some(o) = &mut self.order else {
+            return;
+        };
+        // A newer order on its way counts afresh.
+        if self.order_task.is_some() || !Arc::ptr_eq(&o.snapshot, &self.snapshot) {
+            return;
+        }
+        self.live_ordered = Some(now);
+        o.live_stamp = self.snapshot.live_stamp();
+        o.stats = stats_of(&o.snapshot, &o.order);
+        self.generation += 1;
     }
 
     /// Live data moved under a query that depends on it: order again, at most every
@@ -451,7 +399,10 @@ impl Servers {
     /// The total and the maps of the snapshot on hand.
     fn take_list_in(&mut self) {
         self.total = u32::try_from(self.snapshot.len()).unwrap_or(u32::MAX);
-        self.maps = self.snapshot.maps().to_vec();
+        if self.maps_generation != self.snapshot.generation() {
+            self.maps = self.snapshot.maps().to_vec();
+            self.maps_generation = self.snapshot.generation();
+        }
     }
 
     // ── loading ─────────────────────────────────────────────────────────────
@@ -469,13 +420,12 @@ impl Servers {
         let hub = self.hub.clone();
         self.resume_task = Some(rt::spawn(async move {
             let (scan, refresh) = tokio::join!(hub.ping_scan_state(), hub.refresh_state());
-            (scan.ok(), mirror(&refresh).unwrap_or_default())
+            (scan.ok(), refresh)
         }));
     }
 
     /// Something the rows show changed here (the mods on disk): look again.
     pub fn touch(&mut self) {
-        self.rows.clear();
         self.generation += 1;
         self.follow_snapshot();
     }
@@ -496,11 +446,7 @@ impl Servers {
         self.scan = None;
         self.scan_paused = false;
         let hub = self.hub.clone();
-        self.refresh_task = Some(rt::spawn(async move {
-            hub.servers_refresh()
-                .await
-                .map(|s| mirror(&s).unwrap_or_default())
-        }));
+        self.refresh_task = Some(rt::spawn(async move { hub.servers_refresh().await }));
     }
 
     /// Where the hub's refresh stands, from its answer or its event.
@@ -533,7 +479,6 @@ impl Servers {
         let quiet = self.quiet;
         if st.phase == RefreshPhase::Done {
             self.list_error = None;
-            self.rows.clear();
             self.ping.clear();
             self.load();
             self.load_after_refresh = Some((quiet, st.count));
@@ -595,13 +540,9 @@ impl Servers {
             } else {
                 self.a2s_failures.remove(&key);
                 self.timeouts.remove(&key);
-                if let Some(p) = r.players {
-                    self.apply_live_count(
-                        &key,
-                        i64::from(p),
-                        i64::from(r.max_players.unwrap_or(0)),
-                        u32::from(r.bots.unwrap_or(0)),
-                    );
+                if r.players.is_some() {
+                    // The hub has written the count into the snapshot: draw again.
+                    self.generation += 1;
                 }
             }
         }
@@ -671,11 +612,7 @@ impl Servers {
             // Picked up by `poll` on the frame this wakes.
             HubEvent::ServersChanged(_) => {}
             HubEvent::PingScanProgress(p) => self.show_scan(p.0),
-            HubEvent::RefreshChanged(r) => {
-                if let Some(st) = mirror(&r.0) {
-                    self.follow(st);
-                }
-            }
+            HubEvent::RefreshChanged(r) => self.follow(r.0.clone()),
             HubEvent::PingResults(r) => self.apply_pings(r),
             _ => {}
         }
@@ -734,15 +671,18 @@ impl Servers {
                 changed = true;
             }
         }
-        // Live data moved during a reorder wait: once it is over, order again.
-        if self.query.depends_on_live()
-            && self.order_task.is_none()
+        // Live data moved during a reorder wait: once it is over, order (or count) again.
+        if self.order_task.is_none()
             && self
                 .order
                 .as_ref()
                 .is_some_and(|o| o.live_stamp != self.snapshot.live_stamp())
         {
-            self.order_for_live();
+            if self.query.depends_on_live() {
+                self.order_for_live();
+            } else {
+                self.stats_for_live();
+            }
         }
 
         if let Some(t) = &mut self.resume_task

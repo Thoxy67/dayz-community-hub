@@ -91,26 +91,31 @@ pub struct Model {
 }
 
 /// What [`Model::of`] reads, as a cheap key (a few lookups, one formatted address, no
-/// copy): the stores' generation and the list's (answers taken in, live data), the
-/// profile's favourites and history, the mods on disk, and this server's own state that
-/// actions change at once (a query or a ping asked, an address excluded).
+/// copy): the list (its generation) and this server's own words in it (live counts, ping,
+/// flags), its A2S answer and DayZ Metrics entry, its ping asked on request, the
+/// profile's favourites and history, the mods on disk, and this server's state that
+/// actions change at once (a query or a ping asked, an address excluded). Nothing global
+/// that moves with every hub event or every ping elsewhere: during a scan the panel is
+/// made again only when its own server changes.
 pub fn key(cx: &Ctx, ip: &str, port: i64, name: &str) -> u64 {
     use std::hash::{Hash, Hasher};
     let s = &cx.stores;
     let mut h = rustc_hash::FxHasher::default();
+    let row = s.servers.row(ip, port);
     (
         ip,
         port,
         name,
-        s.generation,
-        s.servers.generation,
+        s.servers.snapshot().generation(),
+        row.map(|r| r.state_bits()),
         s.profile.stamp(),
         s.profile.is_excluded(ip),
     )
         .hash(&mut h);
-    let qp = s.servers.row(ip, port).map_or(port, |r| r.query_port());
+    let qp = row.map_or(port, |r| r.query_port());
     let key = format!("{ip}:{qp}");
-    if let Some(e) = s.server_data.a2s_entry(&key) {
+    let entry = s.server_data.a2s_entry(&key);
+    if let Some(e) = entry {
         (
             e.data.as_ref().map(|d| Arc::as_ptr(d) as usize),
             e.loading,
@@ -118,15 +123,34 @@ pub fn key(cx: &Ctx, ip: &str, port: i64, name: &str) -> u64 {
         )
             .hash(&mut h);
     }
+    // The ports `of` works out, the same way: the metrics and the ping are read with them.
+    let a2s = entry.and_then(|e| e.data.as_deref());
+    let query_port = row
+        .map(|r| r.query_port())
+        .or(a2s.map(|a| a.query_port))
+        .unwrap_or(port);
+    let game_port = row
+        .map(|r| r.game_port())
+        .or(a2s.and_then(|a| a.game_port))
+        .unwrap_or(port);
+    let metrics = s.server_data.metrics(
+        ip,
+        u32::try_from(game_port).unwrap_or(0),
+        u32::try_from(query_port).unwrap_or(0),
+    );
+    (
+        metrics.data.as_ref().map(|d| Arc::as_ptr(d) as usize),
+        metrics.loading,
+        &metrics.error,
+        s.servers.ping_ms(ip, query_port),
+    )
+        .hash(&mut h);
     (
         s.server_data.a2s_loading(&key),
         s.servers.pending.contains(&key),
     )
         .hash(&mut h);
-    s.mods.installed.len().hash(&mut h);
-    for m in &s.mods.installed {
-        (m.id, m.update_available, m.size, &m.name).hash(&mut h);
-    }
+    s.mods.revision.hash(&mut h);
     h.finish()
 }
 

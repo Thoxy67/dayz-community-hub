@@ -197,6 +197,9 @@ pub struct ToolbarData<'a> {
     pub shown: usize,
     pub total: u32,
     pub maps: &'a [dz_hub::features::browser::MapCount],
+    /// Moves when `maps` was replaced (a new list): what is made from them is kept
+    /// until then.
+    pub maps_generation: u64,
     pub has_key: bool,
     pub excluded: usize,
     pub focus_search: bool,
@@ -229,7 +232,6 @@ pub fn toolbar(ui: &mut Ui, f: &mut Filters, d: &ToolbarData, run: &mut Run) {
             f32::INFINITY
         };
         let search_w = (ui.available_width() - rest).clamp(128.0, max_search);
-        let before = f.search.clone();
         let r = ui.add(
             Input::new(&mut f.search)
                 .search()
@@ -242,7 +244,7 @@ pub fn toolbar(ui: &mut Ui, f: &mut Filters, d: &ToolbarData, run: &mut Run) {
         if d.focus_search {
             r.request_focus();
         }
-        if f.search != before {
+        if r.changed() {
             ui.ctx().request_repaint();
         }
 
@@ -299,7 +301,7 @@ pub fn toolbar(ui: &mut Ui, f: &mut Filters, d: &ToolbarData, run: &mut Run) {
 
         // The maps: "<map> · <count>", busiest first, several at once, found by typing;
         // the placeholder clears them.
-        let names = map_names(ui.ctx(), d.maps);
+        let names = map_names(ui.ctx(), d.maps, d.maps_generation);
         let opts: Vec<SelectOption<&str>> = d
             .maps
             .iter()
@@ -357,8 +359,9 @@ pub fn toolbar(ui: &mut Ui, f: &mut Filters, d: &ToolbarData, run: &mut Run) {
     });
 }
 
-/// The map choices' words, made once per list of maps (not each frame): each map's
-/// label ("<map> · <count>") and its name lowercased.
+/// The map choices' words, made once per list of maps (not each frame, nor hashed
+/// each frame: keyed on the list's generation): each map's label ("<map> · <count>")
+/// and its name lowercased.
 #[derive(Default)]
 struct MapNames {
     key: u64,
@@ -366,14 +369,13 @@ struct MapNames {
     lower: Vec<String>,
 }
 
-fn map_names(ctx: &egui::Context, maps: &[dz_hub::features::browser::MapCount]) -> Arc<MapNames> {
-    use std::hash::{Hash, Hasher};
-    let mut h = rustc_hash::FxHasher::default();
-    maps.len().hash(&mut h);
-    for m in maps {
-        (&m.map, m.count).hash(&mut h);
-    }
-    let key = h.finish();
+fn map_names(
+    ctx: &egui::Context,
+    maps: &[dz_hub::features::browser::MapCount],
+    generation: u64,
+) -> Arc<MapNames> {
+    // The length too: a guard should the maps ever change under one generation.
+    let key = generation ^ ((maps.len() as u64) << 48);
     let id = egui::Id::new("dzch.servers.map_names");
     if let Some(n) = ctx.data(|d| d.get_temp::<Arc<MapNames>>(id))
         && n.key == key

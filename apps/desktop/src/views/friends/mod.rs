@@ -130,7 +130,7 @@ fn apply(cx: &mut Ctx, act: Act) {
         }
         Act::Players(ip, port) => {
             let s = &mut *cx.stores;
-            s.server_data.refresh_a2s(&mut s.servers, &ip, port);
+            s.server_data.refresh_a2s(&s.servers, &ip, port);
         }
         Act::CopyLink(ip, game, query, name) => {
             cx.stores

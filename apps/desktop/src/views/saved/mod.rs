@@ -40,7 +40,7 @@ use crate::views::servers::detail;
 pub use crate::views::servers::{Run, run_all};
 
 const HEAD_H: f32 = 28.0;
-const OVERSCAN: usize = 8;
+const OVERSCAN: usize = 1;
 /// Rows on screen without a ping are pinged once they have stayed this long (s).
 const PING_SETTLE: f64 = 0.2;
 /// A ping at or past this is a timeout (sorted last, left out of the figures).
@@ -264,7 +264,7 @@ pub fn lines(cx: &mut Ctx, entries: &[Entry]) -> Vec<Line> {
                     key,
                     listed: false,
                     game_port: port,
-                    live: s.server_data.players(&mut s.servers, &e.ip, port),
+                    live: s.server_data.players(&s.servers, &e.ip, port),
                     ping,
                     map: String::new(),
                     time: String::new(),
@@ -505,15 +505,15 @@ pub struct Listing {
 }
 
 /// The list for this frame: the one made before while nothing it reads has moved (the
-/// stores' generation, the list's, the profile's favourites and history, the search, the
-/// order, "in the list only"), else made again, with the keys the commands walk.
+/// list's generation, the profile's favourites and history, each entry's own state, the
+/// search, the order, "in the list only"), else made again, with the keys the commands
+/// walk. A ping landing on a server elsewhere in the list does not make it again.
 fn listing(cx: &mut Ctx, kind: Kind, st: &mut State) -> Arc<Listing> {
     let key = {
         let mut h = FxHasher::default();
         (
             kind,
-            cx.stores.generation,
-            cx.stores.servers.generation,
+            cx.stores.servers.snapshot().generation(),
             cx.stores.profile.stamp(),
             &st.query,
             st.listed_only,
@@ -521,6 +521,7 @@ fn listing(cx: &mut Ctx, kind: Kind, st: &mut State) -> Arc<Listing> {
             st.asc,
         )
             .hash(&mut h);
+        entries_state(cx, kind, &mut h);
         h.finish()
     };
     if let Some((k, l)) = &st.listing
@@ -542,6 +543,27 @@ fn listing(cx: &mut Ctx, kind: Kind, st: &mut State) -> Arc<Listing> {
     });
     st.listing = Some((key, Arc::clone(&l)));
     l
+}
+
+/// What each saved entry's line reads, hashed: a listed server's live and profile words,
+/// else its ping asked on request and its own query's answer.
+fn entries_state(cx: &Ctx, kind: Kind, h: &mut FxHasher) {
+    let s = &cx.stores;
+    let mut one = |ip: &str, port: u16| {
+        let port = i64::from(port);
+        match s.servers.row(ip, port) {
+            Some(r) => r.state_bits().hash(h),
+            None => {
+                s.servers.ping_ms(ip, port).hash(h);
+                let live = s.server_data.players(&s.servers, ip, port);
+                (live.players, live.max, live.bots).hash(h);
+            }
+        }
+    };
+    match kind {
+        Kind::Favorites => s.profile.favorites.iter().for_each(|f| one(&f.ip, f.port)),
+        Kind::History => s.profile.history.iter().for_each(|e| one(&e.ip, e.port)),
+    }
 }
 
 /// Words a list's empty state says (it has no entries at all).
@@ -1089,8 +1111,11 @@ fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCac
                     || profile.is_favorite(&e.ip, qp)
                     || profile.is_favorite(&e.ip, gp);
                 rd.excluded = profile.is_excluded(&e.ip);
-                let names: Vec<String> = if has_friends {
-                    friends.on(&e.ip, qp).map(|f| f.name.clone()).collect()
+                let names: Vec<&str> = if has_friends {
+                    friends
+                        .on_key(&l.ping_key)
+                        .map(|f| f.name.as_str())
+                        .collect()
                 } else {
                     Vec::new()
                 };

@@ -22,7 +22,7 @@ mod snapshot;
 pub use query::{ServerPage, ServerQuery, ServerRow, ServerStats, SortCol, Tri};
 #[cfg(all(test, feature = "mock"))]
 pub(crate) use snapshot::ProfileView;
-pub use snapshot::{ServerOrder, ServerRef, ServerSnapshot, order};
+pub use snapshot::{ServerOrder, ServerRef, ServerSnapshot, order, stats_of};
 
 use crate::{Hub, HubEvent};
 use dz_api::ServerList;
@@ -60,11 +60,16 @@ pub(crate) fn profile_view(s: &AppState) -> snapshot::ProfileView {
     let p = s.ctl.profile();
     snapshot::ProfileView {
         excluded: p.excluded_ips.iter().cloned().collect(),
-        favorites: p
-            .favorites
-            .iter()
-            .map(|f| (f.ip.clone(), i64::from(f.port)))
-            .collect(),
+        favorites: p.favorites.iter().fold(
+            rustc_hash::FxHashMap::default(),
+            |mut by_ip: rustc_hash::FxHashMap<String, Vec<i64>>, f| {
+                by_ip
+                    .entry(f.ip.clone())
+                    .or_default()
+                    .push(i64::from(f.port));
+                by_ip
+            },
+        ),
         mods: s.mods_on_disk.as_ref().map(|disk| {
             disk.iter()
                 .map(|(&id, &local)| {
@@ -78,10 +83,12 @@ pub(crate) fn profile_view(s: &AppState) -> snapshot::ProfileView {
 
 /// The profile's flags (favourites, exclusions, mods on disk) may have
 /// changed in `s`: write them into its snapshot again (`snap`, the one the
-/// state holds, which is the one published).
+/// state holds, which is the one published). The window is woken only when
+/// a server's flags did change.
 pub(crate) fn profile_changed(snap: &ServerSnapshot, s: &AppState) {
-    snap.apply_profile(&profile_view(s));
-    live::store().touch();
+    if snap.apply_profile(&profile_view(s)) {
+        live::store().touch();
+    }
 }
 
 /// A filtered, sorted window of the server list, with totals.
@@ -171,7 +178,7 @@ pub(crate) async fn scan_whole(
     state: &SharedState,
     ping: &Arc<PingState>,
 ) -> ScanProgress {
-    let (targets, concurrency, timeout, retries) = {
+    let (targets, concurrency, timeout, retries, every_server) = {
         let s = state.read().await;
         let p = s.ctl.profile();
         (
@@ -179,16 +186,49 @@ pub(crate) async fn scan_whole(
             (p.ping_concurrency as usize).clamp(5, 200),
             Duration::from_millis(u64::from(p.ping_timeout_auto).clamp(1000, 5000)),
             p.ping_max_retries.min(5),
+            p.ping_scan_servers,
         )
     };
-    ping::start_whole_scan(hub, ping, targets, concurrency, timeout, retries)
+    let progress = ping::start_whole_scan(hub, ping, targets, concurrency, timeout, retries);
+    if let Ok(mut s) = SCAN.lock() {
+        *s = Some((Arc::downgrade(ping), every_server));
+    }
+    // A scan of every server queries the full ones too: a check started by the
+    // list it follows (a refresh's) would ask them twice.
+    if every_server
+        && let Ok(mut v) = VERIFY.lock()
+        && let Some(prev) = v.take()
+    {
+        prev.abort();
+    }
+    progress
+}
+
+/// The whole-list scan last started, and whether it pings every server (the
+/// profile's "scan the servers"): while such a scan runs, re-querying the full
+/// servers is its job.
+static SCAN: Mutex<Option<(std::sync::Weak<PingState>, bool)>> = Mutex::new(None);
+
+/// A running whole-list scan pings every server, the full ones among them
+/// (servers added to the list meanwhile join its queue).
+fn scan_covers_list() -> bool {
+    let ping = SCAN.lock().ok().and_then(|s| {
+        s.as_ref()
+            .filter(|(_, all)| *all)
+            .and_then(|(p, _)| p.upgrade())
+    });
+    ping.is_some_and(|p| p.state().progress.running)
 }
 
 /// The running full-server check, so a newer list can replace it.
 static VERIFY: Mutex<Option<tokio::task::JoinHandle<()>>> = Mutex::new(None);
 
 /// Re-query every server the list says is full: its count is often stale.
+/// Not while a scan of every server runs: it queries them already.
 pub(crate) fn verify_full_servers(list: Arc<ServerList>) {
+    if scan_covers_list() {
+        return;
+    }
     let targets: Vec<(String, i64)> = list
         .result
         .iter()
@@ -290,27 +330,42 @@ impl Hub {
     }
 }
 
-/// A map's total and each spelling's count, keyed by the lowercased name.
+/// One map as counted: its total and each spelling's count.
 type Spellings<'a> = (u32, Vec<(&'a str, u32)>);
 
-/// Map names counted case-insensitively (and trimmed), each named by its most
-/// common spelling; ties go to the first spelling met. Blank names are skipped.
-fn count_maps<'a>(names: impl Iterator<Item = &'a str>) -> Vec<(String, u32)> {
-    let mut by_key: rustc_hash::FxHashMap<String, Spellings<'a>> = Default::default();
+/// Maps counted case-insensitively (and trimmed), in the order first met,
+/// each named by its most common spelling (ties go to the first spelling
+/// met), and for each name given, its map in that list (`u32::MAX` for a
+/// blank name). Servers use a handful of spellings, so a name is lowercased
+/// only the first time its spelling is met.
+fn count_maps<'a>(names: impl Iterator<Item = &'a str>) -> (Vec<(String, u32)>, Vec<u32>) {
+    let mut by_spelling: rustc_hash::FxHashMap<&'a str, u32> = Default::default();
+    let mut by_lower: rustc_hash::FxHashMap<String, u32> = Default::default();
+    let mut maps: Vec<Spellings<'a>> = Vec::new();
+    let mut of = Vec::with_capacity(names.size_hint().0);
     for name in names {
         let name = name.trim();
         if name.is_empty() {
+            of.push(u32::MAX);
             continue;
         }
-        let entry = by_key.entry(name.to_lowercase()).or_default();
-        entry.0 += 1;
-        match entry.1.iter_mut().find(|(s, _)| *s == name) {
-            Some((_, n)) => *n += 1,
-            None => entry.1.push((name, 1)),
+        let k = *by_spelling.entry(name).or_insert_with(|| {
+            *by_lower.entry(name.to_lowercase()).or_insert_with(|| {
+                maps.push((0, Vec::new()));
+                (maps.len() - 1) as u32
+            })
+        });
+        if let Some(entry) = maps.get_mut(k as usize) {
+            entry.0 += 1;
+            match entry.1.iter_mut().find(|(s, _)| *s == name) {
+                Some((_, n)) => *n += 1,
+                None => entry.1.push((name, 1)),
+            }
         }
+        of.push(k);
     }
-    by_key
-        .into_values()
+    let maps = maps
+        .into_iter()
         .map(|(total, spellings)| {
             let mut best = ("", 0);
             for (s, n) in spellings {
@@ -320,7 +375,8 @@ fn count_maps<'a>(names: impl Iterator<Item = &'a str>) -> Vec<(String, u32)> {
             }
             (best.0.to_owned(), total)
         })
-        .collect()
+        .collect();
+    (maps, of)
 }
 
 #[cfg(test)]
@@ -329,7 +385,7 @@ mod map_tests {
 
     #[test]
     fn maps_differing_in_case_are_one_map() {
-        let mut maps = count_maps(
+        let (maps, of) = count_maps(
             [
                 "chernarusplus",
                 "ChernarusPlus",
@@ -340,10 +396,10 @@ mod map_tests {
             ]
             .into_iter(),
         );
-        maps.sort();
         assert_eq!(
             maps,
             vec![("chernarusplus".to_owned(), 3), ("enoch".to_owned(), 2)]
         );
+        assert_eq!(of, [0, 0, 0, 1, 1, u32::MAX]);
     }
 }

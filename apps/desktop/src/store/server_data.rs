@@ -9,7 +9,6 @@ use std::time::{Duration, Instant};
 
 use dz_hub::Hub;
 use dz_hub::features::a2s::A2sDetailsDto;
-use dz_hub::features::browser::ServerRow;
 use dz_hub::features::metrics::{HeatCell, ServerMetricsDto};
 use rustc_hash::FxHashMap;
 
@@ -151,14 +150,9 @@ fn evict<K: Eq + Hash + Clone, T>(map: &mut FxHashMap<K, Entry<T>>, max: usize) 
     }
 }
 
-/// An A2S flight: the key it was asked under, the key its answer is kept under, the row
-/// it resolved, and the answer.
-type A2sAnswer = (
-    String,
-    String,
-    Option<ServerRow>,
-    Result<Arc<A2sDetailsDto>, String>,
-);
+/// An A2S flight: the key it was asked under, the key its answer is kept under, and the
+/// answer.
+type A2sAnswer = (String, String, Result<Arc<A2sDetailsDto>, String>);
 
 pub struct ServerData {
     hub: Hub,
@@ -184,12 +178,12 @@ impl ServerData {
     }
 
     /// The key a server's A2S data is kept under: its query port when known.
-    pub fn key(servers: &mut Servers, ip: &str, port: i64) -> String {
-        let qp = servers.find(ip, port).map_or(port, |r| r.query_port);
+    pub fn key(servers: &Servers, ip: &str, port: i64) -> String {
+        let qp = servers.row(ip, port).map_or(port, |r| r.query_port());
         format!("{ip}:{qp}")
     }
 
-    pub fn a2s(&self, servers: &mut Servers, ip: &str, port: i64) -> Entry<A2sDetailsDto> {
+    pub fn a2s(&self, servers: &Servers, ip: &str, port: i64) -> Entry<A2sDetailsDto> {
         self.a2s
             .get(&Self::key(servers, ip, port))
             .cloned()
@@ -207,7 +201,7 @@ impl ServerData {
         self.a2s_flights.iter().any(|(k, _)| k == key)
     }
 
-    pub fn has_fresh_a2s(&self, servers: &mut Servers, ip: &str, port: i64) -> bool {
+    pub fn has_fresh_a2s(&self, servers: &Servers, ip: &str, port: i64) -> bool {
         self.a2s
             .get(&Self::key(servers, ip, port))
             .is_some_and(|e| e.fresh(A2S_TTL))
@@ -215,7 +209,7 @@ impl ServerData {
 
     /// Ask the server itself; concurrent callers share one query. The address may carry
     /// the game port: the row is resolved first, so the query goes to the query port.
-    pub fn refresh_a2s(&mut self, servers: &mut Servers, ip: &str, port: i64) {
+    pub fn refresh_a2s(&mut self, servers: &Servers, ip: &str, port: i64) {
         let asked = Self::key(servers, ip, port);
         if self.a2s_flights.iter().any(|(k, _)| *k == asked) {
             return;
@@ -223,26 +217,28 @@ impl ServerData {
         let e = self.a2s.entry(asked.clone()).or_default();
         e.loading = true;
         e.error = None;
-        let known = servers.find(ip, port);
+        let known = servers
+            .row(ip, port)
+            .map(|r| (r.query_port(), r.game_port()));
         let hub = self.hub.clone();
         let ip = ip.to_string();
         let asked2 = asked.clone();
         let task = rt::spawn(async move {
-            let row = match known {
-                Some(r) => Some((*r).clone()),
-                None => super::servers::lookup_one(&hub, &ip, port).await,
+            let (qp, gp) = match known {
+                Some((qp, gp)) => (qp, Some(gp)),
+                None => super::servers::lookup_one(&hub, &ip, port)
+                    .await
+                    .map_or((port, None), |r| (r.query_port, Some(r.game_port))),
             };
-            let qp = row.as_ref().map_or(port, |r| r.query_port);
-            let gp = row.as_ref().map(|r| r.game_port);
             let key = format!("{ip}:{qp}");
             let r = hub.query_a2s(ip, qp, gp).await;
-            (asked2, key, row, r)
+            (asked2, key, r)
         });
         self.a2s_flights.push((asked, task));
     }
 
     /// Players right now: from A2S when it has answered, else the list.
-    pub fn players(&self, servers: &mut Servers, ip: &str, port: i64) -> super::servers::Live {
+    pub fn players(&self, servers: &Servers, ip: &str, port: i64) -> super::servers::Live {
         let key = Self::key(servers, ip, port);
         if let Some(d) = self.a2s.get(&key).and_then(|e| e.data.as_ref()) {
             return super::servers::Live {
@@ -252,8 +248,12 @@ impl ServerData {
             };
         }
         servers
-            .find(ip, port)
-            .map(|r| Servers::count(&r))
+            .row(ip, port)
+            .map(|r| super::servers::Live {
+                players: r.players(),
+                max: r.max_players(),
+                bots: r.bots(),
+            })
             .unwrap_or_default()
     }
 
@@ -341,7 +341,7 @@ impl ServerData {
             }
             None => t.is_pending(),
         });
-        for (asked, key, _row, r) in done {
+        for (asked, key, r) in done {
             changed = true;
             if key != asked
                 && let Some(e) = self.a2s.get_mut(&asked)
@@ -352,12 +352,8 @@ impl ServerData {
             e.loading = false;
             match r {
                 Ok(d) => {
-                    servers.apply_live_count(
-                        &key,
-                        i64::from(d.players),
-                        i64::from(d.max_players),
-                        u32::from(d.bots),
-                    );
+                    // The hub has written the count into the snapshot: draw again.
+                    servers.generation += 1;
                     servers.a2s_failures.remove(&key);
                     e.data = Some(d);
                     e.error = None;
