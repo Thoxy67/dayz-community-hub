@@ -231,8 +231,8 @@ impl World {
         top.sort_by_key(|x| std::cmp::Reverse(x.players));
         let on = |i: usize| {
             top.get(i).map(|s| FriendServerDto {
-                ip: s.ip.clone(),
-                port: u16::try_from(s.query_port).unwrap_or(0),
+                ip: s.ip,
+                port: s.query_port,
                 name: Some(s.name.clone()),
                 map: Some(s.map.clone()),
                 players: Some(s.players),
@@ -241,7 +241,7 @@ impl World {
         };
         let unlisted = || {
             Some(FriendServerDto {
-                ip: "203.0.113.7".to_string(),
+                ip: dz_api::Ipv4Addr::new(203, 0, 113, 7),
                 port: 2302,
                 name: None,
                 map: None,
@@ -358,8 +358,8 @@ impl World {
                 value: (*value).to_string(),
             })
             .collect(),
-            query_port: s.map_or(27_016, |s| s.query_port),
-            game_port: Some(s.map_or(2302, |s| s.game_port)),
+            query_port: i64::from(s.map_or(27_016, |s| s.query_port)),
+            game_port: Some(i64::from(s.map_or(2302, |s| s.game_port))),
         }
     }
 

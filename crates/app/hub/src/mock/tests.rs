@@ -32,7 +32,7 @@ fn the_generator_makes_mock_ts_world() {
     assert_eq!(g.servers[0].name, "4100 | EUROPE - DE");
     assert!(g.servers[0].official);
     assert_eq!(g.servers[3].name, "4203 | UNITED STATES - NY | x10 Loot");
-    assert_eq!(g.servers[0].ip, "45.0.0.0");
+    assert_eq!(g.servers[0].ip.to_string(), "45.0.0.0");
     assert_eq!(g.servers.iter().filter(|s| s.official).count(), 20);
     // As the reference screenshot shows them (var/reference/servers.png).
     let players: i64 = g.servers.iter().map(|s| s.players).sum();
@@ -98,7 +98,7 @@ async fn a_mock_hub_answers_as_mock_ts_did() {
     assert_eq!(native.stats, page.stats);
     for (n, row) in page.rows.iter().enumerate() {
         let r = native.get(n).unwrap();
-        assert_eq!((r.ip(), r.query_port()), (row.ip.as_str(), row.query_port));
+        assert_eq!((r.ip(), r.query_port()), (row.ip, row.query_port));
         assert_eq!(r.ping_ms(), row.ping_ms);
         assert_eq!(r.favorite(), row.favorite);
         assert_eq!(r.mods_missing(), row.mods_missing);
@@ -170,7 +170,8 @@ async fn a_mock_hub_answers_as_mock_ts_did() {
     // Fixtures for what would leave the machine.
     assert_eq!(hub.steam_friends(false).await.unwrap().friends.len(), 10);
     assert_eq!(hub.fetch_steam_player_count().await.unwrap(), 61_204);
-    let ip = first.ip.clone();
+    let ip = first.ip.to_string();
+    let addr = dz_api::addr(&ip, 27016).unwrap();
     assert_eq!(
         hub.query_a2s(ip.clone(), 27016, None)
             .await
@@ -220,7 +221,7 @@ async fn a_mock_hub_answers_as_mock_ts_did() {
     hub.cancel_ping().await.unwrap();
 
     // A join is recorded and reported, nothing started.
-    hub.launch_server(ip, 27016, None).await.unwrap();
+    hub.launch_server(addr, None).await.unwrap();
     assert!(
         events
             .lock()
@@ -261,11 +262,7 @@ fn refilter_timings() {
     ));
     let build = t.elapsed();
     for s in &list.result {
-        snap.put_live(
-            &s.endpoint.ip,
-            s.endpoint.port,
-            &super::live_of(&s.endpoint.ip, s.endpoint.port),
-        );
+        snap.put_live(s.endpoint, &super::live_of(s.endpoint));
     }
     assert_eq!(snap.len(), 9500);
 

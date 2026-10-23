@@ -1,7 +1,7 @@
 //! Joining a server through Steam, and the DayZ launch options.
 
 use crate::{Hub, HubEvent};
-use dz_api::Server;
+use dz_api::{Ipv4Addr, Server, SocketAddrV4};
 use dz_game::DayzCtl;
 
 use crate::state::mutate_profile;
@@ -28,16 +28,15 @@ fn spawn_launch(
             Ok(()) => {
                 // Recorded on the profile the app keeps, not the task's copy,
                 // so the window sees the entry and the next save keeps it.
-                // A port outside 1..=65535 cannot be joined again: not recorded.
-                if let Ok(port) = u16::try_from(server.game_port)
-                    && port != 0
+                // An unknown game port cannot be joined again: not recorded.
+                if let Some(join) = server.join_addr()
                     && let Ok(state) = app.state()
                 {
                     let _ = mutate_profile(&state, |s| {
                         s.ctl.profile_mut().add_history(
                             server.name.clone(),
-                            server.endpoint.ip.clone(),
-                            port,
+                            join.ip().to_string(),
+                            join.port(),
                         );
                         Ok(())
                     })
@@ -48,8 +47,8 @@ fn spawn_launch(
                     crate::features::stats::tracker::Expected {
                         kind: dz_profile::SessionKind::Server,
                         name: server.name.clone(),
-                        ip: Some(server.endpoint.ip.clone()),
-                        port: u16::try_from(server.game_port).ok().filter(|p| *p != 0),
+                        ip: Some(server.ip().to_string()),
+                        port: (server.game_port != 0).then_some(server.game_port),
                         map: (!server.map.is_empty()).then(|| server.map.clone()),
                     },
                 );
@@ -60,6 +59,25 @@ fn spawn_launch(
             }
         }
     });
+}
+
+/// The IPv4 `host` names: itself when it is one, else the first IPv4 its
+/// name resolves to.
+async fn resolve_v4(host: &str) -> Result<Ipv4Addr, String> {
+    let host = host.trim();
+    if let Ok(ip) = host.parse() {
+        return Ok(ip);
+    }
+    let found = tokio::net::lookup_host((host, 0))
+        .await
+        .map_err(|e| format!("{host}: {e}"))?;
+    found
+        .filter_map(|a| match a {
+            std::net::SocketAddr::V4(a) => Some(*a.ip()),
+            std::net::SocketAddr::V6(_) => None,
+        })
+        .next()
+        .ok_or_else(|| format!("{host} has no IPv4 address to join"))
 }
 
 /// How DayZ gets started, for the launch options page: what the launcher
@@ -126,21 +144,20 @@ impl Hub {
         .await
     }
 
-    /// Join a listed server by its query port. Returns at once; the outcome
-    /// arrives as a `launch-done` or `launch-error` event.
+    /// Join a listed server by its query address. Returns at once; the
+    /// outcome arrives as a `launch-done` or `launch-error` event.
     pub async fn launch_server(
         &self,
-        ip: String,
-        port: i64,
+        addr: SocketAddrV4,
         password: Option<String>,
     ) -> Result<(), String> {
-        mocked!(self, w => w.launch(self, &ip, port).await);
+        mocked!(self, w => w.launch(self, addr).await);
         let state = self.state()?;
         let app = self.clone();
         let (server, ctl) = {
             let state = state.read().await;
             let server = state
-                .find_by_query_port(&ip, port)
+                .find_by_query_port(addr)
                 .cloned()
                 .ok_or_else(|| "Server not found".to_string())?;
             (server, state.ctl.clone_for_task())
@@ -149,24 +166,31 @@ impl Hub {
         Ok(())
     }
 
-    /// Join by address, whether or not the server is listed. Returns at once;
-    /// the outcome arrives as a `launch-done` or `launch-error` event.
+    /// Join by address, whether or not the server is listed. `host` is what
+    /// was typed: an IPv4, or a name looked up here (DayZ joins an IPv4).
+    /// Returns at once; the outcome arrives as a `launch-done` or
+    /// `launch-error` event.
     pub async fn launch_direct(
         &self,
-        ip: String,
+        host: String,
         game_port: u16,
         password: Option<String>,
         extra_args: Option<Vec<String>>,
     ) -> Result<(), String> {
-        mocked!(self, w => w.launch(self, &ip, i64::from(game_port)).await);
+        // The mock looks no name up: nothing of it goes over the network.
+        mocked!(self, w => {
+            let ip = host.trim().parse().map_err(|_| format!("{host}: no IPv4 address"))?;
+            w.launch(self, SocketAddrV4::new(ip, game_port)).await
+        });
+        let join = SocketAddrV4::new(resolve_v4(&host).await?, game_port);
         let state = self.state()?;
         let app = self.clone();
         let (server, ctl) = {
             let st = state.read().await;
             let server = st
-                .find_flexible(&ip, i64::from(game_port))
+                .find_flexible(join)
                 .cloned()
-                .unwrap_or_else(|| Server::unlisted(&ip, i64::from(game_port)));
+                .unwrap_or_else(|| Server::unlisted(join));
             (server, st.ctl.clone_for_task())
         };
         spawn_launch(app, ctl, server, password, extra_args.unwrap_or_default());

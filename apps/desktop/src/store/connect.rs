@@ -8,6 +8,7 @@
 //! thread with `bus.run` to show the mods dialog ([`Connect::request`]) or start a mod
 //! operation. It starts from a [`Snapshot`] of what it needs from the other stores.
 
+use dz_api::SocketAddrV4;
 use dz_hub::Hub;
 use dz_hub::features::browser::ServerRow;
 use dz_hub::features::dzch_cli::CliArgs;
@@ -131,8 +132,8 @@ pub struct Target {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Launch {
     Listed {
-        ip: String,
-        query_port: i64,
+        /// Its query address.
+        addr: SocketAddrV4,
         name: String,
         password: Option<String>,
     },
@@ -369,7 +370,7 @@ async fn password_for(
     snap: &Snapshot,
     name: &str,
     ip: &str,
-    ports: &[i64],
+    ports: &[u16],
     known: Option<String>,
 ) -> Result<String, ()> {
     if let Some(k) = known.filter(|k| !k.is_empty()) {
@@ -378,7 +379,7 @@ async fn password_for(
     let fav = snap
         .favorites
         .iter()
-        .find(|f| f.ip == ip && ports.contains(&i64::from(f.port)) && f.password.is_some());
+        .find(|f| f.ip == ip && ports.contains(&f.port) && f.password.is_some());
     if let Some(p) = fav.and_then(|f| f.password.clone()) {
         return Ok(p);
     }
@@ -387,26 +388,27 @@ async fn password_for(
         let (name, ip, pw) = (name.to_string(), ip.to_string(), a.password.clone());
         let port = ports
             .first()
-            .and_then(|p| u16::try_from(*p).ok())
+            .copied()
+            .filter(|p| *p != 0)
             .unwrap_or(DEFAULT_GAME_PORT);
         bus.run(move |cx| cx.stores.profile.add_favorite(&name, &ip, port, Some(pw)));
     }
     Ok(a.password)
 }
 
-/// The server's mods; `None` when they could not be read and the player said stop.
+/// The server's mods, by its query address; `None` when they could not be read and
+/// the player said stop.
 async fn mods_of(
     hub: &Hub,
     bus: &Bus,
-    ip: &str,
-    query_port: i64,
+    addr: SocketAddrV4,
     count: usize,
     name: &str,
 ) -> Option<Vec<(u64, String)>> {
     if count == 0 {
         return Some(Vec::new());
     }
-    match hub.get_server_details(ip.to_string(), query_port).await {
+    match hub.get_server_details(addr).await {
         Ok(d) => Some(
             d.mods
                 .into_iter()
@@ -461,12 +463,13 @@ fn show(bus: &Bus, r: ConnectRequest) {
 
 async fn flow_server(hub: Hub, bus: Bus, s: ServerRow, known: Option<String>, snap: Snapshot) {
     let mut password = None;
+    let addr = SocketAddrV4::new(s.ip, s.query_port);
     if s.password {
         match password_for(
             &bus,
             &snap,
             &s.name,
-            &s.ip,
+            &s.ip.to_string(),
             &[s.query_port, s.game_port],
             known,
         )
@@ -476,20 +479,18 @@ async fn flow_server(hub: Hub, bus: Bus, s: ServerRow, known: Option<String>, sn
             Err(()) => return,
         }
     }
-    let Some(server_mods) = mods_of(&hub, &bus, &s.ip, s.query_port, s.mods_count, &s.name).await
-    else {
+    let Some(server_mods) = mods_of(&hub, &bus, addr, s.mods_count, &s.name).await else {
         return;
     };
     let launch = Launch::Listed {
-        ip: s.ip.clone(),
-        query_port: s.query_port,
+        addr,
         name: s.name.clone(),
         password,
     };
     let (missing, present) = split(&server_mods, &snap);
     let args = OpArgs {
-        ip: Some(s.ip.clone()),
-        port: Some(s.query_port),
+        ip: Some(s.ip.to_string()),
+        port: Some(i64::from(s.query_port)),
         ..OpArgs::default()
     };
     if !missing.is_empty() {
@@ -571,7 +572,15 @@ async fn flow_direct(hub: Hub, bus: Bus, mut t: Target, snap: Snapshot) {
         }
     }
     let server_mods = match &listed {
-        Some(l) => match mods_of(&hub, &bus, &t.ip, l.query_port, l.mods_count, &name).await {
+        Some(l) => match mods_of(
+            &hub,
+            &bus,
+            SocketAddrV4::new(l.ip, l.query_port),
+            l.mods_count,
+            &name,
+        )
+        .await
+        {
             Some(m) => m,
             None => return,
         },
@@ -635,8 +644,7 @@ async fn flow_direct(hub: Hub, bus: Bus, mut t: Target, snap: Snapshot) {
 async fn do_launch(hub: &Hub, bus: &Bus, l: Launch) {
     match l {
         Launch::Listed {
-            ip,
-            query_port,
+            addr,
             name,
             password,
         } => {
@@ -645,8 +653,8 @@ async fn do_launch(hub: &Hub, bus: &Bus, l: Launch) {
                 tf("connect", "connectLaunchingServer", &[("name", &name)]),
                 ToastTone::Neutral,
             );
-            let _ = hub.setup_mod_symlinks(ip.clone(), query_port).await;
-            match hub.launch_server(ip, query_port, password).await {
+            let _ = hub.setup_mod_symlinks(addr).await;
+            match hub.launch_server(addr, password).await {
                 Ok(()) => bus.step(
                     "launch",
                     t("connect", "connectWaitingSteam"),

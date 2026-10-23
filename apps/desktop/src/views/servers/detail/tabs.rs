@@ -57,21 +57,16 @@ pub fn players(ui: &mut Ui, cx: &Ctx, st: &mut DetailState, m: &Model, run: &mut
     let tk = ui.tokens();
     padded(ui, |ui| {
         // Steam friends on this server, by its query port or (unlisted) the port asked.
-        let qp = u16::try_from(m.query_port).unwrap_or(0);
-        let gp = u16::try_from(m.game_port).unwrap_or(0);
-        let mut mine: Vec<&str> = cx
-            .stores
-            .friends
-            .on(&m.ip, qp)
-            .map(|f| f.name.as_str())
-            .collect();
+        // Friends sit on IPv4 servers only: a host name has none.
+        let friends = &cx.stores.friends;
+        let on = |port: i64| -> Vec<&str> {
+            dz_api::addr(&m.ip, port)
+                .map(|a| friends.on(a).map(|f| f.name.as_str()).collect())
+                .unwrap_or_default()
+        };
+        let mut mine = on(m.query_port);
         if mine.is_empty() {
-            mine = cx
-                .stores
-                .friends
-                .on(&m.ip, gp)
-                .map(|f| f.name.as_str())
-                .collect();
+            mine = on(m.game_port);
         }
         if !mine.is_empty() {
             let s = tf("friends", "friendsHere", &[("names", &mine.join(", "))]);

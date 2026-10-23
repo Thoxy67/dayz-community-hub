@@ -88,9 +88,10 @@ fn one_or_many<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D:
 /// One row of the browser: the server with its freshest known state.
 #[derive(Serialize, Clone, Debug)]
 pub struct ServerRow {
-    pub game_port: i64,
-    pub ip: String,
-    pub query_port: i64,
+    /// 0 when unknown.
+    pub game_port: u16,
+    pub ip: dz_api::Ipv4Addr,
+    pub query_port: u16,
     pub name: String,
     pub map: String,
     /// Freshest known: the last successful query, else the list.
@@ -180,8 +181,12 @@ mod tests {
     use super::super::live::Live;
     use super::super::snapshot::ProfileView;
     use super::*;
-    use dz_api::{Endpoint, Server, ServerList};
+    use dz_api::{Server, ServerList, SocketAddrV4};
     use rustc_hash::FxHashSet;
+
+    fn at(ip: &str, port: u16) -> SocketAddrV4 {
+        SocketAddrV4::new(ip.parse().unwrap(), port)
+    }
 
     fn query() -> ServerQuery {
         ServerQuery {
@@ -217,11 +222,11 @@ mod tests {
     fn snap(
         list: ServerList,
         profile: &ProfileView,
-        pings: &[(&str, i64, u32)],
+        pings: &[(&str, u16, u32)],
     ) -> Arc<ServerSnapshot> {
         let s = Arc::new(ServerSnapshot::build(Arc::new(list), profile));
         for &(ip, port, ms) in pings {
-            s.put_live(ip, port, &ping(ms));
+            s.put_live(at(ip, port), &ping(ms));
         }
         s
     }
@@ -231,12 +236,9 @@ mod tests {
         (o.order.to_vec(), o.stats)
     }
 
-    fn timed(name: &str, qport: i64, players: i64, max: i64, time: &str) -> Server {
+    fn timed(name: &str, qport: u16, players: i64, max: i64, time: &str) -> Server {
         Server {
-            endpoint: Endpoint {
-                ip: "1.1.1.1".into(),
-                port: qport,
-            },
+            endpoint: at("1.1.1.1", qport),
             game_port: qport - 1,
             name: name.into(),
             map: "chernarusplus".into(),
@@ -247,12 +249,9 @@ mod tests {
         }
     }
 
-    fn server(ip: &str, qport: i64, players: i64, mods: usize) -> Server {
+    fn server(ip: &str, qport: u16, players: i64, mods: usize) -> Server {
         Server {
-            endpoint: Endpoint {
-                ip: ip.into(),
-                port: qport,
-            },
+            endpoint: at(ip, qport),
             game_port: qport - 1,
             name: format!("{ip}:{qport}"),
             map: "enoch".into(),
@@ -323,17 +322,33 @@ mod tests {
     }
 
     #[test]
+    fn a_search_finds_servers_by_their_address() {
+        // Named apart from their addresses: only the address can match.
+        let mut l = list();
+        for s in &mut l.result {
+            Arc::make_mut(s).name = "server".into();
+        }
+        let s = snap(l, &ProfileView::default(), &[]);
+        let mut q = query();
+        q.search = "2.2.2".into();
+        assert_eq!(compute(&s, &q).0, [1]);
+        q.search = " 3.3.3.3 ".into();
+        assert_eq!(compute(&s, &q).0, [2]);
+        q.search = "4.4".into();
+        assert!(compute(&s, &q).0.is_empty());
+    }
+
+    #[test]
     fn a_ping_lands_in_the_row_without_a_query() {
         let s = snap(list(), &ProfileView::default(), &[]);
         assert_eq!(s.get(1).unwrap().ping_ms(), None);
         let stamp = s.live_stamp();
-        s.put_live("2.2.2.2", 2, &ping(77));
+        s.put_live(at("2.2.2.2", 2), &ping(77));
         assert_eq!(s.get(1).unwrap().ping_ms(), Some(77));
         assert!(s.live_stamp() > stamp);
         // A failed one: a timeout, and the list's count stays.
         s.put_live(
-            "2.2.2.2",
-            2,
+            at("2.2.2.2", 2),
             &Live {
                 ms: Some(9999),
                 players: Some(1),
@@ -439,8 +454,8 @@ mod tests {
     #[test]
     fn excluded_ips_are_hidden_unless_asked_and_favorites_are_marked() {
         let profile = ProfileView {
-            excluded: ["2.2.2.2".to_string()].into_iter().collect(),
-            favorites: [("3.3.3.3".to_string(), vec![2])].into_iter().collect(),
+            excluded: [at("2.2.2.2", 1).ip().to_owned()].into_iter().collect(),
+            favorites: [at("3.3.3.3", 2)].into_iter().collect(),
             mods: None,
         };
         let s = snap(list(), &profile, &[]);
@@ -465,7 +480,7 @@ mod tests {
         let profile = ProfileView {
             excluded: FxHashSet::default(),
             // The favourite is saved under the game port.
-            favorites: [("2.2.2.2".to_string(), vec![1])].into_iter().collect(),
+            favorites: [at("2.2.2.2", 1)].into_iter().collect(),
             mods: None,
         };
         let s = snap(list(), &profile, &[]);
@@ -482,8 +497,8 @@ mod tests {
         let s = snap(list(), &ProfileView::default(), &[]);
         let o = order(&s, &query());
         assert_eq!((o.stats.pinged, o.stats.best_ping), (0, None));
-        s.put_live("2.2.2.2", 2, &ping(80));
-        s.put_live("3.3.3.3", 2, &ping(30));
+        s.put_live(at("2.2.2.2", 2), &ping(80));
+        s.put_live(at("3.3.3.3", 2), &ping(30));
         let stats = super::super::stats_of(&s, &o.order);
         assert_eq!((stats.pinged, stats.best_ping), (2, Some(30)));
         assert_eq!(stats, order(&s, &query()).stats, "the same as a new order");
@@ -531,7 +546,7 @@ mod tests {
         let page = run(&s, &q, 1);
         assert_eq!(page.total, 3);
         assert_eq!(page.rows.len(), 2);
-        assert_eq!(page.rows[0].ip, "2.2.2.2");
+        assert_eq!(page.rows[0].ip, *at("2.2.2.2", 1).ip());
         q.offset = 99;
         assert!(run(&s, &q, 1).rows.is_empty());
     }
@@ -552,7 +567,7 @@ mod tests {
         );
         let profile = ProfileView {
             excluded: FxHashSet::default(),
-            favorites: rustc_hash::FxHashMap::default(),
+            favorites: FxHashSet::default(),
             mods: Some([(0, false), (1, true)].into_iter().collect()),
         };
         let s = snap(one(), &profile, &[]);
@@ -563,9 +578,9 @@ mod tests {
     #[test]
     fn lookups_by_query_or_game_port() {
         let s = snap(list(), &ProfileView::default(), &[]);
-        assert_eq!(s.find("2.2.2.2", 2), Some(1));
-        assert_eq!(s.find("2.2.2.2", 1), Some(1), "the game port");
-        assert_eq!(s.find("9.9.9.9", 2), None);
+        assert_eq!(s.find(at("2.2.2.2", 2)), Some(1));
+        assert_eq!(s.find(at("2.2.2.2", 1)), Some(1), "the game port");
+        assert_eq!(s.find(at("9.9.9.9", 2)), None);
     }
 
     #[test]

@@ -9,6 +9,7 @@
 //! answered) is laid out again on its own. Icons come from the texture cache.
 
 use std::hash::{Hash, Hasher};
+use std::net::Ipv4Addr;
 use std::sync::Arc;
 
 use egui::{
@@ -129,10 +130,41 @@ impl ListColumns {
     }
 }
 
+/// A server's IP as a row holds it: the list's address (a number), or the text a
+/// favourite or a typed address keeps, which may be a host name. Shown, copied and
+/// hashed the same either way: text that is an IPv4 address is read as one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Host<'a> {
+    V4(Ipv4Addr),
+    Name(&'a str),
+}
+
+impl<'a> Host<'a> {
+    /// `text` as a host: an IPv4 address when it is one.
+    pub fn of(text: &'a str) -> Self {
+        text.trim().parse().map_or(Host::Name(text), Host::V4)
+    }
+}
+
+impl Default for Host<'_> {
+    fn default() -> Self {
+        Host::Name("")
+    }
+}
+
+impl std::fmt::Display for Host<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Host::V4(ip) => ip.fmt(f),
+            Host::Name(name) => f.write_str(name),
+        }
+    }
+}
+
 /// What a row shows, borrowed from wherever it lives (a `ServerRow`, a favourite).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RowData<'a> {
-    pub ip: &'a str,
+    pub ip: Host<'a>,
     pub query_port: i64,
     /// The port players connect to: the address shown and copied.
     pub game_port: i64,
@@ -174,10 +206,10 @@ impl<'a> RowData<'a> {
     pub fn from_server(r: &dz_hub::features::browser::ServerRef<'a>) -> Self {
         let s = r.server;
         Self {
-            ip: &s.endpoint.ip,
-            query_port: s.endpoint.port,
-            game_port: s.game_port,
-            join_port: s.endpoint.port,
+            ip: Host::V4(s.ip()),
+            query_port: i64::from(s.query_port()),
+            game_port: i64::from(s.game_port),
+            join_port: i64::from(s.query_port()),
             name: &s.name,
             map: r.map,
             time: &s.time,
@@ -211,10 +243,10 @@ impl<'a> RowData<'a> {
     /// A listed server, as the hub's page gives it.
     pub fn from_row(r: &'a dz_hub::features::browser::ServerRow) -> Self {
         Self {
-            ip: &r.ip,
-            query_port: r.query_port,
-            game_port: r.game_port,
-            join_port: r.query_port,
+            ip: Host::V4(r.ip),
+            query_port: i64::from(r.query_port),
+            game_port: i64::from(r.game_port),
+            join_port: i64::from(r.query_port),
             name: &r.name,
             map: &r.map,
             time: &r.time,
@@ -1200,7 +1232,7 @@ fn paint_tag(ui: &Ui, x: f32, cy: f32, g: &Arc<Galley>, tag: RowTag<'_>, id: Id,
 /// items. Call inside `menu::context`; answers the item chosen.
 pub fn server_menu(
     ui: &mut Ui,
-    ip: &str,
+    ip: impl std::fmt::Display,
     favorite: bool,
     excluded: bool,
     show_mods: bool,
@@ -1484,7 +1516,7 @@ mod tests {
         ctx.set_fonts(crate::theme::fonts::definitions());
         let mut row = dz_hub::features::browser::ServerRow {
             game_port: 2302,
-            ip: "45.0.0.0".into(),
+            ip: dz_api::Ipv4Addr::new(45, 0, 0, 0),
             query_port: 2303,
             name: "4100 | EUROPE - DE".into(),
             map: "chernarusplus".into(),

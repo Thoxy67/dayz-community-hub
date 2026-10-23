@@ -24,7 +24,7 @@
 //!   - `servers_snapshot(&self) -> Arc<ServerSnapshot>` (native: rows by index, live state in atomics)
 //!   - `servers_order(&self, query: ServerQuery) -> Result<ServerOrder, String>` (native: `Arc<[u32]>` + stats)
 //!   - `servers_query(&self, query: ServerQuery) -> Result<ServerPage, String>`
-//!   - `servers_lookup(&self, keys: Vec<String>) -> Result<Vec<Option<ServerRow>>, String>`
+//!   - `servers_lookup(&self, keys: Vec<SocketAddrV4>) -> Result<Vec<Option<ServerRow>>, String>`
 //!   - `server_maps(&self) -> Result<Vec<MapCount>, String>`
 //!   - `start_scan(&self) -> Result<ScanProgress, String>`
 //! - `dzch_cli`:
@@ -39,8 +39,8 @@
 //! - `launch`:
 //!   - `toggle_launch_option(&self, key: String) -> Result<bool, String>`
 //!   - `set_launch_option_value(&self, key: String, value: Option<String>) -> Result<(), String>`
-//!   - `launch_server(&self, ip: String, port: i64, password: Option<String>) -> Result<(), String>`
-//!   - `launch_direct(&self, ip: String, game_port: u16, password: Option<String>, extra_args: Option<Vec<String>>) -> Result<(), String>`
+//!   - `launch_server(&self, addr: SocketAddrV4, password: Option<String>) -> Result<(), String>`
+//!   - `launch_direct(&self, host: String, game_port: u16, password: Option<String>, extra_args: Option<Vec<String>>) -> Result<(), String>`
 //!   - `steam_launch_info(&self) -> Result<SteamLaunchInfoDto, String>`
 //!   - `game_running(&self) -> Result<bool, String>`
 //!   - `kill_game(&self) -> Result<u32, String>`
@@ -62,7 +62,7 @@
 //!   - `cleanup_mods(&self) -> Result<String, String>`
 //!   - `open_workshop_dir(&self) -> Result<std::path::PathBuf, String>`
 //!   - `open_mod_dir(&self, mod_id: u64) -> Result<std::path::PathBuf, String>`
-//!   - `setup_mod_symlinks(&self, ip: String, port: i64) -> Result<(), String>`
+//!   - `setup_mod_symlinks(&self, addr: SocketAddrV4) -> Result<(), String>`
 //! - `native`:
 //!   - `geolocate_ip(&self) -> Result<GeoLocation, String>`
 //! - `news::images`:
@@ -84,7 +84,7 @@
 //!   - `launch_offline_mission(&self, mission: String) -> Result<(), String>`
 //!   - `open_mission_dir(&self, mission: String) -> Result<std::path::PathBuf, String>`
 //! - `ping`:
-//!   - `ping_servers(&self, targets: Vec<String>, concurrency: Option<usize>, timeout_ms: Option<u64>) -> Result<(), String>`
+//!   - `ping_servers(&self, targets: Vec<SocketAddrV4>, concurrency: Option<usize>, timeout_ms: Option<u64>) -> Result<(), String>`
 //!   - `ping_scan_state(&self) -> Result<ScanState, String>`
 //!   - `ping_single(&self, ip: String, port: i64, timeout_ms: Option<u64>) -> Result<u32, String>`
 //!   - `cancel_ping(&self) -> Result<(), String>`
@@ -106,7 +106,7 @@
 //! - `servers`:
 //!   - `check_first_launch(&self) -> bool`
 //!   - `initialize(&self) -> Result<InitResult, String>`
-//!   - `get_server_details(&self, ip: String, port: i64) -> Result<ServerDto, String>`
+//!   - `get_server_details(&self, addr: SocketAddrV4) -> Result<ServerDto, String>`
 //!   - `set_steam_server_list(&self, enabled: bool) -> Result<(), String>`
 //!   - `get_app_stats(&self) -> Result<AppStatsDto, String>`
 //! - `servers::refresh`:
@@ -165,6 +165,12 @@
 //!   `mod_op_attach()` returns the snapshot (steps at or below its `seq` are
 //!   in it). `install_update` takes no `on_event`: `HubEvent::UpdateDownload`.
 //!   `ping_servers` takes no `on_progress`: `HubEvent::PingResults`.
+//! - **Listed servers by address as numbers**: `servers_lookup`,
+//!   `ping_servers`, `get_server_details`, `launch_server` and
+//!   `setup_mod_symlinks` take a [`dz_api::SocketAddrV4`] for the old `"ip:port"`
+//!   or `(ip, port)`; the DTOs' `ip` is an `Ipv4Addr` (the same JSON). The
+//!   one-offs that may get a host name typed in Direct Connect (`query_a2s`,
+//!   `ping_single`, `launch_direct`) keep the address as text.
 //! - **News**: `fetch_news` never opens a WebView; when Cloudflare blocks,
 //!   its error starts with `"blocked:"` ([`features::news::BLOCKED_PREFIX`]).
 //!   `fetch_image` returns the cached file's `PathBuf` and

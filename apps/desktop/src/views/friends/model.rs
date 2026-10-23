@@ -6,6 +6,7 @@
 
 use std::cmp::Ordering;
 
+use dz_api::{Ipv4Addr, SocketAddrV4};
 use dz_hub::features::friends::{FriendDto, FriendStatus};
 
 /// A group of the list, in its fixed order.
@@ -34,7 +35,7 @@ impl Group {
 /// Friends on one server: the friend rows, then the server's row under them.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Block {
-    pub ip: String,
+    pub ip: Ipv4Addr,
     /// The port friends are on: the listed server's query port, else the game port.
     pub port: u16,
     /// The list knows the server (Steam's answer named it).
@@ -132,7 +133,7 @@ fn is_away(s: FriendStatus) -> bool {
 
 /// What a friend's server is called and on which map, from the listed row when the list
 /// has it (`server_of` gives it), else from Steam's answer.
-pub type ServerOf<'a> = dyn Fn(&str, u16) -> Option<(String, String)> + 'a;
+pub type ServerOf<'a> = dyn Fn(SocketAddrV4) -> Option<(String, String)> + 'a;
 
 /// Whether `f` matches `q` (trimmed, lower case; empty matches all): its name, its game,
 /// its server's name or map.
@@ -147,7 +148,7 @@ pub fn matches(f: &FriendDto, q: &str, server_of: &ServerOf) -> bool {
     let Some(s) = &f.server else {
         return false;
     };
-    let listed = server_of(&s.ip, s.port);
+    let listed = server_of(SocketAddrV4::new(s.ip, s.port));
     let name = listed.as_ref().map(|l| l.0.as_str()).or(s.name.as_deref());
     let map = listed.as_ref().map(|l| l.1.as_str()).or(s.map.as_deref());
     name.is_some_and(has) || map.is_some_and(has)
@@ -183,14 +184,14 @@ impl Model {
             match blocks.iter_mut().find(|b| b.ip == s.ip && b.port == s.port) {
                 Some(b) => b.who.push(i),
                 None => blocks.push(Block {
-                    ip: s.ip.clone(),
+                    ip: s.ip,
                     port: s.port,
                     listed: s.name.is_some(),
                     who: vec![i],
                     name: s.name.clone(),
                     map: s.map.clone(),
                     here: Vec::new(),
-                    known: server_of(&s.ip, s.port).is_some(),
+                    known: server_of(SocketAddrV4::new(s.ip, s.port)).is_some(),
                 }),
             }
         }
@@ -324,7 +325,7 @@ mod tests {
             game: game.map(str::to_string),
             in_dayz: game == Some("DayZ"),
             server: at.map(|(ip, port)| FriendServerDto {
-                ip: ip.to_string(),
+                ip: ip.parse().unwrap(),
                 port,
                 name: (ip != "9.9.9.9").then(|| format!("srv {ip}")),
                 map: Some("chernarusplus".to_string()),
@@ -335,7 +336,7 @@ mod tests {
         }
     }
 
-    fn none(_: &str, _: u16) -> Option<(String, String)> {
+    fn none(_: SocketAddrV4) -> Option<(String, String)> {
         None
     }
 
@@ -354,7 +355,7 @@ mod tests {
         let m = Model::build(&list, "", &none);
         assert_eq!(m.shown, 7);
         // The busier server first; its friends by name, case aside.
-        assert_eq!(m.blocks[0].ip, "2.2.2.2");
+        assert_eq!(m.blocks[0].ip.to_string(), "2.2.2.2");
         assert_eq!(m.blocks[0].who, vec![2, 1]);
         assert_eq!(m.blocks[0].here.len(), 2);
         // Steam named both servers but the (empty) list knows neither: short rows.
@@ -378,7 +379,7 @@ mod tests {
             ]
         );
         // A server the list knows gets the full row, and room after it.
-        let known = |_: &str, _: u16| Some(("Frontline".to_string(), "enoch".to_string()));
+        let known = |_: SocketAddrV4| Some(("Frontline".to_string(), "enoch".to_string()));
         let k = Model::build(&list, "", &known);
         assert!(k.blocks.iter().all(Block::full));
         assert_eq!(
@@ -411,7 +412,7 @@ mod tests {
         assert_eq!(Model::build(&list, "  COUNTER ", &none).shown, 1);
         assert_eq!(Model::build(&list, "srv 1.1", &none).shown, 1);
         assert_eq!(Model::build(&list, "chernarus", &none).shown, 1);
-        let listed = |_: &str, _: u16| Some(("Frontline".to_string(), "enoch".to_string()));
+        let listed = |_: SocketAddrV4| Some(("Frontline".to_string(), "enoch".to_string()));
         assert_eq!(Model::build(&list, "frontline", &listed).shown, 1);
         let m = Model::build(&list, "nobody", &none);
         assert_eq!(m.shown, 0);
@@ -431,7 +432,7 @@ mod tests {
         assert!(!m.blocks[0].full());
         assert_eq!(m.blocks[0].key(), "9.9.9.9:2302");
         // Even if the list had a row at that address, an unnamed server stays short.
-        let any = |_: &str, _: u16| Some((String::new(), String::new()));
+        let any = |_: SocketAddrV4| Some((String::new(), String::new()));
         assert!(!Model::build(&list, "", &any).blocks[0].full());
     }
 }

@@ -23,7 +23,6 @@ use async_a2s::info::Info;
 use dz_common::{Error, Result};
 use exchange::info_within;
 
-use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
 /// Sentinel RTT reported when a query fails. The window shows any value
@@ -46,12 +45,6 @@ pub struct Ping {
 fn duration_to_ms_floor1(d: Duration) -> u32 {
     let ms = d.as_millis() as u32;
     if ms == 0 && d.as_micros() > 0 { 1 } else { ms }
-}
-
-/// The address to query for `ip` and `port`, when they make one.
-pub fn socket_addr(ip: &str, port: i64) -> Option<SocketAddr> {
-    let ip: IpAddr = ip.parse().ok()?;
-    Some(SocketAddr::new(ip, u16::try_from(port).ok()?))
 }
 
 /// What A2S_INFO answered.
@@ -148,20 +141,6 @@ mod tests {
             Ok(p) => println!("PING ok: {p:?}"),
             Err(e) => println!("PING error: {e}"),
         }
-    }
-
-    #[test]
-    fn addresses_of_either_family() {
-        assert_eq!(
-            socket_addr("1.2.3.4", 27016),
-            Some("1.2.3.4:27016".parse().unwrap())
-        );
-        assert_eq!(
-            socket_addr("::1", 2303),
-            Some("[::1]:2303".parse().unwrap())
-        );
-        assert_eq!(socket_addr("1.2.3.4", 70_000), None);
-        assert_eq!(socket_addr("nope", 1), None);
     }
 
     #[test]

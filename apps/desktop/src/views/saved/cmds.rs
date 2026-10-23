@@ -124,13 +124,12 @@ fn entry(cx: &Ctx, kind: Kind, a: &Value) -> Option<super::Entry> {
         let listed = cx
             .stores
             .servers
-            .row(ip, port)
+            .row_of(ip, port)
             .map(|r| (r.query_port(), r.game_port()));
         return entries.into_iter().find(|e| {
             e.ip == ip
                 && (i64::from(e.port) == port
-                    || listed
-                        .is_some_and(|(q, g)| i64::from(e.port) == q || i64::from(e.port) == g))
+                    || listed.is_some_and(|(q, g)| e.port == q || e.port == g))
         });
     }
     let sel = shared(cx.egui, kind).lock().sel.clone()?;

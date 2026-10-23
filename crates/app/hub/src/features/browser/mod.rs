@@ -25,7 +25,7 @@ pub(crate) use snapshot::ProfileView;
 pub use snapshot::{ServerOrder, ServerRef, ServerSnapshot, order, stats_of};
 
 use crate::{Hub, HubEvent};
-use dz_api::ServerList;
+use dz_api::{ServerList, SocketAddrV4};
 use futures_util::{StreamExt, stream};
 use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
@@ -59,17 +59,16 @@ pub struct MapCount {
 pub(crate) fn profile_view(s: &AppState) -> snapshot::ProfileView {
     let p = s.ctl.profile();
     snapshot::ProfileView {
-        excluded: p.excluded_ips.iter().cloned().collect(),
-        favorites: p.favorites.iter().fold(
-            rustc_hash::FxHashMap::default(),
-            |mut by_ip: rustc_hash::FxHashMap<String, Vec<i64>>, f| {
-                by_ip
-                    .entry(f.ip.clone())
-                    .or_default()
-                    .push(i64::from(f.port));
-                by_ip
-            },
-        ),
+        excluded: p
+            .excluded_ips
+            .iter()
+            .filter_map(|ip| ip.trim().parse().ok())
+            .collect(),
+        favorites: p
+            .favorites
+            .iter()
+            .filter_map(|f| dz_api::addr(&f.ip, i64::from(f.port)))
+            .collect(),
         mods: s.mods_on_disk.as_ref().map(|disk| {
             disk.iter()
                 .map(|(&id, &local)| {
@@ -101,17 +100,17 @@ async fn servers_query(hub: &Hub, query: ServerQuery) -> Result<ServerPage, Stri
         .cmd_err()
 }
 
-/// Full rows for "ip:port" keys (query or game port), in the same order;
-/// null for a server that is not in the list.
-async fn servers_lookup(hub: &Hub, keys: Vec<String>) -> Result<Vec<Option<ServerRow>>, String> {
+/// Full rows for addresses (query or game port), in the same order; null
+/// for a server that is not in the list.
+async fn servers_lookup(
+    hub: &Hub,
+    keys: Vec<SocketAddrV4>,
+) -> Result<Vec<Option<ServerRow>>, String> {
     hub.state()?;
     let snap = live::store().snapshot();
     Ok(keys
-        .iter()
-        .map(|k| {
-            let (ip, port) = ping::parse_target(k)?;
-            snap.lookup(ip, port).map(|r| r.to_row())
-        })
+        .into_iter()
+        .map(|k| snap.lookup(k).map(|r| r.to_row()))
         .collect())
 }
 
@@ -125,27 +124,37 @@ async fn server_maps(hub: &Hub) -> Result<Vec<MapCount>, String> {
 
 /// Every query address to scan, in order: favorites, then history, then the
 /// rest, as far as the profile's scopes allow, leaving excluded IPs out.
-fn scan_targets(s: &AppState) -> Vec<String> {
+/// The profile's addresses are read once; the list's are numbers already,
+/// so the ten thousand targets are copied, not written out.
+fn scan_targets(s: &AppState) -> Vec<SocketAddrV4> {
     let p = s.ctl.profile();
-    let excluded: FxHashSet<&str> = p.excluded_ips.iter().map(String::as_str).collect();
-    let favorites: FxHashSet<String> = p
+    let excluded: FxHashSet<dz_api::Ipv4Addr> = p
+        .excluded_ips
+        .iter()
+        .filter_map(|ip| ip.trim().parse().ok())
+        .collect();
+    let favorites: FxHashSet<SocketAddrV4> = p
         .favorites
         .iter()
-        .map(|f| format!("{}:{}", f.ip, f.port))
+        .filter_map(|f| dz_api::addr(&f.ip, i64::from(f.port)))
         .collect();
-    let history: FxHashSet<String> = p
+    let history: FxHashSet<SocketAddrV4> = p
         .history
         .iter()
-        .map(|h| format!("{}:{}", h.ip, h.port))
+        .filter_map(|h| dz_api::addr(&h.ip, i64::from(h.port)))
         .filter(|k| !favorites.contains(k))
         .collect();
 
-    let (mut fav, mut hist, mut rest) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut fav, mut hist, mut rest) = (
+        Vec::new(),
+        Vec::new(),
+        Vec::with_capacity(s.servers.result.len()),
+    );
     for srv in &s.servers.result {
-        if excluded.contains(srv.endpoint.ip.as_str()) {
+        if excluded.contains(srv.endpoint.ip()) {
             continue;
         }
-        let key = format!("{}:{}", srv.endpoint.ip, srv.endpoint.port);
+        let key = srv.endpoint;
         if favorites.contains(&key) {
             if p.ping_scan_favorites {
                 fav.push(key);
@@ -229,22 +238,19 @@ pub(crate) fn verify_full_servers(list: Arc<ServerList>) {
     if scan_covers_list() {
         return;
     }
-    let targets: Vec<(String, i64)> = list
+    let targets: Vec<SocketAddrV4> = list
         .result
         .iter()
         .filter(|s| s.players > 0 && s.players >= s.max_players)
-        .map(|s| (s.endpoint.ip.clone(), s.endpoint.port))
+        .map(|s| s.endpoint)
         .collect();
     let handle = tokio::spawn(async move {
-        let targets = stream::iter(targets.into_iter().filter_map(|(ip, port)| {
-            let addr = dz_a2s::socket_addr(&ip, port)?;
-            Some(((ip, port), addr))
-        }));
+        let targets = stream::iter(targets.into_iter().map(|a| (a, a.into())));
         crate::net::a2s()
             .infos(targets, VERIFY_TIMEOUT)
-            .for_each(|((ip, port), r)| {
+            .for_each(|(addr, r)| {
                 let r = r.map(|a| a.ping());
-                live::store().record(&ip, port, live::Live::from_result(&r));
+                live::store().record(addr, live::Live::from_result(&r));
                 std::future::ready(())
             })
             .await;
@@ -304,11 +310,11 @@ impl Hub {
         servers_query(self, query).await
     }
 
-    /// Full rows for "ip:port" keys (query or game port), in the same order;
+    /// Full rows for addresses (query or game port), in the same order;
     /// `None` for a server that is not in the list.
     pub async fn servers_lookup(
         &self,
-        keys: Vec<String>,
+        keys: Vec<SocketAddrV4>,
     ) -> Result<Vec<Option<ServerRow>>, String> {
         servers_lookup(self, keys).await
     }

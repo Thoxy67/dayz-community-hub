@@ -25,7 +25,7 @@ pub fn build_launch_args(
     }
 
     // Connection
-    args.push(format!("-connect={}", server.endpoint.ip));
+    args.push(format!("-connect={}", server.ip()));
     args.push(format!("-port={}", server.game_port));
 
     // Password
@@ -74,10 +74,7 @@ mod tests {
     fn args_carry_mods_address_password_and_options() {
         let server = Server {
             game_port: 2402,
-            endpoint: dz_api::Endpoint {
-                ip: "1.2.3.4".into(),
-                port: 27016,
-            },
+            endpoint: "1.2.3.4:27016".parse().unwrap(),
             ..Default::default()
         };
         let args = build_launch_args(

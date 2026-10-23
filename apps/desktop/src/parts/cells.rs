@@ -1036,7 +1036,7 @@ impl<'a> ExcludeButton<'a> {
 }
 
 /// The ban's label for `ip`.
-pub fn exclude_label(ip: &str, on: bool) -> String {
+pub fn exclude_label(ip: impl std::fmt::Display, on: bool) -> String {
     if on {
         tf("servers", "ipExcludedClick", &[("ip", &ip)])
     } else {

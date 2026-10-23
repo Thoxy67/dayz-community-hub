@@ -9,6 +9,7 @@
 //! snapshot's live table too (under the same lock, so a snapshot being
 //! published never misses one), where the window's rows read it.
 
+use dz_api::SocketAddrV4;
 use rustc_hash::FxHashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, RwLock, RwLockReadGuard};
@@ -57,49 +58,33 @@ impl Live {
     }
 }
 
-/// Live entries by IP, then query port, each with when it was recorded.
-/// Keyed by IP alone so a lookup borrows the caller's `&str` instead of
-/// formatting "ip:port".
+/// Live entries by query address, each with when it was recorded. Keyed by
+/// the address itself: a lookup or a write builds no key and copies no text.
 #[derive(Default)]
 pub(crate) struct LiveMap {
-    by_ip: FxHashMap<Box<str>, Vec<(i64, Live, Instant)>>,
+    by_addr: FxHashMap<SocketAddrV4, (Live, Instant)>,
 }
 
 impl LiveMap {
-    pub(crate) fn get(&self, ip: &str, port: i64) -> Option<&Live> {
-        self.entry(ip, port).map(|(_, l, _)| l)
+    pub(crate) fn get(&self, addr: SocketAddrV4) -> Option<&Live> {
+        self.by_addr.get(&addr).map(|(l, _)| l)
     }
 
-    /// The entry for `ip:port` if it was recorded less than `within` ago.
-    pub(crate) fn fresh(&self, ip: &str, port: i64, within: Duration) -> Option<&Live> {
-        self.entry(ip, port)
-            .filter(|(_, _, at)| at.elapsed() < within)
-            .map(|(_, l, _)| l)
+    /// The entry for `addr` if it was recorded less than `within` ago.
+    pub(crate) fn fresh(&self, addr: SocketAddrV4, within: Duration) -> Option<&Live> {
+        self.by_addr
+            .get(&addr)
+            .filter(|(_, at)| at.elapsed() < within)
+            .map(|(l, _)| l)
     }
 
-    fn entry(&self, ip: &str, port: i64) -> Option<&(i64, Live, Instant)> {
-        self.by_ip.get(ip)?.iter().find(|(p, ..)| *p == port)
+    pub(crate) fn put(&mut self, addr: SocketAddrV4, live: Live) {
+        self.by_addr.insert(addr, (live, Instant::now()));
     }
 
-    pub(crate) fn put(&mut self, ip: &str, port: i64, live: Live) {
-        let now = Instant::now();
-        if let Some(slots) = self.by_ip.get_mut(ip) {
-            match slots.iter_mut().find(|(p, ..)| *p == port) {
-                Some((_, l, at)) => (*l, *at) = (live, now),
-                None => slots.push((port, live, now)),
-            }
-        } else {
-            self.by_ip.insert(ip.into(), vec![(port, live, now)]);
-        }
-    }
-
-    /// The entry for `ip:port`, to change, marked as recorded now.
-    fn get_mut(&mut self, ip: &str, port: i64) -> Option<&mut Live> {
-        let (_, l, at) = self
-            .by_ip
-            .get_mut(ip)?
-            .iter_mut()
-            .find(|(p, ..)| *p == port)?;
+    /// The entry for `addr`, to change, marked as recorded now.
+    fn get_mut(&mut self, addr: SocketAddrV4) -> Option<&mut Live> {
+        let (l, at) = self.by_addr.get_mut(&addr)?;
         *at = Instant::now();
         Some(l)
     }
@@ -164,14 +149,14 @@ impl LiveStore {
         self.touch();
     }
 
-    /// Record a query's result for `ip:port`.
-    pub(crate) fn record(&self, ip: &str, port: i64, live: Live) {
+    /// Record a query's result for the query address `addr`.
+    pub(crate) fn record(&self, addr: SocketAddrV4, live: Live) {
         let mut map = self
             .map
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        map.put(ip, port, live);
-        self.snapshot().put_live(ip, port, &live);
+        map.put(addr, live);
+        self.snapshot().put_live(addr, &live);
         drop(map);
         self.dirty.store(true, Ordering::Release);
         self.changed.notify_one();
@@ -179,19 +164,12 @@ impl LiveStore {
 
     /// Update only the player counts (from an A2S details query), keeping
     /// the ping that is there.
-    pub(crate) fn record_counts(
-        &self,
-        ip: &str,
-        port: i64,
-        players: u8,
-        max_players: u8,
-        bots: u8,
-    ) {
+    pub(crate) fn record_counts(&self, addr: SocketAddrV4, players: u8, max_players: u8, bots: u8) {
         let mut map = self
             .map
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let live = match map.get_mut(ip, port) {
+        let live = match map.get_mut(addr) {
             Some(l) => {
                 l.players = Some(players);
                 l.max_players = Some(max_players);
@@ -207,11 +185,11 @@ impl LiveStore {
                     bots: Some(bots),
                     failed: false,
                 };
-                map.put(ip, port, l);
+                map.put(addr, l);
                 l
             }
         };
-        self.snapshot().put_live(ip, port, &live);
+        self.snapshot().put_live(addr, &live);
         drop(map);
         self.dirty.store(true, Ordering::Release);
         self.changed.notify_one();

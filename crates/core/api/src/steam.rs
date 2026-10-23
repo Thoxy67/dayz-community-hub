@@ -20,17 +20,18 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::sync::Arc;
 
-use crate::{Endpoint, Mod, Server, tags_say_official};
+use crate::{Ipv4Addr, Mod, Server, SocketAddrV4, tags_say_official};
 
 /// Empty servers listed on one address from which the address is a farm.
 pub const FARM_ADDRESS: usize = 20;
 
 /// One server Steam listed, as it answered A2S.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SteamListed {
-    pub ip: String,
-    pub query_port: i64,
-    pub game_port: i64,
+    /// Its query address.
+    pub addr: SocketAddrV4,
+    /// 0 when unknown.
+    pub game_port: u16,
     pub name: String,
     pub map: String,
     /// DayZ's gametags.
@@ -58,12 +59,9 @@ impl SteamListed {
             game_port: if self.game_port > 0 {
                 self.game_port
             } else {
-                self.query_port
+                self.addr.port()
             },
-            endpoint: Endpoint {
-                ip: self.ip.clone(),
-                port: self.query_port,
-            },
+            endpoint: self.addr,
             name: self.name.clone(),
             map: self.map.clone(),
             players: if self.empty == Some(true) {
@@ -98,29 +96,22 @@ pub(crate) fn game_time(tags: &[&str]) -> String {
 /// Steam does not count players on, to tell farms.
 #[derive(Debug, Default, Clone)]
 pub struct FarmCounter {
-    seen: FxHashSet<(String, i64)>,
-    per_ip: FxHashMap<String, usize>,
+    seen: FxHashSet<SocketAddrV4>,
+    per_ip: FxHashMap<Ipv4Addr, usize>,
 }
 
 impl FarmCounter {
-    /// One listed server; servers with players counted by Steam are real
-    /// wherever they sit, and do not count.
-    pub fn add(&mut self, ip: &str, query_port: i64, empty: Option<bool>) {
-        if empty != Some(false) && self.seen.insert((ip.to_owned(), query_port)) {
-            // An address is counted many times (that is what a farm is): its
-            // string is made once, not per server.
-            match self.per_ip.get_mut(ip) {
-                Some(n) => *n += 1,
-                None => {
-                    self.per_ip.insert(ip.to_owned(), 1);
-                }
-            }
+    /// One listed server, by its query address; servers with players
+    /// counted by Steam are real wherever they sit, and do not count.
+    pub fn add(&mut self, addr: SocketAddrV4, empty: Option<bool>) {
+        if empty != Some(false) && self.seen.insert(addr) {
+            *self.per_ip.entry(*addr.ip()).or_default() += 1;
         }
     }
 
     /// Whether `ip` carries [`FARM_ADDRESS`] or more such servers.
-    pub fn is_farm(&self, ip: &str) -> bool {
-        self.per_ip.get(ip).is_some_and(|&n| n >= FARM_ADDRESS)
+    pub fn is_farm(&self, ip: Ipv4Addr) -> bool {
+        self.per_ip.get(&ip).is_some_and(|&n| n >= FARM_ADDRESS)
     }
 }
 
@@ -150,8 +141,7 @@ impl SteamRow {
     /// stands for them.
     pub fn from_server(server: Arc<Server>) -> Self {
         let listed = SteamListed {
-            ip: server.endpoint.ip.clone(),
-            query_port: server.endpoint.port,
+            addr: server.endpoint,
             game_port: server.game_port,
             name: server.name.clone(),
             map: server.map.clone(),
@@ -242,24 +232,23 @@ pub fn merged_steam(
 type Addition = (usize, bool);
 
 /// What merging `listed` into `list` does: the positions to mark official
-/// and the servers to add, decided with keys borrowed from both lists (an
-/// index keyed by a copy of every address made ten thousand strings or more
-/// for each merge).
+/// and the servers to add, keyed by address (integers: nothing copied for
+/// the ten thousand servers of each merge).
 fn plan<'a>(
     list: &[Arc<Server>],
     listed: impl Iterator<Item = &'a SteamListed>,
     farms: &FarmCounter,
 ) -> (Vec<usize>, Vec<Addition>) {
-    let at: FxHashMap<(&str, i64), usize> = list
+    let at: FxHashMap<SocketAddrV4, usize> = list
         .iter()
         .enumerate()
-        .map(|(i, s)| ((s.endpoint.ip.as_str(), s.endpoint.port), i))
+        .map(|(i, s)| (s.endpoint, i))
         .collect();
     let mut mark: Vec<usize> = Vec::new();
     let mut add: Vec<Addition> = Vec::new();
-    let mut added: FxHashMap<(&str, i64), usize> = FxHashMap::default();
+    let mut added: FxHashMap<SocketAddrV4, usize> = FxHashMap::default();
     for (j, s) in listed.enumerate() {
-        let key = (s.ip.as_str(), s.query_port);
+        let key = s.addr;
         if let Some(&i) = at.get(&key) {
             if tags_say_official(&s.tags) {
                 mark.push(i);
@@ -274,7 +263,7 @@ fn plan<'a>(
             }
             continue;
         }
-        if s.empty != Some(false) && farms.is_farm(&s.ip) {
+        if s.empty != Some(false) && farms.is_farm(*s.addr.ip()) {
             continue;
         }
         added.insert(key, add.len());
@@ -287,10 +276,9 @@ fn plan<'a>(
 mod tests {
     use super::*;
 
-    fn listed(ip: &str, port: i64, empty: Option<bool>) -> SteamListed {
+    fn listed(ip: &str, port: u16, empty: Option<bool>) -> SteamListed {
         SteamListed {
-            ip: ip.into(),
-            query_port: port,
+            addr: SocketAddrV4::new(ip.parse().unwrap(), port),
             game_port: port - 1,
             name: format!("{ip}:{port}"),
             map: "chernarusplus".into(),
@@ -299,15 +287,17 @@ mod tests {
             max_players: 60,
             password: false,
             secure: true,
+            version: String::new(),
+            environment: String::new(),
+            mods: Vec::new(),
             empty,
-            ..Default::default()
         }
     }
 
     fn counted(rows: &[SteamListed]) -> FarmCounter {
         let mut f = FarmCounter::default();
         for r in rows {
-            f.add(&r.ip, r.query_port, r.empty);
+            f.add(r.addr, r.empty);
         }
         f
     }
@@ -316,12 +306,9 @@ mod tests {
         merge_steam(list, rows, &counted(rows))
     }
 
-    fn known(ip: &str, port: i64) -> Arc<Server> {
+    fn known(ip: &str, port: u16) -> Arc<Server> {
         Arc::new(Server {
-            endpoint: Endpoint {
-                ip: ip.into(),
-                port,
-            },
+            endpoint: SocketAddrV4::new(ip.parse().unwrap(), port),
             name: "known".into(),
             ..Default::default()
         })
@@ -355,7 +342,7 @@ mod tests {
 
     #[test]
     fn a_farm_address_is_left_out_but_its_counted_players_are_not() {
-        let mut rows: Vec<SteamListed> = (0..FARM_ADDRESS as i64)
+        let mut rows: Vec<SteamListed> = (0..FARM_ADDRESS as u16)
             .map(|i| listed("6.6.6.6", 30000 + i, Some(true)))
             .collect();
         rows.push(listed("6.6.6.6", 2303, Some(false)));
@@ -363,13 +350,11 @@ mod tests {
         rows.extend((0..5).map(|i| listed("7.7.7.7", 27016 + i, Some(true))));
         let mut list = Vec::new();
         merge(&mut list, &rows);
-        let farm: Vec<_> = list.iter().filter(|s| s.endpoint.ip == "6.6.6.6").collect();
+        let on = |ip: [u8; 4]| list.iter().filter(move |s| s.ip() == Ipv4Addr::from(ip));
+        let farm: Vec<_> = on([6, 6, 6, 6]).collect();
         assert_eq!(farm.len(), 1);
-        assert_eq!(farm[0].endpoint.port, 2303);
-        assert_eq!(
-            list.iter().filter(|s| s.endpoint.ip == "7.7.7.7").count(),
-            5
-        );
+        assert_eq!(farm[0].query_port(), 2303);
+        assert_eq!(on([7, 7, 7, 7]).count(), 5);
     }
 
     #[test]
@@ -408,7 +393,7 @@ mod tests {
         official.tags = "battleye,shard000,lqs0,etm5.400000,entm2.170000,20:16".into();
         let mut list = vec![known("9.9.9.9", 27016)];
         let mut also = official.clone();
-        also.ip = "9.9.9.9".into();
+        also.addr.set_ip(Ipv4Addr::new(9, 9, 9, 9));
         merge(&mut list, &[official, also]);
         assert!(list.iter().all(|s| s.official));
     }

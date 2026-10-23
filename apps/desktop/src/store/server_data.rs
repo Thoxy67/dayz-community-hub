@@ -179,7 +179,9 @@ impl ServerData {
 
     /// The key a server's A2S data is kept under: its query port when known.
     pub fn key(servers: &Servers, ip: &str, port: i64) -> String {
-        let qp = servers.row(ip, port).map_or(port, |r| r.query_port());
+        let qp = servers
+            .row_of(ip, port)
+            .map_or(port, |r| i64::from(r.query_port()));
         format!("{ip}:{qp}")
     }
 
@@ -218,8 +220,8 @@ impl ServerData {
         e.loading = true;
         e.error = None;
         let known = servers
-            .row(ip, port)
-            .map(|r| (r.query_port(), r.game_port()));
+            .row_of(ip, port)
+            .map(|r| (i64::from(r.query_port()), i64::from(r.game_port())));
         let hub = self.hub.clone();
         let ip = ip.to_string();
         let asked2 = asked.clone();
@@ -228,7 +230,9 @@ impl ServerData {
                 Some((qp, gp)) => (qp, Some(gp)),
                 None => super::servers::lookup_one(&hub, &ip, port)
                     .await
-                    .map_or((port, None), |r| (r.query_port, Some(r.game_port))),
+                    .map_or((port, None), |r| {
+                        (i64::from(r.query_port), Some(i64::from(r.game_port)))
+                    }),
             };
             let key = format!("{ip}:{qp}");
             let r = hub.query_a2s(ip, qp, gp).await;
@@ -248,7 +252,7 @@ impl ServerData {
             };
         }
         servers
-            .row(ip, port)
+            .row_of(ip, port)
             .map(|r| super::servers::Live {
                 players: r.players(),
                 max: r.max_players(),

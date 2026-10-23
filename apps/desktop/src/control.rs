@@ -515,14 +515,15 @@ pub async fn hub_call(hub: &Hub, method: &str, p: &Value) -> Value {
             Err(e) => err(e),
         },
         "hub.servers_lookup" => {
-            let keys: Vec<String> = p
+            // "ip:port" keys; one that is no IPv4 address finds nothing, in its place.
+            let keys: Vec<dz_api::SocketAddrV4> = p
                 .get("keys")
                 .and_then(Value::as_array)
                 .map(|a| {
                     a.iter()
                         .filter_map(Value::as_str)
                         .take(1000)
-                        .map(str::to_string)
+                        .map(|k| k.trim().parse().unwrap_or(dz_api::NO_ADDR))
                         .collect()
                 })
                 .unwrap_or_default();

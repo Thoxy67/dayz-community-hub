@@ -7,6 +7,7 @@
 
 use std::sync::Arc;
 
+use dz_api::SocketAddrV4;
 use dz_hub::features::friends::{FriendDto, FriendStatus};
 use egui::text::{LayoutJob, TextFormat};
 use egui::{CornerRadius, Pos2, Rangef, Rect, Sense, Stroke, Ui, UiBuilder, Vec2};
@@ -391,7 +392,7 @@ fn is_selected(cx: &Ctx, b: &Block) -> bool {
         .friends
         .selected
         .as_ref()
-        .is_some_and(|s| s.ip == b.ip && s.port == b.port)
+        .is_some_and(|s| s.port == b.port && s.ip.parse() == Ok(b.ip))
 }
 
 /// What a server row's action asks for. `query_port` and `game_port` as the list knows
@@ -414,23 +415,25 @@ impl Target<'_> {
         Some(match a {
             RowAction::Select | RowAction::Details | RowAction::Custom(BTN_DETAILS) => {
                 Act::Select(Selected {
-                    ip: b.ip.clone(),
+                    ip: b.ip.to_string(),
                     port: b.port,
                     name,
                 })
             }
-            RowAction::Join => Act::Join(b.ip.clone(), b.port),
-            RowAction::Custom(BTN_SHOW) => Act::ShowInList(b.ip.clone(), b.port),
+            RowAction::Join => Act::Join(b.ip.to_string(), b.port),
+            RowAction::Custom(BTN_SHOW) => Act::ShowInList(b.ip.to_string(), b.port),
             RowAction::Custom(BTN_DIRECT) | RowAction::DirectConnect => {
-                Act::Direct(b.ip.clone(), gp, qp)
+                Act::Direct(b.ip.to_string(), gp, qp)
             }
             RowAction::Custom(_) | RowAction::ShowMods => return None,
-            RowAction::ToggleFavorite => Act::Favorite(name, b.ip.clone(), b.port, self.favorite),
-            RowAction::Ping => Act::Ping(b.ip.clone(), self.query_port),
-            RowAction::RefreshPlayers => Act::Players(b.ip.clone(), self.query_port),
-            RowAction::CopyLink => Act::CopyLink(b.ip.clone(), gp, qp, name),
+            RowAction::ToggleFavorite => {
+                Act::Favorite(name, b.ip.to_string(), b.port, self.favorite)
+            }
+            RowAction::Ping => Act::Ping(b.ip.to_string(), self.query_port),
+            RowAction::RefreshPlayers => Act::Players(b.ip.to_string(), self.query_port),
+            RowAction::CopyLink => Act::CopyLink(b.ip.to_string(), gp, qp, name),
             RowAction::CopyAddress => Act::CopyAddress(format!("{}:{}", b.ip, gp)),
-            RowAction::ToggleExclude => Act::Exclude(b.ip.clone(), !self.excluded),
+            RowAction::ToggleExclude => Act::Exclude(b.ip.to_string(), !self.excluded),
         })
     }
 }
@@ -457,7 +460,7 @@ fn server_row(
     acts: &mut Vec<Act>,
 ) {
     let port = i64::from(b.port);
-    let Some(lr) = cx.stores.servers.row(&b.ip, port) else {
+    let Some(lr) = cx.stores.servers.row(SocketAddrV4::new(b.ip, b.port)) else {
         // The list lost it since the model was built: the short row until it is rebuilt.
         short_row(ui, row, cx, b, acts);
         return;
@@ -546,8 +549,11 @@ fn short_row(ui: &mut Ui, row: Rect, cx: &Ctx, b: &Block, acts: &mut Vec<Act>) {
     }
     let cols = ListColumns::new(Rangef::new(rr.left(), rr.right()), false);
     let cy = rr.center().y;
-    let favorite = cx.stores.profile.is_favorite(&b.ip, b.port);
-    let excluded = cx.stores.profile.is_excluded(&b.ip);
+    let favorite = cx
+        .stores
+        .profile
+        .is_favorite_at(SocketAddrV4::new(b.ip, b.port));
+    let excluded = cx.stores.profile.is_excluded_ip(b.ip);
     let address = key;
     let name = b
         .name
@@ -660,7 +666,7 @@ fn short_row(ui: &mut Ui, row: Rect, cx: &Ctx, b: &Block, acts: &mut Vec<Act>) {
     }
 
     if let Some(inner) = menu::context(&resp, |ui| {
-        server_menu(ui, &b.ip, favorite, excluded, false, &[])
+        server_menu(ui, b.ip, favorite, excluded, false, &[])
     }) && let Some(a) = inner.inner
     {
         action = Some(a);

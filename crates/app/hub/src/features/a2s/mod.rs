@@ -104,7 +104,9 @@ pub struct A2sDetailsDto {
 }
 
 impl Hub {
-    /// Query a server's live details (cached for 30 s).
+    /// Query a server's live details (cached for 30 s). A one-off: the
+    /// address is text, so a host name typed in Direct Connect is asked too
+    /// (only an IPv4 one can be a listed server).
     pub async fn query_a2s(
         &self,
         ip: String,
@@ -114,6 +116,7 @@ impl Hub {
         mocked!(self, w => Ok(std::sync::Arc::new(w.a2s(&ip))));
         let state = self.state()?;
         let addr = format!("{ip}:{query_port}");
+        let listed_at = |port: i64| dz_api::addr(&ip, port);
 
         // One read lock: peek the cache and, on a miss, take the listed mods.
         let mods = {
@@ -123,8 +126,13 @@ impl Hub {
             {
                 return Ok(Arc::clone(cached));
             }
-            s.find_by_query_port(&ip, query_port)
-                .or_else(|| game_port.and_then(|gp| s.find_flexible(&ip, gp)))
+            listed_at(query_port)
+                .and_then(|a| s.find_by_query_port(a))
+                .or_else(|| {
+                    game_port
+                        .and_then(listed_at)
+                        .and_then(|a| s.find_flexible(a))
+                })
                 .map(mods_to_dto)
                 .unwrap_or_default()
         };
@@ -207,13 +215,14 @@ impl Hub {
             game_port,
         });
 
-        crate::features::browser::live::store().record_counts(
-            &ip,
-            query_port,
-            result.players,
-            result.max_players,
-            result.bots,
-        );
+        if let Some(at) = listed_at(query_port) {
+            crate::features::browser::live::store().record_counts(
+                at,
+                result.players,
+                result.max_players,
+                result.bots,
+            );
+        }
         state
             .write()
             .await

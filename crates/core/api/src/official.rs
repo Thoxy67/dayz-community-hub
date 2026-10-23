@@ -12,7 +12,7 @@
 
 use serde::Deserialize;
 
-use crate::{Endpoint, Server};
+use crate::{Server, SocketAddrV4};
 
 /// Steam's master server, filtered to DayZ servers without the community tags.
 const STEAM_SERVER_LIST: &str =
@@ -51,10 +51,11 @@ struct ListInner {
 /// One server as Steam's master lists it.
 #[derive(Debug, Default, Deserialize)]
 struct SteamServer {
-    /// "ip:queryport".
-    addr: String,
+    /// "ip:queryport", read as numbers; `None` when it is not an IPv4 one.
+    #[serde(deserialize_with = "crate::addr::lenient_addr", default)]
+    addr: Option<SocketAddrV4>,
     #[serde(default)]
-    gameport: i64,
+    gameport: u16,
     #[serde(default)]
     name: String,
     #[serde(default)]
@@ -79,20 +80,16 @@ impl SteamServer {
         if !tags_say_official(&self.gametype) {
             return None;
         }
-        let (ip, port) = self.addr.rsplit_once(':')?;
-        let query_port: i64 = port.parse().ok()?;
+        let endpoint = self.addr?;
         let tags: Vec<&str> = self.gametype.split(',').map(str::trim).collect();
         let time = crate::steam::game_time(&tags);
         Some(Server {
             game_port: if self.gameport > 0 {
                 self.gameport
             } else {
-                query_port
+                endpoint.port()
             },
-            endpoint: Endpoint {
-                ip: ip.to_string(),
-                port: query_port,
-            },
+            endpoint,
             name: self.name,
             map: self.map,
             players: self.players,
@@ -160,19 +157,18 @@ pub async fn fetch_official_servers(
 /// Put the official servers into a list: a server already listed at the same
 /// query address is marked official, the others are added.
 pub fn merge_official(list: &mut Vec<std::sync::Arc<Server>>, official: Vec<Server>) {
-    // Which to mark and which to add, decided with borrowed keys first: no
-    // copy of every address in the list.
+    // Which to mark and which to add, decided first, keyed by address.
     let mut mark: Vec<usize> = Vec::new();
     let mut keep = vec![false; official.len()];
     {
-        let at: rustc_hash::FxHashMap<(&str, i64), usize> = list
+        let at: rustc_hash::FxHashMap<SocketAddrV4, usize> = list
             .iter()
             .enumerate()
-            .map(|(i, s)| ((s.endpoint.ip.as_str(), s.endpoint.port), i))
+            .map(|(i, s)| (s.endpoint, i))
             .collect();
         let mut added = rustc_hash::FxHashSet::default();
         for (j, o) in official.iter().enumerate() {
-            let key = (o.endpoint.ip.as_str(), o.endpoint.port);
+            let key = o.endpoint;
             match at.get(&key) {
                 Some(&i) => mark.push(i),
                 // A repeat of one added is official already.
@@ -238,8 +234,8 @@ mod tests {
         assert_eq!(servers.len(), 2);
         let a = &servers[0];
         assert_eq!(
-            (a.endpoint.ip.as_str(), a.endpoint.port, a.game_port),
-            ("5.62.99.21", 11101, 11100)
+            (a.endpoint.to_string().as_str(), a.game_port),
+            ("5.62.99.21:11101", 11100)
         );
         assert!(a.official && a.battl_eye == Some(true) && !a.first_person_only);
         assert_eq!(a.time, "20:16");
@@ -252,18 +248,12 @@ mod tests {
     #[test]
     fn merge_marks_known_and_adds_new() {
         let mut list = vec![std::sync::Arc::new(Server {
-            endpoint: Endpoint {
-                ip: "1.1.1.1".into(),
-                port: 27016,
-            },
+            endpoint: "1.1.1.1:27016".parse().unwrap(),
             name: "listed".into(),
             ..Default::default()
         })];
         let official = |ip: &str, port| Server {
-            endpoint: Endpoint {
-                ip: ip.into(),
-                port,
-            },
+            endpoint: SocketAddrV4::new(ip.parse().unwrap(), port),
             official: true,
             ..Default::default()
         };
@@ -277,7 +267,7 @@ mod tests {
         );
         assert_eq!(list.len(), 2);
         assert!(list[0].official && list[0].name == "listed");
-        assert_eq!(list[1].endpoint.ip, "2.2.2.2");
+        assert_eq!(list[1].ip().to_string(), "2.2.2.2");
     }
 
     /// Live check against Steam: `DZCH_STEAM_KEY=… cargo test -p dz-api -- --ignored`.

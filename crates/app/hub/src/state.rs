@@ -134,15 +134,15 @@ impl AppState {
         h.finish()
     }
 
-    /// The server whose query port is `port`.
-    pub fn find_by_query_port(&self, ip: &str, port: i64) -> Option<&Server> {
-        let i = self.snapshot.find_by_query_port(ip, port)?;
+    /// The server whose query address is `addr`.
+    pub fn find_by_query_port(&self, addr: dz_api::SocketAddrV4) -> Option<&Server> {
+        let i = self.snapshot.find_by_query_port(addr)?;
         self.snapshot.list().result.get(i as usize).map(|s| &**s)
     }
 
-    /// The server whose query port, else game port, is `port`.
-    pub fn find_flexible(&self, ip: &str, port: i64) -> Option<&Server> {
-        let i = self.snapshot.find(ip, port)?;
+    /// The server at `addr` by its query port, else its game port.
+    pub fn find_flexible(&self, addr: dz_api::SocketAddrV4) -> Option<&Server> {
+        let i = self.snapshot.find(addr)?;
         self.snapshot.list().result.get(i as usize).map(|s| &**s)
     }
 }

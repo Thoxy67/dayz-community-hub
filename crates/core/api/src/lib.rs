@@ -2,11 +2,13 @@
 //! Steam's master server), the servers Steam's client lists, the on-disk
 //! cache, and the Steam player count.
 
+mod addr;
 mod index;
 mod master;
 mod official;
 mod steam;
 
+pub use addr::{Ipv4Addr, NO_ADDR, SocketAddrV4, addr, is_addressed, lenient_ip, nonzero_port};
 pub use index::ServerIndex;
 pub use master::{
     MAX_SPLIT_DEPTH, MasterAddr, PLAN_MARGIN, PlannedPart, WEB_LIST_CAP, WebError, WebPartition,
@@ -31,20 +33,51 @@ use std::sync::Arc;
 /// Each server sits behind an `Arc`: a list put together from another (the
 /// Steam servers merged in, a refresh keeping what it lost) shares the
 /// servers instead of copying every string of every one of them.
+///
+/// A server without an IPv4 query address (see `addr`) is left out as the
+/// list is read, the launcher's and the cache's alike.
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", from = "ReadList")]
 pub struct ServerList {
     pub status: i64,
     pub result: Vec<Arc<Server>>,
 }
 
+/// [`ServerList`] as read, before the servers without an address leave.
+#[derive(Deserialize)]
+struct ReadList {
+    #[serde(default)]
+    status: i64,
+    #[serde(default)]
+    result: Vec<Arc<Server>>,
+}
+
+impl From<ReadList> for ServerList {
+    fn from(mut read: ReadList) -> Self {
+        let before = read.result.len();
+        read.result.retain(|s| is_addressed(&s.endpoint));
+        let left_out = before - read.result.len();
+        if left_out > 0 {
+            eprintln!("server list: {left_out} servers without an IPv4 query address left out");
+        }
+        Self {
+            status: read.status,
+            result: read.result,
+        }
+    }
+}
+
 /// One server of the list.
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Server {
-    pub game_port: i64,
-    /// The A2S query endpoint (its port is the query port).
-    pub endpoint: Endpoint,
+    /// The port to join on, 0 when unknown.
+    #[serde(deserialize_with = "addr::port_or_zero")]
+    pub game_port: u16,
+    /// The A2S query address (its port is the query port), written as the
+    /// list has it: `{"ip": "1.2.3.4", "port": 27016}`.
+    #[serde(with = "addr::endpoint")]
+    pub endpoint: SocketAddrV4,
     pub name: String,
     pub map: String,
     pub players: i64,
@@ -67,31 +100,59 @@ pub struct Server {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Endpoint {
-    pub ip: String,
-    pub port: i64,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct Mod {
     pub name: String,
     pub steam_workshop_id: i64,
 }
 
-impl Server {
-    /// A server known only by its address, for a direct connect to a server
-    /// that is not in the list.
-    pub fn unlisted(ip: &str, game_port: i64) -> Self {
+impl Default for Server {
+    /// No server: no address, nothing known.
+    fn default() -> Self {
         Self {
-            endpoint: Endpoint {
-                ip: ip.to_owned(),
-                port: game_port,
-            },
-            name: format!("{ip}:{game_port}"),
-            game_port,
+            game_port: 0,
+            endpoint: NO_ADDR,
+            name: String::new(),
+            map: String::new(),
+            players: 0,
+            max_players: 0,
+            environment: String::new(),
+            password: false,
+            version: String::new(),
+            vac: false,
+            battl_eye: None,
+            first_person_only: false,
+            time: String::new(),
+            mods: Vec::new(),
+            official: false,
+        }
+    }
+}
+
+impl Server {
+    /// A server known only by its address to join, for a direct connect to
+    /// a server that is not in the list.
+    pub fn unlisted(join: SocketAddrV4) -> Self {
+        Self {
+            endpoint: join,
+            name: join.to_string(),
+            game_port: join.port(),
             ..Default::default()
         }
+    }
+
+    /// The query address's IP.
+    pub fn ip(&self) -> Ipv4Addr {
+        *self.endpoint.ip()
+    }
+
+    /// The query port.
+    pub fn query_port(&self) -> u16 {
+        self.endpoint.port()
+    }
+
+    /// The address to join (ip, game port), when the game port is known.
+    pub fn join_addr(&self) -> Option<SocketAddrV4> {
+        (self.game_port != 0).then(|| SocketAddrV4::new(self.ip(), self.game_port))
     }
 
     /// Workshop mod IDs as `u64`.
@@ -101,25 +162,17 @@ impl Server {
             .map(|m| m.steam_workshop_id as u64)
             .collect()
     }
-
-    /// The query address, "ip:port".
-    pub fn query_addr(&self) -> String {
-        format!("{}:{}", self.endpoint.ip, self.endpoint.port)
-    }
 }
 
 /// Keep the first server for each (ip, query port) and drop the repeats the
 /// API sometimes lists.
 pub fn dedup_servers<S: Borrow<Server>>(mut servers: Vec<S>) -> Vec<S> {
     let keep: Vec<bool> = {
-        let mut seen: rustc_hash::FxHashSet<(&str, i64)> =
+        let mut seen: rustc_hash::FxHashSet<SocketAddrV4> =
             rustc_hash::FxHashSet::with_capacity_and_hasher(servers.len(), Default::default());
         servers
             .iter()
-            .map(|s| {
-                let s = s.borrow();
-                seen.insert((s.endpoint.ip.as_str(), s.endpoint.port))
-            })
+            .map(|s| seen.insert(s.borrow().endpoint))
             .collect()
     };
     let mut keep = keep.into_iter();
@@ -129,34 +182,27 @@ pub fn dedup_servers<S: Borrow<Server>>(mut servers: Vec<S>) -> Vec<S> {
 
 /// The servers that claim the same address to join (ip, game port) under
 /// different query ports: one server listed twice (one entry stale), or one
-/// stating a wrong game port. Each group is `(ip, query port)`s, in list
-/// order. Servers on one address with the same name but their own game
-/// ports are not here: they are separate servers (hosts give many
-/// customers the same default name).
-pub fn join_conflicts<S: Borrow<Server>>(servers: &[S]) -> Vec<Vec<(String, i64)>> {
-    let mut by_join: rustc_hash::FxHashMap<(&str, i64), Vec<usize>> =
-        rustc_hash::FxHashMap::default();
-    for (i, s) in servers.iter().enumerate() {
-        let s = s.borrow();
-        if s.game_port > 0 {
-            by_join
-                .entry((s.endpoint.ip.as_str(), s.game_port))
-                .or_default()
-                .push(i);
-        }
-    }
-    let mut groups: Vec<Vec<(String, i64)>> = by_join
-        .into_values()
-        .filter(|g| g.len() > 1)
-        .map(|g| {
-            g.into_iter()
-                .filter_map(|i| servers.get(i).map(Borrow::borrow))
-                .map(|s: &Server| (s.endpoint.ip.clone(), s.endpoint.port))
-                .collect()
+/// stating a wrong game port. Each group is that address to join and the
+/// query addresses claiming it, in list order. Servers on one address with
+/// the same name but their own game ports are not here: they are separate
+/// servers (hosts give many customers the same default name).
+pub fn join_conflicts<S: Borrow<Server>>(servers: &[S]) -> Vec<(SocketAddrV4, Vec<SocketAddrV4>)> {
+    // Every (join, query) pair in one vector, sorted by the address to join
+    // (stable: list order within each), then read in runs: no table of a
+    // vector per server for the few that conflict.
+    let mut pairs: Vec<(SocketAddrV4, SocketAddrV4)> = servers
+        .iter()
+        .filter_map(|s| {
+            let s = s.borrow();
+            Some((s.join_addr()?, s.endpoint))
         })
         .collect();
-    groups.sort();
-    groups
+    pairs.sort_by_key(|&(join, _)| join);
+    pairs
+        .chunk_by(|a, b| a.0 == b.0)
+        .filter(|run| run.len() > 1)
+        .filter_map(|run| Some((run.first()?.0, run.iter().map(|&(_, q)| q).collect())))
+        .collect()
 }
 
 /// Response from the Steam GetNumberOfCurrentPlayers endpoint.
@@ -291,12 +337,9 @@ pub async fn fetch_servers(client: &reqwest::Client) -> Result<ServerList> {
 mod tests {
     use super::*;
 
-    fn server(ip: &str, qport: i64, gport: i64, name: &str) -> Server {
+    fn server(ip: &str, qport: u16, gport: u16, name: &str) -> Server {
         Server {
-            endpoint: Endpoint {
-                ip: ip.into(),
-                port: qport,
-            },
+            endpoint: SocketAddrV4::new(ip.parse().unwrap(), qport),
             game_port: gport,
             name: name.into(),
             ..Default::default()
@@ -313,10 +356,13 @@ mod tests {
         ];
         assert_eq!(
             join_conflicts(&list),
-            vec![vec![
-                ("1.1.1.1".to_string(), 27019),
-                ("1.1.1.1".to_string(), 2505)
-            ]]
+            vec![(
+                "1.1.1.1:2502".parse::<SocketAddrV4>().unwrap(),
+                vec![
+                    "1.1.1.1:27019".parse().unwrap(),
+                    "1.1.1.1:2505".parse().unwrap()
+                ]
+            )]
         );
     }
 
@@ -403,6 +449,33 @@ mod tests {
     fn unknown_fields_are_ignored() {
         let json = r#"{"status":0,"result":[{"gamePort":2302,"sponsor":true,"endpoint":{"ip":"1.2.3.4","port":27016},"name":"n","map":"chernarusplus","players":1,"maxPlayers":60,"environment":"w","password":false,"version":"1.28","vac":true,"battlEye":true,"firstPersonOnly":false,"time":"12:00","mods":[],"shard":"x"}]}"#;
         let list: ServerList = serde_json::from_str(json).unwrap();
-        assert_eq!(list.result[0].endpoint.port, 27016);
+        assert_eq!(list.result[0].query_port(), 27016);
+    }
+
+    #[test]
+    fn servers_without_an_ipv4_query_address_are_left_out() {
+        let entry = |ip: &str, port: i64, game: i64| {
+            format!(
+                r#"{{"gamePort":{game},"endpoint":{{"ip":{ip},"port":{port}}},"name":"n","map":"m","players":0,"maxPlayers":60,"environment":"w","password":false,"version":"1","vac":true,"battlEye":null,"firstPersonOnly":false,"time":"","mods":[]}}"#
+            )
+        };
+        let json = format!(
+            r#"{{"status":0,"result":[{},{},{},{},{}]}}"#,
+            entry(r#""1.2.3.4""#, 27016, 2302),
+            entry(r#""play.example.com""#, 27016, 2302),
+            entry(r#""2001:db8::1""#, 27016, 2302),
+            entry(r#""5.6.7.8""#, 0, 2302),
+            entry(r#""5.6.7.8""#, 27017, -1),
+        );
+        let list: ServerList = serde_json::from_str(&json).unwrap();
+        let kept: Vec<String> = list.result.iter().map(|s| s.endpoint.to_string()).collect();
+        assert_eq!(kept, ["1.2.3.4:27016", "5.6.7.8:27017"]);
+        // A game port that is no port reads as unknown, as 0 did.
+        assert_eq!(list.result[1].game_port, 0);
+        assert_eq!(list.result[1].join_addr(), None);
+        assert_eq!(
+            list.result[0].join_addr(),
+            Some("1.2.3.4:2302".parse().unwrap())
+        );
     }
 }

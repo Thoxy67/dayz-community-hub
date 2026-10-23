@@ -16,6 +16,7 @@
 //! (<https://steamcommunity.com/dev/apiterms>).
 
 use crate::Hub;
+use dz_api::{Ipv4Addr, SocketAddrV4};
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
@@ -75,7 +76,7 @@ impl FriendStatus {
 /// The server a friend is on.
 #[derive(Serialize, Clone, Debug)]
 pub struct FriendServerDto {
-    pub ip: String,
+    pub ip: Ipv4Addr,
     /// The port to join with: the listed server's query port when it is in
     /// the list, else the game port Steam gave.
     pub port: u16,
@@ -155,7 +156,7 @@ async fn ask(state: &SharedState, client: bool) -> Result<FriendsDto, String> {
 struct Raw {
     dto: FriendDto,
     /// ip, game port (or unknown), query port (or 0).
-    addr: Option<(String, u16, u16)>,
+    addr: Option<(Ipv4Addr, u16, u16)>,
 }
 
 /// Look each friend's server up in the list, and sort.
@@ -187,15 +188,15 @@ async fn finish(state: &SharedState, raw: Vec<Raw>, source: FriendsSource) -> Fr
     }
 }
 
-fn server_of(s: &AppState, ip: String, game_port: u16, query_port: u16) -> FriendServerDto {
+fn server_of(s: &AppState, ip: Ipv4Addr, game_port: u16, query_port: u16) -> FriendServerDto {
     let listed = (query_port != 0)
-        .then(|| s.find_by_query_port(&ip, i64::from(query_port)))
+        .then(|| s.find_by_query_port(SocketAddrV4::new(ip, query_port)))
         .flatten()
-        .or_else(|| s.find_flexible(&ip, i64::from(game_port)));
+        .or_else(|| s.find_flexible(SocketAddrV4::new(ip, game_port)));
     match listed {
         Some(l) => FriendServerDto {
             ip,
-            port: u16::try_from(l.endpoint.port).unwrap_or(game_port),
+            port: l.query_port(),
             name: Some(l.name.clone()),
             map: Some(l.map.clone()),
             players: Some(l.players),
@@ -321,9 +322,9 @@ async fn from_web(key: &str, id: &str) -> Result<Vec<Raw>, String> {
             let addr = p
                 .gameserverip
                 .as_deref()
-                .and_then(|a| a.rsplit_once(':'))
-                .and_then(|(ip, port)| Some((ip.to_owned(), port.parse::<u16>().ok()?, 0)))
-                .filter(|(ip, port, _)| *port != 0 && ip != "0.0.0.0");
+                .and_then(|a| a.trim().parse::<SocketAddrV4>().ok())
+                .filter(dz_api::is_addressed)
+                .map(|a| (*a.ip(), a.port(), 0));
             Raw {
                 dto: FriendDto {
                     steam_id: p.steamid,
@@ -370,7 +371,7 @@ async fn from_client(friends: Vec<dz_steamworks::Friend>) -> Vec<Raw> {
                 .as_ref()
                 .filter(|_| in_dayz)
                 .and_then(|g| g.server)
-                .map(|s| (s.ip.to_string(), s.game_port, s.query_port));
+                .map(|s| (s.ip, s.game_port, s.query_port));
             Raw {
                 dto: FriendDto {
                     steam_id: f.steam_id.to_string(),

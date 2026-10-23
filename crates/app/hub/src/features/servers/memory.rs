@@ -19,7 +19,7 @@
 
 use std::path::{Path, PathBuf};
 
-use dz_api::PlannedPart;
+use dz_api::{Ipv4Addr, PlannedPart, SocketAddrV4};
 use serde::{Deserialize, Serialize};
 
 use super::sources::SteamStatus;
@@ -89,10 +89,13 @@ impl Memo {
     }
 }
 
-/// [`Memo`] with its address, as the file holds it.
+/// [`Memo`] with its address, as the file holds it: the IP as text and the
+/// port as a number. An entry whose address is not an IPv4 one (no listing
+/// writes such) is read without failing the file, and dropped.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 struct AddrMemo {
-    ip: String,
+    #[serde(with = "dz_api::lenient_ip")]
+    ip: Option<Ipv4Addr>,
     port: i64,
     #[serde(flatten)]
     memo: Memo,
@@ -113,8 +116,8 @@ pub(crate) struct ListingMemory {
     addresses: Vec<AddrMemo>,
 }
 
-/// An (ip, query port) pair.
-pub(crate) type Addr = (String, i64);
+/// A query address.
+pub(crate) type Addr = SocketAddrV4;
 
 impl ListingMemory {
     /// Whether the last complete listing finished less than
@@ -138,7 +141,10 @@ impl ListingMemory {
     pub(crate) fn take_addresses(&mut self) -> impl Iterator<Item = (Addr, Memo)> + use<> {
         std::mem::take(&mut self.addresses)
             .into_iter()
-            .map(|a| ((a.ip, a.port), a.memo))
+            .filter_map(|a| {
+                let port = dz_api::nonzero_port(a.port)?;
+                Some((SocketAddrV4::new(a.ip?, port), a.memo))
+            })
     }
 
     /// Put `addresses` in for saving, without those forgotten by `now`.
@@ -149,15 +155,14 @@ impl ListingMemory {
     ) {
         self.addresses = addresses
             .filter(|(_, m)| now - m.seen < FORGET_AFTER || m.holds(now))
-            .map(|((ip, port), memo)| AddrMemo {
-                ip: ip.clone(),
-                port: *port,
+            .map(|(addr, memo)| AddrMemo {
+                ip: Some(*addr.ip()),
+                port: i64::from(addr.port()),
                 memo: *memo,
             })
             .collect();
         // One order whatever the map's: the file changes only when it does.
-        self.addresses
-            .sort_unstable_by(|a, b| (&a.ip, a.port).cmp(&(&b.ip, b.port)));
+        self.addresses.sort_unstable_by_key(|a| (a.ip, a.port));
     }
 }
 
@@ -199,6 +204,10 @@ mod tests {
     use dz_api::WebPartition;
 
     const NOW: i64 = 1_800_000_000;
+
+    fn at(s: &str) -> Addr {
+        s.parse().unwrap()
+    }
 
     fn memo(verdict: Verdict, ago: i64) -> Memo {
         Memo {
@@ -247,10 +256,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let file = dir.join("steam_listing_cache.json");
         let addrs: Vec<(Addr, Memo)> = vec![
-            (("1.1.1.1".into(), 27016), memo(Verdict::Answered, 60)),
-            (("2.2.2.2".into(), 27016), memo(Verdict::Fake, 3600)),
+            (at("1.1.1.1:27016"), memo(Verdict::Answered, 60)),
+            (at("2.2.2.2:27016"), memo(Verdict::Fake, 3600)),
             // Not listed for a week and its verdict over: forgotten.
-            (("3.3.3.3".into(), 27016), memo(Verdict::Silent, 7 * 86_400)),
+            (at("3.3.3.3:27016"), memo(Verdict::Silent, 7 * 86_400)),
         ];
         let mut m = ListingMemory {
             started_at: Some(NOW - 200),
@@ -264,6 +273,12 @@ mod tests {
         m.status.added = 7;
         m.set_addresses(addrs.iter().map(|(a, m)| (a, m)), NOW);
         save(file.clone(), m).await.unwrap();
+        // Written as before: the IP as text, the port as a number.
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(
+            text.contains(r#"{"ip":"1.1.1.1","port":27016,"seen":"#),
+            "{text}"
+        );
         let mut back = load(&file).await.unwrap();
         assert_eq!(back.version, VERSION);
         assert_eq!(back.completed_at, Some(NOW - 100));
@@ -283,17 +298,22 @@ mod tests {
         assert!(load(&file).await.is_none());
         std::fs::write(&file, b"{\"completed_at\": 12, \"plan\": [tr").unwrap();
         assert!(load(&file).await.is_none());
-        // Another version's fields and verdicts: what is known is read.
+        // Another version's fields and verdicts: what is known is read. An
+        // address that is no IPv4 and a port is dropped, the rest kept.
         std::fs::write(
             &file,
             br#"{"version":9,"completed_at":12,"later":true,"status":{"added":3,"new":1},
-                "addresses":[{"ip":"1.1.1.1","port":2,"seen":3,"verdict":"maybe","at":4}]}"#,
+                "addresses":[{"ip":"1.1.1.1","port":2,"seen":3,"verdict":"maybe","at":4},
+                {"ip":"host.example","port":2,"seen":3,"verdict":"fake","at":4},
+                {"ip":"1.1.1.2","port":70000,"seen":3,"verdict":"fake","at":4}]}"#,
         )
         .unwrap();
         let mut m = load(&file).await.unwrap();
         assert_eq!(m.completed_at, Some(12));
         assert_eq!(m.status.added, 3);
         let a: Vec<(Addr, Memo)> = m.take_addresses().collect();
+        assert_eq!(a.len(), 1);
+        assert_eq!(a[0].0, at("1.1.1.1:2"));
         assert_eq!(a[0].1.verdict, Verdict::Unknown);
         let _ = std::fs::remove_dir_all(&dir);
     }

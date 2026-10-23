@@ -200,7 +200,8 @@ pub fn show(ui: &mut Ui, cx: &Ctx, st: &mut UiState, cache: &mut RowCache, run: 
     let profile = &cx.stores.profile;
     let direct = t("servers", "directConnect");
     let mut acts: Vec<(RowAction, usize)> = Vec::new();
-    // One address buffer for every row (the stores are asked by "ip:port").
+    // One address buffer for every row (pings and queries on request are kept by
+    // "ip:port", which may be a typed host name).
     let mut key = String::new();
     let out = VirtualList::new("servers-list", total)
         .row_height(ROW_PX)
@@ -221,22 +222,21 @@ pub fn show(ui: &mut Ui, cx: &Ctx, st: &mut UiState, cache: &mut RowCache, run: 
                 };
                 let mut d = RowData::from_server(&r);
                 key.clear();
-                let _ = write!(key, "{}:{}", d.ip, d.query_port);
+                let _ = write!(key, "{}", r.addr());
                 d.ping_pending = pending.contains(&key);
                 d.players_loading = data.a2s_loading(&key);
                 // The profile's own state, changed at once by a click (the snapshot's
                 // flags follow when the hub has written it).
-                let (qp, gp) = (
-                    u16::try_from(d.query_port).unwrap_or(0),
-                    u16::try_from(d.game_port).unwrap_or(0),
-                );
-                d.favorite = profile.is_favorite(d.ip, qp) || profile.is_favorite(d.ip, gp);
-                d.excluded = profile.is_excluded(d.ip);
+                d.favorite = profile.is_favorite_at(r.addr())
+                    || r.server
+                        .join_addr()
+                        .is_some_and(|j| profile.is_favorite_at(j));
+                d.excluded = profile.is_excluded_ip(r.ip());
                 let selected = sel
                     .as_ref()
-                    .is_some_and(|s| s.port == d.query_port && s.ip == d.ip);
+                    .is_some_and(|s| s.port == d.query_port && s.ip == r.ip().to_string());
                 let names: Vec<&str> = if has_friends {
-                    friends.on_key(&key).map(|f| f.name.as_str()).collect()
+                    friends.on(r.addr()).map(|f| f.name.as_str()).collect()
                 } else {
                     Vec::new()
                 };

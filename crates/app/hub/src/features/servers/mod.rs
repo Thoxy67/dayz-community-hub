@@ -11,7 +11,7 @@ pub use dto::{AppStatsDto, InitResult, ModDto, ServerDto};
 pub(crate) use dto::{mods_to_dto, server_to_dto};
 
 use crate::paths;
-use dz_api::ServerList;
+use dz_api::{ServerList, SocketAddrV4};
 use dz_game::DayzCtl;
 use std::sync::{Arc, LazyLock};
 use tokio::sync::{Mutex, RwLock};
@@ -224,18 +224,18 @@ async fn initialize_mock(hub: &Hub, world: &crate::mock::World) -> Result<InitRe
     })
 }
 
-/// One server with its mods, by query port.
-async fn get_server_details(hub: &Hub, ip: String, port: i64) -> Result<ServerDto, String> {
+/// One server with its mods, by query address.
+async fn get_server_details(hub: &Hub, addr: SocketAddrV4) -> Result<ServerDto, String> {
     let state = hub.state()?;
     let state = state.read().await;
     let server = state
-        .find_by_query_port(&ip, port)
+        .find_by_query_port(addr)
         .ok_or_else(|| "Server not found".to_string())?;
     let mut dto = server_to_dto(server);
     // The map's one spelling, as the rows show it.
     if let Some(r) = crate::features::browser::live::store()
         .snapshot()
-        .lookup(&ip, port)
+        .lookup(addr)
     {
         r.map.clone_into(&mut dto.map);
     }
@@ -514,9 +514,9 @@ impl Hub {
         initialize(self).await
     }
 
-    /// One server with its mods, by query port.
-    pub async fn get_server_details(&self, ip: String, port: i64) -> Result<ServerDto, String> {
-        get_server_details(self, ip, port).await
+    /// One server with its mods, by query address.
+    pub async fn get_server_details(&self, addr: SocketAddrV4) -> Result<ServerDto, String> {
+        get_server_details(self, addr).await
     }
 
     /// Whether the servers Steam's master lists are added to the list.

@@ -2,6 +2,7 @@
 //! same servers, mods and sessions come out.
 
 use dz_profile::{Favorite, History, ModDownloader, Profile, Session, SessionKind};
+use std::net::Ipv4Addr;
 
 use crate::features::news::ArticleDto;
 
@@ -141,9 +142,9 @@ impl Rng {
 /// One of mock.ts' servers.
 #[derive(Clone, Debug)]
 pub(crate) struct MockServer {
-    pub game_port: i64,
-    pub ip: String,
-    pub query_port: i64,
+    pub game_port: u16,
+    pub ip: Ipv4Addr,
+    pub query_port: u16,
     pub name: String,
     pub map: String,
     pub players: i64,
@@ -164,7 +165,8 @@ impl MockServer {
         if self.mods_count == 0 {
             return 0;
         }
-        let last = self.ip.bytes().last().map_or(0, usize::from);
+        // mock.ts read the address as text: its last character's code.
+        let last = self.ip.to_string().bytes().last().map_or(0, usize::from);
         [0, 0, 3, 1, self.mods_count]
             .get(last % 5)
             .copied()
@@ -176,7 +178,9 @@ impl MockServer {
         if self.mods_count == 0 {
             return 0;
         }
-        let k = (self.ip.len() as i64 + self.query_port).rem_euclid(5) as usize;
+        // mock.ts added the address text's length.
+        let len = self.ip.to_string().len() as i64;
+        let k = (len + i64::from(self.query_port)).rem_euclid(5) as usize;
         [0, 2, 0, 1, 0].get(k).copied().unwrap_or(0)
     }
 }
@@ -230,12 +234,13 @@ fn servers(rng: &mut Rng) -> Vec<MockServer> {
             } else {
                 (rng.next() * max as f64).floor() as i64
             };
-            let ip = format!(
-                "{}.{}.{}.{}",
-                45 + (i % 180),
-                (i * 7) % 255,
-                (i * 13) % 255,
-                (i * 31) % 250
+            // Each part below 256, as mock.ts writes them.
+            let part = |n: usize| (n % 256) as u8;
+            let ip = Ipv4Addr::new(
+                part(45 + (i % 180)),
+                part((i * 7) % 255),
+                part((i * 13) % 255),
+                part((i * 31) % 250),
             );
             let map = rng.pick(&MAPS);
             let fp = rng.next() < 0.35;
@@ -259,9 +264,9 @@ fn servers(rng: &mut Rng) -> Vec<MockServer> {
             let mods_count = if rng.next() < 0.35 { 0 } else { rng.below(40) };
             let battl_eye = rng.next() < 0.9;
             MockServer {
-                game_port: 2302 + (i as i64 % 5) * 100,
+                game_port: 2302 + (i as u16 % 5) * 100,
                 ip,
-                query_port: 27016 + (i as i64 % 5) * 100,
+                query_port: 27016 + (i as u16 % 5) * 100,
                 name,
                 map: map.to_string(),
                 players,
@@ -394,8 +399,8 @@ fn play_log(rng: &mut Rng, servers: &[MockServer], now: i64) -> Vec<Session> {
         .map(|x| Session {
             kind: SessionKind::Server,
             name: x.name.clone(),
-            ip: Some(x.ip.clone()),
-            port: u16::try_from(x.game_port).ok(),
+            ip: Some(x.ip.to_string()),
+            port: Some(x.game_port),
             map: Some(x.map.clone()),
             start: 0,
             end: 0,
@@ -459,7 +464,6 @@ fn play_log(rng: &mut Rng, servers: &[MockServer], now: i64) -> Vec<Session> {
 /// mock.ts' profile, as the real one is stored.
 pub(super) fn profile(world: &World) -> Profile {
     let servers = &world.servers;
-    let port = |p: i64| u16::try_from(p).unwrap_or(0);
     let mut p = Profile {
         steam_login: Some("survivor_42".to_string()),
         steam_password: None,
@@ -479,8 +483,8 @@ pub(super) fn profile(world: &World) -> Profile {
             .take(6)
             .map(|s| Favorite {
                 name: s.name.clone(),
-                ip: s.ip.clone(),
-                port: port(s.query_port),
+                ip: s.ip.to_string(),
+                port: s.query_port,
                 password: None,
             })
             .collect(),
@@ -491,13 +495,17 @@ pub(super) fn profile(world: &World) -> Profile {
             .enumerate()
             .map(|(i, s)| History {
                 name: s.name.clone(),
-                ip: s.ip.clone(),
-                port: port(s.query_port),
+                ip: s.ip.to_string(),
+                port: s.query_port,
                 ts: world.now - i as i64 * 7200 - 600,
                 extra: None,
             })
             .collect(),
-        excluded_ips: servers.get(40).map(|s| s.ip.clone()).into_iter().collect(),
+        excluded_ips: servers
+            .get(40)
+            .map(|s| s.ip.to_string())
+            .into_iter()
+            .collect(),
         ping_concurrency: 64,
         ping_timeout_auto: 2000,
         ping_timeout_manual: 10_000,

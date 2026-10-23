@@ -114,14 +114,14 @@ pub fn run_all(cx: &mut Ctx, run: Run) {
     }
 }
 
-/// The position of `(ip, query port)` in `o`, trying `hint` first.
+/// The position of `(ip, query port)` in `o`, trying `hint` first. Only an IPv4
+/// address is listed.
 pub fn index_of(o: &ServerOrder, ip: &str, port: i64, hint: usize) -> Option<usize> {
-    if o.get(hint)
-        .is_some_and(|r| r.query_port() == port && r.ip() == ip)
-    {
+    let addr = dz_api::addr(ip, port)?;
+    if o.get(hint).is_some_and(|r| r.addr() == addr) {
         return Some(hint);
     }
-    let at = o.snapshot.find_by_query_port(ip, port)?;
+    let at = o.snapshot.find_by_query_port(addr)?;
     o.order.iter().position(|i| *i == at)
 }
 

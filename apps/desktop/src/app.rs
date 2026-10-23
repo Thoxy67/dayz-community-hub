@@ -869,7 +869,7 @@ mod tests {
             .expect("the mock profile has favourites");
         let (ip, port) = (fav.ip.clone(), i64::from(fav.port));
         until(&mut h, 60, "a favourite's row", |a| {
-            a.stores().servers.row(&ip, port).is_some()
+            a.stores().servers.row_of(&ip, port).is_some()
         });
 
         let ctx = h.ctx.clone();

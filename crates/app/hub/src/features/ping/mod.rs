@@ -11,6 +11,7 @@
 //! it, so a reload used to leave the scan running unseen.
 
 use crate::{Hub, HubEvent};
+use dz_api::{Ipv4Addr, SocketAddrV4};
 use futures_util::{StreamExt, stream};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -36,8 +37,8 @@ const PROGRESS_INTERVAL: Duration = Duration::from_millis(500);
 /// One ping, as the window receives it.
 #[derive(Serialize, Clone, Debug)]
 pub struct PingResultDto {
-    pub ip: String,
-    pub port: i64,
+    pub ip: Ipv4Addr,
+    pub port: u16,
     pub ms: u32,
     pub players: Option<u8>,
     pub max_players: Option<u8>,
@@ -47,10 +48,10 @@ pub struct PingResultDto {
     pub failed: bool,
 }
 
-fn to_dto(l: &Live, ip: String, port: i64) -> PingResultDto {
+fn to_dto(l: &Live, addr: SocketAddrV4) -> PingResultDto {
     PingResultDto {
-        ip,
-        port,
+        ip: *addr.ip(),
+        port: addr.port(),
         ms: l.ms.unwrap_or(dz_a2s::PING_TIMEOUT_SENTINEL),
         players: l.players,
         max_players: l.max_players,
@@ -154,7 +155,7 @@ pub struct PingState {
 
 struct Queue {
     /// Targets, with the tries each has had.
-    tx: mpsc::UnboundedSender<(String, u32)>,
+    tx: mpsc::UnboundedSender<(SocketAddrV4, u32)>,
     run: Arc<Run>,
 }
 
@@ -248,19 +249,11 @@ impl PingState {
     }
 }
 
-/// Parse "ip:port".
-pub(crate) fn parse_target(target: &str) -> Option<(&str, i64)> {
-    let (ip, port) = target.rsplit_once(':')?;
-    Some((ip, port.parse().ok()?))
-}
-
 /// What asking one target came to.
 enum Asked {
-    Done(String, i64, Live),
+    Done(SocketAddrV4, Live),
     /// No answer, tries left: to the back of the queue.
-    Again(String, u32),
-    /// Not "ip:port": counted done, nothing recorded.
-    Invalid,
+    Again(SocketAddrV4, u32),
 }
 
 fn progress_of(run: &Run, paused: bool, running: bool) -> ScanProgress {
@@ -288,7 +281,7 @@ enum Sink {
 /// UDP packet should not mark it dead, nor should it hold a slot meanwhile.
 /// A `whole` scan takes more targets while it runs ([`enqueue`]).
 async fn scan(
-    targets: Vec<String>,
+    targets: Vec<SocketAddrV4>,
     concurrency: usize,
     timeout: Duration,
     retries: u32,
@@ -307,7 +300,7 @@ async fn scan(
     // goes to the back of the queue rather than being asked again at once,
     // so the silent ones are retried in a short pass at the end instead of
     // each holding a slot for `retries + 1` timeouts.
-    let (tx, rx) = mpsc::unbounded_channel::<(String, u32)>();
+    let (tx, rx) = mpsc::unbounded_channel::<(SocketAddrV4, u32)>();
     for t in targets {
         if tx.send((t, 0)).is_ok() {
             run.total.fetch_add(1, Ordering::Relaxed);
@@ -364,19 +357,13 @@ async fn scan(
         .map(|(target, tries)| {
             let engine = engine.clone();
             async move {
-                let Some((ip, port)) = parse_target(&target) else {
-                    return Asked::Invalid;
-                };
-                let Some(addr) = dz_a2s::socket_addr(ip, port) else {
-                    return Asked::Invalid;
-                };
-                let r = engine.info(addr, timeout).await.map(|a| a.ping());
+                let r = engine.info(target.into(), timeout).await.map(|a| a.ping());
                 if r.is_err() && tries < retries {
                     return Asked::Again(target, tries + 1);
                 }
                 let l = Live::from_result(&r);
-                live::store().record(ip, port, l);
-                Asked::Done(ip.to_owned(), port, l)
+                live::store().record(target, l);
+                Asked::Done(target, l)
             }
         })
         .buffer_unordered(concurrency)
@@ -432,13 +419,10 @@ async fn scan(
                         done.fetch_add(1, Ordering::Relaxed);
                     }
                 }
-                Some(Asked::Invalid) => {
-                    done.fetch_add(1, Ordering::Relaxed);
-                }
-                Some(Asked::Done(ip, port, l)) => {
+                Some(Asked::Done(addr, l)) => {
                     done.fetch_add(1, Ordering::Relaxed);
                     if let Sink::Batches(_) = &sink {
-                        batch.push(to_dto(&l, ip, port));
+                        batch.push(to_dto(&l, addr));
                         if batch.len() >= BATCH_SIZE {
                             send(&mut batch);
                         }
@@ -460,7 +444,7 @@ async fn scan(
 /// says, the whole list at mock.ts' pace (700 servers per 250 ms), an
 /// explicit list in batches of 200 every 60 ms. Nothing goes on the network.
 #[cfg(feature = "mock")]
-async fn mock_scan(targets: Vec<String>, sink: Sink, ping: Arc<PingState>, run: Arc<Run>) {
+async fn mock_scan(targets: Vec<SocketAddrV4>, sink: Sink, ping: Arc<PingState>, run: Arc<Run>) {
     let whole = matches!(sink, Sink::Event(_));
     let (every, per_tick) = if whole {
         (PROGRESS_INTERVAL, 1400)
@@ -480,12 +464,9 @@ async fn mock_scan(targets: Vec<String>, sink: Sink, ping: Arc<PingState>, run: 
             let mut batch = Vec::new();
             for target in rest.by_ref().take(per_tick) {
                 run.done.fetch_add(1, Ordering::Relaxed);
-                let Some((ip, port)) = parse_target(&target) else {
-                    continue;
-                };
-                let l = crate::mock::live_of(ip, port);
-                live::store().record(ip, port, l);
-                batch.push(to_dto(&l, ip.to_owned(), port));
+                let l = crate::mock::live_of(target);
+                live::store().record(target, l);
+                batch.push(to_dto(&l, target));
             }
             if let Sink::Batches(hub) = &sink
                 && !batch.is_empty()
@@ -513,7 +494,7 @@ async fn mock_scan(targets: Vec<String>, sink: Sink, ping: Arc<PingState>, run: 
 pub(crate) fn start_whole_scan(
     hub: &Hub,
     ping: &Arc<PingState>,
-    targets: Vec<String>,
+    targets: Vec<SocketAddrV4>,
     concurrency: usize,
     timeout: Duration,
     retries: u32,
@@ -547,7 +528,7 @@ pub(crate) fn start_whole_scan(
 pub(crate) fn enqueue(
     hub: &Hub,
     ping: &Arc<PingState>,
-    targets: Vec<String>,
+    targets: Vec<SocketAddrV4>,
     concurrency: usize,
     timeout: Duration,
     retries: u32,
@@ -560,7 +541,7 @@ pub(crate) fn enqueue(
     {
         let mut sent = true;
         for t in &targets {
-            if queue.tx.send((t.clone(), 0)).is_err() {
+            if queue.tx.send((*t, 0)).is_err() {
                 sent = false;
                 break;
             }
@@ -598,7 +579,7 @@ impl Hub {
     /// whole-list scan, not instead of it.
     pub async fn ping_servers(
         &self,
-        targets: Vec<String>,
+        targets: Vec<SocketAddrV4>,
         concurrency: Option<usize>,
         timeout_ms: Option<u64>,
     ) -> Result<(), String> {
@@ -637,24 +618,32 @@ impl Hub {
     }
 
     /// Ping one server, with the long manual timeout. Returns the RTT in ms.
+    /// A one-off on a socket of its own: the address is text, so a host
+    /// name typed in Direct Connect is pinged too; the result lands in the
+    /// live store when it is an IPv4 one (only those are listed).
     pub async fn ping_single(
         &self,
         ip: String,
         port: i64,
         timeout_ms: Option<u64>,
     ) -> Result<u32, String> {
+        let listed = dz_api::addr(&ip, port);
         mocked!(self => {
             let ms = crate::mock::ping_of(&format!("{ip}:{port}"));
-            live::store().record(&ip, port, crate::mock::live_of(&ip, port));
+            if let Some(addr) = listed {
+                live::store().record(addr, crate::mock::live_of(addr));
+            }
             Ok(ms)
         });
-        let addr = format!("{ip}:{port}");
+        let target = format!("{ip}:{port}");
         let timeout = Duration::from_millis(timeout_ms.unwrap_or(MANUAL_TIMEOUT_MS));
-        let r = match tokio::time::timeout(timeout, dz_a2s::ping(&addr)).await {
+        let r = match tokio::time::timeout(timeout, dz_a2s::ping(&target)).await {
             Ok(r) => r,
             Err(_) => Err(dz_common::Error::A2sQuery("Timeout".into())),
         };
-        live::store().record(&ip, port, Live::from_result(&r));
+        if let Some(addr) = listed {
+            live::store().record(addr, Live::from_result(&r));
+        }
         r.map(|p| p.ms).map_err(|e| e.to_string())
     }
 
@@ -679,14 +668,6 @@ impl Hub {
 )]
 mod tests {
     use super::*;
-
-    #[test]
-    fn targets_parse() {
-        assert_eq!(parse_target("1.2.3.4:27016"), Some(("1.2.3.4", 27016)));
-        assert_eq!(parse_target("::1:27016"), Some(("::1", 27016)));
-        assert_eq!(parse_target("nope"), None);
-        assert_eq!(parse_target("1.2.3.4:x"), None);
-    }
 
     #[test]
     fn the_scan_state_follows_the_last_scan() {

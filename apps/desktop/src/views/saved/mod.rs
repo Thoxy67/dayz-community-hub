@@ -17,6 +17,8 @@ pub mod cmds;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
+use dz_api::SocketAddrV4;
+
 use egui::mutex::Mutex;
 use egui::{CornerRadius, Id, Sense, Ui, UiBuilder, Vec2};
 use rustc_hash::{FxHashMap, FxHasher};
@@ -28,9 +30,9 @@ use crate::i18n::{format, t, tf};
 use crate::icons::{Icon, lucide};
 use crate::kit::{Button, IconButton, Input, Side, Tone, Variant, VirtualList};
 use crate::parts::{
-    Empty, ListColumns, MasterDetail, PageHeader, ROW_PX, RowAction, RowButton, RowCache, RowData,
-    RowExtra, RowMenuItem, RowTag, ServerListRow, ShortcutsButton, SortHead, TableHead, draw,
-    head_cell, ph,
+    Empty, Host, ListColumns, MasterDetail, PageHeader, ROW_PX, RowAction, RowButton, RowCache,
+    RowData, RowExtra, RowMenuItem, RowTag, ServerListRow, ShortcutsButton, SortHead, TableHead,
+    draw, head_cell, ph,
 };
 use crate::store::servers::Live;
 use crate::theme::{TokensExt, font, fonts::Face, size};
@@ -218,6 +220,9 @@ pub struct Line {
     pub key: String,
     /// What pings know it by: the listed query port, else the saved port.
     pub ping_key: String,
+    /// The same address as numbers, what the list and friends are asked by each frame;
+    /// `None` for one saved as a host name (never listed).
+    pub addr: Option<SocketAddrV4>,
     pub listed: bool,
     pub game_port: i64,
     pub live: Live,
@@ -243,12 +248,14 @@ pub fn lines(cx: &mut Ctx, entries: &[Entry]) -> Vec<Line> {
             let port = i64::from(e.port);
             let key = e.key();
             let ping = s.servers.ping_ms(&e.ip, port);
-            match s.servers.row(&e.ip, port) {
+            let saved = dz_api::addr(&e.ip, port);
+            match saved.and_then(|a| s.servers.row(a)) {
                 Some(r) => Line {
-                    ping_key: format!("{}:{}", r.ip(), r.query_port()),
+                    ping_key: r.addr().to_string(),
+                    addr: Some(r.addr()),
                     key,
                     listed: true,
-                    game_port: r.game_port(),
+                    game_port: i64::from(r.game_port()),
                     live: Live {
                         players: r.players(),
                         max: r.max_players(),
@@ -261,6 +268,7 @@ pub fn lines(cx: &mut Ctx, entries: &[Entry]) -> Vec<Line> {
                 },
                 None => Line {
                     ping_key: key.clone(),
+                    addr: saved,
                     key,
                     listed: false,
                     game_port: port,
@@ -551,7 +559,7 @@ fn entries_state(cx: &Ctx, kind: Kind, h: &mut FxHasher) {
     let s = &cx.stores;
     let mut one = |ip: &str, port: u16| {
         let port = i64::from(port);
-        match s.servers.row(ip, port) {
+        match s.servers.row_of(ip, port) {
             Some(r) => r.state_bits().hash(h),
             None => {
                 s.servers.ping_ms(ip, port).hash(h);
@@ -1083,11 +1091,11 @@ fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCac
                     return;
                 };
                 let port = i64::from(e.port);
-                let listed = servers.row(&e.ip, port);
+                let listed = l.addr.and_then(|a| servers.row(a));
                 let mut rd = match &listed {
                     Some(r) => RowData::from_server(r),
                     None => RowData {
-                        ip: &e.ip,
+                        ip: Host::of(&e.ip),
                         query_port: port,
                         game_port: port,
                         players: u32::try_from(l.live.players.max(0)).unwrap_or(0),
@@ -1103,21 +1111,22 @@ fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCac
                 rd.flags.saved_password = e.password.as_deref().is_some_and(|p| !p.is_empty());
                 rd.ping_pending = servers.pending.contains(&l.ping_key);
                 rd.players_loading = data.a2s_loading(&l.ping_key);
-                let (qp, gp) = (
-                    u16::try_from(rd.query_port).unwrap_or(0),
-                    u16::try_from(rd.game_port).unwrap_or(0),
-                );
-                rd.favorite = profile.is_favorite(&e.ip, e.port)
-                    || profile.is_favorite(&e.ip, qp)
-                    || profile.is_favorite(&e.ip, gp);
-                rd.excluded = profile.is_excluded(&e.ip);
-                let names: Vec<&str> = if has_friends {
-                    friends
-                        .on_key(&l.ping_key)
-                        .map(|f| f.name.as_str())
-                        .collect()
-                } else {
-                    Vec::new()
+                // Saved, query and game port alike; a listed one asked by numbers.
+                match &listed {
+                    Some(r) => {
+                        rd.favorite = [e.port, r.query_port(), r.game_port()]
+                            .into_iter()
+                            .any(|p| profile.is_favorite_at(SocketAddrV4::new(r.ip(), p)));
+                        rd.excluded = profile.is_excluded_ip(r.ip());
+                    }
+                    None => {
+                        rd.favorite = profile.is_favorite(&e.ip, e.port);
+                        rd.excluded = profile.is_excluded(&e.ip);
+                    }
+                }
+                let names: Vec<&str> = match l.addr.filter(|_| has_friends) {
+                    Some(a) => friends.on(a).map(|f| f.name.as_str()).collect(),
+                    None => Vec::new(),
                 };
                 let (top, bottom) = match e.ts.filter(|_| wide) {
                     Some(ts) => {

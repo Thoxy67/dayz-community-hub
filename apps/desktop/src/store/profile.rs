@@ -6,6 +6,7 @@
 //! [`Profile::favorites`] / [`Profile::history`] and edited there optimistically: read
 //! them here, never `data.favorites` (left empty).
 
+use dz_api::{Ipv4Addr, SocketAddrV4};
 use dz_hub::Hub;
 pub use dz_hub::features::profile::{FavoriteDto as Favorite, HistoryDto as History};
 use dz_hub::features::profile::{ProfileDto, ProfileSettingsInput};
@@ -61,10 +62,13 @@ pub struct Profile {
     pub avatar_key: u64,
     /// Account writes that failed (the settings form puts the player's edits back).
     pub account_failures: u32,
-    /// The favourites' ports by address, asked by every row on screen each frame
-    /// (looked up by `&str`: no key is formatted).
-    favorite_keys: FxHashMap<String, Vec<u16>>,
-    excluded: FxHashSet<String>,
+    /// The favourites by address and the excluded IPs, asked by every row on screen
+    /// each frame: an IPv4 one as numbers (what a listed row has), any other (a host
+    /// name kept in the profile) by its text.
+    favorite_addrs: FxHashSet<SocketAddrV4>,
+    favorite_names: FxHashMap<String, Vec<u16>>,
+    excluded: FxHashSet<Ipv4Addr>,
+    excluded_names: FxHashSet<String>,
     load: Option<Task<Result<ProfileDto, String>>>,
     avatar: Option<Task<Option<String>>>,
     writes: Vec<Task<WriteResult>>,
@@ -85,8 +89,10 @@ impl Profile {
             avatar_url: None,
             avatar_key: 0,
             account_failures: 0,
-            favorite_keys: FxHashMap::default(),
+            favorite_addrs: FxHashSet::default(),
+            favorite_names: FxHashMap::default(),
             excluded: FxHashSet::default(),
+            excluded_names: FxHashSet::default(),
             load: None,
             avatar: None,
             writes: Vec::new(),
@@ -105,24 +111,48 @@ impl Profile {
     }
 
     fn derive(&mut self) {
-        self.favorite_keys.clear();
+        self.favorite_addrs.clear();
+        self.favorite_names.clear();
         for f in &self.favorites {
-            self.favorite_keys
-                .entry(f.ip.clone())
-                .or_default()
-                .push(f.port);
+            match f.ip.trim().parse() {
+                Ok(ip) => {
+                    self.favorite_addrs.insert(SocketAddrV4::new(ip, f.port));
+                }
+                Err(_) => self
+                    .favorite_names
+                    .entry(f.ip.clone())
+                    .or_default()
+                    .push(f.port),
+            }
         }
-        self.excluded = self
-            .data
-            .as_ref()
-            .map(|p| p.excluded_ips.iter().cloned().collect())
-            .unwrap_or_default();
+        self.excluded.clear();
+        self.excluded_names.clear();
+        for e in self.data.iter().flat_map(|p| &p.excluded_ips) {
+            match e.trim().parse() {
+                Ok(ip) => {
+                    self.excluded.insert(ip);
+                }
+                Err(_) => {
+                    self.excluded_names.insert(e.clone());
+                }
+            }
+        }
     }
 
+    /// Whether `ip:port` (as text: a favourite, what was typed) is a favourite.
     pub fn is_favorite(&self, ip: &str, port: u16) -> bool {
-        self.favorite_keys
-            .get(ip)
-            .is_some_and(|ports| ports.contains(&port))
+        match ip.trim().parse() {
+            Ok(ip) => self.is_favorite_at(SocketAddrV4::new(ip, port)),
+            Err(_) => self
+                .favorite_names
+                .get(ip)
+                .is_some_and(|ports| ports.contains(&port)),
+        }
+    }
+
+    /// Whether a listed server's address (query or game port) is a favourite.
+    pub fn is_favorite_at(&self, addr: SocketAddrV4) -> bool {
+        self.favorite_addrs.contains(&addr)
     }
 
     /// A cheap fingerprint of the favourites, the history and the excluded addresses
@@ -139,12 +169,21 @@ impl Profile {
         for e in &self.history {
             (&e.ip, e.port, &e.name, e.ts).hash(&mut h);
         }
-        self.excluded.len().hash(&mut h);
+        (self.excluded.len(), self.excluded_names.len()).hash(&mut h);
         h.finish()
     }
 
+    /// Whether `ip` (as text) is excluded.
     pub fn is_excluded(&self, ip: &str) -> bool {
-        self.excluded.contains(ip)
+        match ip.trim().parse() {
+            Ok(ip) => self.is_excluded_ip(ip),
+            Err(_) => self.excluded_names.contains(ip),
+        }
+    }
+
+    /// Whether a listed server's IP is excluded.
+    pub fn is_excluded_ip(&self, ip: Ipv4Addr) -> bool {
+        self.excluded.contains(&ip)
     }
 
     pub fn has_api_key(&self) -> bool {

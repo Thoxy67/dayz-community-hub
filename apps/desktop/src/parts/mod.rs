@@ -93,7 +93,7 @@ pub use sections::{
     SettingsSection,
 };
 pub use server_row::{
-    Col, ListColumns, NARROW_PX, ROW_PX, RowAction, RowButton, RowCache, RowData, RowExtra,
+    Col, Host, ListColumns, NARROW_PX, ROW_PX, RowAction, RowButton, RowCache, RowData, RowExtra,
     RowMenuItem, RowResponse, RowTag, ServerListRow, SortHead, TableHead, head_cell, head_label,
     server_menu,
 };

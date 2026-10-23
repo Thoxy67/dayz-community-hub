@@ -4,9 +4,10 @@ use serde::Serialize;
 /// A server with its mod list, for the detail panel and the connect flow.
 #[derive(Serialize, Clone, Debug)]
 pub struct ServerDto {
-    pub game_port: i64,
-    pub ip: String,
-    pub query_port: i64,
+    /// 0 when unknown.
+    pub game_port: u16,
+    pub ip: dz_api::Ipv4Addr,
+    pub query_port: u16,
     pub name: String,
     pub map: String,
     pub players: i64,
@@ -59,8 +60,8 @@ pub struct AppStatsDto {
 pub(crate) fn server_to_dto(s: &Server) -> ServerDto {
     ServerDto {
         game_port: s.game_port,
-        ip: s.endpoint.ip.clone(),
-        query_port: s.endpoint.port,
+        ip: s.ip(),
+        query_port: s.query_port(),
         name: s.name.clone(),
         map: s.map.clone(),
         players: s.players,

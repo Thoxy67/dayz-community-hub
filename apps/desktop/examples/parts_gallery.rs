@@ -53,7 +53,7 @@ struct State {
 fn server(
     name: &str,
     ip: &str,
-    port: i64,
+    port: u16,
     env: &str,
     map: &str,
     time: &str,
@@ -63,7 +63,7 @@ fn server(
 ) -> ServerRow {
     ServerRow {
         game_port: port,
-        ip: ip.to_owned(),
+        ip: ip.parse().unwrap_or(std::net::Ipv4Addr::UNSPECIFIED),
         query_port: port + 1,
         name: name.to_owned(),
         map: map.to_owned(),

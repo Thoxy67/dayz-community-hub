@@ -252,9 +252,9 @@ impl Direct {
         let port_error = port_num.is_none();
         let valid = !address_error && !port_error;
         let listed = match port_num {
-            Some(p) if valid && is_ipv4(&ip) => {
-                servers.row(&ip, i64::from(p)).map(|r| Arc::new(r.to_row()))
-            }
+            Some(p) if valid && is_ipv4(&ip) => servers
+                .row_of(&ip, i64::from(p))
+                .map(|r| Arc::new(r.to_row())),
             _ => None,
         };
         let favorite = port_num.filter(|_| valid).and_then(|p| {
@@ -264,23 +264,23 @@ impl Direct {
                 .find(|f| {
                     f.ip == ip
                         && (f.port == p
-                            || listed.as_ref().is_some_and(|l| {
-                                i64::from(f.port) == l.game_port
-                                    || i64::from(f.port) == l.query_port
-                            }))
+                            || listed
+                                .as_ref()
+                                .is_some_and(|l| f.port == l.game_port || f.port == l.query_port))
                 })
                 .cloned()
         });
         let to_u16 = |n: i64| u16::try_from(n).ok().filter(|p| *p >= 1);
         let game_port = listed
             .as_ref()
-            .and_then(|l| to_u16(l.game_port))
+            .map(|l| l.game_port)
+            .filter(|p| *p >= 1)
             .or_else(|| self.a2s.as_ref().and_then(|a| a.game_port.and_then(to_u16)))
             .or(port_num)
             .unwrap_or(0);
         let query_port = listed
             .as_ref()
-            .and_then(|l| to_u16(l.query_port))
+            .map(|l| l.query_port)
             .or_else(|| self.resolved_query_port.and_then(to_u16))
             .or_else(|| {
                 self.query_port
@@ -355,7 +355,7 @@ impl Direct {
     /// The server shown on the right: its list entry, or the address the query answered on.
     pub fn detail_target(&self, r: &Resolved) -> Option<(String, i64)> {
         if let Some(l) = &r.listed {
-            return Some((l.ip.clone(), l.query_port));
+            return Some((l.ip.to_string(), i64::from(l.query_port)));
         }
         match (&self.a2s, self.resolved_query_port) {
             (Some(_), Some(q)) => Some((r.ip.clone(), q)),
@@ -463,27 +463,30 @@ impl Direct {
                 Some(l) => Some(l),
                 None => super::servers::lookup_one(&hub, &ip, i64::from(typed)).await,
             };
-            let details_of = |ip: String, qp: i64| {
+            let details_of = |addr: dz_api::SocketAddrV4| {
                 let hub = hub.clone();
-                rt::spawn(async move { hub.get_server_details(ip, qp).await.ok() })
+                rt::spawn(async move { hub.get_server_details(addr).await.ok() })
             };
             let mut details = listed
                 .as_ref()
                 .filter(|l| l.mods_count > 0)
-                .map(|l| details_of(l.ip.clone(), l.query_port));
+                .map(|l| details_of(dz_api::SocketAddrV4::new(l.ip, l.query_port)));
             let qp = listed
                 .as_ref()
-                .map(|l| l.query_port)
+                .map(|l| i64::from(l.query_port))
                 .or(typed_qp)
                 .unwrap_or(i64::from(typed));
-            let target = listed.as_ref().map_or_else(|| ip.clone(), |l| l.ip.clone());
+            let target = listed
+                .as_ref()
+                .map_or_else(|| ip.clone(), |l| l.ip.to_string());
             let a2s = hub
-                .query_a2s(target, qp, listed.as_ref().map(|l| l.game_port))
+                .query_a2s(target, qp, listed.as_ref().map(|l| i64::from(l.game_port)))
                 .await;
+            // Only an IPv4 address can be a listed server with details.
             if listed.is_none()
                 && let Ok(a) = &a2s
             {
-                details = Some(details_of(ip.clone(), a.query_port));
+                details = dz_api::addr(&ip, a.query_port).map(details_of);
             }
             Answer {
                 listed,
@@ -546,7 +549,11 @@ impl Direct {
             match a.a2s {
                 Ok(a2s) => {
                     self.resolved_query_port = Some(a2s.query_port);
-                    let game = a.listed.as_ref().map(|l| l.game_port).or(a2s.game_port);
+                    let game = a
+                        .listed
+                        .as_ref()
+                        .map(|l| i64::from(l.game_port))
+                        .or(a2s.game_port);
                     if let Some(g) = game {
                         self.port = g.to_string();
                     }
@@ -556,7 +563,7 @@ impl Direct {
                     let ip = a
                         .listed
                         .as_ref()
-                        .map_or_else(|| self.address.trim().to_string(), |l| l.ip.clone());
+                        .map_or_else(|| self.address.trim().to_string(), |l| l.ip.to_string());
                     let (_, _, manual) = profile.ping_settings();
                     servers.ping_one(&ip, a2s.query_port, manual);
                     self.a2s = Some(a2s);

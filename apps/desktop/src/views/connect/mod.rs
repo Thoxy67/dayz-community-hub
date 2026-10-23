@@ -189,8 +189,11 @@ fn header(ui: &mut Ui, cx: &mut Ctx, r: &Resolved) {
     );
     let ping = match (r.query_port, &listed) {
         (Some(q), l) => {
-            let ip = l.as_ref().map_or(r.ip.as_str(), |l| l.ip.as_str());
-            cx.stores.servers.ping.get(&format!("{ip}:{q}")).copied()
+            let key = match l {
+                Some(l) => format!("{}:{q}", l.ip),
+                None => format!("{}:{q}", r.ip),
+            };
+            cx.stores.servers.ping.get(&key).copied()
         }
         _ => None,
     };

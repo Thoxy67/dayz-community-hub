@@ -12,6 +12,7 @@ pub mod model;
 
 use std::sync::Arc;
 
+use dz_api::SocketAddrV4;
 use dz_hub::features::friends::FriendsSource;
 use egui::{Rect, Ui, UiBuilder, Vec2};
 
@@ -78,9 +79,9 @@ impl FriendsView {
             return;
         }
         let servers = &cx.stores.servers;
-        let server_of = |ip: &str, port: u16| {
+        let server_of = |addr: SocketAddrV4| {
             servers
-                .row(ip, i64::from(port))
+                .row(addr)
                 .map(|r| (r.server.name.clone(), r.map.to_string()))
         };
         self.model = Model::build(f.list(), &f.query, &server_of);

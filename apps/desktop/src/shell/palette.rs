@@ -948,8 +948,8 @@ fn mod_items(cx: &Ctx) -> Vec<Item> {
 fn listed(st: &Palette) -> Vec<Item> {
     st.found
         .iter()
-        .filter_map(|r| {
-            let port = u16::try_from(r.game_port).ok()?;
+        .map(|r| {
+            let port = r.game_port;
             let mut it = Item::new(
                 format!("srv:{}:{port}", r.ip),
                 lucide::SERVER,
@@ -961,8 +961,8 @@ fn listed(st: &Palette) -> Vec<Item> {
                 "{}/{} · {} · {}:{port}",
                 r.players, r.max_players, r.map, r.ip
             ));
-            it.server = Some((r.ip.clone(), port));
-            Some(it)
+            it.server = Some((r.ip.to_string(), port));
+            it
         })
         .collect()
 }

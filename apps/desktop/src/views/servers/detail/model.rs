@@ -101,7 +101,7 @@ pub fn key(cx: &Ctx, ip: &str, port: i64, name: &str) -> u64 {
     use std::hash::{Hash, Hasher};
     let s = &cx.stores;
     let mut h = rustc_hash::FxHasher::default();
-    let row = s.servers.row(ip, port);
+    let row = s.servers.row_of(ip, port);
     (
         ip,
         port,
@@ -112,7 +112,7 @@ pub fn key(cx: &Ctx, ip: &str, port: i64, name: &str) -> u64 {
         s.profile.is_excluded(ip),
     )
         .hash(&mut h);
-    let qp = row.map_or(port, |r| r.query_port());
+    let qp = row.map_or(port, |r| i64::from(r.query_port()));
     let key = format!("{ip}:{qp}");
     let entry = s.server_data.a2s_entry(&key);
     if let Some(e) = entry {
@@ -126,11 +126,11 @@ pub fn key(cx: &Ctx, ip: &str, port: i64, name: &str) -> u64 {
     // The ports `of` works out, the same way: the metrics and the ping are read with them.
     let a2s = entry.and_then(|e| e.data.as_deref());
     let query_port = row
-        .map(|r| r.query_port())
+        .map(|r| i64::from(r.query_port()))
         .or(a2s.map(|a| a.query_port))
         .unwrap_or(port);
     let game_port = row
-        .map(|r| r.game_port())
+        .map(|r| i64::from(r.game_port()))
         .or(a2s.and_then(|a| a.game_port))
         .unwrap_or(port);
     let metrics = s.server_data.metrics(
@@ -201,7 +201,7 @@ impl Model {
     /// Gather it for `(ip, port)`, `port` the query port or (unlisted) the one asked.
     pub fn of(cx: &Ctx, ip: &str, port: i64, name: &str) -> Self {
         let s = &cx.stores;
-        let row = s.servers.row(ip, port);
+        let row = s.servers.row_of(ip, port);
         let listed = row.map(|r| {
             let v = r.server;
             Listed {
@@ -225,7 +225,7 @@ impl Model {
                 bots: r.bots(),
             }
         });
-        let qp_listed = row.map(|r| r.query_port());
+        let qp_listed = row.map(|r| i64::from(r.query_port()));
         let key = format!("{ip}:{}", qp_listed.unwrap_or(port));
         let entry = s.server_data.a2s_entry(&key);
         let a2s = entry.and_then(|e| e.data.clone());
@@ -235,7 +235,7 @@ impl Model {
             .or(a2s.as_ref().map(|a| a.query_port))
             .unwrap_or(port);
         let game_port = row
-            .map(|r| r.game_port())
+            .map(|r| i64::from(r.game_port()))
             .or(a2s.as_ref().and_then(|a| a.game_port))
             .unwrap_or(port);
         let title = [

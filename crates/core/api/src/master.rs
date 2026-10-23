@@ -26,6 +26,8 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 
+use crate::SocketAddrV4;
+
 /// Steam's ceiling for one request.
 pub const WEB_LIST_CAP: usize = 10_000;
 /// How deep a capped request is split: one character, then two.
@@ -403,9 +405,9 @@ fn compact_below(
 /// One server as the master lists it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MasterAddr {
-    pub ip: String,
+    /// Its query address.
+    pub addr: SocketAddrV4,
     pub name: String,
-    pub query_port: u16,
     pub game_port: u16,
     /// The bots its last heartbeat counted. DayZ has none: a server
     /// reporting some is a farm's emulator padding its count.
@@ -467,7 +469,9 @@ struct Inner {
 }
 #[derive(Deserialize)]
 struct Row {
-    addr: String,
+    /// "ip:port", read as numbers; `None` when it is not an IPv4 one.
+    #[serde(deserialize_with = "crate::addr::lenient_addr", default)]
+    addr: Option<SocketAddrV4>,
     #[serde(default)]
     name: String,
     #[serde(default)]
@@ -479,30 +483,32 @@ struct Row {
 fn parse(body: &[u8]) -> Result<Vec<MasterAddr>, WebError> {
     let r: Response = serde_json::from_slice(body)
         .map_err(|e| WebError::Body(format!("unreadable Steam server list: {e}")))?;
-    Ok(r.response
+    let rows = r.response.servers.len();
+    let servers: Vec<MasterAddr> = r
+        .response
         .servers
         .into_iter()
         .filter_map(|r| {
-            let (ip, port) = r.addr.rsplit_once(':')?;
-            let query_port: u16 = port.parse().ok().filter(|p| *p != 0)?;
-            // The address's own string, cut at the colon: no second
-            // allocation per row of up to twenty thousand.
-            let ip_len = ip.len();
-            let mut ip = r.addr;
-            ip.truncate(ip_len);
+            let addr = r.addr?;
             Some(MasterAddr {
-                ip,
+                addr,
                 name: r.name,
-                query_port,
                 game_port: if r.gameport == 0 {
-                    query_port
+                    addr.port()
                 } else {
                     r.gameport
                 },
                 bots: r.bots,
             })
         })
-        .collect())
+        .collect();
+    if servers.len() < rows {
+        eprintln!(
+            "steam master: {} rows without an IPv4 address left out",
+            rows - servers.len()
+        );
+    }
+    Ok(servers)
 }
 
 /// One request's servers.
@@ -760,10 +766,13 @@ mod tests {
         let body = br#"{"response":{"servers":[
             {"addr":"1.2.3.4:27016","gameport":2302,"bots":12,"players":12},
             {"addr":"1.2.3.4:27017"},
-            {"addr":"bad"}]}}"#;
+            {"addr":"bad"},
+            {"addr":"[2001:db8::1]:27016"},
+            {"addr":"1.2.3.4:0"}]}}"#;
         let r = parse(body).unwrap();
         assert_eq!(r.len(), 2);
-        assert_eq!((r[0].query_port, r[0].game_port), (27016, 2302));
+        assert_eq!((r[0].addr.port(), r[0].game_port), (27016, 2302));
+        assert_eq!(r[1].addr, "1.2.3.4:27017".parse().unwrap());
         assert_eq!((r[0].bots, r[1].bots), (12, 0));
         assert_eq!(r[1].game_port, 27017);
         assert!(parse(br#"{"response":{}}"#).unwrap().is_empty());

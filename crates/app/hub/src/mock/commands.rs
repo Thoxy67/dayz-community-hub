@@ -1,6 +1,7 @@
 //! The mock's answers that read or change the real state: usage from the
 //! profile, joins recorded in its history, folders in its data directory.
 
+use dz_api::SocketAddrV4;
 use std::path::PathBuf;
 
 use crate::features::mods::ModUsageDto;
@@ -43,19 +44,17 @@ impl World {
 
     /// A join: recorded in the history as for real, then reported done.
     /// Nothing is started.
-    pub(crate) async fn launch(&self, hub: &Hub, ip: &str, port: i64) -> Result<(), String> {
+    pub(crate) async fn launch(&self, hub: &Hub, addr: SocketAddrV4) -> Result<(), String> {
         let state = hub.state()?;
         let (name, game_port) = {
             let s = state.read().await;
-            match s.find_flexible(ip, port) {
+            match s.find_flexible(addr) {
                 Some(srv) => (srv.name.clone(), srv.game_port),
-                None => (format!("{ip}:{port}"), port),
+                None => (addr.to_string(), addr.port()),
             }
         };
-        if let Ok(p) = u16::try_from(game_port)
-            && p != 0
-        {
-            let (n, i) = (name.clone(), ip.to_string());
+        if game_port != 0 {
+            let (n, i, p) = (name.clone(), addr.ip().to_string(), game_port);
             mutate_profile(&state, |s| {
                 s.ctl.profile_mut().add_history(n, i, p);
                 Ok(())

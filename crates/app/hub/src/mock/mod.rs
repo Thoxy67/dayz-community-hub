@@ -31,7 +31,7 @@ mod tests;
 
 use std::path::{Path, PathBuf};
 
-use dz_api::{Endpoint, Server, ServerList};
+use dz_api::{Server, ServerList, SocketAddrV4};
 use rustc_hash::FxHashMap;
 
 use crate::features::browser::live::{self, Live};
@@ -167,10 +167,7 @@ impl World {
                 }
                 std::sync::Arc::new(Server {
                     game_port: s.game_port,
-                    endpoint: Endpoint {
-                        ip: s.ip.clone(),
-                        port: s.query_port,
-                    },
+                    endpoint: SocketAddrV4::new(s.ip, s.query_port),
                     name: s.name.clone(),
                     map: s.map.clone(),
                     players: s.players,
@@ -212,7 +209,8 @@ impl World {
     pub(crate) fn seed_pings(&self) {
         let store = live::store();
         for s in &self.servers {
-            store.record(&s.ip, s.query_port, live_of(&s.ip, s.query_port));
+            let addr = SocketAddrV4::new(s.ip, s.query_port);
+            store.record(addr, live_of(addr));
         }
         store.touch();
     }
@@ -225,6 +223,7 @@ impl World {
 
     /// The server at `ip` (mock.ts looks servers up by IP alone).
     pub(crate) fn server_by_ip(&self, ip: &str) -> Option<(usize, &MockServer)> {
+        let ip: dz_api::Ipv4Addr = ip.trim().parse().ok()?;
         self.servers.iter().enumerate().find(|(_, s)| s.ip == ip)
     }
 }
@@ -262,9 +261,10 @@ pub(crate) fn ping_of(key: &str) -> u32 {
     20 + ((len * 37 + last * 11) % 260) as u32
 }
 
-/// What a ping of `ip:port` comes to in the mock: above 270 ms, a timeout.
-pub(crate) fn live_of(ip: &str, port: i64) -> Live {
-    let ms = ping_of(&format!("{ip}:{port}"));
+/// What a ping of `addr` comes to in the mock: above 270 ms, a timeout.
+/// mock.ts hashed the address as text, so it is written out here.
+pub(crate) fn live_of(addr: SocketAddrV4) -> Live {
+    let ms = ping_of(&addr.to_string());
     let failed = ms > PING_TIMEOUT_ABOVE;
     Live {
         ms: Some(if failed { PING_TIMEOUT_MS } else { ms }),

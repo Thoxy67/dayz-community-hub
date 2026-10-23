@@ -10,6 +10,7 @@
 
 use std::time::{Duration, Instant};
 
+use dz_api::SocketAddrV4;
 use dz_hub::Hub;
 use dz_hub::features::friends::{FriendDto, FriendStatus, FriendsDto, FriendsSource};
 use rustc_hash::FxHashMap;
@@ -24,10 +25,6 @@ const SHOWN: Duration = Duration::from_secs(60);
 const BEHIND: Duration = Duration::from_secs(120);
 /// More arrivals than this at once are said in one toast.
 const TOASTS_MAX: usize = 2;
-
-fn server_key(ip: &str, port: u16) -> String {
-    format!("{ip}:{port}")
-}
 
 pub struct Friends {
     hub: Hub,
@@ -46,7 +43,7 @@ pub struct Friends {
     in_dayz: usize,
     online: usize,
     /// Indexes into `data.friends` by "ip:port".
-    by_server: FxHashMap<String, Vec<usize>>,
+    by_server: FxHashMap<SocketAddrV4, Vec<usize>>,
     task: Option<(bool, Task<Result<FriendsDto, String>>)>,
     /// Bumped whenever `data` changes: what the view derived from it is redone.
     pub generation: u64,
@@ -98,17 +95,12 @@ impl Friends {
         self.online
     }
 
-    /// The friends on a server, by its query port (or game port when unlisted).
-    pub fn on(&self, ip: &str, port: u16) -> impl Iterator<Item = &FriendDto> {
-        self.on_key(&server_key(ip, port))
-    }
-
-    /// [`Friends::on`] by a key the caller already holds ("ip:port", the row's own
-    /// buffer): nothing is formatted, for lists that ask once per row each frame.
-    pub fn on_key<'a>(&'a self, key: &str) -> impl Iterator<Item = &'a FriendDto> + use<'a> {
+    /// The friends on a server, by its query address (or game port when unlisted):
+    /// a lookup by number, for lists that ask once per row each frame.
+    pub fn on<'a>(&'a self, addr: SocketAddrV4) -> impl Iterator<Item = &'a FriendDto> + use<'a> {
         let list = self.list();
         self.by_server
-            .get(key)
+            .get(&addr)
             .into_iter()
             .flatten()
             .filter_map(move |i| list.get(*i))
@@ -121,10 +113,12 @@ impl Friends {
             .iter()
             .filter(|f| f.status != FriendStatus::Offline || f.game.is_some())
             .count();
-        let mut m: FxHashMap<String, Vec<usize>> = FxHashMap::default();
+        let mut m: FxHashMap<SocketAddrV4, Vec<usize>> = FxHashMap::default();
         for (i, f) in list.iter().enumerate() {
             if let (true, Some(s)) = (f.in_dayz, &f.server) {
-                m.entry(server_key(&s.ip, s.port)).or_default().push(i);
+                m.entry(SocketAddrV4::new(s.ip, s.port))
+                    .or_default()
+                    .push(i);
             }
         }
         self.by_server = m;
@@ -233,7 +227,7 @@ impl Friends {
                 && f.server.as_ref().is_some_and(|s| {
                     p.server
                         .as_ref()
-                        .is_none_or(|ps| server_key(&ps.ip, ps.port) != server_key(&s.ip, s.port))
+                        .is_none_or(|ps| (ps.ip, ps.port) != (s.ip, s.port))
                 });
             if started {
                 self.since.insert(f.steam_id.clone(), now);

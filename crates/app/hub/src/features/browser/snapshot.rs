@@ -19,7 +19,7 @@
 //! profile's flags were written again; [`ServerSnapshot::live_stamp`] moves
 //! with every live write. An order stays right until one it depends on moves.
 
-use dz_api::{Server, ServerIndex, ServerList};
+use dz_api::{Ipv4Addr, Server, ServerIndex, ServerList, SocketAddrV4};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -28,13 +28,14 @@ use super::live::{Live, PING_FAILED_MS};
 use super::query::{ServerQuery, ServerRow, ServerStats, SortCol};
 use super::{MapCount, count_maps};
 
-/// What the profile says of servers, as the flags need it.
+/// What the profile says of servers, as the flags need it: its addresses
+/// read into numbers once, so each server's flags are two or three integer
+/// lookups. An entry that is no IPv4 address names no listed server.
 #[derive(Default)]
 pub(crate) struct ProfileView {
-    pub excluded: FxHashSet<String>,
-    /// Each favourite's IP → its ports (query or game port), keyed by IP so a
-    /// server is looked up with its borrowed address, no allocation.
-    pub favorites: FxHashMap<String, Vec<i64>>,
+    pub excluded: FxHashSet<Ipv4Addr>,
+    /// Each favourite's address (by query or game port).
+    pub favorites: FxHashSet<SocketAddrV4>,
     /// Workshop id of each mod on disk → an update is waiting for it; `None`
     /// while the disk has not been read.
     pub mods: Option<FxHashMap<u64, bool>>,
@@ -42,9 +43,8 @@ pub(crate) struct ProfileView {
 
 impl ProfileView {
     fn is_favorite(&self, s: &Server) -> bool {
-        self.favorites
-            .get(s.endpoint.ip.as_str())
-            .is_some_and(|ports| ports.contains(&s.endpoint.port) || ports.contains(&s.game_port))
+        self.favorites.contains(&s.endpoint)
+            || s.join_addr().is_some_and(|j| self.favorites.contains(&j))
     }
 
     /// The packed profile word for one server.
@@ -53,7 +53,7 @@ impl ProfileView {
         if self.is_favorite(s) {
             w |= P_FAVORITE;
         }
-        if self.excluded.contains(&s.endpoint.ip) {
+        if self.excluded.contains(s.endpoint.ip()) {
             w |= P_EXCLUDED;
         }
         if let Some(have) = &self.mods {
@@ -329,24 +329,25 @@ impl ServerSnapshot {
         })
     }
 
-    /// The index of the server at `ip:port`, query port first, then game port.
-    pub fn find(&self, ip: &str, port: i64) -> Option<u32> {
-        self.index.flexible(ip, port).map(|i| i as u32)
+    /// The index of the server at `addr`, by query port first, then game port.
+    pub fn find(&self, addr: SocketAddrV4) -> Option<u32> {
+        self.index.flexible(addr).map(|i| i as u32)
     }
 
-    /// The index of the server whose query port is `port`.
-    pub fn find_by_query_port(&self, ip: &str, port: i64) -> Option<u32> {
-        self.index.by_query_port(ip, port).map(|i| i as u32)
+    /// The index of the server whose query address is `addr`.
+    pub fn find_by_query_port(&self, addr: SocketAddrV4) -> Option<u32> {
+        self.index.by_query_port(addr).map(|i| i as u32)
     }
 
-    /// Server `ip:port` (query or game port) with its state.
-    pub fn lookup(&self, ip: &str, port: i64) -> Option<ServerRef<'_>> {
-        self.get(self.find(ip, port)?)
+    /// The server at `addr` (query or game port) with its state.
+    pub fn lookup(&self, addr: SocketAddrV4) -> Option<ServerRef<'_>> {
+        self.get(self.find(addr)?)
     }
 
-    /// Write a live result into the server at `ip:query_port`, if listed.
-    pub(crate) fn put_live(&self, ip: &str, port: i64, live: &Live) {
-        if let Some(i) = self.index.by_query_port(ip, port)
+    /// Write a live result into the server whose query address is `addr`,
+    /// if listed.
+    pub(crate) fn put_live(&self, addr: SocketAddrV4, live: &Live) {
+        if let Some(i) = self.index.by_query_port(addr)
             && let Some(slot) = self.live.get(i)
         {
             slot.store(pack_live(live), Ordering::Relaxed);
@@ -357,9 +358,7 @@ impl ServerSnapshot {
     /// Fill the live table from what is known by address.
     pub(crate) fn fill_live(&self, live: &super::live::LiveMap) {
         for (s, slot) in self.list.result.iter().zip(self.live.iter()) {
-            let w = live
-                .get(&s.endpoint.ip, s.endpoint.port)
-                .map_or(0, pack_live);
+            let w = live.get(s.endpoint).map_or(0, pack_live);
             slot.store(w, Ordering::Relaxed);
         }
         self.live_stamp.fetch_add(1, Ordering::Release);
@@ -396,13 +395,18 @@ pub struct ServerRef<'a> {
 }
 
 impl<'a> ServerRef<'a> {
-    pub fn ip(&self) -> &'a str {
-        &self.server.endpoint.ip
+    pub fn ip(&self) -> Ipv4Addr {
+        self.server.ip()
     }
-    pub fn query_port(&self) -> i64 {
-        self.server.endpoint.port
+    /// Its query address.
+    pub fn addr(&self) -> SocketAddrV4 {
+        self.server.endpoint
     }
-    pub fn game_port(&self) -> i64 {
+    pub fn query_port(&self) -> u16 {
+        self.server.query_port()
+    }
+    /// 0 when unknown.
+    pub fn game_port(&self) -> u16 {
         self.server.game_port
     }
     pub fn name(&self) -> &'a str {
@@ -486,8 +490,8 @@ impl<'a> ServerRef<'a> {
         let s = self.server;
         ServerRow {
             game_port: s.game_port,
-            ip: s.endpoint.ip.clone(),
-            query_port: s.endpoint.port,
+            ip: s.ip(),
+            query_port: s.query_port(),
             name: s.name.clone(),
             map: self.map.to_owned(),
             players: self.players(),
@@ -567,6 +571,21 @@ pub(crate) fn contains_ci(hay: &str, needle_lower: &str) -> bool {
         .any(|w| w.iter().zip(n).all(|(a, b)| a.to_ascii_lowercase() == *b))
 }
 
+/// Whether `ip` written out ("1.2.3.4") holds `needle`; written on the
+/// stack, so a search through ten thousand servers allocates nothing.
+fn ip_contains(ip: Ipv4Addr, needle: &str) -> bool {
+    use std::io::Write;
+    let mut buf = [0u8; 15];
+    let mut at = &mut buf[..];
+    if write!(at, "{ip}").is_err() {
+        return false;
+    }
+    let len = 15 - at.len();
+    let text = buf.get(..len).unwrap_or_default();
+    text.windows(needle.len().max(1))
+        .any(|w| w == needle.as_bytes())
+}
+
 /// Filter and sort `snap` for `q` (its `offset`/`limit` are ignored). Pure and
 /// quick (well under a millisecond on 9 500 servers in release): call it on
 /// any thread.
@@ -574,6 +593,8 @@ pub fn order(snap: &Arc<ServerSnapshot>, q: &ServerQuery) -> ServerOrder {
     let profile_generation = snap.profile_generation();
     let live_stamp = snap.live_stamp();
     let search = q.search.trim().to_lowercase();
+    // Only digits and dots can be found in an address's text.
+    let search_ip = !search.is_empty() && search.bytes().all(|b| b.is_ascii_digit() || b == b'.');
     // The maps wanted, as a mask over the snapshot's maps (one spelling per map); none
     // for every map. A name no server runs adds nothing.
     let wanted: Vec<String> = q
@@ -625,7 +646,7 @@ pub fn order(snap: &Arc<ServerSnapshot>, q: &ServerQuery) -> ServerOrder {
                 .get(i)
                 .is_some_and(|n| n.contains(search.as_str()));
             let hit = name_hit
-                || s.endpoint.ip.contains(search.as_str())
+                || (search_ip && ip_contains(s.ip(), &search))
                 || map_hits.get(map as usize).copied().unwrap_or(false);
             if !hit {
                 continue;

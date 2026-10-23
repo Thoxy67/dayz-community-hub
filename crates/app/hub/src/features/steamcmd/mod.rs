@@ -569,10 +569,11 @@ impl Hub {
             ModOpType::InstallServer | ModOpType::UpdateServer => {
                 let ip = ip.ok_or("ip required")?;
                 let port = port.ok_or("port required")?;
+                let addr = dz_api::addr(&ip, port).ok_or_else(|| "Server not found".to_string())?;
                 let server = state
                     .read()
                     .await
-                    .find_by_query_port(&ip, port)
+                    .find_by_query_port(addr)
                     .cloned()
                     .ok_or_else(|| "Server not found".to_string())?;
                 if op_type == ModOpType::InstallServer {

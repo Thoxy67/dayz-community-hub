@@ -412,7 +412,7 @@ fn foot_height(cx: &mut Ctx, collapsed: bool, window_h: f32) -> f32 {
         None => 0.0,
         Some(_) if collapsed || window_h <= SHORT_WINDOW => ENTRY_H + 8.0,
         Some((ip, port, ..)) => {
-            let listed = cx.stores.servers.row(&ip, i64::from(port)).is_some();
+            let listed = cx.stores.servers.row_of(&ip, i64::from(port)).is_some();
             card_height(listed) + 8.0
         }
     };
@@ -495,7 +495,7 @@ fn rejoin(ui: &mut Ui, cx: &mut Ctx, collapsed: bool, foot: Rect, y: f32) -> f32
 
     // The snapshot is held here (an `Arc`), so the row borrows it and not the stores.
     let snap = Arc::clone(cx.stores.servers.snapshot());
-    let listed = snap.lookup(&ip, i64::from(port));
+    let listed = dz_api::addr(&ip, i64::from(port)).and_then(|a| snap.lookup(a));
     let card = Rect::from_min_size(
         pos2(foot.left() + 8.0, y),
         vec2(foot.width() - 16.0, card_height(listed.is_some())),
@@ -648,8 +648,9 @@ fn listed_lines(
     let players = u32::try_from(row.players().max(0)).unwrap_or(0);
     let max = u32::try_from(row.max_players().max(0)).unwrap_or(0);
     ui.put(pr, Players::new(players, max).bots(row.bots()).compact());
-    let key = format!("{}:{}", row.ip(), row.query_port());
-    let ms = cx.stores.servers.ping_ms(row.ip(), row.query_port());
+    let key = row.addr().to_string();
+    let ms = crate::store::servers::Servers::listed_ping(&row)
+        .or_else(|| cx.stores.servers.ping.get(&key).copied());
     let pending = cx.stores.servers.pending.contains(&key);
     let sr = Rect::from_min_max(pos2(right - 56.0, y), pos2(right, y + 21.0));
     let mut sui = ui.new_child(
@@ -664,7 +665,7 @@ fn listed_lines(
         let timeout = cx.stores.profile.ping_settings().2;
         cx.stores
             .servers
-            .ping_one(row.ip(), row.query_port(), timeout);
+            .ping_one(&row.ip().to_string(), i64::from(row.query_port()), timeout);
     }
     let y = y + 21.0 + 6.0;
     // Map and time (`text-2xs text-map`).

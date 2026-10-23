@@ -49,11 +49,11 @@ pub fn target(cx: &Ctx, a: &Value) -> Option<Target> {
     let servers = &cx.stores.servers;
     if let (Some(ip), Some(port)) = (arg_str(a, "ip"), arg_i64(a, "port")) {
         let ip: String = ip.trim().chars().take(255).collect();
-        if let Some(r) = servers.row(&ip, port) {
+        if let Some(r) = servers.row_of(&ip, port) {
             return Some(Target {
                 ip,
-                query_port: r.query_port(),
-                game_port: r.game_port(),
+                query_port: i64::from(r.query_port()),
+                game_port: i64::from(r.game_port()),
                 name: r.name().to_string(),
                 listed: true,
             });
@@ -103,10 +103,10 @@ fn with_detail(cx: &Ctx, f: impl FnOnce(&mut detail::DetailState)) {
 
 /// Another view asked for one server: selected, details open, scrolled to.
 pub fn focus(cx: &mut Ctx, ip: &str, port: i64) {
-    let row = cx.stores.servers.row(ip, port).map(|r| {
+    let row = cx.stores.servers.row_of(ip, port).map(|r| {
         (
             r.ip().to_string(),
-            r.query_port(),
+            i64::from(r.query_port()),
             r.name().to_string(),
             r.index,
         )
@@ -184,7 +184,7 @@ fn move_by(cx: &mut Ctx, delta: i64) {
         if let Some(r) = o.get(i) {
             st.sel = Some(Sel {
                 ip: r.ip().to_string(),
-                port: r.query_port(),
+                port: i64::from(r.query_port()),
                 name: r.name().to_string(),
                 index: i,
             });
@@ -242,7 +242,7 @@ pub fn join(cx: &mut Ctx, a: &Value) {
     let row = cx
         .stores
         .servers
-        .row(&tg.ip, tg.query_port)
+        .row_of(&tg.ip, tg.query_port)
         .map(|r| r.to_row());
     match row {
         Some(r) => cx.join_row(r, None),

@@ -250,7 +250,8 @@ impl Hub {
         let p = s.ctl.profile();
         let mut by: FxHashMap<u64, ModUsageDto> = FxHashMap::default();
         let mut add = |ip: &str, port: u16, name: &str, favorite: bool| {
-            let Some(srv) = s.find_flexible(ip, i64::from(port)) else {
+            let Some(srv) = dz_api::addr(ip, i64::from(port)).and_then(|a| s.find_flexible(a))
+            else {
                 return;
             };
             for m in &srv.mods {
@@ -479,13 +480,13 @@ impl Hub {
     }
 
     /// Create the `@<id>` links a listed server's mods need.
-    pub async fn setup_mod_symlinks(&self, ip: String, port: i64) -> Result<(), String> {
+    pub async fn setup_mod_symlinks(&self, addr: dz_api::SocketAddrV4) -> Result<(), String> {
         mocked!(self => Ok(()));
         let state = self.state()?;
         let (server, ctl) = {
             let state = state.read().await;
             let server = state
-                .find_by_query_port(&ip, port)
+                .find_by_query_port(addr)
                 .cloned()
                 .ok_or_else(|| "Server not found".to_string())?;
             (server, state.ctl.clone_for_task())

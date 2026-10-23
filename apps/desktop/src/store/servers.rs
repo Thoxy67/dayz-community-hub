@@ -17,6 +17,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use dz_api::SocketAddrV4;
 use dz_hub::features::browser::{
     MapCount, ServerOrder, ServerQuery, ServerRef, ServerRow, ServerSnapshot, SortCol, Tri, order,
     stats_of,
@@ -228,8 +229,14 @@ impl Servers {
 
     /// A listed server with its freshest state, by address (query or game port),
     /// borrowed from the snapshot.
-    pub fn row(&self, ip: &str, port: i64) -> Option<ServerRef<'_>> {
-        self.snapshot.lookup(ip, port)
+    pub fn row(&self, addr: SocketAddrV4) -> Option<ServerRef<'_>> {
+        self.snapshot.lookup(addr)
+    }
+
+    /// [`row`](Self::row) for an address as text (a favourite, a link, what was
+    /// typed): only an IPv4 one can be listed.
+    pub fn row_of(&self, ip: &str, port: i64) -> Option<ServerRef<'_>> {
+        self.row(dz_api::addr(ip, port)?)
     }
 
     /// The browser's query as it stands (the last one set, maybe still debouncing).
@@ -294,16 +301,18 @@ impl Servers {
 
     /// The round trip of a server, listed or pinged on request; `None` never pinged.
     pub fn ping_ms(&self, ip: &str, port: i64) -> Option<u32> {
-        self.snapshot
-            .lookup(ip, port)
-            .and_then(|r| {
-                if r.ping_failed() {
-                    Some(TIMEOUT_MS)
-                } else {
-                    r.ping_ms()
-                }
-            })
+        self.row_of(ip, port)
+            .and_then(|r| Self::listed_ping(&r))
             .or_else(|| self.ping.get(&format!("{ip}:{port}")).copied())
+    }
+
+    /// The round trip the snapshot holds for a listed server (a failure as a timeout).
+    pub fn listed_ping(r: &ServerRef<'_>) -> Option<u32> {
+        if r.ping_failed() {
+            Some(TIMEOUT_MS)
+        } else {
+            r.ping_ms()
+        }
     }
 
     /// How many servers have answered a ping or timed out.
@@ -316,7 +325,8 @@ impl Servers {
                 .ping
                 .keys()
                 .filter(|k| {
-                    split_key(k).is_none_or(|(ip, port)| self.snapshot.find(ip, port).is_none())
+                    k.parse::<SocketAddrV4>()
+                        .map_or(true, |a| self.snapshot.find(a).is_none())
                 })
                 .count()
     }
@@ -563,7 +573,9 @@ impl Servers {
         }
         self.pending.extend(todo.iter().cloned());
         let hub = self.hub.clone();
-        let targets = todo.clone();
+        // Only an IPv4 address is pinged in a list; one that is not stays pending
+        // until the list ends.
+        let targets: Vec<SocketAddrV4> = todo.iter().filter_map(|k| k.parse().ok()).collect();
         let task = rt::spawn(async move {
             hub.ping_servers(
                 targets,
@@ -818,9 +830,10 @@ impl Servers {
     }
 }
 
-/// One server by address, asked of the hub now (for the async connect flows).
+/// One server by address, asked of the hub now (for the async connect flows). An
+/// address that is not an IPv4 one is no listed server.
 pub async fn lookup_one(hub: &Hub, ip: &str, port: i64) -> Option<ServerRow> {
-    hub.servers_lookup(vec![format!("{ip}:{port}")])
+    hub.servers_lookup(vec![dz_api::addr(ip, port)?])
         .await
         .ok()
         .and_then(|mut v| v.pop().flatten())

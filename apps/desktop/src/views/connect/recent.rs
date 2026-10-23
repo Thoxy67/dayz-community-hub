@@ -104,7 +104,7 @@ pub fn list(ui: &mut Ui, cx: &mut Ctx, wide: bool) {
     let snap = Arc::clone(cx.stores.servers.snapshot());
     let rows: Vec<Option<ServerRef<'_>>> = picks
         .iter()
-        .map(|p| snap.lookup(&p.ip, i64::from(p.port)))
+        .map(|p| dz_api::addr(&p.ip, i64::from(p.port)).and_then(|a| snap.lookup(a)))
         .collect();
     let pings: Vec<Option<u32>> = picks
         .iter()
@@ -151,11 +151,10 @@ pub fn list(ui: &mut Ui, cx: &mut Ctx, wide: bool) {
         let row = rows.get(i).copied().flatten();
         let port = row
             .as_ref()
-            .and_then(|r| u16::try_from(r.game_port()).ok())
+            .map(|r| r.game_port())
+            .filter(|p| *p != 0)
             .unwrap_or(p.port);
-        let qp = row
-            .as_ref()
-            .and_then(|r| u16::try_from(r.query_port()).ok());
+        let qp = row.as_ref().map(|r| r.query_port());
         cx.stores.direct_load(&p.ip, port, qp, p.password.clone());
     }
 }
@@ -299,7 +298,8 @@ fn cards(
             cy += name.size().y.max(17.5) + 5.0;
             let port = row
                 .as_ref()
-                .and_then(|s| u16::try_from(s.game_port()).ok())
+                .map(|s| s.game_port())
+                .filter(|p| *p != 0)
                 .unwrap_or(p.port);
             let addr = paint::galley_trunc(
                 ui,
@@ -401,7 +401,8 @@ fn compact(
         let name = paint::galley_trunc(ui, &p.name, font(Face::Sans, size::TEXT_2XS), tk.fg, tw);
         let port = row
             .as_ref()
-            .and_then(|s| u16::try_from(s.game_port()).ok())
+            .map(|s| s.game_port())
+            .filter(|p| *p != 0)
             .unwrap_or(p.port);
         let addr = paint::galley(ui, &format!("{}:{port}", p.ip), mono.clone(), tk.fg_faint);
         let painter = ui.painter();

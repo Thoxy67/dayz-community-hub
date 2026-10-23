@@ -47,8 +47,8 @@ use std::time::{Duration, Instant};
 
 use crate::Hub;
 use dz_api::{
-    FarmCounter, MasterAddr, Mod, PlannedPart, Server, ServerList, SteamListed, SteamRow, WebError,
-    WebPartition,
+    FarmCounter, MasterAddr, Mod, PlannedPart, Server, ServerList, SocketAddrV4, SteamListed,
+    SteamRow, WebError, WebPartition,
 };
 use futures_util::stream::FuturesUnordered;
 use futures_util::{StreamExt, stream};
@@ -109,15 +109,15 @@ struct Found {
     /// Every server Steam listed that answered, once each, with its
     /// [`Server`] made once.
     rows: Vec<SteamRow>,
-    keys: FxHashSet<(String, i64)>,
+    keys: FxHashSet<Addr>,
     farms: FarmCounter,
     /// Servers an earlier list had that the current one lacks, kept while
     /// they answer.
     kept: Vec<Arc<Server>>,
-    /// Entries combed out as duplicates, by (ip, query port), and the join
-    /// addresses (ip, game port) already combed.
-    dropped: FxHashSet<(String, i64)>,
-    combed: FxHashSet<(String, i64)>,
+    /// Entries combed out as duplicates, by query address, and the
+    /// addresses to join (ip, game port) already combed.
+    dropped: FxHashSet<Addr>,
+    combed: FxHashSet<SocketAddrV4>,
     /// When the last listing started.
     last: Option<Instant>,
     /// What listings learned of each address they queried.
@@ -158,15 +158,13 @@ fn found() -> std::sync::MutexGuard<'static, Found> {
 use memory::Addr;
 
 fn key<S: std::borrow::Borrow<Server>>(s: &S) -> Addr {
-    let s = s.borrow();
-    (s.endpoint.ip.clone(), s.endpoint.port)
+    s.borrow().endpoint
 }
 
 /// An address the master listed, with what it counts for its players.
 #[derive(Debug, Clone)]
 struct Candidate {
-    ip: String,
-    query_port: u16,
+    addr: Addr,
     game_port: u16,
     empty: Option<bool>,
     /// Bots the master's row counts.
@@ -216,8 +214,8 @@ pub(crate) fn remember(memory: Option<ListingMemory>, list: &ServerList) {
 pub(crate) fn refreshed(previous: &ServerList, base: Arc<ServerList>) -> Arc<ServerList> {
     let kept = {
         let mut f = found();
-        let mut known: FxHashSet<(String, i64)> = base.result.iter().map(key).collect();
-        known.extend(f.keys.iter().cloned());
+        let mut known: FxHashSet<Addr> = base.result.iter().map(key).collect();
+        known.extend(f.keys.iter().copied());
         f.kept.retain(|s| known.insert(key(s)));
         let more: Vec<Arc<Server>> = previous
             .result
@@ -245,7 +243,8 @@ pub(crate) fn refreshed(previous: &ServerList, base: Arc<ServerList>) -> Arc<Ser
 
 /// The base, Steam's rows and the kept servers as one list. The servers are
 /// shared with `base` and the rows (refcounts, no copies), and the keys
-/// compared are borrowed: this runs every time more servers answer.
+/// compared are addresses (integers): this runs every time more servers
+/// answer.
 fn compose() -> Arc<ServerList> {
     let f = found();
     if f.rows.is_empty() && f.kept.is_empty() && f.dropped.is_empty() {
@@ -258,25 +257,17 @@ fn compose() -> Arc<ServerList> {
         result: dz_api::merged_steam(&f.base.result, &f.rows, &f.farms),
     };
     if !f.kept.is_empty() {
-        let mut have: FxHashSet<(&str, i64)> = list
-            .result
-            .iter()
-            .map(|s| (s.endpoint.ip.as_str(), s.endpoint.port))
-            .collect();
+        let mut have: FxHashSet<Addr> = list.result.iter().map(key).collect();
         let more: Vec<Arc<Server>> = f
             .kept
             .iter()
-            .filter(|s| have.insert((s.endpoint.ip.as_str(), s.endpoint.port)))
+            .filter(|s| have.insert(s.endpoint))
             .cloned()
             .collect();
-        drop(have);
         list.result.extend(more);
     }
     if !f.dropped.is_empty() {
-        let dropped: FxHashSet<(&str, i64)> =
-            f.dropped.iter().map(|(ip, p)| (ip.as_str(), *p)).collect();
-        list.result
-            .retain(|s| !dropped.contains(&(s.endpoint.ip.as_str(), s.endpoint.port)));
+        list.result.retain(|s| !f.dropped.contains(&s.endpoint));
     }
     Arc::new(list)
 }
@@ -328,25 +319,15 @@ async fn comb_once(hub: &Hub) {
         return;
     };
     let list = Arc::clone(&state.read().await.servers);
-    let groups: Vec<(i64, Vec<(String, i64)>)> = {
+    let groups: Vec<(SocketAddrV4, Vec<Addr>)> = {
         let conflicts = dz_api::join_conflicts(&list.result);
         if conflicts.is_empty() {
             return;
         }
-        // Borrowed keys: this runs on every change to the list while a
-        // listing adds to it, and an owned key would copy every IP.
-        let game_port: FxHashMap<(&str, i64), i64> = list
-            .result
-            .iter()
-            .map(|s| ((s.endpoint.ip.as_str(), s.endpoint.port), s.game_port))
-            .collect();
         let f = found();
         conflicts
             .into_iter()
-            .filter_map(|g| {
-                let gp = *game_port.get(&(g[0].0.as_str(), g[0].1))?;
-                (!f.combed.contains(&(g[0].0.clone(), gp))).then_some((gp, g))
-            })
+            .filter(|(join, _)| !f.combed.contains(join))
             .collect()
     };
     if groups.is_empty() {
@@ -354,24 +335,20 @@ async fn comb_once(hub: &Hub) {
     }
     let engine = crate::net::a2s();
     let window = engine.window(INFO_TIMEOUT);
-    let verdicts: Vec<(Addr, Vec<Addr>)> = stream::iter(groups)
-        .map(|(gp, group)| {
+    let verdicts: Vec<(SocketAddrV4, Vec<Addr>)> = stream::iter(groups)
+        .map(|(join, group)| {
             let engine = engine.clone();
             async move {
-                let ip = group[0].0.clone();
                 let mut stating = None;
                 let mut answering = None;
-                for (ip, qp) in &group {
-                    let Some(addr) = dz_a2s::socket_addr(ip, *qp) else {
-                        continue;
-                    };
+                for &addr in &group {
                     for _ in 0..KEPT_TRIES {
-                        if let Ok(a) = engine.info(addr, INFO_TIMEOUT).await {
-                            let port = a.info.extended_server_info.port.map(i64::from);
-                            if stating.is_none() && port.is_none_or(|p| p == gp) {
-                                stating = Some((ip.clone(), *qp));
+                        if let Ok(a) = engine.info(addr.into(), INFO_TIMEOUT).await {
+                            let port = a.info.extended_server_info.port;
+                            if stating.is_none() && port.is_none_or(|p| p == join.port()) {
+                                stating = Some(addr);
                             }
-                            answering.get_or_insert((ip.clone(), *qp));
+                            answering.get_or_insert(addr);
                             break;
                         }
                     }
@@ -380,7 +357,7 @@ async fn comb_once(hub: &Hub) {
                     Some(keep) => group.into_iter().filter(|k| *k != keep).collect(),
                     None => Vec::new(),
                 };
-                ((ip, gp), losers)
+                (join, losers)
             }
         })
         .buffer_unordered(window)
@@ -390,8 +367,8 @@ async fn comb_once(hub: &Hub) {
     {
         let mut f = found();
         let now = sources::now();
-        for ((ip, gp), losers) in verdicts {
-            f.combed.insert((ip, gp));
+        for (join, losers) in verdicts {
+            f.combed.insert(join);
             removed += losers.len();
             // A listing does not query them again for a while.
             for k in &losers {
@@ -423,7 +400,7 @@ async fn comb_once(hub: &Hub) {
 /// servers included) is judged on that answer instead of being asked again.
 pub(crate) fn check_kept(hub: Hub) {
     tokio::spawn(async move {
-        let kept: Vec<(String, i64)> = found().kept.iter().map(key).collect();
+        let kept: Vec<Addr> = found().kept.iter().map(key).collect();
         if kept.is_empty() {
             return;
         }
@@ -447,7 +424,7 @@ pub(crate) fn check_kept(hub: Hub) {
         }
         gone.extend(kept_pass(ask).await);
         if !gone.is_empty() {
-            let gone: FxHashSet<(String, i64)> = gone.into_iter().collect();
+            let gone: FxHashSet<Addr> = gone.into_iter().collect();
             found().kept.retain(|s| !gone.contains(&key(s)));
             let list = show(&hub, &state).await;
             super::save_cache_in_background(Arc::clone(&list));
@@ -467,13 +444,13 @@ fn split_kept(
 ) -> (Vec<(Addr, bool)>, Vec<Addr>) {
     let mut answered = Vec::new();
     let mut ask = Vec::new();
-    for (ip, port) in kept {
-        match live.fresh(&ip, port, within) {
+    for addr in kept {
+        match live.fresh(addr, within) {
             Some(l) if l.ms.is_some() && !l.ping_failed() => {
                 let fake = l.bots.is_some_and(|b| b > 0);
-                answered.push(((ip, port), fake));
+                answered.push((addr, fake));
             }
-            _ => ask.push((ip, port)),
+            _ => ask.push(addr),
         }
     }
     (answered, ask)
@@ -485,20 +462,18 @@ async fn kept_pass(addrs: Vec<Addr>) -> Vec<Addr> {
     let engine = crate::net::a2s();
     let window = engine.window(KEPT_TIMEOUT);
     stream::iter(addrs)
-        .map(|(ip, port)| {
+        .map(|addr| {
             let engine = engine.clone();
             async move {
                 let mut alive = false;
                 let mut fake = false;
-                if let Some(addr) = dz_a2s::socket_addr(&ip, port) {
-                    for _ in 0..KEPT_TRIES {
-                        if let Ok(a) = engine.info(addr, KEPT_TIMEOUT).await {
-                            let p = a.ping();
-                            live::store().record(&ip, port, Live::from_result(&Ok(p)));
-                            alive = true;
-                            fake = p.bots > 0;
-                            break;
-                        }
+                for _ in 0..KEPT_TRIES {
+                    if let Ok(a) = engine.info(addr.into(), KEPT_TIMEOUT).await {
+                        let p = a.ping();
+                        live::store().record(addr, Live::from_result(&Ok(p)));
+                        alive = true;
+                        fake = p.bots > 0;
+                        break;
                     }
                 }
                 sources::update(|s| {
@@ -511,7 +486,7 @@ async fn kept_pass(addrs: Vec<Addr>) -> Vec<Addr> {
                         s.kept.removed += 1;
                     }
                 });
-                (!alive || fake).then_some((ip, port))
+                (!alive || fake).then_some(addr)
             }
         })
         .buffer_unordered(window)
@@ -576,7 +551,7 @@ async fn run(hub: &Hub) {
     };
     let (enabled, maps, known, ping_settings) = {
         let s = state.read().await;
-        let known: FxHashSet<(String, i64)> = s.servers.result.iter().map(key).collect();
+        let known: FxHashSet<Addr> = s.servers.result.iter().map(key).collect();
         let p = s.ctl.profile();
         (
             p.steam_server_list,
@@ -624,7 +599,7 @@ async fn run(hub: &Hub) {
             .memo
             .iter()
             .filter(|(_, m)| m.holds(started_at))
-            .map(|(a, _)| a.clone())
+            .map(|(a, _)| *a)
             .collect();
         (recent, f.saved.plan.clone(), remembered)
     };
@@ -666,8 +641,8 @@ async fn run(hub: &Hub) {
     let mut answers = Box::pin(
         candidates
             .filter_map(move |c| {
-                let k = (c.ip.clone(), i64::from(c.query_port));
-                let ask = if !seen.insert(k.clone()) {
+                let k = c.addr;
+                let ask = if !seen.insert(k) {
                     sources::update(|s| s.steam.known += 1);
                     false
                 } else if remembered.contains(&k) {
@@ -774,7 +749,7 @@ async fn take_answers(
         tokio::select! {
             next = answers.next() => match next {
                 Some(Outcome::Row(row)) => {
-                    judged((row.ip.clone(), row.query_port), Verdict::Answered);
+                    judged(row.addr, Verdict::Answered);
                     fresh.push(row);
                 }
                 Some(Outcome::Rejected(addr, verdict)) => judged(addr, verdict),
@@ -812,12 +787,12 @@ async fn publish(
     if rows.is_empty() {
         return;
     }
-    let added: Vec<String> = {
+    let added: Vec<Addr> = {
         let mut f = found();
         let mut added = Vec::new();
         for r in rows {
-            if f.keys.insert((r.ip.clone(), r.query_port)) {
-                added.push(format!("{}:{}", r.ip, r.query_port));
+            if f.keys.insert(r.addr) {
+                added.push(r.addr);
                 f.rows.push(SteamRow::from(r));
             }
         }
@@ -881,8 +856,7 @@ async fn list(
         hand_on(
             rows.into_iter()
                 .map(|r| Candidate {
-                    ip: r.ip,
-                    query_port: r.query_port,
+                    addr: r.addr,
                     game_port: r.game_port,
                     empty: part.empty,
                     bots: r.bots,
@@ -904,15 +878,13 @@ fn hand_on(rows: Vec<Candidate>, tx: &mpsc::UnboundedSender<Candidate>) {
     {
         let mut f = found();
         for c in &rows {
-            f.farms.add(&c.ip, i64::from(c.query_port), c.empty);
+            f.farms.add(c.addr, c.empty);
         }
         for c in rows {
-            if c.empty != Some(false) && f.farms.is_farm(&c.ip) {
+            if c.empty != Some(false) && f.farms.is_farm(*c.addr.ip()) {
                 farms += 1;
             } else {
-                if !f.memo.is_empty()
-                    && let Some(m) = f.memo.get_mut(&(c.ip.clone(), i64::from(c.query_port)))
-                {
+                if let Some(m) = f.memo.get_mut(&c.addr) {
                     m.seen = now;
                 }
                 let _ = tx.send(c);
@@ -1157,16 +1129,13 @@ enum Outcome {
 /// (it could not be joined with them) are rejected.
 async fn query(engine: dz_a2s::Engine, c: Candidate) -> Outcome {
     sources::update(|s| s.steam.queried += 1);
-    let port = i64::from(c.query_port);
-    let Some(addr) = dz_a2s::socket_addr(&c.ip, port) else {
-        return Outcome::Rejected((c.ip, port), Verdict::Silent);
-    };
+    let addr = c.addr.into();
     let answer = match engine.info(addr, INFO_TIMEOUT).await {
         Ok(answer) => Ok(answer),
         Err(_) => engine.info(addr, INFO_RETRY_TIMEOUT).await,
     };
     let Ok(answer) = answer else {
-        return Outcome::Rejected((c.ip, port), Verdict::Silent);
+        return Outcome::Rejected(c.addr, Verdict::Silent);
     };
     sources::update(|s| s.steam.answered += 1);
     let info = &answer.info;
@@ -1176,18 +1145,18 @@ async fn query(engine: dz_a2s::Engine, c: Candidate) -> Outcome {
     // listed, 324 reported as many bots as players.
     if info.bots > 0 {
         sources::update(|s| s.steam.fakes += 1);
-        return Outcome::Rejected((c.ip, port), Verdict::Fake);
+        return Outcome::Rejected(c.addr, Verdict::Fake);
     }
     // Its counts and its round trip now, shown at once; the ping scan
     // measures it again once it is in the list, away from this burst.
     let ping = answer.ping();
-    live::store().record(&c.ip, port, Live::from_result(&Ok(ping)));
+    live::store().record(c.addr, Live::from_result(&Ok(ping)));
     let ext = &info.extended_server_info;
     let tags = ext.keywords.clone().unwrap_or_default();
     let modded = tags.split(',').any(|t| t.trim() == "mod");
     let mut row = SteamListed {
-        query_port: port,
-        game_port: ext.port.map_or(i64::from(c.game_port), i64::from),
+        addr: c.addr,
+        game_port: ext.port.unwrap_or(c.game_port),
         name: info.name.trim().to_owned(),
         map: info.map.clone(),
         tags,
@@ -1199,7 +1168,6 @@ async fn query(engine: dz_a2s::Engine, c: Candidate) -> Outcome {
         environment: String::from(char::from(info.server_os as u8)),
         mods: Vec::new(),
         empty: c.empty,
-        ip: c.ip,
     };
     if modded {
         // A lost datagram (a modded server's rules take up to a dozen) or a
@@ -1223,7 +1191,7 @@ async fn query(engine: dz_a2s::Engine, c: Candidate) -> Outcome {
             .unwrap_or_default();
         if row.mods.is_empty() {
             sources::update(|s| s.steam.no_mods += 1);
-            return Outcome::Rejected((row.ip, port), Verdict::NoMods);
+            return Outcome::Rejected(row.addr, Verdict::NoMods);
         }
     }
     Outcome::Row(row)
@@ -1240,6 +1208,16 @@ mod tests {
     use super::*;
     use std::sync::atomic::AtomicU32;
 
+    fn at(s: &str) -> Addr {
+        s.parse().unwrap()
+    }
+
+    /// The `i`th made-up address of a block.
+    fn nth(block: u8, i: u32) -> Addr {
+        let [_, b, c, d] = i.to_be_bytes();
+        SocketAddrV4::new(dz_api::Ipv4Addr::new(block, b, c, d), 27016)
+    }
+
     #[test]
     fn kept_servers_that_answered_lately_are_not_asked_again() {
         let ping = |bots: u8| dz_a2s::Ping {
@@ -1249,35 +1227,23 @@ mod tests {
             bots,
         };
         let mut map = live::LiveMap::default();
-        map.put("1.1.1.1", 1, Live::from_result(&Ok(ping(0))));
-        map.put("2.2.2.2", 2, Live::from_result(&Ok(ping(5))));
+        map.put(at("1.1.1.1:1"), Live::from_result(&Ok(ping(0))));
+        map.put(at("2.2.2.2:2"), Live::from_result(&Ok(ping(5))));
         map.put(
-            "3.3.3.3",
-            3,
+            at("3.3.3.3:3"),
             Live::from_result(&Err(dz_common::Error::A2sQuery("timeout".into()))),
         );
-        let kept: Vec<Addr> = [
-            ("1.1.1.1", 1),
-            ("2.2.2.2", 2),
-            ("3.3.3.3", 3),
-            ("4.4.4.4", 4),
-        ]
-        .into_iter()
-        .map(|(ip, p)| (ip.to_string(), p))
-        .collect();
+        let kept: Vec<Addr> = ["1.1.1.1:1", "2.2.2.2:2", "3.3.3.3:3", "4.4.4.4:4"]
+            .into_iter()
+            .map(at)
+            .collect();
         let (answered, ask) = split_kept(kept.clone(), &map, Duration::from_secs(60));
         assert_eq!(
             answered,
-            [
-                (("1.1.1.1".to_string(), 1), false),
-                (("2.2.2.2".to_string(), 2), true)
-            ]
+            [(at("1.1.1.1:1"), false), (at("2.2.2.2:2"), true)]
         );
         // A failure, and a server never asked, are asked by the check itself.
-        assert_eq!(
-            ask,
-            [("3.3.3.3".to_string(), 3), ("4.4.4.4".to_string(), 4)]
-        );
+        assert_eq!(ask, [at("3.3.3.3:3"), at("4.4.4.4:4")]);
         // Answers older than the window decide nothing.
         let (answered, ask) = split_kept(kept, &map, Duration::ZERO);
         assert!(answered.is_empty());
@@ -1363,9 +1329,8 @@ mod tests {
                     let i = servers.len() as u32;
                     servers.push(Listed {
                         addr: MasterAddr {
-                            ip: format!("10.{}.{}.{}", i >> 16, (i >> 8) & 255, i & 255),
+                            addr: nth(10, i),
                             name: names(&mut rng),
-                            query_port: 27016,
                             game_port: 2302,
                             bots: 0,
                         },
@@ -1485,12 +1450,12 @@ mod tests {
     async fn listing(
         master: &FakeMaster,
         plan: &[PlannedPart],
-    ) -> (FxHashSet<String>, WebOutcome, u32) {
+    ) -> (FxHashSet<Addr>, WebOutcome, u32) {
         master.http.store(0, Ordering::SeqCst);
         let parts = dz_api::planned_partitions(dz_api::web_partitions(&FakeMaster::maps()), plan);
         let mut found = FxHashSet::default();
         let out = list_web(master, parts, |_, rows| {
-            found.extend(rows.into_iter().map(|r| r.ip));
+            found.extend(rows.into_iter().map(|r| r.addr));
         })
         .await
         .unwrap();
@@ -1542,10 +1507,7 @@ mod tests {
         let now = sources::now();
         let server = |ip: &str| {
             Arc::new(Server {
-                endpoint: dz_api::Endpoint {
-                    ip: ip.into(),
-                    port: 27016,
-                },
+                endpoint: at(&format!("{ip}:27016")),
                 name: ip.into(),
                 ..Default::default()
             })
@@ -1568,29 +1530,23 @@ mod tests {
         m.completed_at = Some(now - 300);
         let addrs: Vec<(Addr, Memo)> = vec![
             // Added and listed by the last listing: Steam's.
-            (
-                ("192.0.2.1".into(), 27016),
-                memo(now - 500, Verdict::Answered),
-            ),
+            (at("192.0.2.1:27016"), memo(now - 500, Verdict::Answered)),
             // Added long before, not listed since: a kept server to check.
-            (
-                ("192.0.2.2".into(), 27016),
-                memo(now - 7200, Verdict::Answered),
-            ),
-            (("192.0.2.3".into(), 27016), memo(now - 500, Verdict::Fake)),
+            (at("192.0.2.2:27016"), memo(now - 7200, Verdict::Answered)),
+            (at("192.0.2.3:27016"), memo(now - 500, Verdict::Fake)),
         ];
         m.set_addresses(addrs.iter().map(|(a, m)| (a, m)), now);
         remember(Some(m), &list);
         let f = found();
-        assert!(f.keys.contains(&("192.0.2.1".to_string(), 27016)));
-        assert!(!f.keys.contains(&("192.0.2.2".to_string(), 27016)));
-        assert!(!f.keys.contains(&("192.0.2.3".to_string(), 27016)));
+        assert!(f.keys.contains(&at("192.0.2.1:27016")));
+        assert!(!f.keys.contains(&at("192.0.2.2:27016")));
+        assert!(!f.keys.contains(&at("192.0.2.3:27016")));
         assert!(
             f.rows
                 .iter()
                 .any(|r| Arc::ptr_eq(r.server(), &list.result[0]))
         );
-        assert!(f.memo[&("192.0.2.3".to_string(), 27016)].holds(now));
+        assert!(f.memo[&at("192.0.2.3:27016")].holds(now));
         assert_eq!(
             f.saved.next_listing(now),
             Some(now - 300 + memory::MIN_INTERVAL)
@@ -1608,9 +1564,8 @@ mod tests {
             let k = n + i;
             master.servers.push(Listed {
                 addr: MasterAddr {
-                    ip: format!("11.{}.{}.{}", k >> 16, (k >> 8) & 255, k & 255),
+                    addr: nth(11, k),
                     name: format!("{} new", ["Ash", "Birch", "Cedar"][(i % 3) as usize]),
-                    query_port: 27016,
                     game_port: 2302,
                     bots: 0,
                 },
@@ -1624,7 +1579,7 @@ mod tests {
             .servers
             .iter()
             .filter(|s| s.map == "sakhal")
-            .all(|s| found.contains(&s.addr.ip));
+            .all(|s| found.contains(&s.addr.addr));
         assert!(sakhal, "every Sakhal server found once split");
         assert!(again.requests > plan.len() as u32);
     }
@@ -1647,9 +1602,8 @@ mod tests {
                 Err(WebError::RateLimited(self.wait))
             } else {
                 Ok(vec![MasterAddr {
-                    ip: format!("192.0.2.{}", asked.len()),
+                    addr: nth(192, asked.len() as u32),
                     name: "x".into(),
-                    query_port: 27016,
                     game_port: 2302,
                     bots: 0,
                 }])
