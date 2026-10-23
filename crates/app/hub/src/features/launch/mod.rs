@@ -7,11 +7,14 @@ use dz_game::DayzCtl;
 use crate::state::mutate_profile;
 
 /// Link the server's mods, hand Steam the launch, then record the server in
-/// the history and tell the window how it went.
+/// the history and tell the window how it went. `host` is the name typed for
+/// a server the list does not know: the history and the play stats keep it in
+/// place of the IP it resolved to, so a rejoin follows the name.
 fn spawn_launch(
     app: Hub,
     ctl: DayzCtl,
     server: Server,
+    host: Option<String>,
     password: Option<String>,
     extra: Vec<String>,
 ) {
@@ -26,6 +29,7 @@ fn spawn_launch(
         }
         match ctl.launch_game(&server, password.as_deref(), &extra).await {
             Ok(()) => {
+                let host = host.unwrap_or_else(|| server.ip().to_string());
                 // Recorded on the profile the app keeps, not the task's copy,
                 // so the window sees the entry and the next save keeps it.
                 // An unknown game port cannot be joined again: not recorded.
@@ -35,7 +39,7 @@ fn spawn_launch(
                     let _ = mutate_profile(&state, |s| {
                         s.ctl.profile_mut().add_history(
                             server.name.clone(),
-                            join.ip().to_string(),
+                            host.clone(),
                             join.port(),
                         );
                         Ok(())
@@ -47,7 +51,7 @@ fn spawn_launch(
                     crate::features::stats::tracker::Expected {
                         kind: dz_profile::SessionKind::Server,
                         name: server.name.clone(),
-                        ip: Some(server.ip().to_string()),
+                        ip: Some(host),
                         port: (server.game_port != 0).then_some(server.game_port),
                         map: (!server.map.is_empty()).then(|| server.map.clone()),
                     },
@@ -61,15 +65,19 @@ fn spawn_launch(
     });
 }
 
+/// How long a name may take to resolve before the join gives up: the system
+/// resolver has no limit of its own, and the toast says "launching" meanwhile.
+const RESOLVE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// The IPv4 `host` names: itself when it is one, else the first IPv4 its
 /// name resolves to.
 async fn resolve_v4(host: &str) -> Result<Ipv4Addr, String> {
-    let host = host.trim();
     if let Ok(ip) = host.parse() {
         return Ok(ip);
     }
-    let found = tokio::net::lookup_host((host, 0))
+    let found = tokio::time::timeout(RESOLVE_TIMEOUT, tokio::net::lookup_host((host, 0)))
         .await
+        .map_err(|_| format!("{host}: no answer from the name lookup"))?
         .map_err(|e| format!("{host}: {e}"))?;
     found
         .filter_map(|a| match a {
@@ -162,7 +170,7 @@ impl Hub {
                 .ok_or_else(|| "Server not found".to_string())?;
             (server, state.ctl.clone_for_task())
         };
-        spawn_launch(app, ctl, server, password, vec![]);
+        spawn_launch(app, ctl, server, None, password, vec![]);
         Ok(())
     }
 
@@ -182,18 +190,31 @@ impl Hub {
             let ip = host.trim().parse().map_err(|_| format!("{host}: no IPv4 address"))?;
             w.launch(self, SocketAddrV4::new(ip, game_port)).await
         });
-        let join = SocketAddrV4::new(resolve_v4(&host).await?, game_port);
+        let host = host.trim();
+        let join = SocketAddrV4::new(resolve_v4(host).await?, game_port);
         let state = self.state()?;
         let app = self.clone();
-        let (server, ctl) = {
+        let (server, typed, ctl) = {
             let st = state.read().await;
-            let server = st
-                .find_flexible(join)
-                .cloned()
-                .unwrap_or_else(|| Server::unlisted(join));
-            (server, st.ctl.clone_for_task())
+            let (server, typed) = match st.find_flexible(join) {
+                Some(s) => (s.clone(), None),
+                // Not listed: named as typed, the way the Recent list shows it.
+                None => {
+                    let mut s = Server::unlisted(join);
+                    s.name = format!("{host}:{game_port}");
+                    (s, Some(host.to_string()))
+                }
+            };
+            (server, typed, st.ctl.clone_for_task())
         };
-        spawn_launch(app, ctl, server, password, extra_args.unwrap_or_default());
+        spawn_launch(
+            app,
+            ctl,
+            server,
+            typed,
+            password,
+            extra_args.unwrap_or_default(),
+        );
         Ok(())
     }
 

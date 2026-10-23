@@ -193,6 +193,8 @@ pub fn show(ui: &mut Ui, cx: &Ctx, st: &mut UiState, cache: &mut RowCache, run: 
     let offset = st.scroll_top.take();
     let scroll_to = st.scroll_to.take();
     let sel = st.sel.clone();
+    // Read once, so a row compares numbers rather than writing its IP out.
+    let sel_addr = sel.as_ref().and_then(|s| dz_api::addr(&s.ip, s.port));
     let friends = &cx.stores.friends;
     let has_friends = !friends.list().is_empty();
     let pending = &servers.pending;
@@ -232,9 +234,7 @@ pub fn show(ui: &mut Ui, cx: &Ctx, st: &mut UiState, cache: &mut RowCache, run: 
                         .join_addr()
                         .is_some_and(|j| profile.is_favorite_at(j));
                 d.excluded = profile.is_excluded_ip(r.ip());
-                let selected = sel
-                    .as_ref()
-                    .is_some_and(|s| s.port == d.query_port && s.ip == r.ip().to_string());
+                let selected = sel_addr == Some(r.addr());
                 let names: Vec<&str> = if has_friends {
                     friends.on(r.addr()).map(|f| f.name.as_str()).collect()
                 } else {
