@@ -357,7 +357,12 @@ async fn scan(
         .map(|(target, tries)| {
             let engine = engine.clone();
             async move {
-                let r = engine.info(target.into(), timeout).await.map(|a| a.ping());
+                let r = engine.info(target.into(), timeout).await.map(|a| {
+                    // The answer's keywords carry the in-game clock and its rates.
+                    live::store()
+                        .record_clock(target, a.info.extended_server_info.keywords.as_deref());
+                    a.ping()
+                });
                 if r.is_err() && tries < retries {
                     return Asked::Again(target, tries + 1);
                 }
@@ -465,6 +470,7 @@ async fn mock_scan(targets: Vec<SocketAddrV4>, sink: Sink, ping: Arc<PingState>,
             for target in rest.by_ref().take(per_tick) {
                 run.done.fetch_add(1, Ordering::Relaxed);
                 let l = crate::mock::live_of(target);
+                live::store().record_clock(target, crate::mock::keywords_of(target).as_deref());
                 live::store().record(target, l);
                 batch.push(to_dto(&l, target));
             }

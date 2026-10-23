@@ -43,8 +43,21 @@ pub enum SortCol {
     Time,
 }
 
+/// The in-game time of day a server is at now (see [`super::clock`] for the
+/// bounds and how the clock is estimated).
+#[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DayTime {
+    #[default]
+    Any,
+    /// 06:00 to 20:00.
+    Day,
+    /// 20:00 to 06:00.
+    Night,
+}
+
 /// What the browser shows: filters, sort, and the window of rows wanted.
-#[derive(Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Deserialize, Clone, Debug, PartialEq, Eq, Hash, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerQuery {
     /// Case-insensitive, over name, IP and map.
@@ -65,6 +78,23 @@ pub struct ServerQuery {
     pub max_ping: u32,
     /// Show servers on excluded IPs too.
     pub show_excluded: bool,
+    /// Servers whose in-game clock is now at this time of day; servers with
+    /// no clock go unless it is `Any`.
+    #[serde(default)]
+    pub time_of_day: DayTime,
+    /// Servers running a mod: its Workshop id, or part of its name
+    /// (case-insensitive); blank for any.
+    #[serde(default)]
+    pub with_mod: String,
+    /// Only servers a join starts at once: every mod on disk and up to date
+    /// (known once the disk is read), and the server's version the game's
+    /// when both are known.
+    #[serde(default)]
+    pub ready: bool,
+    /// The installed game's version (`1.28.162391`), for `ready`; `None`
+    /// when not known, and the version is not compared.
+    #[serde(default)]
+    pub game_version: Option<String>,
     pub sort: SortCol,
     pub asc: bool,
     pub offset: u32,
@@ -179,7 +209,7 @@ pub(crate) fn run(snap: &Arc<ServerSnapshot>, q: &ServerQuery, generation: u64) 
 )]
 mod tests {
     use super::super::live::Live;
-    use super::super::snapshot::ProfileView;
+    use super::super::snapshot::{ProfileView, order_at};
     use super::*;
     use dz_api::{Server, ServerList, SocketAddrV4};
     use rustc_hash::FxHashSet;
@@ -205,6 +235,7 @@ mod tests {
             asc: true,
             offset: 0,
             limit: 100,
+            ..ServerQuery::default()
         }
     }
 
@@ -581,6 +612,181 @@ mod tests {
         assert_eq!(s.find(at("2.2.2.2", 2)), Some(1));
         assert_eq!(s.find(at("2.2.2.2", 1)), Some(1), "the game port");
         assert_eq!(s.find(at("9.9.9.9", 2)), None);
+    }
+
+    fn modded(qport: u16, mods: &[(i64, &str)], version: &str) -> Arc<Server> {
+        Server {
+            endpoint: at("1.1.1.1", qport),
+            game_port: qport - 1,
+            name: format!("s{qport}"),
+            map: "chernarusplus".into(),
+            version: version.into(),
+            mods: mods
+                .iter()
+                .map(|&(id, name)| dz_api::Mod {
+                    name: name.into(),
+                    steam_workshop_id: id,
+                })
+                .collect(),
+            ..Default::default()
+        }
+        .into()
+    }
+
+    #[test]
+    fn the_time_of_day_filter_reads_the_clock_now() {
+        let list = ServerList {
+            status: 0,
+            result: vec![
+                timed("noon", 2, 1, 60, "12:00").into(),
+                timed("late", 3, 1, 60, "19:30").into(),
+                timed("night", 4, 1, 60, "02:00").into(),
+                timed("none", 5, 1, 60, "").into(),
+            ],
+        };
+        let s = snap(list, &ProfileView::default(), &[]);
+        let seen = 1_790_000_000;
+        s.set_list_seen(seen);
+        let mut q = query();
+        assert_eq!(order_at(&s, &q, seen).order.len(), 4, "any: every server");
+        q.time_of_day = DayTime::Day;
+        assert_eq!(order_at(&s, &q, seen).order.to_vec(), [0, 1]);
+        q.time_of_day = DayTime::Night;
+        assert_eq!(
+            order_at(&s, &q, seen).order.to_vec(),
+            [2],
+            "no clock, no answer"
+        );
+        assert!(q.depends_on_live());
+
+        // An hour later at real time: 19:30 has turned 20:30.
+        let later = seen + 3600;
+        assert_eq!(order_at(&s, &q, later).order.to_vec(), [1, 2]);
+
+        // A ping reads the clock and its rates: 03:00 at 6× by day, 6×1.5 = 9×
+        // at night, seen now. Twenty minutes of real time later it is 06:00.
+        s.put_clock(
+            at("1.1.1.1", 4),
+            &super::super::clock::Clock::from_keywords("etm6.000000,entm1.500000,03:00", seen)
+                .unwrap(),
+        );
+        let half = seen + 20 * 60;
+        q.time_of_day = DayTime::Day;
+        assert_eq!(order_at(&s, &q, half).order.to_vec(), [0, 1, 2]);
+        assert_eq!(s.clock_minute(2, half), Some(6 * 60));
+
+        // Sorted by the clock now: an hour on, 13:00, 20:30 and (06:00 then
+        // forty minutes at 6×) 10:00; no clock last.
+        q.time_of_day = DayTime::Any;
+        q.sort = SortCol::Time;
+        assert_eq!(s.clock_minute(2, later), Some(10 * 60));
+        assert_eq!(order_at(&s, &q, later).order.to_vec(), [2, 0, 1, 3]);
+    }
+
+    #[test]
+    fn the_mod_filter_matches_a_name_or_a_workshop_id() {
+        let list = ServerList {
+            status: 0,
+            result: vec![
+                modded(
+                    2,
+                    &[(1559212036, "CF"), (1564026768, "Community-Online-Tools")],
+                    "",
+                ),
+                modded(3, &[(1559212036, "CF")], ""),
+                modded(4, &[(2545327648, "Dabs Framework")], ""),
+                modded(5, &[], ""),
+            ],
+        };
+        let s = snap(list, &ProfileView::default(), &[]);
+        assert_eq!(s.mods().count(), 3, "each mod once");
+        let mut q = query();
+        q.with_mod = "  cf ".into();
+        assert_eq!(compute(&s, &q).0, [0, 1]);
+        q.with_mod = "online-tools".into();
+        assert_eq!(compute(&s, &q).0, [0]);
+        q.with_mod = "2545327648".into();
+        assert_eq!(compute(&s, &q).0, [2]);
+        q.with_mod = "nothing like it".into();
+        assert!(compute(&s, &q).0.is_empty());
+        q.with_mod = " ".into();
+        assert_eq!(compute(&s, &q).0.len(), 4, "a blank name is no filter");
+    }
+
+    #[test]
+    fn ready_to_join_needs_every_mod_current_and_the_games_version() {
+        let list = || ServerList {
+            status: 0,
+            result: vec![
+                modded(2, &[(1, "a"), (2, "b")], "1.28.162391"),
+                modded(3, &[(1, "a"), (3, "c")], "1.28.162391"),
+                modded(4, &[(2, "b")], "1.28.162391"),
+                modded(5, &[], "1.27.160000"),
+                modded(6, &[], ""),
+            ],
+        };
+        // Mod 1 is current, mod 2 is behind, mod 3 is not on disk.
+        let profile = ProfileView {
+            mods: Some([(1, false), (2, true)].into_iter().collect()),
+            ..ProfileView::default()
+        };
+        let s = snap(list(), &profile, &[]);
+        let mut q = query();
+        q.ready = true;
+        assert_eq!(
+            compute(&s, &q).0,
+            [3, 4],
+            "only the vanilla ones: no game version to compare"
+        );
+        q.game_version = Some("1.28.0.162391".into());
+        assert_eq!(compute(&s, &q).0, [4], "the other version goes");
+
+        // Mod 2 updated and mod 3 downloaded.
+        s.apply_profile(&ProfileView {
+            mods: Some([(1, false), (2, false), (3, false)].into_iter().collect()),
+            ..ProfileView::default()
+        });
+        assert_eq!(compute(&s, &q).0, [0, 1, 2, 4]);
+
+        // The disk not read yet: no modded server can be promised.
+        let s = snap(list(), &ProfileView::default(), &[]);
+        assert_eq!(compute(&s, &q).0, [4]);
+    }
+
+    #[test]
+    fn versions_compare_by_their_numbers() {
+        use super::super::snapshot::same_version;
+        assert!(same_version("1.28.162391", " 1.28.0.162391 "));
+        assert!(!same_version("1.28.162391", "1.28.162392"));
+        assert!(!same_version("1.28", "1.28.162391"));
+        assert!(same_version("exp", "exp"));
+        assert!(!same_version("1.2.3.4.5", "1.2.3"));
+    }
+
+    #[test]
+    fn the_new_filters_read_from_json_and_default_off() {
+        let q: ServerQuery = serde_json::from_value(serde_json::json!({
+            "search": "", "firstPerson": "all", "password": "all",
+            "battleye": "all", "modded": "all", "official": "all",
+            "hideEmpty": false, "hideFull": false, "maxPing": 0,
+            "showExcluded": false, "sort": "none", "asc": true,
+            "offset": 0, "limit": 10,
+        }))
+        .unwrap();
+        assert_eq!(q.time_of_day, DayTime::Any);
+        assert!(q.with_mod.is_empty() && !q.ready && q.game_version.is_none());
+        let q: ServerQuery = serde_json::from_value(serde_json::json!({
+            "search": "", "firstPerson": "all", "password": "all",
+            "battleye": "all", "modded": "all", "official": "all",
+            "hideEmpty": false, "hideFull": false, "maxPing": 0,
+            "showExcluded": false, "sort": "none", "asc": true,
+            "offset": 0, "limit": 10, "timeOfDay": "night", "withMod": "CF",
+            "ready": true, "gameVersion": "1.28.162391",
+        }))
+        .unwrap();
+        assert_eq!(q.time_of_day, DayTime::Night);
+        assert_eq!(q.with_mod, "CF");
+        assert!(q.ready);
     }
 
     #[test]

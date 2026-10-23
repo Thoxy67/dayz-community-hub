@@ -54,7 +54,7 @@ static LAUNCHER: std::sync::Mutex<dz_api::CacheStamp> = std::sync::Mutex::new(dz
     launcher_count: None,
 });
 
-fn launcher() -> dz_api::CacheStamp {
+pub(crate) fn launcher() -> dz_api::CacheStamp {
     LAUNCHER.lock().map(|s| *s).unwrap_or_default()
 }
 

@@ -15,11 +15,13 @@
 //! - `servers-changed` wakes the window when the list, the profile's flags
 //!   or live data moved, at most ~30 times a second.
 
+pub(crate) mod clock;
 pub(crate) mod live;
 mod query;
 mod snapshot;
 
-pub use query::{ServerPage, ServerQuery, ServerRow, ServerStats, SortCol, Tri};
+pub use clock::{DAY_START, NIGHT_START, clock_text, is_day};
+pub use query::{DayTime, ServerPage, ServerQuery, ServerRow, ServerStats, SortCol, Tri};
 #[cfg(all(test, feature = "mock"))]
 pub(crate) use snapshot::ProfileView;
 pub use snapshot::{ServerOrder, ServerRef, ServerSnapshot, order, stats_of};
@@ -249,7 +251,11 @@ pub(crate) fn verify_full_servers(list: Arc<ServerList>) {
         crate::net::a2s()
             .infos(targets, VERIFY_TIMEOUT)
             .for_each(|(addr, r)| {
-                let r = r.map(|a| a.ping());
+                let r = r.map(|a| {
+                    live::store()
+                        .record_clock(addr, a.info.extended_server_info.keywords.as_deref());
+                    a.ping()
+                });
                 live::store().record(addr, live::Live::from_result(&r));
                 std::future::ready(())
             })

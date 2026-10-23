@@ -19,8 +19,8 @@ use std::time::{Duration, Instant};
 
 use dz_api::SocketAddrV4;
 use dz_hub::features::browser::{
-    MapCount, ServerOrder, ServerQuery, ServerRef, ServerRow, ServerSnapshot, SortCol, Tri, order,
-    stats_of,
+    DayTime, MapCount, ServerOrder, ServerQuery, ServerRef, ServerRow, ServerSnapshot, SortCol,
+    Tri, order, stats_of,
 };
 use dz_hub::features::ping::{PingResultDto, ScanProgress, ScanState};
 use dz_hub::features::servers::AppStatsDto;
@@ -52,6 +52,9 @@ pub const QUERY_DEBOUNCE: Duration = Duration::from_millis(80);
 /// do not jump under the pointer on every result. Under any other query the header's
 /// figures follow at the same pace, the order kept.
 const LIVE_REORDER: Duration = Duration::from_millis(500);
+/// Under the time-of-day filter, the order is asked again this often: the servers'
+/// clocks move on, and some cross dawn or dusk.
+const CLOCK_REORDER: Duration = Duration::from_secs(60);
 /// The title bar's figures that follow a new list, at most this often.
 const COUNTS_DELAY: Duration = Duration::from_secs(2);
 
@@ -76,6 +79,7 @@ pub fn default_query() -> ServerQuery {
         asc: true,
         offset: 0,
         limit: 0,
+        ..ServerQuery::default()
     }
 }
 
@@ -142,6 +146,8 @@ pub struct Servers {
     query_due: Option<Instant>,
     /// The last time the order was asked for because of live data.
     live_ordered: Option<Instant>,
+    /// When the order was last asked for (the clocks it read).
+    ordered_at: Instant,
 
     /// Round trips of servers pinged on request (ms; ≥ 5000 is a timeout), for those the
     /// list lacks: a listed server's ping is in the snapshot.
@@ -197,6 +203,7 @@ impl Servers {
             order_req: 0,
             query_due: None,
             live_ordered: None,
+            ordered_at: Instant::now(),
             ping: FxHashMap::default(),
             pending: FxHashSet::default(),
             timeouts: FxHashMap::default(),
@@ -251,6 +258,8 @@ impl Servers {
         let q = ServerQuery {
             offset: 0,
             limit: 0,
+            // The game's version is the store's to set.
+            game_version: self.query.game_version.clone(),
             ..q
         };
         if q == self.query {
@@ -262,6 +271,18 @@ impl Servers {
             self.bus.ctx().request_repaint_after(QUERY_DEBOUNCE);
         } else {
             self.query_due = None;
+            self.ask_order();
+        }
+    }
+
+    /// The installed game's version, for the "ready to join" filter (`None` when not
+    /// known): the order follows when it changed under that filter.
+    pub fn set_game_version(&mut self, v: Option<&str>) {
+        if self.query.game_version.as_deref() == v {
+            return;
+        }
+        self.query.game_version = v.map(str::to_owned);
+        if self.query.ready {
             self.ask_order();
         }
     }
@@ -282,6 +303,7 @@ impl Servers {
     /// frame; later ones off the frame, the old order shown meanwhile.
     fn ask_order(&mut self) {
         self.order_req += 1;
+        self.ordered_at = Instant::now();
         let snap = Arc::clone(&self.snapshot);
         let q = self.query.clone();
         if !snap.is_empty() && self.order.as_ref().is_none_or(|o| o.snapshot.is_empty()) {
@@ -681,6 +703,18 @@ impl Servers {
                 self.order = Some(o);
                 self.generation += 1;
                 changed = true;
+            }
+        }
+        // The clocks moved on under the time-of-day filter or the Time sort: order again
+        // now and then.
+        if (self.query.time_of_day != DayTime::Any || self.query.sort == SortCol::Time)
+            && self.order_task.is_none()
+        {
+            let due = self.ordered_at + CLOCK_REORDER;
+            if now >= due {
+                self.ask_order();
+            } else {
+                self.bus.ctx().request_repaint_after(due - now);
             }
         }
         // Live data moved during a reorder wait: once it is over, order (or count) again.

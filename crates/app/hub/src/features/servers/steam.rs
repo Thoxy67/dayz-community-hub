@@ -470,6 +470,8 @@ async fn kept_pass(addrs: Vec<Addr>) -> Vec<Addr> {
                 for _ in 0..KEPT_TRIES {
                     if let Ok(a) = engine.info(addr.into(), KEPT_TIMEOUT).await {
                         let p = a.ping();
+                        live::store()
+                            .record_clock(addr, a.info.extended_server_info.keywords.as_deref());
                         live::store().record(addr, Live::from_result(&Ok(p)));
                         alive = true;
                         fake = p.bots > 0;
@@ -1181,6 +1183,7 @@ async fn query(engine: dz_a2s::Engine, c: Candidate) -> Outcome {
     let ping = answer.ping();
     live::store().record(c.addr, Live::from_result(&Ok(ping)));
     let ext = &info.extended_server_info;
+    live::store().record_clock(c.addr, ext.keywords.as_deref());
     let tags = ext.keywords.clone().unwrap_or_default();
     let modded = tags.split(',').any(|t| t.trim() == "mod");
     let mut row = SteamListed {

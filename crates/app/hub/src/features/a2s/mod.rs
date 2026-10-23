@@ -187,9 +187,8 @@ impl Hub {
             ),
             Err(_) => (vec![], vec![], vec![]),
         };
-        let dayz = info
-            .extended_server_info
-            .keywords
+        let keywords = info.extended_server_info.keywords.clone();
+        let dayz = keywords
             .as_deref()
             .filter(|k| !k.is_empty())
             .map(|k| dz_a2s::DayzInfo::parse(k).into());
@@ -216,6 +215,7 @@ impl Hub {
         });
 
         if let Some(at) = listed_at(query_port) {
+            crate::features::browser::live::store().record_clock(at, keywords.as_deref());
             crate::features::browser::live::store().record_counts(
                 at,
                 result.players,

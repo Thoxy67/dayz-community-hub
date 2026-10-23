@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 
-use dz_hub::features::browser::{ServerQuery, SortCol, Tri};
+use dz_hub::features::browser::{DayTime, ServerQuery, SortCol, Tri};
 use egui::{CornerRadius, Pos2, Rect, Response, Sense, Stroke, Ui, Vec2, Widget};
 use serde_json::{Value, json};
 
@@ -43,6 +43,15 @@ pub struct Filters {
     /// Hide servers slower than this (ms); 0 for any.
     pub max_ping: u32,
     pub show_excluded: bool,
+    /// Servers at this time of day now (in game).
+    pub time_of_day: DayTime,
+    /// Servers running a mod: part of its name, or its Workshop id.
+    pub with_mod: String,
+    /// The mod picked from the suggestions, by Workshop id: `with_mod` is then its name,
+    /// shown in the field and the chip, and the filter matches this one mod only.
+    pub with_mod_id: Option<u64>,
+    /// Only servers a join starts at once (mods installed and current, same version).
+    pub ready: bool,
     pub sort: SortCol,
     pub asc: bool,
 }
@@ -61,9 +70,40 @@ impl Default for Filters {
             hide_full: false,
             max_ping: 0,
             show_excluded: false,
+            time_of_day: DayTime::Any,
+            with_mod: String::new(),
+            with_mod_id: None,
+            ready: false,
             sort: SortCol::None,
             asc: true,
         }
+    }
+}
+
+/// A time of day as the commands write it.
+pub fn day_time_id(d: DayTime) -> &'static str {
+    match d {
+        DayTime::Any => "any",
+        DayTime::Day => "day",
+        DayTime::Night => "night",
+    }
+}
+
+pub fn day_time_from(id: &str) -> Option<DayTime> {
+    Some(match id {
+        "any" | "all" => DayTime::Any,
+        "day" => DayTime::Day,
+        "night" => DayTime::Night,
+        _ => return None,
+    })
+}
+
+/// A time of day in words.
+pub fn day_time_words(d: DayTime) -> &'static str {
+    match d {
+        DayTime::Any => t("servers", "timeAny"),
+        DayTime::Day => t("servers", "timeDay"),
+        DayTime::Night => t("servers", "timeNight"),
     }
 }
 
@@ -105,6 +145,13 @@ impl Filters {
             hide_full: self.hide_full,
             max_ping: self.max_ping,
             show_excluded: self.show_excluded,
+            time_of_day: self.time_of_day,
+            with_mod: self
+                .with_mod_id
+                .map_or_else(|| self.with_mod.trim().to_string(), |id| id.to_string()),
+            ready: self.ready,
+            // The store sets the game's version.
+            game_version: None,
             sort: self.sort,
             asc: self.asc,
             offset: 0,
@@ -124,6 +171,9 @@ impl Filters {
             || self.hide_empty
             || self.hide_full
             || self.max_ping > 0
+            || self.time_of_day != DayTime::Any
+            || !self.with_mod.trim().is_empty()
+            || self.ready
     }
 
     pub fn clear(&mut self) {
@@ -137,6 +187,10 @@ impl Filters {
         self.hide_empty = false;
         self.hide_full = false;
         self.max_ping = 0;
+        self.time_of_day = DayTime::Any;
+        self.with_mod.clear();
+        self.with_mod_id = None;
+        self.ready = false;
     }
 
     /// The same column flips; a new one starts A→Z for names, smallest first for ping,
@@ -159,6 +213,9 @@ impl Filters {
             + usize::from(self.hide_empty)
             + usize::from(self.hide_full)
             + usize::from(self.show_excluded)
+            + usize::from(self.time_of_day != DayTime::Any)
+            + usize::from(!self.with_mod.trim().is_empty())
+            + usize::from(self.ready)
     }
 
     /// One of the three-way filters by its key.
@@ -181,6 +238,12 @@ impl Filters {
             "ping" => self.max_ping = 0,
             "empty" => self.hide_empty = false,
             "full" => self.hide_full = false,
+            "time" => self.time_of_day = DayTime::Any,
+            "mod" => {
+                self.with_mod.clear();
+                self.with_mod_id = None;
+            }
+            "ready" => self.ready = false,
             k => {
                 if let Some(t) = self.tri_mut(k) {
                     *t = Tri::All;
@@ -204,6 +267,8 @@ pub struct ToolbarData<'a> {
     pub excluded: usize,
     pub focus_search: bool,
     pub open_more: bool,
+    /// The mods on disk, for the mod filter's suggestions.
+    pub installed: &'a [dz_hub::features::mods::InstalledModDto],
 }
 
 /// `Toolbar.svelte`: search, the three-way chips, the map, "More filters", the count.
@@ -553,7 +618,7 @@ impl Widget for TriChip<'_> {
 
 /// "More filters": the ping ceiling, empty and full servers, excluded addresses; its
 /// badge says how many of those are on.
-fn more_filters(ui: &mut Ui, f: &Filters, d: &ToolbarData, win_w: f32, run: &mut Run) {
+fn more_filters(ui: &mut Ui, f: &mut Filters, d: &ToolbarData, win_w: f32, run: &mut Run) {
     let tk = ui.tokens();
     let n = f.more_count();
     let label = t("servers", "moreFilters");
@@ -660,6 +725,10 @@ fn more_filters(ui: &mut Ui, f: &Filters, d: &ToolbarData, win_w: f32, run: &mut
                 if v != f.max_ping {
                     run.push(("servers.filter.max_ping", json!({ "ms": v })));
                 }
+                ui.add_space(4.0);
+                time_of_day(ui, f.time_of_day, run);
+                ui.add_space(4.0);
+                with_mod(ui, f, d.installed, run);
             });
         let r = ui.painter().add(egui::Shape::Noop);
         let y = ui.cursor().top();
@@ -671,6 +740,14 @@ fn more_filters(ui: &mut Ui, f: &Filters, d: &ToolbarData, win_w: f32, run: &mut
                 Stroke::new(1.0, tk.border),
             ),
         );
+        let mut ready = f.ready;
+        ui.add(
+            Switch::new(&mut ready, t("servers", "readyToJoin"))
+                .hint(t("servers", "readyToJoinHint")),
+        );
+        if ready != f.ready {
+            run.push(("servers.filter.ready", json!({ "on": ready })));
+        }
         let mut e = f.hide_empty;
         ui.add(Switch::new(&mut e, t("servers", "hideEmpty")));
         if e != f.hide_empty {
@@ -685,6 +762,207 @@ fn more_filters(ui: &mut Ui, f: &Filters, d: &ToolbarData, win_w: f32, run: &mut
             run.push(("servers.filter.toggle_excluded", Value::Null));
         }
     });
+}
+
+/// A section's small capitals label in the popover.
+fn popover_label(ui: &mut Ui, text: &str) {
+    let tk = ui.tokens();
+    let g = crate::views::servers::stencil_galley(ui, text, tk.fg_faint, None);
+    let (r, _) = ui.allocate_exact_size(g.size(), Sense::hover());
+    ui.painter().galley(r.min, g, tk.fg_faint);
+}
+
+/// The time of day the servers are at now: any, day or night.
+fn time_of_day(ui: &mut Ui, v: DayTime, run: &mut Run) {
+    popover_label(ui, t("servers", "timeOfDay"));
+    let hint = t("servers", "timeOfDayHint");
+    let segs = [
+        Segment::new(DayTime::Any, t("servers", "timeAny")).title(hint),
+        Segment::new(DayTime::Day, t("servers", "timeDay"))
+            .icon(lucide::SUN)
+            .title(hint),
+        Segment::new(DayTime::Night, t("servers", "timeNight"))
+            .icon(lucide::MOON)
+            .title(hint),
+    ];
+    let mut now = v;
+    ui.add(Segmented::new(&mut now, &segs).size(FieldSize::Xs).fill());
+    if now != v {
+        run.push((
+            "servers.filter.time_of_day",
+            json!({ "value": day_time_id(now) }),
+        ));
+    }
+}
+
+/// Most suggestions the mod filter offers from the mods on disk.
+const MOD_SUGGESTIONS: usize = 5;
+
+/// The mods on disk matching what is typed in the mod field, worked out when the
+/// text or the list changes rather than every frame.
+#[derive(Clone, Default)]
+struct Suggestions {
+    /// What it was worked out for: the text typed, the id picked, the list's address
+    /// and length.
+    key: (String, Option<u64>, usize, usize),
+    /// Indexes into the list, at most [`MOD_SUGGESTIONS`].
+    hits: Vec<usize>,
+}
+
+fn suggestions(
+    installed: &[dz_hub::features::mods::InstalledModDto],
+    typed: &str,
+    picked: Option<u64>,
+) -> Vec<usize> {
+    let typed = typed.trim();
+    let low = typed.to_lowercase();
+    let mut hits = Vec::new();
+    for (i, m) in installed.iter().enumerate() {
+        if hits.len() >= MOD_SUGGESTIONS {
+            break;
+        }
+        let name = m.name.trim();
+        // The one already chosen is left out.
+        if name.is_empty() || picked == Some(m.id) || name.eq_ignore_ascii_case(typed) {
+            continue;
+        }
+        if !low.is_empty() && !name.to_lowercase().contains(&low) {
+            continue;
+        }
+        hits.push(i);
+    }
+    hits
+}
+
+/// Servers running a mod: its name (or Workshop id) typed, or one of the mods on disk
+/// picked from the suggestions under the field (that mod then, by its id).
+fn with_mod(
+    ui: &mut Ui,
+    f: &mut Filters,
+    installed: &[dz_hub::features::mods::InstalledModDto],
+    run: &mut Run,
+) {
+    popover_label(ui, t("servers", "withMod"));
+    let r = ui.add(
+        Input::new(&mut f.with_mod)
+            .search()
+            .placeholder(t("servers", "withModPlaceholder"))
+            .clear_label(t("servers", "clearWithMod"))
+            .size(FieldSize::Xs)
+            .width(ui.available_width())
+            .char_limit(128)
+            .id_salt("servers-with-mod"),
+    );
+    // Named for screen readers by its section's label (the placeholder is only a hint).
+    r.widget_info(|| {
+        let mut i = egui::WidgetInfo::text_edit(
+            true,
+            &f.with_mod,
+            &f.with_mod,
+            t("servers", "withModPlaceholder"),
+        );
+        i.label = Some(t("servers", "withMod").to_string());
+        i
+    });
+    if r.changed() {
+        // Typing makes it a text match again.
+        f.with_mod_id = None;
+        ui.ctx().request_repaint();
+    }
+    // The suggestions show while the field has focus. Clicking one takes the focus
+    // away from the field before the click lands (on the press or the release), so
+    // they stay up while a click that began with them open is under way.
+    let open_id = r.id.with("suggest-open");
+    let was_open = ui.data(|d| d.get_temp::<bool>(open_id)).unwrap_or(false);
+    let clicking = ui.input(|i| i.pointer.any_down() || i.pointer.any_released());
+    let open = r.has_focus() || (was_open && clicking);
+    ui.data_mut(|d| d.insert_temp(open_id, open));
+    if !open {
+        return;
+    }
+    let cache_id = r.id.with("suggest");
+    let key = (
+        f.with_mod.clone(),
+        f.with_mod_id,
+        installed.as_ptr() as usize,
+        installed.len(),
+    );
+    let mut cache = ui
+        .data(|d| d.get_temp::<Arc<Suggestions>>(cache_id))
+        .unwrap_or_default();
+    if cache.key != key {
+        let hits = suggestions(installed, &f.with_mod, f.with_mod_id);
+        cache = Arc::new(Suggestions { key, hits });
+        ui.data_mut(|d| d.insert_temp(cache_id, Arc::clone(&cache)));
+    }
+    if cache.hits.is_empty() {
+        return;
+    }
+    // A short window keeps the popover under its button: three then.
+    let room = if ui.ctx().content_rect().height() < 700.0 {
+        3
+    } else {
+        MOD_SUGGESTIONS
+    };
+    ui.scope(|ui| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        for &i in cache.hits.iter().take(room) {
+            let Some(m) = installed.get(i) else { continue };
+            let name = m.name.trim();
+            if suggestion_row(ui, name).clicked() {
+                run.push((
+                    "servers.filter.with_mod",
+                    json!({ "name": name, "id": m.id }),
+                ));
+                ui.data_mut(|d| d.insert_temp(open_id, false));
+            }
+        }
+    });
+}
+
+/// One mod offered under the mod field: a compact row, puzzle icon and name.
+fn suggestion_row(ui: &mut Ui, name: &str) -> Response {
+    let tk = ui.tokens();
+    let w = ui.available_width();
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 26.0), Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, name));
+    if ui.is_rect_visible(rect) {
+        let hover = paint::ease(
+            ui,
+            resp.id.with("hover"),
+            resp.hovered() || resp.has_focus(),
+        );
+        let p = ui.painter();
+        p.rect_filled(
+            rect,
+            CornerRadius::same(size::RADIUS_XS),
+            alpha(tk.raised, hover),
+        );
+        let ink = paint::lerp(tk.fg_muted, tk.fg, hover);
+        let cy = rect.center().y;
+        let x = rect.left() + 6.0;
+        lucide::PUZZLE.paint(
+            p,
+            Rect::from_min_size(
+                Pos2::new(x, cy - size::ICON_SM / 2.0),
+                Vec2::splat(size::ICON_SM),
+            ),
+            ink,
+        );
+        let tx = x + size::ICON_SM + 8.0;
+        let g = paint::galley_trunc(
+            ui,
+            name,
+            font(Face::Sans, size::TEXT_XS),
+            ink,
+            (rect.right() - 6.0 - tx).max(0.0),
+        );
+        paint::text_at(p, &g, tx, cy, ink);
+        if paint::keyboard_focus(ui, &resp) {
+            paint::focus_ring(p, rect, size::RADIUS_XS, &tk);
+        }
+    }
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 /// "Click to reveal excluded" / "Click to hide excluded", with how many there are.
@@ -803,6 +1081,33 @@ pub fn chips(f: &Filters) -> Vec<(&'static str, String)> {
     }
     if f.hide_full {
         chips.push(("full", t("servers", "hideFull").to_string()));
+    }
+    if f.time_of_day != DayTime::Any {
+        chips.push((
+            "time",
+            tf(
+                "servers",
+                "filterValue",
+                &[
+                    ("label", &t("servers", "timeOfDay")),
+                    ("value", &day_time_words(f.time_of_day)),
+                ],
+            ),
+        ));
+    }
+    let m = f.with_mod.trim();
+    if !m.is_empty() {
+        chips.push((
+            "mod",
+            tf(
+                "servers",
+                "filterValue",
+                &[("label", &t("servers", "withMod")), ("value", &m)],
+            ),
+        ));
+    }
+    if f.ready {
+        chips.push(("ready", t("servers", "readyToJoin").to_string()));
     }
     chips
 }
@@ -930,6 +1235,89 @@ mod tests {
         assert!(!f.active());
         // "Show excluded" is not a filter the clear button resets.
         assert!(f.show_excluded);
+    }
+
+    #[test]
+    fn time_mod_and_ready_are_filters_of_more_filters() {
+        let mut f = Filters {
+            time_of_day: DayTime::Night,
+            with_mod: "  CF ".into(),
+            ready: true,
+            ..Filters::default()
+        };
+        assert!(f.active());
+        assert_eq!(f.more_count(), 3);
+        let q = f.query();
+        assert_eq!(q.time_of_day, DayTime::Night);
+        assert_eq!(q.with_mod, "CF");
+        assert!(q.ready && q.game_version.is_none());
+        let keys: Vec<&str> = chips(&f).into_iter().map(|(k, _)| k).collect();
+        assert_eq!(keys, ["time", "mod", "ready"]);
+        f.remove("time");
+        f.remove("mod");
+        assert_eq!(f.more_count(), 1);
+        f.clear();
+        assert!(!f.active() && !f.ready);
+        assert_eq!(day_time_from(day_time_id(DayTime::Day)), Some(DayTime::Day));
+        assert_eq!(day_time_from("dusk"), None);
+    }
+
+    #[test]
+    fn a_picked_mod_filters_by_its_id_and_reads_by_its_name() {
+        use super::super::cmds::with_mod_args;
+        let picked = with_mod_args(&json!({ "name": " CF ", "id": 1559212036 }));
+        assert_eq!(picked, ("CF".to_string(), Some(1559212036)));
+        assert_eq!(
+            with_mod_args(&json!({ "id": "2545327648" })),
+            ("2545327648".to_string(), None)
+        );
+        assert_eq!(
+            with_mod_args(&json!({ "name": "tools" })),
+            ("tools".to_string(), None)
+        );
+        assert_eq!(with_mod_args(&Value::Null), (String::new(), None));
+        let mut f = Filters {
+            with_mod: picked.0,
+            with_mod_id: picked.1,
+            ..Filters::default()
+        };
+        // The hub matches the one mod by its id; the chip says its name.
+        assert_eq!(f.query().with_mod, "1559212036");
+        assert!(
+            chips(&f)
+                .iter()
+                .any(|(k, v)| *k == "mod" && v.contains("CF"))
+        );
+        f.remove("mod");
+        assert!(f.with_mod.is_empty() && f.with_mod_id.is_none());
+        assert_eq!(f.query().with_mod, "");
+    }
+
+    #[test]
+    fn mod_suggestions_match_what_is_typed_and_leave_out_the_pick() {
+        let m = |name: &str, id: u64| dz_hub::features::mods::InstalledModDto {
+            name: name.into(),
+            id,
+            local_updated: 0,
+            size: 0,
+            size_human: String::new(),
+            managed: true,
+            source: dz_hub::features::mods::ModSourceDto::Launcher,
+            path: String::new(),
+            other_copy: false,
+            remote_updated: None,
+            update_available: false,
+        };
+        let installed = [
+            m("CF", 1),
+            m("Code Lock", 2),
+            m("", 3),
+            m("Dabs Framework", 4),
+        ];
+        assert_eq!(suggestions(&installed, "", None), [0, 1, 3]);
+        assert_eq!(suggestions(&installed, " co", None), [1]);
+        assert_eq!(suggestions(&installed, "CF", Some(1)), Vec::<usize>::new());
+        assert_eq!(suggestions(&installed, "", Some(1)), [1, 3]);
     }
 
     #[test]

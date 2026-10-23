@@ -168,7 +168,9 @@ impl View for ServersView {
             let mut st = shared.lock();
             if st.last_f.as_ref() != Some(&st.f) {
                 let q = st.f.query();
-                let debounce = q.search != cx.stores.servers.query().search;
+                // Typing (the search, the mod's name) waits for the last key.
+                let debounce = q.search != cx.stores.servers.query().search
+                    || q.with_mod != cx.stores.servers.query().with_mod;
                 if st.last_q.as_ref() != Some(&q) {
                     if st.last_q.is_some() {
                         st.scroll_top = Some(0.0);
@@ -344,6 +346,7 @@ fn header(ui: &mut Ui, cx: &Ctx, st: &mut UiState, focus_search: bool, run: &mut
             .map_or(0, |p| p.excluded_ips.len()),
         focus_search,
         open_more: std::mem::take(&mut st.open_more),
+        installed: &cx.stores.mods.installed,
     };
     let show_detail = st.show_detail;
     let run_cell = std::cell::RefCell::new(std::mem::take(run));

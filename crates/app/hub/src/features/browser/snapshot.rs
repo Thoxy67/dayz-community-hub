@@ -24,8 +24,9 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use super::clock::{self, Clock};
 use super::live::{Live, PING_FAILED_MS};
-use super::query::{ServerQuery, ServerRow, ServerStats, SortCol};
+use super::query::{DayTime, ServerQuery, ServerRow, ServerStats, SortCol};
 use super::{MapCount, count_maps};
 
 /// What the profile says of servers, as the flags need it: its addresses
@@ -147,6 +148,18 @@ pub struct ServerSnapshot {
     time_min: Box<[u16]>,
     /// Per server: a community server named like an official one.
     mimics: Box<[bool]>,
+    /// Every distinct mod of the list (by Workshop id): its id and its name.
+    mod_ids: Box<[i64]>,
+    mod_names: Box<[Arc<str>]>,
+    /// Per server, its mods as places in `mod_ids`: server `i`'s are
+    /// `server_mods[mods_at[i]..mods_at[i + 1]]`.
+    server_mods: Box<[u32]>,
+    mods_at: Box<[u32]>,
+    /// When the list's clocks were read (Unix seconds).
+    list_seen: AtomicU64,
+    /// Per server: its clock as an A2S answer last gave it (packed
+    /// [`Clock`], 0 for none), fresher than the list's.
+    clock: Box<[AtomicU64]>,
     live: Box<[AtomicU64]>,
     profile: Box<[AtomicU64]>,
     profile_gen: AtomicU64,
@@ -160,6 +173,49 @@ impl std::fmt::Debug for ServerSnapshot {
             .field("len", &self.len())
             .finish_non_exhaustive()
     }
+}
+
+/// When the list on hand had its clocks read: when the launcher list was
+/// fetched, else now (tests, the mock world, a skewed stamp).
+fn list_seen_at() -> u64 {
+    let now = dz_common::time::now_secs();
+    #[cfg(not(test))]
+    {
+        let at = crate::features::servers::launcher().fetched_at;
+        if at > 0 && at <= now {
+            return at;
+        }
+    }
+    now
+}
+
+/// Every distinct mod of `servers` once, by Workshop id (the first name met
+/// names it), and each server's mods as places in that table.
+type ModTable = (Box<[i64]>, Box<[Arc<str>]>, Box<[u32]>, Box<[u32]>);
+
+fn mod_table(servers: &[Arc<Server>]) -> ModTable {
+    let mut by_id: FxHashMap<i64, u32> = FxHashMap::default();
+    let (mut ids, mut names) = (Vec::new(), Vec::new());
+    let mut flat = Vec::with_capacity(servers.iter().map(|s| s.mods.len()).sum());
+    let mut at = Vec::with_capacity(servers.len() + 1);
+    at.push(0u32);
+    for s in servers {
+        for m in &s.mods {
+            let k = *by_id.entry(m.steam_workshop_id).or_insert_with(|| {
+                ids.push(m.steam_workshop_id);
+                names.push(Arc::clone(&m.name));
+                (ids.len() - 1) as u32
+            });
+            flat.push(k);
+        }
+        at.push(u32::try_from(flat.len()).unwrap_or(u32::MAX));
+    }
+    (
+        ids.into_boxed_slice(),
+        names.into_boxed_slice(),
+        flat.into_boxed_slice(),
+        at.into_boxed_slice(),
+    )
 }
 
 fn time_minutes(t: &str) -> Option<u16> {
@@ -249,6 +305,7 @@ impl ServerSnapshot {
             .iter()
             .map(|s| !s.official && dz_api::name_looks_official(&s.name))
             .collect();
+        let (mod_ids, mod_names, server_mods, mods_at) = mod_table(servers);
         let live = (0..n).map(|_| AtomicU64::new(0)).collect();
         let profile_words = servers
             .iter()
@@ -267,6 +324,12 @@ impl ServerSnapshot {
             name_rank,
             time_min,
             mimics,
+            mod_ids,
+            mod_names,
+            server_mods,
+            mods_at,
+            list_seen: AtomicU64::new(list_seen_at()),
+            clock: clock::table(n),
             live,
             profile: profile_words,
             profile_gen: AtomicU64::new(0),
@@ -307,6 +370,72 @@ impl ServerSnapshot {
         &self.maps
     }
 
+    /// Every distinct mod of the list: its Workshop id and its name.
+    pub fn mods(&self) -> impl Iterator<Item = (i64, &Arc<str>)> {
+        self.mod_ids.iter().copied().zip(self.mod_names.iter())
+    }
+
+    /// Server `i`'s mods as places in the mod table.
+    fn mods_of(&self, i: usize) -> &[u32] {
+        let (Some(&a), Some(&b)) = (self.mods_at.get(i), self.mods_at.get(i + 1)) else {
+            return &[];
+        };
+        self.server_mods
+            .get(a as usize..b as usize)
+            .unwrap_or_default()
+    }
+
+    /// Server `i`'s clock as last seen: whichever of an A2S answer's and the
+    /// list's was seen later (a server restarted since an old answer starts its
+    /// day again), the rates only an A2S answer gives kept either way.
+    fn clock_of(&self, i: usize) -> Option<Clock> {
+        let a2s = clock::load(&self.clock, i);
+        let list = self
+            .time_min
+            .get(i)
+            .copied()
+            .filter(|&m| m != NONE_U16)
+            .map(|minute| Clock {
+                minute: minute.min(1439),
+                day_accel: None,
+                night_mult: None,
+                seen: self.list_seen.load(Ordering::Relaxed),
+            });
+        match (a2s, list) {
+            (Some(a), Some(l)) if l.seen > a.seen => Some(Clock {
+                day_accel: a.day_accel,
+                night_mult: a.night_mult,
+                ..l
+            }),
+            (Some(a), _) => Some(a),
+            (None, l) => l,
+        }
+    }
+
+    /// Server `i`'s in-game clock at `now` (Unix seconds), as minutes of the
+    /// day, estimated from the last one seen (see [`super::clock`]); `None`
+    /// when no clock was ever seen.
+    pub fn clock_minute(&self, i: u32, now: u64) -> Option<u32> {
+        self.clock_of(i as usize).map(|c| c.minute_at(now))
+    }
+
+    /// Write a clock an A2S answer gave into the server whose query address
+    /// is `addr`, if listed.
+    pub(crate) fn put_clock(&self, addr: SocketAddrV4, c: &Clock) {
+        if let Some(i) = self.index.by_query_port(addr)
+            && let Some(slot) = self.clock.get(i)
+        {
+            slot.store(c.pack(), Ordering::Relaxed);
+            self.live_stamp.fetch_add(1, Ordering::Release);
+        }
+    }
+
+    /// When the list's clocks were read (tests set it).
+    #[cfg(test)]
+    pub(crate) fn set_list_seen(&self, secs: u64) {
+        self.list_seen.store(secs, Ordering::Relaxed);
+    }
+
     /// Server `i` with its live and profile state.
     pub fn get(&self, i: u32) -> Option<ServerRef<'_>> {
         let i_us = i as usize;
@@ -326,6 +455,7 @@ impl ServerSnapshot {
                 .get(i_us)
                 .map_or(0, |a| a.load(Ordering::Relaxed)),
             mimics_official: self.mimics.get(i_us).copied().unwrap_or(false),
+            clock: self.clock_of(i_us),
         })
     }
 
@@ -357,9 +487,19 @@ impl ServerSnapshot {
 
     /// Fill the live table from what is known by address.
     pub(crate) fn fill_live(&self, live: &super::live::LiveMap) {
-        for (s, slot) in self.list.result.iter().zip(self.live.iter()) {
+        for ((s, slot), clock) in self
+            .list
+            .result
+            .iter()
+            .zip(self.live.iter())
+            .zip(self.clock.iter())
+        {
             let w = live.get(s.endpoint).map_or(0, pack_live);
             slot.store(w, Ordering::Relaxed);
+            clock.store(
+                live.clock(s.endpoint).map_or(0, |c| c.pack()),
+                Ordering::Relaxed,
+            );
         }
         self.live_stamp.fetch_add(1, Ordering::Release);
     }
@@ -392,6 +532,7 @@ pub struct ServerRef<'a> {
     live: u64,
     profile: u64,
     pub mimics_official: bool,
+    clock: Option<Clock>,
 }
 
 impl<'a> ServerRef<'a> {
@@ -485,6 +626,23 @@ impl<'a> ServerRef<'a> {
         self.server.mods.len()
     }
 
+    /// Its in-game clock at `now` (Unix seconds) as minutes of the day,
+    /// estimated from the last one seen (see [`super::clock`]); `None` when no
+    /// clock was ever seen.
+    pub fn minute_at(&self, now: u64) -> Option<u32> {
+        self.clock.map(|c| c.minute_at(now))
+    }
+
+    /// Its in-game clock now, "HH:MM" (estimated, as the rows, the filter and
+    /// the sort read it); the list's text when no clock was ever seen.
+    pub fn time_now(&self) -> String {
+        let mut buf = [0u8; 5];
+        self.minute_at(dz_common::time::now_secs()).map_or_else(
+            || self.server.time.clone(),
+            |m| clock::clock_text(m, &mut buf).to_owned(),
+        )
+    }
+
     /// The owned row (for the control channel, a connect flow).
     pub fn to_row(&self) -> ServerRow {
         let s = self.server;
@@ -500,7 +658,7 @@ impl<'a> ServerRef<'a> {
             password: s.password,
             version: s.version.clone(),
             first_person_only: s.first_person_only,
-            time: s.time.clone(),
+            time: self.time_now(),
             mods_count: s.mods.len(),
             mods_missing: self.mods_missing(),
             mods_stale: self.mods_stale(),
@@ -551,7 +709,9 @@ impl ServerQuery {
         self.hide_empty
             || self.hide_full
             || self.max_ping > 0
-            || matches!(self.sort, SortCol::Ping | SortCol::Players)
+            // A clock read by a ping can move a server across dusk, or past another.
+            || self.time_of_day != DayTime::Any
+            || matches!(self.sort, SortCol::Ping | SortCol::Players | SortCol::Time)
     }
 }
 
@@ -586,10 +746,40 @@ fn ip_contains(ip: Ipv4Addr, needle: &str) -> bool {
         .any(|w| w == needle.as_bytes())
 }
 
+/// Whether a server's version is the game's: "1.28.162391" against
+/// "1.28.162391", or against a file version with a zero between
+/// ("1.28.0.162391"). Compares the numbers, else the trimmed text; nothing
+/// is allocated.
+pub fn same_version(a: &str, b: &str) -> bool {
+    fn parts(v: &str) -> Option<([u64; 4], usize)> {
+        let mut out = [0u64; 4];
+        let mut n = 0;
+        for p in v.trim().split('.') {
+            *out.get_mut(n)? = p.parse().ok()?;
+            n += 1;
+        }
+        // A file version's third field is a zero the servers' version leaves out.
+        if n == 4 && out[2] == 0 {
+            out[2] = out[3];
+            n = 3;
+        }
+        Some((out, n))
+    }
+    match (parts(a), parts(b)) {
+        (Some((x, n)), Some((y, m))) => n == m && x.get(..n) == y.get(..m),
+        _ => a.trim() == b.trim(),
+    }
+}
+
 /// Filter and sort `snap` for `q` (its `offset`/`limit` are ignored). Pure and
 /// quick (well under a millisecond on 9 500 servers in release): call it on
 /// any thread.
 pub fn order(snap: &Arc<ServerSnapshot>, q: &ServerQuery) -> ServerOrder {
+    order_at(snap, q, dz_common::time::now_secs())
+}
+
+/// [`order`] with the clocks read at `now` (Unix seconds).
+pub(crate) fn order_at(snap: &Arc<ServerSnapshot>, q: &ServerQuery, now: u64) -> ServerOrder {
     let profile_generation = snap.profile_generation();
     let live_stamp = snap.live_stamp();
     let search = q.search.trim().to_lowercase();
@@ -619,6 +809,23 @@ pub fn order(snap: &Arc<ServerSnapshot>, q: &ServerQuery) -> ServerOrder {
             .collect()
     };
 
+    // The mods asked for, as a mask over the snapshot's distinct mods: one
+    // check per mod, then a lookup per server's mod. A number is a Workshop id.
+    let with_mod = q.with_mod.trim().to_lowercase();
+    let mod_mask: Option<Vec<bool>> = (!with_mod.is_empty()).then(|| {
+        let id = with_mod.parse::<i64>().ok();
+        snap.mod_ids
+            .iter()
+            .zip(snap.mod_names.iter())
+            .map(|(&mid, name)| Some(mid) == id || contains_ci(name, &with_mod))
+            .collect()
+    });
+    let game_version = q
+        .game_version
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty());
+
     let mut stats = ServerStats::default();
     let mut order: Vec<u32> = Vec::with_capacity(snap.len());
     for (i, s) in snap.list.result.iter().enumerate() {
@@ -633,6 +840,35 @@ pub fn order(snap: &Arc<ServerSnapshot>, q: &ServerQuery) -> ServerOrder {
             || !q.official.keeps(s.official)
         {
             continue;
+        }
+        if let Some(mask) = &mod_mask
+            && !snap
+                .mods_of(i)
+                .iter()
+                .any(|&m| mask.get(m as usize).copied().unwrap_or(false))
+        {
+            continue;
+        }
+        if q.ready {
+            // Every mod on disk and current (a vanilla server needs none), and
+            // the game's version when both sides say theirs.
+            let mods_ok = s.mods.is_empty()
+                || (profile & P_MODS_KNOWN != 0 && (profile >> 16) & 0xFFFF_FFFF == 0);
+            let version_ok = match game_version {
+                Some(g) if !s.version.trim().is_empty() => same_version(&s.version, g),
+                _ => true,
+            };
+            if !mods_ok || !version_ok {
+                continue;
+            }
+        }
+        if q.time_of_day != DayTime::Any {
+            let Some(minute) = snap.clock_of(i).map(|c| c.minute_at(now)) else {
+                continue;
+            };
+            if clock::is_day(minute) != (q.time_of_day == DayTime::Day) {
+                continue;
+            }
         }
         let map = snap.map_of.get(i).copied().unwrap_or(NONE_U32);
         if let Some(mask) = &map_filter
@@ -676,7 +912,7 @@ pub fn order(snap: &Arc<ServerSnapshot>, q: &ServerQuery) -> ServerOrder {
         order.push(i as u32);
     }
 
-    sort(&mut order, snap, q.sort, q.asc);
+    sort(&mut order, snap, q.sort, q.asc, now);
     ServerOrder {
         snapshot: Arc::clone(snap),
         order: order.into(),
@@ -715,7 +951,7 @@ pub fn stats_of(snap: &ServerSnapshot, order: &[u32]) -> ServerStats {
     stats
 }
 
-fn sort(order: &mut [u32], snap: &ServerSnapshot, col: SortCol, asc: bool) {
+fn sort(order: &mut [u32], snap: &ServerSnapshot, col: SortCol, asc: bool, now: u64) {
     // Every key is worked out once per server; the sorts are stable.
     let flip = |k: i64| if asc { k } else { -k };
     match col {
@@ -745,13 +981,14 @@ fn sort(order: &mut [u32], snap: &ServerSnapshot, col: SortCol, asc: bool) {
                 .map_or(-1, |&r| i64::from(r));
             flip(rank)
         }),
-        // Servers without a time go last either way.
-        SortCol::Time => order.sort_by_cached_key(|&i| {
-            match snap.time_min.get(i as usize).copied().unwrap_or(NONE_U16) {
-                NONE_U16 => (1u8, 0),
-                m => (0, flip(i64::from(m))),
-            }
-        }),
+        // By the clock now, as the rows show it; servers without one go last
+        // either way.
+        SortCol::Time => {
+            order.sort_by_cached_key(|&i| match snap.clock_minute(i, now) {
+                None => (1u8, 0),
+                Some(m) => (0, flip(i64::from(m))),
+            });
+        }
         // Answered first (by RTT, in the chosen direction), then timeouts,
         // then servers never pinged.
         SortCol::Ping => order.sort_by_cached_key(|&i| match snap.get(i).and_then(|r| r.ping()) {

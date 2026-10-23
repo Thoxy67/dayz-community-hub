@@ -16,8 +16,8 @@ use crate::i18n::{t, tf};
 use crate::icons::lucide;
 use crate::kit::{Button, Skeleton, Variant, VirtualList};
 use crate::parts::{
-    Empty, ListColumns, ROW_PX, RowAction, RowButton, RowCache, RowData, ServerListRow, SortHead,
-    TableHead, head_cell,
+    Empty, ListColumns, ROW_PX, RowAction, RowButton, RowCache, RowData, RowMenuItem,
+    ServerListRow, SortHead, TableHead, head_cell,
 };
 use crate::theme::TokensExt;
 
@@ -201,10 +201,20 @@ pub fn show(ui: &mut Ui, cx: &Ctx, st: &mut UiState, cache: &mut RowCache, run: 
     let data = &cx.stores.server_data;
     let profile = &cx.stores.profile;
     let direct = t("servers", "directConnect");
+    let mods = &cx.stores.mods;
+    let remove_mods = [RowMenuItem {
+        id: MENU_REMOVE_MODS,
+        icon: lucide::TRASH_2,
+        label: t("mods", "removeServerMods"),
+        danger: true,
+        kbd: "",
+    }];
     let mut acts: Vec<(RowAction, usize)> = Vec::new();
     // One address buffer for every row (pings and queries on request are kept by
     // "ip:port", which may be a typed host name).
     let mut key = String::new();
+    // The rows show each server's clock now, estimated by the hub from the last seen.
+    let now = dz_common::time::now_secs();
     let out = VirtualList::new("servers-list", total)
         .row_height(ROW_PX)
         .overscan(OVERSCAN)
@@ -222,7 +232,11 @@ pub fn show(ui: &mut Ui, cx: &Ctx, st: &mut UiState, cache: &mut RowCache, run: 
                 let Some(r) = order.get(i) else {
                     return;
                 };
+                let mut clock = [0u8; 5];
                 let mut d = RowData::from_server(&r);
+                if let Some(m) = r.minute_at(now) {
+                    d.time = dz_hub::features::browser::clock_text(m, &mut clock);
+                }
                 key.clear();
                 let _ = write!(key, "{}", r.addr());
                 d.ping_pending = pending.contains(&key);
@@ -264,10 +278,17 @@ pub fn show(ui: &mut Ui, cx: &Ctx, st: &mut UiState, cache: &mut RowCache, run: 
                     egui::Rangef::new(ui.max_rect().left(), ui.max_rect().left() + w),
                     false,
                 );
+                // "Remove this server's mods" when one of them is installed.
+                let has_mods = r
+                    .server
+                    .mods
+                    .iter()
+                    .any(|m| mods.by_id(m.steam_workshop_id as u64).is_some());
                 let resp = ServerListRow::new(d)
                     .selected(selected)
                     .friends(&names)
                     .buttons(&buttons)
+                    .menu(if has_mods { &remove_mods } else { &[] })
                     .show(ui, &cols, cache);
                 if let Some(a) = resp.action {
                     acts.push((a, i));
@@ -296,8 +317,10 @@ pub fn show(ui: &mut Ui, cx: &Ctx, st: &mut UiState, cache: &mut RowCache, run: 
             RowAction::ShowMods => "servers.row.show_mods",
             RowAction::CopyLink => "list.link",
             RowAction::CopyAddress => "servers.row.copy_address",
+            RowAction::DesktopShortcut => "list.shortcut",
             RowAction::DirectConnect | RowAction::Custom(BTN_DIRECT) => "list.direct",
             RowAction::ToggleExclude | RowAction::Custom(BTN_EXCLUDE) => "servers.row.exclude_ip",
+            RowAction::Custom(MENU_REMOVE_MODS) => "servers.row.remove_mods",
             RowAction::Custom(_) => continue,
         };
         let mut args = target;
@@ -312,3 +335,4 @@ pub fn show(ui: &mut Ui, cx: &Ctx, st: &mut UiState, cache: &mut RowCache, run: 
 
 const BTN_DIRECT: u32 = 1;
 const BTN_EXCLUDE: u32 = 2;
+const MENU_REMOVE_MODS: u32 = 3;

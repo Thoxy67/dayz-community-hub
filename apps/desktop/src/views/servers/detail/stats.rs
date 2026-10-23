@@ -701,7 +701,8 @@ fn details(ui: &mut Ui, x: &dz_hub::features::metrics::ServerMetricsDto) {
     }
     let mut v: Vec<F> = Vec::new();
     if let Some(day) = x.time_accel {
-        let night = x.night_time_accel.unwrap_or(day);
+        // `serverNightTimeAcceleration` multiplies the day's speed at night.
+        let night = day * x.night_time_accel.unwrap_or(1.0);
         v.push(F {
             label: t("detail", "dmTimeSpeed"),
             value: tf(
