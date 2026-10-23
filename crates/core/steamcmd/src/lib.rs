@@ -8,13 +8,14 @@ mod download;
 mod output;
 mod progress;
 mod pty;
+pub mod shortcuts;
 pub mod vdf;
 
-pub use client::{DayzGame, SteamClient, appimage_env, spawn_detached};
+pub use client::{DayzGame, SteamClient, appimage_env, scrub_child_env, spawn_detached};
 pub use cmd::SteamCmd;
 pub use detect::{
     DayzInstall, SteamGameConfig, dayz_steam_config, detect_dayz, find_steam_root, find_steamcmd,
-    steam_libraries, steam_workshop_dirs,
+    steam_install_dir, steam_libraries, steam_workshop_dirs,
 };
 pub use progress::{ModProgress, ProgressTx, PtyInputRx, PtyInputTx};
 

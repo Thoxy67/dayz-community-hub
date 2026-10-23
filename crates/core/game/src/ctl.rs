@@ -480,9 +480,7 @@ pub async fn run_through_steam(args: Vec<String>) -> Result<()> {
         .args(&args)
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    for v in dz_steamcmd::appimage_env() {
-        cmd.env_remove(v);
-    }
+    dz_steamcmd::scrub_child_env(cmd.as_std_mut());
     #[cfg(target_os = "windows")]
     cmd.creation_flags(dz_common::CREATE_NO_WINDOW);
     cmd.spawn()?;

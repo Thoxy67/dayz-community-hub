@@ -152,7 +152,13 @@ impl Wizard {
             steamcmd_path: String::new(),
             steam_api_key: String::new(),
             steam_id: String::new(),
-            downloader: ModDownloaderDto::Steamcmd,
+            // On a Steam Deck the Steam client downloads mods (as a new profile there
+            // says); elsewhere SteamCMD, as before.
+            downloader: if crate::platform::deck::on_deck() {
+                ModDownloaderDto::Steamworks
+            } else {
+                ModDownloaderDto::Steamcmd
+            },
             game: None,
             game_task: None,
             steam: None,

@@ -143,9 +143,7 @@ pub fn repair(_dayz: &Path) -> Result<()> {
         .arg(format!("steam://install/{RUNTIME_APP_ID}"))
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
-    for v in dz_steamcmd::appimage_env() {
-        cmd.env_remove(v);
-    }
+    dz_steamcmd::scrub_child_env(&mut cmd);
     // The link is handed to the running Steam and the program exits at once.
     dz_steamcmd::spawn_detached(&mut cmd)?;
     Ok(())

@@ -145,22 +145,19 @@ fn pick(cx: &mut Ctx, folder: bool, then: fn(&mut Wizard, String)) {
     let windows = with(cx, |w| w.windows());
     let bus = cx.stores.bus.clone();
     crate::rt::fire(async move {
-        let d = rfd::AsyncFileDialog::new();
-        let picked = if folder {
-            d.set_title(t("setup", "selectSteamRoot"))
-                .pick_folder()
-                .await
+        use crate::parts::file_picker::{Pick, pick};
+        let question = if folder {
+            Pick::folder(t("setup", "selectSteamRoot"))
         } else {
-            let d = d.set_title(t("setup", "selectSteamcmd"));
-            let d = if windows {
-                d.add_filter(t("setup", "steamcmdFilter"), &["exe"])
+            let p = Pick::file(t("setup", "selectSteamcmd"));
+            if windows {
+                p.filter(t("setup", "steamcmdFilter"), &["exe"])
             } else {
-                d
-            };
-            d.pick_file().await
+                p
+            }
         };
-        if let Some(f) = picked {
-            let p = f.path().to_string_lossy().into_owned();
+        if let Some(f) = pick(question).await {
+            let p = f.to_string_lossy().into_owned();
             bus.run(move |cx| with(cx, |w| then(w, p)));
         }
     });
@@ -212,6 +209,27 @@ pub fn command(cx: &mut Ctx, what: &str, a: &Value) {
                 Some("steamworks" | "steam") => ModDownloaderDto::Steamworks,
                 _ => return,
             };
+            // On a Steam Deck the Steam client is the way (Game Mode included): leaving
+            // it for SteamCMD is asked first, as in Settings, unless the caller did.
+            let confirmed = a.get("confirmed").and_then(Value::as_bool) == Some(true);
+            let on_deck = cx.stores.pad.steam_deck || crate::platform::deck::on_deck();
+            if d == ModDownloaderDto::Steamcmd
+                && on_deck
+                && !confirmed
+                && with(cx, |w| w.via_steam())
+            {
+                let req = crate::store::dialogs::ConfirmRequest::new(
+                    t("settings", "steamcmdOnDeckTitle"),
+                    t("settings", "steamcmdOnDeckMessage"),
+                )
+                .confirm_label(t("settings", "steamcmdOnDeckConfirm"));
+                cx.stores.bus.confirm_then(req, |cx| {
+                    if shown(cx) {
+                        with(cx, |w| w.choose(ModDownloaderDto::Steamcmd));
+                    }
+                });
+                return;
+            }
             with(cx, |w| w.choose(d));
         }
         "pick_steam_library" => match arg(a, "path") {

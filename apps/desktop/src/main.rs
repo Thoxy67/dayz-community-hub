@@ -156,6 +156,8 @@ fn main() -> eframe::Result {
     platform::window::sanitize(&window_file);
     let saved = prefs.get().window;
     let centered = !platform::window::has_saved_position(&window_file);
+    // A Steam Deck and Game Mode, read once here (sysfs) and kept for the frames.
+    let deck = platform::deck::warm();
     let options = |gpu: Gpu| {
         let mut viewport = egui::ViewportBuilder::default()
             .with_title(TITLE)
@@ -172,12 +174,21 @@ fn main() -> eframe::Result {
                 .with_inner_size([w.size[0].max(MIN_SIZE[0]), w.size[1].max(MIN_SIZE[1])])
                 .with_maximized(w.maximized);
         }
+        // Game Mode shows one window over the whole screen and scales one of another
+        // size to fit (blurred): the window takes the screen's size (here for the first
+        // start, and again in `restored`, which runs after eframe's saved window).
+        let game_mode = deck.game_mode;
+        if game_mode {
+            viewport = viewport.with_fullscreen(true);
+        }
         eframe::NativeOptions {
             viewport,
             centered,
             persist_window: true,
             persistence_path: Some(window_file.clone()),
-            window_builder: Some(Box::new(move |b| platform::window::restored(b, saved))),
+            window_builder: Some(Box::new(move |b| {
+                platform::window::restored(b, saved, game_mode)
+            })),
             wgpu_options: wgpu_options(gpu),
             ..Default::default()
         }

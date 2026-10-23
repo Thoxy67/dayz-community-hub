@@ -1,6 +1,6 @@
 //! The undecorated window's resize edges: a few points along each side and a larger
 //! square at each corner show the resize cursor, and a press there hands the resize to
-//! the window manager (`ViewportCommand::BeginResize`). None while maximised or
+//! the window manager (`ViewportCommand::BeginResize`). None in Game Mode, while maximised or
 //! full-screen. Read from the raw pointer at the end of the frame, so it wins over what
 //! is drawn under the edge.
 //!
@@ -106,7 +106,8 @@ pub(super) fn resize_edges(ctx: &Context, cx: &Ctx) {
             v.fullscreen.unwrap_or(false),
         )
     });
-    if maximized || fullscreen {
+    // Game Mode: gamescope sizes the window to the screen, there is nothing to resize.
+    if maximized || fullscreen || crate::platform::deck::game_mode() {
         return;
     }
     let r = ctx.content_rect();

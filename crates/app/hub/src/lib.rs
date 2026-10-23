@@ -127,6 +127,8 @@
 //!   - `steam_me(&self) -> Result<SteamMeDto, String>`
 //!   - `fetch_steam_avatar(&self) -> Result<Option<String>, String>`
 //!   - `fetch_steam_player_count(&self) -> Result<u32, String>`
+//!   - `add_to_steam(&self, req: AddToSteamRequest) -> Result<AddedToSteam, AddToSteamError>`
+//!     (new: the launcher as a non-Steam game, for a Deck's Game Mode)
 //! - `steamcmd::detect`:
 //!   - `detect_steamcmd(&self) -> Result<SteamcmdStatusDto, String>`
 //!   - `watch_steamcmd(&self) -> Result<(), String>`

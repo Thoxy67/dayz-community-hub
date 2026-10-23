@@ -1,6 +1,7 @@
 //! What every DayZ Community Hub crate shares: one error type, where the app
 //! keeps its files, and the clock.
 
+pub mod deck;
 pub mod error;
 pub mod fs;
 pub mod paths;

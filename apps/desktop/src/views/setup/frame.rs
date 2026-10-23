@@ -78,7 +78,7 @@ pub(super) fn show(ctx: &egui::Context, cx: &mut Ctx, w: &mut Wizard, acts: &mut
 /// Enter anywhere but on a button advances (or, on the last step, goes to the servers).
 fn keys(ctx: &egui::Context, cx: &Ctx, _w: &Wizard, acts: &mut Acts) {
     let blocked = cx.stores.dialogs.open()
-        || ctx.any_popup_open()
+        || egui::Popup::is_any_open(ctx)
         || ctx.memory(|m| m.top_modal_layer().is_some());
     if blocked {
         return;
@@ -496,14 +496,19 @@ fn welcome(ui: &mut Ui, cx: &Ctx, acts: &mut Acts) {
             );
             let p = ui.painter();
             paint::plate(p, card, size::RADIUS_MD, tk.panel, tk.border);
-            let tile = Rect::from_min_size(card.min + vec2(12.0, 12.0), Vec2::splat(32.0));
+            // The tile and the words on the card's centre line, whatever the row's height.
+            let tile = Rect::from_min_size(
+                pos2(card.left() + 12.0, card.center().y - 16.0),
+                Vec2::splat(32.0),
+            );
             p.rect_filled(tile, CornerRadius::same(size::RADIUS_SM), tk.raised);
             icon.paint(
                 p,
                 Rect::from_center_size(tile.center(), Vec2::splat(size::ICON)),
                 *tone,
             );
-            p.galley(pos2(tile.right() + 12.0, card.top() + 12.0), g, tk.fg);
+            let y = card.center().y - g.size().y / 2.0;
+            p.galley(pos2(tile.right() + 12.0, y), g, tk.fg);
         }
         ui.add_space(gap);
     }

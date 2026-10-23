@@ -251,4 +251,44 @@ impl Hub {
         .await
         .map_err(|e| format!("Task join error: {e}"))
     }
+
+    /// Every Steam library on this machine that exists (the folder holding
+    /// `steamapps`), the profile's Steam folder first: where the window's own file
+    /// picker starts looking. Empty in the mock (its world has no disk).
+    pub async fn steam_library_dirs(&self) -> Vec<String> {
+        mocked!(self => Vec::new());
+        let explicit = match self.state() {
+            Ok(state) => state.read().await.ctl.profile().steam_root.clone(),
+            Err(_) => None,
+        };
+        tokio::task::spawn_blocking(move || {
+            let root = explicit
+                .filter(|p| !p.trim().is_empty())
+                .map(std::path::PathBuf::from)
+                .or_else(dz_steamcmd::find_steam_root);
+            let Some(root) = root else {
+                return Vec::new();
+            };
+            let mut out: Vec<String> = Vec::new();
+            for sa in dz_steamcmd::steam_libraries(&root) {
+                // `steam_libraries` names each library's `steamapps`; the library is
+                // its parent (a root given as the library itself is kept as is).
+                let lib = if sa.file_name().is_some_and(|n| n == "steamapps") {
+                    sa.parent().map(std::path::Path::to_path_buf).unwrap_or(sa)
+                } else {
+                    sa
+                };
+                if !lib.is_dir() {
+                    continue;
+                }
+                let s = lib.to_string_lossy().into_owned();
+                if !out.contains(&s) && out.len() < 32 {
+                    out.push(s);
+                }
+            }
+            out
+        })
+        .await
+        .unwrap_or_default()
+    }
 }

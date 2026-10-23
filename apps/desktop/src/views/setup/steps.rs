@@ -962,7 +962,7 @@ pub fn services(ui: &mut Ui, w: &mut Wizard) {
                     .variant(Variant::Ghost)
                     .size(Size::Xs);
                 if ui.add(b).clicked() {
-                    let _ = open::that_detached(API_KEY_URL);
+                    let _ = crate::platform::deck::open(API_KEY_URL);
                 }
             },
             |ui| {

@@ -221,7 +221,7 @@ impl Profile {
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         if !path.exists() {
-            let mut profile = Self::default_with_version(APP_VERSION);
+            let mut profile = Self::fresh(dz_common::deck::deck().hardware);
             profile.path = path.to_path_buf();
             profile.snapshot()?.write_blocking()?;
             return Ok(profile);
@@ -248,7 +248,7 @@ impl Profile {
     pub async fn load_async(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         if !tokio::fs::try_exists(path).await.unwrap_or(false) {
-            let mut profile = Self::default_with_version(APP_VERSION);
+            let mut profile = Self::fresh(dz_common::deck::deck().hardware);
             profile.path = path.to_path_buf();
             profile.snapshot()?.write().await?;
             return Ok(profile);
@@ -279,6 +279,17 @@ impl Profile {
             data: serde_json::to_string_pretty(self)?,
             seq: 0,
         })
+    }
+
+    /// The profile a first start writes. On a Steam Deck the mods come through
+    /// the Steam client: it is always running there, logged in, and SteamCMD
+    /// would want the password typed on a pad.
+    pub fn fresh(on_deck: bool) -> Self {
+        let mut p = Self::default_with_version(APP_VERSION);
+        if on_deck {
+            p.mod_downloader = ModDownloader::Steamworks;
+        }
+        p
     }
 
     pub fn default_with_version(version: &str) -> Self {
@@ -499,6 +510,12 @@ mod tests {
         assert_eq!(p.mod_downloader, ModDownloader::Steamcmd);
         assert_eq!(p.ping_concurrency, 64);
         assert!(!p.options.window.description.is_empty());
+    }
+
+    #[test]
+    fn a_first_start_on_a_deck_downloads_through_steam() {
+        assert_eq!(Profile::fresh(true).mod_downloader, ModDownloader::Steamworks);
+        assert_eq!(Profile::fresh(false).mod_downloader, ModDownloader::Steamcmd);
     }
 
     #[test]

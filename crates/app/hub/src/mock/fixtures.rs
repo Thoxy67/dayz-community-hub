@@ -577,11 +577,15 @@ pub(crate) fn offline_saves() -> Vec<MissionSaveDto> {
 }
 
 pub(crate) fn gamepad_status() -> GamepadStatus {
+    // The machine as it is: `SteamDeck=1` or `XDG_CURRENT_DESKTOP=gamescope`
+    // in the environment shows the window as a Deck or Game Mode draw it.
+    let deck = dz_common::deck::deck();
     GamepadStatus {
         available: true,
         pads: Vec::new(),
-        steam_ui: false,
-        steam_deck: false,
+        steam_ui: deck.game_mode,
+        steam_deck: deck.hardware,
+        game_mode: deck.game_mode,
     }
 }
 

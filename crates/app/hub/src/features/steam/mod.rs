@@ -5,6 +5,7 @@ use crate::Hub;
 use crate::error::{HttpResultExt, ResultExt, send_ok};
 
 pub(crate) mod access;
+pub mod shortcut;
 
 /// Who is logged in to the running Steam client.
 #[derive(serde::Serialize, Clone, Debug)]

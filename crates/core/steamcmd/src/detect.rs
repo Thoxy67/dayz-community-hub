@@ -314,7 +314,7 @@ impl FileStamp {
 /// The account Steam logged in last, from `loginusers.vdf`, as its
 /// `userdata` folder names it (the account id: the SteamID64 less
 /// 76561197960265728).
-fn most_recent_account(login_users: &str) -> Option<u64> {
+pub(crate) fn most_recent_account(login_users: &str) -> Option<u64> {
     const BASE: u64 = 76_561_197_960_265_728;
     let doc = crate::vdf::parse(login_users);
     let Some(crate::vdf::Vdf::Obj(users)) = doc.get(&["users"]) else {
@@ -325,6 +325,16 @@ fn most_recent_account(login_users: &str) -> Option<u64> {
             .then(|| id.parse::<u64>().ok()?.checked_sub(BASE))
             .flatten()
     })
+}
+
+/// The Steam client's own folder (where `userdata` and `config` are), not a
+/// secondary library: the first default `steamapps` that exists, less its
+/// last part. Blocking (a few stats).
+pub fn steam_install_dir() -> Option<PathBuf> {
+    default_steamapps_candidates()
+        .into_iter()
+        .find(|c| c.is_dir())
+        .and_then(|sa| sa.parent().map(Path::to_path_buf))
 }
 
 /// Default `steamapps` directory candidates for the current platform, in

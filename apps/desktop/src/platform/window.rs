@@ -36,7 +36,7 @@ const MAX_COORD: f64 = 100_000.0;
 const MINIMISED_POS: f64 = 30_000.0;
 
 /// The 256 px app icon (the Tauri app's `icons/128x128@2x.png`).
-const PNG: &[u8] = include_bytes!("../../assets/app/icon-256.png");
+pub(crate) const PNG: &[u8] = include_bytes!("../../assets/app/icon-256.png");
 
 /// The window's icon (an empty one if the bundled PNG cannot be read, which a test
 /// rules out).
@@ -74,9 +74,15 @@ pub fn has_saved_position(path: &Path) -> bool {
 }
 
 /// The window eframe restores, corrected before it is created (eframe's
-/// `NativeOptions::window_builder`). `saved` is the preferences' geometry.
-pub fn restored(builder: ViewportBuilder, saved: Option<WindowState>) -> ViewportBuilder {
-    let mut b = builder.with_fullscreen(false);
+/// `NativeOptions::window_builder`). `saved` is the preferences' geometry;
+/// `fullscreen` is set in Steam's Game Mode, where the window always takes the screen
+/// (eframe's saved `fullscreen: false` must not undo it).
+pub fn restored(
+    builder: ViewportBuilder,
+    saved: Option<WindowState>,
+    fullscreen: bool,
+) -> ViewportBuilder {
+    let mut b = builder.with_fullscreen(fullscreen);
     // Saved maximised, eframe's size is the maximised one: restoring would leave a window
     // as big as the screen. The size before maximising, if smaller (eframe's is already
     // clamped to the monitor).
@@ -234,6 +240,7 @@ mod tests {
                 .with_maximized(true)
                 .with_fullscreen(true),
             saved,
+            false,
         );
         assert_eq!(b.inner_size, Some(egui::vec2(1100.0, 700.0)));
         assert_eq!(b.fullscreen, Some(false));
@@ -243,11 +250,19 @@ mod tests {
                 .with_inner_size([160.0, 64.0])
                 .with_position([500.0, 400.0]),
             None,
+            false,
         );
         assert_eq!(b.inner_size, Some(egui::vec2(900.0, 600.0)));
         assert_eq!(b.position, Some(egui::pos2(130.0, 132.0)));
         // A normal window is left as it was.
-        let b = restored(base.with_inner_size([1200.0, 780.0]), saved);
+        let b = restored(base.clone().with_inner_size([1200.0, 780.0]), saved, false);
         assert_eq!(b.inner_size, Some(egui::vec2(1200.0, 780.0)));
+        // Game Mode: full screen survives eframe's saved `fullscreen: false`.
+        let b = restored(
+            base.with_inner_size([1200.0, 780.0]).with_fullscreen(false),
+            saved,
+            true,
+        );
+        assert_eq!(b.fullscreen, Some(true));
     }
 }

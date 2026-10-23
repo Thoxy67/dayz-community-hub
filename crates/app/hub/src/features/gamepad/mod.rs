@@ -54,9 +54,13 @@ pub struct GamepadStatus {
     /// Running inside Steam's big-screen interface, a Steam Deck's Game Mode
     /// or Big Picture, where Steam's on-screen keyboard is there to type with.
     pub steam_ui: bool,
-    /// On a Steam Deck (its Game Mode sets `SteamDeck=1`): Steam Input hands
-    /// the app a generic pad, and the buttons to draw are the Deck's.
+    /// On a Steam Deck (its firmware says so, or Game Mode's `SteamDeck=1`):
+    /// Steam Input hands the app a virtual Xbox pad, and the buttons to draw
+    /// are the Deck's.
     pub steam_deck: bool,
+    /// Inside gamescope's session (Game Mode): no window manager around the
+    /// window, no file manager or browser beside it.
+    pub game_mode: bool,
 }
 
 /// The main window has the focus. Starts true: a compositor that never says
@@ -279,12 +283,14 @@ impl Hub {
     /// The pads, and whether a controller UI is to be expected.
     pub async fn gamepad_status(&self) -> GamepadStatus {
         mocked!(self => crate::mock::fixtures::gamepad_status());
+        let deck = dz_common::deck::deck();
         let s = shared().lock().unwrap_or_else(|e| e.into_inner());
         GamepadStatus {
             available: s.0,
             pads: s.1.clone(),
-            steam_ui: in_steam_ui(),
-            steam_deck: env_flag("SteamDeck"),
+            steam_ui: in_steam_ui() || deck.game_mode,
+            steam_deck: deck.hardware,
+            game_mode: deck.game_mode,
         }
     }
 }

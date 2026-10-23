@@ -206,9 +206,7 @@ impl SteamClient {
                 .arg("-silent")
                 .stdout(Stdio::null())
                 .stderr(Stdio::null());
-            for v in appimage_env() {
-                cmd.env_remove(v);
-            }
+            scrub_child_env(&mut cmd);
             spawn_detached(&mut cmd)?;
         }
 
@@ -289,6 +287,68 @@ pub fn appimage_env() -> &'static [&'static str] {
         ];
     }
     &[]
+}
+
+/// Variables Steam sets for a game it runs, here the launcher itself when it
+/// was started from Steam (a non-Steam shortcut, Game Mode). A child that
+/// inherits them takes itself for that game: `steam -applaunch` from inside
+/// would be counted as the launcher's session, the overlay's library loaded
+/// into Steam's own script (and into a 32-bit helper that cannot load it).
+const STEAM_SESSION_VARS: [&str; 3] = ["SteamGameId", "SteamOverlayGameId", "SteamAppId"];
+
+/// The overlay's libraries Steam preloads into a game.
+fn is_overlay_lib(entry: &str) -> bool {
+    entry.contains("gameoverlayrenderer")
+}
+
+/// What to change in a child's environment when the launcher runs inside a
+/// Steam session (`get` reads the launcher's own): `(name, None)` removes a
+/// variable, `(name, Some(v))` sets it. Empty outside such a session, so a
+/// player's own `LD_PRELOAD` is never touched there.
+pub fn steam_session_env(
+    get: &dyn Fn(&str) -> Option<String>,
+) -> Vec<(&'static str, Option<String>)> {
+    let inside = ["SteamGameId", "SteamOverlayGameId"]
+        .iter()
+        .any(|k| get(k).is_some_and(|v| !v.is_empty()));
+    if !inside {
+        return Vec::new();
+    }
+    let mut out: Vec<(&'static str, Option<String>)> = STEAM_SESSION_VARS
+        .iter()
+        .filter(|k| get(k).is_some())
+        .map(|k| (*k, None))
+        .collect();
+    if let Some(pre) = get("LD_PRELOAD") {
+        // Entries are separated by colons or spaces (ld.so takes both).
+        let kept: Vec<&str> = pre
+            .split([':', ' '])
+            .filter(|e| !e.is_empty() && !is_overlay_lib(e))
+            .collect();
+        if kept.len() != pre.split([':', ' ']).filter(|e| !e.is_empty()).count() {
+            out.push((
+                "LD_PRELOAD",
+                (!kept.is_empty()).then(|| kept.join(":")),
+            ));
+        }
+    }
+    out
+}
+
+/// Ready a command for a child that outlives or stands apart from the
+/// launcher (Steam, a link handed to it): without the AppImage's variables
+/// ([`appimage_env`]) nor, when the launcher itself runs inside a Steam
+/// session, the variables that session set for it ([`steam_session_env`]).
+pub fn scrub_child_env(cmd: &mut std::process::Command) {
+    for v in appimage_env() {
+        cmd.env_remove(v);
+    }
+    for (k, v) in steam_session_env(&|k| std::env::var(k).ok()) {
+        match v {
+            Some(v) => cmd.env(k, v),
+            None => cmd.env_remove(k),
+        };
+    }
 }
 
 /// The game's own processes, beside the Steam client that starts them: the
@@ -557,6 +617,58 @@ mod tests {
     #[ignore = "reads this machine's processes"]
     fn running_here() {
         println!("running: {}", DayzGame::is_running());
+    }
+
+    fn env<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
+        move |k| {
+            pairs
+                .iter()
+                .find(|(n, _)| *n == k)
+                .map(|(_, v)| v.to_string())
+        }
+    }
+
+    /// Started from a Steam shortcut: the session's ids and the overlay stay
+    /// with the launcher, the player's own preloads go on.
+    #[test]
+    fn a_steam_session_is_not_handed_to_the_children() {
+        use super::steam_session_env;
+        let inside = [
+            ("SteamGameId", "12345678901234567890"),
+            ("SteamOverlayGameId", "12345678901234567890"),
+            ("SteamAppId", "0"),
+            (
+                "LD_PRELOAD",
+                "/home/deck/.local/share/Steam/ubuntu12_32/gameoverlayrenderer.so:\
+                 /home/deck/.local/share/Steam/ubuntu12_64/gameoverlayrenderer.so \
+                 /usr/lib/libmine.so",
+            ),
+        ];
+        let got = steam_session_env(&env(&inside));
+        assert_eq!(
+            got,
+            vec![
+                ("SteamGameId", None),
+                ("SteamOverlayGameId", None),
+                ("SteamAppId", None),
+                ("LD_PRELOAD", Some("/usr/lib/libmine.so".to_string())),
+            ]
+        );
+        // Only the overlay preloaded: the variable goes.
+        let only = [
+            ("SteamGameId", "1"),
+            ("LD_PRELOAD", "/s/ubuntu12_64/gameoverlayrenderer.so"),
+        ];
+        assert_eq!(
+            steam_session_env(&env(&only)),
+            vec![("SteamGameId", None), ("LD_PRELOAD", None)]
+        );
+        // No overlay in it: left as it is.
+        let mine = [("SteamGameId", "1"), ("LD_PRELOAD", "/usr/lib/libmine.so")];
+        assert_eq!(steam_session_env(&env(&mine)), vec![("SteamGameId", None)]);
+        // Outside a Steam session nothing is touched, not even an overlay path.
+        let outside = [("LD_PRELOAD", "/s/gameoverlayrenderer.so"), ("SteamAppId", "221100")];
+        assert!(steam_session_env(&env(&outside)).is_empty());
     }
 
     #[test]
