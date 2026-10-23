@@ -7,8 +7,8 @@
 //! start and written every 30 s while a Steam listing ran; this file is a
 //! fraction of that and reads several times faster, and a read shares one
 //! name per mod as the network parse does (see `names`). JSON stays the
-//! network's format only, and an older JSON cache is read once when no
-//! binary one exists yet.
+//! network's format only; an older JSON cache is read when no binary one
+//! exists yet, or when an older build wrote it after the binary one.
 //!
 //! The file is only a speed-up: one that is missing, cut short, of another
 //! version or otherwise unreadable is no cache, never an error.
@@ -199,17 +199,19 @@ fn decode(data: &[u8]) -> Option<ServerListCache> {
             official: r.official,
         }));
     }
+    // Read as a list from the launcher is: the servers without an IPv4
+    // query address leave (one may have come in with the official list).
     Some(ServerListCache {
         fetched_at: file.fetched_at,
         launcher_count: file.launcher_count,
-        list: ServerList {
+        list: ServerList::from(crate::ReadList {
             status: file.status,
             result,
-        },
+        }),
     })
 }
 
-/// The JSON cache older versions wrote, read when no binary one exists yet.
+/// The JSON cache older versions wrote.
 #[derive(Deserialize)]
 struct JsonCache {
     fetched_at: u64,
@@ -218,29 +220,38 @@ struct JsonCache {
     list: ServerList,
 }
 
-/// Load the cached server list: the binary file at `path`, else the JSON
-/// one older versions wrote at `legacy`. `None` if neither is there whole
-/// and readable. The files are read asynchronously and decoded on the
-/// blocking pool.
+/// Load the cached server list: the binary file at `path` or the JSON one
+/// older versions wrote at `legacy`, whichever holds the later launcher
+/// list. Both are there only when an older build ran after this one (the
+/// JSON is deleted once a binary cache is written), and then the JSON may
+/// be the newer. `None` if neither is there whole and readable. The files
+/// are read asynchronously and decoded on the blocking pool.
 pub async fn load_server_list_cache(path: &Path, legacy: &Path) -> Option<ServerListCache> {
-    if let Ok(data) = tokio::fs::read(path).await
-        && let Some(cache) = tokio::task::spawn_blocking(move || decode(&data))
+    let binary = match tokio::fs::read(path).await {
+        Ok(data) => tokio::task::spawn_blocking(move || decode(&data))
             .await
             .ok()
-            .flatten()
-    {
-        return Some(cache);
+            .flatten(),
+        Err(_) => None,
+    };
+    let json = match tokio::fs::read(legacy).await {
+        Ok(data) => {
+            tokio::task::spawn_blocking(move || serde_json::from_slice::<JsonCache>(&data).ok())
+                .await
+                .ok()
+                .flatten()
+                .map(|old| ServerListCache {
+                    fetched_at: old.fetched_at,
+                    launcher_count: old.launcher_count,
+                    list: old.list,
+                })
+        }
+        Err(_) => None,
+    };
+    match (binary, json) {
+        (Some(binary), Some(json)) if json.fetched_at > binary.fetched_at => Some(json),
+        (binary, json) => binary.or(json),
     }
-    let data = tokio::fs::read(legacy).await.ok()?;
-    let old: JsonCache = tokio::task::spawn_blocking(move || serde_json::from_slice(&data).ok())
-        .await
-        .ok()
-        .flatten()?;
-    Some(ServerListCache {
-        fetched_at: old.fetched_at,
-        launcher_count: old.launcher_count,
-        list: old.list,
-    })
 }
 
 /// Persist the server list, with when its launcher list was fetched
@@ -375,10 +386,40 @@ mod tests {
             (back.fetched_at, back.launcher_count),
             (1_700_000_000, Some(3))
         );
+        // A JSON an older build wrote after the binary file wins.
+        std::fs::write(
+            &legacy,
+            br#"{"fetched_at":1800000000,"list":{"status":0,"result":[]}}"#,
+        )
+        .unwrap();
+        let newer = load_server_list_cache(&path, &legacy).await.unwrap();
+        assert_eq!(newer.fetched_at, 1_800_000_000);
+        assert!(newer.list.result.is_empty());
         // A broken binary file is no cache, and the JSON is read instead.
+        std::fs::write(
+            &legacy,
+            br#"{"fetched_at":5,"list":{"status":0,"result":[]}}"#,
+        )
+        .unwrap();
         std::fs::write(&path, b"DZSL\x01\x00garbage").unwrap();
         let old = load_server_list_cache(&path, &legacy).await.unwrap();
         assert_eq!(old.fetched_at, 5);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_server_without_a_query_address_is_left_out_as_the_file_is_read() {
+        let mut no_ip = (*server("1.1.1.1", 27016, &[("@CF", 1)])).clone();
+        no_ip.endpoint = SocketAddrV4::new(crate::Ipv4Addr::UNSPECIFIED, 27016);
+        let mut no_port = (*server("2.2.2.2", 27017, &[])).clone();
+        no_port.endpoint = SocketAddrV4::new("2.2.2.2".parse().unwrap(), 0);
+        let mut servers = list().result.clone();
+        servers.extend([Arc::new(no_ip), Arc::new(no_port)]);
+        let written = ServerList {
+            status: 0,
+            result: servers,
+        };
+        let back = decode(&encode(&written, 7, None)).unwrap();
+        assert_eq!(back.list, *list());
     }
 }

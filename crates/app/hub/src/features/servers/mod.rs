@@ -383,8 +383,8 @@ fn dedup(mut list: ServerList) -> Arc<ServerList> {
 /// by [`CACHE_WRITER`], so the cache is written once for a burst of them,
 /// and always with the newest list. A cache only speeds up the next start,
 /// so an exit within the wait loses nothing that matters. Once the binary
-/// cache is written, the JSON one an older version left is deleted: it was
-/// read at start only because there was no binary one yet.
+/// cache is written, the JSON one an older version left is deleted: the
+/// binary one now holds the newer list.
 pub(super) fn save_cache_in_background(list: Arc<ServerList>) {
     CACHE_WRITER.request((list, launcher()), |(list, stamp)| async move {
         if dz_api::save_server_list_cache(&paths::server_list_cache_path(), list, stamp).await {

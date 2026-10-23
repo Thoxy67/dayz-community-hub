@@ -48,8 +48,9 @@ pub fn server_list_cache_path() -> PathBuf {
     data_dir().join("server_list_cache.bin")
 }
 
-/// `<data dir>/server_list_cache.json`: the cache as versions up to 0.5.4
-/// wrote it, read once when there is no binary one yet, then deleted.
+/// `<data dir>/server_list_cache.json`: the cache as versions before the
+/// binary one wrote it, read when there is no binary one yet or it is the
+/// newer, and deleted once a binary one is written.
 pub fn legacy_server_list_cache_path() -> PathBuf {
     data_dir().join("server_list_cache.json")
 }

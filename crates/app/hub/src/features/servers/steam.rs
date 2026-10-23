@@ -549,7 +549,7 @@ async fn run(hub: &Hub) {
     let Some(state) = hub.try_state() else {
         return;
     };
-    let (enabled, maps, known, ping_settings) = {
+    let (enabled, maps, known, mut names, ping_settings) = {
         let s = state.read().await;
         let known: FxHashSet<Addr> = s.servers.result.iter().map(key).collect();
         let p = s.ctl.profile();
@@ -557,6 +557,7 @@ async fn run(hub: &Hub) {
             p.steam_server_list,
             maps_by_size(&s.servers),
             known,
+            mod_names(&s.servers),
             // As the window's scan asks (browser::start_scan); `None` when
             // the profile does not scan the list.
             p.ping_scan_servers.then(|| PingSettings {
@@ -666,7 +667,7 @@ async fn run(hub: &Hub) {
             .buffer_unordered(window)
             .fuse(),
     );
-    take_answers(hub, &state, &mut answers, ping_settings).await;
+    take_answers(hub, &state, &mut answers, &mut names, ping_settings).await;
     let outcome = lister.await.unwrap_or_else(|e| Err(e.to_string()));
 
     let list = Arc::clone(&state.read().await.servers);
@@ -734,12 +735,39 @@ struct PingSettings {
     retries: u32,
 }
 
-/// Put the servers `answers` yields in the list as they come. How each
-/// answered is remembered.
+/// The mod names `list` holds, one each: the names a listing's servers
+/// share (see [`share_names`]).
+fn mod_names(list: &ServerList) -> FxHashSet<Arc<str>> {
+    list.result
+        .iter()
+        .flat_map(|s| &s.mods)
+        .map(|m| Arc::clone(&m.name))
+        .collect()
+}
+
+/// `mods` holding the names in `names` rather than a copy each, the names
+/// not met yet added. A server's A2S rules give it names of its own, and a
+/// listing adds thousands of servers running the same few hundred mods:
+/// shared, they hold one name per mod as the list read from the launcher
+/// or the cache does.
+fn share_names(names: &mut FxHashSet<Arc<str>>, mods: &mut [Mod]) {
+    for m in mods {
+        match names.get(&*m.name) {
+            Some(known) => m.name = Arc::clone(known),
+            None => {
+                names.insert(Arc::clone(&m.name));
+            }
+        }
+    }
+}
+
+/// Put the servers `answers` yields in the list as they come, their mods'
+/// names shared through `names`. How each answered is remembered.
 async fn take_answers(
     hub: &Hub,
     state: &SharedState,
     answers: &mut (impl Unpin + futures_util::stream::FusedStream<Item = Outcome>),
+    names: &mut FxHashSet<Arc<str>>,
     ping: Option<PingSettings>,
 ) {
     let mut fresh: Vec<SteamListed> = Vec::new();
@@ -748,7 +776,8 @@ async fn take_answers(
     loop {
         tokio::select! {
             next = answers.next() => match next {
-                Some(Outcome::Row(row)) => {
+                Some(Outcome::Row(mut row)) => {
+                    share_names(names, &mut row.mods);
                     judged(row.addr, Verdict::Answered);
                     fresh.push(row);
                 }
@@ -1248,6 +1277,29 @@ mod tests {
         let (answered, ask) = split_kept(kept, &map, Duration::ZERO);
         assert!(answered.is_empty());
         assert_eq!(ask.len(), 4);
+    }
+
+    #[test]
+    fn a_listed_servers_mods_take_the_names_the_list_already_holds() {
+        let named = |name: &str, id| Mod {
+            name: name.into(),
+            steam_workshop_id: id,
+        };
+        let list = ServerList {
+            status: 0,
+            result: vec![Arc::new(Server {
+                mods: vec![named("@CF", 1)],
+                ..Default::default()
+            })],
+        };
+        let mut names = mod_names(&list);
+        let mut first = vec![named("@CF", 1), named("@Trader", 2)];
+        let mut second = vec![named("@Trader", 2)];
+        share_names(&mut names, &mut first);
+        share_names(&mut names, &mut second);
+        assert!(Arc::ptr_eq(&first[0].name, &list.result[0].mods[0].name));
+        // A name the list lacked is shared from its first server on.
+        assert!(Arc::ptr_eq(&first[1].name, &second[0].name));
     }
 
     /// One server of the made-up master.
