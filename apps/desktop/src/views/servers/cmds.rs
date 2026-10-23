@@ -6,11 +6,11 @@
 //! query port or the game port), else on the browser's selection, else on the server the
 //! panel shows (favourites, history): one set of commands for every server list.
 
-use dz_hub::features::browser::{SortCol, Tri};
+use dz_hub::features::browser::{DayTime, SortCol, Tri};
 use serde_json::Value;
 
 use super::detail::{self, DetailTab, ModsFilter};
-use super::filters::{PINGS, sort_col, tri_from, tri_next};
+use super::filters::{PINGS, day_time_from, sort_col, tri_from, tri_next};
 use super::{Sel, UiState, index_of, shared};
 use crate::app::Ctx;
 use crate::i18n::t;
@@ -306,6 +306,81 @@ pub fn copy_address(cx: &mut Ctx, a: &Value) {
         .ok(format!("{} · {address}", t("common", "copied")));
 }
 
+/// A shortcut on the desktop that joins this server (`--connect ip:port`), named after
+/// it, opening this same launcher (its `--data-dir`, `--instance`); a toast says
+/// where it went, or why not. Never from the invented world: its addresses are not
+/// real and the desktop is.
+pub fn desktop_shortcut(cx: &mut Ctx, a: &Value) {
+    use crate::platform::shortcut::{self, Failure, Shortcut};
+    let Some(tg) = target(cx, a) else {
+        return no_target(cx);
+    };
+    if cx.hub.is_mock() {
+        cx.stores.bus.err(t("servers", "shortcutMock"));
+        return;
+    }
+    let address = format!("{}:{}", tg.ip, tg.game_port);
+    let name = if tg.name.trim().is_empty() {
+        address.clone()
+    } else {
+        tg.name
+    };
+    let comment = crate::i18n::tf("servers", "shortcutComment", &[("name", &name)]);
+    let args = shortcut_args(dz_hub::features::updater::restart_args());
+    let bus = cx.stores.bus.clone();
+    crate::rt::fire(async move {
+        let made = tokio::task::spawn_blocking(move || {
+            shortcut::create(&Shortcut {
+                name: &name,
+                fallback: &address,
+                comment: &comment,
+                address: &address,
+                args: &args,
+            })
+        })
+        .await
+        .map_err(|e| Failure::Io(e.to_string()))
+        .and_then(|r| r);
+        match made {
+            Ok(path) => bus.ok(crate::i18n::tf(
+                "servers",
+                "shortcutCreated",
+                &[("path", &path.display())],
+            )),
+            Err(e) => {
+                let why = match e {
+                    Failure::NoDesktop => t("servers", "shortcutNoDesktop").to_string(),
+                    Failure::NotOnDrive => t("servers", "shortcutNotOnDrive").to_string(),
+                    Failure::Taken => t("servers", "shortcutTaken").to_string(),
+                    Failure::Io(e) => e,
+                };
+                bus.err(crate::i18n::tf(
+                    "servers",
+                    "shortcutFailed",
+                    &[("error", &why)],
+                ));
+            }
+        }
+    });
+}
+
+/// The window's own flags a shortcut passes on: the data folder and the instance,
+/// never the control port (another window may hold it) or `--mock`.
+fn shortcut_args(own: Vec<std::ffi::OsString>) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut it = own.into_iter();
+    while let Some(a) = it.next() {
+        match a.to_str() {
+            Some("--control") => {
+                it.next();
+            }
+            Some("--mock") => {}
+            _ => out.push(a.to_string_lossy().into_owned()),
+        }
+    }
+    out
+}
+
 pub fn copy_link(cx: &mut Ctx, a: &Value) {
     let Some(tg) = target(cx, a) else {
         return no_target(cx);
@@ -492,6 +567,52 @@ pub fn hide_full(cx: &mut Ctx, a: &Value) {
     filters(cx, |f| f.hide_full = on.unwrap_or(!f.hide_full));
 }
 
+/// `servers.filter.time_of_day {value?: "any" | "day" | "night"}`: the one named, or
+/// the next (any, day, night).
+pub fn time_of_day(cx: &mut Ctx, a: &Value) {
+    let value = arg_str(a, "value").and_then(day_time_from);
+    filters(cx, |f| {
+        f.time_of_day = value.unwrap_or(match f.time_of_day {
+            DayTime::Any => DayTime::Day,
+            DayTime::Day => DayTime::Night,
+            DayTime::Night => DayTime::Any,
+        });
+    });
+}
+
+/// `servers.filter.with_mod {name | id}`: servers running a mod (part of its name, or
+/// its Workshop id); blank or missing for any. With both, the one mod `id` is matched
+/// and `name` is what the field and the chip show. Opens the browser.
+pub fn with_mod(cx: &mut Ctx, a: &Value) {
+    let (text, id) = with_mod_args(a);
+    filters(cx, |f| {
+        f.with_mod = text;
+        f.with_mod_id = id;
+    });
+    cx.go(ViewId::Servers);
+}
+
+/// The mod filter's text and picked id from the command's arguments.
+pub fn with_mod_args(a: &Value) -> (String, Option<u64>) {
+    let clip = |s: &str| s.trim().chars().take(128).collect::<String>();
+    let name = arg_str(a, "name").map(clip).unwrap_or_default();
+    let id = arg_i64(a, "id")
+        .and_then(|i| u64::try_from(i).ok())
+        .filter(|i| *i > 0);
+    match (name.is_empty(), id) {
+        (false, Some(id)) => (name, Some(id)),
+        (true, Some(id)) => (id.to_string(), None),
+        _ if name.is_empty() => (arg_str(a, "id").map(clip).unwrap_or_default(), None),
+        _ => (name, None),
+    }
+}
+
+/// `servers.filter.ready {on?}`: only servers a join starts at once; toggles without `on`.
+pub fn ready(cx: &mut Ctx, a: &Value) {
+    let on = arg_bool(a, "on");
+    filters(cx, |f| f.ready = on.unwrap_or(!f.ready));
+}
+
 pub fn toggle_excluded(cx: &mut Ctx, _: &Value) {
     filters(cx, |f| f.show_excluded = !f.show_excluded);
 }
@@ -639,5 +760,31 @@ pub fn open_link(cx: &mut Ctx, a: &Value) {
     }
     if let Err(e) = open::that_detached(url) {
         cx.stores.bus.err(e.to_string());
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod shortcut_tests {
+    use super::shortcut_args;
+
+    #[test]
+    fn a_shortcut_keeps_the_data_folder_and_instance_not_the_port_or_mock() {
+        let own = [
+            "--data-dir",
+            "/d",
+            "--instance",
+            "two",
+            "--mock",
+            "--control",
+            "9000",
+        ]
+        .map(std::ffi::OsString::from)
+        .to_vec();
+        assert_eq!(
+            shortcut_args(own),
+            ["--data-dir", "/d", "--instance", "two"].map(String::from)
+        );
+        assert!(shortcut_args(Vec::new()).is_empty());
     }
 }

@@ -368,6 +368,15 @@ pub fn set_restart_args(args: Vec<std::ffi::OsString>) {
         .unwrap_or_else(std::sync::PoisonError::into_inner) = args;
 }
 
+/// The window's own arguments (see [`RESTART_ARGS`]), for what starts this same
+/// launcher again later (a desktop shortcut).
+pub fn restart_args() -> Vec<std::ffi::OsString> {
+    RESTART_ARGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
 /// Start this copy again, without exiting, with the window's own arguments
 /// (see [`set_restart_args`]). An AppImage runs from a mount that goes away
 /// with the process, so the image itself (`$APPIMAGE`, the new one after an
