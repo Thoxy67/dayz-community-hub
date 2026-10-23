@@ -22,6 +22,33 @@ notes; without one, the notes are the commit titles since the last release.
   articles, each opened with its pictures, its videos (a click opens them
   on YouTube) and, for an update, its patch notes for Steam, Xbox and
   PlayStation, one platform at a time.
+- **Interface size.** Ctrl + and Ctrl − make the whole launcher bigger
+  or smaller, and the settings' Appearance page has the same choice. The
+  size is kept for the next start. Every view also fits smaller windows
+  better.
+- **The map filter takes several maps**, and a map can be typed to find
+  it in the list.
+- **A removed mod leaves at once.** It disappeared from the mods list
+  only after a while, often only after a restart; it now leaves the list
+  as soon as it is removed, while Steam deletes its files.
+- **An updated mod stops showing as out of date.** An update through the
+  Steam client could be counted as done before Steam had even started it,
+  and a check right after an update could read the mods from before it;
+  the installed version is now read from Steam's own record of it.
+- **Your game version beside each server's.** A server running another
+  version of DayZ than yours is marked in the list.
+- **BattlEye on Linux** shows "runtime" in the status bar once Steam's
+  Proton BattlEye Runtime is installed, since Proton does not tell when
+  BattlEye itself starts.
+- **Faster starts and lighter scans.** A restart (an update's included)
+  reuses Steam's last server list when it is under ten minutes old,
+  instead of asking Steam again; when it does ask, it needs about a third
+  of the requests. The full server list costs less to keep up to date,
+  and the launcher stays idle when nothing happens.
+- **One notification per message.** Some notifications appeared twice;
+  launch steps now replace each other instead of piling up.
+- **The window can be resized from its edges again** after it has been
+  moved (on Linux with Wayland).
 - **The AppImage no longer bundles libraries**: it uses your system's
   graphics drivers and desktop directly.
 - **Removed:** the news feed's built-in browser fallback when dayz.com's
