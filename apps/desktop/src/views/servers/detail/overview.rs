@@ -125,7 +125,9 @@ fn facts(ui: &Ui, m: &Model) -> Vec<F> {
         }
         if let Some(day) = d.time_accel {
             let x = |v: f32| format::num((f64::from(v) * 10.0).round() / 10.0);
-            let night = d.night_time_accel.unwrap_or(day);
+            // `entm` multiplies the day's speed at night (DayZ's
+            // `serverNightTimeAcceleration`), as the browser's clock reads it.
+            let night = day * d.night_time_accel.unwrap_or(1.0);
             v.push(f(
                 t("detail", "dmTimeSpeed"),
                 tf(
@@ -309,6 +311,13 @@ pub fn show(ui: &mut Ui, cx: &Ctx, m: &Model, run: &mut Run) {
                 }
             },
         );
+
+    // ── a favourite's notes (`views/favorites`), near the top: the player's own words ──
+    let ports: Vec<u16> = [m.game_port, m.query_port]
+        .into_iter()
+        .filter_map(|p| u16::try_from(p).ok())
+        .collect();
+    crate::views::favorites::detail_notes(ui, cx, &m.ip, &ports, run);
 
     // ── details ──
     let items = facts(ui, m);

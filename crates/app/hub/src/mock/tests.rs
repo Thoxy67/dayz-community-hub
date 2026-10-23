@@ -139,6 +139,77 @@ async fn a_mock_hub_answers_as_mock_ts_did() {
     assert_eq!(profile.favorites.len(), 6);
     assert_eq!(profile.history.len(), 12);
     assert_eq!(profile.excluded_ips.len(), 1);
+    // A favourite's note, labels and group: edited, kept, read back.
+    assert_eq!(profile.favorite_groups.len(), 2);
+    assert_eq!(profile.favorite_labels.len(), 3);
+    let fav = profile.favorites[4].clone();
+    hub.edit_favorites(vec![dz_profile::FavoriteEdit::Meta {
+        ip: fav.ip.clone(),
+        port: fav.port,
+        meta: dz_profile::FavoriteMeta {
+            note: "base at the dam".into(),
+            labels: vec!["PvE".into()],
+            group: Some("Weekend".into()),
+            ..Default::default()
+        },
+    }])
+    .await
+    .unwrap();
+    let after = hub.get_profile().await.unwrap();
+    let f = after
+        .favorites
+        .iter()
+        .find(|f| f.ip == fav.ip && f.port == fav.port)
+        .unwrap();
+    assert_eq!(
+        (f.note.as_str(), f.group.as_deref()),
+        ("base at the dam", Some("Weekend"))
+    );
+    assert!(
+        hub.edit_favorites(vec![dz_profile::FavoriteEdit::AddGroup {
+            name: "Main".into()
+        }])
+        .await
+        .is_err()
+    );
+    // A batch goes in order (the group exists when the favourite joins it), and
+    // all or none (a refused edit undoes the ones before it).
+    let meta = |group: &str| dz_profile::FavoriteEdit::Meta {
+        ip: fav.ip.clone(),
+        port: fav.port,
+        meta: dz_profile::FavoriteMeta {
+            group: Some(group.into()),
+            ..Default::default()
+        },
+    };
+    hub.edit_favorites(vec![
+        dz_profile::FavoriteEdit::AddGroup {
+            name: "Late".into(),
+        },
+        meta("Late"),
+    ])
+    .await
+    .unwrap();
+    assert!(
+        hub.edit_favorites(vec![
+            dz_profile::FavoriteEdit::AddGroup {
+                name: "Never".into(),
+            },
+            dz_profile::FavoriteEdit::AddGroup {
+                name: "Main".into(),
+            },
+        ])
+        .await
+        .is_err()
+    );
+    let after = hub.get_profile().await.unwrap();
+    let f = after
+        .favorites
+        .iter()
+        .find(|f| f.ip == fav.ip && f.port == fav.port)
+        .unwrap();
+    assert_eq!(f.group.as_deref(), Some("Late"));
+    assert!(!after.favorite_groups.iter().any(|g| g.name == "Never"));
 
     let mods = hub.get_installed_mods().await.unwrap();
     assert_eq!(mods.len(), 24);

@@ -11,6 +11,7 @@ use dz_hub::Hub;
 pub use dz_hub::features::profile::{FavoriteDto as Favorite, HistoryDto as History};
 use dz_hub::features::profile::{ProfileDto, ProfileSettingsInput};
 use dz_hub::features::steamworks::ModDownloaderDto;
+pub use dz_profile::{FavoriteEdit, FavoriteGroup, FavoriteLabel, FavoriteMeta, LabelColor};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::{Bus, ConfirmRequest, Signal};
@@ -53,6 +54,11 @@ pub struct Profile {
     bus: Bus,
     pub data: Option<ProfileDto>,
     pub favorites: Vec<Favorite>,
+    /// The labels favourites can carry, moved out of each profile read like the
+    /// favourites, and edited with them.
+    pub labels: Vec<FavoriteLabel>,
+    /// The favourites view's sections, in order.
+    pub groups: Vec<FavoriteGroup>,
     pub history: Vec<History>,
     /// The Steam avatar as the hub gives it (a `data:` URI, kilobytes); set through
     /// [`Profile::set_avatar`], which works out [`Profile::avatar_key`] with it.
@@ -76,6 +82,14 @@ pub struct Profile {
     ping: Option<Task<Result<(), String>>>,
     ping_pending: Option<PingSettings>,
     option: Vec<OptionWrite>,
+    /// The favourites' edits on their way to the hub, one batch at a time so they
+    /// land in the order made (a label made, then given), and the ones made
+    /// meanwhile with their success toasts.
+    fav_write: Option<Task<WriteResult>>,
+    fav_pending: Vec<(FavoriteEdit, Option<String>)>,
+    /// Moves each time a write landed (favourites, history, settings): what is
+    /// read from the hub's profile (the saved servers' mods) is read again.
+    pub written: u64,
 }
 
 impl Profile {
@@ -85,6 +99,8 @@ impl Profile {
             bus,
             data: None,
             favorites: Vec::new(),
+            labels: Vec::new(),
+            groups: Vec::new(),
             history: Vec::new(),
             avatar_url: None,
             avatar_key: 0,
@@ -100,11 +116,16 @@ impl Profile {
             ping: None,
             ping_pending: None,
             option: Vec::new(),
+            fav_write: None,
+            fav_pending: Vec::new(),
+            written: 0,
         }
     }
 
     fn set(&mut self, mut p: ProfileDto) {
         self.favorites = std::mem::take(&mut p.favorites);
+        self.labels = std::mem::take(&mut p.favorite_labels);
+        self.groups = std::mem::take(&mut p.favorite_groups);
         self.history = std::mem::take(&mut p.history);
         self.data = Some(p);
         self.derive();
@@ -164,7 +185,9 @@ impl Profile {
         self.favorites.len().hash(&mut h);
         for f in &self.favorites {
             (&f.ip, f.port, &f.name, &f.password).hash(&mut h);
+            (&f.note, &f.labels, &f.group).hash(&mut h);
         }
+        (&self.labels, &self.groups).hash(&mut h);
         self.history.len().hash(&mut h);
         for e in &self.history {
             (&e.ip, e.port, &e.name, e.ts).hash(&mut h);
@@ -350,6 +373,20 @@ impl Profile {
         );
     }
 
+    /// Discord Rich Presence, and whether it names the server: saved, applied at once.
+    pub fn set_discord(&mut self, enabled: bool, show_server: bool) {
+        if let Some(p) = &mut self.data {
+            p.discord_presence = enabled;
+            p.discord_show_server = show_server;
+        }
+        let hub = self.hub.clone();
+        self.write(
+            async move { hub.set_discord_presence(enabled, show_server).await },
+            None,
+            None,
+        );
+    }
+
     // ── favourites ──────────────────────────────────────────────────────────
 
     pub fn add_favorite(&mut self, name: &str, ip: &str, port: u16, password: Option<String>) {
@@ -358,11 +395,18 @@ impl Profile {
             .iter()
             .position(|f| f.ip == ip && f.port == port)
             .map(|i| self.favorites.remove(i));
+        // Saved again: what the player kept with it stays.
+        let prev = prev.unwrap_or_default();
         self.favorites.push(Favorite {
             name: name.to_string(),
             ip: ip.to_string(),
             port,
-            password: password.clone().or_else(|| prev.and_then(|p| p.password)),
+            password: password.clone().or(prev.password),
+            note: prev.note,
+            labels: prev.labels,
+            group: prev.group,
+            character: prev.character,
+            launch_args: prev.launch_args,
         });
         self.derive();
         let hub = self.hub.clone();
@@ -393,6 +437,62 @@ impl Profile {
         } else {
             self.add_favorite(name, ip, port, None);
         }
+    }
+
+    /// The favourite saved as `ip:port`.
+    pub fn favorite(&self, ip: &str, port: u16) -> Option<&Favorite> {
+        self.favorites.iter().find(|f| f.ip == ip && f.port == port)
+    }
+
+    /// The favourite a server is saved as: under `ip` with any of `ports` (saved,
+    /// query or game port alike).
+    pub fn favorite_of(&self, ip: &str, ports: &[u16]) -> Option<&Favorite> {
+        self.favorites
+            .iter()
+            .find(|f| f.ip == ip && ports.contains(&f.port))
+    }
+
+    /// The label named `name`.
+    pub fn label(&self, name: &str) -> Option<&FavoriteLabel> {
+        self.labels.iter().find(|l| l.name == name)
+    }
+
+    /// Change a favourite's note, labels, group or launch settings, or the labels and
+    /// groups: applied here at once with the hub's own rules, then written; a refused
+    /// edit says why and changes nothing, a failed write reloads the profile.
+    pub fn edit_favorites(&mut self, edit: FavoriteEdit, done: Option<String>) {
+        let applied = dz_profile::favorites::FavoriteBook {
+            favorites: &mut self.favorites,
+            labels: &mut self.labels,
+            groups: &mut self.groups,
+        }
+        .apply(edit.clone());
+        if let Err(e) = applied {
+            self.bus.err(edit_error(&e));
+            return;
+        }
+        self.fav_pending.push((edit, done));
+        self.send_favorite_edits();
+    }
+
+    /// The edits waiting, as one batch, unless one is on its way already (it sends
+    /// the rest when it lands).
+    fn send_favorite_edits(&mut self) {
+        if self.fav_write.is_some() || self.fav_pending.is_empty() {
+            return;
+        }
+        let (edits, done): (Vec<FavoriteEdit>, Vec<Option<String>>) =
+            std::mem::take(&mut self.fav_pending).into_iter().unzip();
+        // One toast for the batch: the last edit's that has one.
+        let done = done.into_iter().flatten().last();
+        let hub = self.hub.clone();
+        let prefix = t("shell", "errorFailed").to_string();
+        self.fav_write = Some(rt::spawn(async move {
+            match hub.edit_favorites(edits).await {
+                Ok(()) => Ok(done),
+                Err(e) => Err(format!("{prefix}: {e}")),
+            }
+        }));
     }
 
     /// Remove, after asking.
@@ -578,7 +678,7 @@ impl Profile {
                 Ok(()) => match hub.relaunch_app().await {
                     Ok(true) => {
                         if let Some(rt) = rt::Rt::get() {
-                            rt.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                            crate::platform::life::quit(rt.ctx());
                         }
                     }
                     Ok(false) => crate::prefs::hold_writes(false),
@@ -648,21 +748,46 @@ impl Profile {
             changed = true;
         }
         let mut reload = false;
+        if let Some(task) = &mut self.fav_write
+            && let Some(r) = task.poll()
+        {
+            self.fav_write = None;
+            self.written = self.written.wrapping_add(1);
+            match r {
+                Ok(done) => {
+                    if let Some(d) = done {
+                        self.bus.ok(d);
+                    }
+                }
+                Err(e) => {
+                    // The hub refused or failed: what was applied here no longer
+                    // holds, and the edits made since built on it.
+                    self.bus.err(e);
+                    self.fav_pending.clear();
+                    reload = true;
+                }
+            }
+            self.send_favorite_edits();
+        }
         let bus = self.bus.clone();
+        let mut landed = 0u64;
         self.writes.retain_mut(|task| match task.poll() {
             Some(Ok(done)) => {
                 if let Some(d) = done {
                     bus.ok(d);
                 }
+                landed += 1;
                 false
             }
             Some(Err(e)) => {
                 bus.err(e);
                 reload = true;
+                landed += 1;
                 false
             }
             None => task.is_pending(),
         });
+        self.written = self.written.wrapping_add(landed);
         if let Some(task) = &mut self.account
             && let Some(r) = task.poll()
         {
@@ -732,5 +857,21 @@ impl Profile {
             changed = true;
         }
         changed
+    }
+}
+
+/// A refused favourites edit, in the player's language.
+pub fn edit_error(e: &dz_profile::favorites::EditError) -> String {
+    use dz_profile::favorites::{EditError as E, Kind::Group, Kind::Label};
+    match e {
+        E::NotFavorite { .. } => t("favorites", "notFavorite").to_string(),
+        E::NoName(Label) => t("favorites", "errLabelNoName").to_string(),
+        E::NoName(Group) => t("favorites", "errGroupNoName").to_string(),
+        E::Taken(Label, n) => tf("favorites", "errLabelTaken", &[("name", n)]),
+        E::Taken(Group, n) => tf("favorites", "errGroupTaken", &[("name", n)]),
+        E::TooMany(Label, max) => tf("favorites", "errLabelTooMany", &[("max", max)]),
+        E::TooMany(Group, max) => tf("favorites", "errGroupTooMany", &[("max", max)]),
+        E::Missing(Label, n) => tf("favorites", "errLabelMissing", &[("name", n)]),
+        E::Missing(Group, n) => tf("favorites", "errGroupMissing", &[("name", n)]),
     }
 }

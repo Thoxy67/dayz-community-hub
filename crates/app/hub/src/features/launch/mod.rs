@@ -1,5 +1,7 @@
 //! Joining a server through Steam, and the DayZ launch options.
 
+pub mod args;
+
 use crate::{Hub, HubEvent};
 use dz_api::{Ipv4Addr, Server, SocketAddrV4};
 use dz_game::DayzCtl;
@@ -9,15 +11,19 @@ use crate::state::mutate_profile;
 /// Link the server's mods, hand Steam the launch, then record the server in
 /// the history and tell the window how it went. `host` is the name typed for
 /// a server the list does not know: the history and the play stats keep it in
-/// place of the IP it resolved to, so a rejoin follows the name.
+/// place of the IP it resolved to, so a rejoin follows the name. `typed` is
+/// what was typed to join, listed or not: a favourite saved under that name
+/// gives the launch its own character name and arguments.
 fn spawn_launch(
     app: Hub,
-    ctl: DayzCtl,
+    mut ctl: DayzCtl,
     server: Server,
     host: Option<String>,
+    typed: Option<&str>,
     password: Option<String>,
     extra: Vec<String>,
 ) {
+    let extra = per_server(&mut ctl, &server, typed, &extra);
     tokio::spawn(async move {
         // The `@<id>` links DayZ loads mods through: without them `-mod=@<id>`
         // points at nothing (notably on Windows, where they are NTFS
@@ -37,11 +43,11 @@ fn spawn_launch(
                     && let Ok(state) = app.state()
                 {
                     let _ = mutate_profile(&state, |s| {
-                        s.ctl.profile_mut().add_history(
-                            server.name.clone(),
-                            host.clone(),
-                            join.port(),
-                        );
+                        let p = s.ctl.profile_mut();
+                        p.add_history(server.name.clone(), host.clone(), join.port());
+                        // What it needs while the list does not show it (the
+                        // unused-mods filter keeps these).
+                        p.set_history_mods(&host, join.port(), server.mod_ids());
                         Ok(())
                     })
                     .await;
@@ -63,6 +69,51 @@ fn spawn_launch(
             }
         }
     });
+}
+
+/// A favourite's own character name and launch arguments over the global
+/// ones ([`args::merge`]), on the task's copy of the profile: the merged
+/// arguments are returned to go as the launch's extra arguments, and the
+/// options they already hold are switched off on the copy so none goes twice.
+fn per_server(
+    ctl: &mut DayzCtl,
+    server: &Server,
+    typed: Option<&str>,
+    extra: &[String],
+) -> Vec<String> {
+    apply_per_server(ctl.profile_mut(), server, typed, extra)
+}
+
+/// [`per_server`] on a profile: the favourite is looked up under the name
+/// typed (a host name saved from Direct Connect) and under the server's IP,
+/// with its game or query port.
+fn apply_per_server(
+    p: &mut dz_profile::Profile,
+    server: &Server,
+    typed: Option<&str>,
+    extra: &[String],
+) -> Vec<String> {
+    let ip = server.ip().to_string();
+    let hosts: Vec<&str> = typed
+        .map(str::trim)
+        .filter(|h| !h.is_empty())
+        .into_iter()
+        .chain([ip.as_str()])
+        .collect();
+    let ports = [server.game_port, server.query_port()];
+    let fav = args::favorite_for(&p.favorites, &hosts, &ports);
+    let merged = args::merge(
+        &p.options.to_args(),
+        fav.map_or("", |f| f.launch_args.as_str()),
+        extra,
+        fav.and_then(|f| f.character.as_deref()),
+        p.player.as_deref(),
+    );
+    p.player = merged.name;
+    for (_, o) in p.options.all_options_mut() {
+        o.enabled = false;
+    }
+    merged.args
 }
 
 /// How long a name may take to resolve before the join gives up: the system
@@ -170,7 +221,7 @@ impl Hub {
                 .ok_or_else(|| "Server not found".to_string())?;
             (server, state.ctl.clone_for_task())
         };
-        spawn_launch(app, ctl, server, None, password, vec![]);
+        spawn_launch(app, ctl, server, None, None, password, vec![]);
         Ok(())
     }
 
@@ -212,6 +263,7 @@ impl Hub {
             ctl,
             server,
             typed,
+            Some(host),
             password,
             extra_args.unwrap_or_default(),
         );
@@ -360,5 +412,89 @@ impl Hub {
         })
         .await
         .map_err(|e| format!("Task join error: {e}"))
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use dz_profile::{Favorite, Profile};
+
+    fn listed() -> Server {
+        let mut s = Server::unlisted(SocketAddrV4::new(Ipv4Addr::new(10, 0, 0, 7), 2302));
+        s.name = "Listed".into();
+        s
+    }
+
+    fn fav(ip: &str, port: u16, character: Option<&str>, args: &str) -> Favorite {
+        Favorite {
+            name: "Fav".into(),
+            ip: ip.into(),
+            port,
+            character: character.map(str::to_string),
+            launch_args: args.into(),
+            ..Default::default()
+        }
+    }
+
+    fn profile() -> Profile {
+        let mut p = Profile {
+            player: Some("Global".into()),
+            ..Default::default()
+        };
+        p.options.window.enabled = true;
+        p
+    }
+
+    #[test]
+    fn a_host_name_favourite_applies_to_its_listed_server() {
+        let mut p = profile();
+        p.favorites
+            .push(fav("play.example.net", 2302, Some("Hostie"), "-hostonly=1"));
+        let out = apply_per_server(&mut p, &listed(), Some(" play.example.net "), &[]);
+        assert_eq!(p.player.as_deref(), Some("Hostie"));
+        assert!(out.iter().any(|a| a == "-hostonly=1"));
+        // Without the typed name the IP finds nothing: the global name stays.
+        let mut p2 = profile();
+        p2.favorites
+            .push(fav("play.example.net", 2302, Some("Hostie"), "-hostonly=1"));
+        let out = apply_per_server(&mut p2, &listed(), None, &[]);
+        assert_eq!(p2.player.as_deref(), Some("Global"));
+        assert!(!out.iter().any(|a| a == "-hostonly=1"));
+    }
+
+    #[test]
+    fn options_go_once_and_only_on_the_copy() {
+        let base = {
+            let mut p = profile();
+            p.favorites
+                .push(fav("10.0.0.7", 2302, Some("Local"), "-window -cpuCount=4"));
+            p
+        };
+        let mut copy = base.clone();
+        let out = apply_per_server(&mut copy, &listed(), None, &["-extra".into()]);
+        assert_eq!(copy.player.as_deref(), Some("Local"));
+        assert_eq!(
+            out.iter()
+                .filter(|a| a.eq_ignore_ascii_case("-window"))
+                .count(),
+            1
+        );
+        assert!(out.iter().any(|a| a == "-cpuCount=4"));
+        assert_eq!(out.last().map(String::as_str), Some("-extra"));
+        // The copy's options are off, so the launch does not add them again...
+        assert!(copy.options.to_args().is_empty());
+        // ...and the profile it was copied from keeps its own.
+        assert!(base.options.window.enabled);
+        assert_eq!(base.player.as_deref(), Some("Global"));
+    }
+
+    #[test]
+    fn no_favourite_keeps_the_global_options_and_name() {
+        let mut p = profile();
+        let out = apply_per_server(&mut p, &listed(), None, &[]);
+        assert_eq!(p.player.as_deref(), Some("Global"));
+        assert!(out.iter().any(|a| a.eq_ignore_ascii_case("-window")));
     }
 }

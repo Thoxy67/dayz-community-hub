@@ -28,11 +28,11 @@ use crate::app::Ctx;
 use crate::commands::{self, Scope};
 use crate::i18n::{format, t, tf};
 use crate::icons::{Icon, lucide};
-use crate::kit::{Button, IconButton, Input, Side, Tone, Variant, VirtualList};
+use crate::kit::{Button, IconButton, Input, Side, TipExt, Tone, Variant, VirtualList};
 use crate::parts::{
     Empty, Host, ListColumns, MasterDetail, PageHeader, ROW_PX, RowAction, RowButton, RowCache,
-    RowData, RowExtra, RowMenuItem, RowTag, ServerListRow, ShortcutsButton, SortHead, TableHead,
-    draw, head_cell, ph,
+    RowData, RowExtra, RowLabel, RowMenuItem, RowTag, ServerListRow, ShortcutsButton, SortHead,
+    TableHead, draw, head_cell, ph,
 };
 use crate::store::servers::Live;
 use crate::theme::{TokensExt, font, fonts::Face, size};
@@ -167,6 +167,10 @@ pub struct Entry {
     pub password: Option<String>,
     /// History: when it was last joined (Unix seconds).
     pub ts: Option<i64>,
+    /// Favourites: the player's note, labels and group.
+    pub note: String,
+    pub labels: Vec<String>,
+    pub group: Option<String>,
 }
 
 impl Entry {
@@ -198,6 +202,9 @@ pub fn entries(cx: &Ctx, kind: Kind) -> Vec<Entry> {
                 name: f.name.clone(),
                 password: f.password.clone(),
                 ts: None,
+                note: f.note.clone(),
+                labels: f.labels.clone(),
+                group: f.group.clone(),
             })
             .collect(),
         Kind::History => p
@@ -207,8 +214,8 @@ pub fn entries(cx: &Ctx, kind: Kind) -> Vec<Entry> {
                 ip: h.ip.clone(),
                 port: h.port,
                 name: h.name.clone(),
-                password: None,
                 ts: Some(h.ts),
+                ..Entry::default()
             })
             .collect(),
     }
@@ -341,6 +348,12 @@ pub struct State {
     pub page_rows: usize,
     /// The keys of the rows shown last frame, in order (the commands walk them).
     pub shown: Vec<String>,
+    /// Where each of [`State::shown`] is among the list's rows (group headings
+    /// come between them).
+    pub row_of_shown: Vec<usize>,
+    /// Favourites: the "other favourites" section is folded (for the life of the
+    /// window; the player's groups keep theirs in the profile).
+    pub ungrouped_collapsed: bool,
     /// Focus the search on the next frame.
     pub focus_search: bool,
     /// History: the rail's Rejoin card asked for the last server played; done on the
@@ -356,6 +369,9 @@ pub struct State {
     /// History: each join's "how long ago" and date, by its time, with the second and
     /// the language they were written in (written again when either moves).
     times: FxHashMap<i64, (u64, String, String)>,
+    /// Favourites: the row menu's "Move to {group}" words, with the key (the groups'
+    /// names and the language) they were written under.
+    move_words: (u64, Vec<String>),
 }
 
 impl State {
@@ -375,6 +391,8 @@ impl State {
             scroll_to: None,
             page_rows: 10,
             shown: Vec::new(),
+            row_of_shown: Vec::new(),
+            ungrouped_collapsed: false,
             focus_search: false,
             focus_last: false,
             on_screen: Vec::new(),
@@ -383,6 +401,7 @@ impl State {
             pinged_hash: 0,
             listing: None,
             times: FxHashMap::default(),
+            move_words: (0, Vec::new()),
         }
     }
 
@@ -439,6 +458,23 @@ pub fn shown(entries: &[Entry], lines: &[Line], st: &State) -> Vec<usize> {
             .map(|e| e.name.to_lowercase())
             .collect()
     };
+    // The note and the labels, searched too (favourites).
+    let marks: Vec<String> = if q.is_empty() {
+        Vec::new()
+    } else {
+        entries
+            .iter()
+            .take(n)
+            .map(|e| {
+                let mut s = e.note.to_lowercase();
+                for l in &e.labels {
+                    s.push('\n');
+                    s.push_str(&l.to_lowercase());
+                }
+                s
+            })
+            .collect()
+    };
     let maps: Vec<String> = if q.is_empty() {
         Vec::new()
     } else {
@@ -463,6 +499,7 @@ pub fn shown(entries: &[Entry], lines: &[Line], st: &State) -> Vec<usize> {
                 && (q.is_empty()
                     || names.get(i).is_some_and(|n| n.contains(&q))
                     || l.key.contains(&q)
+                    || marks.get(i).is_some_and(|m| m.contains(&q))
                     || (l.listed && maps.get(i).is_some_and(|m| m.contains(&q))))
         })
         .collect();
@@ -504,12 +541,89 @@ pub fn shown(entries: &[Entry], lines: &[Line], st: &State) -> Vec<usize> {
     out
 }
 
-/// A list as last made: its entries, how each stands, the order shown.
+/// One row of the list: a group's heading or an entry (an index into the entries).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Row {
+    Head(usize),
+    Entry(usize),
+}
+
+/// A group's heading: its name (`None` for the favourites in no group), how many of its
+/// favourites match, whether it is folded.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Head {
+    pub name: Option<String>,
+    pub count: usize,
+    pub collapsed: bool,
+}
+
+/// The rows to draw: without groups, the order as it is; with them, each group's heading
+/// then its entries (in the order), in the groups' order, then the favourites in no group
+/// (or in one that no longer exists) under their own heading. While a search or "in the
+/// list only" filters, a group with nothing matching is left out; while searching, a
+/// folded group shows what matches.
+pub fn group_rows(
+    entries: &[Entry],
+    order: &[usize],
+    groups: &[dz_profile::FavoriteGroup],
+    filtering: bool,
+    searching: bool,
+    ungrouped_collapsed: bool,
+) -> (Vec<Row>, Vec<Head>) {
+    if groups.is_empty() {
+        return (order.iter().map(|&i| Row::Entry(i)).collect(), Vec::new());
+    }
+    let group_of = |i: usize| entries.get(i).and_then(|e| e.group.as_deref());
+    let known = |g: Option<&str>| g.is_some_and(|g| groups.iter().any(|x| x.name == g));
+    let mut rows = Vec::with_capacity(order.len() + groups.len() + 1);
+    let mut heads = Vec::new();
+    let mut section = |name: Option<String>, collapsed: bool, members: Vec<usize>| {
+        if members.is_empty() && (filtering || name.is_none()) {
+            return;
+        }
+        rows.push(Row::Head(heads.len()));
+        heads.push(Head {
+            name,
+            count: members.len(),
+            collapsed,
+        });
+        if !collapsed || searching {
+            rows.extend(members.into_iter().map(Row::Entry));
+        }
+    };
+    // A hand-edited or imported profile may name two groups alike: the first one
+    // holds them, so no favourite is listed twice.
+    let mut seen: Vec<&str> = Vec::with_capacity(groups.len());
+    for g in groups {
+        if seen.contains(&g.name.as_str()) {
+            continue;
+        }
+        seen.push(g.name.as_str());
+        let members = order
+            .iter()
+            .copied()
+            .filter(|&i| group_of(i) == Some(g.name.as_str()))
+            .collect();
+        section(Some(g.name.clone()), g.collapsed, members);
+    }
+    let rest = order
+        .iter()
+        .copied()
+        .filter(|&i| !known(group_of(i)))
+        .collect();
+    section(None, ungrouped_collapsed, rest);
+    (rows, heads)
+}
+
+/// A list as last made: its entries, how each stands, the order shown, and the rows drawn
+/// (the order under the groups' headings).
 #[derive(Default)]
 pub struct Listing {
     pub entries: Vec<Entry>,
     pub lines: Vec<Line>,
     pub order: Vec<usize>,
+    pub rows: Vec<Row>,
+    pub heads: Vec<Head>,
 }
 
 /// The list for this frame: the one made before while nothing it reads has moved (the
@@ -527,6 +641,7 @@ fn listing(cx: &mut Ctx, kind: Kind, st: &mut State) -> Arc<Listing> {
             st.listed_only,
             st.sort.id(),
             st.asc,
+            st.ungrouped_collapsed,
         )
             .hash(&mut h);
         entries_state(cx, kind, &mut h);
@@ -540,14 +655,35 @@ fn listing(cx: &mut Ctx, kind: Kind, st: &mut State) -> Arc<Listing> {
     let entries = entries(cx, kind);
     let lines = lines(cx, &entries);
     let order = shown(&entries, &lines, st);
-    st.shown = order
-        .iter()
-        .filter_map(|&i| lines.get(i).map(|l| l.key.clone()))
-        .collect();
+    let groups: &[dz_profile::FavoriteGroup] = match kind {
+        Kind::Favorites => &cx.stores.profile.groups,
+        Kind::History => &[],
+    };
+    let searching = !st.query.trim().is_empty();
+    let (rows, heads) = group_rows(
+        &entries,
+        &order,
+        groups,
+        searching || st.listed_only,
+        searching,
+        st.ungrouped_collapsed,
+    );
+    st.shown.clear();
+    st.row_of_shown.clear();
+    for (r, row) in rows.iter().enumerate() {
+        if let Row::Entry(i) = row
+            && let Some(l) = lines.get(*i)
+        {
+            st.shown.push(l.key.clone());
+            st.row_of_shown.push(r);
+        }
+    }
     let l = Arc::new(Listing {
         entries,
         lines,
         order,
+        rows,
+        heads,
     });
     st.listing = Some((key, Arc::clone(&l)));
     l
@@ -643,6 +779,8 @@ pub fn show_with_actions(
             entries,
             lines,
             order,
+            rows: &list.rows,
+            heads: &list.heads,
             selected,
             stats: &st_figures,
         };
@@ -669,6 +807,8 @@ struct Frame<'a> {
     entries: &'a [Entry],
     lines: &'a [Line],
     order: &'a [usize],
+    rows: &'a [Row],
+    heads: &'a [Head],
     selected: Option<usize>,
     stats: &'a Stats,
 }
@@ -972,9 +1112,135 @@ fn heading(ui: &mut Ui, kind: Kind, st: &State, run: &mut Run) {
 
 const BTN_DIRECT: u32 = 1;
 const BTN_REMOVE: u32 = 2;
+const BTN_EDIT: u32 = 3;
+/// "Take out of its group".
+const BTN_UNGROUP: u32 = 4;
+/// "Move to group n": `BTN_GROUP + n`.
+const BTN_GROUP: u32 = 100;
+
+/// What a group's heading was asked for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HeadAction {
+    Toggle,
+    Move(i32),
+    Rename,
+    Remove,
+}
+
+/// A group's heading, one row tall: the fold chevron, the name and the count on a band
+/// at the row's foot (the space above parts it from the group before). A click folds or
+/// unfolds it; the right-click menu moves, renames or deletes the group.
+fn head_row(ui: &mut Ui, head: &Head, at: usize) -> Option<HeadAction> {
+    let tk = ui.tokens();
+    let w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(w, ROW_PX), Sense::hover());
+    let band = egui::Rect::from_min_max(
+        egui::pos2(rect.left(), rect.bottom() - 30.0),
+        rect.right_bottom(),
+    );
+    let id = ui.id().with(("saved-head", at));
+    let resp = ui.interact(band, id, Sense::click());
+    let hover = crate::kit::paint::ease(ui, id.with("hover"), resp.hovered());
+    let p = ui.painter();
+    p.rect_filled(
+        band,
+        CornerRadius::ZERO,
+        crate::kit::paint::alpha(tk.raised, 0.35 + 0.35 * hover),
+    );
+    p.hline(
+        band.x_range(),
+        band.bottom() - 0.5,
+        egui::Stroke::new(1.0, tk.border),
+    );
+    let cy = band.center().y;
+    let chevron = if head.collapsed {
+        lucide::CHEVRON_RIGHT
+    } else {
+        lucide::CHEVRON_DOWN
+    };
+    chevron.paint(
+        p,
+        egui::Rect::from_center_size(egui::pos2(band.left() + 16.0, cy), Vec2::splat(12.0)),
+        tk.fg_muted,
+    );
+    let name = head
+        .name
+        .as_deref()
+        .unwrap_or_else(|| t("favorites", "ungrouped"));
+    let count = format::num(head.count as f64);
+    let cg = ph(ui, &count, font(Face::Mono, size::TEXT_2XS));
+    let room = (band.width() - 28.0 - cg.size().x - 20.0).max(16.0);
+    let ng = crate::parts::ph_trunc(ui, name, font(Face::SansSemibold, size::TEXT_XS), room);
+    let x = band.left() + 28.0;
+    let p = ui.painter();
+    draw(
+        p,
+        &ng,
+        x,
+        cy,
+        if head.name.is_some() {
+            tk.fg
+        } else {
+            tk.fg_muted
+        },
+    );
+    draw(p, &cg, x + ng.size().x + 8.0, cy, tk.fg_faint);
+    let fold = if head.collapsed {
+        t("favorites", "expand")
+    } else {
+        t("favorites", "collapse")
+    };
+    let mut out = None;
+    if resp.clicked() {
+        out = Some(HeadAction::Toggle);
+    }
+    let named = head.name.is_some();
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    if named {
+        if let Some(inner) = crate::kit::menu::context(&resp, |ui| {
+            let mut a = None;
+            let item = |ui: &mut Ui, label: &str, icon| {
+                ui.add(crate::kit::MenuItem::new(label).icon(icon))
+                    .clicked()
+            };
+            if item(ui, fold, chevron) {
+                a = Some(HeadAction::Toggle);
+            }
+            crate::kit::menu::separator(ui);
+            if item(ui, t("favorites", "moveUp"), lucide::ARROW_UP) {
+                a = Some(HeadAction::Move(-1));
+            }
+            if item(ui, t("favorites", "moveDown"), lucide::ARROW_DOWN) {
+                a = Some(HeadAction::Move(1));
+            }
+            if item(ui, t("favorites", "rename"), lucide::PENCIL) {
+                a = Some(HeadAction::Rename);
+            }
+            crate::kit::menu::separator(ui);
+            if ui
+                .add(
+                    crate::kit::MenuItem::new(t("favorites", "removeGroup"))
+                        .icon(lucide::TRASH_2)
+                        .danger(),
+                )
+                .clicked()
+            {
+                a = Some(HeadAction::Remove);
+            }
+            a
+        }) && let Some(a) = inner.inner
+        {
+            out = Some(a);
+        }
+    } else {
+        let _ = resp.tip_kbd(fold, "", Side::Top);
+    }
+    out
+}
 
 /// The list pane: nothing matching, or the rows on screen.
 fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCache, run: &mut Run) {
+    let tk = ui.tokens();
     let kind = d.kind;
     let wide = kind == Kind::History;
     if d.order.is_empty() {
@@ -1025,24 +1291,46 @@ fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCac
         Kind::Favorites => t("servers", "removeFavorite"),
         Kind::History => t("history", "remove"),
     };
-    let buttons = [
-        RowButton {
-            id: BTN_DIRECT,
-            icon: lucide::PLUG_ZAP,
-            label: direct,
-            exclude: false,
-            danger: false,
-            tint: None,
-        },
-        RowButton {
-            id: BTN_REMOVE,
-            icon: lucide::TRASH_2,
-            label: remove,
-            exclude: false,
-            danger: true,
-            tint: None,
-        },
+    let edit = t("favorites", "edit");
+    let button = |id, icon, label, danger| RowButton {
+        id,
+        icon,
+        label,
+        exclude: false,
+        danger,
+        tint: None,
+    };
+    let fav_buttons = [
+        button(BTN_DIRECT, lucide::PLUG_ZAP, direct, false),
+        button(BTN_EDIT, lucide::PENCIL, edit, false),
+        button(BTN_REMOVE, lucide::TRASH_2, remove, true),
     ];
+    let history_buttons = [
+        button(BTN_DIRECT, lucide::PLUG_ZAP, direct, false),
+        button(BTN_REMOVE, lucide::TRASH_2, remove, true),
+    ];
+    let buttons: &[RowButton] = if wide { &history_buttons } else { &fav_buttons };
+    // Favourites: "Edit…", then a "Move to …" per other group, "Take out of the group".
+    let groups = &profile.groups;
+    let words_key = {
+        let mut h = FxHasher::default();
+        crate::i18n::locale().hash(&mut h);
+        for g in groups {
+            g.name.hash(&mut h);
+        }
+        h.finish()
+    };
+    let mut move_words = std::mem::take(&mut st.move_words);
+    if move_words.0 != words_key || move_words.1.len() != groups.len() {
+        move_words = (
+            words_key,
+            groups
+                .iter()
+                .map(|g| tf("favorites", "moveToGroup", &[("group", &g.name)]))
+                .collect(),
+        );
+    }
+    let ungroup = t("favorites", "ungroup");
     let remove_kbd = commands::shortcut("saved.remove")
         .and_then(commands::Shortcut::key_text)
         .unwrap_or_default();
@@ -1053,7 +1341,39 @@ fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCac
         danger: true,
         kbd: &remove_kbd,
     }];
-    let menu: &[RowMenuItem] = if wide { &menu_items } else { &[] };
+    // Filled again for each row on screen, so a row allocates nothing.
+    let fav_menu = |items: &mut Vec<_>, group: Option<&str>| {
+        items.clear();
+        items.push(RowMenuItem {
+            id: BTN_EDIT,
+            icon: lucide::PENCIL,
+            label: edit,
+            danger: false,
+            kbd: "",
+        });
+        for (i, (g, w)) in groups.iter().zip(&move_words.1).enumerate() {
+            if group != Some(g.name.as_str()) {
+                items.push(RowMenuItem {
+                    id: BTN_GROUP + u32::try_from(i).unwrap_or(0),
+                    icon: lucide::LAYERS,
+                    label: w,
+                    danger: false,
+                    kbd: "",
+                });
+            }
+        }
+        if group.is_some_and(|g| groups.iter().any(|x| x.name == g)) {
+            items.push(RowMenuItem {
+                id: BTN_UNGROUP,
+                icon: lucide::LAYERS,
+                label: ungroup,
+                danger: false,
+                kbd: "",
+            });
+        }
+    };
+    let mut row_menu: Vec<RowMenuItem> = Vec::new();
+    let mut labels: Vec<RowLabel> = Vec::new();
     let tag = RowTag {
         text: t("favorites", "notInList"),
         tone: Tone::Warn,
@@ -1063,7 +1383,11 @@ fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCac
     let scroll_to = st.scroll_to.take();
     let cursor = sel
         .as_ref()
-        .and_then(|k| st.shown.iter().position(|s| s == k));
+        .and_then(|k| st.shown.iter().position(|s| s == k))
+        .and_then(|i| st.row_of_shown.get(i).copied());
+    // Asked as a place among the entries shown; the list scrolls by rows.
+    let scroll_to = scroll_to.map(|i| st.row_of_shown.get(i).copied().unwrap_or(i));
+    let mut head_acts: Vec<(HeadAction, usize)> = Vec::new();
     let mut acts: Vec<(RowAction, usize)> = Vec::new();
     let mut times = std::mem::take(&mut st.times);
     if times.len() > 512 {
@@ -1074,102 +1398,131 @@ fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCac
         (crate::i18n::locale(), chrono::Local::now().timestamp()).hash(&mut h);
         h.finish()
     };
-    let out = VirtualList::new(("saved-list", kind.id()), d.order.len())
-        .row_height(ROW_PX)
-        .overscan(OVERSCAN)
-        .header(HEAD_H)
-        .scroll_to(scroll_to)
-        .cursor(cursor)
-        .show(
-            ui,
-            |ui| heading(ui, kind, st, run),
-            |ui, i| {
-                let Some(&at) = d.order.get(i) else {
-                    return;
-                };
-                let (Some(e), Some(l)) = (d.entries.get(at), d.lines.get(at)) else {
-                    return;
-                };
-                let port = i64::from(e.port);
-                let listed = l.addr.and_then(|a| servers.row(a));
-                let mut rd = match &listed {
-                    Some(r) => RowData::from_server(r),
-                    None => RowData {
-                        ip: Host::of(&e.ip),
-                        query_port: port,
-                        game_port: port,
-                        players: u32::try_from(l.live.players.max(0)).unwrap_or(0),
-                        max_players: u32::try_from(l.live.max.max(0)).unwrap_or(0),
-                        bots: l.live.bots,
-                        ping_ms: l.ping,
-                        listed: false,
-                        ..RowData::default()
-                    },
-                };
-                rd.name = &e.name;
-                rd.join_port = port;
-                rd.flags.saved_password = e.password.as_deref().is_some_and(|p| !p.is_empty());
-                rd.ping_pending = servers.pending.contains(&l.ping_key);
-                rd.players_loading = data.a2s_loading(&l.ping_key);
-                // Saved, query and game port alike; a listed one asked by numbers.
-                match &listed {
-                    Some(r) => {
-                        rd.favorite = [e.port, r.query_port(), r.game_port()]
-                            .into_iter()
-                            .any(|p| profile.is_favorite_at(SocketAddrV4::new(r.ip(), p)));
-                        rd.excluded = profile.is_excluded_ip(r.ip());
-                    }
-                    None => {
-                        rd.favorite = profile.is_favorite(&e.ip, e.port);
-                        rd.excluded = profile.is_excluded(&e.ip);
-                    }
-                }
-                let names: Vec<&str> = match l.addr.filter(|_| has_friends) {
-                    Some(a) => friends.on(a).map(|f| f.name.as_str()).collect(),
-                    None => Vec::new(),
-                };
-                let (top, bottom) = match e.ts.filter(|_| wide) {
-                    Some(ts) => {
-                        let cell = times.entry(ts).or_default();
-                        if cell.0 != times_stamp || cell.1.is_empty() {
-                            *cell = (times_stamp, format::relative(ts), format::date_time(ts));
+    let out =
+        VirtualList::new(("saved-list", kind.id()), d.rows.len())
+            .row_height(ROW_PX)
+            .overscan(OVERSCAN)
+            .header(HEAD_H)
+            .scroll_to(scroll_to)
+            .cursor(cursor)
+            .show(
+                ui,
+                |ui| heading(ui, kind, st, run),
+                |ui, i| {
+                    let at = match d.rows.get(i) {
+                        Some(Row::Entry(at)) => *at,
+                        Some(Row::Head(h)) => {
+                            if let Some(head) = d.heads.get(*h)
+                                && let Some(a) = head_row(ui, head, *h)
+                            {
+                                head_acts.push((a, *h));
+                            }
+                            return;
                         }
-                        (cell.1.as_str(), cell.2.as_str())
+                        None => return,
+                    };
+                    let (Some(e), Some(l)) = (d.entries.get(at), d.lines.get(at)) else {
+                        return;
+                    };
+                    let port = i64::from(e.port);
+                    let listed = l.addr.and_then(|a| servers.row(a));
+                    let mut rd = match &listed {
+                        Some(r) => RowData::from_server(r),
+                        None => RowData {
+                            ip: Host::of(&e.ip),
+                            query_port: port,
+                            game_port: port,
+                            players: u32::try_from(l.live.players.max(0)).unwrap_or(0),
+                            max_players: u32::try_from(l.live.max.max(0)).unwrap_or(0),
+                            bots: l.live.bots,
+                            ping_ms: l.ping,
+                            listed: false,
+                            ..RowData::default()
+                        },
+                    };
+                    rd.name = &e.name;
+                    rd.join_port = port;
+                    rd.flags.saved_password = e.password.as_deref().is_some_and(|p| !p.is_empty());
+                    rd.ping_pending = servers.pending.contains(&l.ping_key);
+                    rd.players_loading = data.a2s_loading(&l.ping_key);
+                    // Saved, query and game port alike; a listed one asked by numbers.
+                    match &listed {
+                        Some(r) => {
+                            rd.favorite = [e.port, r.query_port(), r.game_port()]
+                                .into_iter()
+                                .any(|p| profile.is_favorite_at(SocketAddrV4::new(r.ip(), p)));
+                            rd.excluded = profile.is_excluded_ip(r.ip());
+                        }
+                        None => {
+                            rd.favorite = profile.is_favorite(&e.ip, e.port);
+                            rd.excluded = profile.is_excluded(&e.ip);
+                        }
                     }
-                    None => ("", ""),
-                };
-                let w = ui.available_width();
-                let cols = ListColumns::new(
-                    egui::Rangef::new(ui.max_rect().left(), ui.max_rect().left() + w),
-                    wide,
-                );
-                let mut row = ServerListRow::new(rd)
-                    .selected(sel.as_ref() == Some(&l.key))
-                    .friends(&names)
-                    .buttons(&buttons)
-                    .menu(menu);
-                if !l.listed {
-                    row = row.tag(tag);
-                }
-                if wide && !top.is_empty() {
-                    row = row.extra(RowExtra {
-                        top,
-                        bottom,
-                        tip: bottom,
-                    });
-                }
-                let resp = row.show(ui, &cols, cache);
-                if let Some(a) = resp.action {
-                    acts.push((a, at));
-                }
-            },
-        );
+                    let names: Vec<&str> = match l.addr.filter(|_| has_friends) {
+                        Some(a) => friends.on(a).map(|f| f.name.as_str()).collect(),
+                        None => Vec::new(),
+                    };
+                    let (top, bottom) = match e.ts.filter(|_| wide) {
+                        Some(ts) => {
+                            let cell = times.entry(ts).or_default();
+                            if cell.0 != times_stamp || cell.1.is_empty() {
+                                *cell = (times_stamp, format::relative(ts), format::date_time(ts));
+                            }
+                            (cell.1.as_str(), cell.2.as_str())
+                        }
+                        None => ("", ""),
+                    };
+                    let w = ui.available_width();
+                    let cols = ListColumns::new(
+                        egui::Rangef::new(ui.max_rect().left(), ui.max_rect().left() + w),
+                        wide,
+                    );
+                    labels.clear();
+                    labels.extend(e.labels.iter().filter_map(|n| profile.label(n)).map(|l| {
+                        RowLabel {
+                            text: &l.name,
+                            color: crate::views::favorites::label_color(&tk, l.color),
+                        }
+                    }));
+                    if wide {
+                        row_menu.clear();
+                    } else {
+                        fav_menu(&mut row_menu, e.group.as_deref());
+                    }
+                    let menu: &[RowMenuItem] = if wide { &menu_items } else { &row_menu };
+                    let mut row = ServerListRow::new(rd)
+                        .selected(sel.as_ref() == Some(&l.key))
+                        .friends(&names)
+                        .buttons(buttons)
+                        .menu(menu)
+                        .marks(&labels, &e.note);
+                    if !l.listed {
+                        row = row.tag(tag);
+                    }
+                    if wide && !top.is_empty() {
+                        row = row.extra(RowExtra {
+                            top,
+                            bottom,
+                            tip: bottom,
+                        });
+                    }
+                    let resp = row.show(ui, &cols, cache);
+                    if let Some(a) = resp.action {
+                        acts.push((a, at));
+                    }
+                },
+            );
     st.times = times;
+    drop((row_menu, labels));
+    st.move_words = move_words;
     st.page_rows = ((out.viewport.height() / ROW_PX).floor() as usize).max(1);
     // The rows on screen, for their pings.
     let on: Vec<String> = out
         .visible
-        .filter_map(|i| d.order.get(i).and_then(|&at| d.lines.get(at)))
+        .filter_map(|i| match d.rows.get(i) {
+            Some(Row::Entry(at)) => d.lines.get(*at),
+            _ => None,
+        })
         .filter(|l| l.ping.is_none())
         .map(|l| l.ping_key.clone())
         .collect();
@@ -1181,6 +1534,21 @@ fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCac
         st.on_screen_since = ui.input(|i| i.time);
         st.on_screen = on;
         st.pinged_hash = if st.on_screen.is_empty() { hash } else { 0 };
+    }
+    for (a, h) in head_acts {
+        let Some(head) = d.heads.get(h) else {
+            continue;
+        };
+        let name = head.name.clone().map_or(Value::Null, Value::String);
+        match a {
+            HeadAction::Toggle => run.push(("favorites.group_toggle", json!({ "name": name }))),
+            HeadAction::Move(delta) => run.push((
+                "favorites.group_move",
+                json!({ "name": name, "delta": delta }),
+            )),
+            HeadAction::Rename => run.push(("favorites.organize", Value::Null)),
+            HeadAction::Remove => run.push(("favorites.group_remove", json!({ "name": name }))),
+        }
     }
     for (a, at) in acts {
         let (Some(e), Some(l)) = (d.entries.get(at), d.lines.get(at)) else {
@@ -1215,9 +1583,31 @@ fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCac
             RowAction::RefreshPlayers => "servers.row.refresh_players",
             RowAction::CopyLink => "list.link",
             RowAction::CopyAddress => "list.copy",
+            RowAction::DesktopShortcut => "list.shortcut",
             RowAction::DirectConnect | RowAction::Custom(BTN_DIRECT) => "list.direct",
             RowAction::ToggleExclude => "servers.row.exclude_ip",
             RowAction::Custom(BTN_REMOVE) => kind.cmd(Cmd::Remove),
+            RowAction::Custom(BTN_EDIT) => "favorites.edit",
+            RowAction::Custom(BTN_UNGROUP) => {
+                let mut args = args;
+                if let Some(o) = args.as_object_mut() {
+                    o.insert("group".into(), Value::Null);
+                }
+                run.push(("favorites.move_to_group", args));
+                continue;
+            }
+            RowAction::Custom(n) if n >= BTN_GROUP => {
+                let i = usize::try_from(n - BTN_GROUP).unwrap_or(usize::MAX);
+                let Some(g) = profile.groups.get(i) else {
+                    continue;
+                };
+                let mut args = args;
+                if let Some(o) = args.as_object_mut() {
+                    o.insert("group".into(), Value::String(g.name.clone()));
+                }
+                run.push(("favorites.move_to_group", args));
+                continue;
+            }
             RowAction::Custom(_) => continue,
         };
         run.push((id, args));
@@ -1307,6 +1697,44 @@ mod tests {
         assert_eq!(st.sel, Some(b.key()));
         assert!(st.query.is_empty() && !st.listed_only && st.show_detail);
         assert_eq!((st.sort, st.asc), (SortCol::Recent, false));
+    }
+
+    #[test]
+    fn groups_head_their_entries_and_fold() {
+        let mut es = vec![entry("a", 1), entry("b", 2), entry("c", 3), entry("d", 4)];
+        es[0].group = Some("G1".into());
+        es[2].group = Some("G1".into());
+        es[3].group = Some("gone".into());
+        let groups = vec![
+            dz_profile::FavoriteGroup {
+                name: "G1".into(),
+                collapsed: false,
+            },
+            dz_profile::FavoriteGroup {
+                name: "Empty".into(),
+                collapsed: false,
+            },
+        ];
+        let order = [0, 1, 2, 3];
+        let (rows, heads) = group_rows(&es, &order, &[], false, false, false);
+        assert!(heads.is_empty() && rows.len() == 4);
+        let (rows, heads) = group_rows(&es, &order, &groups, false, false, false);
+        use Row::{Entry as E, Head as H};
+        assert_eq!(rows, vec![H(0), E(0), E(2), H(1), H(2), E(1), E(3)]);
+        assert_eq!(heads[0].count, 2);
+        assert_eq!(heads[2].name, None);
+        // Filtering leaves out an empty group; folding hides entries unless searching.
+        let mut folded = groups;
+        folded[0].collapsed = true;
+        let (rows, _) = group_rows(&es, &order, &folded, true, false, true);
+        assert_eq!(rows, vec![H(0), H(1)]);
+        let (rows, _) = group_rows(&es, &order, &folded, true, true, true);
+        assert_eq!(rows, vec![H(0), E(0), E(2), H(1), E(1), E(3)]);
+        // Two groups of one name (a hand-edited profile): listed once, under the first.
+        let twice = vec![folded[0].clone(), folded[0].clone()];
+        let (rows, heads) = group_rows(&es, &order, &twice, false, true, false);
+        assert_eq!(heads.len(), 2);
+        assert_eq!(rows, vec![H(0), E(0), E(2), H(1), E(1), E(3)]);
     }
 
     fn move_down(st: &mut State) {

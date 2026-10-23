@@ -3,15 +3,9 @@ use serde::Serialize;
 
 use crate::features::steamworks::ModDownloaderDto;
 
-/// A saved server.
-#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
-pub struct FavoriteDto {
-    pub name: String,
-    pub ip: String,
-    pub port: u16,
-    /// Saved join password, filled into Direct Connect.
-    pub password: Option<String>,
-}
+/// A saved server: the profile's own, with its note, labels, group and launch
+/// settings (the window edits a copy optimistically with the same rules).
+pub type FavoriteDto = dz_profile::Favorite;
 
 /// A server played, newest first.
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
@@ -54,6 +48,10 @@ pub struct ProfileDto {
     /// The user's location for distances, as (longitude, latitude).
     pub user_location: Option<(f64, f64)>,
     pub favorites: Vec<FavoriteDto>,
+    /// The labels favourites can carry.
+    pub favorite_labels: Vec<dz_profile::FavoriteLabel>,
+    /// The favourites view's sections, in order.
+    pub favorite_groups: Vec<dz_profile::FavoriteGroup>,
     pub history: Vec<HistoryDto>,
     pub options: Vec<LaunchOptionDto>,
     /// IPs hidden from the server browser.
@@ -72,6 +70,10 @@ pub struct ProfileDto {
     pub ping_scan_history: bool,
     /// Include every other server in the background scan.
     pub ping_scan_servers: bool,
+    /// Discord Rich Presence is on.
+    pub discord_presence: bool,
+    /// The presence names the server played on.
+    pub discord_show_server: bool,
 }
 
 pub(crate) fn profile_to_dto(profile: &Profile) -> ProfileDto {
@@ -88,16 +90,9 @@ pub(crate) fn profile_to_dto(profile: &Profile) -> ProfileDto {
         steam_api_key: profile.steam_api_key.clone(),
         steam_id: profile.steam_id.clone(),
         user_location: profile.user_location,
-        favorites: profile
-            .favorites
-            .iter()
-            .map(|f| FavoriteDto {
-                name: f.name.clone(),
-                ip: f.ip.clone(),
-                port: f.port,
-                password: f.password.clone(),
-            })
-            .collect(),
+        favorites: profile.favorites.clone(),
+        favorite_labels: profile.favorite_labels.clone(),
+        favorite_groups: profile.favorite_groups.clone(),
         history: profile
             .history
             .iter()
@@ -128,5 +123,7 @@ pub(crate) fn profile_to_dto(profile: &Profile) -> ProfileDto {
         ping_scan_favorites: profile.ping_scan_favorites,
         ping_scan_history: profile.ping_scan_history,
         ping_scan_servers: profile.ping_scan_servers,
+        discord_presence: profile.discord_presence,
+        discord_show_server: profile.discord_show_server,
     }
 }

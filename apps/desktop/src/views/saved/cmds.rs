@@ -117,7 +117,7 @@ pub fn search(cx: &mut Ctx, kind: Kind, a: &Value) {
 
 /// The entry the arguments name (`{ip, port}`, its saved port or a listed port), else the
 /// selection.
-fn entry(cx: &Ctx, kind: Kind, a: &Value) -> Option<super::Entry> {
+pub fn entry(cx: &Ctx, kind: Kind, a: &Value) -> Option<super::Entry> {
     let entries = super::entries(cx, kind);
     if let (Some(ip), Some(port)) = (arg_str(a, "ip"), arg_i64(a, "port")) {
         let ip = ip.trim();

@@ -54,9 +54,15 @@ pub fn build_steam_applaunch_args(
     username: Option<&str>,
 ) -> Vec<String> {
     let mut steam_args = vec!["-applaunch".to_string(), game_id.to_string()];
-    // -malloc=system is a Linux-only DayZ optimisation flag; skip on Windows.
+    // -malloc=system is a Linux-only DayZ optimisation flag; skip on Windows,
+    // and when the arguments name an allocator of their own (a favourite's).
     #[cfg(not(target_os = "windows"))]
-    steam_args.push("-malloc=system".to_string());
+    if !args.iter().any(|a| {
+        a.get(..8)
+            .is_some_and(|p| p.eq_ignore_ascii_case("-malloc="))
+    }) {
+        steam_args.push("-malloc=system".to_string());
+    }
     if let Some(user) = username
         && !user.is_empty()
     {
@@ -107,5 +113,19 @@ mod tests {
         assert_eq!(&args[..2], ["-applaunch", "221100"]);
         assert!(args.contains(&"-name=Survivor".to_string()));
         assert_eq!(args.last().map(String::as_str), Some("-connect=x"));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn an_allocator_of_its_own_replaces_the_system_one() {
+        let plain = build_steam_applaunch_args(221100, &[], None);
+        assert!(plain.contains(&"-malloc=system".to_string()));
+        let own = build_steam_applaunch_args(221100, &["-MALLOC=mimalloc".into()], None);
+        assert_eq!(
+            own.iter()
+                .filter(|a| a.to_ascii_lowercase().starts_with("-malloc="))
+                .count(),
+            1
+        );
     }
 }

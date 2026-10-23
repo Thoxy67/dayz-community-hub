@@ -176,6 +176,15 @@ impl Hub {
         .await
     }
 
+    /// Change a favourite's note, labels, group, character name or launch
+    /// arguments, or the labels and groups themselves. The edits apply in
+    /// order and all or none, so a label made and then given to a favourite
+    /// arrive together.
+    pub async fn edit_favorites(&self, edits: Vec<dz_profile::FavoriteEdit>) -> Result<(), String> {
+        let state = self.state()?;
+        mutate_profile(&state, |s| s.ctl.profile_mut().edit_favorites_all(edits)).await
+    }
+
     pub async fn remove_history_entry(&self, ip: String, port: u16) -> Result<(), String> {
         let state = self.state()?;
         mutate_profile(&state, |s| {
