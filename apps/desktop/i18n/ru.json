@@ -631,8 +631,6 @@
   "mods": {
     "all": "Все",
     "alsoSubscribed": "также подписка в Steam",
-    "apiKeyMissingBody": "Добавьте ключ Steam Web API, чтобы видеть, какие моды отстают от Workshop.",
-    "apiKeyMissingTitle": "Проверка обновлений отключена",
     "behindToday": "устарел",
     "cancel": "Отмена",
     "checkUpdates": "Проверить обновления",

@@ -147,8 +147,8 @@ pub(crate) async fn download(
     }
 }
 
-/// The line the window reads a download's bytes from: the shape of
-/// SteamCMD's own ("progress: 42.17 (123 / 456)"), which it already parses.
+/// The log's live line for a download: for people to read, the numbers
+/// themselves go as [`ModProgress::Bytes`].
 pub(crate) fn progress_line(id: u64, done: u64, total: u64) -> String {
     format!(
         "Steam: item {id} downloading, progress: {:.2} ({done} / {total})",
@@ -169,7 +169,6 @@ fn progress_of(e: Event, mods: &[(u64, String)]) -> Vec<ModProgress> {
                 mod_id: id,
                 name: name(index),
             },
-            // "Downloading item" also tells the window a new item's bytes begin.
             ModProgress::LogLine(format!(
                 "Downloading item {id} ({}) through Steam",
                 name(index)
@@ -177,7 +176,14 @@ fn progress_of(e: Event, mods: &[(u64, String)]) -> Vec<ModProgress> {
         ],
         Event::Progress {
             id, done, total, ..
-        } => vec![ModProgress::LogProgress(progress_line(id, done, total))],
+        } => vec![
+            ModProgress::LogProgress(progress_line(id, done, total)),
+            ModProgress::Bytes {
+                mod_id: id,
+                done,
+                total,
+            },
+        ],
         Event::Installed { index, id, path } => vec![
             ModProgress::LogLine(format!("Installed {id} at {}", path.display())),
             ModProgress::Done {
@@ -205,18 +211,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn progress_lines_read_as_steamcmds() {
-        // The window's pattern (the mods view's SteamCMD log parser).
-        let re = regex::Regex::new(r"(?i)progress:\s*([\d.]+)\s*\((\d+)\s*/\s*(\d+)\)").unwrap();
-        let line = progress_line(1_559_212_036, 50, 200);
-        let c = re.captures(&line).expect("matches");
-        assert_eq!(&c[1], "25.00");
-        assert_eq!(&c[2], "50");
-        assert_eq!(&c[3], "200");
-        assert!(re.is_match(&progress_line(1, 0, 0)));
-    }
-
-    #[test]
     fn events_become_the_progress_steamcmd_sends() {
         let mods = vec![(10, "CF".to_string()), (20, "Trader".to_string())];
         let msgs = progress_of(Event::Starting { index: 1, id: 20 }, &mods);
@@ -224,9 +218,7 @@ mod tests {
             &msgs[0],
             ModProgress::Starting { current: 2, total: 2, mod_id: 20, name } if name == "Trader"
         ));
-        assert!(
-            matches!(&msgs[1], ModProgress::LogLine(l) if l.to_lowercase().contains("downloading item 20"))
-        );
+        assert!(matches!(&msgs[1], ModProgress::LogLine(l) if l.contains("20 (Trader)")));
 
         let msgs = progress_of(
             Event::Installed {
@@ -266,6 +258,14 @@ mod tests {
             },
             &mods,
         );
-        assert!(matches!(&msgs[0], ModProgress::LogProgress(l) if l.contains("25.00 (1 / 4)")));
+        assert!(matches!(&msgs[0], ModProgress::LogProgress(l) if l.contains("25.00")));
+        assert!(matches!(
+            msgs[1],
+            ModProgress::Bytes {
+                mod_id: 10,
+                done: 1,
+                total: 4
+            }
+        ));
     }
 }

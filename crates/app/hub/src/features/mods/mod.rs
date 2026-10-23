@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use crate::error::{HttpResultExt, send_ok};
 use crate::error::{ResultExt, spawn_blocking_mapped};
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 pub struct InstalledModDto {
     pub name: String,
     pub id: u64,
@@ -83,6 +83,26 @@ fn on_disk(mods: &[InstalledMod]) -> FxHashMap<u64, i64> {
     mods.iter().map(|m| (m.id, m.local_updated)).collect()
 }
 
+/// Keep a read of the mods on disk, and the Workshop's answer if one came:
+/// the browser's flags are written again only when either changed, so the
+/// rechecks while a deletion settles (every few seconds) cost the browser
+/// nothing.
+fn set_mods_known(
+    s: &mut crate::state::AppState,
+    disk: FxHashMap<u64, i64>,
+    remote: Option<FxHashMap<u64, i64>>,
+) {
+    let changed = s.mods_on_disk.as_ref() != Some(&disk)
+        || remote.as_ref().is_some_and(|r| *r != s.mod_update_cache);
+    s.mods_on_disk = Some(disk);
+    if let Some(r) = remote {
+        s.mod_update_cache = r;
+    }
+    if changed {
+        s.profile_changed();
+    }
+}
+
 /// How long a read of the mods on disk serves `check_mod_updates`.
 const SCAN_FRESH: Duration = Duration::from_secs(10);
 
@@ -98,17 +118,62 @@ pub(crate) async fn mods_changed(state: &crate::state::SharedState) {
     state.write().await.mod_scan = None;
 }
 
-/// `time_updated` of each of `ids`, from the Workshop's Web API.
-async fn updates_from_web(ids: &[u64], key: &str) -> Result<FxHashMap<u64, i64>, String> {
-    let client = crate::net::api();
+/// The Workshop's keyless details endpoint: a form POST, hundreds of ids
+/// per request, the same `time_updated` as `IPublishedFileService/GetDetails`.
+const REMOTE_STORAGE_DETAILS: &str =
+    "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/";
+/// Ids per keyless request (Steam takes a few hundred).
+const KEYLESS_CHUNK: usize = 250;
+/// Ids per keyed `GetDetails` request.
+const KEYED_CHUNK: usize = 100;
+/// Requests in flight at once, for a user with a great many mods.
+const WEB_CONCURRENT: usize = 4;
 
-    // Query the Workshop API for each 100-id chunk concurrently — the chunks are
-    // independent and the shared client pools connections, so for users with
-    // several hundred mods this turns N serial round-trips into a few parallel
-    // waves instead.
-    let chunks: Vec<Vec<u64>> = ids.chunks(100).map(<[u64]>::to_vec).collect();
-    let chunk_results: Vec<Result<Vec<(u64, i64)>, String>> = futures_util::stream::iter(chunks)
-        .map(|chunk| async move {
+/// `(id, time_updated)` of each item of a details answer (either endpoint:
+/// both answer `response.publishedfiledetails[]`). An item Steam could not
+/// give (private, removed: `result` other than 1) is left out.
+fn parse_details(resp: &serde_json::Value) -> Vec<(u64, i64)> {
+    let Some(files) = resp["response"]["publishedfiledetails"].as_array() else {
+        return Vec::new();
+    };
+    files
+        .iter()
+        .filter(|f| f["result"].as_i64().is_none_or(|r| r == 1))
+        .filter_map(|f| {
+            let id = &f["publishedfileid"];
+            let id = id
+                .as_str()
+                .and_then(|s| s.parse::<u64>().ok())
+                .or_else(|| id.as_u64())?;
+            let ts = f["time_updated"].as_i64().filter(|&t| t > 0)?;
+            Some((id, ts))
+        })
+        .collect()
+}
+
+/// The keyless request's form body for `ids`.
+fn keyless_form(ids: &[u64]) -> String {
+    let mut body = format!("itemcount={}", ids.len());
+    for (i, id) in ids.iter().enumerate() {
+        // `publishedfileids[i]`, its brackets percent-encoded.
+        body.push_str(&format!("&publishedfileids%5B{i}%5D={id}"));
+    }
+    body
+}
+
+/// One request of [`updates_from_web`]: the keyless endpoint, or `GetDetails`
+/// with a key.
+async fn details_chunk(chunk: &[u64], key: Option<&str>) -> Result<Vec<(u64, i64)>, String> {
+    let client = crate::net::api();
+    let req = match key {
+        None => client
+            .post(REMOTE_STORAGE_DETAILS)
+            .header(
+                reqwest::header::CONTENT_TYPE,
+                "application/x-www-form-urlencoded",
+            )
+            .body(keyless_form(chunk)),
+        Some(key) => {
             let mut params: Vec<(String, String)> = vec![("key".to_string(), key.to_owned())];
             for flag in [
                 "includetags",
@@ -122,41 +187,42 @@ async fn updates_from_web(ids: &[u64], key: &str) -> Result<FxHashMap<u64, i64>,
             for (i, id) in chunk.iter().enumerate() {
                 params.push((format!("publishedfileids[{i}]"), id.to_string()));
             }
+            client
+                .get("https://api.steampowered.com/IPublishedFileService/GetDetails/v1/")
+                .query(&params)
+        }
+    };
+    let resp = send_ok(req)
+        .await
+        .http_err("Steam Workshop")?
+        .json::<serde_json::Value>()
+        .await
+        .http_err("Steam Workshop")?;
+    Ok(parse_details(&resp))
+}
 
-            let resp: serde_json::Value = send_ok(
-                client
-                    .get("https://api.steampowered.com/IPublishedFileService/GetDetails/v1/")
-                    .query(&params),
-            )
-            .await
-            .http_err("Steam Workshop")?
-            .json::<serde_json::Value>()
-            .await
-            .http_err("Steam Workshop")?;
-
-            let mut out = Vec::new();
-            if let Some(files) = resp["response"]["publishedfiledetails"].as_array() {
-                for file in files {
-                    let id = file["publishedfileid"]
-                        .as_str()
-                        .and_then(|s| s.parse::<u64>().ok());
-                    let ts = file["time_updated"].as_i64();
-                    if let (Some(id), Some(ts)) = (id, ts) {
-                        out.push((id, ts));
-                    }
-                }
-            }
-            Ok(out)
-        })
-        .buffer_unordered(6)
+/// `time_updated` of each of `ids`, from the Workshop's Web API: keyless
+/// (`ISteamRemoteStorage`) when `key` is `None`, else `GetDetails` with it.
+/// The chunks go a few at once: they are independent and the shared client
+/// pools connections.
+async fn updates_from_web(ids: &[u64], key: Option<&str>) -> Result<FxHashMap<u64, i64>, String> {
+    let size = if key.is_some() {
+        KEYED_CHUNK
+    } else {
+        KEYLESS_CHUNK
+    };
+    // Owned chunks: a stream of borrowed slices trips the `Send` check of the
+    // window's task.
+    let chunks: Vec<Vec<u64>> = ids.chunks(size).map(<[u64]>::to_vec).collect();
+    let chunk_results: Vec<Result<Vec<(u64, i64)>, String>> = futures_util::stream::iter(chunks)
+        .map(|chunk| async move { details_chunk(&chunk, key).await })
+        .buffer_unordered(WEB_CONCURRENT)
         .collect()
         .await;
 
     let mut remote_map: FxHashMap<u64, i64> = FxHashMap::default();
     for chunk in chunk_results {
-        for (id, ts) in chunk? {
-            remote_map.insert(id, ts);
-        }
+        remote_map.extend(chunk?);
     }
     Ok(remote_map)
 }
@@ -226,9 +292,8 @@ impl Hub {
         let mods = Arc::new(spawn_blocking_mapped(move || ctl_clone.get_installed_mods()).await?);
         {
             let mut s = state.write().await;
-            s.mods_on_disk = Some(on_disk(&mods));
+            set_mods_known(&mut s, on_disk(&mods), None);
             s.mod_scan = Some((Instant::now(), Arc::clone(&mods)));
-            s.profile_changed();
         }
 
         Ok(mods
@@ -237,9 +302,10 @@ impl Hub {
             .collect())
     }
 
-    /// Fetch `time_updated` for all installed mods (from the Workshop's Web API
-    /// with a key, else or failing that from the Steam client) and cache the
-    /// results. Returns the enriched mod list (same as `get_installed_mods`).
+    /// Fetch `time_updated` for all installed mods and cache the results:
+    /// from the Workshop's keyless Web API, else `GetDetails` with the
+    /// profile's key, and only when the Web API cannot be reached, from the
+    /// Steam client. Returns the enriched mod list (same as `get_installed_mods`).
     pub async fn check_mod_updates(&self) -> Result<Vec<InstalledModDto>, String> {
         mocked!(self, w => Ok(w.installed_mods()));
         let state = self.state()?;
@@ -247,7 +313,6 @@ impl Hub {
             let s = state.read().await;
             (s.ctl.clone_for_task(), recent_scan(s.mod_scan.as_ref()))
         };
-        let api_key = crate::features::steam::access::web_key(&state).await;
 
         // The window reads the disk (`get_installed_mods`) just before it
         // asks: that read serves, unless it is old or the mods changed since.
@@ -262,22 +327,29 @@ impl Hub {
 
         if installed_mods.is_empty() {
             let mut s = state.write().await;
-            s.mods_on_disk = Some(FxHashMap::default());
-            s.profile_changed();
+            set_mods_known(&mut s, FxHashMap::default(), None);
             return Ok(vec![]);
         }
 
         let mod_ids: Vec<u64> = installed_mods.iter().map(|m| m.id).collect();
-        // The Web API needs a key (401 without); the Steam client answers the
-        // same, at the cost of a moment of Steam showing DayZ running.
-        let remote_map = match api_key {
-            Some(key) => match updates_from_web(&mod_ids, &key).await {
-                Ok(map) => map,
-                Err(web) => updates_from_steam(mod_ids)
-                    .await
-                    .map_err(|steam| format!("{web} {steam}"))?,
-            },
-            None => updates_from_steam(mod_ids).await?,
+        // The keyless Web API answers everyone in one request or a few; with a
+        // key, `GetDetails` is a second try. The Steam client answers the same,
+        // at the cost of a worker process and a moment of Steam showing DayZ
+        // running, so it is the last resort.
+        let remote_map = match updates_from_web(&mod_ids, None).await {
+            Ok(map) => map,
+            Err(keyless) => {
+                let keyed = match crate::features::steam::access::web_key(&state).await {
+                    Some(key) => updates_from_web(&mod_ids, Some(&key)).await,
+                    None => Err(keyless),
+                };
+                match keyed {
+                    Ok(map) => map,
+                    Err(web) => updates_from_steam(mod_ids)
+                        .await
+                        .map_err(|steam| format!("{web} {steam}"))?,
+                }
+            }
         };
 
         let dtos = installed_mods
@@ -286,10 +358,8 @@ impl Hub {
             .collect();
         {
             let mut s = state.write().await;
-            s.mod_update_cache = remote_map;
-            s.mods_on_disk = Some(on_disk(&installed_mods));
+            set_mods_known(&mut s, on_disk(&installed_mods), Some(remote_map));
             s.mod_scan = Some((Instant::now(), installed_mods));
-            s.profile_changed();
         }
         Ok(dtos)
     }
@@ -311,39 +381,41 @@ impl Hub {
         let state = self.state()?;
         let ctl_clone = { state.read().await.ctl.clone_for_task() };
         let kept = spawn_blocking_mapped(move || -> std::result::Result<Vec<u64>, String> {
+            // The folders (Steam's libraries read from its .vdf) are worked out
+            // once for every mod, not once per mod.
+            let dirs = ctl_clone.mod_dirs();
+            let dayz = ctl_clone.dayz_path().ok();
             let mut deleted = Vec::new();
             let mut in_steam = Vec::new();
             let mut failed = None;
-            for id in mod_ids {
-                match ctl_clone.delete_mod(id).cmd_err() {
+            for (id, r) in mods::delete_mods(&dirs, dayz.as_deref(), &mod_ids) {
+                match r.cmd_err() {
                     Ok(outcome) => {
                         deleted.push(id);
                         if outcome == DeleteOutcome::KeptInSteam {
                             in_steam.push(id);
                         }
                     }
-                    Err(e) => {
-                        failed = Some(e);
-                        break;
-                    }
+                    Err(e) => failed = Some(e),
                 }
             }
             // Even after a failure: what was deleted must not come back.
             let steam = dz_game::steam_download::unsubscribe(&deleted);
             // Copies Steam does not manage (not subscribed) go now; Steam
             // removes the unsubscribed ones itself.
-            in_steam.retain(|id| {
-                if steam.unsubscribed.contains(id) {
-                    return false;
+            let loose: Vec<u64> = in_steam
+                .iter()
+                .copied()
+                .filter(|id| !steam.unsubscribed.contains(id) && steam.not_subscribed.contains(id))
+                .collect();
+            let mut gone = Vec::new();
+            for (id, r) in mods::delete_steam_copies_of(&dirs, &loose) {
+                match r {
+                    Ok(()) => gone.push(id),
+                    Err(e) => eprintln!("[mods] Steam copy of {id} not deleted: {e}"),
                 }
-                if steam.not_subscribed.contains(id) {
-                    match ctl_clone.delete_steam_copies(*id) {
-                        Ok(_) => return false,
-                        Err(e) => eprintln!("[mods] Steam copy of {id} not deleted: {e}"),
-                    }
-                }
-                true
-            });
+            }
+            in_steam.retain(|id| !steam.unsubscribed.contains(id) && !gone.contains(id));
             if let Some(e) = failed {
                 return Err(e);
             }
@@ -426,8 +498,33 @@ impl Hub {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod scan_tests {
     use super::*;
+
+    #[test]
+    fn details_keep_answered_items_only() {
+        let resp = serde_json::json!({"response": {"result": 1, "resultcount": 4,
+        "publishedfiledetails": [
+            {"publishedfileid": "1559212036", "result": 1, "time_updated": 1700000000},
+            {"publishedfileid": "1564026768", "result": 9},
+            {"publishedfileid": "2", "result": 1, "time_updated": 0},
+            {"publishedfileid": 3, "time_updated": 42},
+        ]}});
+        assert_eq!(
+            parse_details(&resp),
+            [(1_559_212_036, 1_700_000_000), (3, 42)]
+        );
+        assert!(parse_details(&serde_json::json!({})).is_empty());
+    }
+
+    #[test]
+    fn the_keyless_form_numbers_every_id() {
+        assert_eq!(
+            keyless_form(&[10, 20]),
+            "itemcount=2&publishedfileids%5B0%5D=10&publishedfileids%5B1%5D=20"
+        );
+    }
 
     #[test]
     fn a_recent_read_serves_and_an_old_one_does_not() {

@@ -46,6 +46,10 @@ pub enum ModProgress {
     /// previous transient line instead of appending, so download progress
     /// updates in place rather than flooding the log.
     LogProgress(String),
+    /// How far the download of `mod_id` has got, in bytes: the numbers the
+    /// progress bar, the speed and the time left are worked out from. A log
+    /// line may say the same for people to read; nothing parses it back.
+    Bytes { mod_id: u64, done: u64, total: u64 },
     /// All mods processed
     Finished {
         ok: usize,

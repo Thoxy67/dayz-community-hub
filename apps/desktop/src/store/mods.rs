@@ -7,34 +7,31 @@
 //! summary was closed, gets it back with its queue, results and log ([`Mods::resume`]).
 
 use std::collections::VecDeque;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use dz_hub::events::ModProgressEvent;
 use dz_hub::features::mods::{InstalledModDto, ModUsageDto};
+use dz_hub::features::steamcmd::op::{self as hub_op, ModOpSnapshot};
 use dz_hub::features::steamcmd::{ModOpType, ModProgressKind};
 use dz_hub::features::steamworks::{SteamSubscriptionDto, SteamSubscriptionsDto, WorkshopItemDto};
 use dz_hub::{Hub, HubEvent};
 use rustc_hash::FxHashMap;
-use serde::Deserialize;
 
 use super::connect::Launch;
-use super::{Bus, ConfirmRequest, Signal, mirror};
+use super::{Bus, ConfirmRequest, Signal};
 use crate::i18n::{plural, t, tf};
 use crate::rt::{self, Task};
 
 const UPDATES_TTL_MS: u128 = 5 * 60 * 1000;
-/// After a removal, how often the disk is read again while Steam's copy of a removed
-/// mod is still there, and for how long.
-const RECHECK: Duration = Duration::from_secs(3);
-const RECHECK_FOR: Duration = Duration::from_secs(120);
 /// A removed mod Steam calls subscribed again after this long was subscribed again
 /// (an earlier answer can predate the removal).
 const RESUBSCRIBED_AFTER: Duration = Duration::from_secs(30);
 /// Lines of SteamCMD output kept for the dialog; past this the oldest go.
 pub const LOG_MAX: usize = 5000;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ModOpPhase {
     #[default]
     Downloading,
@@ -43,17 +40,36 @@ pub enum ModOpPhase {
     Finished,
 }
 
+impl From<hub_op::ModOpPhase> for ModOpPhase {
+    fn from(p: hub_op::ModOpPhase) -> Self {
+        match p {
+            hub_op::ModOpPhase::Downloading => Self::Downloading,
+            hub_op::ModOpPhase::SteamGuardMobile => Self::SteamGuardMobile,
+            hub_op::ModOpPhase::PasswordRequired => Self::PasswordRequired,
+            hub_op::ModOpPhase::Finished => Self::Finished,
+        }
+    }
+}
+
 /// What downloads.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ModOpVia {
     #[default]
     Steamcmd,
     Steamworks,
 }
 
+impl From<hub_op::ModOpVia> for ModOpVia {
+    fn from(v: hub_op::ModOpVia) -> Self {
+        match v {
+            hub_op::ModOpVia::Steamcmd => Self::Steamcmd,
+            hub_op::ModOpVia::Steamworks => Self::Steamworks,
+        }
+    }
+}
+
 /// A mod that came through or failed, and how long it took.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Completed {
     pub id: u64,
     pub name: String,
@@ -85,15 +101,21 @@ pub struct ModOp {
     pub log: VecDeque<(u64, String)>,
     /// Bumped whenever the log changes: a view caches its galleys on it.
     pub log_rev: u64,
+    /// Lines dropped from the front of the log so far ([`LOG_MAX`]): a view that keeps
+    /// a copy of it drops as many.
+    pub log_dropped: u64,
     pub started_at: Instant,
     /// When the mod being worked on started.
     pub item_started_at: Instant,
+    /// The hub's numbers for the mod being downloaded (`at_ms` after the start, on
+    /// this window's clock): the bar, the speed and the time left come from them.
+    pub bytes: Option<hub_op::LiveBytesDto>,
     /// The dialog is closed while the operation carries on; the status bar shows it.
     pub minimised: bool,
 }
 
 impl ModOp {
-    fn idle() -> Self {
+    pub(crate) fn idle() -> Self {
         let now = Instant::now();
         Self {
             active: false,
@@ -112,8 +134,10 @@ impl ModOp {
             hint: None,
             log: VecDeque::new(),
             log_rev: 0,
+            log_dropped: 0,
             started_at: now,
             item_started_at: now,
+            bytes: None,
             minimised: false,
         }
     }
@@ -121,43 +145,6 @@ impl ModOp {
     fn elapsed_ms(&self) -> u64 {
         u64::try_from(self.started_at.elapsed().as_millis()).unwrap_or(u64::MAX)
     }
-}
-
-/// The hub's `ModOpSnapshot`, read through serde (the hub does not export the type).
-#[derive(Deserialize, Default)]
-#[serde(default)]
-struct Snapshot {
-    seq: u32,
-    kind: Option<ModOpType>,
-    via: ModOpVia,
-    phase: ModOpPhase,
-    current: usize,
-    total: usize,
-    current_id: u64,
-    current_name: String,
-    queue: Vec<Queued>,
-    completed: Vec<Completed>,
-    ok: usize,
-    failed: usize,
-    hint: Option<String>,
-    log: Vec<LogLine>,
-    log_live: bool,
-    started_at: i64,
-    item_started_ms: u64,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(default)]
-struct Queued {
-    id: u64,
-    name: String,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(default)]
-struct LogLine {
-    at_ms: u64,
-    line: String,
 }
 
 /// Where a mod stands in the running operation.
@@ -182,6 +169,9 @@ pub struct Mods {
     hub: Hub,
     bus: Bus,
     pub installed: Vec<InstalledModDto>,
+    /// Moves whenever `installed` changed (a read, a check, a removal, a link flipped):
+    /// views key on it instead of hashing every mod.
+    pub revision: u64,
     pub loading: bool,
     /// The disk has been read at least once (an empty list is then an answer).
     pub loaded: bool,
@@ -206,7 +196,7 @@ pub struct Mods {
     steam_task: Option<Task<Result<SteamSubscriptionsDto, String>>>,
     steam_before: Vec<u64>,
     start_task: Option<Task<Result<(), String>>>,
-    attach_task: Option<Task<Option<Snapshot>>>,
+    attach_task: Option<Task<Option<ModOpSnapshot>>>,
     /// Steps that came while the snapshot was asked for.
     early: Vec<ModProgressEvent>,
     /// Steps at or below this were in the snapshot.
@@ -226,8 +216,10 @@ pub struct Mods {
     load_again: bool,
     /// A forced check was asked for while one ran: run it after.
     check_again: bool,
-    /// When the disk and Steam are next read for the removed mods still on disk.
-    recheck_at: Option<Instant>,
+    /// Set from the hub's watcher thread when the mod folders changed: read them again.
+    disk_changed: Arc<AtomicBool>,
+    /// The hub is (re)arming the watch on the folders, which follows each read.
+    watch_task: Option<Task<Result<(), String>>>,
 }
 
 /// What a write to the mods did, for the toast and the follow-up.
@@ -250,6 +242,7 @@ impl Mods {
             hub,
             bus,
             installed: Vec::new(),
+            revision: 0,
             loading: false,
             loaded: false,
             checking: false,
@@ -280,15 +273,19 @@ impl Mods {
             removed: FxHashMap::default(),
             load_again: false,
             check_again: false,
-            recheck_at: None,
+            disk_changed: Arc::new(AtomicBool::new(false)),
+            watch_task: None,
         }
     }
 
     // ── derived ─────────────────────────────────────────────────────────────
 
-    fn set_installed(&mut self, mut list: Vec<InstalledModDto>) {
+    /// Take a new list in. True when what the server rows show of it moved (which mods
+    /// are on disk, their versions, their update flags), so the rows look again only then.
+    fn set_installed(&mut self, mut list: Vec<InstalledModDto>) -> bool {
         // A removed mod whose folder is gone is gone for good; one still on disk is
-        // Steam's copy waiting to be deleted: kept out of the list, read again soon.
+        // Steam's copy waiting to be deleted: kept out of the list until the watch on
+        // the folders sees it go.
         let on_disk: Vec<u64> = list.iter().map(|m| m.id).collect();
         let before = self.removed.len();
         self.removed.retain(|id, _| on_disk.contains(id));
@@ -297,11 +294,16 @@ impl Mods {
             self.load_steam();
         }
         list.retain(|m| !self.removed.contains_key(&m.id));
-        self.recheck_at = self
-            .removed
-            .values()
-            .any(|at| at.elapsed() < RECHECK_FOR)
-            .then(|| Instant::now() + RECHECK);
+        if list == self.installed {
+            return false;
+        }
+        let shown = |m: &InstalledModDto| (m.id, m.local_updated, m.update_available);
+        let rows_moved = list.len() != self.installed.len()
+            || list
+                .iter()
+                .zip(&self.installed)
+                .any(|(a, b)| shown(a) != shown(b));
+        self.revision += 1;
         self.installed = list;
         self.by_id = self
             .installed
@@ -311,6 +313,7 @@ impl Mods {
             .collect();
         self.stale_count = self.installed.iter().filter(|m| m.update_available).count();
         self.total_size = self.installed.iter().map(|m| m.size).sum();
+        rows_moved
     }
 
     fn set_steam(&mut self, mut s: SteamSubscriptionsDto) {
@@ -437,11 +440,9 @@ impl Mods {
         self.load_task = Some(rt::spawn(async move { hub.get_installed_mods().await }));
     }
 
-    /// Ask the Workshop which mods are behind. Needs a Steam API key (`has_key`).
-    pub fn check_updates(&mut self, force: bool, has_key: bool) {
-        if !has_key {
-            return;
-        }
+    /// Ask the Workshop which mods are behind. The hub answers with or without a Steam
+    /// API key.
+    pub fn check_updates(&mut self, force: bool) {
         if self.check_task.is_some() {
             // The check under way may have read the disk before what changed
             // (an update that just ended): its answer would undo it.
@@ -473,10 +474,30 @@ impl Mods {
     }
 
     /// Read the folders again, ask Steam again, check for updates.
-    pub fn refresh(&mut self, has_key: bool) {
+    pub fn refresh(&mut self) {
         self.load();
         self.load_steam();
-        self.check_updates(true, has_key);
+        self.check_updates(true);
+    }
+
+    /// Have the hub watch the mod folders: a change sets `disk_changed` and wakes the
+    /// frame, which reads them again. Asked after each read, since the folders may have
+    /// moved (a library added); the hub keeps a watch on the same folders as it is.
+    fn watch(&mut self) {
+        if self.watch_task.is_some() {
+            return;
+        }
+        let Some(rt) = rt::Rt::get() else {
+            return;
+        };
+        let flag = Arc::clone(&self.disk_changed);
+        let ctx = rt.ctx().clone();
+        let on_change: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            flag.store(true, Ordering::Release);
+            ctx.request_repaint();
+        });
+        let hub = self.hub.clone();
+        self.watch_task = Some(rt::spawn(async move { hub.watch_mods(on_change).await }));
     }
 
     // ── changes ─────────────────────────────────────────────────────────────
@@ -491,7 +512,11 @@ impl Mods {
             tf(
                 "mods",
                 "deleteSingleMessage",
-                &[("name", &m.name), ("id", &m.id), ("size", &m.size_human)],
+                &[
+                    ("name", &m.name),
+                    ("id", &m.id),
+                    ("size", &crate::i18n::format::bytes(m.size as f64)),
+                ],
             ),
         )
         .danger();
@@ -577,6 +602,7 @@ impl Mods {
         };
         m.managed = !m.managed;
         let name = m.name.clone();
+        self.revision += 1;
         let hub = self.hub.clone();
         self.mutate.push(rt::spawn(async move {
             Ok(match hub.toggle_mod_managed(id).await {
@@ -745,13 +771,10 @@ impl Mods {
         self.listening = true;
         self.early.clear();
         let hub = self.hub.clone();
-        self.attach_task = Some(rt::spawn(async move {
-            let snap = hub.mod_op_attach().await?;
-            mirror::<_, Snapshot>(&snap)
-        }));
+        self.attach_task = Some(rt::spawn(async move { hub.mod_op_attach().await }));
     }
 
-    fn apply_snapshot(&mut self, s: Snapshot) {
+    fn apply_snapshot(&mut self, s: ModOpSnapshot) {
         let now = Instant::now();
         let age = |at_ms: i64| {
             let ago = super::now_ms().saturating_sub(at_ms).max(0);
@@ -763,9 +786,9 @@ impl Mods {
         let started = age(s.started_at);
         let mut op = ModOp::idle();
         op.active = true;
-        op.kind = s.kind.unwrap_or(ModOpType::UpdateAll);
-        op.via = s.via;
-        op.phase = s.phase;
+        op.kind = s.kind;
+        op.via = s.via.into();
+        op.phase = s.phase.into();
         op.current = s.current;
         op.total = s.total;
         op.current_name = if s.current_name.is_empty() {
@@ -776,7 +799,16 @@ impl Mods {
         op.current_id = s.current_id;
         op.ids = s.queue.iter().map(|q| q.id).collect();
         op.names = s.queue.into_iter().map(|q| (q.id, q.name)).collect();
-        op.completed = s.completed;
+        op.completed = s
+            .completed
+            .into_iter()
+            .map(|c| Completed {
+                id: c.id,
+                name: c.name,
+                ok: c.ok,
+                ms: c.ms,
+            })
+            .collect();
         op.ok = s.ok;
         op.failed = s.failed;
         op.hint = s.hint;
@@ -784,6 +816,7 @@ impl Mods {
         op.log_rev = 1;
         op.started_at = started;
         op.item_started_at = started + std::time::Duration::from_millis(s.item_started_ms);
+        op.bytes = s.bytes;
         self.op = op;
         self.snap_seq = s.seq;
         self.last_was_progress = s.log_live;
@@ -808,6 +841,7 @@ impl Mods {
                 op.current_name.clone_from(&ev.name);
                 op.current_id = ev.mod_id;
                 op.item_started_at = Instant::now();
+                op.bytes = None;
             }
             ModProgressKind::Done | ModProgressKind::Failed => {
                 op.current = ev.current;
@@ -827,6 +861,7 @@ impl Mods {
                     op.log.push_back((at, line.clone()));
                     while op.log.len() > LOG_MAX {
                         op.log.pop_front();
+                        op.log_dropped += 1;
                     }
                     op.log_rev += 1;
                     self.last_was_progress = false;
@@ -841,6 +876,15 @@ impl Mods {
                     }
                     op.log_rev += 1;
                     self.last_was_progress = true;
+                }
+            }
+            ModProgressKind::Bytes => {
+                if let Some(bytes) = ev.bytes {
+                    op.bytes = Some(hub_op::LiveBytesDto {
+                        mod_id: ev.mod_id,
+                        bytes,
+                        at_ms: op.elapsed_ms(),
+                    });
                 }
             }
             ModProgressKind::Finished => {
@@ -938,7 +982,11 @@ impl Mods {
             }
             match r {
                 Ok(list) => {
-                    self.set_installed(list);
+                    // The rows look again only when what they show moved.
+                    if self.set_installed(list) {
+                        signals.push(Signal::ModsChanged);
+                    }
+                    self.watch();
                     signals.push(Signal::ModsLoaded);
                     // Only an extra: the list stands without it.
                     let hub = self.hub.clone();
@@ -964,13 +1012,14 @@ impl Mods {
             changed = true;
             if std::mem::take(&mut self.check_again) {
                 // This answer predates what changed: the next one replaces it.
-                self.check_updates(true, true);
+                self.check_updates(true);
             } else {
                 match r {
                     Ok(list) => {
-                        self.set_installed(list);
+                        if self.set_installed(list) {
+                            signals.push(Signal::ModsChanged);
+                        }
                         self.last_checked = Some(Instant::now());
-                        signals.push(Signal::ModsChanged);
                     }
                     Err(e) => self
                         .bus
@@ -1051,29 +1100,31 @@ impl Mods {
                     kept,
                     says,
                 }) => {
-                    // Out of the list now; the disk and Steam are read again until
-                    // Steam has deleted its copies.
+                    // Out of the list now; the watch on the folders reads them again
+                    // when Steam deletes its copies.
                     let now = Instant::now();
                     for id in removed.into_iter().filter(|id| !kept.contains(id)) {
                         self.removed.insert(id, now);
                     }
-                    let list = std::mem::take(&mut self.installed);
-                    self.set_installed(list);
+                    let list = self.installed.clone();
+                    let rows_moved = self.set_installed(list);
                     if let Some(s) = self.steam.take() {
                         self.set_steam(s);
                     }
                     self.load();
                     self.load_steam();
-                    signals.push(Signal::ModsChanged);
+                    if rows_moved {
+                        signals.push(Signal::ModsChanged);
+                    }
                     self.toasts(says);
                 }
                 Ok(MutateDone::Managed(id, managed, name)) => {
                     if let Some(m) = self.by_id.get(&id).and_then(|i| self.installed.get_mut(*i)) {
                         m.managed = managed;
+                        self.revision += 1;
                     }
                     let word = if managed { "linked" } else { "unlinked" };
                     self.bus.ok(tf("mods", word, &[("name", &name)]));
-                    signals.push(Signal::ModsChanged);
                 }
                 Ok(MutateDone::ManagedFailed(e)) => {
                     self.load();
@@ -1082,17 +1133,25 @@ impl Mods {
                 Err(e) => self.bus.err(e),
             }
         }
-        // The removed mods Steam has not deleted yet: read again in a moment.
-        if let Some(at) = self.recheck_at {
-            let now = Instant::now();
-            if now >= at {
-                // The disk only: asking Steam starts a session (a worker process),
-                // which is asked once more when the copy is gone.
-                self.recheck_at = None;
-                self.load();
-            } else if let Some(r) = rt::Rt::get() {
-                r.ctx().request_repaint_after(at - now);
+        if let Some(task) = &mut self.watch_task
+            && let Some(r) = task.poll()
+        {
+            self.watch_task = None;
+            if let Err(e) = r {
+                // The view's slow read keeps the list current without it.
+                eprintln!("[mods] folders not watched: {e}");
             }
+        }
+        // The folders changed (Steam, the player, an `@` link): read them once. Not
+        // while an operation downloads: its end reads them anyway, and each item would
+        // read them again meanwhile.
+        if !self.busy() && self.disk_changed.swap(false, Ordering::AcqRel) {
+            self.load();
+            if self.steam.is_some() {
+                // Steam's manifest is a file read; its view moves with the folders.
+                self.load_steam();
+            }
+            changed = true;
         }
         changed
     }

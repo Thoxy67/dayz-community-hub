@@ -631,8 +631,6 @@
   "mods": {
     "all": "Tous",
     "alsoSubscribed": "aussi abonné sur Steam",
-    "apiKeyMissingBody": "Ajoutez une clé Steam Web API pour voir quels mods sont en retard sur le Workshop.",
-    "apiKeyMissingTitle": "La vérification des mises à jour est désactivée",
     "behindToday": "en retard",
     "cancel": "Annuler",
     "checkUpdates": "Vérifier les MAJ",

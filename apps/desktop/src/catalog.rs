@@ -2070,14 +2070,14 @@ pub const CATALOG: &[Feature] = &[
     Feature {
         id: "mods.banner.api_key_missing",
         view: "mods",
-        what: "Info banner (key icon) 'Update checks are off' / 'Add a Steam Web API key to see which mods are behind the Workshop.' when no API key and mods installed.",
+        what: "Info banner (key icon) 'Update checks are off' / 'Add a Steam Web API key to see which mods are behind the Workshop.' when no API key and mods installed. Retired on purpose: the hub checks for updates without a key, so there is nothing to warn about.",
         kind: Kind::Display,
         done: true,
     },
     Feature {
         id: "mods.banner.add_key",
         view: "mods",
-        what: "Banner button 'Add a key' navigates to Settings, section steam.",
+        what: "Banner button 'Add a key' navigates to Settings, section steam. The banner is retired (update checks need no key); the command stays for the palette.",
         kind: Kind::Command("mods.open_settings_steam"),
         done: true,
     },

@@ -14,7 +14,7 @@ use std::time::Instant;
 
 use serde::Serialize;
 
-use super::{ModOpType, ModProgressEvent, ModProgressKind, QueuedModDto};
+use super::{ModBytes, ModOpType, ModProgressEvent, ModProgressKind, QueuedModDto};
 
 /// Lines of output kept: the window's `LOG_MAX` (mods.svelte.ts).
 pub(crate) const LOG_MAX: usize = 5000;
@@ -56,6 +56,15 @@ pub struct LogLineDto {
     pub line: String,
 }
 
+/// How far the mod being downloaded has got, and when that was said (ms
+/// after the operation started).
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LiveBytesDto {
+    pub mod_id: u64,
+    pub bytes: ModBytes,
+    pub at_ms: u64,
+}
+
 /// The operation as it stands: everything the progress dialog shows.
 #[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct ModOpSnapshot {
@@ -86,6 +95,9 @@ pub struct ModOpSnapshot {
     pub started_at: i64,
     /// When the mod being worked on started, ms after `started_at`.
     pub item_started_ms: u64,
+    /// The last bytes said of the mod being worked on; none until the
+    /// first after it started.
+    pub bytes: Option<LiveBytesDto>,
 }
 
 impl ModOpSnapshot {
@@ -109,6 +121,7 @@ impl ModOpSnapshot {
             log_live: false,
             started_at,
             item_started_ms: 0,
+            bytes: None,
         }
     }
 
@@ -133,6 +146,7 @@ impl ModOpSnapshot {
                 self.current_name = ev.name.clone();
                 self.current_id = ev.mod_id;
                 self.item_started_ms = at;
+                self.bytes = None;
             }
             K::Done | K::Failed => {
                 self.current = ev.current;
@@ -161,6 +175,15 @@ impl ModOpSnapshot {
                         _ => self.push_line(line, at),
                     }
                     self.log_live = true;
+                }
+            }
+            K::Bytes => {
+                if let Some(bytes) = ev.bytes {
+                    self.bytes = Some(LiveBytesDto {
+                        mod_id: ev.mod_id,
+                        bytes,
+                        at_ms: at,
+                    });
                 }
             }
             K::Finished => {
@@ -337,8 +360,27 @@ mod tests {
         assert_eq!(op.phase, ModOpPhase::Downloading);
         op.apply(&line(K::LogProgress, 6, "progress: 10.00"), 150);
         op.apply(&line(K::LogProgress, 7, "progress: 90.00"), 200);
+        op.apply(
+            &ModProgressEvent {
+                seq: 7,
+                mod_id: 10,
+                bytes: Some(ModBytes { done: 9, total: 10 }),
+                ..ModProgressEvent::of(K::Bytes)
+            },
+            200,
+        );
+        assert_eq!(
+            op.bytes,
+            Some(LiveBytesDto {
+                mod_id: 10,
+                bytes: ModBytes { done: 9, total: 10 },
+                at_ms: 200
+            })
+        );
         op.apply(&about(K::Done, 8, 1, 10, "CF"), 400);
         op.apply(&about(K::Starting, 9, 2, 20, "Expansion"), 400);
+        // A new mod's bytes start from nothing.
+        assert_eq!(op.bytes, None);
         op.apply(&line(K::LogLine, 10, "Download failed"), 450);
         op.apply(&about(K::Failed, 11, 2, 20, "Expansion (denied)"), 700);
         op.apply(

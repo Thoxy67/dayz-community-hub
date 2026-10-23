@@ -73,7 +73,7 @@ fn detect_steamcmd_sync(explicit_path: &Option<String>) -> SteamcmdStatusDto {
 /// the "SteamCMD not found" warning goes away without a settings save.
 async fn adopt_if_found(state: &SharedState, status: &SteamcmdStatusDto) {
     if status.found && !state.read().await.ctl.has_steamcmd() {
-        state.write().await.ctl.rebuild_steamcmd();
+        crate::features::profile::rebuild_steamcmd(state).await;
     }
 }
 

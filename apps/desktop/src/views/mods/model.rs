@@ -383,9 +383,9 @@ pub fn workshop_url(id: u64) -> String {
     format!("https://steamcommunity.com/sharedfiles/filedetails/?id={id}")
 }
 
-// ── SteamCMD's progress lines (`steamcmd-log.ts`) ───────────────────────────
+// ── A download's progress ──────────────────────────────────────────────────
 
-/// What a progress line says: percent, bytes done, bytes in all.
+/// How far the mod being downloaded has got: percent, bytes done, bytes in all.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Progress {
     pub percent: f64,
@@ -395,47 +395,43 @@ pub struct Progress {
     pub at: u64,
 }
 
-/// `progress: 42.17 (123456789 / 292837465)`, anywhere in the line.
-pub fn parse_progress(line: &str) -> Option<(f64, u64, u64)> {
-    let lower = line.to_ascii_lowercase();
-    let at = lower.find("progress:")?;
-    let rest = line.get(at + "progress:".len()..)?.trim_start();
-    let pct_end = rest
-        .find(|c: char| !(c.is_ascii_digit() || c == '.'))
-        .unwrap_or(rest.len());
-    let percent: f64 = rest.get(..pct_end)?.parse().ok()?;
-    let rest = rest.get(pct_end..)?.trim_start().strip_prefix('(')?;
-    let (done, rest) = rest.split_once('/')?;
-    let total = rest.split_once(')')?.0;
-    let done: u64 = done.trim().parse().ok()?;
-    let total: u64 = total.trim().parse().ok()?;
-    percent.is_finite().then_some((percent, done, total))
+/// Where `needle` (ASCII, lowercase) first is in `hay`, ignoring ASCII case: no
+/// lowercase copy of the line, which the log is searched through line by line.
+pub fn find_ci(hay: &str, needle: &str) -> Option<usize> {
+    let (h, n) = (hay.as_bytes(), needle.as_bytes());
+    if n.is_empty() {
+        return Some(0);
+    }
+    h.windows(n.len())
+        .position(|w| w.iter().zip(n).all(|(a, b)| a.to_ascii_lowercase() == *b))
 }
 
-/// The newest progress line of the mod under way: `None` until one arrives after its
-/// "Downloading item" line.
-pub fn latest_progress<'a>(
-    log: impl DoubleEndedIterator<Item = &'a (u64, String)>,
-) -> Option<Progress> {
-    for (at, line) in log.rev() {
-        if let Some((percent, done, total)) = parse_progress(line) {
-            return Some(Progress {
-                percent,
-                done,
-                total,
-                at: *at,
-            });
-        }
-        if line.to_ascii_lowercase().contains("downloading item") {
-            return None;
-        }
-    }
-    None
+/// The operation's progress on the mod under way, from the hub's numbers (SteamCMD's
+/// lines are read once, in the backend): `None` until the first after it started.
+pub fn op_progress(op: &crate::store::mods::ModOp) -> Option<Progress> {
+    op.bytes.map(|b| Progress {
+        percent: b.bytes.percent(),
+        done: b.bytes.done,
+        total: b.bytes.total,
+        at: b.at_ms,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn finds_without_regard_to_ascii_case() {
+        assert_eq!(find_ci("Update state PROGRESS: 1", "progress:"), Some(13));
+        assert_eq!(find_ci("Downloading Item 5", "downloading item"), Some(0));
+        assert_eq!(find_ci("nothing", "progress:"), None);
+        assert_eq!(
+            find_ci("é progress:", "progress:"),
+            Some(3),
+            "bytes, not chars"
+        );
+    }
 
     #[test]
     fn workshop_ids_from_text() {
@@ -452,27 +448,6 @@ mod tests {
             parse_workshop_ids("1, 2;3\n2 https://x/?id=4 nope"),
             vec![1, 2, 3, 4]
         );
-    }
-
-    #[test]
-    fn progress_lines() {
-        assert_eq!(
-            parse_progress("Update state (0x61) downloading, progress: 42.17 (123 / 292)"),
-            Some((42.17, 123, 292))
-        );
-        assert_eq!(
-            parse_progress("Steam: item 1 downloading, progress: 8.33 (25 / 300)"),
-            Some((8.33, 25, 300))
-        );
-        assert_eq!(parse_progress("no progress here"), None);
-        assert_eq!(parse_progress("progress: x"), None);
-        let log = [
-            (1, "Downloading item 1 ...".to_string()),
-            (2, "progress: 50.00 (5 / 10)".to_string()),
-            (3, "Downloading item 2 ...".to_string()),
-        ];
-        assert_eq!(latest_progress(log.iter()), None);
-        assert_eq!(latest_progress(log.iter().take(2)).map(|p| p.done), Some(5));
     }
 
     #[test]

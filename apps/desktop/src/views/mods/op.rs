@@ -53,10 +53,13 @@ pub struct OpUi {
     rate: Rate,
     rate_at: Option<u64>,
     speed: Option<f64>,
-    /// The log as the pane reads it, rebuilt when the operation's log changes.
+    /// The log as the pane reads it, kept in step with the operation's: new lines
+    /// added, the live line rewritten, as many dropped at the front as the store drops.
     lines: Vec<String>,
     times: Vec<f64>,
     lines_rev: u64,
+    /// The store's `log_dropped` that `lines` matches.
+    lines_dropped: u64,
     lines_start: Option<std::time::Instant>,
     /// The clock stopped where the operation finished (ms), for the operation that
     /// started at `lines_start`.
@@ -129,6 +132,37 @@ pub fn cmd_manual_login(cx: &mut Ctx, _: &Value) {
     let cmd = manual_cmd(cx, s.steamcmd_home.as_deref());
     cx.egui.copy_text(cmd);
     s.distrust = true;
+}
+
+/// Bring the pane's copy of the log in step with the operation's: only what changed is
+/// copied (a few lines a step, where a whole copy was up to [`crate::store::mods::LOG_MAX`]).
+fn sync_lines(st: &mut OpUi, op: &ModOp) {
+    let same_op = st.lines_start == Some(op.started_at) && op.log_dropped >= st.lines_dropped;
+    if same_op {
+        let drop = usize::try_from(op.log_dropped - st.lines_dropped).unwrap_or(usize::MAX);
+        let drop = drop.min(st.lines.len());
+        st.lines.drain(..drop);
+        st.times.drain(..drop);
+    }
+    if !same_op || st.lines.len() > op.log.len() {
+        st.lines.clear();
+        st.times.clear();
+    }
+    // The last line kept may be the live progress line, rewritten since.
+    if let Some(i) = st.lines.len().checked_sub(1)
+        && let Some((at, l)) = op.log.get(i)
+        && st.lines[i] != *l
+    {
+        st.lines[i].clone_from(l);
+        st.times[i] = *at as f64;
+    }
+    for (at, l) in op.log.iter().skip(st.lines.len()) {
+        st.lines.push(l.clone());
+        st.times.push(*at as f64);
+    }
+    st.lines_rev = op.log_rev;
+    st.lines_dropped = op.log_dropped;
+    st.lines_start = Some(op.started_at);
 }
 
 fn kind_label(k: ModOpType) -> &'static str {
@@ -247,7 +281,7 @@ fn dialog(ctx: &egui::Context, cx: &Ctx, st: &mut OpUi, run: &mut Vec<(&'static 
                 .iter()
                 .rev()
                 .take(8)
-                .any(|(_, l)| l.to_ascii_lowercase().contains("retrying"));
+                .any(|(_, l)| model::find_ci(l, "retrying").is_some());
             if fresh {
                 st.guard_from = Some(std::time::Instant::now());
             }
@@ -271,17 +305,10 @@ fn dialog(ctx: &egui::Context, cx: &Ctx, st: &mut OpUi, run: &mut Vec<(&'static 
     }
     // The log as the pane reads it.
     if st.lines_rev != op.log_rev || st.lines_start != Some(op.started_at) {
-        st.lines.clear();
-        st.times.clear();
-        for (at, l) in &op.log {
-            st.lines.push(l.clone());
-            st.times.push(*at as f64);
-        }
-        st.lines_rev = op.log_rev;
-        st.lines_start = Some(op.started_at);
+        sync_lines(st, op);
     }
     // The current mod's bytes and speed.
-    let progress: Option<Progress> = model::latest_progress(op.log.iter());
+    let progress: Option<Progress> = model::op_progress(op);
     match progress {
         Some(p) => {
             if st.rate_at != Some(p.at) {
@@ -419,7 +446,6 @@ fn dialog(ctx: &egui::Context, cx: &Ctx, st: &mut OpUi, run: &mut Vec<(&'static 
         let ir = Rect::from_center_size(ib.center(), Vec2::splat(size::ICON));
         if running {
             Spinner::paint(&ui, ir, tk.accent);
-            ctx.request_repaint();
         } else if op.failed > 0 || op.hint.is_some() {
             lucide::CIRCLE_X.paint(ui.painter(), ir, tk.err);
         } else {
@@ -1185,4 +1211,41 @@ fn small(ui: &mut Ui, text: &str, color: Color32) {
     let g = paint::galley_wrap(ui, text, font(Face::Sans, size::TEXT_2XS), color, w);
     let (r, _) = ui.allocate_exact_size(Vec2::new(w, g.size().y), Sense::hover());
     ui.painter().galley(r.min, g, color);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn push(op: &mut ModOp, line: &str) {
+        op.log.push_back((op.log.len() as u64, line.to_string()));
+        op.log_rev += 1;
+    }
+
+    #[test]
+    fn the_pane_follows_the_log_line_by_line() {
+        let mut op = ModOp::idle();
+        let mut st = OpUi::default();
+        push(&mut op, "a");
+        push(&mut op, "progress: 1");
+        sync_lines(&mut st, &op);
+        assert_eq!(st.lines, ["a", "progress: 1"]);
+        // The live line is rewritten, a line comes, the front is dropped.
+        if let Some(last) = op.log.back_mut() {
+            last.1 = "progress: 2".into();
+        }
+        push(&mut op, "b");
+        op.log.pop_front();
+        op.log_dropped += 1;
+        op.log_rev += 1;
+        sync_lines(&mut st, &op);
+        assert_eq!(st.lines, ["progress: 2", "b"]);
+        assert_eq!(st.times.len(), st.lines.len());
+        // Another operation: copied afresh.
+        let mut next = ModOp::idle();
+        next.started_at = op.started_at + std::time::Duration::from_secs(1);
+        push(&mut next, "c");
+        sync_lines(&mut st, &next);
+        assert_eq!(st.lines, ["c"]);
+    }
 }

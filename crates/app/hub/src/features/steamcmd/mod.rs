@@ -1,7 +1,8 @@
 //! Mod downloads through steamcmd, and finding steamcmd itself.
 
 pub(crate) mod detect;
-pub(crate) mod op;
+pub mod op;
+pub(crate) mod watch;
 
 use crate::{Hub, HubEvent};
 use dz_game::ModOperation;
@@ -28,6 +29,8 @@ pub enum ModProgressKind {
     PasswordRequired,
     LogLine,
     LogProgress,
+    /// How far the mod being downloaded has got (`mod_id`, `bytes`).
+    Bytes,
     Starting,
     Done,
     Failed,
@@ -46,12 +49,32 @@ pub struct ModProgressEvent {
     pub failed: usize,
     pub hint: Option<String>,
     pub log_line: Option<String>,
+    /// Only on `bytes`: done and in all.
+    pub bytes: Option<ModBytes>,
     /// Only on `queued`: the operation's mods with their names; empty on
     /// every other step.
     pub queue: Vec<QueuedModDto>,
     /// The step's number in its operation, from 1: a window that attached
     /// (`mod_op_attach`) drops the steps its snapshot already holds.
     pub seq: u32,
+}
+
+/// How far a download has got, in bytes.
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ModBytes {
+    pub done: u64,
+    pub total: u64,
+}
+
+impl ModBytes {
+    /// How much is done, from 0 to 100 (0 while the size is unknown).
+    pub fn percent(self) -> f64 {
+        if self.total == 0 {
+            0.0
+        } else {
+            (self.done as f64 / self.total as f64 * 100.0).min(100.0)
+        }
+    }
 }
 
 /// A mod an operation will work on, by the name it is best known by: its
@@ -76,6 +99,7 @@ impl ModProgressEvent {
             failed: 0,
             hint: None,
             log_line: None,
+            bytes: None,
             queue: Vec::new(),
             seq: 0,
         }
@@ -116,6 +140,18 @@ fn mod_progress_to_event(msg: &ModProgress) -> ModProgressEvent {
         ModProgress::LogProgress(line) => ModProgressEvent {
             log_line: Some(line.clone()),
             ..ModProgressEvent::of(K::LogProgress)
+        },
+        ModProgress::Bytes {
+            mod_id,
+            done,
+            total,
+        } => ModProgressEvent {
+            mod_id: *mod_id,
+            bytes: Some(ModBytes {
+                done: *done,
+                total: *total,
+            }),
+            ..ModProgressEvent::of(K::Bytes)
         },
         ModProgress::Starting {
             current,
@@ -294,9 +330,11 @@ fn name_op(op: &mut ModOperation, installed: &[InstalledMod], list: &dz_api::Ser
 
 /// The mods `op` will download, in the order it will, as `dz_game`'s
 /// operation works them out: a server's or a manual install's only those
-/// not on disk, an update all every installed one.
+/// not on disk, an update all every installed one but the copies Steam keeps
+/// current itself.
 fn queue_of(op: &ModOperation, installed: &[InstalledMod]) -> Vec<QueuedModDto> {
     let on_disk: FxHashSet<u64> = installed.iter().map(|m| m.id).collect();
+    let steam_keeps = dz_game::operation::left_to_steam(installed);
     let q = |id: u64, name: &str| QueuedModDto {
         id,
         name: if name.trim().is_empty() {
@@ -324,9 +362,14 @@ fn queue_of(op: &ModOperation, installed: &[InstalledMod]) -> Vec<QueuedModDto> 
         ModOperation::UpdateServer { server } => server
             .mods
             .iter()
+            .filter(|m| !steam_keeps.contains(&(m.steam_workshop_id as u64)))
             .map(|m| q(m.steam_workshop_id as u64, &m.name))
             .collect(),
-        ModOperation::UpdateAll => installed.iter().map(|m| q(m.id, &m.name)).collect(),
+        ModOperation::UpdateAll => installed
+            .iter()
+            .filter(|m| !steam_keeps.contains(&m.id))
+            .map(|m| q(m.id, &m.name))
+            .collect(),
         ModOperation::UpdateOne { mod_id, name } => vec![q(*mod_id, name)],
         ModOperation::UpdateStale { stale_mods: mods }
         | ModOperation::UpdateSelected { mods }
@@ -340,10 +383,84 @@ fn queue_of(op: &ModOperation, installed: &[InstalledMod]) -> Vec<QueuedModDto> 
     }
 }
 
+/// How long the last read of the mods on disk serves a start: as long as it
+/// serves `check_mod_updates`, and it is cleared whenever the mods change.
+const SCAN_FRESH: Duration = Duration::from_secs(10);
+
 /// A `log_progress` line is held back this long after the last one sent:
 /// SteamCMD rewrites its progress line on every read of its output, and the
 /// window only ever shows the latest.
 const PROGRESS_EVERY: Duration = Duration::from_millis(100);
+
+/// The live steps (SteamCMD's progress line, the bytes) held back so each
+/// kind goes at most every [`PROGRESS_EVERY`]: only the latest of a kind is
+/// kept, the others it replaced are already out of date.
+#[derive(Default)]
+struct Held {
+    steps: [Option<ModProgressEvent>; 2],
+    /// When a step of each kind last went.
+    last: [Option<Instant>; 2],
+}
+
+impl Held {
+    /// Which slot a step of `kind` is held in; `None` for a step that goes
+    /// at once.
+    fn slot(kind: ModProgressKind) -> Option<usize> {
+        match kind {
+            ModProgressKind::LogProgress => Some(0),
+            ModProgressKind::Bytes => Some(1),
+            _ => None,
+        }
+    }
+
+    /// How long a slot's step still waits.
+    fn wait(&self, slot: usize) -> Duration {
+        self.last
+            .get(slot)
+            .copied()
+            .flatten()
+            .map_or(Duration::ZERO, |t| {
+                PROGRESS_EVERY.saturating_sub(t.elapsed())
+            })
+    }
+
+    /// How long until the first held step is due; `None` with none held.
+    fn due(&self) -> Option<Duration> {
+        (0..self.steps.len())
+            .filter(|&i| self.steps[i].is_some())
+            .map(|i| self.wait(i))
+            .min()
+    }
+
+    /// A live step: back when it goes now, else held in place of the last.
+    fn offer(&mut self, slot: usize, evt: ModProgressEvent) -> Option<ModProgressEvent> {
+        let (Some(step), Some(last)) = (self.steps.get_mut(slot), self.last.get_mut(slot)) else {
+            return Some(evt);
+        };
+        if last.is_some_and(|t| t.elapsed() < PROGRESS_EVERY) {
+            *step = Some(evt);
+            return None;
+        }
+        *step = None;
+        *last = Some(Instant::now());
+        Some(evt)
+    }
+
+    /// The held steps that are due (every one with `all`), in slot order.
+    fn take(&mut self, all: bool) -> Vec<ModProgressEvent> {
+        let mut out = Vec::new();
+        for i in 0..self.steps.len() {
+            if self.steps[i].is_none() || !(all || self.wait(i) <= Duration::from_millis(1)) {
+                continue;
+            }
+            if let Some(evt) = self.steps[i].take() {
+                self.last[i] = Some(Instant::now());
+                out.push(evt);
+            }
+        }
+        out
+    }
+}
 
 /// What a session says about SteamCMD's login, kept in the profile:
 /// logged in, the account is remembered and a password saved by an earlier
@@ -352,23 +469,25 @@ const PROGRESS_EVERY: Duration = Duration::from_millis(100);
 async fn remember_login(state: &SharedState, msg: &ModProgress) {
     let _ = match msg {
         ModProgress::LoggedIn => {
-            mutate_profile(state, |s| {
+            let forgot = mutate_profile(state, |s| {
                 let p = s.ctl.profile_mut();
                 p.steamcmd_logged_in = p.steam_login.clone();
-                if p.steam_password.take().is_some() {
-                    s.ctl.rebuild_steamcmd();
-                }
-                Ok(())
+                Ok(p.steam_password.take().is_some())
             })
-            .await
+            .await;
+            if let Ok(true) = forgot {
+                crate::features::profile::rebuild_steamcmd(state).await;
+            }
+            forgot.map(drop)
         }
         ModProgress::SavedPasswordRefused => {
-            mutate_profile(state, |s| {
+            let r = mutate_profile(state, |s| {
                 s.ctl.profile_mut().steam_password = None;
-                s.ctl.rebuild_steamcmd();
                 Ok(())
             })
-            .await
+            .await;
+            crate::features::profile::rebuild_steamcmd(state).await;
+            r
         }
         ModProgress::PasswordRequired => {
             mutate_profile(state, |s| {
@@ -414,7 +533,7 @@ impl Hub {
         // One operation at a time: two steamcmd sessions fight over the login,
         // and the first would lose its input channel. Checked first, so a
         // refused start costs no disk scan.
-        let (ctl, update_cache, list, downloads_through_steam) = {
+        let (ctl, update_cache, list, downloads_through_steam, recent) = {
             let s = state.read().await;
             if s.mod_op_abort.is_some() {
                 return Err("A mod operation is already running".into());
@@ -424,17 +543,26 @@ impl Hub {
                 s.mod_update_cache.clone(),
                 Arc::clone(&s.servers),
                 s.ctl.downloads_through_steam(),
+                s.mod_scan
+                    .as_ref()
+                    .filter(|(at, _)| at.elapsed() < SCAN_FRESH)
+                    .map(|(_, mods)| Arc::clone(mods)),
             )
         };
         // What is on disk, read once for everything below (which mods are
         // stale or missing, their names), off the runtime and outside the lock.
-        let installed = if op_type == ModOpType::Login {
-            Vec::new()
+        // The window has usually just read it: that read serves while fresh.
+        let installed: Arc<Vec<InstalledMod>> = if op_type == ModOpType::Login {
+            Arc::default()
+        } else if let Some(recent) = recent {
+            recent
         } else {
             let ctl = ctl.clone_for_task();
-            spawn_blocking_mapped(move || ctl.get_installed_mods())
-                .await
-                .unwrap_or_default()
+            Arc::new(
+                spawn_blocking_mapped(move || ctl.get_installed_mods())
+                    .await
+                    .unwrap_or_default(),
+            )
         };
 
         let mut op = match op_type {
@@ -488,10 +616,15 @@ impl Hub {
         drop(list);
         let queue = queue_of(&op, &installed);
 
-        // Starting scans the workshop directory: off the runtime, and without
-        // holding the state's lock.
-        let (mut rx, pty_input_tx, handle) =
-            spawn_blocking_mapped(move || ctl.start_mod_operation(op)).await?;
+        // Starting reads the workshop directories: off the runtime, and without
+        // holding the state's lock. The mods read above serve, so the folders
+        // are not scanned again (an empty read, or a login, scans as before).
+        let scanned = (!installed.is_empty()).then(|| (*installed).clone());
+        let (mut rx, pty_input_tx, handle) = spawn_blocking_mapped(move || match scanned {
+            Some(mods) => ctl.start_mod_operation_with(op, mods),
+            None => ctl.start_mod_operation(op),
+        })
+        .await?;
         let ours = pty_input_tx.clone();
         {
             let mut s = state.write().await;
@@ -524,44 +657,32 @@ impl Hub {
 
         let state = state.clone();
         tokio::spawn(async move {
-            // The latest progress line not sent yet, and when one last went.
-            let mut held: Option<ModProgressEvent> = None;
-            let mut last_progress: Option<Instant> = None;
+            let mut held = Held::default();
             loop {
-                let next = match &held {
-                    // Wait for the next message only until the held line is due.
-                    Some(_) => {
-                        let due = last_progress.map_or(Duration::ZERO, |t| {
-                            PROGRESS_EVERY.saturating_sub(t.elapsed())
-                        });
-                        match tokio::time::timeout(due, rx.recv()).await {
-                            Ok(m) => m,
-                            Err(_) => {
-                                if let Some(evt) = held.take() {
-                                    last_progress = Some(Instant::now());
-                                    op::emit(id, evt);
-                                }
-                                continue;
+                let next = match held.due() {
+                    // Wait for the next message only until a held step is due.
+                    Some(due) => match tokio::time::timeout(due, rx.recv()).await {
+                        Ok(m) => m,
+                        Err(_) => {
+                            for evt in held.take(false) {
+                                op::emit(id, evt);
                             }
+                            continue;
                         }
-                    }
+                    },
                     None => rx.recv().await,
                 };
                 let Some(msg) = next else { break };
                 remember_login(&state, &msg).await;
                 let evt = mod_progress_to_event(&msg);
-                if evt.kind == ModProgressKind::LogProgress {
-                    if last_progress.is_some_and(|t| t.elapsed() < PROGRESS_EVERY) {
-                        held = Some(evt);
-                        continue;
+                if let Some(slot) = Held::slot(evt.kind) {
+                    if let Some(evt) = held.offer(slot, evt) {
+                        op::emit(id, evt);
                     }
-                    held = None;
-                    last_progress = Some(Instant::now());
-                    op::emit(id, evt);
                     continue;
                 }
-                // Anything else goes after the progress line it followed.
-                if let Some(h) = held.take() {
+                // Anything else goes after the progress it followed.
+                for h in held.take(true) {
                     op::emit(id, h);
                 }
                 let finished = evt.kind == ModProgressKind::Finished;
@@ -591,6 +712,31 @@ impl Hub {
         });
 
         Ok(())
+    }
+
+    /// Watch the mod folders (the launcher's, each Steam library's and its
+    /// workshop manifest, and the DayZ folder's `@` links): `on_change` is
+    /// called, from a watcher thread, once per burst of changes, after the
+    /// next read of the mods on disk is made to read them again. Ask again
+    /// after each read: the folders are worked out afresh (a library added,
+    /// the Steam folder changed), and the same ones keep the watch running.
+    pub async fn watch_mods(&self, on_change: Arc<dyn Fn() + Send + Sync>) -> Result<(), String> {
+        mocked!(self => Ok(()));
+        let state = self.state()?;
+        let ctl = state.read().await.ctl.clone_for_task();
+        let rt = tokio::runtime::Handle::current();
+        let told: watch::OnChange = Arc::new(move || {
+            let (state, on_change) = (state.clone(), Arc::clone(&on_change));
+            rt.spawn(async move {
+                crate::features::mods::mods_changed(&state).await;
+                on_change();
+            });
+        });
+        spawn_blocking_mapped(move || {
+            let targets = watch::targets(&ctl.mod_dirs(), ctl.dayz_path().ok().as_deref());
+            watch::watch(targets, told)
+        })
+        .await
     }
 
     /// Send input (password or Steam Guard code) to the running steamcmd PTY.
@@ -685,6 +831,7 @@ mod tests {
             source: dz_game::mods::ModSource::Launcher,
             path: Default::default(),
             other_copy: false,
+            subscribed: false,
         }
     }
 
@@ -744,6 +891,71 @@ mod tests {
         let ids: Vec<u64> = queue_of(&op, &installed).iter().map(|q| q.id).collect();
         assert_eq!(ids, [5, 4]);
         assert!(queue_of(&ModOperation::Login, &installed).is_empty());
+    }
+
+    #[test]
+    fn an_update_all_leaves_steams_subscribed_copies_to_steam() {
+        let steam = |id: u64, subscribed: bool| InstalledMod {
+            source: dz_game::mods::ModSource::Steam,
+            subscribed,
+            ..on_disk(id, "S")
+        };
+        let installed = vec![on_disk(1, "own"), steam(2, true), steam(3, false)];
+        let ids = |op: &ModOperation| -> Vec<u64> {
+            queue_of(op, &installed).iter().map(|q| q.id).collect()
+        };
+        assert_eq!(ids(&ModOperation::UpdateAll), [1, 3]);
+        let server = listed(&[(2, "S"), (1, "own"), (4, "new")]);
+        assert_eq!(ids(&ModOperation::UpdateServer { server }), [1, 4]);
+        // A repair is asked for by name: it downloads whatever it is given.
+        let repair = ModOperation::Repair {
+            mods: vec![(2, "S".into())],
+        };
+        assert_eq!(ids(&repair), [2]);
+    }
+
+    #[test]
+    fn bytes_go_as_numbers() {
+        let evt = mod_progress_to_event(&ModProgress::Bytes {
+            mod_id: 9,
+            done: 25,
+            total: 100,
+        });
+        assert_eq!(evt.kind, ModProgressKind::Bytes);
+        assert_eq!(evt.mod_id, 9);
+        let bytes = evt.bytes.unwrap();
+        assert_eq!((bytes.done, bytes.total), (25, 100));
+        assert!((bytes.percent() - 25.0).abs() < 1e-9);
+        assert!(ModBytes { done: 1, total: 0 }.percent().abs() < 1e-9);
+    }
+
+    #[test]
+    fn live_steps_of_each_kind_are_held_apart() {
+        let step = |kind| ModProgressEvent::of(kind);
+        let mut held = Held::default();
+        let line = Held::slot(ModProgressKind::LogProgress).unwrap();
+        let bytes = Held::slot(ModProgressKind::Bytes).unwrap();
+        assert_eq!(Held::slot(ModProgressKind::LogLine), None);
+        // The first of each kind goes at once, though they come together.
+        assert!(
+            held.offer(line, step(ModProgressKind::LogProgress))
+                .is_some()
+        );
+        assert!(held.offer(bytes, step(ModProgressKind::Bytes)).is_some());
+        assert_eq!(held.due(), None);
+        // The next ones wait, the newest of a kind replacing the one before.
+        assert!(held.offer(bytes, step(ModProgressKind::Bytes)).is_none());
+        let newer = ModProgressEvent {
+            mod_id: 2,
+            ..step(ModProgressKind::Bytes)
+        };
+        assert!(held.offer(bytes, newer).is_none());
+        assert!(held.due().is_some_and(|d| d <= PROGRESS_EVERY));
+        assert!(held.take(false).is_empty());
+        let out = held.take(true);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].mod_id, 2);
+        assert_eq!(held.due(), None);
     }
 
     #[test]

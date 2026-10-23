@@ -902,7 +902,7 @@ pub(super) fn state_look(mods: &Mods, id: u64, m: Option<&InstalledModDto>) -> S
             second,
         };
     if op == Some(OpState::Downloading) {
-        let share = model::latest_progress(mods.op.log.iter()).map(|p| (p.percent / 100.0) as f32);
+        let share = model::op_progress(&mods.op).map(|p| (p.percent / 100.0) as f32);
         return mk(
             format!("{}{}", t("mods", "stateDownloading"), pct(share)),
             Tone::Accent,

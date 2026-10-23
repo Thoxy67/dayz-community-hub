@@ -24,8 +24,10 @@ pub enum ModOperation {
     /// Install the mods a server needs that are missing, then link them all.
     InstallServer { server: Server },
     /// Update (re-download) every mod a server uses, then link them all.
+    /// Copies Steam keeps current are left to it ([`steam_keeps_current`]).
     UpdateServer { server: Server },
-    /// Update all installed mods
+    /// Update all installed mods, but those Steam keeps current
+    /// ([`steam_keeps_current`]).
     UpdateAll,
     /// Update only mods that are known to be stale (remote_updated > local_updated).
     /// `stale_ids` is the pre-filtered list of (mod_id, name) pairs from the GUI.
@@ -187,10 +189,12 @@ pub fn spawn_mod_operation(
             }
 
             ModOperation::UpdateServer { server } => {
+                let steam_keeps = left_to_steam(&installed_mods);
                 let mods_info: Vec<(u64, String)> = server
                     .mods
                     .iter()
                     .map(|m| (m.steam_workshop_id as u64, m.name.clone()))
+                    .filter(|(id, _)| !steam_keeps.contains(id))
                     .collect();
 
                 let results = downloader
@@ -206,6 +210,7 @@ pub fn spawn_mod_operation(
             ModOperation::UpdateAll => {
                 let mods_info: Vec<(u64, String)> = installed_mods
                     .iter()
+                    .filter(|m| !steam_keeps_current(m))
                     .map(|m| (m.id, m.name.clone()))
                     .collect();
 
@@ -338,6 +343,23 @@ pub fn spawn_mod_operation(
     });
 
     (rx, pty_input_tx, handle)
+}
+
+/// A copy Steam keeps updated itself: in a Steam library, and the account is
+/// subscribed to it. An update all or a server's update leaves it to Steam,
+/// rather than downloading a second, launcher copy of it (gigabytes for big
+/// mods). A repair, or an update of that one mod, still downloads it.
+pub fn steam_keeps_current(m: &InstalledMod) -> bool {
+    m.source == mods::ModSource::Steam && m.subscribed
+}
+
+/// The ids of `installed` that [`steam_keeps_current`].
+pub fn left_to_steam(installed: &[InstalledMod]) -> std::collections::HashSet<u64> {
+    installed
+        .iter()
+        .filter(|m| steam_keeps_current(m))
+        .map(|m| m.id)
+        .collect()
 }
 
 /// The mods downloaded are now the newest copies: their links move to them.

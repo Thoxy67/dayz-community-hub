@@ -9,7 +9,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::features::steamcmd::op::{self, ModOpVia};
-use crate::features::steamcmd::{ModOpType, ModProgressEvent, ModProgressKind, QueuedModDto};
+use crate::features::steamcmd::{
+    ModBytes, ModOpType, ModProgressEvent, ModProgressKind, QueuedModDto,
+};
 use crate::{Hub, HubEvent};
 
 use super::World;
@@ -34,6 +36,7 @@ impl Steps {
             failed: 0,
             hint: None,
             log_line: None,
+            bytes: None,
             queue: Vec::new(),
             seq: 0,
         }
@@ -52,12 +55,20 @@ impl Steps {
         self.at(dt, ev);
     }
 
-    fn progress(&mut self, dt: u64, line: String) {
+    /// The live line, then the same bytes as numbers, as the backend sends
+    /// them.
+    fn progress(&mut self, dt: u64, line: String, id: u64, done: u64, total: u64) {
         let ev = ModProgressEvent {
             log_line: Some(line),
             ..self.ev(ModProgressKind::LogProgress)
         };
         self.at(dt, ev);
+        let ev = ModProgressEvent {
+            mod_id: id,
+            bytes: Some(ModBytes { done, total }),
+            ..self.ev(ModProgressKind::Bytes)
+        };
+        self.at(0, ev);
     }
 
     fn about(&mut self, dt: u64, kind: ModProgressKind, current: usize, id: u64, name: String) {
@@ -151,6 +162,9 @@ fn steps(
                         "Steam: item {id} downloading, progress: {} ({done} / {total})",
                         percent(done, total)
                     ),
+                    id,
+                    done,
+                    total,
                 );
             }
             if i == 1 && list.len() > 2 {
@@ -247,6 +261,9 @@ fn steps(
                     "Update state (0x61) downloading, progress: {} ({done} / {total})",
                     percent(done, total)
                 ),
+                id,
+                done,
+                total,
             );
         }
         if i == 1 && list.len() > 2 {

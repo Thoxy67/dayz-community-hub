@@ -116,6 +116,27 @@ pub(crate) fn extract_mod_id_from_line(line: &str) -> Option<u64> {
         .and_then(|m| m.as_str().parse::<u64>().ok())
 }
 
+/// Where `needle` (ASCII) first is in `hay`, ignoring ASCII case.
+fn ascii_find_ci(hay: &str, needle: &str) -> Option<usize> {
+    let (h, n) = (hay.as_bytes(), needle.as_bytes());
+    if n.is_empty() {
+        return Some(0);
+    }
+    h.windows(n.len()).position(|w| w.eq_ignore_ascii_case(n))
+}
+
+/// The bytes done and in all of a SteamCMD progress line, `… progress: 42.17
+/// (123456789 / 292837465)`: SteamCMD prints them only as text, so they are
+/// read here, once, and sent on as numbers.
+pub(crate) fn progress_bytes(line: &str) -> Option<(u64, u64)> {
+    let at = ascii_find_ci(line, "progress:")?;
+    let rest = line.get(at + "progress:".len()..)?;
+    let rest = rest.get(rest.find('(')? + 1..)?;
+    let (done, rest) = rest.split_once('/')?;
+    let total = rest.split_once(')')?.0;
+    Some((done.trim().parse().ok()?, total.trim().parse().ok()?))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,6 +179,21 @@ mod tests {
             "Logging in user 'player' [U:1:123] to Steam Public...FAILED (Invalid Password)"
         ));
         assert!(!is_login_ok("Waiting for client config...OK"));
+    }
+
+    #[test]
+    fn reads_the_bytes_of_a_progress_line() {
+        assert_eq!(
+            progress_bytes("Update state (0x61) downloading, progress: 42.17 (123 / 292)"),
+            Some((123, 292))
+        );
+        assert_eq!(
+            progress_bytes("Update state (0x5) verifying install, PROGRESS: 1.00 (1 / 100)"),
+            Some((1, 100))
+        );
+        assert_eq!(progress_bytes("no progress here"), None);
+        assert_eq!(progress_bytes("progress: 5.00"), None);
+        assert_eq!(progress_bytes("progress: 5.00 (x / 2)"), None);
     }
 
     #[test]

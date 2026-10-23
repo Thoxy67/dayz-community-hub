@@ -631,8 +631,6 @@
   "mods": {
     "all": "Alle",
     "alsoSubscribed": "auch auf Steam abonniert",
-    "apiKeyMissingBody": "Füge einen Steam-Web-API-Schlüssel hinzu, um zu sehen, welche Mods hinter dem Workshop liegen.",
-    "apiKeyMissingTitle": "Update-Prüfung ist aus",
     "behindToday": "veraltet",
     "cancel": "Abbrechen",
     "checkUpdates": "Updates prüfen",

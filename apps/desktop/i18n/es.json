@@ -631,8 +631,6 @@
   "mods": {
     "all": "Todos",
     "alsoSubscribed": "también suscrito en Steam",
-    "apiKeyMissingBody": "Añade una clave de Steam Web API para ver qué mods están por detrás del Workshop.",
-    "apiKeyMissingTitle": "La comprobación de actualizaciones está desactivada",
     "behindToday": "desactualizado",
     "cancel": "Cancelar",
     "checkUpdates": "Comprobar actualizaciones",

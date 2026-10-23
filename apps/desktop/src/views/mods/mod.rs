@@ -32,8 +32,8 @@ use crate::commands::{self, Scope};
 use crate::i18n::{format, t, tf};
 use crate::icons::lucide;
 use crate::kit::{
-    Alert, Align, Brand, Button, IconButton, Input, MenuItem, Segment, Segmented, Side, Size, Tag,
-    Tone, Variant, menu,
+    Align, Brand, Button, IconButton, Input, MenuItem, Segment, Segmented, Side, Size, Tag, Tone,
+    Variant, menu,
 };
 use crate::parts::{Figure, PageHeader};
 use crate::theme::{TokensExt, font, fonts::Face, size};
@@ -45,6 +45,9 @@ use model::{Col, Filter, Listing, Query};
 /// Steam is asked again this often while it downloads, and while it did not answer.
 const STEAM_BUSY_SECS: f64 = 5.0;
 const STEAM_ERROR_SECS: f64 = 15.0;
+/// The folders are read again this often while the view shows, besides the hub's watch
+/// on them: a network or FUSE drive may never report a change.
+const DISK_FALLBACK_SECS: f64 = 60.0;
 
 /// What the view remembers (session only, as in the Svelte view).
 #[derive(Default)]
@@ -72,6 +75,8 @@ pub struct UiState {
     pub listing: Listing,
     /// When Steam was last asked (egui time).
     steam_at: f64,
+    /// When the view last had the folders read (egui time).
+    disk_at: f64,
     started: bool,
 }
 
@@ -176,13 +181,13 @@ impl View for ModsView {
         }
         st.started = true;
         st.steam_at = cx.egui.input(|i| i.time);
+        st.disk_at = st.steam_at;
         drop(st);
-        let key = cx.stores.profile.has_api_key();
         let m = &mut cx.stores.mods;
         if !m.loaded && !m.loading {
             m.load();
         }
-        m.check_updates(false, key);
+        m.check_updates(false);
         m.load_steam();
     }
 
@@ -194,6 +199,7 @@ impl View for ModsView {
         {
             let mut st = shared.lock();
             poll_steam(ui, cx, &mut st);
+            poll_disk(ui, cx, &mut st);
             // Ctrl+F / `/`: the search field (drawn when there are mods to search).
             if cx.nav.take_focus_search() {
                 ui.memory_mut(|m| m.request_focus(egui::Id::new("mods-search")));
@@ -265,6 +271,24 @@ fn poll_steam(ui: &Ui, cx: &mut Ctx, st: &mut UiState) {
     }
 }
 
+/// The slow read of the folders while the view shows ([`DISK_FALLBACK_SECS`]).
+fn poll_disk(ui: &Ui, cx: &mut Ctx, st: &mut UiState) {
+    let now = ui.input(|i| i.time);
+    let due = st.disk_at + DISK_FALLBACK_SECS;
+    if now >= due {
+        st.disk_at = now;
+        let m = &mut cx.stores.mods;
+        if !m.busy() {
+            m.load();
+        }
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_secs_f64(DISK_FALLBACK_SECS));
+    } else {
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_secs_f64(due - now));
+    }
+}
+
 /// The view's keys (registry scope `mods`), while nothing else has them.
 fn keys(ctx: &egui::Context, cx: &Ctx, st: &mut UiState, run: &mut Vec<(&'static str, Value)>) {
     let overlay = cx.stores.dialogs.open()
@@ -328,24 +352,6 @@ fn draw(ui: &mut Ui, cx: &Ctx, st: &mut UiState, run: &mut Vec<(&'static str, Va
     v.spacing_mut().item_spacing = Vec2::ZERO;
     header(&mut v, cx, st, run);
     let mods = &cx.stores.mods;
-    if !cx.stores.profile.has_api_key() && !mods.installed.is_empty() {
-        let r = Alert::new(
-            Tone::Info,
-            lucide::KEY_ROUND,
-            t("mods", "apiKeyMissingTitle"),
-        )
-        .text(t("mods", "apiKeyMissingBody"))
-        .banner()
-        .show(&mut v, |ui| {
-            if ui
-                .add(Button::new(t("mods", "openSettings")).size(Size::Xs))
-                .clicked()
-            {
-                run.push(("mods.open_settings_steam", Value::Null));
-            }
-        });
-        let _ = r;
-    }
     let rest = v.available_rect_before_wrap();
     let mut body = v.new_child(
         UiBuilder::new()
@@ -375,7 +381,6 @@ fn header(ui: &mut Ui, cx: &Ctx, st: &mut UiState, out: &mut Vec<(&'static str, 
     let run = std::cell::RefCell::new(Vec::<(&'static str, Value)>::new());
     let tk = ui.tokens();
     let mods = &cx.stores.mods;
-    let has_key = cx.stores.profile.has_api_key();
     let n = mods.installed.len();
     let stale = mods.stale_count();
     let size_s = format::bytes(mods.total_size() as f64);
@@ -514,19 +519,18 @@ fn header(ui: &mut Ui, cx: &Ctx, st: &mut UiState, out: &mut Vec<(&'static str, 
             }
             ui.add(Figure::new(t("mods", "statInstalled")).amount(n as f64));
             ui.add(Figure::new(t("mods", "statSize")).value(&size_s));
-            if has_key {
-                ui.add(
-                    Figure::new(t("mods", "filterUpdates"))
-                        .amount(stale as f64)
-                        .tone(if stale > 0 { tk.warn } else { tk.ok })
-                        .tip(&stale_tip),
-                );
-                ui.add(
-                    Figure::new(t("mods", "statChecked"))
-                        .value(&checked)
-                        .secondary(),
-                );
-            }
+            // Checked with or without a Steam API key (the hub asks Steam either way).
+            ui.add(
+                Figure::new(t("mods", "filterUpdates"))
+                    .amount(stale as f64)
+                    .tone(if stale > 0 { tk.warn } else { tk.ok })
+                    .tip(&stale_tip),
+            );
+            ui.add(
+                Figure::new(t("mods", "statChecked"))
+                    .value(&checked)
+                    .secondary(),
+            );
         },
         |ui| {
             if stale > 0
@@ -541,7 +545,7 @@ fn header(ui: &mut Ui, cx: &Ctx, st: &mut UiState, out: &mut Vec<(&'static str, 
             {
                 run.borrow_mut().push(("mods.update_stale", Value::Null));
             }
-            if has_key && n > 0 {
+            if n > 0 {
                 let b = Button::new(t("mods", "checkUpdates"))
                     .icon(lucide::CLOUD_DOWNLOAD)
                     .spinner(mods.checking)

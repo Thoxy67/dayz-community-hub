@@ -43,6 +43,11 @@ pub struct InstalledMod {
     pub path: PathBuf,
     /// Another, older copy exists in the other kind of folder.
     pub other_copy: bool,
+    /// A Steam copy the Steam account is subscribed to, as Steam's manifest
+    /// says: Steam keeps it updated itself, so an update all leaves it to
+    /// Steam. Always false for the launcher's copies.
+    #[serde(default)]
+    pub subscribed: bool,
 }
 
 /// Where installed mods are looked for.
@@ -114,10 +119,25 @@ impl ModDirs {
 
     /// A Steam copy of `id` exists.
     pub fn in_steam(&self, id: u64) -> bool {
+        in_steam_in(&self.resolved(), id)
+    }
+
+    /// The Steam libraries' workshop folders (`steamapps/workshop`), each
+    /// holding the manifest of its content folder; the launcher's own left out.
+    pub fn steam_workshops(&self) -> Vec<PathBuf> {
         self.all()
             .filter(|(_, s)| *s == ModSource::Steam)
-            .any(|(dir, _)| dir.join(id.to_string()).join("meta.cpp").is_file())
+            .filter_map(|(dir, _)| workshop_of(dir).map(Path::to_path_buf))
+            .collect()
     }
+}
+
+/// [`ModDirs::in_steam`] over folders already resolved.
+fn in_steam_in(dirs: &[(&Path, ModSource)], id: u64) -> bool {
+    let name = id.to_string();
+    dirs.iter()
+        .filter(|(_, s)| *s == ModSource::Steam)
+        .any(|(dir, _)| dir.join(&name).join("meta.cpp").is_file())
 }
 
 /// [`ModDirs::copy_of`] over folders already resolved.
@@ -185,12 +205,16 @@ fn mtime_secs(meta: &fs::Metadata) -> Option<i64> {
 static NAME_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"name\s*=\s*"([^"]+)""#).unwrap());
 static ID_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"publishedid\s*=\s*(\d+)"#).unwrap());
 
+/// When a mod's size was last walked: its directory's mtime, `meta.cpp`'s,
+/// and the version Steam's manifest gives it (0 when unlisted).
+type SizeStamp = (u64, u64, i64);
+
 /// Process-lifetime cache: mod directory → (stamp, total size in bytes). The
-/// stamp is the directory's mtime together with `meta.cpp`'s: the directory's
-/// own mtime only moves when an entry is added or removed at its top level,
-/// while steamcmd rewrites `meta.cpp` on every download, so an update that
-/// only changed files deeper down still invalidates the size.
-type SizeCache = Mutex<HashMap<PathBuf, ((u64, u64), u64)>>;
+/// directory's own mtime only moves when an entry is added or removed at its
+/// top level, while steamcmd rewrites `meta.cpp` on every download and the
+/// manifest records each version, so an update that only changed files
+/// deeper down still invalidates the size.
+type SizeCache = Mutex<HashMap<PathBuf, (SizeStamp, u64)>>;
 static SIZE_CACHE: LazyLock<SizeCache> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn size_cache() -> &'static SizeCache {
@@ -213,7 +237,7 @@ fn scan_dir(workshop_path: &Path, source: ModSource) -> Result<Vec<InstalledMod>
         Err(e) => return Err(e.into()),
     };
     let mut mods = Vec::new();
-    let versions = installed_versions(workshop_path);
+    let manifest = manifest_beside(workshop_path);
 
     // An entry that cannot be read is skipped, not a reason to list nothing.
     // No separate "is it a directory" check: a file has no `meta.cpp` under
@@ -253,12 +277,23 @@ fn scan_dir(workshop_path: &Path, source: ModSource) -> Result<Vec<InstalledMod>
             continue;
         };
 
-        let size = du_dir_cached(&path, local_updated.max(0) as u64).unwrap_or(0);
+        let listed = manifest.installed.get(&id);
+        // The size Steam recorded when it installed this version: no walk of
+        // every file. A copy the manifest does not list is walked (cached).
+        let size = match listed {
+            Some(i) if i.size > 0 => i.size,
+            _ => du_dir_cached(
+                &path,
+                local_updated.max(0) as u64,
+                listed.map_or(0, |i| i.updated),
+            )
+            .unwrap_or(0),
+        };
         // The version Steam installed, when it says: an update that left
         // `meta.cpp` as it was still moves it.
-        let local_updated = versions
-            .get(&id)
-            .map_or(local_updated, |&v| v.max(local_updated));
+        let local_updated = listed
+            .filter(|i| i.updated > 0)
+            .map_or(local_updated, |i| i.updated.max(local_updated));
 
         mods.push(InstalledMod {
             name,
@@ -269,46 +304,107 @@ fn scan_dir(workshop_path: &Path, source: ModSource) -> Result<Vec<InstalledMod>
             source,
             path,
             other_copy: false,
+            subscribed: source == ModSource::Steam && manifest.subscribed.contains(&id),
         });
     }
     Ok(mods)
 }
 
-/// Each item's installed version (its Workshop `time_updated`) from the
-/// manifest Steam and SteamCMD keep beside the content folder
-/// (`steamapps/workshop/appworkshop_221100.acf` for
-/// `steamapps/workshop/content/221100`). Empty when there is none.
-fn installed_versions(content: &Path) -> HashMap<u64, i64> {
-    let Some(workshop) = content.parent().and_then(Path::parent) else {
-        return HashMap::new();
-    };
-    let Ok(text) = fs::read_to_string(workshop.join("appworkshop_221100.acf")) else {
-        return HashMap::new();
-    };
-    versions_in(&text)
+/// The manifest's file name in a library's `steamapps/workshop` folder.
+pub const MANIFEST: &str = "appworkshop_221100.acf";
+
+/// An item Steam (or SteamCMD) installed, as its manifest records it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ManifestItem {
+    /// The installed version: the Workshop's `time_updated` of it.
+    pub updated: i64,
+    /// Its content's size in bytes.
+    pub size: u64,
 }
 
-/// [`installed_versions`] from the manifest's text.
-fn versions_in(text: &str) -> HashMap<u64, i64> {
-    let doc = dz_steamcmd::vdf::parse(text);
-    let Some(dz_steamcmd::vdf::Vdf::Obj(items)) =
-        doc.get(&["AppWorkshop", "WorkshopItemsInstalled"])
-    else {
-        return HashMap::new();
-    };
-    items
-        .iter()
-        .filter_map(|(id, item)| {
-            let id = id.parse().ok()?;
-            let at = item.str(&["timeupdated"])?.parse::<i64>().ok()?;
-            (at > 0).then_some((id, at))
-        })
-        .collect()
+/// What the workshop manifest beside a content folder says
+/// (`steamapps/workshop/appworkshop_221100.acf`). Steam and SteamCMD both
+/// write the installed items; only the Steam client writes subscriptions
+/// and the versions it knows are out.
+#[derive(Debug, Clone, Default)]
+pub struct WorkshopManifest {
+    /// The items installed, by id.
+    pub installed: HashMap<u64, ManifestItem>,
+    /// The items a Steam account is subscribed to (`subscribedby`).
+    pub subscribed: HashSet<u64>,
+    /// The items Steam knows a newer version of (`latest_timeupdated` past
+    /// the installed `timeupdated`). Steam updates this in its own time.
+    pub needs_update: HashSet<u64>,
+    /// Steam has items of the game to download (`NeedsDownload`).
+    pub needs_download: bool,
+}
+
+impl WorkshopManifest {
+    /// Read from its text; what is missing or unreadable is left empty.
+    pub fn parse(text: &str) -> Self {
+        use dz_steamcmd::vdf::Vdf;
+        let doc = dz_steamcmd::vdf::parse(text);
+        let num = |v: &Vdf, key: &str| v.str(&[key]).and_then(|s| s.trim().parse::<i64>().ok());
+        let mut out = Self {
+            needs_download: doc
+                .str(&["AppWorkshop", "NeedsDownload"])
+                .is_some_and(|v| v.trim() != "0" && !v.trim().is_empty()),
+            ..Self::default()
+        };
+        if let Some(Vdf::Obj(items)) = doc.get(&["AppWorkshop", "WorkshopItemsInstalled"]) {
+            for (id, item) in items {
+                let Ok(id) = id.parse::<u64>() else { continue };
+                let updated = num(item, "timeupdated").unwrap_or(0).max(0);
+                let size = num(item, "size").and_then(|s| u64::try_from(s).ok());
+                out.installed.insert(
+                    id,
+                    ManifestItem {
+                        updated,
+                        size: size.unwrap_or(0),
+                    },
+                );
+            }
+        }
+        if let Some(Vdf::Obj(items)) = doc.get(&["AppWorkshop", "WorkshopItemDetails"]) {
+            for (id, item) in items {
+                let Ok(id) = id.parse::<u64>() else { continue };
+                if num(item, "subscribedby").is_some_and(|by| by != 0) {
+                    out.subscribed.insert(id);
+                }
+                let at = num(item, "timeupdated").unwrap_or(0);
+                if num(item, "latest_timeupdated").is_some_and(|latest| latest > at) {
+                    out.needs_update.insert(id);
+                }
+            }
+        }
+        out
+    }
+
+    /// The manifest in `workshop` (a library's `steamapps/workshop`), if
+    /// there is one.
+    pub fn read(workshop: &Path) -> Option<Self> {
+        fs::read_to_string(workshop.join(MANIFEST))
+            .ok()
+            .map(|t| Self::parse(&t))
+    }
+}
+
+/// `steamapps/workshop` for its `steamapps/workshop/content/221100`.
+pub fn workshop_of(content: &Path) -> Option<&Path> {
+    content.parent().and_then(Path::parent)
+}
+
+/// The manifest beside `content`; empty when there is none.
+fn manifest_beside(content: &Path) -> WorkshopManifest {
+    workshop_of(content)
+        .and_then(WorkshopManifest::read)
+        .unwrap_or_default()
 }
 
 /// Cached directory size: skips the recursive walk when neither the
-/// directory's mtime nor `meta.cpp`'s (`meta_mtime`) has changed.
-fn du_dir_cached(path: &Path, meta_mtime: u64) -> Result<u64> {
+/// directory's mtime, `meta.cpp`'s (`meta_mtime`) nor the version the
+/// manifest records (`version`, 0 when unlisted) has changed.
+fn du_dir_cached(path: &Path, meta_mtime: u64, version: i64) -> Result<u64> {
     // Read the directory's own mtime — changes when files are added/removed.
     let dir_mtime = fs::metadata(path)
         .and_then(|m| m.modified())
@@ -318,7 +414,7 @@ fn du_dir_cached(path: &Path, meta_mtime: u64) -> Result<u64> {
         .unwrap_or(0);
 
     // Check the cache first.
-    let stamp = (dir_mtime, meta_mtime);
+    let stamp = (dir_mtime, meta_mtime, version);
     if let Ok(cache) = size_cache().lock()
         && let Some(&(cached_stamp, cached_size)) = cache.get(path)
         && cached_stamp == stamp
@@ -578,6 +674,25 @@ pub fn remove_launcher_mods(launcher: &Path) -> Result<(usize, u64)> {
         return Ok((0, 0));
     }
 
+    // The sizes already known (the manifest's, a scan's), so the bytes freed
+    // cost no walk of every file.
+    let manifest = manifest_beside(launcher);
+    let known = |path: &Path| -> Option<u64> {
+        let by_manifest = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(|n| n.parse::<u64>().ok())
+            .and_then(|id| manifest.installed.get(&id))
+            .map(|i| i.size)
+            .filter(|&s| s > 0);
+        by_manifest.or_else(|| {
+            size_cache()
+                .lock()
+                .ok()
+                .and_then(|c| c.get(path).map(|&(_, size)| size))
+        })
+    };
+
     // Best effort: a mod that cannot be removed (in use, permissions) does
     // not stop the others from being.
     for entry in fs::read_dir(launcher)?.flatten() {
@@ -585,7 +700,7 @@ pub fn remove_launcher_mods(launcher: &Path) -> Result<(usize, u64)> {
         if !path.is_dir() || path.is_symlink() {
             continue;
         }
-        let size = du_dir(&path).unwrap_or(0);
+        let size = known(&path).unwrap_or_else(|| du_dir(&path).unwrap_or(0));
         if fs::remove_dir_all(&path).is_ok() {
             count += 1;
             total_size += size;
@@ -608,8 +723,38 @@ pub enum DeleteOutcome {
 /// Delete a mod: the launcher's copy, and its `@<id>` link. A Steam copy is
 /// left where it is (see [`DeleteOutcome::KeptInSteam`]).
 pub fn delete_mod(dirs: &ModDirs, dayz_path: Option<&Path>, mod_id: u64) -> Result<DeleteOutcome> {
+    delete_in(dirs, &dirs.resolved(), dayz_path, mod_id)
+}
+
+/// [`delete_mod`] for each of `mod_ids`, with the folders resolved once.
+/// Stops at the first failure: the results so far, then that one.
+pub fn delete_mods(
+    dirs: &ModDirs,
+    dayz_path: Option<&Path>,
+    mod_ids: &[u64],
+) -> Vec<(u64, Result<DeleteOutcome>)> {
+    let resolved = dirs.resolved();
+    let mut out = Vec::with_capacity(mod_ids.len());
+    for &id in mod_ids {
+        let r = delete_in(dirs, &resolved, dayz_path, id);
+        let failed = r.is_err();
+        out.push((id, r));
+        if failed {
+            break;
+        }
+    }
+    out
+}
+
+/// [`delete_mod`] over folders already resolved.
+fn delete_in(
+    dirs: &ModDirs,
+    resolved: &[(&Path, ModSource)],
+    dayz_path: Option<&Path>,
+    mod_id: u64,
+) -> Result<DeleteOutcome> {
     let own = dirs.launcher_copy(mod_id);
-    let in_steam = dirs.in_steam(mod_id);
+    let in_steam = in_steam_in(resolved, mod_id);
     if !own.exists() && !in_steam {
         return Err(Error::Mod(format!("Mod {mod_id} does not exist")));
     }
@@ -630,11 +775,26 @@ pub fn delete_mod(dirs: &ModDirs, dayz_path: Option<&Path>, mod_id: u64) -> Resu
 /// the account is not subscribed to: Steam does not manage those copies and
 /// never removes them.
 pub fn delete_steam_copies(dirs: &ModDirs, mod_id: u64) -> Result<()> {
-    for (dir, source) in dirs.all() {
+    steam_copies_gone(&dirs.resolved(), mod_id)
+}
+
+/// [`delete_steam_copies`] for each of `mod_ids`, with the folders resolved
+/// once. Each id's result, in order.
+pub fn delete_steam_copies_of(dirs: &ModDirs, mod_ids: &[u64]) -> Vec<(u64, Result<()>)> {
+    let resolved = dirs.resolved();
+    mod_ids
+        .iter()
+        .map(|&id| (id, steam_copies_gone(&resolved, id)))
+        .collect()
+}
+
+fn steam_copies_gone(dirs: &[(&Path, ModSource)], mod_id: u64) -> Result<()> {
+    let name = mod_id.to_string();
+    for &(dir, source) in dirs {
         if source != ModSource::Steam {
             continue;
         }
-        let copy = dir.join(mod_id.to_string());
+        let copy = dir.join(&name);
         if copy.join("meta.cpp").is_file() {
             fs::remove_dir_all(&copy)?;
         }
@@ -745,7 +905,106 @@ mod tests {
             source,
             path: PathBuf::from(format!("/{source:?}/{id}")),
             other_copy: false,
+            subscribed: false,
         }
+    }
+
+    const STEAM_MANIFEST: &str = r#"
+"AppWorkshop"
+{
+	"appid"		"221100"
+	"NeedsUpdate"		"1"
+	"NeedsDownload"		"1"
+	"WorkshopItemsInstalled"
+	{
+		"7"
+		{
+			"size"		"123456789"
+			"timeupdated"		"5000"
+			"manifest"		"1"
+		}
+		"8"
+		{
+			"timeupdated"		"4000"
+		}
+	}
+	"WorkshopItemDetails"
+	{
+		"7"
+		{
+			"timeupdated"		"5000"
+			"subscribedby"		"92612506"
+			"latest_timeupdated"		"6000"
+		}
+		"8"
+		{
+			"timeupdated"		"4000"
+			"latest_timeupdated"		"4000"
+		}
+		"9"
+		{
+			"timeupdated"		"0"
+			"subscribedby"		"0"
+		}
+	}
+}
+"#;
+
+    #[test]
+    fn the_manifest_says_what_steam_installed_and_follows() {
+        let m = WorkshopManifest::parse(STEAM_MANIFEST);
+        assert_eq!(
+            m.installed.get(&7),
+            Some(&ManifestItem {
+                updated: 5000,
+                size: 123_456_789
+            })
+        );
+        assert_eq!(
+            m.installed.get(&8).map(|i| i.size),
+            Some(0),
+            "no size given"
+        );
+        assert_eq!(m.subscribed, HashSet::from([7]), "subscribedby 0 is nobody");
+        assert_eq!(m.needs_update, HashSet::from([7]));
+        assert!(m.needs_download);
+        let none = WorkshopManifest::parse("\"AppWorkshop\" { \"NeedsDownload\" \"0\" }");
+        assert!(none.installed.is_empty() && !none.needs_download);
+    }
+
+    #[test]
+    fn a_listed_copy_takes_its_size_and_subscription_from_the_manifest() {
+        let root = tmp("acf-size");
+        let ws = root.join("content").join("221100");
+        fake_mod(&ws, 7, "listed", 10);
+        fake_mod(&ws, 8, "unsized", 10);
+        fs::write(root.join(MANIFEST), STEAM_MANIFEST).unwrap();
+        let steam = scan_workshop_dir(&ws, ModSource::Steam).unwrap();
+        let get = |mods: &[InstalledMod], id| mods.iter().find(|m| m.id == id).cloned().unwrap();
+        assert_eq!(get(&steam, 7).size, 123_456_789, "no walk");
+        assert!(
+            get(&steam, 8).size >= 10,
+            "walked: the manifest has no size"
+        );
+        assert!(get(&steam, 7).subscribed);
+        assert!(!get(&steam, 8).subscribed);
+        // The launcher's copies are its own to update, whatever a manifest says.
+        let own = scan_workshop_dir(&ws, ModSource::Launcher).unwrap();
+        assert!(!get(&own, 7).subscribed);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_new_version_in_the_manifest_walks_the_size_again() {
+        let d = tmp("stamp");
+        fs::write(d.join("a"), [0u8; 3]).unwrap();
+        assert_eq!(du_dir_cached(&d, 1, 100).unwrap(), 3);
+        // Same directory mtime and meta.cpp: only the version moved.
+        let f = fs::File::options().append(true).open(d.join("a")).unwrap();
+        std::io::Write::write_all(&mut &f, &[0u8; 2]).unwrap();
+        assert_eq!(du_dir_cached(&d, 1, 100).unwrap(), 3, "cached");
+        assert_eq!(du_dir_cached(&d, 1, 200).unwrap(), 5);
+        let _ = fs::remove_dir_all(&d);
     }
 
     #[test]
@@ -763,11 +1022,18 @@ mod tests {
         .unwrap();
         let mods = scan_workshop_dir(&ws, ModSource::Steam).unwrap();
         let at = |id| mods.iter().find(|m| m.id == id).unwrap().local_updated;
-        assert_eq!(at(7), 5_000, "an update that left meta.cpp alone still counts");
+        assert_eq!(
+            at(7),
+            5_000,
+            "an update that left meta.cpp alone still counts"
+        );
         assert_eq!(at(8), 1_000, "only installed items, not the details");
         touch(&ws, 7, 6_000);
         let mods = scan_workshop_dir(&ws, ModSource::Steam).unwrap();
-        assert_eq!(mods.iter().find(|m| m.id == 7).unwrap().local_updated, 6_000);
+        assert_eq!(
+            mods.iter().find(|m| m.id == 7).unwrap().local_updated,
+            6_000
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -928,7 +1194,8 @@ mod tests {
         fake_mod(&dirs.steam[0], 4, "four", 1);
         fake_mod(&dirs.steam[1], 4, "four", 1);
         fake_mod(&dirs.steam[0], 5, "five", 1);
-        delete_steam_copies(&dirs, 4).unwrap();
+        let gone = delete_steam_copies_of(&dirs, &[4]);
+        assert!(gone.iter().all(|(id, r)| *id == 4 && r.is_ok()));
         assert!(!dirs.steam[0].join("4").exists());
         assert!(!dirs.steam[1].join("4").exists());
         assert!(dirs.launcher.join("4").join("meta.cpp").is_file());
@@ -974,6 +1241,15 @@ mod tests {
         assert!(dirs.steam[0].join("3").join("meta.cpp").is_file());
 
         assert!(delete_mod(&dirs, Some(&dayz), 4).is_err());
+
+        // In bulk: each in order, up to the first failure.
+        fake_mod(&dirs.launcher, 5, "five", 1);
+        fake_mod(&dirs.launcher, 6, "six", 1);
+        let bulk = delete_mods(&dirs, Some(&dayz), &[5, 4, 6]);
+        let got: Vec<_> = bulk.iter().map(|(id, r)| (*id, r.is_ok())).collect();
+        assert_eq!(got, [(5, true), (4, false)]);
+        assert!(!dirs.launcher.join("5").exists() && dirs.launcher.join("6").exists());
+        let _ = fs::remove_dir_all(dirs.launcher.join("6"));
 
         fake_mod(&dirs.launcher, 8, "eight", 1);
         let stats = cleanup_mods(&dirs, &dayz).unwrap();
