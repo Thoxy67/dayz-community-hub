@@ -15,6 +15,8 @@
 
 mod derive;
 mod form;
+pub mod integrations;
+mod life;
 mod look;
 mod sections;
 
@@ -43,7 +45,7 @@ use crate::theme::{TokensExt, font, fonts::Face, size};
 pub use derive::derive;
 
 /// The sections, in the page's order: id, words (dictionary, key).
-const SECTIONS: [(&str, &str, &str); 11] = [
+const SECTIONS: [(&str, &str, &str); 13] = [
     ("account", "settings", "sectionAccount"),
     ("steam", "settings", "sectionSteam"),
     ("apis", "settings", "sectionApis"),
@@ -52,8 +54,10 @@ const SECTIONS: [(&str, &str, &str); 11] = [
     ("excluded", "settings", "sectionExcluded"),
     ("appearance", "settings", "sectionAppearance"),
     ("language", "settings", "sectionLanguage"),
+    ("window", "settings", "sectionWindow"),
     ("controller", "pad", "section"),
     ("battleye", "settings", "sectionBattleye"),
+    ("discord", "settings", "sectionDiscord"),
     ("data", "settings", "sectionData"),
 ];
 
@@ -933,8 +937,10 @@ impl SettingsView {
             "excluded" => self.excluded(ui, cx),
             "appearance" => self.appearance(ui, cx),
             "language" => self.language(ui, cx),
+            "window" => self.window_life(ui, cx),
             "controller" => self.controller(ui, cx),
             "battleye" => self.battleye(ui, cx),
+            "discord" => self.discord(ui, cx),
             _ => self.data(ui, cx),
         }
     }
@@ -964,11 +970,7 @@ impl View for SettingsView {
         // Asked to open at a section (the title bar's account chip, the theme menu…):
         // there at once, no glide across the whole page.
         if let Some(focus) = cx.nav.take_focus() {
-            let id = if focus == "window" {
-                "appearance"
-            } else {
-                focus.as_str()
-            };
+            let id = focus.as_str();
             if SECTIONS.iter().any(|s| s.0 == id) {
                 self.goto = Some((id.to_string(), false));
             }

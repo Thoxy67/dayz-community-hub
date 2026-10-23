@@ -253,7 +253,22 @@ fn draw_panel(
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     v.spacing_mut().item_spacing = Vec2::ZERO;
-    hero(&mut v, m, closable, run);
+    // The in-game clock now, estimated as the rows, the filter and the sort read it (the
+    // model is made again only when the server changes, so it is read here); else the
+    // last A2S answer's.
+    let time = cx
+        .stores
+        .servers
+        .row_of(&m.ip, m.query_port)
+        .map(|r| r.time_now())
+        .or_else(|| {
+            m.a2s
+                .as_ref()
+                .and_then(|a| a.dayz.as_ref())
+                .and_then(|d| d.game_time.clone())
+        })
+        .unwrap_or_default();
+    hero(&mut v, m, &time, closable, run);
 
     // The tabs: the icons go under ~480px (except the warnings), so the labels stay whole.
     let wide = full.width() >= 480.0;
@@ -409,7 +424,7 @@ pub(super) fn words(ui: &mut Ui, s: &str, f: egui::FontId, c: Color32) -> egui::
 /// The map is what a player recognises first, so it is the anchor, set large over
 /// contour lines in the map's colour; then the server's name, what it asks of you, where
 /// it is, and the live strip (line, head-count, clock, mods) that decides whether to join.
-fn hero(ui: &mut Ui, m: &Model, closable: bool, run: &mut Run) {
+fn hero(ui: &mut Ui, m: &Model, time: &str, closable: bool, run: &mut Run) {
     let tk = ui.tokens();
     let full = ui.max_rect();
     let start = ui.cursor().top();
@@ -447,13 +462,13 @@ fn hero(ui: &mut Ui, m: &Model, closable: bool, run: &mut Run) {
         .show(ui, |ui| {
             ui.set_width(inner_w);
             ui.spacing_mut().item_spacing = Vec2::new(8.0, 8.0);
-            // Map, name, the two buttons.
+            // Map, name, the buttons (desktop shortcut, refresh, close).
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
                 let btn_w = if closable {
-                    2.0 * size::CONTROL_SM + 2.0
+                    3.0 * size::CONTROL_SM + 4.0
                 } else {
-                    size::CONTROL_SM
+                    2.0 * size::CONTROL_SM + 2.0
                 };
                 let w = (ui.available_width() - btn_w - 8.0).max(40.0);
                 ui.vertical(|ui| {
@@ -543,11 +558,21 @@ fn hero(ui: &mut Ui, m: &Model, closable: bool, run: &mut Run) {
                     {
                         run.push(("servers.detail.refresh_live", target_args(m)));
                     }
+                    if ui
+                        .add(
+                            IconButton::new(lucide::MONITOR, t("servers", "desktopShortcut"))
+                                .size(Size::IconXs)
+                                .variant(Variant::Ghost),
+                        )
+                        .clicked()
+                    {
+                        run.push(("list.shortcut", target_args(m)));
+                    }
                 });
             });
 
             meta_line(ui, m);
-            live_strip(ui, m, run);
+            live_strip(ui, m, time, run);
             population_warning(ui, m, true);
             if m.listed.is_none() {
                 line_top(ui, 16.0, |ui| {
@@ -643,7 +668,7 @@ fn meta_line(ui: &mut Ui, m: &Model) {
 
 /// The live strip: what decides whether to join right now. Four columns from 26rem,
 /// two lines of two below.
-fn live_strip(ui: &mut Ui, m: &Model, run: &mut Run) {
+fn live_strip(ui: &mut Ui, m: &Model, time: &str, run: &mut Run) {
     let tk = ui.tokens();
     let w = ui.available_width();
     let four = w >= 416.0;
@@ -745,14 +770,7 @@ fn live_strip(ui: &mut Ui, m: &Model, run: &mut Run) {
         }
     });
     cell(ui, c2, t("detail", "time"), 2, &mut |ui| {
-        let time = m
-            .a2s
-            .as_ref()
-            .and_then(|a| a.dayz.as_ref())
-            .and_then(|d| d.game_time.clone())
-            .or_else(|| m.listed.as_ref().map(|l| l.time.clone()))
-            .unwrap_or_default();
-        ui.add(TimeOfDay::new(&time));
+        ui.add(TimeOfDay::new(time));
     });
     cell(ui, c3, t("detail", "tabMods"), 3, &mut |ui| {
         if let Some(l) = &m.listed {

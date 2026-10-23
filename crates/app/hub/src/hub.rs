@@ -127,6 +127,7 @@ impl Hub {
         if !self.is_mock() {
             crate::features::gamepad::spawn(self.clone());
             crate::features::stats::tracker::spawn(self.clone());
+            crate::features::discord::spawn(self.clone());
         }
     }
 

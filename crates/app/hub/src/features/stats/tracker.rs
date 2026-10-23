@@ -198,6 +198,16 @@ pub(crate) fn spawn(app: Hub) {
             {
                 *p = None;
             }
+            // What Discord shows follows the open session (it wakes only on a change).
+            let open = super::with_log(|log| {
+                log.open_mut().map(|s| crate::features::discord::Playing {
+                    kind: s.kind,
+                    name: s.name.clone(),
+                    start: s.start,
+                })
+            })
+            .flatten();
+            crate::features::discord::set_playing(open.filter(|_| running));
             if let Some((_, Some(snapshot))) = outcome {
                 last_write = now;
                 super::save(snapshot).await;

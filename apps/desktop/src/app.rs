@@ -119,6 +119,7 @@ impl Ctx<'_> {
     /// Switch the language and keep the choice.
     pub fn set_locale(&mut self, l: Locale) {
         i18n::set_locale(l);
+        crate::views::settings::integrations::push_words(self.hub);
         let code = Some(l.code().to_string());
         if self.prefs.get().locale != code {
             self.prefs.edit().locale = code;
@@ -258,6 +259,11 @@ pub struct HubApp {
     minimized: bool,
     /// The last geometry eframe saved while the window was not minimised.
     saved_window: Option<String>,
+    /// The tray, closing to it, the game's start and stop, notifications.
+    life: crate::platform::life::Life,
+    /// `logic` took the hub's events in for this pass (the window out of sight): the
+    /// pass's `ui`, when it runs, does not take them in again.
+    pumped: bool,
 }
 
 fn cx<'a>(
@@ -288,6 +294,7 @@ impl HubApp {
         let (bus, effects) = Bus::new(ctx.clone());
         let stores = Stores::new(&hub, bus);
         i18n::set_locale(i18n::initial_locale(prefs.get().locale.as_deref()));
+        crate::views::settings::integrations::push_words(&hub);
         Self {
             hub,
             stores,
@@ -306,12 +313,19 @@ impl HubApp {
             control: None,
             minimized: false,
             saved_window: None,
+            life: crate::platform::life::Life::new(),
+            pumped: false,
         }
     }
 
     /// Take requests from the control channel ([`crate::control`]).
     pub fn set_control(&mut self, control: crate::control::Control) {
         self.control = Some(control);
+    }
+
+    /// The tray icon `main` put up.
+    pub fn set_tray(&mut self, tray: crate::platform::tray::Tray) {
+        self.life.set_tray(tray);
     }
 
     /// The window geometry eframe restored (its storage's `window`), kept in case the
@@ -384,12 +398,19 @@ impl HubApp {
             self.start(&ctx);
         }
         self.input(&ctx);
-        self.pump(&ctx);
+        // Already done by this pass's `logic` while the window is out of sight (a
+        // window hidden on X11 or Windows still gets whole passes).
+        let pumped = std::mem::take(&mut self.pumped);
+        if !pumped {
+            self.pump(&ctx);
+        }
         if let Some(mut control) = self.control.take() {
             control.frame(self, &ctx);
             self.control = Some(control);
         }
-        self.stores.poll(self.nav.view);
+        if !pumped {
+            self.stores.poll(self.nav.view);
+        }
         self.dress(&ctx);
         self.track_window(&ctx);
         self.prefs.poll(&ctx);
@@ -462,6 +483,7 @@ impl HubApp {
         }
         for e in &events {
             self.stores.on_event(e);
+            self.life.on_event(e);
         }
         if !events.is_empty() && !self.views.is_empty() {
             let mut c = cx(
@@ -728,6 +750,28 @@ impl eframe::App for HubApp {
         HubApp::ui(self, ui);
     }
 
+    /// Before each frame, and alone while the window is hidden or minimised (no egui
+    /// pass then): the hub's events are taken in here on those passes, so the window's
+    /// life ([`crate::platform::life`]) follows the game and the tray out of sight.
+    fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        self.life.platform(ctx, frame);
+        // `logic` always comes before the pass's `ui`: `ui` knows from this flag that
+        // the events were taken in.
+        self.pumped = self.started && self.life.out_of_sight(ctx);
+        if self.pumped {
+            self.pump(ctx);
+            self.stores.poll(self.nav.view);
+        }
+        let mut c = cx(
+            ctx,
+            &self.hub,
+            &mut self.stores,
+            &mut self.prefs,
+            &mut self.nav,
+        );
+        self.life.frame(&mut c);
+    }
+
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         shell::release_after_hand_over(ctx, raw_input);
         self.control_input(raw_input);
@@ -735,6 +779,8 @@ impl eframe::App for HubApp {
 
     fn on_exit(&mut self) {
         self.flush();
+        // The Discord activity is cleared (a short wait, only when one is shown).
+        self.hub.discord_quit(std::time::Duration::from_millis(300));
     }
 
     /// The window's geometry is the only thing eframe keeps (`platform::window`); egui's

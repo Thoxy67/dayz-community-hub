@@ -133,10 +133,9 @@ fn main() -> eframe::Result {
     if let Some(p) = &instance {
         let (hub, window) = (hub.clone(), window.clone());
         let listening = p.listen(move |args| {
+            // Also out of the tray: a hidden window is shown again.
             if let Some(ctx) = window.get() {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-                ctx.request_repaint();
+                platform::life::show(ctx);
             }
             if platform::asks_something(&args) {
                 hub.hand_off(args);
@@ -197,6 +196,12 @@ fn main() -> eframe::Result {
         app.set_saved_window(cc.storage.and_then(|s| s.get_string("window")));
         if let Some(c) = control {
             app.set_control(c);
+        }
+        // The tray icon (Linux: its own thread; Windows: this thread's message loop),
+        // with the mock too, to try it.
+        let view = platform::life::tray_view(true, None);
+        if let Some(tray) = platform::tray::Tray::start(&cc.egui_ctx, view) {
+            app.set_tray(tray);
         }
         Ok(Box::new(app))
     });

@@ -57,6 +57,24 @@ image = { workspace = true, features = ["jpeg", "webp"] }
 base64.workspace = true
 reqwest.workspace = true
 
+# platform::tray and platform::notify on Linux: the StatusNotifierItem tray and desktop
+# notifications over D-Bus, in pure Rust (zbus on async-io, as accesskit already runs
+# it: no libdbus, no GTK, no libappindicator).
+[target.'cfg(target_os = "linux")'.dependencies]
+ksni = { version = "0.3.7", default-features = false, features = ["async-io", "blocking"] }
+notify-rust = { version = "4.18.2", default-features = false, features = ["z"] }
+
+# platform::tray and platform::notify on Windows: Shell_NotifyIcon (windows-sys, no
+# GTK) and WinRT toasts.
+[target.'cfg(windows)'.dependencies]
+tray-icon = { version = "0.26.1", default-features = false }
+# platform::tray: whether Explorer's notification area is there (FindWindowW), the
+# same windows-sys tray-icon already links.
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+notify-rust = { version = "4.18.2", default-features = false }
+# platform::shortcut: a server's desktop shortcut as a .lnk, written in Rust (no COM).
+mslnk = "0.1.8"
+
 [build-dependencies]
 # Windows only (build.rs returns early elsewhere): icon, VERSIONINFO and manifest.
 winresource = { version = "0.1.34", default-features = false }

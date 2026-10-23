@@ -15,6 +15,9 @@ pub struct ConfirmRequest {
     pub confirm_label: Option<String>,
     pub cancel_label: Option<String>,
     pub danger: bool,
+    /// Lists under the message, each under its heading ("Removed", "Kept"), in a
+    /// bounded scroller: the names a question is about.
+    pub details: Vec<(String, Vec<String>)>,
 }
 
 impl ConfirmRequest {
@@ -33,6 +36,14 @@ impl ConfirmRequest {
 
     pub fn confirm_label(mut self, label: impl Into<String>) -> Self {
         self.confirm_label = Some(label.into());
+        self
+    }
+
+    /// A list under the message, under its heading; an empty one is left out.
+    pub fn detail(mut self, heading: impl Into<String>, lines: Vec<String>) -> Self {
+        if !lines.is_empty() {
+            self.details.push((heading.into(), lines));
+        }
         self
     }
 }

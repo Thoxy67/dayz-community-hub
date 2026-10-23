@@ -79,6 +79,9 @@ pub(super) fn confirm(ctx: &Context, cx: &mut Ctx, st: &mut DialogState) {
                 );
                 let (r, _) = ui.allocate_exact_size(vec2(w, g.size().y), Sense::hover());
                 ui.painter().galley(r.min, g, tk.fg_muted);
+                if !req.details.is_empty() {
+                    confirm_details(ui, &req.details);
+                }
             },
             |ui, _| {
                 if ui
@@ -104,6 +107,63 @@ pub(super) fn confirm(ctx: &Context, cx: &mut Ctx, st: &mut DialogState) {
             None => {}
         }
     }
+}
+
+/// The lists under a question's message: each heading, then its lines, in a well that
+/// scrolls past a few lines.
+fn confirm_details(ui: &mut Ui, details: &[(String, Vec<String>)]) {
+    let tk = ui.tokens();
+    ui.add_space(8.0);
+    let w = ui.available_width();
+    egui::Frame::new()
+        .fill(tk.bg)
+        .stroke(egui::Stroke::new(1.0, tk.border))
+        .corner_radius(egui::CornerRadius::same(size::RADIUS_SM))
+        .inner_margin(egui::Margin::symmetric(10, 8))
+        .show(ui, |ui| {
+            ui.set_width(w - 20.0);
+            egui::ScrollArea::vertical()
+                .id_salt("dzch.confirm.details")
+                .max_height(220.0)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing = vec2(0.0, 2.0);
+                    for (i, (heading, lines)) in details.iter().enumerate() {
+                        if i > 0 {
+                            ui.add_space(8.0);
+                        }
+                        let inner = ui.available_width();
+                        let g = paint::galley_wrap(
+                            ui,
+                            heading,
+                            font(Face::SansMedium, size::TEXT_2XS),
+                            tk.fg,
+                            inner,
+                        );
+                        let (r, _) =
+                            ui.allocate_exact_size(vec2(inner, g.size().y), Sense::hover());
+                        ui.painter().galley(r.min, g, tk.fg);
+                        for line in lines {
+                            let g = paint::galley_wrap(
+                                ui,
+                                line,
+                                font(Face::Sans, size::TEXT_2XS),
+                                tk.fg_muted,
+                                inner - 12.0,
+                            );
+                            let (r, _) =
+                                ui.allocate_exact_size(vec2(inner, g.size().y), Sense::hover());
+                            ui.painter().circle_filled(
+                                pos2(r.left() + 3.0, r.top() + g.size().y.min(16.0) / 2.0),
+                                1.5,
+                                tk.fg_faint,
+                            );
+                            ui.painter()
+                                .galley(pos2(r.left() + 12.0, r.top()), g, tk.fg_muted);
+                        }
+                    }
+                });
+        });
 }
 
 fn pending_is(cx: &Ctx) -> bool {

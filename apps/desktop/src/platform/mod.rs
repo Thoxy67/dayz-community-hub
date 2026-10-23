@@ -5,9 +5,13 @@
 //!   `dzch://` link, a `.dzch` file, `--connect`, `--reconnect`) to the first over
 //!   127.0.0.1, keyed by a per-user file with a random token, and exits; the first
 //!   raises its window and handles them as `HubEvent::CliArgs`.
+//! - [`life`]: closing to the tray, what the launcher does when DayZ starts and
+//!   stops, and when to notify; [`tray`] the icon and its menu (Linux: ksni, Windows:
+//!   tray-icon), [`notify`] the system notifications.
 //! - [`register`]: `dzch://` links and `.dzch` files open this executable (Linux: a
 //!   handler `.desktop` file, a shared-mime-info package and `xdg-mime`; Windows: HKCU
 //!   classes), written at start only when they differ.
+//! - [`shortcut`]: a desktop shortcut that joins one server (`--connect`).
 //! - [`window`]: the window's icon, and its size, position and maximised state from one
 //!   start to the next.
 //!
@@ -15,7 +19,11 @@
 //! which `HubApp` hands to `Ctx::paste` outside text fields.
 
 pub mod instance;
+pub mod life;
+pub mod notify;
 pub mod register;
+pub mod shortcut;
+pub mod tray;
 pub mod window;
 
 use std::path::Path;

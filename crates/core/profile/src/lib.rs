@@ -1,9 +1,11 @@
 //! The user's profile: account settings, favorites, history, launch options
 //! and ping preferences, persisted as `profile.json` in the data directory.
 
+pub mod favorites;
 mod launch_options;
 mod sessions;
 
+pub use favorites::{FavoriteEdit, FavoriteGroup, FavoriteLabel, FavoriteMeta, LabelColor};
 pub use launch_options::{LaunchOption, LaunchOptions};
 pub use sessions::{PlayLog, SESSIONS_FILE, Session, SessionKind};
 
@@ -59,6 +61,12 @@ pub struct Profile {
     #[serde(default)]
     pub user_location: Option<(f64, f64)>,
     pub favorites: Vec<Favorite>,
+    /// The labels favourites can carry, in the order they were made.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub favorite_labels: Vec<FavoriteLabel>,
+    /// The favourites view's sections, in the player's order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub favorite_groups: Vec<FavoriteGroup>,
     pub history: Vec<History>,
     /// IPs excluded from the server browser (persisted across restarts).
     #[serde(default)]
@@ -85,6 +93,17 @@ pub struct Profile {
     /// Whether to include all servers in auto ping scan (default true).
     #[serde(default = "default_true")]
     pub ping_scan_servers: bool,
+    /// Show what is being played on Discord (Rich Presence). Off by default:
+    /// it tells others what the player does.
+    #[serde(default)]
+    pub discord_presence: bool,
+    /// With the presence on, name the server played on (default true).
+    #[serde(default = "default_true")]
+    pub discord_show_server: bool,
+    /// Workshop ids of the installed mods loaded with an offline mission
+    /// (`-mod=`), in the order chosen; none by default.
+    #[serde(default)]
+    pub offline_mods: Vec<u64>,
     #[serde(
         deserialize_with = "launch_options::deserialize_launch_options",
         default = "LaunchOptions::defaults"
@@ -146,7 +165,9 @@ fn default_true() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// A saved server. What came after the address and password ([`favorites`]) is
+/// optional on disk and left out when empty.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Favorite {
     pub name: String,
     pub ip: String,
@@ -154,6 +175,22 @@ pub struct Favorite {
     /// Optional server join password — saved so Direct Connect can auto-fill it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
+    /// The player's own words about it.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub note: String,
+    /// Names of [`Profile::favorite_labels`] it carries.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<String>,
+    /// The name of the [`Profile::favorite_groups`] section it is in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
+    /// The character name (`-name=`) to join it with, over the profile's player.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub character: Option<String>,
+    /// Launch arguments of its own, over and beside the global launch options
+    /// (the merge is the hub's `features::launch::args`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub launch_args: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -162,6 +199,11 @@ pub struct History {
     pub ip: String,
     pub port: u16,
     pub ts: i64,
+    /// Workshop ids of the mods the server ran when it was last joined from
+    /// here: what it needs while the server list does not show it. `None`
+    /// when never recorded; `Some(vec![])` is a server known to run none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mod_ids: Option<Vec<u64>>,
     // Old profiles may have extra fields like "mods" -- ignore them
     #[serde(flatten)]
     pub extra: Option<serde_json::Value>,
@@ -198,6 +240,7 @@ impl Profile {
             }
         };
         profile.path = path.to_path_buf();
+        profile.favorite_book().tidy();
         Ok(profile)
     }
 
@@ -224,6 +267,7 @@ impl Profile {
             }
         };
         profile.path = path.to_path_buf();
+        profile.favorite_book().tidy();
         Ok(profile)
     }
 
@@ -252,6 +296,8 @@ impl Profile {
             steam_api_key: None,
             steam_id: None,
             favorites: Vec::new(),
+            favorite_labels: Vec::new(),
+            favorite_groups: Vec::new(),
             history: Vec::new(),
             excluded_ips: Vec::new(),
             ping_concurrency: default_ping_concurrency(),
@@ -261,6 +307,9 @@ impl Profile {
             ping_scan_favorites: true,
             ping_scan_history: true,
             ping_scan_servers: true,
+            discord_presence: false,
+            discord_show_server: true,
+            offline_mods: Vec::new(),
             options: LaunchOptions::defaults(),
             version: version.to_string(),
             path: PathBuf::new(),
@@ -282,6 +331,7 @@ impl Profile {
                 ip,
                 port,
                 password,
+                ..Favorite::default()
             });
         }
     }
@@ -292,6 +342,31 @@ impl Profile {
 
     pub fn is_favorite(&self, ip: &str, port: u16) -> bool {
         self.favorites.iter().any(|f| f.ip == ip && f.port == port)
+    }
+
+    /// Change a favourite's note, labels or group, or the labels and groups
+    /// themselves ([`favorites::FavoriteBook::apply`]).
+    pub fn edit_favorites(&mut self, edit: FavoriteEdit) -> std::result::Result<(), String> {
+        self.edit_favorites_all(vec![edit])
+    }
+
+    /// [`Profile::edit_favorites`] for several edits, in order, all or none
+    /// ([`favorites::FavoriteBook::apply_all`]).
+    pub fn edit_favorites_all(
+        &mut self,
+        edits: Vec<FavoriteEdit>,
+    ) -> std::result::Result<(), String> {
+        self.favorite_book()
+            .apply_all(edits)
+            .map_err(|e| e.to_string())
+    }
+
+    fn favorite_book(&mut self) -> favorites::FavoriteBook<'_> {
+        favorites::FavoriteBook {
+            favorites: &mut self.favorites,
+            labels: &mut self.favorite_labels,
+            groups: &mut self.favorite_groups,
+        }
     }
 
     /// Put a server at the top of the history (moving it if already there).
@@ -305,11 +380,24 @@ impl Profile {
                 ip,
                 port,
                 ts,
+                mod_ids: None,
                 extra: None,
             },
         );
         // Bounded, so the profile JSON rewritten on every mutation stays small.
         self.history.truncate(MAX_HISTORY);
+    }
+
+    /// Remember the mods the history entry at `ip:port` ran (a join just
+    /// recorded it); nothing when there is no such entry.
+    pub fn set_history_mods(&mut self, ip: &str, port: u16, mod_ids: Vec<u64>) {
+        if let Some(h) = self
+            .history
+            .iter_mut()
+            .find(|h| h.ip == ip && h.port == port)
+        {
+            h.mod_ids = Some(mod_ids);
+        }
     }
 
     pub fn remove_history(&mut self, ip: &str, port: u16) {
@@ -414,6 +502,18 @@ mod tests {
     }
 
     #[test]
+    fn discord_presence_is_off_until_asked_and_names_the_server_once_on() {
+        let p: Profile = serde_json::from_str("{}").unwrap();
+        assert!(
+            !p.discord_presence,
+            "off by default: it tells others what one plays"
+        );
+        assert!(p.discord_show_server);
+        let d = Profile::default();
+        assert!(!d.discord_presence && d.discord_show_server);
+    }
+
+    #[test]
     fn the_mod_downloader_round_trips_and_an_unknown_one_reads_as_steamcmd() {
         let p: Profile = serde_json::from_str(r#"{"mod_downloader": "steamworks"}"#).unwrap();
         assert_eq!(p.mod_downloader, ModDownloader::Steamworks);
@@ -466,6 +566,31 @@ mod tests {
     }
 
     #[test]
+    fn a_joins_mods_and_the_offline_choice_are_kept() {
+        let mut p = Profile::default();
+        p.add_history("a".into(), "10.0.0.1".into(), 2302);
+        p.set_history_mods("10.0.0.1", 2302, vec![7, 8]);
+        p.set_history_mods("10.0.0.9", 2302, vec![9]);
+        p.add_history("vanilla".into(), "10.0.0.2".into(), 2302);
+        p.set_history_mods("10.0.0.2", 2302, Vec::new());
+        p.offline_mods = vec![8];
+        let json = serde_json::to_string(&p).unwrap();
+        let back: Profile = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.history[1].mod_ids, Some(vec![7, 8]));
+        // A server known to run no mod stays known after a reload.
+        assert_eq!(back.history[0].mod_ids, Some(Vec::new()));
+        assert_eq!(back.offline_mods, vec![8]);
+        // A rejoin starts the entry afresh; an old entry without them reads as unknown.
+        p.add_history("a".into(), "10.0.0.1".into(), 2302);
+        assert_eq!(p.history[0].mod_ids, None);
+        let old: History = serde_json::from_str(
+            r#"{"name":"x","ip":"1.2.3.4","port":1,"ts":0,"mods":[{"id":1}]}"#,
+        )
+        .unwrap();
+        assert_eq!(old.mod_ids, None);
+    }
+
+    #[test]
     fn history_is_newest_first_and_bounded() {
         let mut p = Profile::default();
         for i in 0..(MAX_HISTORY + 10) {
@@ -485,6 +610,67 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn a_favorite_without_notes_labels_or_groups_loads_and_writes_none() {
+        let json = r#"{"favorites": [{"name": "A", "ip": "1.2.3.4", "port": 2302}]}"#;
+        let p: Profile = serde_json::from_str(json).unwrap();
+        let f = &p.favorites[0];
+        assert!(f.note.is_empty() && f.labels.is_empty() && f.launch_args.is_empty());
+        assert_eq!((f.group.as_ref(), f.character.as_ref()), (None, None));
+        assert!(p.favorite_labels.is_empty() && p.favorite_groups.is_empty());
+        // Empty fields stay off the disk: an older build reads the same file.
+        let out = serde_json::to_value(&p).unwrap();
+        assert_eq!(
+            out["favorites"][0],
+            serde_json::json!({"name": "A", "ip": "1.2.3.4", "port": 2302})
+        );
+        assert!(out.get("favorite_labels").is_none() && out.get("favorite_groups").is_none());
+    }
+
+    #[test]
+    fn favorite_notes_labels_groups_and_launch_settings_round_trip() {
+        let mut p = Profile::default();
+        p.add_favorite("A".into(), "1.1.1.1".into(), 2302, None);
+        p.edit_favorites(FavoriteEdit::SetLabel {
+            old: None,
+            name: "PvE".into(),
+            color: LabelColor::Ok,
+        })
+        .unwrap();
+        p.edit_favorites(FavoriteEdit::AddGroup {
+            name: "Weekend".into(),
+        })
+        .unwrap();
+        p.edit_favorites(FavoriteEdit::CollapseGroup {
+            name: "Weekend".into(),
+            collapsed: true,
+        })
+        .unwrap();
+        p.edit_favorites(FavoriteEdit::Meta {
+            ip: "1.1.1.1".into(),
+            port: 2302,
+            meta: FavoriteMeta {
+                note: "trader at Green Mountain".into(),
+                labels: vec!["PvE".into()],
+                group: Some("Weekend".into()),
+                character: Some("Alt".into()),
+                launch_args: "-maxMem=4096".into(),
+            },
+        })
+        .unwrap();
+        let json = serde_json::to_string(&p).unwrap();
+        let back: Profile = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.favorites, p.favorites);
+        assert_eq!(back.favorite_labels, p.favorite_labels);
+        assert_eq!(back.favorite_groups, p.favorite_groups);
+        assert!(back.favorite_groups[0].collapsed);
+        // Saving the favourite again keeps what came with it.
+        let mut again = back;
+        again.add_favorite("A2".into(), "1.1.1.1".into(), 2302, Some("pw".into()));
+        assert_eq!(again.favorites[0].note, "trader at Green Mountain");
+        assert_eq!(again.favorites[0].character.as_deref(), Some("Alt"));
     }
 
     #[test]

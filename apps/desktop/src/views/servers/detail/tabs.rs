@@ -445,7 +445,9 @@ fn rows(ui: &mut Ui, st: &mut DetailState, m: &Model, run: &mut Run) {
             });
         }
     });
-    if m.missing > 0 || m.stale > 0 {
+    // On disk: what "Remove this server's mods" could delete (a listed server only).
+    let on_disk = m.listed.is_some() && m.mod_rows.iter().any(|r| r.state != ModState::Missing);
+    if m.missing > 0 || m.stale > 0 || on_disk {
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
             if m.missing > 0 {
@@ -476,6 +478,19 @@ fn rows(ui: &mut Ui, st: &mut DetailState, m: &Model, run: &mut Run) {
                         json!({ "ids": m.stale_ids() }),
                     ));
                 }
+            }
+            if on_disk
+                && ui
+                    .add(
+                        Button::new(t("mods", "removeServerMods"))
+                            .icon(lucide::TRASH_2)
+                            .variant(Variant::Ghost)
+                            .size(Size::Xs)
+                            .tip(t("mods", "removeServerModsTip")),
+                    )
+                    .clicked()
+            {
+                run.push(("servers.row.remove_mods", target_args(m)));
             }
         });
     }

@@ -174,6 +174,9 @@ pub struct Stored {
     /// No motion: views appear, toasts and menus do not slide.
     #[serde(rename = "dzch.reducedMotion")]
     pub reduced_motion: bool,
+    /// The tray, the game's start and stop, notifications (`platform::life`).
+    #[serde(rename = "dzch.life")]
+    pub life: crate::platform::life::LifePrefs,
     #[serde(flatten)]
     pub other: BTreeMap<String, serde_json::Value>,
 }
@@ -189,6 +192,7 @@ impl Default for Stored {
             window: None,
             scale: 1.0,
             reduced_motion: false,
+            life: crate::platform::life::LifePrefs::default(),
             other: BTreeMap::new(),
         }
     }

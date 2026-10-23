@@ -3,6 +3,7 @@
 
 pub mod a2s;
 pub mod browser;
+pub mod discord;
 pub mod dzch_cli;
 pub mod friends;
 pub mod gamepad;

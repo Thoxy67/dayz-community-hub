@@ -660,11 +660,14 @@ async fn do_launch(hub: &Hub, bus: &Bus, l: Launch) {
                     t("connect", "connectWaitingSteam"),
                     ToastTone::Neutral,
                 ),
-                Err(e) => bus.step(
-                    "launch",
-                    tf("connect", "connectLaunchFailed", &[("error", &e)]),
-                    ToastTone::Err,
-                ),
+                Err(e) => {
+                    bus.step(
+                        "launch",
+                        tf("connect", "connectLaunchFailed", &[("error", &e)]),
+                        ToastTone::Err,
+                    );
+                    crate::platform::life::note_launch_failed(bus.ctx(), &e);
+                }
             }
         }
         Launch::Address(t) => {
@@ -687,11 +690,14 @@ async fn do_launch(hub: &Hub, bus: &Bus, l: Launch) {
                     crate::i18n::t("connect", "connectWaitingSteam"),
                     ToastTone::Neutral,
                 ),
-                Err(e) => bus.step(
-                    "launch",
-                    tf("connect", "connectLaunchFailed", &[("error", &e)]),
-                    ToastTone::Err,
-                ),
+                Err(e) => {
+                    bus.step(
+                        "launch",
+                        tf("connect", "connectLaunchFailed", &[("error", &e)]),
+                        ToastTone::Err,
+                    );
+                    crate::platform::life::note_launch_failed(bus.ctx(), &e);
+                }
             }
         }
     }

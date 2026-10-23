@@ -275,6 +275,32 @@ pub(crate) fn live_of(addr: SocketAddrV4) -> Live {
     }
 }
 
+/// The A2S keywords' clock a mock server answers with: the time its row shows
+/// now, and a speed by its address (a third run at real time, the rest 2× to
+/// 8× by day, with nights 1× to 4× that), so the accelerated clock has data.
+/// `None` for a server that times out or shows no time.
+pub(crate) fn keywords_of(addr: SocketAddrV4) -> Option<String> {
+    if live_of(addr).failed {
+        return None;
+    }
+    let snap = crate::features::browser::live::store().snapshot();
+    let i = snap.find_by_query_port(addr)?;
+    let minute = snap.clock_minute(i, dz_common::time::now_secs())?;
+    let h = u64::from(addr.ip().to_bits()) * 31 + u64::from(addr.port());
+    let (day, night) = match h % 3 {
+        0 => (1, 1),
+        _ => (
+            [2, 4, 6, 8].get((h / 3 % 4) as usize).copied().unwrap_or(2),
+            [1, 2, 4].get((h / 12 % 3) as usize).copied().unwrap_or(1),
+        ),
+    };
+    let mut buf = [0u8; 5];
+    let time = crate::features::browser::clock_text(minute, &mut buf);
+    Some(format!(
+        "battleye,no3rd,external,privHive,etm{day}.000000,entm{night}.000000,{time}"
+    ))
+}
+
 /// Unix ms as JavaScript's `toISOString()` writes it.
 pub(crate) fn iso(ms: i64) -> String {
     let secs = ms.div_euclid(1000);

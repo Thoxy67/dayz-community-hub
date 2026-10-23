@@ -136,7 +136,11 @@ pub fn cmd_window_drag(cx: &mut Ctx, _: &serde_json::Value) {
 pub fn cmd_window(cx: &mut Ctx, a: &serde_json::Value) {
     let max = cx.stores.app.maximized;
     let cmd = match arg(a, "action") {
-        Some("minimize") => egui::ViewportCommand::Minimized(true),
+        // Through the window's life: on Wayland it is the only one to know.
+        Some("minimize") => {
+            crate::platform::life::apply(cx.egui, crate::platform::life::Act::Minimize);
+            return;
+        }
         Some("maximize") => egui::ViewportCommand::Maximized(!max),
         Some("close") => egui::ViewportCommand::Close,
         _ => return,
@@ -259,6 +263,7 @@ pub fn overlays(ctx: &egui::Context, cx: &mut Ctx) {
     dialogs::connect(ctx, cx, &mut st.dialogs);
     dialogs::password(ctx, cx, &mut st.dialogs);
     dialogs::shortcuts(ctx, cx, &mut st.dialogs);
+    crate::views::favorites::edit::show(ctx, cx);
     palette::show(ctx, cx, &mut st.palette);
     // The question goes over everything else: a flow waits on it.
     dialogs::confirm(ctx, cx, &mut st.dialogs);

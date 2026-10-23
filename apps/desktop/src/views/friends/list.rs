@@ -433,6 +433,7 @@ impl Target<'_> {
             RowAction::RefreshPlayers => Act::Players(b.ip.to_string(), self.query_port),
             RowAction::CopyLink => Act::CopyLink(b.ip.to_string(), gp, qp, name),
             RowAction::CopyAddress => Act::CopyAddress(format!("{}:{}", b.ip, gp)),
+            RowAction::DesktopShortcut => Act::Shortcut(b.ip.to_string(), gp, qp, name),
             RowAction::ToggleExclude => Act::Exclude(b.ip.to_string(), !self.excluded),
         })
     }

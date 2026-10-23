@@ -27,6 +27,11 @@
 //!   - `servers_lookup(&self, keys: Vec<SocketAddrV4>) -> Result<Vec<Option<ServerRow>>, String>`
 //!   - `server_maps(&self) -> Result<Vec<MapCount>, String>`
 //!   - `start_scan(&self) -> Result<ScanProgress, String>`
+//! - `discord` (new: Rich Presence, a background task of `start`):
+//!   - `set_discord_presence(&self, enabled: bool, show_server: bool) -> Result<(), String>`
+//!   - `set_discord_words(&self, words: PresenceWords)` (never blocks)
+//!   - `discord_status(&self) -> DiscordStatus` (never blocks)
+//!   - `discord_quit(&self, wait: Duration)` (at exit: clears the activity, waits at most `wait`)
 //! - `dzch_cli`:
 //!   - `get_cli_args(&self) -> CliArgs`
 //!   - `read_dzch_file(&self, path: String) -> Result<DzchConfig, String>`

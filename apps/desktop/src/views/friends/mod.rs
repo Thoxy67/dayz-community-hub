@@ -51,6 +51,8 @@ pub enum Act {
     /// ip, game port, query port, name.
     CopyLink(String, u16, u16, String),
     CopyAddress(String),
+    /// ip, game port, query port, name.
+    Shortcut(String, u16, u16, String),
     /// ip, exclude (true) or include.
     Exclude(String, bool),
 }
@@ -143,6 +145,12 @@ fn apply(cx: &mut Ctx, act: Act) {
             cx.stores
                 .bus
                 .ok(format!("{} · {addr}", t("common", "copied")));
+        }
+        Act::Shortcut(ip, game, query, name) => {
+            let args = serde_json::json!({
+                "ip": ip, "port": query, "gamePort": game, "name": name,
+            });
+            let _ = cx.run("list.shortcut", &args);
         }
         Act::Exclude(ip, on) => {
             if on {

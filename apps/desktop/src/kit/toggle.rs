@@ -368,6 +368,7 @@ pub struct Toggle<'a> {
     count: Option<u64>,
     swatch: Option<Color32>,
     tip: &'a str,
+    compact: bool,
 }
 
 impl<'a> Toggle<'a> {
@@ -378,7 +379,14 @@ impl<'a> Toggle<'a> {
             count: None,
             swatch: None,
             tip: "",
+            compact: false,
         }
+    }
+
+    /// The height of a small control rather than a list row: for long checklists.
+    pub fn compact(mut self) -> Self {
+        self.compact = true;
+        self
     }
 
     /// A figure at the end: how many rows it lets through.
@@ -404,7 +412,12 @@ impl Widget for Toggle<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
         let t = ui.tokens();
         let w = ui.available_width();
-        let (rect, mut resp) = ui.allocate_exact_size(Vec2::new(w, size::ROW), Sense::click());
+        let h = if self.compact {
+            size::CONTROL_SM
+        } else {
+            size::ROW
+        };
+        let (rect, mut resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
         if resp.clicked() {
             *self.on = !*self.on;
             resp.mark_changed();

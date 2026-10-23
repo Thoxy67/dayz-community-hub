@@ -94,8 +94,8 @@ pub use sections::{
 };
 pub use server_row::{
     Col, Host, ListColumns, NARROW_PX, ROW_PX, RowAction, RowButton, RowCache, RowData, RowExtra,
-    RowMenuItem, RowResponse, RowTag, ServerListRow, SortHead, TableHead, head_cell, head_label,
-    server_menu,
+    RowLabel, RowMenuItem, RowResponse, RowTag, ServerListRow, SortHead, TableHead, head_cell,
+    head_label, server_menu,
 };
 pub use text::{clock, draw, is_cut, map_name, ph, ph_trunc};
 pub use theme_cards::{ThemePick, ThemePreview, ThemeSwatches, preset_name, theme_preview};

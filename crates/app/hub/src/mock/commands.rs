@@ -20,6 +20,74 @@ impl World {
         Ok(self.mods_usage(&favorites, p.history.first().map(|h| h.name.as_str())))
     }
 
+    /// The saved servers' mods as [`World::mods_usage`] tells them (so the Unused
+    /// filter agrees with the rows' "played on" lines): a favourite runs the mods
+    /// naming it, the last game the ones naming it, other history servers none.
+    pub(crate) async fn saved_mods_now(
+        &self,
+        hub: &Hub,
+    ) -> Result<crate::features::mods::usage::SavedModsDto, String> {
+        use crate::features::mods::usage::{SavedModsDto, SavedServerModsDto};
+        let state = hub.state()?;
+        let s = state.read().await;
+        let p = s.ctl.profile();
+        let favorites: Vec<String> = p.favorites.iter().map(|f| f.name.clone()).collect();
+        let first = p.history.first().map(|h| h.name.clone());
+        let usage = self.mods_usage(&favorites, first.as_deref());
+        let runs = |name: &str, favorite: bool| -> Vec<u64> {
+            usage
+                .iter()
+                .filter(|u| {
+                    if favorite {
+                        u.favorites.iter().any(|n| n == name)
+                    } else {
+                        u.history.iter().any(|n| n == name)
+                    }
+                })
+                .map(|u| u.id)
+                .collect()
+        };
+        let listed = |ip: &str, port: u16| {
+            dz_api::addr(ip, i64::from(port))
+                .and_then(|a| s.find_flexible(a))
+                .map(|srv| srv.endpoint)
+        };
+        let mut servers: Vec<SavedServerModsDto> = Vec::new();
+        for f in &p.favorites {
+            servers.push(SavedServerModsDto {
+                name: f.name.clone(),
+                ip: f.ip.clone(),
+                port: f.port,
+                favorite: true,
+                history: false,
+                listed: listed(&f.ip, f.port),
+                mods: Some(runs(&f.name, true)),
+            });
+        }
+        for (i, h) in p.history.iter().enumerate() {
+            if servers.iter().any(|e| e.ip == h.ip && e.port == h.port) {
+                continue;
+            }
+            servers.push(SavedServerModsDto {
+                name: h.name.clone(),
+                ip: h.ip.clone(),
+                port: h.port,
+                favorite: false,
+                history: true,
+                listed: listed(&h.ip, h.port),
+                mods: Some(if i == 0 {
+                    runs(&h.name, false)
+                } else {
+                    Vec::new()
+                }),
+            });
+        }
+        Ok(SavedModsDto {
+            servers,
+            offline: p.offline_mods.clone(),
+        })
+    }
+
     /// Of `ids`, those whose copy is in a Steam library: what deleting them
     /// leaves behind.
     pub(crate) fn kept_in_steam(&self, ids: &[u64]) -> Vec<u64> {

@@ -1343,6 +1343,20 @@ pub static COMMANDS: &[CommandSpec] = &[
         |cx, a| crate::views::settings::command(cx, "steam.toggle_steam_server_list", a)
     ),
     cmd!(
+        "settings.discord.toggle_presence",
+        ("settings", "discordPresenceSwitch"),
+        "settings",
+        crate::views::settings::integrations::toggle_presence,
+        crate::views::settings::integrations::available
+    ),
+    cmd!(
+        "settings.discord.toggle_show_server",
+        ("settings", "discordShowServerSwitch"),
+        "settings",
+        crate::views::settings::integrations::toggle_show_server,
+        crate::views::settings::integrations::available
+    ),
+    cmd!(
         "settings.steam.edit_login",
         ("settings", "username"),
         "settings",
@@ -2255,6 +2269,12 @@ pub static COMMANDS: &[CommandSpec] = &[
         crate::views::mods::cmd_bulk_delete
     ),
     cmd!(
+        "mods.remove_unused",
+        ("mods", "removeUnusedTitle"),
+        "mods",
+        crate::views::mods::cmd_remove_unused
+    ),
+    cmd!(
         "mods.clear_ticks",
         ("mods", "clearSelectionTitle"),
         "mods",
@@ -2418,6 +2438,24 @@ pub static COMMANDS: &[CommandSpec] = &[
         crate::views::servers::cmds::hide_full
     ),
     cmd!(
+        "servers.filter.time_of_day",
+        ("servers", "timeOfDay"),
+        "servers",
+        crate::views::servers::cmds::time_of_day
+    ),
+    cmd!(
+        "servers.filter.with_mod",
+        ("servers", "withMod"),
+        "servers",
+        crate::views::servers::cmds::with_mod
+    ),
+    cmd!(
+        "servers.filter.ready",
+        ("servers", "readyToJoin"),
+        "servers",
+        crate::views::servers::cmds::ready
+    ),
+    cmd!(
         "servers.filter.toggle_excluded",
         ("servers", "excludedReveal"),
         "servers",
@@ -2452,6 +2490,12 @@ pub static COMMANDS: &[CommandSpec] = &[
         ("servers", "colMods"),
         "servers",
         crate::views::servers::cmds::show_mods
+    ),
+    cmd!(
+        "servers.row.remove_mods",
+        ("mods", "removeServerModsTitle"),
+        "servers",
+        crate::views::mods::cmd_remove_server_mods
     ),
     cmd!(
         "servers.row.refresh_players",
@@ -2506,6 +2550,12 @@ pub static COMMANDS: &[CommandSpec] = &[
         ("keys", "direct"),
         "servers",
         crate::views::servers::cmds::direct
+    ),
+    cmd!(
+        "list.shortcut",
+        ("servers", "desktopShortcut"),
+        "servers",
+        crate::views::servers::cmds::desktop_shortcut
     ),
     cmd!(
         "list.move",
@@ -2567,6 +2617,54 @@ pub static COMMANDS: &[CommandSpec] = &[
         ("servers", "removeFavorite"),
         "favorites",
         crate::views::favorites::remove
+    ),
+    cmd!(
+        "favorites.edit",
+        ("favorites", "edit"),
+        "favorites",
+        crate::views::favorites::edit,
+        |cx| !cx.stores.profile.favorites.is_empty()
+    ),
+    cmd!(
+        "favorites.organize",
+        ("favorites", "organize"),
+        "favorites",
+        crate::views::favorites::organize
+    ),
+    cmd!(
+        "favorites.move_to_group",
+        ("favorites", "moveToGroupCmd"),
+        "favorites",
+        crate::views::favorites::move_to_group,
+        |cx| !cx.stores.profile.groups.is_empty()
+    ),
+    cmd!(
+        "favorites.group_toggle",
+        ("favorites", "collapse"),
+        "favorites",
+        crate::views::favorites::group_toggle,
+        |cx| !cx.stores.profile.groups.is_empty()
+    ),
+    cmd!(
+        "favorites.group_move",
+        ("favorites", "moveUp"),
+        "favorites",
+        crate::views::favorites::group_move,
+        |cx| !cx.stores.profile.groups.is_empty()
+    ),
+    cmd!(
+        "favorites.group_remove",
+        ("favorites", "removeGroup"),
+        "favorites",
+        crate::views::favorites::group_remove,
+        |cx| !cx.stores.profile.groups.is_empty()
+    ),
+    cmd!(
+        "favorites.label_remove",
+        ("favorites", "removeLabel"),
+        "favorites",
+        crate::views::favorites::label_remove,
+        |cx| !cx.stores.profile.labels.is_empty()
     ),
     // ── history (`views/history`, on the shared saved list `views/saved`) ──
     cmd!(
@@ -2787,6 +2885,44 @@ pub static COMMANDS: &[CommandSpec] = &[
         "shell",
         crate::shell::cmd_window
     ),
+    // ── the window's life (`platform/life.rs`) ──
+    cmd!("app.quit", ("shell", "trayQuit"), "shell", |cx, a| {
+        crate::platform::life::command(cx, "quit", a)
+    }),
+    cmd!(
+        "window.hide",
+        ("shell", "trayHide"),
+        "shell",
+        |cx, a| crate::platform::life::command(cx, "hide", a),
+        |cx| crate::platform::life::tray_available(cx.egui)
+    ),
+    cmd!("window.show", ("shell", "trayShow"), "shell", |cx, a| {
+        crate::platform::life::command(cx, "show", a)
+    }),
+    cmd!(
+        "settings.life.set_close_to_tray",
+        ("settings", "lifeCloseToTray"),
+        "settings",
+        |cx, a| crate::platform::life::command(cx, "close_to_tray", a)
+    ),
+    cmd!(
+        "settings.life.set_on_game_start",
+        ("settings", "lifeOnGameStart"),
+        "settings",
+        |cx, a| crate::platform::life::command(cx, "on_game_start", a)
+    ),
+    cmd!(
+        "settings.life.set_on_game_stop",
+        ("settings", "lifeOnGameStop"),
+        "settings",
+        |cx, a| crate::platform::life::command(cx, "on_game_stop", a)
+    ),
+    cmd!(
+        "settings.life.set_notify",
+        ("settings", "lifeNotify"),
+        "settings",
+        |cx, a| crate::platform::life::command(cx, "notify", a)
+    ),
     cmd!(
         "settings.open_account",
         ("shell", "titlebarEditAccount"),
@@ -2942,6 +3078,18 @@ pub static COMMANDS: &[CommandSpec] = &[
         ("offline", "launch"),
         "offline",
         crate::views::offline::cmd_launch
+    ),
+    cmd!(
+        "offline.toggle_mod",
+        ("offline", "modsTitle"),
+        "offline",
+        crate::views::offline::cmd_toggle_mod
+    ),
+    cmd!(
+        "offline.clear_mods",
+        ("offline", "modsClear"),
+        "offline",
+        crate::views::offline::cmd_clear_mods
     ),
     cmd!(
         "offline.open_dir",

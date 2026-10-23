@@ -199,7 +199,7 @@ impl Updater {
             match r {
                 Ok(true) => {
                     if let Some(rt) = rt::Rt::get() {
-                        rt.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                        crate::platform::life::quit(rt.ctx());
                     }
                 }
                 Ok(false) => {}

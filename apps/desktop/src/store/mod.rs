@@ -312,12 +312,15 @@ impl Stores {
         changed |= self.server_data.poll(&mut self.servers);
         changed |= self.profile.poll(&mut self.signals);
         changed |= self.mods.poll(&mut self.signals);
+        self.mods
+            .follow_saved(self.servers.snapshot(), self.profile.written);
         if self.game.poll() {
             changed = true;
             crate::parts::server_row::set_game_version(
                 self.bus.ctx(),
                 self.game.version.as_deref(),
             );
+            self.servers.set_game_version(self.game.version.as_deref());
         }
         changed |= self.battleye.poll();
         changed |= self.updater.poll();
@@ -368,6 +371,10 @@ impl Stores {
                     .profile_loaded(&mut self.mods, &mut self.profile, &mut self.connect);
                 let snap = self.cli_snapshot();
                 self.connect.flush_cli(snap);
+                // A join (`LaunchDone` reads the profile again) recorded its mods.
+                if self.mods.loaded {
+                    self.mods.load_saved();
+                }
             }
             Signal::AccountSaved => {
                 self.profile.load();

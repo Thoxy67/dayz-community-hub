@@ -47,6 +47,9 @@ pub enum HubEvent {
     /// DayZ started or stopped (whether launched from here or not), as the
     /// play tracker saw it; also its first look, at start.
     GameRunning(bool),
+    /// Discord Rich Presence connected to a running Discord, or lost it
+    /// (`Hub::discord_status` has the rest).
+    DiscordConnected(bool),
     /// A pad's input, for the gamepad navigation mode.
     GamepadInput(GamepadInput),
     /// The pads connected changed.

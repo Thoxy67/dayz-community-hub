@@ -295,6 +295,19 @@ pub struct RowTag<'a> {
     pub tip: &'a str,
 }
 
+/// A label the player put on a saved server, drawn as a small tinted pill on the address
+/// line.
+#[derive(Clone, Copy, Debug)]
+pub struct RowLabel<'a> {
+    pub text: &'a str,
+    pub color: Color32,
+}
+
+/// Labels shown on a row at most; the rest are counted ("+2").
+const MAX_LABELS_SHOWN: usize = 3;
+/// A label pill's text is cut past this width.
+const LABEL_MAX_W: f32 = 72.0;
+
 /// The list's own column (`wide`): two lines, the second faint mono, with a hint.
 #[derive(Clone, Copy, Debug)]
 pub struct RowExtra<'a> {
@@ -353,6 +366,8 @@ pub enum RowAction {
     CopyAddress,
     /// "Open in Direct Connect".
     DirectConnect,
+    /// "Create a desktop shortcut" (a launcher that joins this server).
+    DesktopShortcut,
     /// "Exclude {ip}" / "Stop excluding {ip}".
     ToggleExclude,
     /// One of the list's own buttons or menu items.
@@ -394,6 +409,11 @@ struct Laid {
     friends: Option<Arc<Galley>>,
     tag: Option<Arc<Galley>>,
     extra: Option<(Arc<Galley>, Arc<Galley>)>,
+    /// The player's labels (as many as fit) and how many more there are.
+    labels: Vec<Arc<Galley>>,
+    labels_more: Option<Arc<Galley>>,
+    /// The player's note, cut to the room left on the address line.
+    note: Option<Arc<Galley>>,
 }
 
 /// The rows' laid-out text, kept between frames: the list owns one and hands it to every
@@ -476,6 +496,8 @@ pub struct ServerListRow<'a> {
     buttons: &'a [RowButton<'a>],
     menu: &'a [RowMenuItem<'a>],
     mods_clickable: bool,
+    labels: &'a [RowLabel<'a>],
+    note: &'a str,
 }
 
 impl<'a> ServerListRow<'a> {
@@ -489,7 +511,17 @@ impl<'a> ServerListRow<'a> {
             buttons: &[],
             menu: &[],
             mods_clickable: true,
+            labels: &[],
+            note: "",
         }
+    }
+
+    /// The player's labels and note (a favourite's), on the address line after the
+    /// version: as many pills as fit, then the note's first line, cut.
+    pub fn marks(mut self, labels: &'a [RowLabel<'a>], note: &'a str) -> Self {
+        self.labels = labels;
+        self.note = note;
+        self
     }
 
     pub fn selected(mut self, on: bool) -> Self {
@@ -567,6 +599,10 @@ impl<'a> ServerListRow<'a> {
         self.friends.len().hash(&mut h);
         self.tag.map(|t| t.text).hash(&mut h);
         self.extra.map(|e| (e.top, e.bottom)).hash(&mut h);
+        for l in self.labels {
+            (l.text, l.color.to_array()).hash(&mut h);
+        }
+        self.note.hash(&mut h);
         (name_w.round() as i32).hash(&mut h);
         (cols.server.span().round() as i32).hash(&mut h);
         cols.map.map(|m| m.span().round() as i32).hash(&mut h);
@@ -623,10 +659,45 @@ impl<'a> ServerListRow<'a> {
         let extra = match (self.extra, cols.extra) {
             (Some(e), Some(x)) => Some((
                 ph_trunc(ui, e.top, font(Face::Sans, size::TEXT_2XS), x.span()),
-                ph_trunc(ui, e.bottom, mono_3xs, x.span()),
+                ph_trunc(ui, e.bottom, mono_3xs.clone(), x.span()),
             )),
             _ => None,
         };
+        // The address line's room after the address (and its copy icon) and the version.
+        let mut room = server_w
+            - address.size().x
+            - 16.0
+            - 4.0
+            - version.as_ref().map_or(0.0, |v| v.size().x + 8.0);
+        let mut labels = Vec::new();
+        let label_font = font(Face::SansMedium, size::TEXT_3XS);
+        for l in self.labels.iter().take(MAX_LABELS_SHOWN) {
+            let g = ph_trunc(ui, l.text, label_font.clone(), LABEL_MAX_W);
+            let w = g.size().x + 8.0 + 4.0;
+            if w > room {
+                break;
+            }
+            room -= w;
+            labels.push(g);
+        }
+        let more = self.labels.len().saturating_sub(labels.len());
+        let labels_more = (more > 0).then(|| {
+            let g = ph(ui, &format!("+{more}"), mono_3xs.clone());
+            room -= g.size().x + 4.0;
+            g
+        });
+        let first_line = self.note.lines().find(|l| !l.trim().is_empty());
+        // Too little room for its words: the note's icon alone, its words on hover.
+        let note_font = font(Face::Sans, size::TEXT_2XS);
+        let note = first_line.and_then(|n| {
+            if room > 40.0 {
+                Some(ph_trunc(ui, n.trim(), note_font, room - 14.0))
+            } else if room > 12.0 {
+                Some(ph(ui, "", note_font))
+            } else {
+                None
+            }
+        });
         Laid {
             stamp,
             used: pass,
@@ -649,6 +720,9 @@ impl<'a> ServerListRow<'a> {
             friends,
             tag,
             extra,
+            labels,
+            labels_more,
+            note,
         }
     }
 
@@ -1038,6 +1112,62 @@ impl<'a> ServerListRow<'a> {
             }
         }
 
+        if !l.labels.is_empty() || l.labels_more.is_some() || l.note.is_some() {
+            let mut x = x0
+                + l.address.size().x
+                + 16.0
+                + 4.0
+                + l.version.as_ref().map_or(0.0, |v| v.size().x + 8.0);
+            for (i, (g, lab)) in l.labels.iter().zip(self.labels).enumerate() {
+                let r = Rect::from_min_size(
+                    Pos2::new(x, bot_cy - 6.5),
+                    Vec2::new(g.size().x + 8.0, 13.0),
+                );
+                let p = ui.painter();
+                p.rect_filled(
+                    r,
+                    CornerRadius::same(size::RADIUS_XS),
+                    alpha(lab.color, 0.16),
+                );
+                draw(p, g, x + 4.0, bot_cy, lab.color);
+                let resp = ui.interact(r, id.with(("label", i)), Sense::hover());
+                if resp.hovered() {
+                    let _ = resp.tip_kbd(lab.text, "", Side::Top);
+                }
+                x = r.right() + 4.0;
+            }
+            if let Some(g) = &l.labels_more {
+                draw(ui.painter(), g, x, bot_cy, tk.fg_faint);
+                let r =
+                    Rect::from_min_size(Pos2::new(x, bot_cy - 6.0), Vec2::new(g.size().x, 12.0));
+                let resp = ui.interact(r, id.with("labels-more"), Sense::hover());
+                if resp.hovered() {
+                    let rest: Vec<&str> = self
+                        .labels
+                        .iter()
+                        .skip(l.labels.len())
+                        .map(|l| l.text)
+                        .collect();
+                    let _ = resp.tip_kbd(&rest.join(", "), "", Side::Top);
+                }
+                x += g.size().x + 4.0;
+            }
+            if let Some(g) = &l.note {
+                let x = x + 2.0;
+                let ir = Rect::from_min_size(Pos2::new(x, bot_cy - 5.0), Vec2::splat(10.0));
+                lucide::MESSAGE_SQUARE.paint(ui.painter(), ir, tk.fg_faint);
+                draw(ui.painter(), g, x + 13.0, bot_cy, tk.fg_muted);
+                let r = Rect::from_min_size(
+                    Pos2::new(x, bot_cy - 7.0),
+                    Vec2::new(g.size().x + 13.0, 14.0),
+                );
+                let resp = ui.interact(r, id.with("note"), Sense::hover());
+                if resp.hovered() {
+                    let _ = resp.tip_kbd(self.note, "", Side::Top);
+                }
+            }
+        }
+
         ui.set_clip_rect(row_clip);
 
         // Map and clock.
@@ -1299,6 +1429,11 @@ pub fn server_menu(
             .icon(lucide::PLUG_ZAP)
             .kbd("D"),
         RowAction::DirectConnect,
+    );
+    item(
+        ui,
+        MenuItem::new(t("servers", "desktopShortcut")).icon(lucide::MONITOR),
+        RowAction::DesktopShortcut,
     );
     menu::separator(ui);
     let ex_label = if excluded {
