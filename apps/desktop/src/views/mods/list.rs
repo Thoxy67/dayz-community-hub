@@ -8,7 +8,7 @@ use egui::{CornerRadius, Pos2, Rangef, Rect, Sense, Stroke, Ui, UiBuilder, Vec2}
 use serde_json::{Value, json};
 
 use super::UiState;
-use super::model::{self, BEHIND, Col, INCOMING, Item, Row, Where};
+use super::model::{self, BEHIND, Col, Filter, INCOMING, Item, Row, Where};
 use crate::app::Ctx;
 use crate::i18n::{format, t, tf};
 use crate::icons::{Icon, lucide};
@@ -208,6 +208,8 @@ fn table(ui: &mut Ui, cx: &Ctx, st: &mut UiState, run: &mut Run) {
         scroll_to,
         col,
         asc,
+        filter,
+        query,
         ..
     } = st;
     let scroll = scroll_to
@@ -325,7 +327,25 @@ fn table(ui: &mut Ui, cx: &Ctx, st: &mut UiState, run: &mut Run) {
                 None => {}
             },
         );
-    if count == 0 {
+    if count == 0 && *filter == Filter::Unused && query.trim().is_empty() {
+        // Nothing unused, or not known yet (the strip above says which servers).
+        let known = mods.unused().is_some_and(|u| u.unknown.is_empty());
+        let mut e = ui.new_child(UiBuilder::new().max_rect(out.viewport));
+        let (icon, title, text) = if known {
+            (lucide::PACKAGE_CHECK, "noUnused", "noUnusedText")
+        } else {
+            (
+                lucide::CIRCLE_ALERT,
+                "unusedUnknownTitle",
+                "unusedUnknownText",
+            )
+        };
+        Empty::new()
+            .icon(icon)
+            .title(t("mods", title))
+            .text(t("mods", text))
+            .show(&mut e, |_| {});
+    } else if count == 0 {
         // Filters left nothing: say so, with the way back.
         let mut e = ui.new_child(UiBuilder::new().max_rect(out.viewport));
         Empty::new()

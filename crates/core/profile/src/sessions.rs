@@ -155,6 +155,7 @@ mod tests {
             ip: "1.2.3.4".into(),
             port: 2302,
             ts,
+            mod_ids: None,
             extra: None,
         }
     }

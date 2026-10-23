@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use dz_hub::events::ModProgressEvent;
+use dz_hub::features::mods::usage::{self, SavedModsDto, ServerRemoval, Unused};
 use dz_hub::features::mods::{InstalledModDto, ModUsageDto};
 use dz_hub::features::steamcmd::op::{self as hub_op, ModOpSnapshot};
 use dz_hub::features::steamcmd::{ModOpType, ModProgressKind};
@@ -183,6 +184,11 @@ pub struct Mods {
     pub steam_error: Option<String>,
     /// Which favourites and played servers run each mod, by id.
     pub usage: FxHashMap<u64, ModUsageDto>,
+    /// The saved servers' mods (`None` until the hub answered), for [`Mods::unused`].
+    pub saved: Option<SavedModsDto>,
+    /// The installed mods nothing needs (see `dz_hub::features::mods::usage`), worked
+    /// out again whenever the mods, Steam's details or the saved servers move.
+    unused: Option<Unused>,
     by_id: FxHashMap<u64, usize>,
     steam_by_id: FxHashMap<u64, usize>,
     workshop: FxHashMap<u64, usize>,
@@ -192,6 +198,12 @@ pub struct Mods {
 
     load_task: Option<Task<Result<Vec<InstalledModDto>, String>>>,
     usage_task: Option<Task<Result<Vec<ModUsageDto>, String>>>,
+    saved_task: Option<Task<Result<SavedModsDto, String>>>,
+    /// The saved servers changed while they were being read: read them again.
+    saved_again: bool,
+    /// What the saved servers were last read against: the list's generation, its
+    /// profile flags' and the profile's writes ([`Mods::follow_saved`]).
+    saved_key: (u64, u64, u64),
     check_task: Option<Task<Result<Vec<InstalledModDto>, String>>>,
     steam_task: Option<Task<Result<SteamSubscriptionsDto, String>>>,
     steam_before: Vec<u64>,
@@ -251,6 +263,8 @@ impl Mods {
             steam: None,
             steam_error: None,
             usage: FxHashMap::default(),
+            saved: None,
+            unused: None,
             by_id: FxHashMap::default(),
             steam_by_id: FxHashMap::default(),
             workshop: FxHashMap::default(),
@@ -259,6 +273,9 @@ impl Mods {
             total_size: 0,
             load_task: None,
             usage_task: None,
+            saved_task: None,
+            saved_again: false,
+            saved_key: (0, 0, 0),
             check_task: None,
             steam_task: None,
             steam_before: Vec::new(),
@@ -358,6 +375,86 @@ impl Mods {
     pub fn workshop(&self, id: u64) -> Option<&WorkshopItemDto> {
         let s = self.steam.as_ref()?;
         self.workshop.get(&id).and_then(|i| s.details.get(*i))
+    }
+
+    /// The Workshop items `id` requires, when Steam told.
+    pub fn requires(&self, id: u64) -> Vec<u64> {
+        self.workshop(id)
+            .map(|w| w.requires.clone())
+            .unwrap_or_default()
+    }
+
+    /// The installed mods no favourite, history server or offline choice needs:
+    /// `None` until the disk and the saved servers were read.
+    pub fn unused(&self) -> Option<&Unused> {
+        self.unused.as_ref()
+    }
+
+    fn recompute_unused(&mut self) {
+        self.unused = match (&self.saved, self.loaded) {
+            (Some(saved), true) => {
+                // A mod being downloaded (here or by Steam) is wanted: never offered.
+                let ids: Vec<u64> = self
+                    .installed
+                    .iter()
+                    .map(|m| m.id)
+                    .filter(|id| {
+                        self.op_state(*id).is_none()
+                            && !self
+                                .steam_item(*id)
+                                .is_some_and(|i| i.downloading || i.pending)
+                    })
+                    .collect();
+                Some(usage::unused_mods(&ids, saved, &|id| self.requires(id)))
+            }
+            _ => None,
+        };
+    }
+
+    /// What removing the mods of the server `this` (running `server_mods`)
+    /// would remove and keep, by `saved` (a fresh read of the saved servers).
+    pub fn server_removal(
+        &self,
+        server_mods: &[u64],
+        this: &usage::ServerRef,
+        saved: &SavedModsDto,
+    ) -> ServerRemoval {
+        let installed: rustc_hash::FxHashSet<u64> = self.installed.iter().map(|m| m.id).collect();
+        usage::server_removal(server_mods, this, &installed, saved, &|id| {
+            self.requires(id)
+        })
+    }
+
+    /// Take a fresh read of the saved servers (a command asked for one).
+    pub fn set_saved(&mut self, saved: SavedModsDto) {
+        self.saved = Some(saved);
+        self.recompute_unused();
+    }
+
+    /// Read the saved servers' mods again (a favourite, the history or the offline
+    /// choice changed).
+    pub fn load_saved(&mut self) {
+        if self.saved_task.is_some() {
+            self.saved_again = true;
+            return;
+        }
+        let hub = self.hub.clone();
+        self.saved_task = Some(rt::spawn(async move { hub.saved_server_mods().await }));
+    }
+
+    /// Read the saved servers' mods again when the server list was replaced, the
+    /// favourites moved or a profile write landed (`written`), so the unused count
+    /// follows them while the view stays open. Every frame: only compares numbers.
+    pub fn follow_saved(&mut self, list: &dz_hub::features::browser::ServerSnapshot, written: u64) {
+        let key = (list.generation(), list.profile_generation(), written);
+        if key == self.saved_key {
+            return;
+        }
+        self.saved_key = key;
+        // Before the disk was read the load reads them when it ends.
+        if self.loaded {
+            self.load_saved();
+        }
     }
 
     /// The mods that require `id`.
@@ -555,7 +652,6 @@ impl Mods {
             .map(|m| m.size)
             .sum();
         let size = crate::i18n::format::bytes(size as f64);
-        let many = n > 1;
         let msg = plural(
             i64::try_from(n).unwrap_or(i64::MAX),
             "deleteSelectedMessage",
@@ -567,6 +663,17 @@ impl Mods {
         )
         .confirm_label(tf("mods", "deleteButton", &[("count", &n)]))
         .danger();
+        self.remove_asking(ids, req);
+    }
+
+    /// Delete `ids` once `req` is answered yes, by the same path as [`Mods::remove_many`]
+    /// (one Steam session for the unsubscriptions, the toasts, the list updated).
+    pub fn remove_asking(&self, ids: Vec<u64>, req: ConfirmRequest) {
+        if ids.is_empty() {
+            return;
+        }
+        let n = ids.len();
+        let many = n > 1;
         self.bus.confirm_then(req, move |cx| {
             let hub = cx.hub.clone();
             let task = rt::spawn(async move {
@@ -991,6 +1098,7 @@ impl Mods {
                     // Only an extra: the list stands without it.
                     let hub = self.hub.clone();
                     self.usage_task = Some(rt::spawn(async move { hub.mods_usage().await }));
+                    self.load_saved();
                 }
                 Err(e) => self.bus.err(tf("mods", "loadFailed", &[("error", &e)])),
             }
@@ -1002,6 +1110,19 @@ impl Mods {
             if let Ok(u) = r {
                 self.usage = u.into_iter().map(|x| (x.id, x)).collect();
                 changed = true;
+            }
+        }
+        if let Some(task) = &mut self.saved_task
+            && let Some(r) = task.poll()
+        {
+            self.saved_task = None;
+            changed = true;
+            match r {
+                Ok(saved) => self.saved = Some(saved),
+                Err(e) => eprintln!("[mods] saved servers not read: {e}"),
+            }
+            if std::mem::take(&mut self.saved_again) {
+                self.load_saved();
             }
         }
         if let Some(task) = &mut self.check_task
@@ -1152,6 +1273,9 @@ impl Mods {
                 self.load_steam();
             }
             changed = true;
+        }
+        if changed {
+            self.recompute_unused();
         }
         changed
     }

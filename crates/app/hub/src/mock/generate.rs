@@ -1,7 +1,10 @@
 //! mock.ts' invented data, made in the same order from the same seed, so the
 //! same servers, mods and sessions come out.
 
-use dz_profile::{Favorite, History, ModDownloader, Profile, Session, SessionKind};
+use dz_profile::{
+    Favorite, FavoriteGroup, FavoriteLabel, History, LabelColor, ModDownloader, Profile, Session,
+    SessionKind,
+};
 use std::net::Ipv4Addr;
 
 use crate::features::news::ArticleDto;
@@ -481,13 +484,60 @@ pub(super) fn profile(world: &World) -> Profile {
             .iter()
             .skip(3)
             .take(6)
-            .map(|s| Favorite {
-                name: s.name.clone(),
-                ip: s.ip.to_string(),
-                port: s.query_port,
-                password: None,
+            .enumerate()
+            .map(|(i, s)| {
+                let mut f = Favorite {
+                    name: s.name.clone(),
+                    ip: s.ip.to_string(),
+                    port: s.query_port,
+                    ..Favorite::default()
+                };
+                // A few notes, labels and groups, for the favourites view.
+                match i {
+                    0 => {
+                        f.group = Some("Main".into());
+                        f.labels = vec!["PvE".into(), "Friends".into()];
+                        f.note = "Trader at Green Mountain · wipe every first Friday".into();
+                    }
+                    1 => {
+                        f.group = Some("Main".into());
+                        f.labels = vec!["Hardcore".into()];
+                        f.character = Some("Alt".into());
+                        f.launch_args = "-maxMem=4096 -world=empty".into();
+                    }
+                    2 => {
+                        f.group = Some("Weekend".into());
+                        f.note = "Event server, Saturdays".into();
+                    }
+                    _ => {}
+                }
+                f
             })
             .collect(),
+        favorite_labels: vec![
+            FavoriteLabel {
+                name: "PvE".into(),
+                color: LabelColor::Ok,
+            },
+            FavoriteLabel {
+                name: "Hardcore".into(),
+                color: LabelColor::Err,
+            },
+            FavoriteLabel {
+                name: "Friends".into(),
+                color: LabelColor::Info,
+            },
+        ],
+        favorite_groups: vec![
+            FavoriteGroup {
+                name: "Main".into(),
+                collapsed: false,
+            },
+            FavoriteGroup {
+                name: "Weekend".into(),
+                collapsed: false,
+            },
+        ],
         history: servers
             .iter()
             .skip(10)
@@ -498,6 +548,7 @@ pub(super) fn profile(world: &World) -> Profile {
                 ip: s.ip.to_string(),
                 port: s.query_port,
                 ts: world.now - i as i64 * 7200 - 600,
+                mod_ids: None,
                 extra: None,
             })
             .collect(),

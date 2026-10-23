@@ -13,6 +13,10 @@
 //! Clearing a save (one or all) is optimistic: the card loses its save line at once and
 //! gets it back if the hub fails.
 //!
+//! The mods a mission loads (`-mod=`, as joining a server does) are chosen in the aside's
+//! "Mods" panel: a checklist of the installed mods, kept in the profile by the hub
+//! (`offline_mods`), so the choice holds between runs. A toggle is optimistic too.
+//!
 //! Files: `draw` (the header, the status strip, the cards and the aside).
 
 mod draw;
@@ -215,6 +219,23 @@ pub struct OfflineState {
     pub focused: Option<String>,
     load_gen: u64,
     saves_gen: u64,
+    /// The installed mods chosen to load with a mission, in the order chosen.
+    pub mods: Vec<u64>,
+    /// The choice was read from the profile.
+    pub mods_loaded: bool,
+    /// The checklist's search.
+    pub mods_query: String,
+    mods_gen: u64,
+    /// The checklist's rows (installed mod ids: the chosen first, in their order,
+    /// then the others by name), made again only when `mods_rows_key` moves.
+    pub mods_rows: Vec<u64>,
+    /// What `mods_rows` was made from: the mods' revision, the search, the choice.
+    pub mods_rows_key: Option<(u64, String, Vec<u64>)>,
+    /// A save of the choice is on its way to the hub.
+    mods_saving: bool,
+    /// The choice made while a save was on its way: sent when it lands, so the
+    /// profile keeps the last one made.
+    mods_pending: Option<Vec<u64>>,
 }
 
 impl OfflineState {
@@ -402,6 +423,92 @@ fn launch(cx: &Ctx, id: String) {
             Err(e) => bus.err(tf("offline", "statusLaunchFailed", &[("error", &e)])),
         }
     });
+}
+
+/// Read the mods chosen for offline missions from the profile.
+fn load_mods(cx: &Ctx) {
+    let wanted = with(cx.egui, |st| {
+        st.mods_gen = st.mods_gen.wrapping_add(1);
+        st.mods_gen
+    });
+    let (hub, bus) = (cx.hub.clone(), cx.stores.bus.clone());
+    rt::fire(async move {
+        let r = hub.offline_mods().await;
+        bus.run(move |cx| match r {
+            Ok(ids) => with(cx.egui, |st| {
+                if st.mods_gen == wanted {
+                    st.mods = ids;
+                    st.mods_loaded = true;
+                }
+            }),
+            Err(e) => cx.stores.bus.err(e),
+        });
+    });
+}
+
+/// Choose `ids` (shown at once), then have the hub keep them; a failure reads the
+/// profile's choice back. One save at a time: a choice made while one is on its
+/// way waits for it, and only the latest waiting one is sent.
+fn save_mods(cx: &mut Ctx, ids: Vec<u64>) {
+    let send = with(cx.egui, |st| {
+        st.mods = ids.clone();
+        st.mods_gen = st.mods_gen.wrapping_add(1);
+        if st.mods_saving {
+            st.mods_pending = Some(ids.clone());
+            false
+        } else {
+            st.mods_saving = true;
+            true
+        }
+    });
+    if send {
+        send_mods(cx, ids);
+    }
+}
+
+/// Send one save of the choice; when it lands, the one that waited (if any) goes.
+fn send_mods(cx: &Ctx, ids: Vec<u64>) {
+    let (hub, bus) = (cx.hub.clone(), cx.stores.bus.clone());
+    rt::fire(async move {
+        let r = hub.set_offline_mods(ids).await;
+        bus.run(move |cx| {
+            let next = with(cx.egui, |st| {
+                let next = st.mods_pending.take();
+                st.mods_saving = next.is_some();
+                next
+            });
+            match r {
+                Ok(()) => {
+                    if let Some(ids) = next {
+                        send_mods(cx, ids);
+                    } else {
+                        // The unused-mods filter keeps what offline missions load.
+                        cx.stores.mods.load_saved();
+                    }
+                }
+                Err(e) => {
+                    // What waited built on the choice that failed: read it back.
+                    with(cx.egui, |st| st.mods_saving = false);
+                    cx.stores
+                        .bus
+                        .err(tf("offline", "modsSaveFailed", &[("error", &e)]));
+                    load_mods(cx);
+                }
+            }
+        });
+    });
+}
+
+/// `ids` with `id` added (at the end) or taken out.
+fn toggled(ids: &[u64], id: u64, on: bool) -> Vec<u64> {
+    if on && ids.contains(&id) {
+        return ids.to_vec();
+    }
+    let mut out: Vec<u64> = ids.iter().copied().filter(|x| *x != id).collect();
+    if on {
+        out.push(id);
+    }
+    out
 }
 
 /// Open a folder the hub names (created first where it must be); errors ignored.
@@ -597,9 +704,17 @@ impl Default for OfflineView {
 impl View for OfflineView {
     fn on_show(&mut self, cx: &mut Ctx) {
         // Once: revisits keep the list unless Refresh is pressed.
-        let first = with(cx.egui, |st| !st.loaded && !st.loading);
+        let (first, mods) = with(cx.egui, |st| (!st.loaded && !st.loading, !st.mods_loaded));
         if first {
             load(cx, After::Count);
+        }
+        if mods {
+            load_mods(cx);
+        }
+        // The checklist lists the installed mods.
+        let m = &mut cx.stores.mods;
+        if !m.loaded && !m.loading {
+            m.load();
         }
     }
 
@@ -630,7 +745,7 @@ impl View for OfflineView {
         let mut run: Vec<(&'static str, Value)> = Vec::new();
         {
             let mut st = shared.lock();
-            draw::show(ui, &mut st, &mut run);
+            draw::show(ui, &mut st, &cx.stores.mods, &mut run);
         }
         for (id, args) in run {
             if let Err(e) = cx.run(id, &args) {
@@ -716,6 +831,33 @@ pub fn cmd_remove_mission(cx: &mut Ctx, a: &Value) {
     }
 }
 
+/// `offline.toggle_mod {"id", "on"?}`: load an installed mod with offline missions, or
+/// not (toggles without `on`); kept in the profile.
+pub fn cmd_toggle_mod(cx: &mut Ctx, a: &Value) {
+    let Some(id) = a
+        .get("id")
+        .and_then(|v| v.as_u64().or_else(|| v.as_str()?.trim().parse().ok()))
+        .filter(|id| *id != 0)
+    else {
+        return;
+    };
+    let ids = with(cx.egui, |st| st.mods.clone());
+    let on = a
+        .get("on")
+        .and_then(Value::as_bool)
+        .unwrap_or(!ids.contains(&id));
+    // Only an installed mod can be chosen; one already chosen can always go.
+    if on && cx.stores.mods.by_id(id).is_none() {
+        return;
+    }
+    save_mods(cx, toggled(&ids, id, on));
+}
+
+/// `offline.clear_mods`: offline missions load no mod.
+pub fn cmd_clear_mods(cx: &mut Ctx, _: &Value) {
+    save_mods(cx, Vec::new());
+}
+
 /// `offline.open_project`: the project's GitHub page in the browser.
 pub fn cmd_open_project(cx: &mut Ctx, _: &Value) {
     crate::views::news::open_url(&cx.stores.bus, REPO_URL);
@@ -756,6 +898,18 @@ mod tests {
         assert_eq!(prettify("big-old--map"), "Big Old Map");
         assert_eq!(describe("").map, "");
         assert_eq!(describe("é.Offline").map, "é");
+    }
+
+    #[test]
+    fn a_toggle_adds_at_the_end_or_takes_out() {
+        assert_eq!(toggled(&[1, 2], 3, true), vec![1, 2, 3]);
+        assert_eq!(toggled(&[1, 2, 3], 2, false), vec![1, 3]);
+        assert_eq!(
+            toggled(&[1, 2], 1, true),
+            vec![1, 2],
+            "already chosen: kept in place"
+        );
+        assert!(toggled(&[], 5, false).is_empty());
     }
 
     #[test]

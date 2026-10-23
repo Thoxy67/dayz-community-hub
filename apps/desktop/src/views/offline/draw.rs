@@ -1,5 +1,6 @@
 //! The offline view's drawing: the header, the status strip, the mission cards (a grid,
-//! `auto-fill minmax(16rem, 1fr)`) and the aside ("How it works", "Maintenance").
+//! `auto-fill minmax(16rem, 1fr)`) and the aside ("How it works", the mods missions load,
+//! "Maintenance").
 //! Clicks become commands pushed on `run`, which the view runs once the state is unlocked.
 
 use std::sync::Arc;
@@ -16,10 +17,11 @@ use crate::i18n::{format, t, tf};
 use crate::icons::{game, lucide};
 use crate::kit::paint::{self, alpha};
 use crate::kit::{
-    Button, IconButton, Meter, MeterSize, Panel, SkeletonRows, Spinner, Tag, TipExt, Variant,
-    panel, topo,
+    Button, IconButton, Input, Meter, MeterSize, Panel, Size, SkeletonRows, Spinner, Tag, TipExt,
+    Toggle, Variant, panel, topo,
 };
 use crate::parts::{Empty, Figure, PageHeader};
+use crate::store::mods::Mods;
 use crate::theme::{Tokens, TokensExt, font, fonts::Face, size};
 
 type Run = Vec<(&'static str, Value)>;
@@ -37,7 +39,7 @@ const FACT_GAP: f32 = 4.0;
 /// The card's foot: `py-1.5` around a control, its top border.
 const FOOT_H: f32 = 6.0 + size::CONTROL + 6.0 + 1.0;
 
-pub(super) fn show(ui: &mut Ui, st: &mut OfflineState, run: &mut Run) {
+pub(super) fn show(ui: &mut Ui, st: &mut OfflineState, mods: &Mods, run: &mut Run) {
     let tk = ui.tokens();
     let full = ui.max_rect();
     ui.painter().rect_filled(full, CornerRadius::ZERO, tk.panel);
@@ -80,7 +82,7 @@ pub(super) fn show(ui: &mut Ui, st: &mut OfflineState, run: &mut Run) {
             .layout(Layout::top_down(Align::Min)),
     );
     aui.set_clip_rect(aside.intersect(ui.clip_rect()));
-    aside_panels(&mut aui, st, run);
+    aside_panels(&mut aui, st, mods, run);
 }
 
 fn header(ui: &mut Ui, st: &OfflineState, out: &mut Run) {
@@ -529,7 +531,7 @@ fn card(
 
 // ── the aside ───────────────────────────────────────────────────────────────
 
-fn aside_panels(ui: &mut Ui, st: &OfflineState, run: &mut Run) {
+fn aside_panels(ui: &mut Ui, st: &mut OfflineState, mods: &Mods, run: &mut Run) {
     let tk = ui.tokens();
     let disabled = st.busy() || !st.installed();
     ui.painter()
@@ -543,6 +545,12 @@ fn aside_panels(ui: &mut Ui, st: &OfflineState, run: &mut Run) {
                 .title(t("offline", "howItWorks"))
                 .no_scroll()
                 .show(ui, |ui| how_it_works(ui, &tk, run));
+            let (sep, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
+            ui.painter().rect_filled(sep, CornerRadius::ZERO, tk.border);
+            Panel::new("offline-mods")
+                .title(t("offline", "modsTitle"))
+                .no_scroll()
+                .show(ui, |ui| mods_panel(ui, &tk, st, mods, run));
             let (sep, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
             ui.painter().rect_filled(sep, CornerRadius::ZERO, tk.border);
             Panel::new("offline-maintenance")
@@ -666,6 +674,210 @@ fn how_it_works(ui: &mut Ui, tk: &Tokens, run: &mut Run) {
         });
 }
 
+/// The checklist of installed mods offline missions load (`-mod=`), with its search.
+fn mods_panel(ui: &mut Ui, tk: &Tokens, st: &mut OfflineState, mods: &Mods, run: &mut Run) {
+    egui::Frame::new()
+        .inner_margin(egui::Margin::same(12))
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing = Vec2::ZERO;
+            let w = ui.available_width();
+            let x = ui.cursor().left();
+            let line = size::TEXT_3XS * 1.375;
+            let g = para(
+                ui,
+                t("offline", "modsIntro"),
+                size::TEXT_3XS,
+                line,
+                tk.fg_faint,
+                w,
+            );
+            place(ui, g, x, tk.fg_faint);
+            ui.add_space(8.0);
+            if mods.installed.is_empty() {
+                let key = if mods.loaded {
+                    "modsNone"
+                } else {
+                    "modsLoading"
+                };
+                let g = para(ui, t("offline", key), size::TEXT_2XS, line, tk.fg_muted, w);
+                place(ui, g, x, tk.fg_muted);
+                return;
+            }
+            if mods.installed.len() > 6 {
+                ui.add(
+                    Input::new(&mut st.mods_query)
+                        .search()
+                        .size(crate::kit::FieldSize::Xs)
+                        .placeholder(t("offline", "modsSearch"))
+                        .clear_label(t("common", "clear"))
+                        .width(w)
+                        .id_salt("offline-mods-search"),
+                );
+                ui.add_space(6.0);
+            }
+            refresh_mod_rows(st, mods);
+            let rows = &st.mods_rows;
+            if rows.is_empty() {
+                let g = para(
+                    ui,
+                    t("offline", "modsNoMatch"),
+                    size::TEXT_2XS,
+                    line,
+                    tk.fg_faint,
+                    w,
+                );
+                place(ui, g, x, tk.fg_faint);
+            } else {
+                // Its own height (at most ten rows): inside the aside's scroller a
+                // shrinking one would collapse to its least height. Only the rows on
+                // screen are laid out.
+                let h = size::CONTROL_SM * (rows.len().min(10) as f32);
+                egui::ScrollArea::vertical()
+                    .id_salt("offline-mods-list")
+                    .min_scrolled_height(h)
+                    .max_height(h)
+                    .auto_shrink([false, true])
+                    .show_rows(ui, size::CONTROL_SM, rows.len(), |ui, range| {
+                        ui.spacing_mut().item_spacing = Vec2::ZERO;
+                        for id in &rows[range] {
+                            let Some(m) = mods.by_id(*id) else {
+                                continue;
+                            };
+                            let mut on = st.mods.contains(id);
+                            let tip = format!("{} · {}", m.name, m.id);
+                            let r = ui.push_id(m.id, |ui| {
+                                ui.add(Toggle::new(&mut on, &m.name).compact().tip(&tip))
+                            });
+                            if r.inner.clicked() {
+                                run.push(("offline.toggle_mod", json!({ "id": m.id, "on": on })));
+                            }
+                        }
+                    });
+            }
+            ui.add_space(6.0);
+            let chosen = st
+                .mods
+                .iter()
+                .filter(|id| mods.by_id(**id).is_some())
+                .count();
+            let missing = st.mods.len() - chosen;
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                let text = if chosen == 0 {
+                    t("offline", "modsNoneChosen").to_owned()
+                } else {
+                    tf("offline", "modsChosen", &[("count", &chosen)])
+                };
+                let g = paint::galley(ui, &text, font(Face::Sans, size::TEXT_2XS), tk.fg_muted);
+                let (r, _) =
+                    ui.allocate_exact_size(vec2(g.size().x, size::CONTROL_SM), Sense::hover());
+                paint::text_at(ui.painter(), &g, r.left(), r.center().y, tk.fg_muted);
+                if !st.mods.is_empty() {
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if ui
+                            .add(
+                                Button::new(t("offline", "modsClear"))
+                                    .variant(Variant::Ghost)
+                                    .size(Size::Xs),
+                            )
+                            .clicked()
+                        {
+                            run.push(("offline.clear_mods", Value::Null));
+                        }
+                    });
+                }
+            });
+            if missing > 0 && mods.loaded {
+                ui.add_space(4.0);
+                let g = para(
+                    ui,
+                    &tf("offline", "modsMissing", &[("count", &missing)]),
+                    size::TEXT_3XS,
+                    line,
+                    tk.warn,
+                    w,
+                );
+                place(ui, g, x, tk.warn);
+                // Each one can go on its own: "Clear" would drop the kept ones too.
+                let label = t("offline", "modsUnchoose");
+                for id in st.mods.iter().filter(|id| mods.by_id(**id).is_none()) {
+                    ui.push_id(("offline-missing", *id), |ui| {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            let bw = size::CONTROL_SM;
+                            let name = paint::galley_trunc(
+                                ui,
+                                &mods.name_of(*id),
+                                font(Face::Sans, size::TEXT_2XS),
+                                tk.fg_muted,
+                                (w - bw - 6.0).max(0.0),
+                            );
+                            let (r, _) = ui.allocate_exact_size(
+                                vec2((w - bw - 6.0).max(0.0), bw),
+                                Sense::hover(),
+                            );
+                            paint::text_at(
+                                ui.painter(),
+                                &name,
+                                r.left(),
+                                r.center().y,
+                                tk.fg_muted,
+                            );
+                            if ui
+                                .add(
+                                    IconButton::new(lucide::X, label)
+                                        .size(Size::IconXs)
+                                        .danger_hover(),
+                                )
+                                .clicked()
+                            {
+                                run.push(("offline.toggle_mod", json!({ "id": id, "on": false })));
+                            }
+                        });
+                    });
+                }
+            }
+        });
+}
+
+/// Make the checklist's rows again when the mods, the search or the choice moved:
+/// the chosen first, in the order they load, then the others by name.
+fn refresh_mod_rows(st: &mut OfflineState, mods: &Mods) {
+    let needle = st.mods_query.trim().to_lowercase();
+    let fresh = st.mods_rows_key.as_ref().is_some_and(|(rev, q, chosen)| {
+        *rev == mods.revision && *q == needle && *chosen == st.mods
+    });
+    if fresh {
+        return;
+    }
+    st.mods_rows = mod_rows(
+        mods.installed.iter().map(|m| (m.id, m.name.as_str())),
+        &st.mods,
+        &needle,
+    );
+    st.mods_rows_key = Some((mods.revision, needle, st.mods.clone()));
+}
+
+/// The installed mods (`(id, name)`) matching `needle` (lowercase): the `chosen`
+/// first, in their order, then the others by name.
+fn mod_rows<'a>(
+    installed: impl Iterator<Item = (u64, &'a str)>,
+    chosen: &[u64],
+    needle: &str,
+) -> Vec<u64> {
+    let rank: rustc_hash::FxHashMap<u64, usize> =
+        chosen.iter().enumerate().map(|(i, id)| (*id, i)).collect();
+    let mut rows: Vec<(usize, String, u64)> = installed
+        .filter_map(|(id, name)| {
+            let name = name.to_lowercase();
+            let hit = needle.is_empty() || name.contains(needle) || id.to_string().contains(needle);
+            hit.then(|| (rank.get(&id).copied().unwrap_or(usize::MAX), name, id))
+        })
+        .collect();
+    rows.sort_unstable();
+    rows.into_iter().map(|(_, _, id)| id).collect()
+}
+
 fn maintenance(ui: &mut Ui, tk: &Tokens, disabled: bool, run: &mut Run) {
     egui::Frame::new()
         .inner_margin(egui::Margin::same(12))
@@ -719,4 +931,20 @@ fn maintenance(ui: &mut Ui, tk: &Tokens, disabled: bool, run: &mut Run) {
                 place(ui, g, x, tk.fg_faint);
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mod_rows;
+
+    #[test]
+    fn the_checklist_puts_the_chosen_first_then_the_rest_by_name() {
+        let installed = [(1, "Zeta"), (2, "alpha"), (3, "CF"), (4, "Beta")];
+        assert_eq!(
+            mod_rows(installed.into_iter(), &[3, 1], ""),
+            vec![3, 1, 2, 4]
+        );
+        assert_eq!(mod_rows(installed.into_iter(), &[], "ta"), vec![4, 1]);
+        assert_eq!(mod_rows(installed.into_iter(), &[], "3"), vec![3]);
+    }
 }

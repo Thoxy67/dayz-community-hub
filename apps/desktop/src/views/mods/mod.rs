@@ -189,6 +189,11 @@ impl View for ModsView {
         }
         m.check_updates(false);
         m.load_steam();
+        // The favourites and the history may have moved since: the Unused filter
+        // reads them again.
+        if m.loaded {
+            m.load_saved();
+        }
     }
 
     fn on_event(&mut self, _ev: &HubEvent, _cx: &mut Ctx) {}
@@ -221,6 +226,7 @@ impl View for ModsView {
                     col: *col,
                     asc: *asc,
                     folded,
+                    unused: cx.stores.mods.unused().map_or(&[], |u| u.ids.as_slice()),
                 },
             );
             // Forget ticks for mods that are gone.
@@ -351,6 +357,9 @@ fn draw(ui: &mut Ui, cx: &Ctx, st: &mut UiState, run: &mut Vec<(&'static str, Va
     );
     v.spacing_mut().item_spacing = Vec2::ZERO;
     header(&mut v, cx, st, run);
+    if st.filter == Filter::Unused && !cx.stores.mods.installed.is_empty() {
+        unused_strip(&mut v, cx, run);
+    }
     let mods = &cx.stores.mods;
     let rest = v.available_rect_before_wrap();
     let mut body = v.new_child(
@@ -403,10 +412,16 @@ fn header(ui: &mut Ui, cx: &Ctx, st: &mut UiState, out: &mut Vec<(&'static str, 
     let shown = st.listing.rows.len();
     let incoming = st.listing.incoming;
     let unmanaged = mods.installed.iter().filter(|m| !m.managed).count();
+    // Unknown while the saved servers are being read, or while one's mods are unknown.
+    let unused = match mods.unused() {
+        Some(u) if u.unknown.is_empty() => u.ids.len().to_string(),
+        _ => "?".to_owned(),
+    };
     let labels = [
         format!("{} · {}", t("mods", "filterAll"), total),
         format!("{} · {}", t("mods", "filterUpdates"), stale + incoming),
         format!("{} · {}", t("mods", "filterUnmanaged"), unmanaged),
+        format!("{} · {}", t("mods", "filterUnused"), unused),
     ];
     let steam_active = mods.steam_active().count();
     let steam_dl = tf("mods", "steamDownloads", &[("count", &steam_active)]);
@@ -463,6 +478,7 @@ fn header(ui: &mut Ui, cx: &Ctx, st: &mut UiState, out: &mut Vec<(&'static str, 
                 Segment::new(Filter::All, &labels[0]),
                 Segment::new(Filter::Updates, &labels[1]),
                 Segment::new(Filter::Unmanaged, &labels[2]),
+                Segment::new(Filter::Unused, &labels[3]).title(t("mods", "filterUnusedTitle")),
             ];
             ui.add(Segmented::new(filter, &segs));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -626,6 +642,306 @@ fn header(ui: &mut Ui, cx: &Ctx, st: &mut UiState, out: &mut Vec<(&'static str, 
     out.extend(run.into_inner());
 }
 
+/// Under the toolbar while the Unused filter is on: what "unused" means and how many,
+/// with the button that removes them all; or why none can be called unused yet.
+fn unused_strip(ui: &mut Ui, cx: &Ctx, run: &mut Vec<(&'static str, Value)>) {
+    let tk = ui.tokens();
+    let mods = &cx.stores.mods;
+    let w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(w, 40.0), egui::Sense::hover());
+    ui.painter()
+        .rect_filled(rect, egui::CornerRadius::ZERO, tk.bg);
+    ui.painter().hline(
+        rect.x_range(),
+        rect.bottom() - 0.5,
+        egui::Stroke::new(1.0, tk.border),
+    );
+    let inner = rect.shrink2(Vec2::new(size::PAD, 0.0));
+    let (icon, text, tip, remove) = match mods.unused() {
+        None => (
+            lucide::INFO,
+            t("mods", "unusedLoading").to_owned(),
+            String::new(),
+            None,
+        ),
+        Some(u) if !u.unknown.is_empty() => {
+            let names = some_names(&u.unknown, ", ");
+            (
+                lucide::CIRCLE_ALERT,
+                tf(
+                    "mods",
+                    "unusedBlocked",
+                    &[("count", &u.unknown.len()), ("names", &names)],
+                ),
+                some_names(&u.unknown, "\n"),
+                None,
+            )
+        }
+        Some(u) => {
+            let n = u.ids.len();
+            let bytes: u64 = u
+                .ids
+                .iter()
+                .filter_map(|id| mods.by_id(*id))
+                .map(|m| m.size)
+                .sum();
+            let size_s = format::bytes(bytes as f64);
+            let text = if n == 0 {
+                t("mods", "unusedDefinition").to_owned()
+            } else {
+                tf("mods", "unusedSummary", &[("count", &n), ("size", &size_s)])
+            };
+            (
+                lucide::INFO,
+                text,
+                t("mods", "unusedDefinition").to_owned(),
+                (n > 0).then(|| tf("mods", "removeUnused", &[("count", &n)])),
+            )
+        }
+    };
+    let mut row = ui.new_child(
+        UiBuilder::new()
+            .max_rect(inner)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    row.spacing_mut().item_spacing.x = 8.0;
+    let (ir, _) = row.allocate_exact_size(Vec2::splat(size::ICON_SM), egui::Sense::hover());
+    let tint = if icon == lucide::CIRCLE_ALERT {
+        tk.warn
+    } else {
+        tk.fg_faint
+    };
+    icon.paint(row.painter(), ir, tint);
+    let button_w = remove.as_ref().map_or(0.0, |l| {
+        crate::parts::ph(&row, l, font(Face::SansMedium, size::TEXT_XS))
+            .size()
+            .x
+            + 48.0
+    });
+    let text_w = (row.available_width() - button_w - 8.0).max(40.0);
+    let g = crate::parts::ph_trunc(&row, &text, font(Face::Sans, size::TEXT_2XS), text_w);
+    let elided = g.size().x + 1.0 >= text_w;
+    let (tr, resp) = row.allocate_exact_size(Vec2::new(text_w, 20.0), egui::Sense::hover());
+    crate::parts::draw(row.painter(), &g, tr.left(), tr.center().y, tk.fg_muted);
+    if !tip.is_empty() || elided {
+        let full = if elided && tip != text {
+            format!("{text}\n\n{tip}")
+        } else {
+            tip
+        };
+        let _ = crate::kit::TipExt::tip_kbd(resp, full.trim(), "", Side::Bottom);
+    }
+    if let Some(label) = remove {
+        row.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .add(
+                    Button::new(&label)
+                        .icon(lucide::TRASH_2)
+                        .variant(Variant::Danger)
+                        .size(Size::Sm)
+                        .enabled(!mods.busy()),
+                )
+                .clicked()
+            {
+                run.push(("mods.remove_unused", Value::Null));
+            }
+        });
+    }
+}
+
+/// The first ten of `names` joined by `sep`, and "+N" for the rest: the history
+/// holds up to 200 servers.
+fn some_names(names: &[String], sep: &str) -> String {
+    const SHOWN: usize = 10;
+    let mut out = names
+        .iter()
+        .take(SHOWN)
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(sep);
+    if names.len() > SHOWN {
+        out.push_str(sep);
+        out.push_str(&format!("+{}", names.len() - SHOWN));
+    }
+    out
+}
+
+/// A mod's line in a removal question: its name and size.
+fn removal_line(mods: &crate::store::mods::Mods, id: u64) -> String {
+    match mods.by_id(id) {
+        Some(m) => format!("{} · {}", m.name, m.size_human),
+        None => mods.name_of(id),
+    }
+}
+
+/// `mods.remove_unused`: read the saved servers afresh, then ask to delete every
+/// installed mod nothing needs (listed in the question).
+pub fn cmd_remove_unused(cx: &mut Ctx, _: &Value) {
+    let (hub, bus) = (cx.hub.clone(), cx.stores.bus.clone());
+    crate::rt::fire(async move {
+        let r = hub.saved_server_mods().await;
+        bus.run(move |cx| match r {
+            Ok(saved) => {
+                cx.stores.mods.set_saved(saved);
+                ask_remove_unused(cx);
+            }
+            Err(e) => cx.stores.bus.err(e),
+        });
+    });
+}
+
+fn ask_remove_unused(cx: &mut Ctx) {
+    let mods = &cx.stores.mods;
+    let Some(u) = mods.unused() else {
+        return;
+    };
+    if !u.unknown.is_empty() {
+        let names = some_names(&u.unknown, ", ");
+        cx.stores.bus.info(tf(
+            "mods",
+            "unusedBlocked",
+            &[("count", &u.unknown.len()), ("names", &names)],
+        ));
+        return;
+    }
+    if u.ids.is_empty() {
+        cx.stores.bus.info(t("mods", "noUnused"));
+        return;
+    }
+    let ids = u.ids.clone();
+    let n = ids.len();
+    let bytes: u64 = ids
+        .iter()
+        .filter_map(|id| mods.by_id(*id))
+        .map(|m| m.size)
+        .sum();
+    let mut lines: Vec<String> = ids.iter().map(|id| removal_line(mods, *id)).collect();
+    lines.sort_by_key(|l| l.to_lowercase());
+    let req = crate::store::ConfirmRequest::new(
+        t("mods", "removeUnusedTitle"),
+        tf(
+            "mods",
+            "removeUnusedMessage",
+            &[("count", &n), ("size", &format::bytes(bytes as f64))],
+        ),
+    )
+    .detail(t("mods", "removalRemoved"), lines)
+    .confirm_label(tf("mods", "deleteButton", &[("count", &n)]))
+    .danger();
+    mods.remove_asking(ids, req);
+}
+
+/// `servers.remove_mods {"ip", "port"}` (the query port): read the saved servers
+/// afresh, then ask to delete the listed server's installed mods that no other saved
+/// server, nor the offline choice, needs; the question lists what goes, what stays and
+/// why.
+pub fn cmd_remove_server_mods(cx: &mut Ctx, a: &Value) {
+    let ip = a.get("ip").and_then(Value::as_str).unwrap_or("");
+    let port = a.get("port").and_then(Value::as_i64).unwrap_or(0);
+    let Some(r) = cx.stores.servers.row_of(ip, port) else {
+        return;
+    };
+    let this = dz_hub::features::mods::usage::ServerRef {
+        listed: r.server.endpoint,
+        ip: r.server.ip().to_string(),
+        port: r.server.game_port,
+        name: r.server.name.clone(),
+    };
+    let ids = r.server.mod_ids();
+    // Until the disk was read nothing looks installed: the question would wrongly
+    // say none is. Read it and let the user ask again.
+    if !cx.stores.mods.loaded {
+        if !cx.stores.mods.loading {
+            cx.stores.mods.load();
+        }
+        cx.stores.bus.info(t("mods", "loading"));
+        return;
+    }
+    let (hub, bus) = (cx.hub.clone(), cx.stores.bus.clone());
+    crate::rt::fire(async move {
+        let r = hub.saved_server_mods().await;
+        bus.run(move |cx| match r {
+            Ok(saved) => {
+                cx.stores.mods.set_saved(saved.clone());
+                ask_remove_server_mods(cx, &this, &ids, &saved);
+            }
+            Err(e) => cx.stores.bus.err(e),
+        });
+    });
+}
+
+fn ask_remove_server_mods(
+    cx: &mut Ctx,
+    this: &dz_hub::features::mods::usage::ServerRef,
+    server_mods: &[u64],
+    saved: &dz_hub::features::mods::usage::SavedModsDto,
+) {
+    use dz_hub::features::mods::usage::KeepReason;
+    let mods = &cx.stores.mods;
+    let server = this.name.as_str();
+    let plan = mods.server_removal(server_mods, this, saved);
+    let kept: Vec<String> = plan
+        .keep
+        .iter()
+        .map(|(id, why)| {
+            let why = match why {
+                KeepReason::Server(s) => tf("mods", "keptForServer", &[("server", s)]),
+                KeepReason::Offline => t("mods", "keptForOffline").to_owned(),
+                KeepReason::Required(by) => {
+                    tf("mods", "keptRequiredBy", &[("name", &mods.name_of(*by))])
+                }
+            };
+            format!("{} · {why}", mods.name_of(*id))
+        })
+        .collect();
+    if plan.remove.is_empty() {
+        let key = if plan.keep.is_empty() {
+            "serverModsNoneInstalled"
+        } else {
+            "serverModsAllKept"
+        };
+        cx.stores.bus.info(tf(
+            "mods",
+            key,
+            &[("server", &server), ("count", &plan.keep.len())],
+        ));
+        return;
+    }
+    let n = plan.remove.len();
+    let bytes: u64 = plan
+        .remove
+        .iter()
+        .filter_map(|id| mods.by_id(*id))
+        .map(|m| m.size)
+        .sum();
+    let removed: Vec<String> = plan
+        .remove
+        .iter()
+        .map(|id| removal_line(mods, *id))
+        .collect();
+    let mut req = crate::store::ConfirmRequest::new(
+        t("mods", "removeServerModsTitle"),
+        tf(
+            "mods",
+            "removeServerModsMessage",
+            &[
+                ("count", &n),
+                ("server", &server),
+                ("size", &format::bytes(bytes as f64)),
+            ],
+        ),
+    )
+    .detail(t("mods", "removalRemoved"), removed)
+    .detail(t("mods", "removalKept"), kept);
+    if !plan.unknown.is_empty() {
+        req = req.detail(t("mods", "removalUnknown"), plan.unknown.clone());
+    }
+    let req = req
+        .confirm_label(tf("mods", "deleteButton", &[("count", &n)]))
+        .danger();
+    mods.remove_asking(plan.remove, req);
+}
+
 // ── commands (registered in `commands.rs`) ──────────────────────────────────
 
 fn arg_u64(a: &Value, k: &str) -> Option<u64> {
@@ -772,7 +1088,7 @@ pub fn cmd_search(cx: &mut Ctx, a: &Value) {
     cx.go(ViewId::Mods);
 }
 
-/// `mods.filter {"filter": "all" | "updates" | "unmanaged"}`.
+/// `mods.filter {"filter": "all" | "updates" | "unmanaged" | "unused"}`.
 pub fn cmd_filter(cx: &mut Ctx, a: &Value) {
     if let Some(f) = a
         .get("filter")

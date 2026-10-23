@@ -1,5 +1,8 @@
 //! Installed workshop mods: list them, check them against the Workshop,
-//! delete them, link and unlink them, and open their folders.
+//! delete them, link and unlink them, and open their folders; which of them
+//! the saved servers still need (`usage`).
+
+pub mod usage;
 
 use crate::Hub;
 use dz_game::mods::{self, DeleteOutcome, InstalledMod, ModSource};

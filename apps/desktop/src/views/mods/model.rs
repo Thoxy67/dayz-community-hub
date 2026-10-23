@@ -16,6 +16,9 @@ pub enum Filter {
     All,
     Updates,
     Unmanaged,
+    /// Installed mods no favourite, history server or offline choice needs
+    /// (`dz_hub::features::mods::usage`).
+    Unused,
 }
 
 impl Filter {
@@ -24,6 +27,7 @@ impl Filter {
             "all" => Some(Filter::All),
             "updates" => Some(Filter::Updates),
             "unmanaged" => Some(Filter::Unmanaged),
+            "unused" => Some(Filter::Unused),
             _ => None,
         }
     }
@@ -105,6 +109,8 @@ pub struct Query<'a> {
     pub col: Col,
     pub asc: bool,
     pub folded: &'a FxHashSet<i8>,
+    /// The unused mods, sorted by id (empty while unknown).
+    pub unused: &'a [u64],
 }
 
 /// A mod's status group.
@@ -155,7 +161,7 @@ fn fingerprint(mods: &Mods, q: &Query<'_>) -> u64 {
         s.details.len().hash(&mut h);
     }
     mods.op.names.len().hash(&mut h);
-    (q.query, q.filter, q.col, q.asc).hash(&mut h);
+    (q.query, q.filter, q.col, q.asc, q.unused).hash(&mut h);
     let mut folded: Vec<i8> = q.folded.iter().copied().collect();
     folded.sort_unstable();
     folded.hash(&mut h);
@@ -206,6 +212,7 @@ impl Listing {
                 Filter::All => true,
                 Filter::Updates => m.is_none_or(|m| m.update_available),
                 Filter::Unmanaged => m.is_some_and(|m| !m.managed),
+                Filter::Unused => m.is_some() && q.unused.binary_search(&r.id).is_ok(),
             };
             pass && (needle.is_empty()
                 || r.name.to_lowercase().contains(&needle)
