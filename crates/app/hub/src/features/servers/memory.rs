@@ -49,7 +49,7 @@ pub(crate) enum Verdict {
     Fake,
     /// Modded, its mods unreadable.
     NoMods,
-    /// Did not answer, twice.
+    /// Did not answer A2S_INFO, twice, the second time given longer.
     Silent,
     /// Combed out: another entry answers for its address to join.
     Duplicate,

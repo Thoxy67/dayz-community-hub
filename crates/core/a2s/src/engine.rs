@@ -8,6 +8,13 @@
 //! within the request's one deadline; every deadline sits in one queue, read
 //! by one timer, instead of a timer per request.
 //!
+//! A2S answers carry no request id, so an answer is only as good as the
+//! guess of which request it answers. One request to an address is out at
+//! a time, an answer of the other kind is ignored, and an address whose
+//! request timed out stays quiet for half that timeout (less if the late
+//! answer comes): what arrives meanwhile is dropped rather than taken, with
+//! a far too short round trip, by the next request there.
+//!
 //! The official DayZ launcher, captured on the owner's machine, queries the
 //! same way: one socket for every A2S_INFO, about 85 to 160 a second, a few
 //! in flight, no retries, and about 0.4% of the answers lost. Before this, a
@@ -240,6 +247,7 @@ struct Pending {
     challenge: Option<[u8; 4]>,
     challenges: usize,
     sent: Instant,
+    timeout: Duration,
     first_trip: Option<Duration>,
     answer: Reassembly,
     reply: oneshot::Sender<std::result::Result<Reply, String>>,
@@ -277,8 +285,12 @@ struct Driver {
     /// address, so they go one at a time.
     parked: FxHashMap<SocketAddr, VecDeque<Request>>,
     pending: FxHashMap<SocketAddr, Pending>,
-    /// Every pending request's deadline, the soonest on top; an entry whose
-    /// request has ended is dropped when it comes up.
+    /// Addresses whose request timed out, by the id of their quiet spell:
+    /// nothing is sent there and what they send is dropped until it ends.
+    quiet: FxHashMap<SocketAddr, u64>,
+    /// Every pending request's deadline and every quiet spell's end, the
+    /// soonest on top; an entry whose request or spell has ended is dropped
+    /// when it comes up.
     deadlines: BinaryHeap<Reverse<(Instant, u64, SocketAddr)>>,
     next_id: u64,
     tokens: f64,
@@ -298,6 +310,7 @@ impl Driver {
             queue: VecDeque::new(),
             parked: FxHashMap::default(),
             pending: FxHashMap::default(),
+            quiet: FxHashMap::default(),
             deadlines: BinaryHeap::new(),
             next_id: 0,
             tokens: f64::from(pace.burst.max(1)),
@@ -313,7 +326,11 @@ impl Driver {
         let mut timer = pin!(sleep_until(Instant::now()));
         loop {
             self.send_due();
-            if !self.open && self.queue.is_empty() && self.pending.is_empty() {
+            if !self.open
+                && self.queue.is_empty()
+                && self.pending.is_empty()
+                && self.parked.is_empty()
+            {
                 return;
             }
             let wake_at = self.next_wake();
@@ -357,7 +374,7 @@ impl Driver {
             if req.reply.is_closed() {
                 continue;
             }
-            if self.pending.contains_key(&req.addr) {
+            if self.pending.contains_key(&req.addr) || self.quiet.contains_key(&req.addr) {
                 self.parked.entry(req.addr).or_default().push_back(req);
                 continue;
             }
@@ -380,6 +397,7 @@ impl Driver {
                     challenge: req.challenge,
                     challenges: 0,
                     sent,
+                    timeout: req.timeout,
                     first_trip: None,
                     answer: Reassembly::default(),
                     reply: req.reply,
@@ -421,7 +439,9 @@ impl Driver {
     /// deadline, or the next send the pace allows.
     fn next_wake(&mut self) -> Option<Instant> {
         while let Some(Reverse((_, id, addr))) = self.deadlines.peek() {
-            if self.pending.get(addr).is_some_and(|p| p.id == *id) {
+            if self.pending.get(addr).is_some_and(|p| p.id == *id)
+                || self.quiet.get(addr) == Some(id)
+            {
                 break;
             }
             self.deadlines.pop();
@@ -461,6 +481,12 @@ impl Driver {
     /// or nothing anyone waits for.
     fn datagram(&mut self, from: SocketAddr, packet: &[u8]) {
         let Some(p) = self.pending.get_mut(&from) else {
+            // The late answer of a request that timed out: dropped, and
+            // nothing more is expected, so the address may be asked again.
+            if self.quiet.contains_key(&from) && is_answer(packet) {
+                self.quiet.remove(&from);
+                self.release(from);
+            }
             return;
         };
         let payload = match p.answer.push(packet) {
@@ -468,10 +494,10 @@ impl Driver {
             Some(Ok(payload)) => payload,
             Some(Err(e)) => return self.finish(from, Err(e)),
         };
-        let sent = p.sent;
-        let trip = *p.first_trip.get_or_insert_with(|| sent.elapsed());
+        let trip = p.sent.elapsed();
         match payload.first() {
             Some(&S2C_CHALLENGE) if payload.len() >= 5 => {
+                p.first_trip.get_or_insert(trip);
                 p.challenges += 1;
                 if p.challenges >= MAX_CHALLENGES {
                     return self
@@ -486,17 +512,19 @@ impl Driver {
                     self.finish(from, Err(e));
                 }
             }
-            // A late answer to an earlier A2S_INFO: the rules are still to come.
-            Some(&S2A_INFO) if p.kind != Kind::Info => {
+            // A late answer of the other kind, to an earlier request there:
+            // this one's is still to come, and its round trip not measured.
+            Some(&b) if b != p.kind.answer() && (b == S2A_INFO || b == rules::S2A_RULES) => {
                 p.answer = Reassembly::default();
             }
             Some(&b) if b == p.kind.answer() => {
+                let latency = p.first_trip.unwrap_or(trip);
                 let challenge = p.challenge;
                 self.finish(
                     from,
                     Ok(Reply {
                         payload,
-                        latency: trip,
+                        latency,
                         challenge,
                     }),
                 );
@@ -515,6 +543,11 @@ impl Driver {
         if let Some(p) = self.pending.remove(&addr) {
             let _ = p.reply.send(result);
         }
+        self.release(addr);
+    }
+
+    /// Let the next request parked for `addr` go first.
+    fn release(&mut self, addr: SocketAddr) {
         if let Some(waiting) = self.parked.get_mut(&addr) {
             if let Some(next) = waiting.pop_front() {
                 self.queue.push_front(next);
@@ -525,18 +558,33 @@ impl Driver {
         }
     }
 
-    /// End every request whose deadline has passed.
+    /// End every request whose deadline has passed, its address quiet for
+    /// half its timeout, and every quiet spell that is over.
     fn expire(&mut self, now: Instant) {
         while let Some(&Reverse((at, id, addr))) = self.deadlines.peek() {
             if at > now {
                 break;
             }
             self.deadlines.pop();
-            if self.pending.get(&addr).is_some_and(|p| p.id == id) {
-                self.finish(addr, Err("timed out".into()));
+            if self.pending.get(&addr).is_some_and(|p| p.id == id)
+                && let Some(p) = self.pending.remove(&addr)
+            {
+                let _ = p.reply.send(Err("timed out".into()));
+                self.next_id += 1;
+                self.quiet.insert(addr, self.next_id);
+                self.deadlines
+                    .push(Reverse((at + p.timeout / 2, self.next_id, addr)));
+            } else if self.quiet.get(&addr) == Some(&id) {
+                self.quiet.remove(&addr);
+                self.release(addr);
             }
         }
     }
+}
+
+/// Whether `packet` is a whole answer, single and of either kind.
+fn is_answer(packet: &[u8]) -> bool {
+    packet.starts_with(&HEADER) && matches!(packet.get(4), Some(&(S2A_INFO | rules::S2A_RULES)))
 }
 
 /// An unconnected UDP socket for one family, on any port, with the large
@@ -624,6 +672,36 @@ mod tests {
                     _ => out.extend_from_slice(&rules_payload()),
                 }
                 let _ = socket.send_to(&out, from).await;
+            }
+        });
+        (addr, got)
+    }
+
+    /// A fake server that answers its n-th A2S_INFO, without a challenge,
+    /// `delays[n]` after it came (never past the list); returns its address
+    /// and the number of datagrams it got.
+    async fn scripted(delays: Vec<Duration>) -> (SocketAddr, Arc<AtomicUsize>) {
+        let socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let addr = socket.local_addr().unwrap();
+        let got = Arc::new(AtomicUsize::new(0));
+        let count = Arc::clone(&got);
+        tokio::spawn(async move {
+            let mut buf = [0u8; 1500];
+            loop {
+                let Ok((_, from)) = socket.recv_from(&mut buf).await else {
+                    return;
+                };
+                let n = count.fetch_add(1, Ordering::SeqCst);
+                let Some(&delay) = delays.get(n) else {
+                    continue;
+                };
+                let socket = Arc::clone(&socket);
+                tokio::spawn(async move {
+                    tokio::time::sleep(delay).await;
+                    let mut out = HEADER.to_vec();
+                    out.extend_from_slice(&info_payload());
+                    let _ = socket.send_to(&out, from).await;
+                });
             }
         });
         (addr, got)
@@ -832,6 +910,97 @@ mod tests {
                 .sum::<usize>(),
             6
         );
+    }
+
+    #[tokio::test]
+    async fn a_request_its_caller_dropped_is_never_sent() {
+        let (silent, _) = fake(Fake::Silent).await;
+        let (open, got) = fake(Fake::Open).await;
+        let engine = Engine::new(Pace {
+            rate: 10_000,
+            burst: 64,
+            in_flight: 1,
+        });
+        // The silent server holds the one place in flight while the other
+        // request waits its turn, and is given up before it comes.
+        let (quiet, dropped) = tokio::join!(
+            engine.info(silent, Duration::from_millis(300)),
+            tokio::time::timeout(
+                Duration::from_millis(50),
+                engine.info(open, Duration::from_secs(1))
+            ),
+        );
+        assert!(quiet.is_err());
+        assert!(dropped.is_err());
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(got.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn an_earlier_requests_deadline_does_not_end_the_next() {
+        // The first answer comes at once, the second past the first
+        // request's deadline.
+        let (addr, _) = scripted(vec![Duration::ZERO, Duration::from_millis(500)]).await;
+        let engine = Engine::new(fast());
+        let first = engine.info(addr, Duration::from_millis(300)).await;
+        assert!(first.is_ok());
+        let second = engine.info(addr, Duration::from_secs(2)).await.unwrap();
+        assert!(
+            second.latency >= Duration::from_millis(450),
+            "{:?}",
+            second.latency
+        );
+    }
+
+    #[tokio::test]
+    async fn a_late_answer_is_not_taken_by_the_next_request() {
+        // The first answer comes 250 ms late for a 200 ms timeout, while the
+        // address is quiet; the second 150 ms after it is asked.
+        let (addr, got) =
+            scripted(vec![Duration::from_millis(250), Duration::from_millis(150)]).await;
+        let engine = Engine::new(fast());
+        assert!(engine.info(addr, Duration::from_millis(200)).await.is_err());
+        let t = std::time::Instant::now();
+        let second = engine.info(addr, Duration::from_secs(2)).await.unwrap();
+        // Asked once the late answer was in (about 50 ms on), and measured
+        // from then: not the late answer's 50 ms.
+        assert!(
+            second.latency >= Duration::from_millis(120),
+            "{:?}",
+            second.latency
+        );
+        assert!(
+            t.elapsed() < Duration::from_millis(400),
+            "{:?}",
+            t.elapsed()
+        );
+        assert_eq!(got.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn a_late_answer_of_the_other_kind_is_ignored() {
+        // Answers the rules at once and late, the info only after them.
+        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let addr = socket.local_addr().unwrap();
+        tokio::spawn(async move {
+            let mut buf = [0u8; 1500];
+            let (_, from) = socket.recv_from(&mut buf).await.unwrap();
+            let (_, _) = socket.recv_from(&mut buf).await.unwrap();
+            let mut rules = HEADER.to_vec();
+            rules.extend_from_slice(&rules_payload());
+            socket.send_to(&rules, from).await.unwrap();
+            let mut info = HEADER.to_vec();
+            info.extend_from_slice(&info_payload());
+            socket.send_to(&info, from).await.unwrap();
+            std::future::pending::<()>().await;
+        });
+        let engine = Engine::new(fast());
+        let (rules, info) = tokio::join!(
+            engine.rules(addr, None, Duration::from_millis(100)),
+            engine.info(addr, Duration::from_secs(2)),
+        );
+        assert!(rules.is_err());
+        assert_eq!(info.unwrap().info.name, "Test server");
     }
 
     #[tokio::test]

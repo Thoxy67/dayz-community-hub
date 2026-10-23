@@ -63,12 +63,14 @@ use crate::state::SharedState;
 /// How often the list is written to the cache while a listing adds to it,
 /// so closing the launcher midway loses little.
 const SAVE_EVERY: Duration = Duration::from_secs(30);
-/// How long a server has to answer A2S_INFO. Each is asked once: the
-/// queries go out at the shared engine's pace (`crate::net::a2s`), which
-/// loses about as few answers as the official launcher (0.4%), so the
-/// slower second pass a burst of sockets once needed is gone. A server
-/// missed is found again by the next listing.
+/// How long a server has to answer A2S_INFO. The queries go out at the
+/// shared engine's pace (`crate::net::a2s`), which loses about as few
+/// answers as the official launcher (0.4%), so most answer the first time.
+/// One that does not is asked once more, with [`INFO_RETRY_TIMEOUT`], before
+/// it is taken for silent: that verdict keeps it out of every listing for
+/// an hour, too long for one lost datagram or a slow reply.
 const INFO_TIMEOUT: Duration = Duration::from_millis(1500);
+const INFO_RETRY_TIMEOUT: Duration = Duration::from_secs(3);
 /// How long a modded server has to answer A2S_RULES.
 const RULES_TIMEOUT: Duration = Duration::from_secs(2);
 /// How often what answered is put in the list.
@@ -658,7 +660,8 @@ async fn run(hub: &Hub) {
 
     let mut seen = known;
     let engine = crate::net::a2s();
-    let window = engine.window(INFO_TIMEOUT);
+    // A silent candidate waits out both tries.
+    let window = engine.window(INFO_TIMEOUT + INFO_RETRY_TIMEOUT);
     let candidates = stream::unfold(rx, |mut rx| async move { rx.recv().await.map(|c| (c, rx)) });
     let mut answers = Box::pin(
         candidates
@@ -1150,15 +1153,19 @@ enum Outcome {
 
 /// A2S_INFO, and A2S_RULES for a modded server's mods with the challenge
 /// A2S_INFO got, both through the shared `engine`. A server that does not
-/// answer, a fake, and a modded one whose mods cannot be read (it could not
-/// be joined with them) are rejected.
+/// answer A2S_INFO twice, a fake, and a modded one whose mods cannot be read
+/// (it could not be joined with them) are rejected.
 async fn query(engine: dz_a2s::Engine, c: Candidate) -> Outcome {
     sources::update(|s| s.steam.queried += 1);
     let port = i64::from(c.query_port);
     let Some(addr) = dz_a2s::socket_addr(&c.ip, port) else {
         return Outcome::Rejected((c.ip, port), Verdict::Silent);
     };
-    let Ok(answer) = engine.info(addr, INFO_TIMEOUT).await else {
+    let answer = match engine.info(addr, INFO_TIMEOUT).await {
+        Ok(answer) => Ok(answer),
+        Err(_) => engine.info(addr, INFO_RETRY_TIMEOUT).await,
+    };
+    let Ok(answer) = answer else {
         return Outcome::Rejected((c.ip, port), Verdict::Silent);
     };
     sources::update(|s| s.steam.answered += 1);
