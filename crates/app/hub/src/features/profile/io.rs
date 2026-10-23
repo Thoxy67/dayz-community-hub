@@ -263,6 +263,7 @@ mod tests {
         assert!(!is_settings_file_name(".json"));
         assert!(!is_settings_file_name("x.txt"));
         assert!(!is_settings_file_name("server_list_cache.json"));
+        assert!(!is_settings_file_name("server_list_cache.bin"));
     }
 
     #[test]

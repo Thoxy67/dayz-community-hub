@@ -82,7 +82,7 @@ pub(crate) fn mods_to_dto(s: &Server) -> Vec<ModDto> {
     s.mods
         .iter()
         .map(|m| ModDto {
-            name: m.name.clone(),
+            name: m.name.to_string(),
             steam_workshop_id: m.steam_workshop_id,
         })
         .collect()

@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 dz-common.workspace = true
+postcard.workspace = true
 reqwest.workspace = true
 rustc-hash.workspace = true
 # `rc`: the list holds each server behind an `Arc` (`ServerList::result`).

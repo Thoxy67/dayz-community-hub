@@ -30,9 +30,9 @@ pub fn default_profile_path() -> PathBuf {
     default_data_dir().join("profile.json")
 }
 
-/// `<data dir>/server_list_cache.json`.
+/// `<data dir>/server_list_cache.bin`.
 pub fn server_list_cache_path() -> PathBuf {
-    default_data_dir().join("server_list_cache.json")
+    default_data_dir().join("server_list_cache.bin")
 }
 
 /// `<data dir>/steamcmd-content`: SteamCMD's own install directory, where it

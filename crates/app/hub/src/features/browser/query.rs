@@ -259,7 +259,7 @@ mod tests {
             max_players: 60,
             mods: (0..mods)
                 .map(|i| dz_api::Mod {
-                    name: String::new(),
+                    name: "".into(),
                     steam_workshop_id: i as i64,
                 })
                 .collect(),

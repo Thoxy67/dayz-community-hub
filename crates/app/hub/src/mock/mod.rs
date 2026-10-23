@@ -238,7 +238,7 @@ impl Drop for World {
 
 fn mod_entry(id: u64, name: &str) -> dz_api::Mod {
     dz_api::Mod {
-        name: name.to_string(),
+        name: name.into(),
         steam_workshop_id: id as i64,
     }
 }

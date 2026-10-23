@@ -278,15 +278,15 @@ fn names_for(
 /// so its progress steps are named too.
 fn name_op(op: &mut ModOperation, installed: &[InstalledMod], list: &dz_api::ServerList) {
     let mut wanted = FxHashSet::default();
-    let mut want = |id: u64, name: &mut String| {
+    let mut want = |id: u64, name: &str| {
         if unnamed(id, name) {
             wanted.insert(id);
         }
     };
     match op {
         ModOperation::InstallServer { server } | ModOperation::UpdateServer { server } => {
-            for m in &mut server.mods {
-                want(m.steam_workshop_id as u64, &mut m.name);
+            for m in &server.mods {
+                want(m.steam_workshop_id as u64, &m.name);
             }
         }
         ModOperation::UpdateStale { stale_mods: mods }
@@ -304,15 +304,21 @@ fn name_op(op: &mut ModOperation, installed: &[InstalledMod], list: &dz_api::Ser
         return;
     }
     let found = names_for(&wanted, installed, list);
-    let fill = |id: u64, name: &mut String| {
-        if unnamed(id, name) {
-            *name = found.get(&id).cloned().unwrap_or_else(|| id.to_string());
+    // The name to give `id` in place of `name`, when it needs one.
+    let fill = |id: u64, name: &str| {
+        unnamed(id, name).then(|| found.get(&id).cloned().unwrap_or_else(|| id.to_string()))
+    };
+    let fill_text = |id: u64, name: &mut String| {
+        if let Some(new) = fill(id, name) {
+            *name = new;
         }
     };
     match op {
         ModOperation::InstallServer { server } | ModOperation::UpdateServer { server } => {
             for m in &mut server.mods {
-                fill(m.steam_workshop_id as u64, &mut m.name);
+                if let Some(new) = fill(m.steam_workshop_id as u64, &m.name) {
+                    m.name = new.into();
+                }
             }
         }
         ModOperation::UpdateStale { stale_mods: mods }
@@ -320,10 +326,10 @@ fn name_op(op: &mut ModOperation, installed: &[InstalledMod], list: &dz_api::Ser
         | ModOperation::InstallManual { mods }
         | ModOperation::Repair { mods } => {
             for (id, name) in mods.iter_mut() {
-                fill(*id, name);
+                fill_text(*id, name);
             }
         }
-        ModOperation::UpdateOne { mod_id, name } => fill(*mod_id, name),
+        ModOperation::UpdateOne { mod_id, name } => fill_text(*mod_id, name),
         ModOperation::UpdateAll | ModOperation::Login => {}
     }
 }
@@ -354,7 +360,7 @@ fn queue_of(op: &ModOperation, installed: &[InstalledMod]) -> Vec<QueuedModDto> 
                         .mods
                         .iter()
                         .find(|m| m.steam_workshop_id as u64 == id)
-                        .map_or("", |m| m.name.as_str());
+                        .map_or("", |m| &*m.name);
                     q(id, name)
                 })
                 .collect()

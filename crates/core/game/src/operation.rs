@@ -156,7 +156,7 @@ pub fn spawn_mod_operation(
                             .mods
                             .iter()
                             .find(|m| m.steam_workshop_id as u64 == id)
-                            .map(|m| m.name.clone())
+                            .map(|m| m.name.to_string())
                             .unwrap_or_else(|| id.to_string());
                         (id, name)
                     })
@@ -193,7 +193,7 @@ pub fn spawn_mod_operation(
                 let mods_info: Vec<(u64, String)> = server
                     .mods
                     .iter()
-                    .map(|m| (m.steam_workshop_id as u64, m.name.clone()))
+                    .map(|m| (m.steam_workshop_id as u64, m.name.to_string()))
                     .filter(|(id, _)| !steam_keeps.contains(id))
                     .collect();
 

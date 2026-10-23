@@ -3,12 +3,14 @@
 //! cache, and the Steam player count.
 
 mod addr;
+mod cache;
 mod index;
 mod master;
 mod official;
 mod steam;
 
 pub use addr::{Ipv4Addr, NO_ADDR, SocketAddrV4, addr, is_addressed, lenient_ip, nonzero_port};
+pub use cache::{CacheStamp, ServerListCache, load_server_list_cache, save_server_list_cache};
 pub use index::ServerIndex;
 pub use master::{
     MAX_SPLIT_DEPTH, MasterAddr, PLAN_MARGIN, PlannedPart, WEB_LIST_CAP, WebError, WebPartition,
@@ -35,9 +37,9 @@ use std::sync::Arc;
 /// servers instead of copying every string of every one of them.
 ///
 /// A server without an IPv4 query address (see `addr`) is left out as the
-/// list is read, the launcher's and the cache's alike.
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", from = "ReadList")]
+/// list is read, and the servers share one name per mod (see `names`).
+#[derive(Default, Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ServerList {
     pub status: i64,
     pub result: Vec<Arc<Server>>,
@@ -50,6 +52,13 @@ struct ReadList {
     status: i64,
     #[serde(default)]
     result: Vec<Arc<Server>>,
+}
+
+impl<'de> Deserialize<'de> for ServerList {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        let _names = names::Shared::begin();
+        ReadList::deserialize(d).map(Self::from)
+    }
 }
 
 impl From<ReadList> for ServerList {
@@ -98,11 +107,87 @@ pub struct Server {
     pub official: bool,
 }
 
+/// A mod a server runs. Its name is shared: the ~150 000 mods of a list
+/// are ~13 000 distinct ones, and every server running one holds the same
+/// name rather than a copy.
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Mod {
-    pub name: String,
+    #[serde(deserialize_with = "names::shared")]
+    pub name: Arc<str>,
     pub steam_workshop_id: i64,
+}
+
+/// One allocation per distinct mod name while a list is read.
+///
+/// A [`ServerList`] being deserialized keeps a set of the names met so far
+/// on its thread (a parse runs on one), and each mod's name is looked up in
+/// it by the text the parser holds, allocated only the first time. A
+/// [`Mod`] read outside a list gets a name of its own.
+mod names {
+    use serde::Deserializer;
+    use std::cell::RefCell;
+    use std::sync::Arc;
+
+    thread_local! {
+        static SEEN: RefCell<Option<rustc_hash::FxHashSet<Arc<str>>>> =
+            const { RefCell::new(None) };
+    }
+
+    /// The names shared from `begin` until it is dropped. A list read
+    /// inside another shares the outer one's.
+    pub(crate) struct Shared {
+        outer: bool,
+    }
+
+    impl Shared {
+        pub(crate) fn begin() -> Self {
+            let outer = SEEN.with_borrow_mut(|seen| {
+                let outer = seen.is_none();
+                if outer {
+                    *seen = Some(Default::default());
+                }
+                outer
+            });
+            Self { outer }
+        }
+    }
+
+    impl Drop for Shared {
+        fn drop(&mut self) {
+            if self.outer {
+                SEEN.with_borrow_mut(|seen| *seen = None);
+            }
+        }
+    }
+
+    fn share(name: &str) -> Arc<str> {
+        SEEN.with_borrow_mut(|seen| match seen {
+            Some(seen) => match seen.get(name) {
+                Some(known) => Arc::clone(known),
+                None => {
+                    let new: Arc<str> = Arc::from(name);
+                    seen.insert(Arc::clone(&new));
+                    new
+                }
+            },
+            None => Arc::from(name),
+        })
+    }
+
+    pub(crate) fn shared<'de, D: Deserializer<'de>>(d: D) -> Result<Arc<str>, D::Error> {
+        struct Visitor;
+        impl serde::de::Visitor<'_> for Visitor {
+            type Value = Arc<str>;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a mod name")
+            }
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                Ok(share(v))
+            }
+        }
+        d.deserialize_str(Visitor)
+    }
 }
 
 impl Default for Server {
@@ -230,76 +315,6 @@ pub async fn fetch_steam_player_count(client: &reqwest::Client) -> Result<u32> {
     Ok(resp.response.player_count.unwrap_or(0))
 }
 
-/// On-disk cache envelope for the server list.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ServerListCache {
-    /// Unix timestamp (seconds) when the launcher list in it was fetched.
-    /// Older caches hold when they were last written, which is no earlier.
-    pub fetched_at: u64,
-    /// Servers the launcher list itself had then (before Steam's and the
-    /// kept ones); absent from older caches.
-    #[serde(default)]
-    pub launcher_count: Option<u32>,
-    pub list: ServerList,
-}
-
-/// When the launcher list in a cache was fetched, and how many servers it
-/// had, for [`save_server_list_cache`].
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct CacheStamp {
-    pub fetched_at: u64,
-    pub launcher_count: Option<u32>,
-}
-
-/// Load the cached server list. `None` if the file is missing, unreadable, or
-/// fails to parse. The file is multi-MB JSON, so it is read asynchronously and
-/// parsed on the blocking pool.
-pub async fn load_server_list_cache(cache_path: &std::path::Path) -> Option<ServerListCache> {
-    let data = tokio::fs::read(cache_path).await.ok()?;
-    tokio::task::spawn_blocking(move || serde_json::from_slice(&data).ok())
-        .await
-        .ok()
-        .flatten()
-}
-
-/// Serialization-only view of the cache that borrows the list instead of cloning it.
-#[derive(Serialize)]
-struct ServerListCacheRef<'a> {
-    fetched_at: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    launcher_count: Option<u32>,
-    list: &'a ServerList,
-}
-
-/// Persist the server list, with when its launcher list was fetched
-/// (`stamp`; a zero time is taken as now). Serialized from a reference (no
-/// clone of the list) and written on the blocking pool, through a file
-/// beside the cache renamed over it, so a crash or a power cut mid-write
-/// leaves the previous cache whole rather than a truncated one.
-/// Failures are ignored: the cache only speeds up the next start.
-pub async fn save_server_list_cache(
-    cache_path: &std::path::Path,
-    list: std::sync::Arc<ServerList>,
-    stamp: CacheStamp,
-) {
-    let fetched_at = if stamp.fetched_at == 0 {
-        dz_common::time::now_secs()
-    } else {
-        stamp.fetched_at
-    };
-    let path = cache_path.to_path_buf();
-    let _ = tokio::task::spawn_blocking(move || {
-        let data = serde_json::to_vec(&ServerListCacheRef {
-            fetched_at,
-            launcher_count: stamp.launcher_count,
-            list: &list,
-        })
-        .map_err(std::io::Error::other)?;
-        write_atomic(&path, &data)
-    })
-    .await;
-}
-
 /// Write `data` to `path` atomically: into a new file in the same directory
 /// (so the rename stays on one file system), flushed, then renamed over
 /// `path`, which replaces it on every platform. A reader sees the old file
@@ -416,33 +431,29 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    #[tokio::test]
-    async fn the_cache_round_trips() {
-        let dir = std::env::temp_dir().join(format!("dz-api-cache-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        let path = dir.join("servers.json");
-        let list = Arc::new(ServerList {
-            status: 0,
-            result: vec![Arc::new(server("1.1.1.1", 27016, 2302, "a"))],
-        });
-        let stamp = CacheStamp {
-            fetched_at: 1_700_000_000,
-            launcher_count: Some(1),
+    #[test]
+    fn a_list_read_shares_one_name_per_mod() {
+        let entry = |ip: &str, mods: &str| {
+            format!(
+                r#"{{"gamePort":2302,"endpoint":{{"ip":"{ip}","port":27016}},"name":"n","map":"m","players":0,"maxPlayers":60,"environment":"w","password":false,"version":"1","vac":true,"battlEye":null,"firstPersonOnly":false,"time":"","mods":[{mods}]}}"#
+            )
         };
-        save_server_list_cache(&path, Arc::clone(&list), stamp).await;
-        let back = load_server_list_cache(&path).await.unwrap();
-        assert_eq!(back.list, *list);
-        assert_eq!(back.fetched_at, 1_700_000_000);
-        assert_eq!(back.launcher_count, Some(1));
-        // A cache written before the count was kept still loads.
-        std::fs::write(
-            &path,
-            br#"{"fetched_at":5,"list":{"status":0,"result":[]}}"#,
-        )
-        .unwrap();
-        let old = load_server_list_cache(&path).await.unwrap();
-        assert_eq!((old.fetched_at, old.launcher_count), (5, None));
-        let _ = std::fs::remove_dir_all(&dir);
+        let cf = r#"{"name":"@CF","steamWorkshopId":1}"#;
+        let escaped = r#"{"name":"@\u0043F","steamWorkshopId":1}"#;
+        let json = format!(
+            r#"{{"status":0,"result":[{},{}]}}"#,
+            entry("1.1.1.1", cf),
+            entry("2.2.2.2", &format!("{escaped},{cf}"))
+        );
+        let read = || serde_json::from_str::<ServerList>(&json).unwrap();
+        let (one, two) = (read(), read());
+        let name = |l: &ServerList, s: usize, m: usize| Arc::clone(&l.result[s].mods[m].name);
+        assert_eq!(&*name(&one, 1, 0), "@CF");
+        assert!(Arc::ptr_eq(&name(&one, 0, 0), &name(&one, 1, 0)));
+        assert!(Arc::ptr_eq(&name(&one, 0, 0), &name(&one, 1, 1)));
+        // Each read has its own names: nothing outlives it.
+        assert!(!Arc::ptr_eq(&name(&one, 0, 0), &name(&two, 0, 0)));
+        assert_eq!(Arc::strong_count(&one.result[0].mods[0].name), 3);
     }
 
     #[test]

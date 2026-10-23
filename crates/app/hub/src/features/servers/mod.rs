@@ -94,7 +94,10 @@ async fn initialize(hub: &Hub) -> Result<InitResult, String> {
     }
     let profile_path = paths::profile_path();
     let is_first_launch = !tokio::fs::try_exists(&profile_path).await.unwrap_or(false);
-    let cache_path = paths::server_list_cache_path();
+    let (cache_path, legacy_cache) = (
+        paths::server_list_cache_path(),
+        paths::legacy_server_list_cache_path(),
+    );
 
     let memory_path = memory::path();
     // The play log is read as soon as the profile is, beside the cache.
@@ -110,7 +113,7 @@ async fn initialize(hub: &Hub) -> Result<InitResult, String> {
     };
     let (ctl, cache, memory) = tokio::join!(
         profile,
-        dz_api::load_server_list_cache(&cache_path),
+        dz_api::load_server_list_cache(&cache_path, &legacy_cache),
         memory::load(&memory_path)
     );
     let ctl = ctl.map_err(|e| format!("Could not load the profile: {e}"))?;
@@ -379,10 +382,14 @@ fn dedup(mut list: ServerList) -> Arc<ServerList> {
 /// check, the listing as it goes and at its end): the writes are coalesced
 /// by [`CACHE_WRITER`], so the cache is written once for a burst of them,
 /// and always with the newest list. A cache only speeds up the next start,
-/// so an exit within the wait loses nothing that matters.
+/// so an exit within the wait loses nothing that matters. Once the binary
+/// cache is written, the JSON one an older version left is deleted: it was
+/// read at start only because there was no binary one yet.
 pub(super) fn save_cache_in_background(list: Arc<ServerList>) {
     CACHE_WRITER.request((list, launcher()), |(list, stamp)| async move {
-        dz_api::save_server_list_cache(&paths::server_list_cache_path(), list, stamp).await;
+        if dz_api::save_server_list_cache(&paths::server_list_cache_path(), list, stamp).await {
+            let _ = tokio::fs::remove_file(paths::legacy_server_list_cache_path()).await;
+        }
     });
 }
 

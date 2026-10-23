@@ -42,8 +42,15 @@ pub fn profile_path() -> PathBuf {
     data_dir().join("profile.json")
 }
 
-/// `<data dir>/server_list_cache.json`.
+/// `<data dir>/server_list_cache.bin`: the server list between two starts
+/// (`dz_api::save_server_list_cache`).
 pub fn server_list_cache_path() -> PathBuf {
+    data_dir().join("server_list_cache.bin")
+}
+
+/// `<data dir>/server_list_cache.json`: the cache as versions up to 0.5.4
+/// wrote it, read once when there is no binary one yet, then deleted.
+pub fn legacy_server_list_cache_path() -> PathBuf {
     data_dir().join("server_list_cache.json")
 }
 

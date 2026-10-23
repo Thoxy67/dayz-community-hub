@@ -1182,7 +1182,7 @@ async fn query(engine: dz_a2s::Engine, c: Candidate) -> Outcome {
                     .into_iter()
                     .filter_map(|m| {
                         Some(Mod {
-                            name: m.name,
+                            name: m.name.into(),
                             steam_workshop_id: i64::try_from(m.id?).ok()?,
                         })
                     })
