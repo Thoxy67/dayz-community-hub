@@ -31,6 +31,12 @@ const TICK: Duration = Duration::from_millis(100);
 const SUBSCRIBE_TIMEOUT: Duration = Duration::from_secs(60);
 /// How long nothing may move (no byte, no state change) before giving up.
 const STALL_TIMEOUT: Duration = Duration::from_secs(180);
+/// How long an item asked for must look current, with no sign of a download,
+/// before it counts as current. Right after DownloadItem, Steam can still
+/// report the old copy as installed and current: it has not yet learnt of
+/// the newer version, and taking that answer reported an update that never
+/// downloaded.
+const SETTLE: Duration = Duration::from_secs(8);
 /// How long Steam may take to answer the unsubscriptions.
 const UNSUBSCRIBE_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long a fresh session may take to report the user logged on.
@@ -646,8 +652,8 @@ fn set_app_id(on: bool) {
 enum Phase {
     /// SubscribeItem was sent at this time; its answer has not come.
     Subscribing(ApiCall, Instant),
-    /// Subscribed and DownloadItem called: Steam is on it.
-    Downloading,
+    /// Subscribed and DownloadItem called at this time: Steam is on it.
+    Downloading(Instant),
     Done(PathBuf),
     Failed(String),
 }
@@ -657,6 +663,9 @@ struct Item {
     phase: Phase,
     state: ItemState,
     bytes: (u64, u64),
+    /// Steam was seen working on it (downloading, waiting, behind) or said
+    /// its download ended: a current state after that is the new copy.
+    worked: bool,
 }
 
 struct Downloads<'a> {
@@ -684,6 +693,7 @@ impl<'a> Downloads<'a> {
                     phase: Phase::Subscribing(0, now),
                     state: ItemState(u32::MAX),
                     bytes: (0, 0),
+                    worked: false,
                 })
                 .collect(),
             by_id: ids.iter().enumerate().map(|(i, &id)| (id, i)).collect(),
@@ -788,7 +798,7 @@ impl<'a> Downloads<'a> {
                 Some((state::RESULT_OK, _)) => {
                     on(Event::Log(format!("Subscribed {id}")));
                     if unsafe { (self.session.api.download)(self.ugc, id, true) } {
-                        self.items[i].phase = Phase::Downloading;
+                        self.items[i].phase = Phase::Downloading(Instant::now());
                     } else {
                         self.fail(i, "Steam would not download it".into(), on);
                     }
@@ -807,9 +817,12 @@ impl<'a> Downloads<'a> {
         }
         for (id, result) in downloaded {
             if let Some(&i) = self.by_id.get(&id)
-                && result != state::RESULT_OK
                 && self.items[i].unresolved()
             {
+                if result == state::RESULT_OK {
+                    self.items[i].worked = true;
+                    continue;
+                }
                 self.fail(
                     i,
                     format!("Download failed: {}", state::result_text(result)),
@@ -826,24 +839,29 @@ impl<'a> Downloads<'a> {
         let mut moved = Vec::new();
         for i in 0..self.items.len() {
             let id = self.items[i].id;
-            match self.items[i].phase {
+            let asked = match self.items[i].phase {
                 Phase::Subscribing(_, since) => {
                     if since.elapsed() > SUBSCRIBE_TIMEOUT {
                         self.fail(i, "Steam did not answer the subscription".into(), on);
                     }
                     continue;
                 }
-                Phase::Downloading => {}
+                Phase::Downloading(at) => at,
                 Phase::Done(_) | Phase::Failed(_) => continue,
-            }
+            };
             let st = ItemState(unsafe { (api.item_state)(self.ugc, id) });
             if st != self.items[i].state {
                 self.items[i].state = st;
                 self.last_activity = Instant::now();
                 on(Event::Log(format!("{id}: {st}")));
             }
+            if st.downloading() || st.pending() || st.needs_update() {
+                self.items[i].worked = true;
+            }
             if st.ready() {
-                self.install(i, on);
+                if self.items[i].worked || asked.elapsed() >= SETTLE {
+                    self.install(i, on);
+                }
                 continue;
             }
             if st.downloading() {
@@ -932,6 +950,6 @@ impl<'a> Downloads<'a> {
 
 impl Item {
     fn unresolved(&self) -> bool {
-        matches!(self.phase, Phase::Subscribing(..) | Phase::Downloading)
+        matches!(self.phase, Phase::Subscribing(..) | Phase::Downloading(_))
     }
 }

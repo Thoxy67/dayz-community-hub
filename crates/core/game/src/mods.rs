@@ -31,7 +31,9 @@ pub enum ModSource {
 pub struct InstalledMod {
     pub name: String,
     pub id: u64,
-    /// Local install/update time (filesystem mtime of meta.cpp, rewritten by steamcmd on each download)
+    /// The installed copy's version, as a time: the Workshop's `time_updated`
+    /// of it from Steam's manifest, or `meta.cpp`'s mtime when that is later
+    /// (or the manifest does not name it).
     pub local_updated: i64,
     pub size: u64,
     /// An `@<id>` link in the DayZ directory loads it.
@@ -211,6 +213,7 @@ fn scan_dir(workshop_path: &Path, source: ModSource) -> Result<Vec<InstalledMod>
         Err(e) => return Err(e.into()),
     };
     let mut mods = Vec::new();
+    let versions = installed_versions(workshop_path);
 
     // An entry that cannot be read is skipped, not a reason to list nothing.
     // No separate "is it a directory" check: a file has no `meta.cpp` under
@@ -251,6 +254,11 @@ fn scan_dir(workshop_path: &Path, source: ModSource) -> Result<Vec<InstalledMod>
         };
 
         let size = du_dir_cached(&path, local_updated.max(0) as u64).unwrap_or(0);
+        // The version Steam installed, when it says: an update that left
+        // `meta.cpp` as it was still moves it.
+        let local_updated = versions
+            .get(&id)
+            .map_or(local_updated, |&v| v.max(local_updated));
 
         mods.push(InstalledMod {
             name,
@@ -264,6 +272,38 @@ fn scan_dir(workshop_path: &Path, source: ModSource) -> Result<Vec<InstalledMod>
         });
     }
     Ok(mods)
+}
+
+/// Each item's installed version (its Workshop `time_updated`) from the
+/// manifest Steam and SteamCMD keep beside the content folder
+/// (`steamapps/workshop/appworkshop_221100.acf` for
+/// `steamapps/workshop/content/221100`). Empty when there is none.
+fn installed_versions(content: &Path) -> HashMap<u64, i64> {
+    let Some(workshop) = content.parent().and_then(Path::parent) else {
+        return HashMap::new();
+    };
+    let Ok(text) = fs::read_to_string(workshop.join("appworkshop_221100.acf")) else {
+        return HashMap::new();
+    };
+    versions_in(&text)
+}
+
+/// [`installed_versions`] from the manifest's text.
+fn versions_in(text: &str) -> HashMap<u64, i64> {
+    let doc = dz_steamcmd::vdf::parse(text);
+    let Some(dz_steamcmd::vdf::Vdf::Obj(items)) =
+        doc.get(&["AppWorkshop", "WorkshopItemsInstalled"])
+    else {
+        return HashMap::new();
+    };
+    items
+        .iter()
+        .filter_map(|(id, item)| {
+            let id = id.parse().ok()?;
+            let at = item.str(&["timeupdated"])?.parse::<i64>().ok()?;
+            (at > 0).then_some((id, at))
+        })
+        .collect()
 }
 
 /// Cached directory size: skips the recursive walk when neither the
@@ -706,6 +746,29 @@ mod tests {
             path: PathBuf::from(format!("/{source:?}/{id}")),
             other_copy: false,
         }
+    }
+
+    #[test]
+    fn the_manifest_gives_the_installed_version() {
+        let root = tmp("manifest");
+        let ws = root.join("content").join("221100");
+        fake_mod(&ws, 7, "patched", 1);
+        fake_mod(&ws, 8, "unlisted", 1);
+        touch(&ws, 7, 1_000);
+        touch(&ws, 8, 1_000);
+        fs::write(
+            root.join("appworkshop_221100.acf"),
+            "\"AppWorkshop\"\n{\n\t\"appid\"\t\t\"221100\"\n\t\"WorkshopItemsInstalled\"\n\t{\n\t\t\"7\"\n\t\t{\n\t\t\t\"size\"\t\t\"1\"\n\t\t\t\"timeupdated\"\t\t\"5000\"\n\t\t}\n\t}\n\t\"WorkshopItemDetails\"\n\t{\n\t\t\"8\"\n\t\t{\n\t\t\t\"timeupdated\"\t\t\"9000\"\n\t\t}\n\t}\n}\n",
+        )
+        .unwrap();
+        let mods = scan_workshop_dir(&ws, ModSource::Steam).unwrap();
+        let at = |id| mods.iter().find(|m| m.id == id).unwrap().local_updated;
+        assert_eq!(at(7), 5_000, "an update that left meta.cpp alone still counts");
+        assert_eq!(at(8), 1_000, "only installed items, not the details");
+        touch(&ws, 7, 6_000);
+        let mods = scan_workshop_dir(&ws, ModSource::Steam).unwrap();
+        assert_eq!(mods.iter().find(|m| m.id == 7).unwrap().local_updated, 6_000);
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

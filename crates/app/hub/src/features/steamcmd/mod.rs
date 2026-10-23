@@ -565,6 +565,11 @@ impl Hub {
                     op::emit(id, h);
                 }
                 let finished = evt.kind == ModProgressKind::Finished;
+                if finished {
+                    // Before the window hears of the end: a check it starts
+                    // at once must read the disk, not the read from before.
+                    crate::features::mods::mods_changed(&state).await;
+                }
                 op::emit(id, evt);
                 if finished {
                     break;

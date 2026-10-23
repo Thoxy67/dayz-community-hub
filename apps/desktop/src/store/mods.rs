@@ -224,6 +224,8 @@ pub struct Mods {
     removed: FxHashMap<u64, Instant>,
     /// A read was asked for while one was under way: read again once it is in.
     load_again: bool,
+    /// A forced check was asked for while one ran: run it after.
+    check_again: bool,
     /// When the disk and Steam are next read for the removed mods still on disk.
     recheck_at: Option<Instant>,
 }
@@ -277,6 +279,7 @@ impl Mods {
             mutate: Vec::new(),
             removed: FxHashMap::default(),
             load_again: false,
+            check_again: false,
             recheck_at: None,
         }
     }
@@ -436,7 +439,13 @@ impl Mods {
 
     /// Ask the Workshop which mods are behind. Needs a Steam API key (`has_key`).
     pub fn check_updates(&mut self, force: bool, has_key: bool) {
-        if !has_key || self.check_task.is_some() {
+        if !has_key {
+            return;
+        }
+        if self.check_task.is_some() {
+            // The check under way may have read the disk before what changed
+            // (an update that just ended): its answer would undo it.
+            self.check_again |= force;
             return;
         }
         if !force
@@ -953,15 +962,20 @@ impl Mods {
             self.check_task = None;
             self.checking = false;
             changed = true;
-            match r {
-                Ok(list) => {
-                    self.set_installed(list);
-                    self.last_checked = Some(Instant::now());
-                    signals.push(Signal::ModsChanged);
+            if std::mem::take(&mut self.check_again) {
+                // This answer predates what changed: the next one replaces it.
+                self.check_updates(true, true);
+            } else {
+                match r {
+                    Ok(list) => {
+                        self.set_installed(list);
+                        self.last_checked = Some(Instant::now());
+                        signals.push(Signal::ModsChanged);
+                    }
+                    Err(e) => self
+                        .bus
+                        .err(tf("mods", "updateCheckFailed", &[("error", &e)])),
                 }
-                Err(e) => self
-                    .bus
-                    .err(tf("mods", "updateCheckFailed", &[("error", &e)])),
             }
         }
         if let Some(task) = &mut self.steam_task
