@@ -18,7 +18,9 @@ fn build(b: reqwest::ClientBuilder) -> Client {
     b.build().unwrap_or_else(|_| Client::new())
 }
 
-/// JSON APIs (Steam, the Workshop, ip-api): short answers.
+/// JSON APIs (Steam, the Workshop, ip-api, the launcher's server list): short
+/// answers; a longer one (the server list, several MB) sets its own limit
+/// on the request.
 pub(crate) fn api() -> &'static Client {
     static C: OnceLock<Client> = OnceLock::new();
     C.get_or_init(|| {
@@ -49,8 +51,9 @@ pub(crate) fn dayzmetrics() -> &'static Client {
     })
 }
 
-/// Large downloads (updates, SteamCMD): no total limit, but a stall of 30 s
-/// between two reads fails the download.
+/// Large downloads (updates, SteamCMD, the offline mode's archive, through
+/// `DayzCtl`): no total limit, but a stall of 30 s between two reads fails
+/// the download.
 pub(crate) fn download() -> &'static Client {
     static C: OnceLock<Client> = OnceLock::new();
     C.get_or_init(|| {
@@ -79,9 +82,10 @@ pub(crate) fn dayz_cdn() -> &'static Client {
     })
 }
 
-/// Pictures from the rest of the web (an article's pictures and videos): checked
-/// certificates, a browser's name, short limits.
-pub(crate) fn pictures() -> &'static Client {
+/// Pictures from the rest of the web (an article's pictures and videos, the
+/// window's avatars and Workshop previews): checked certificates, a browser's
+/// name, short limits.
+pub fn pictures() -> &'static Client {
     static C: OnceLock<Client> = OnceLock::new();
     C.get_or_init(|| {
         build(

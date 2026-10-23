@@ -10,9 +10,18 @@
 //! ([`Prefs::edit`]); [`Prefs::poll`] writes it 250 ms after the last change (dragging a
 //! pane's edge changes it on every pointer move) on a writer thread, never on the UI
 //! thread. [`Prefs::flush`] writes what is pending at exit.
+//!
+//! The window's geometry ([`Prefs::set_window`]) is the exception: eframe keeps it
+//! already (`window.ron`, every few seconds), so a move or a resize does not rewrite
+//! this file; it goes with the next write, or at exit.
+//!
+//! A profile import replaces this file, then the window closes the normal way for
+//! the restart: [`hold_writes`] keeps the window from writing its own preferences
+//! back over the imported ones meanwhile, at exit included.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -23,6 +32,22 @@ use crate::theme::{Raw, Scheme};
 
 /// The file, in the hub's data directory.
 pub const FILE_NAME: &str = "interface.json";
+
+/// Set while the file on disk belongs to someone else (see [`hold_writes`]).
+static HELD: AtomicBool = AtomicBool::new(false);
+
+/// Stop (`true`) or allow again (`false`) every write of the preferences: the timed
+/// ones, the writer thread's, the one at exit. Held before a profile import writes
+/// its own `interface.json`, until the window closes for the restart; let go again
+/// when the import fails, and what is pending is written at the next change or at
+/// exit.
+pub fn hold_writes(on: bool) {
+    HELD.store(on, Ordering::SeqCst);
+}
+
+fn held() -> bool {
+    HELD.load(Ordering::SeqCst)
+}
 
 /// Writes wait this long after the last change.
 const SAVE_DELAY: Duration = Duration::from_millis(250);
@@ -203,6 +228,8 @@ pub struct Prefs {
     s: Stored,
     path: Option<PathBuf>,
     dirty_since: Option<Instant>,
+    /// The window's geometry changed since the last write (see the module docs).
+    window_pending: bool,
     writer: Option<mpsc::Sender<(PathBuf, Vec<u8>)>>,
 }
 
@@ -213,6 +240,7 @@ impl Default for Prefs {
             s: Stored::default(),
             path: None,
             dirty_since: None,
+            window_pending: false,
             writer: None,
         }
     }
@@ -236,6 +264,7 @@ impl Prefs {
             s,
             path: Some(path),
             dirty_since: None,
+            window_pending: false,
             writer: None,
         }
     }
@@ -263,12 +292,25 @@ impl Prefs {
         self.dirty_since.is_some()
     }
 
+    /// Keep the window's geometry for the next start, without a write of its own
+    /// (eframe's `window.ron` has it already): it goes with the next write, or at
+    /// exit ([`Prefs::flush`]).
+    pub fn set_window(&mut self, w: WindowState) {
+        if self.s.window != Some(w) {
+            self.s.window = Some(w);
+            self.window_pending = true;
+        }
+    }
+
     /// Write the file once changes have settled; call each frame. Asks for a repaint
     /// at the moment the write is due, so nothing waits on the next input.
     pub fn poll(&mut self, ctx: &egui::Context) {
         let Some(since) = self.dirty_since else {
             return;
         };
+        if held() {
+            return;
+        }
         let due = since + SAVE_DELAY;
         let now = Instant::now();
         if now < due {
@@ -281,11 +323,15 @@ impl Prefs {
 
     /// Write what is pending now (at exit). Blocking, on purpose.
     pub fn flush(&mut self) {
-        if self.dirty_since.take().is_none() {
+        if held() {
+            return;
+        }
+        let window = std::mem::take(&mut self.window_pending);
+        if self.dirty_since.take().is_none() && !window {
             return;
         }
         if let (Some(path), Ok(bytes)) = (&self.path, serde_json::to_vec_pretty(&self.s)) {
-            let _ = write_atomic(path, &bytes);
+            let _ = dz_common::fs::write_atomic(path, &bytes);
         }
     }
 
@@ -293,6 +339,7 @@ impl Prefs {
         let Some(path) = self.path.clone() else {
             return;
         };
+        self.window_pending = false;
         let Ok(bytes) = serde_json::to_vec_pretty(&self.s) else {
             return;
         };
@@ -357,20 +404,12 @@ fn spawn_writer() -> mpsc::Sender<(PathBuf, Vec<u8>)> {
                 while let Ok(next) = rx.try_recv() {
                     job = next;
                 }
-                let _ = write_atomic(&job.0, &job.1);
+                if !held() {
+                    let _ = dz_common::fs::write_atomic(&job.0, &job.1);
+                }
             }
         });
     tx
-}
-
-/// Write beside the file, then rename over it: a crash never leaves half a file.
-fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, bytes)?;
-    std::fs::rename(&tmp, path)
 }
 
 #[cfg(test)]
@@ -412,6 +451,24 @@ mod tests {
         let s = s.sanitized();
         assert_eq!(s.scale, 1.0);
         assert_eq!(s.ui.pad_scale, 1.15);
+    }
+
+    #[test]
+    fn the_window_waits_for_the_exit() {
+        let dir = std::env::temp_dir().join(format!("dzch-prefs-win-{}", std::process::id()));
+        let path = Prefs::path_in(&dir);
+        let mut p = Prefs::load(path.clone());
+        let w = WindowState {
+            pos: Some([10.0, 20.0]),
+            size: [1000.0, 700.0],
+            maximized: false,
+        };
+        p.set_window(w);
+        assert!(!p.dirty());
+        assert!(!path.exists());
+        p.flush();
+        assert_eq!(Prefs::load(path).get().window, Some(w));
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

@@ -388,39 +388,74 @@ async fn from_client(friends: Vec<dz_steamworks::Friend>) -> Vec<Raw> {
         .collect()
 }
 
+/// A Store answer about one app: its name, or when asking failed (no Store
+/// data for tools and delisted games, a refused request), so it is not asked
+/// again on every poll.
+#[derive(Clone, Debug)]
+enum AppName {
+    Known(String),
+    Missing(Instant),
+}
+
+/// A failed Store lookup is tried again after this long; meanwhile the friend
+/// shows "App N".
+const APP_NAME_RETRY: Duration = Duration::from_secs(3600);
+
 /// Game names by app id, from the Store (no key), asked once per run.
-static APP_NAMES: LazyLock<Mutex<HashMap<u32, String>>> = LazyLock::new(Mutex::default);
+static APP_NAMES: LazyLock<Mutex<HashMap<u32, AppName>>> = LazyLock::new(Mutex::default);
+
+/// The apps of `apps` to ask the Store about: neither known nor failed lately.
+fn to_ask(known: &HashMap<u32, AppName>, apps: &[u32], now: Instant) -> Vec<u32> {
+    let mut m: Vec<u32> = apps
+        .iter()
+        .copied()
+        .filter(|a| match known.get(a) {
+            Some(AppName::Known(_)) => false,
+            Some(AppName::Missing(at)) => now.duration_since(*at) >= APP_NAME_RETRY,
+            None => true,
+        })
+        .collect();
+    m.sort_unstable();
+    m.dedup();
+    m
+}
 
 async fn app_names(apps: &[u32]) -> HashMap<u32, String> {
-    let missing: Vec<u32> = {
-        let known = APP_NAMES.lock().map(|m| m.clone()).unwrap_or_default();
-        let mut m: Vec<u32> = apps
-            .iter()
-            .copied()
-            .filter(|a| !known.contains_key(a))
-            .collect();
-        m.sort_unstable();
-        m.dedup();
-        m
+    let missing = {
+        let known = APP_NAMES
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        to_ask(&known, apps, Instant::now())
     };
     let found = futures_util::future::join_all(missing.into_iter().map(|app| async move {
         let url =
             format!("https://store.steampowered.com/api/appdetails?appids={app}&filters=basic");
-        let v: serde_json::Value = send_ok(crate::net::api().get(&url))
-            .await
-            .ok()?
-            .json()
-            .await
-            .ok()?;
-        let name = v[app.to_string()]["data"]["name"].as_str()?.to_owned();
-        Some((app, name))
+        let name = async {
+            let v: serde_json::Value = send_ok(crate::net::api().get(&url))
+                .await
+                .ok()?
+                .json()
+                .await
+                .ok()?;
+            Some(v[app.to_string()]["data"]["name"].as_str()?.to_owned())
+        }
+        .await;
+        (
+            app,
+            name.map_or_else(|| AppName::Missing(Instant::now()), AppName::Known),
+        )
     }))
     .await;
     let mut names = APP_NAMES
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    names.extend(found.into_iter().flatten());
-    names.clone()
+    names.extend(found);
+    apps.iter()
+        .filter_map(|a| match names.get(a) {
+            Some(AppName::Known(n)) => Some((*a, n.clone())),
+            _ => None,
+        })
+        .collect()
 }
 
 impl Hub {
@@ -456,6 +491,17 @@ impl Hub {
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_store_lookup_waits_before_it_is_asked_again() {
+        let now = Instant::now();
+        let mut known = HashMap::new();
+        known.insert(1, AppName::Known("Game".into()));
+        known.insert(2, AppName::Missing(now));
+        assert_eq!(to_ask(&known, &[1, 2, 3, 3], now), vec![3]);
+        let later = now + APP_NAME_RETRY;
+        assert_eq!(to_ask(&known, &[1, 2, 3], later), vec![2, 3]);
+    }
 
     #[test]
     fn persona_states_read_as_statuses() {

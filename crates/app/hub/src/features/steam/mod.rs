@@ -76,10 +76,16 @@ impl Hub {
     }
 
     /// The account's Steam avatar as a `data:` URI, cached: from the Web API
-    /// when a key is set, else (or when that fails) from the Steam client.
+    /// when a key is set, else (or when that fails) from the Steam client. The
+    /// cached one is answered while the key and the Steam id stay the same (a
+    /// change of either, or a profile import, clears it), so saving the account
+    /// settings asks Steam nothing again.
     pub async fn fetch_steam_avatar(&self) -> Result<Option<String>, String> {
         mocked!(self => Ok(None));
         let state = self.state()?;
+        if let Some(uri) = state.read().await.cached_avatar.clone() {
+            return Ok(Some(uri));
+        }
         let web = access::web(&state).await;
         let mut uri = None;
         if let (Some(key), Some(id)) = (&web.key, &web.steam_id) {
@@ -95,14 +101,12 @@ impl Hub {
         Ok(uri)
     }
 
-    /// Fetch Steam player count for DayZ.
+    /// Fetch Steam player count for DayZ, through the Web API's pool (the
+    /// same host as GetPlayerSummaries and the friends).
     pub async fn fetch_steam_player_count(&self) -> Result<u32, String> {
         mocked!(self => Ok(61_204));
-        let state = self.state()?;
-        let client = {
-            let state = state.read().await;
-            state.ctl.http_client().clone()
-        };
-        dz_api::fetch_steam_player_count(&client).await.cmd_err()
+        dz_api::fetch_steam_player_count(crate::net::api())
+            .await
+            .cmd_err()
     }
 }

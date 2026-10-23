@@ -11,6 +11,7 @@ authors.workspace = true
 workspace = true
 
 [dependencies]
+dz-common.workspace = true
 futures-util.workspace = true
 reqwest.workspace = true
 serde.workspace = true

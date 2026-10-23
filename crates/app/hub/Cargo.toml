@@ -42,6 +42,9 @@ dz-dayzmetrics.workspace = true
 lru = "0.18.5"
 # Controllers (Steam Deck, Xbox, PlayStation) for the gamepad navigation mode.
 gilrs = "0.11.2"
+# Watches the mod folders (inotify, ReadDirectoryChangesW), so the window
+# reads them again when Steam or the player changes them, not on a timer.
+notify-debouncer-full = { version = "0.7.0", default-features = false }
 
 [target."cfg(not(windows))".dependencies]
 zstd = { version = "0.14.0", features = ["pkg-config"] }

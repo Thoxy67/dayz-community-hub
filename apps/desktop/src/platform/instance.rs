@@ -98,6 +98,13 @@ fn files(dir: &Path, key: &str) -> (PathBuf, PathBuf) {
 
 /// Become the first instance, or hand `args` to it.
 pub fn start(dir: &Path, key: &str, args: &CliArgs) -> Start {
+    start_after(dir, key, args, Duration::ZERO)
+}
+
+/// [`start`], for an instance a restart started: the previous one still holds the
+/// lock for a moment while it closes, so the lock is waited for (at most `wait`)
+/// before the arguments would be handed to a window about to go.
+pub fn start_after(dir: &Path, key: &str, args: &CliArgs, wait: Duration) -> Start {
     if std::fs::create_dir_all(dir).is_err() {
         return Start::Alone;
     }
@@ -111,7 +118,7 @@ pub fn start(dir: &Path, key: &str, args: &CliArgs) -> Start {
     else {
         return Start::Alone;
     };
-    match lock.try_lock() {
+    match lock_within(&lock, wait) {
         Ok(()) => Start::Primary(Primary {
             _lock: lock,
             port_file,
@@ -124,6 +131,19 @@ pub fn start(dir: &Path, key: &str, args: &CliArgs) -> Start {
             }
         }
         Err(TryLockError::Error(_)) => Start::Alone,
+    }
+}
+
+/// Take `lock`, trying again for at most `wait` while another process holds it.
+fn lock_within(lock: &File, wait: Duration) -> Result<(), TryLockError> {
+    let deadline = Instant::now() + wait;
+    loop {
+        match lock.try_lock() {
+            Err(TryLockError::WouldBlock) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            other => return other,
+        }
     }
 }
 
@@ -340,6 +360,25 @@ mod tests {
             start(&dir, "t", &CliArgs::none()),
             Start::Primary(_)
         ));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_restart_waits_for_the_previous_lock() {
+        let dir = temp_dir("restart");
+        let Start::Primary(old) = start(&dir, "r", &CliArgs::none()) else {
+            panic!("the first launch is the primary");
+        };
+        let gone = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            drop(old);
+        });
+        let t = Instant::now();
+        let got = start_after(&dir, "r", &CliArgs::none(), Duration::from_secs(10));
+        assert!(matches!(got, Start::Primary(_)));
+        assert!(t.elapsed() >= Duration::from_millis(150));
+        gone.join().unwrap();
+        drop(got);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

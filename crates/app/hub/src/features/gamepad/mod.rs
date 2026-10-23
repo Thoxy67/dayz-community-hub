@@ -7,6 +7,11 @@
 //! it costs nothing. Nothing is sent while the window is not focused. If the
 //! pads cannot be opened (no udev access, say), it says so once and the app
 //! runs without them.
+//!
+//! On Windows gilrs polls the controllers itself, every 8 ms, from the moment
+//! it is opened. It is therefore held only while the window has the focus:
+//! dropped when the focus leaves (the player in game, the launcher in the
+//! background), opened again when it comes back, the pads' list sent anew.
 
 pub(crate) mod map;
 
@@ -63,10 +68,33 @@ fn shared() -> &'static Mutex<(bool, Vec<PadInfo>)> {
     S.get_or_init(|| Mutex::new((false, Vec::new())))
 }
 
+/// Wakes the Windows reader waiting for the focus to come back.
+#[cfg(windows)]
+static FOCUS_BACK: (Mutex<()>, std::sync::Condvar) = (Mutex::new(()), std::sync::Condvar::new());
+
 /// The main window gained or lost the focus.
 pub(crate) fn set_focused(focused: bool) {
     FOCUSED.store(focused, Ordering::Relaxed);
+    #[cfg(windows)]
+    {
+        let _g = FOCUS_BACK.0.lock().unwrap_or_else(|e| e.into_inner());
+        FOCUS_BACK.1.notify_all();
+    }
 }
+
+/// Sleep until the window has the focus (no wake-up at all meanwhile).
+#[cfg(windows)]
+fn wait_for_focus() {
+    let mut g = FOCUS_BACK.0.lock().unwrap_or_else(|e| e.into_inner());
+    while !FOCUSED.load(Ordering::Relaxed) {
+        g = FOCUS_BACK.1.wait(g).unwrap_or_else(|e| e.into_inner());
+    }
+}
+
+/// How often the Windows reader looks at the focus while it holds the pads:
+/// gilrs' wait cannot be woken from outside.
+#[cfg(windows)]
+const FOCUS_CHECK: Duration = Duration::from_millis(250);
 
 /// Steam's big-screen interface sets these in the environment of what it runs.
 fn in_steam_ui() -> bool {
@@ -118,18 +146,28 @@ pub(crate) fn spawn(app: Hub) {
 }
 
 fn run(app: Hub) {
-    let mut gilrs = match Gilrs::new() {
-        Ok(g) => g,
-        // A platform gilrs does not know: nothing to read.
-        Err(gilrs::Error::NotImplemented(_)) => {
-            eprintln!("[gamepad] controllers are not supported on this platform");
-            return;
-        }
-        Err(e) => {
-            eprintln!("[gamepad] controllers unavailable: {e}");
-            return;
-        }
-    };
+    loop {
+        #[cfg(windows)]
+        wait_for_focus();
+        let gilrs = match Gilrs::new() {
+            Ok(g) => g,
+            // A platform gilrs does not know: nothing to read.
+            Err(gilrs::Error::NotImplemented(_)) => {
+                eprintln!("[gamepad] controllers are not supported on this platform");
+                return;
+            }
+            Err(e) => {
+                eprintln!("[gamepad] controllers unavailable: {e}");
+                return;
+            }
+        };
+        // Returns only on Windows, once the focus left: the pads are let go.
+        read(&app, gilrs);
+    }
+}
+
+/// Read the pads until the focus leaves (Windows) or for ever (elsewhere).
+fn read(app: &Hub, mut gilrs: Gilrs) {
     let pads_of = |g: &Gilrs| -> Vec<PadInfo> {
         g.gamepads()
             .map(|(_, p)| PadInfo {
@@ -157,6 +195,8 @@ fn run(app: Hub) {
             .filter_map(PadState::deadline)
             .min()
             .map(|at| at.saturating_duration_since(Instant::now()));
+        #[cfg(windows)]
+        let wait = Some(wait.map_or(FOCUS_CHECK, |w| w.min(FOCUS_CHECK)));
         let ev = gilrs.next_event_blocking(wait);
         let now = Instant::now();
 
@@ -165,6 +205,10 @@ fn run(app: Hub) {
             was_focused = focused;
             // Whatever was held when the focus left is not held on return.
             states.values_mut().for_each(PadState::release_all);
+        }
+        #[cfg(windows)]
+        if !focused {
+            return;
         }
 
         if let Some(ev) = ev {

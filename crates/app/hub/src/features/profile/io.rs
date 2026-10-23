@@ -14,16 +14,25 @@ struct ProfileBundle {
     files: std::collections::HashMap<String, serde_json::Value>,
 }
 
-/// Files that should never be included in an export (transient caches etc.)
-const EXPORT_EXCLUDE: &[&str] = &["server_list_cache.json"];
+/// The settings files a bundle carries, and the only ones an import writes
+/// or replaces: the profile, the play log, the window's preferences
+/// (`interface.json`, written by the window crate) and the old mod list.
+/// An allow-list, so a cache in the data directory (the server list's, the
+/// Steam listing's with its timestamps and verdicts) never travels to another
+/// machine, nor is deleted by an import.
+const SETTINGS_FILES: &[&str] = &[
+    "profile.json",
+    dz_profile::SESSIONS_FILE,
+    "interface.json",
+    "mods.json",
+];
 
 /// Largest decompressed bundle accepted: settings are kilobytes, so anything
 /// near this is not a profile (or is a decompression bomb).
 const MAX_BUNDLE_BYTES: u64 = 32 * 1024 * 1024;
 
-/// A settings file name a bundle may write: a plain `name.json` in the data
-/// directory, never a path.
-fn is_settings_file_name(name: &str) -> bool {
+/// A plain `name.json` in the data directory, never a path.
+fn is_plain_json_name(name: &str) -> bool {
     name.ends_with(".json")
         && name.len() > ".json".len()
         && !name.starts_with('.')
@@ -31,7 +40,11 @@ fn is_settings_file_name(name: &str) -> bool {
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
         && !name.contains("..")
-        && !EXPORT_EXCLUDE.contains(&name)
+}
+
+/// A settings file name a bundle may write.
+fn is_settings_file_name(name: &str) -> bool {
+    SETTINGS_FILES.contains(&name)
 }
 
 /// The files a bundle holds, checked before anything on disk is touched.
@@ -61,6 +74,9 @@ fn bundle_files(raw: &serde_json::Value) -> Result<Vec<(String, String)>, String
     }
     files
         .into_iter()
+        // A path is refused outright; another plain name is a cache an older
+        // export carried, left behind.
+        .filter(|(name, _)| !is_plain_json_name(name) || is_settings_file_name(name))
         .map(|(name, value)| {
             if !is_settings_file_name(&name) {
                 return Err(format!("This bundle names a file it may not write: {name}"));
@@ -71,7 +87,8 @@ fn bundle_files(raw: &serde_json::Value) -> Result<Vec<(String, String)>, String
 }
 
 impl Hub {
-    /// Export all settings files from the data directory as a zstd-compressed bundle.
+    /// Export the settings files from the data directory as a zstd-compressed
+    /// bundle (never its caches).
     pub async fn export_profile(&self, path: String, include_mods: bool) -> Result<(), String> {
         mocked!(self => Ok(()));
         let data_dir = paths::data_dir();
@@ -90,10 +107,7 @@ impl Hub {
         {
             let fname = entry.file_name();
             let name = fname.to_string_lossy().to_string();
-            if !name.ends_with(".json") {
-                continue;
-            }
-            if EXPORT_EXCLUDE.contains(&name.as_str()) {
+            if !is_settings_file_name(&name) {
                 continue;
             }
             if !include_mods && name == "mods.json" {
@@ -175,7 +189,7 @@ impl Hub {
                 .map_err(|e| format!("Cannot read dir entry: {e}"))?
             {
                 let name = entry.file_name().to_string_lossy().to_string();
-                if name.ends_with(".json") && !EXPORT_EXCLUDE.contains(&name.as_str()) {
+                if is_settings_file_name(&name) {
                     let _ = tokio::fs::remove_file(entry.path()).await;
                 }
             }
@@ -187,14 +201,17 @@ impl Hub {
         }
 
         let profile_path = paths::profile_path();
-        let mut state = state.write().await;
-        state.ctl.reload_profile(&profile_path).cmd_err()?;
-        // The bundle's sessions.json replaced the play log on disk.
-        crate::features::stats::open(&state.ctl.profile().history);
-        state.ctl.rebuild_steamcmd();
-        state.cached_avatar = None;
-        state.profile_changed();
-        Ok(profile_to_dto(state.ctl.profile()))
+        {
+            let mut s = state.write().await;
+            s.ctl.reload_profile(&profile_path).cmd_err()?;
+            // The bundle's sessions.json replaced the play log on disk.
+            crate::features::stats::open(&s.ctl.profile().history);
+            s.cached_avatar = None;
+            s.profile_changed();
+        }
+        // Steam and SteamCMD as the imported profile says, found off the lock.
+        super::rebuild_steamcmd(&state).await;
+        Ok(profile_to_dto(state.read().await.ctl.profile()))
     }
 
     /// Wipe the entire data directory so the app looks brand-new on next boot.
@@ -210,9 +227,11 @@ impl Hub {
     }
 
     /// Restart the application: start this executable again with the same
-    /// arguments (an AppImage restarts from `$APPIMAGE`, the new version after
-    /// an update) and exit this process. Returns only when the new process could
-    /// not be started.
+    /// arguments (an AppImage restarts from `$APPIMAGE`) and exit this process
+    /// at once, skipping the window's own close. For a reset, where closing the
+    /// normal way would write the preferences and the window's place back into
+    /// the data directory just deleted; an import uses `relaunch_app` and lets
+    /// the window close. Returns only when the new process could not be started.
     pub async fn restart_app(&self) -> Result<(), String> {
         mocked!(self => Ok(()));
         crate::features::updater::restart()
@@ -235,6 +254,8 @@ mod tests {
         assert!(is_settings_file_name("mods.json"));
         // The play history travels with the profile.
         assert!(is_settings_file_name(dz_profile::SESSIONS_FILE));
+        assert!(is_settings_file_name("interface.json"));
+        assert!(!is_settings_file_name("steam_listing_cache.json"));
         assert!(!is_settings_file_name("../profile.json"));
         assert!(!is_settings_file_name("..\\x.json"));
         assert!(!is_settings_file_name("/etc/x.json"));
@@ -251,6 +272,12 @@ mod tests {
         let evil =
             serde_json::json!({"version": 2, "files": {"profile.json": {}, "../../x.json": {}}});
         assert!(bundle_files(&evil).is_err());
+        // A cache an older export carried is left out, not written.
+        let old = serde_json::json!({"version": 2,
+            "files": {"profile.json": {}, "steam_listing_cache.json": {"plan": []}}});
+        let files = bundle_files(&old).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].0, "profile.json");
         let empty = serde_json::json!({"version": 2, "files": {"mods.json": []}});
         assert!(bundle_files(&empty).is_err());
         let v1 = serde_json::json!({"version": 1, "profile": {"player": "x"}});

@@ -188,8 +188,11 @@ impl Profile {
             Ok(p) => p,
             Err(e) => {
                 set_aside(path, &e);
-                let p = Self::default();
-                std::fs::write(path, serde_json::to_string_pretty(&p)?)?;
+                let p = Self {
+                    path: path.to_path_buf(),
+                    ..Self::default()
+                };
+                p.snapshot()?.write_blocking()?;
                 p
             }
         };
@@ -345,16 +348,12 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    /// Write through a temporary file and a rename, so a crash mid-write never
-    /// leaves a truncated `profile.json` behind.
+    /// Write through a flushed temporary file and a rename
+    /// ([`dz_common::fs::write_atomic`]), so neither a crash mid-write nor a power
+    /// cut just after leaves a truncated `profile.json` behind.
     pub async fn write(&self) -> Result<()> {
-        if let Some(parent) = self.path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-        let tmp = self.path.with_extension("json.tmp");
-        tokio::fs::write(&tmp, &self.data).await?;
-        let path = self.path.clone();
-        tokio::task::spawn_blocking(move || replace(&tmp, &path))
+        let (path, data) = (self.path.clone(), self.data.clone().into_bytes());
+        tokio::task::spawn_blocking(move || dz_common::fs::write_atomic(&path, &data))
             .await
             .map_err(std::io::Error::other)??;
         Ok(())
@@ -362,28 +361,8 @@ impl Snapshot {
 
     /// [`Snapshot::write`] for synchronous callers.
     pub fn write_blocking(&self) -> Result<()> {
-        if let Some(parent) = self.path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let tmp = self.path.with_extension("json.tmp");
-        std::fs::write(&tmp, &self.data)?;
-        replace(&tmp, &self.path)?;
+        dz_common::fs::write_atomic(&self.path, self.data.as_bytes())?;
         Ok(())
-    }
-}
-
-/// Rename `tmp` over `path`. On Windows a scanner or the search indexer that
-/// has `profile.json` open for a moment makes the rename fail with a sharing
-/// violation: it is tried again for a second or so instead of losing the
-/// save.
-fn replace(tmp: &Path, path: &Path) -> std::io::Result<()> {
-    #[cfg(windows)]
-    {
-        dz_common::win::retry_locked(|| std::fs::rename(tmp, path))
-    }
-    #[cfg(not(windows))]
-    {
-        std::fs::rename(tmp, path)
     }
 }
 

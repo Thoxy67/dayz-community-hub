@@ -63,6 +63,10 @@ pub enum Effect {
     Run(RunFn),
 }
 
+/// How soon a [`Bus`] wakes the window: any delay above zero makes egui run one pass
+/// for the wake instead of two, and merges what arrives within it.
+const WAKE: std::time::Duration = std::time::Duration::from_millis(4);
+
 /// The way back to the UI thread, from anywhere: cheap to clone, `Send`.
 #[derive(Clone)]
 pub struct Bus {
@@ -82,7 +86,7 @@ impl Bus {
 
     pub fn send(&self, e: Effect) {
         let _ = self.tx.send(e);
-        self.ctx.request_repaint();
+        self.ctx.request_repaint_after(WAKE);
     }
 
     /// Run `f` on the UI thread with the whole context, on the next frame.
@@ -104,27 +108,27 @@ impl Bus {
     /// Steam, started): replaces the step before.
     pub fn step(&self, topic: &'static str, text: impl Into<String>, tone: ToastTone) {
         toast::say_topic(&self.ctx, topic, text, tone);
-        self.ctx.request_repaint();
+        self.ctx.request_repaint_after(WAKE);
     }
 
     pub fn info(&self, text: impl Into<String>) {
         toast::say(&self.ctx, text, ToastTone::Neutral);
-        self.ctx.request_repaint();
+        self.ctx.request_repaint_after(WAKE);
     }
 
     pub fn ok(&self, text: impl Into<String>) {
         toast::ok(&self.ctx, text);
-        self.ctx.request_repaint();
+        self.ctx.request_repaint_after(WAKE);
     }
 
     pub fn warn(&self, text: impl Into<String>) {
         toast::warn(&self.ctx, text);
-        self.ctx.request_repaint();
+        self.ctx.request_repaint_after(WAKE);
     }
 
     pub fn err(&self, text: impl Into<String>) {
         toast::err(&self.ctx, text);
-        self.ctx.request_repaint();
+        self.ctx.request_repaint_after(WAKE);
     }
 
     /// A toast with a button running a command line (`"view.friends"`, or an id and
@@ -137,7 +141,7 @@ impl Bus {
         command: impl Into<String>,
     ) {
         toast::say_with_action(&self.ctx, text, tone, label, command);
-        self.ctx.request_repaint();
+        self.ctx.request_repaint_after(WAKE);
     }
 
     // ── questions ───────────────────────────────────────────────────────────
@@ -180,7 +184,7 @@ pub enum Signal {
     AccountSaved,
     /// SteamCMD logged in: the profile says so now.
     SteamcmdLoggedIn,
-    /// The mods on disk were read.
+    /// The mods on disk were read (`ModsChanged` comes first when they moved).
     ModsLoaded,
     /// What the rows show about mods changed (read, checked, linked).
     ModsChanged,
@@ -211,9 +215,10 @@ pub struct Stores {
     pub sources: sources::Sources,
     pub pad: pad::Pad,
     pub theme: theme::Theme,
-    /// Moves whenever a poll took something in or the hub said something: what a view
-    /// derives from the stores and caches across frames is made again when it moves
-    /// (with the view's own key for what actions change at once).
+    /// Moves whenever a poll took something in or the hub said something other than
+    /// pure progress ([`moves_views`]): what a view derives from the stores and caches
+    /// across frames is made again when it moves (with the view's own key for what
+    /// actions change at once).
     pub generation: u64,
     signals: Vec<Signal>,
 }
@@ -244,7 +249,9 @@ impl Stores {
 
     /// What the hub said, to every store that listens.
     pub fn on_event(&mut self, ev: &HubEvent) {
-        self.generation = self.generation.wrapping_add(1);
+        if moves_views(ev) {
+            self.generation = self.generation.wrapping_add(1);
+        }
         let bus = self.bus.clone();
         match ev {
             HubEvent::LaunchDone(name) => {
@@ -267,6 +274,7 @@ impl Stores {
             _ => {}
         }
         self.servers.on_event(ev);
+        self.game.on_event(ev);
         self.sources.on_event(ev);
         self.mods.on_event(ev, &mut self.signals);
         self.updater.on_event(ev);
@@ -320,9 +328,7 @@ impl Stores {
             let web = self.profile.has_web_api();
             changed |= self.friends.poll(focused, view == ViewId::Friends, web);
         }
-        changed |= self
-            .app
-            .tick(&mut self.mods, &self.profile, &mut self.servers);
+        changed |= self.app.tick(&mut self.mods, &mut self.servers);
         while !self.signals.is_empty() {
             changed = true;
             let signals = std::mem::take(&mut self.signals);
@@ -369,17 +375,11 @@ impl Stores {
                 self.servers.load_stats();
             }
             Signal::SteamcmdLoggedIn => self.profile.load(),
-            Signal::ModsLoaded => {
-                self.servers.touch();
-                self.app.mods_loaded(&mut self.mods, &self.profile);
-            }
+            Signal::ModsLoaded => self.app.mods_loaded(&mut self.mods),
             Signal::ModsChanged => self.servers.touch(),
             Signal::ModOpDismissed => {
-                if self.profile.has_api_key() {
-                    self.mods.check_updates(true, true);
-                } else {
-                    self.mods.load();
-                }
+                // The check reads the disk again first; it needs no key.
+                self.mods.check_updates(true);
                 self.mods.load_steam();
                 self.servers.load_stats();
             }
@@ -389,12 +389,22 @@ impl Stores {
     }
 }
 
-/// A hub value read into this crate's mirror of its type, through serde: for the few
-/// DTOs the hub returns but does not export (`RefreshState`, `ModOpSnapshot`).
-pub fn mirror<T: serde::Serialize, U: serde::de::DeserializeOwned>(v: &T) -> Option<U> {
-    serde_json::to_value(v)
-        .ok()
-        .and_then(|v| serde_json::from_value(v).ok())
+/// Whether `ev` can change what views derive from the stores and cache by
+/// [`Stores::generation`]. Pure progress (a SteamCMD log line, a download's bytes, a
+/// stick repeat) is read live by the dialogs and pads that show it, and must not
+/// rebuild the saved lists or an open server panel several times a second.
+fn moves_views(ev: &HubEvent) -> bool {
+    use dz_hub::features::steamcmd::ModProgressKind;
+    use dz_hub::features::updater::DownloadEvent;
+    match ev {
+        HubEvent::GamepadInput(_) => false,
+        HubEvent::UpdateDownload(DownloadEvent::Progress { .. }) => false,
+        HubEvent::ModProgress(p) => !matches!(
+            p.kind,
+            ModProgressKind::LogLine | ModProgressKind::LogProgress | ModProgressKind::Bytes
+        ),
+        _ => true,
+    }
 }
 
 /// Now, as Unix milliseconds.

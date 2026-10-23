@@ -354,11 +354,29 @@ fn set_relaunch_target(exe: std::path::PathBuf) {
         .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(exe);
 }
 
-/// Start this copy again with the same arguments, without exiting. An
-/// AppImage runs from a mount that goes away with the process, so the image
-/// itself (`$APPIMAGE`, the new one after an update) is started instead.
+/// The arguments a restart starts the new instance with: the window's own
+/// (`--data-dir`, `--instance`, `--mock`, `--control`), set by `main` from what
+/// it parsed. Never the original command line: a `dzch://` link, a `.dzch`
+/// file, `--connect` or `--reconnect` would join a server or start the game
+/// again after every update, profile import or reset. Unset, nothing is passed.
+static RESTART_ARGS: Mutex<Vec<std::ffi::OsString>> = Mutex::new(Vec::new());
+
+/// Keep the arguments a restart passes on (see [`RESTART_ARGS`]).
+pub fn set_restart_args(args: Vec<std::ffi::OsString>) {
+    *RESTART_ARGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = args;
+}
+
+/// Start this copy again, without exiting, with the window's own arguments
+/// (see [`set_restart_args`]). An AppImage runs from a mount that goes away
+/// with the process, so the image itself (`$APPIMAGE`, the new one after an
+/// update) is started instead.
 pub(crate) fn relaunch() -> Result<(), String> {
-    let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    let args = RESTART_ARGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     #[cfg(target_os = "linux")]
     if let Some(image) = std::env::var_os("APPIMAGE")
         && spawn_detached(std::path::Path::new(&image), &args).is_ok()
@@ -376,27 +394,53 @@ pub(crate) fn relaunch() -> Result<(), String> {
     spawn_detached(&exe, &args).map_err(|e| format!("Restart: {e}"))
 }
 
-/// Start this executable again with the same arguments, and exit at once
-/// (the control channel's and a profile import's restart).
+/// Start this executable again with the window's own arguments (see
+/// [`relaunch`]), and exit at once: the control channel's restart and the
+/// reset's, whose window must not write its files back into the data folder
+/// just deleted. An update and a profile import use [`relaunch`] and let the
+/// window close the normal way.
 pub(crate) fn restart() -> Result<(), String> {
     relaunch()?;
     std::process::exit(0);
+}
+
+/// The process a restart started this instance after, read once and taken out
+/// of the environment, so nothing this instance starts (Steam, then a launcher
+/// Steam starts) inherits a stale id. Call it at the very start of `main`,
+/// while the process has one thread.
+pub fn take_restart_of() -> Option<u32> {
+    let pid = std::env::var(RESTART_OF)
+        .ok()
+        .and_then(|p| p.trim().parse::<u32>().ok());
+    if std::env::var_os(RESTART_OF).is_some() {
+        // SAFETY: called first thing in `main`, before any other thread exists
+        // (the runtime, the hub and the window come later), so nothing reads the
+        // environment at the same time.
+        unsafe { std::env::remove_var(RESTART_OF) };
+    }
+    pid.filter(|p| *p != std::process::id())
+}
+
+/// How long a restarted instance waits for the previous one: also the bound on
+/// waiting for its single-instance lock.
+pub fn restart_wait() -> std::time::Duration {
+    RESTART_WAIT
+}
+
+/// Wait (at most 15 s) for process `pid` to be gone. For an instance that takes
+/// no single-instance lock (`--mock` without `--instance`); the others wait for
+/// the previous one's lock instead, which no reused pid can fool.
+pub fn wait_for_previous(pid: u32) {
+    wait_for_exit(pid, RESTART_WAIT);
 }
 
 /// At start: when a restart started this instance, wait (at most 15 s) for
 /// the previous one to be gone, so it does not find that one still running
 /// and hand its arguments over to a window about to close.
 pub fn wait_for_previous_instance() {
-    let Some(pid) = std::env::var(RESTART_OF)
-        .ok()
-        .and_then(|p| p.trim().parse::<u32>().ok())
-    else {
-        return;
-    };
-    if pid == std::process::id() {
-        return;
+    if let Some(pid) = take_restart_of() {
+        wait_for_previous(pid);
     }
-    wait_for_exit(pid, RESTART_WAIT);
 }
 
 /// Wait until process `pid` is gone, at most `timeout`; whether it is.

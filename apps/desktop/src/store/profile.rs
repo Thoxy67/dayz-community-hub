@@ -2,12 +2,12 @@
 //! applied here first and then written; a failed write reloads the profile from disk, so
 //! the screen never shows something that was not saved.
 //!
-//! The hub's `FavoriteDto` and `HistoryDto` are not exported (their module is private),
-//! so the store keeps its own copies, [`Favorite`] and [`History`], made from each
-//! profile it reads and edited optimistically: read `favorites` / `history` here, not
-//! `data.favorites`.
+//! The favourites and the history are moved out of each profile read into
+//! [`Profile::favorites`] / [`Profile::history`] and edited there optimistically: read
+//! them here, never `data.favorites` (left empty).
 
 use dz_hub::Hub;
+pub use dz_hub::features::profile::{FavoriteDto as Favorite, HistoryDto as History};
 use dz_hub::features::profile::{ProfileDto, ProfileSettingsInput};
 use dz_hub::features::steamworks::ModDownloaderDto;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -15,26 +15,6 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use super::{Bus, ConfirmRequest, Signal};
 use crate::i18n::{t, tf};
 use crate::rt::{self, Task};
-
-/// A saved server.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Favorite {
-    pub name: String,
-    pub ip: String,
-    pub port: u16,
-    pub password: Option<String>,
-}
-
-/// A server played, newest first.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct History {
-    pub name: String,
-    pub ip: String,
-    pub port: u16,
-    /// Unix seconds of the last join.
-    pub ts: i64,
-    pub relative_time: String,
-}
 
 /// The account part of the settings.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -117,28 +97,9 @@ impl Profile {
         }
     }
 
-    fn set(&mut self, p: ProfileDto) {
-        self.favorites = p
-            .favorites
-            .iter()
-            .map(|f| Favorite {
-                name: f.name.clone(),
-                ip: f.ip.clone(),
-                port: f.port,
-                password: f.password.clone(),
-            })
-            .collect();
-        self.history = p
-            .history
-            .iter()
-            .map(|h| History {
-                name: h.name.clone(),
-                ip: h.ip.clone(),
-                port: h.port,
-                ts: h.ts,
-                relative_time: h.relative_time.clone(),
-            })
-            .collect();
+    fn set(&mut self, mut p: ProfileDto) {
+        self.favorites = std::mem::take(&mut p.favorites);
+        self.history = std::mem::take(&mut p.history);
         self.data = Some(p);
         self.derive();
     }
@@ -567,12 +528,30 @@ impl Profile {
                 return;
             }
             let path = path.path().to_string_lossy().into_owned();
-            let r = match hub.import_profile(path).await {
-                Ok(_) => hub.restart_app().await,
-                Err(e) => Err(e),
-            };
-            if let Err(e) = r {
-                bus.err(format!("{}: {e}", t("settings", "profileImportFailed")));
+            // Restarted as the update restarts: the hub starts the new instance
+            // (which waits for this one to be gone), then this window closes the
+            // normal way, its GPU and drivers torn down by the main thread rather
+            // than by an exit racing a frame. The mock starts nothing.
+            // The import writes its own interface.json: this window's pending
+            // preferences must not land over it while it closes.
+            crate::prefs::hold_writes(true);
+            match hub.import_profile(path).await.map(|_| ()) {
+                Ok(()) => match hub.relaunch_app().await {
+                    Ok(true) => {
+                        if let Some(rt) = rt::Rt::get() {
+                            rt.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                        }
+                    }
+                    Ok(false) => crate::prefs::hold_writes(false),
+                    Err(e) => {
+                        crate::prefs::hold_writes(false);
+                        bus.err(format!("{}: {e}", t("settings", "profileImportFailed")));
+                    }
+                },
+                Err(e) => {
+                    crate::prefs::hold_writes(false);
+                    bus.err(format!("{}: {e}", t("settings", "profileImportFailed")));
+                }
             }
         });
     }
@@ -590,6 +569,9 @@ impl Profile {
             if !bus.confirm(req).await {
                 return;
             }
+            // An immediate exit, on purpose: closing the normal way would write the
+            // preferences and the window's place back into the data directory just
+            // deleted.
             let r = match hub.reset_profile().await {
                 Ok(()) => hub.restart_app().await,
                 Err(e) => Err(e),

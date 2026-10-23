@@ -38,7 +38,9 @@ fn verify_and_replace(zip_bytes: &[u8], signature: &str, version: &str) -> Resul
     let new_exe = exe_dir.join(NEW_EXE);
     // A leftover from an update that stopped halfway is replaced.
     let _ = std::fs::remove_file(&new_exe);
-    std::fs::write(&new_exe, &exe_bytes).map_err(|e| {
+    // Flushed before the swap: NTFS journals the rename, not the data, so a power cut
+    // just after must not find a renamed but empty launcher.
+    write_flushed(&new_exe, &exe_bytes).map_err(|e| {
         if e.kind() == std::io::ErrorKind::PermissionDenied {
             format!(
                 "cannot write in {}: move the launcher to a folder you can write to \
@@ -58,6 +60,14 @@ fn verify_and_replace(zip_bytes: &[u8], signature: &str, version: &str) -> Resul
     // (renamed) image now reports as its own.
     super::set_relaunch_target(current_exe);
     Ok(())
+}
+
+/// Write `bytes` to a new file at `path` and flush it to the disk.
+fn write_flushed(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut f = std::fs::File::create(path)?;
+    f.write_all(bytes)?;
+    f.sync_all()
 }
 
 /// The new executable, written beside the running one before the swap.

@@ -50,7 +50,30 @@ impl Rt {
             let _ = tx.send(fut.await);
             ctx.request_repaint();
         });
-        Task { rx: Some(rx) }
+        Task {
+            rx: Some(rx),
+            abort: None,
+        }
+    }
+
+    /// [`Rt::spawn`] for a read whose answer only matters to its task: dropping or
+    /// replacing the task stops the work at its next await (an A2S query, a fetch),
+    /// instead of letting it run to an answer nobody takes. Never for a write.
+    pub fn spawn_abortable<T, F>(&self, fut: F) -> Task<T>
+    where
+        T: Send + 'static,
+        F: Future<Output = T> + Send + 'static,
+    {
+        let (tx, rx) = oneshot::channel();
+        let ctx = self.ctx.clone();
+        let join = self.handle.spawn(async move {
+            let _ = tx.send(fut.await);
+            ctx.request_repaint();
+        });
+        Task {
+            rx: Some(rx),
+            abort: Some(join.abort_handle()),
+        }
     }
 
     /// Run `fut` and forget its answer (it still wakes the window).
@@ -74,7 +97,19 @@ where
 {
     match Rt::get() {
         Some(rt) => rt.spawn(fut),
-        None => Task { rx: None },
+        None => Task::never(),
+    }
+}
+
+/// [`Rt::spawn_abortable`] on the installed runtime.
+pub fn spawn_abortable<T, F>(fut: F) -> Task<T>
+where
+    T: Send + 'static,
+    F: Future<Output = T> + Send + 'static,
+{
+    match Rt::get() {
+        Some(rt) => rt.spawn_abortable(fut),
+        None => Task::never(),
     }
 }
 
@@ -92,9 +127,27 @@ where
 #[must_use]
 pub struct Task<T> {
     rx: Option<oneshot::Receiver<T>>,
+    /// Set by [`spawn_abortable`]: the work stops when the task goes unanswered.
+    abort: Option<tokio::task::AbortHandle>,
+}
+
+impl<T> Drop for Task<T> {
+    fn drop(&mut self) {
+        if let Some(a) = &self.abort {
+            a.abort();
+        }
+    }
 }
 
 impl<T> Task<T> {
+    /// A task with no work behind it: never answers.
+    fn never() -> Self {
+        Self {
+            rx: None,
+            abort: None,
+        }
+    }
+
     /// The answer, once, on the first frame it is there.
     pub fn poll(&mut self) -> Option<T> {
         let rx = self.rx.as_mut()?;
@@ -136,12 +189,13 @@ impl<T> Default for Fetch<T> {
 }
 
 impl<T: Send + 'static> Fetch<T> {
-    /// Start loading, superseding a load in flight.
+    /// Start loading, superseding a load in flight (whose work stops: a load is a
+    /// read, and only the newest answer is taken).
     pub fn load<F>(&mut self, fut: F)
     where
         F: Future<Output = Result<T, String>> + Send + 'static,
     {
-        self.task = Some(spawn(fut));
+        self.task = Some(spawn_abortable(fut));
     }
 
     /// Take a finished answer in; true when the value or error changed.

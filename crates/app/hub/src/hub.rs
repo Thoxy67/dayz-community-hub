@@ -60,6 +60,9 @@ pub(crate) struct Inner {
     pub(crate) pending: Pending,
     /// The start-up arguments, until `get_cli_args` hands them out.
     pub(crate) args: Mutex<Option<CliArgs>>,
+    /// Whether this is a first launch, taken by [`Hub::prewarm`] before its
+    /// work can create the profile, until `check_first_launch` takes it.
+    first_launch: Mutex<Option<bool>>,
     started: AtomicBool,
     /// The invented world, in Mock mode.
     #[cfg(feature = "mock")]
@@ -104,6 +107,7 @@ impl Hub {
                 ping: Arc::new(PingState::default()),
                 pending: Pending::default(),
                 args: Mutex::new(args),
+                first_launch: Mutex::new(None),
                 started: AtomicBool::new(false),
                 #[cfg(feature = "mock")]
                 mock,
@@ -159,6 +163,29 @@ impl Hub {
     /// Keep the state `initialize` made. The first one stays.
     pub(crate) fn set_state(&self, state: SharedState) {
         let _ = self.inner.state.set(state);
+    }
+
+    /// Note now whether the profile exists (one stat), before anything started
+    /// here can write a default one: `initialize` does, and the window asks
+    /// `check_first_launch` only on its first frame, after it.
+    pub(crate) fn note_first_launch(&self) {
+        let first = !crate::paths::profile_path().exists();
+        let mut f = self
+            .inner
+            .first_launch
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        f.get_or_insert(first);
+    }
+
+    /// The answer [`Hub::note_first_launch`] kept, once (a later ask, after the
+    /// wizard wrote the profile, looks at the disk again).
+    pub(crate) fn take_first_launch(&self) -> Option<bool> {
+        self.inner
+            .first_launch
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
     }
 
     pub(crate) fn ping(&self) -> &Arc<PingState> {

@@ -430,8 +430,8 @@ pub fn battleye_repairable(cx: &Ctx) -> bool {
 
 // ── the page's own state ────────────────────────────────────────────────────
 
-/// SteamCMD as found (the hub's `SteamcmdStatusDto`, mirrored: its module is private).
-#[derive(Clone, Debug, Default, serde::Deserialize)]
+/// SteamCMD as found (the hub's `SteamcmdStatusDto`, copied: its module is private).
+#[derive(Clone, Debug, Default)]
 pub struct SteamcmdStatus {
     pub found: bool,
     pub path: Option<String>,
@@ -523,7 +523,11 @@ impl SettingsView {
         let hub = cx.hub.clone();
         self.steamcmd.load(async move {
             let s = hub.detect_steamcmd().await?;
-            crate::store::mirror::<_, SteamcmdStatus>(&s).ok_or_else(|| "steamcmd".to_string())
+            Ok(SteamcmdStatus {
+                found: s.found,
+                path: s.path,
+                platform: s.platform,
+            })
         });
     }
 

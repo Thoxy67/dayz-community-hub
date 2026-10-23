@@ -86,7 +86,7 @@ impl AppState {
     }
 
     /// The window is back: refresh what went stale meanwhile.
-    pub fn back(&mut self, servers: &mut Servers, mods: &mut Mods, profile: &Profile) {
+    pub fn back(&mut self, servers: &mut Servers, mods: &mut Mods, _profile: &Profile) {
         self.focused = true;
         let Some(at) = self.away_at.take() else {
             return;
@@ -96,7 +96,7 @@ impl AppState {
             servers.refresh(true);
         }
         if gone >= AWAY_MODS && self.initialized {
-            mods.check_updates(false, profile.has_api_key());
+            mods.check_updates(false);
         }
     }
 
@@ -145,25 +145,25 @@ impl AppState {
         if !self.profile_seen && self.initialized {
             self.profile_seen = true;
             profile.load_avatar();
-            self.maybe_check(mods, profile);
+            self.maybe_check(mods);
         }
     }
 
     /// The mods on disk were read.
-    pub fn mods_loaded(&mut self, mods: &mut Mods, profile: &Profile) {
+    pub fn mods_loaded(&mut self, mods: &mut Mods) {
         if !self.mods_seen {
             self.mods_seen = true;
-            self.maybe_check(mods, profile);
+            self.maybe_check(mods);
         }
     }
 
-    /// The Workshop check needs the Steam API key from the profile; a resumed hub
+    /// The first Workshop check, once the profile and the disk are read; a resumed hub
     /// keeps the last answer, which the disk read shows.
-    fn maybe_check(&mut self, mods: &mut Mods, profile: &Profile) {
+    fn maybe_check(&mut self, mods: &mut Mods) {
         if self.profile_seen && self.mods_seen && !self.checked_once {
             self.checked_once = true;
             if !self.resumed {
-                mods.check_updates(false, profile.has_api_key());
+                mods.check_updates(false);
             }
         }
     }
@@ -175,7 +175,7 @@ impl AppState {
 
     /// Mods are checked for updates every half hour while the window is in use; not
     /// while it sits in the background (`back` checks on return).
-    pub fn tick(&mut self, mods: &mut Mods, profile: &Profile, _servers: &mut Servers) -> bool {
+    pub fn tick(&mut self, mods: &mut Mods, _servers: &mut Servers) -> bool {
         let Some(due) = self.next_mods_check else {
             return false;
         };
@@ -186,7 +186,7 @@ impl AppState {
         }
         self.next_mods_check = Some(now + MODS_EVERY);
         if self.focused {
-            mods.check_updates(true, profile.has_api_key());
+            mods.check_updates(true);
         }
         false
     }

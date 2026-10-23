@@ -47,6 +47,11 @@ pub fn server_list_cache_path() -> PathBuf {
     data_dir().join("server_list_cache.json")
 }
 
+/// `<data dir>/dayzmetrics_ids.json`: the DayZ Metrics ids already found.
+pub fn dayzmetrics_ids_path() -> PathBuf {
+    data_dir().join("dayzmetrics_ids.json")
+}
+
 /// Tauri's `app_data_dir()`: `dirs::data_dir()/<identifier>`.
 pub fn tauri_app_data_dir() -> Option<PathBuf> {
     dirs::data_dir().map(|d| d.join(TAURI_IDENTIFIER))

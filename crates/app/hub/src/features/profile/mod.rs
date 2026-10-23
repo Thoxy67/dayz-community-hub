@@ -5,10 +5,12 @@ mod dto;
 pub(crate) mod io;
 
 pub(crate) use dto::profile_to_dto;
-pub use dto::{LaunchOptionDto, ProfileDto};
+pub use dto::{FavoriteDto, HistoryDto, LaunchOptionDto, ProfileDto};
+
+use dz_game::ctl::{SteamInputs, SteamSetup};
 
 use crate::Hub;
-use crate::state::mutate_profile;
+use crate::state::{SharedState, mutate_profile};
 
 /// The account and ping settings, as the settings dialog saves them.
 #[derive(serde::Deserialize, Clone, Debug)]
@@ -59,6 +61,22 @@ fn clean_path(p: Option<String>) -> Option<String> {
     Some(s.to_string())
 }
 
+/// Find Steam and SteamCMD again for the profile as it stands, on a blocking
+/// thread with no lock held (it probes the disks: every drive on Windows),
+/// then swap the result in, unless the profile's Steam settings moved
+/// meanwhile: the change that moved them rebuilds after this one.
+pub(crate) async fn rebuild_steamcmd(state: &SharedState) {
+    let inputs = SteamInputs::of(state.read().await.ctl.profile());
+    let asked = inputs.clone();
+    let Ok(setup) = tokio::task::spawn_blocking(move || SteamSetup::resolve(&asked)).await else {
+        return;
+    };
+    let mut s = state.write().await;
+    if SteamInputs::of(s.ctl.profile()) == inputs {
+        s.ctl.set_steam_setup(setup);
+    }
+}
+
 impl Hub {
     /// The current profile.
     pub async fn get_profile(&self) -> Result<ProfileDto, String> {
@@ -89,11 +107,12 @@ impl Hub {
             ping_scan_history,
             ping_scan_servers,
         } = settings;
-        mutate_profile(&state, |s| {
+        let steam_moved = mutate_profile(&state, |s| {
             let credentials_changed = {
                 let p = s.ctl.profile();
                 p.steam_api_key != steam_api_key || p.steam_id != steam_id
             };
+            let steamcmd_before = SteamInputs::of(s.ctl.profile());
             let profile = s.ctl.profile_mut();
             profile.player = player;
             // Another account: SteamCMD's cached login and a saved password
@@ -120,10 +139,16 @@ impl Hub {
             if credentials_changed {
                 s.cached_avatar = None;
             }
-            s.ctl.rebuild_steamcmd();
-            Ok(())
+            // Finding Steam and SteamCMD probes the disks (every drive on
+            // Windows): only when what it reads changed, not on every ping
+            // setting saved, and after the lock is let go.
+            Ok(SteamInputs::of(s.ctl.profile()) != steamcmd_before)
         })
-        .await
+        .await?;
+        if steam_moved {
+            rebuild_steamcmd(&state).await;
+        }
+        Ok(())
     }
 
     /// Add a favorite (or update its name and password).

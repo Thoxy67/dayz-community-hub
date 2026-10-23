@@ -12,6 +12,10 @@
 //! searching its name (or, failing that, its IP) and reading the candidates'
 //! details until one has the same address; see [`lookup`].
 
+mod ids;
+
+pub use ids::KnownIds;
+
 use futures_util::stream::{self, StreamExt};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};

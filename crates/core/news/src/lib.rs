@@ -174,6 +174,89 @@ const NEWS_HOST: &str = "dayz.com";
 const NEWS_USER_AGENT: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0";
 
+/// The TLS set-up every news request shares, built once: the roots copied and
+/// the provider made for the first request only (5 list pages and the bodies
+/// each used to build their own).
+///
+/// rustls with the aws-lc-rs (BoringSSL) provider: its ClientHello matches a
+/// Chrome-like fingerprint that Cloudflare accepts (the `ring` provider is
+/// reliably challenged). The provider is pinned explicitly so nothing depends on
+/// a process-wide default that other crates (reqwest) might leave unset.
+///
+/// Sessions are not resumed ([`NoResumption`]): a resumed ClientHello carries a
+/// pre-shared key and a remembered key share, which changes the fingerprint
+/// Cloudflare reads; every connection says what a first one says.
+fn tls_config() -> Result<std::sync::Arc<tokio_rustls::rustls::ClientConfig>> {
+    use std::sync::{Arc, OnceLock};
+    use tokio_rustls::rustls::client::Resumption;
+    use tokio_rustls::rustls::{ClientConfig, RootCertStore};
+    static CONFIG: OnceLock<std::result::Result<Arc<ClientConfig>, String>> = OnceLock::new();
+    CONFIG
+        .get_or_init(|| {
+            let roots = RootCertStore {
+                roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+            };
+            let mut config = ClientConfig::builder_with_provider(Arc::new(
+                tokio_rustls::rustls::crypto::aws_lc_rs::default_provider(),
+            ))
+            .with_safe_default_protocol_versions()
+            .map_err(|e| e.to_string())?
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+            // ALPN is part of the fingerprint Cloudflare checks: must advertise http/1.1.
+            config.alpn_protocols = vec![b"http/1.1".to_vec()];
+            config.resumption = Resumption::store(Arc::new(NoResumption));
+            Ok(Arc::new(config))
+        })
+        .clone()
+        .map_err(|e| Error::Other(format!("news fetch tls config: {e}")))
+}
+
+/// A session store that keeps nothing: each connection's ClientHello is the one
+/// a fresh configuration sends (the extensions advertised, no ticket, no hint).
+#[derive(Debug)]
+struct NoResumption;
+
+impl tokio_rustls::rustls::client::ClientSessionStore for NoResumption {
+    fn set_kx_hint(
+        &self,
+        _: tokio_rustls::rustls::pki_types::ServerName<'static>,
+        _: tokio_rustls::rustls::NamedGroup,
+    ) {
+    }
+    fn kx_hint(
+        &self,
+        _: &tokio_rustls::rustls::pki_types::ServerName<'_>,
+    ) -> Option<tokio_rustls::rustls::NamedGroup> {
+        None
+    }
+    fn set_tls12_session(
+        &self,
+        _: tokio_rustls::rustls::pki_types::ServerName<'static>,
+        _: tokio_rustls::rustls::client::Tls12ClientSessionValue,
+    ) {
+    }
+    fn tls12_session(
+        &self,
+        _: &tokio_rustls::rustls::pki_types::ServerName<'_>,
+    ) -> Option<tokio_rustls::rustls::client::Tls12ClientSessionValue> {
+        None
+    }
+    fn remove_tls12_session(&self, _: &tokio_rustls::rustls::pki_types::ServerName<'static>) {}
+    fn insert_tls13_ticket(
+        &self,
+        _: tokio_rustls::rustls::pki_types::ServerName<'static>,
+        _: tokio_rustls::rustls::client::Tls13ClientSessionValue,
+    ) {
+    }
+    fn take_tls13_ticket(
+        &self,
+        _: &tokio_rustls::rustls::pki_types::ServerName<'static>,
+    ) -> Option<tokio_rustls::rustls::client::Tls13ClientSessionValue> {
+        None
+    }
+}
+
 /// GET `path` on dayz.com over a raw, browser-shaped HTTPS/1.1 connection and
 /// return `(status, body)`.
 ///
@@ -197,28 +280,10 @@ async fn get(path: &str) -> Result<(u16, String)> {
     use bytes::Bytes;
     use http_body_util::{BodyExt, Empty};
     use hyper_util::rt::TokioIo;
-    use std::sync::Arc;
-    use tokio_rustls::rustls::{ClientConfig, RootCertStore, pki_types::ServerName};
+    use tokio_rustls::rustls::pki_types::ServerName;
 
     let err = |ctx: &str, e: String| Error::Other(format!("news fetch {ctx}: {e}"));
-
-    // rustls with the aws-lc-rs (BoringSSL) provider: its ClientHello matches a
-    // Chrome-like fingerprint that Cloudflare accepts (the `ring` provider is
-    // reliably challenged). Pin the provider explicitly so we never depend on a
-    // process-wide default that other crates (reqwest) might leave unset.
-    let roots = RootCertStore {
-        roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
-    };
-    let mut config = ClientConfig::builder_with_provider(Arc::new(
-        tokio_rustls::rustls::crypto::aws_lc_rs::default_provider(),
-    ))
-    .with_safe_default_protocol_versions()
-    .map_err(|e| err("tls config", e.to_string()))?
-    .with_root_certificates(roots)
-    .with_no_client_auth();
-    // ALPN is part of the fingerprint Cloudflare checks: must advertise http/1.1.
-    config.alpn_protocols = vec![b"http/1.1".to_vec()];
-    let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
+    let connector = tokio_rustls::TlsConnector::from(tls_config()?);
 
     let tcp = tokio::net::TcpStream::connect((NEWS_HOST, 443))
         .await

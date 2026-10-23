@@ -2,6 +2,7 @@
 //! keeps its files, and the clock.
 
 pub mod error;
+pub mod fs;
 pub mod paths;
 pub mod time;
 #[cfg(windows)]

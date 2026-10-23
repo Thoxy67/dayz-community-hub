@@ -3,7 +3,8 @@ use serde::Serialize;
 
 use crate::features::steamworks::ModDownloaderDto;
 
-#[derive(Serialize, Clone, Debug)]
+/// A saved server.
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 pub struct FavoriteDto {
     pub name: String,
     pub ip: String,
@@ -12,7 +13,8 @@ pub struct FavoriteDto {
     pub password: Option<String>,
 }
 
-#[derive(Serialize, Clone, Debug)]
+/// A server played, newest first.
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 pub struct HistoryDto {
     pub name: String,
     pub ip: String,

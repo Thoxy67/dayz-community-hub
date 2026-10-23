@@ -1971,13 +1971,11 @@ pub static COMMANDS: &[CommandSpec] = &[
             if arg_bool(a, "open") == Some(true) {
                 cx.go(ViewId::Mods);
             }
-            let key = cx.stores.profile.has_api_key();
-            cx.stores.mods.check_updates(true, key);
+            cx.stores.mods.check_updates(true);
         }
     ),
     cmd!("mods.refresh", ("mods", "refreshTitle"), "mods", |cx, _| {
-        let key = cx.stores.profile.has_api_key();
-        cx.stores.mods.refresh(key);
+        cx.stores.mods.refresh();
     }),
     cmd!("mods.cleanup", ("mods", "cleanup"), "mods", |cx, _| cx
         .stores
