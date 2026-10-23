@@ -429,7 +429,15 @@ fn profile(ui: &mut Ui, cx: &mut Ctx, right: f32, rect: Rect, win_w: f32) -> f32
     // The avatar is drawn at `size-5`, the icon at `size-icon`.
     let avatar_key = cx.stores.profile.avatar_key;
     let lead = match cx.stores.profile.avatar_url.as_deref() {
-        Some(src) if crate::parts::image::texture_keyed(ui.ctx(), avatar_key, src).is_some() => {
+        Some(src)
+            if crate::parts::image::texture_keyed(
+                ui.ctx(),
+                avatar_key,
+                src,
+                crate::parts::image::side_for(ui.ctx(), Vec2::splat(AVATAR)),
+            )
+            .is_some() =>
+        {
             AVATAR
         }
         _ => size::ICON,

@@ -7,7 +7,6 @@
 //! sight are not laid out: their height from the last time they were is skipped.
 
 use std::ops::Range;
-use std::sync::Arc;
 
 use egui::text::LayoutJob;
 use egui::{
@@ -77,6 +76,9 @@ pub struct HtmlDoc {
     pub blocks: Vec<Block>,
     /// Absolute http(s) links, by index.
     pub links: Vec<String>,
+    /// A hash of what was parsed: the document's identity for the heights the pane
+    /// remembers (the same article parsed again is the same document).
+    stamp: u64,
 }
 
 /// What a click on an article asked for.
@@ -559,7 +561,14 @@ impl HtmlDoc {
             b.doc.blocks.push(Block::Pre(p));
         }
         b.flush();
-        b.doc
+        let mut doc = b.doc;
+        doc.stamp = {
+            use std::hash::{Hash, Hasher};
+            let mut h = rustc_hash::FxHasher::default();
+            (html, base).hash(&mut h);
+            h.finish()
+        };
+        doc
     }
 
     /// Every picture's source, for the caller to fetch and cache before they are drawn
@@ -645,6 +654,13 @@ fn job(
     (j, links)
 }
 
+/// The blocks' heights a pane remembers for a document, at one width.
+#[derive(Clone, Default)]
+struct Heights {
+    width: i32,
+    of: Vec<f32>,
+}
+
 /// `SafeHtml`: an [`HtmlDoc`] drawn in the app's type, the width on offer. `resolve` maps a
 /// picture's source to what egui loads (a cached file's `file://` URI, say); a picture it
 /// cannot resolve yet is not drawn. Answers what a click asked for.
@@ -680,16 +696,19 @@ impl<'a> SafeHtml<'a> {
         let mut prev_gap = 0.0_f32;
         let mut first = true;
         let mut after_list = false;
-        // Each block's height at this width, the last time it was laid out.
-        let key = ui.id().with((
-            "html-heights",
-            std::ptr::from_ref(self.doc) as usize,
-            w.round() as i32,
-        ));
-        let mut heights: Vec<f32> = ui
-            .data(|d| d.get_temp::<Arc<Vec<f32>>>(key))
-            .map(|h| h.as_ref().clone())
-            .unwrap_or_default();
+        // Each block's height the last time it was laid out: one memo per pane and
+        // document, started over when the width changes (a resize does not leave one
+        // per width behind). Taken out for the pass and put back at the end.
+        let key = ui.id().with(("html-heights", self.doc.stamp));
+        let width = w.round() as i32;
+        let mut heights = ui.data_mut(|d| {
+            let m = d.get_temp_mut_or_default::<Heights>(key);
+            if m.width != width {
+                m.width = width;
+                m.of.clear();
+            }
+            std::mem::take(&mut m.of)
+        });
         heights.resize(self.doc.blocks.len(), 0.0);
         let clip = ui.clip_rect();
         for (bi, block) in self.doc.blocks.iter().enumerate() {
@@ -885,7 +904,7 @@ impl<'a> SafeHtml<'a> {
                 *h = (ui.cursor().top() - start).max(0.0);
             }
         }
-        ui.data_mut(|d| d.insert_temp(key, Arc::new(heights)));
+        ui.data_mut(|d| d.get_temp_mut_or_default::<Heights>(key).of = heights);
         out
     }
 
@@ -988,6 +1007,15 @@ mod tests {
     use super::*;
 
     const BASE: &str = "https://dayz.com/article/news/x";
+
+    /// The heights memo knows a document by what was parsed, not by where it lives.
+    #[test]
+    fn a_document_is_known_by_its_content() {
+        let a = HtmlDoc::parse("<p>One</p>", BASE);
+        assert_eq!(a.stamp, HtmlDoc::parse("<p>One</p>", BASE).stamp);
+        assert_ne!(a.stamp, HtmlDoc::parse("<p>Two</p>", BASE).stamp);
+        assert_ne!(a.stamp, HtmlDoc::default().stamp);
+    }
 
     #[test]
     fn drops_what_is_unsafe() {

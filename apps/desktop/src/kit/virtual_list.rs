@@ -48,7 +48,7 @@ impl VirtualList {
             id: Id::new(id_salt),
             count,
             row_height: crate::theme::size::ROW,
-            overscan: 6,
+            overscan: 1,
             header: 0.0,
             stick_to_end: false,
             scroll_to: None,
@@ -63,7 +63,9 @@ impl VirtualList {
         self
     }
 
-    /// Rows laid out beyond each edge, so a flick shows no gap.
+    /// Rows laid out beyond each edge (1 by default). egui lays the rows out for this
+    /// frame's offset in the same pass, so a flick never shows a gap; an extra row is
+    /// only for a caller that needs the one just out of view.
     pub fn overscan(mut self, n: usize) -> Self {
         self.overscan = n;
         self

@@ -454,7 +454,6 @@ impl Widget for Button<'_> {
                     Rect::from_min_size(egui::pos2(x, cy - icon_px / 2.0), Vec2::splat(icon_px));
                 if self.spinning {
                     super::Spinner::paint(ui, ir, ink);
-                    ui.ctx().request_repaint();
                 } else {
                     icon.paint(painter, ir, ink);
                 }

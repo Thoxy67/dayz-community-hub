@@ -211,7 +211,7 @@ impl EventPipe {
         let sink: EventSink = Arc::new(move |e| {
             let _ = tx.send(e);
             if let Some(ctx) = w.get() {
-                ctx.request_repaint();
+                ctx.request_repaint_after(EVENT_WAKE);
             }
         });
         Self { sink, rx, wake }
@@ -230,6 +230,10 @@ pub fn reduced_motion(ctx: &Context) -> bool {
         .unwrap_or(false)
 }
 
+/// How soon a hub event wakes the window. Not zero: egui runs two passes for a repaint
+/// asked for at once, and a short delay also folds the events that come in a burst (a
+/// refresh sends dozens a second) into one frame.
+const EVENT_WAKE: std::time::Duration = std::time::Duration::from_millis(4);
 /// Events taken in per frame at most; the rest wait for the next (which is asked for).
 const EVENTS_PER_FRAME: usize = 2048;
 /// How far a view rises as it comes on screen.
@@ -364,6 +368,13 @@ impl HubApp {
         self.started = true;
         self.stores.app.init();
         self.stores.theme.sync(ctx, &self.prefs);
+        // The interface's icons at their usual sizes, rasterised on a worker: the first
+        // frames only upload them.
+        crate::icons::prewarm(
+            ctx,
+            crate::icons::lucide::ALL,
+            &[12.0, size::ICON_SM, size::ICON, size::ICON_LG],
+        );
     }
 
     /// One frame of the whole window, into `ui` (the root, or `ui_shot`'s harness).
@@ -549,7 +560,9 @@ impl HubApp {
             return;
         }
         if prev != Some(w) {
-            self.prefs.edit().window = Some(w);
+            // Kept without a write of its own (eframe's file is the one read
+            // back first): it goes with the next preferences write or at exit.
+            self.prefs.set_window(w);
             // A frame after eframe's save interval, so it writes the new geometry even
             // if the window then sits idle (`auto_save_interval`).
             ctx.request_repaint_after(std::time::Duration::from_millis(2_100));
@@ -846,7 +859,7 @@ mod tests {
         assert_eq!(app.stores().servers.total, 9500);
         let order = app.stores().servers.order().expect("the browser's order");
         assert_eq!(order.total(), 9499, "one server's IP is excluded");
-        // A server other views mention, fetched by address in a batch.
+        // A server other views mention, found by address in the snapshot.
         let fav = app
             .stores()
             .profile
@@ -855,14 +868,8 @@ mod tests {
             .cloned()
             .expect("the mock profile has favourites");
         let (ip, port) = (fav.ip.clone(), i64::from(fav.port));
-        h.state_mut()
-            .as_mut()
-            .unwrap()
-            .stores_mut()
-            .servers
-            .find(&ip, port);
         until(&mut h, 60, "a favourite's row", |a| {
-            a.stores().servers.peek(&ip, port).is_some()
+            a.stores().servers.row(&ip, port).is_some()
         });
 
         let ctx = h.ctx.clone();

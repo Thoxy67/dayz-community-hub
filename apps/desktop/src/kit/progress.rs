@@ -61,7 +61,7 @@ impl Spinner {
             .collect();
         ui.painter()
             .add(Shape::line(pts, Stroke::new(2.0 * s, color)));
-        ui.ctx().request_repaint();
+        super::paint::animate(ui.ctx());
     }
 }
 
@@ -106,7 +106,7 @@ fn shimmer(ui: &Ui, rect: Rect, t: &Tokens) {
     ui.painter()
         .with_clip_rect(rect.intersect(ui.clip_rect()))
         .add(Shape::mesh(mesh));
-    ui.ctx().request_repaint();
+    super::paint::animate(ui.ctx());
 }
 
 /// `ui/skeleton`: the shape of something still on its way, `rounded-full bg-raised`
@@ -342,7 +342,7 @@ impl Widget for Meter {
             let band = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(bw, h));
             p.with_clip_rect(rect.intersect(ui.clip_rect()))
                 .rect_filled(band, r, fill);
-            ui.ctx().request_repaint();
+            super::paint::animate(ui.ctx());
         } else {
             let f = if self.animate {
                 ui.ctx()

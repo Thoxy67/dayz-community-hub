@@ -146,7 +146,7 @@ impl Widget for Signal {
             p.rect_filled(r, CornerRadius::same(1), tone.gamma_multiply(a));
         }
         if self.pending {
-            ui.ctx().request_repaint();
+            super::paint::animate(ui.ctx());
         }
         if timed_out {
             let c = Pos2::new(rect.left() + bars_w / 2.0, bottom - h / 2.0);
@@ -448,10 +448,17 @@ impl Brand {
         let ctx = painter.ctx();
         let px = ((side * ctx.pixels_per_point()).round() as u32).clamp(1, 512);
         let cache_id = egui::Id::new("kit::brand-cache");
-        let cache: Arc<Mutex<BrandCache>> = ctx.data_mut(|d| {
-            d.get_temp_mut_or_default::<Arc<Mutex<BrandCache>>>(cache_id)
-                .clone()
-        });
+        // A read lock on the context once the cache exists; the write lock only to make it.
+        let cache: Arc<Mutex<BrandCache>> = ctx
+            .data(|d| d.get_temp::<Arc<Mutex<BrandCache>>>(cache_id))
+            .unwrap_or_else(|| {
+                ctx.data_mut(|d| {
+                    d.get_temp_mut_or_default::<Arc<Mutex<BrandCache>>>(cache_id)
+                        .clone()
+                })
+            });
+        // The id, not a clone of the handle: cloning and dropping a handle each takes the
+        // texture manager's write lock, and the cache keeps the texture alive anyway.
         let tex = {
             let mut c = cache.lock();
             c.entry((self, px))
@@ -464,12 +471,13 @@ impl Brand {
                         )
                     })
                 })
-                .clone()
+                .as_ref()
+                .map(egui::TextureHandle::id)
         };
         if let Some(tex) = tex {
             let r = Rect::from_center_size(rect.center(), Vec2::splat(side));
             painter.image(
-                tex.id(),
+                tex,
                 r,
                 Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
                 tint,

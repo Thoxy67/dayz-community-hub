@@ -133,7 +133,6 @@ impl Widget for Tag<'_> {
             };
             if self.spinner {
                 super::Spinner::paint(ui, small(x), ink);
-                ui.ctx().request_repaint();
                 x += 14.0;
             }
             if let Some(b) = self.brand {

@@ -5,18 +5,20 @@
 //! `python3 scripts/icons.py`, which rewrites `list.rs` (a test fails when they disagree).
 //! An icon is rasterised with resvg once per (icon, pixel size), uploaded as a texture and
 //! cached in the context's data; monochrome icons are white and take their colour from the
-//! mesh tint, flags (`colored`) are drawn as they are.
+//! mesh tint, flags (`colored`) are drawn as they are. The common icons are rasterised
+//! ahead on a worker ([`prewarm`]), so the first frames only upload them; sizes left unused
+//! for a while (an old zoom) are let go.
 
 mod list;
 
 pub use list::{bx, flag, game, lucide};
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use egui::mutex::Mutex;
-use egui::{Color32, Rect, Vec2};
+use egui::{Color32, Rect, TextureId, Vec2};
 use resvg::{tiny_skia, usvg};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 /// One icon: its SVG and how it is coloured.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -39,6 +41,9 @@ impl std::fmt::Debug for Icon {
 
 /// The largest side, in pixels, an icon is rasterised at.
 const MAX_PX: u32 = 1024;
+/// Past this many textures, those not drawn for [`UNUSED_PASSES`] are let go.
+const KEEP: usize = 384;
+const UNUSED_PASSES: u64 = 600;
 
 impl Icon {
     const fn new(name: &'static str, svg: &'static [u8], colored: bool) -> Self {
@@ -64,13 +69,13 @@ impl Icon {
         } else {
             1
         };
-        let Some(entry) = texture(ctx, *self, px) else {
+        let Some((id, aspect)) = texture(ctx, *self, px) else {
             return;
         };
-        let fitted = fit(entry.aspect, rect);
+        let fitted = fit(aspect, rect);
         let uv = Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
         let tint = if self.colored { Color32::WHITE } else { tint };
-        painter.image(entry.texture.id(), fitted, uv, tint);
+        painter.image(id, fitted, uv, tint);
     }
 
     /// Allocates a `size`×`size` square in `ui` and draws the icon in it.
@@ -95,51 +100,127 @@ fn fit(aspect: f32, rect: Rect) -> Rect {
     Rect::from_center_size(rect.center(), size)
 }
 
-#[derive(Clone)]
-struct Entry {
-    texture: egui::TextureHandle,
+/// An icon's texture at one pixel size. The handle keeps it alive; the frame draws by its
+/// id (cloning and dropping a handle each take the texture manager's write lock).
+struct Slot {
+    _texture: egui::TextureHandle,
+    id: TextureId,
     aspect: f32,
+    /// The pass it was last drawn in.
+    used: u64,
+}
+
+/// By the icon's name and the pixel size. Not by the SVG's address: a constant's bytes
+/// may sit at a different address in each place it is used.
+type Key = (&'static str, u32);
+
+fn key(icon: Icon, px: u32) -> Key {
+    (icon.name, px)
 }
 
 #[derive(Default)]
 struct Cache {
-    textures: HashMap<(&'static str, u32), Entry>,
+    textures: FxHashMap<Key, Slot>,
+    /// Rasterised ahead by [`prewarm`], uploaded when first drawn.
+    ready: FxHashMap<Key, (egui::ColorImage, f32)>,
     /// Icons whose SVG failed: logged once, never retried.
-    broken: HashMap<&'static str, ()>,
+    broken: FxHashSet<&'static str>,
+    /// The pass of the last sweep of unused sizes.
+    swept: u64,
 }
 
 type SharedCache = Arc<Mutex<Cache>>;
 
 fn cache(ctx: &egui::Context) -> SharedCache {
-    ctx.data_mut(|d| {
-        d.get_temp_mut_or_default::<SharedCache>(egui::Id::new("dzch-icon-cache"))
-            .clone()
-    })
+    let id = egui::Id::new("dzch-icon-cache");
+    // A read lock on the context once the cache exists; the write lock only to make it.
+    ctx.data(|d| d.get_temp::<SharedCache>(id))
+        .unwrap_or_else(|| ctx.data_mut(|d| d.get_temp_mut_or_default::<SharedCache>(id).clone()))
 }
 
-fn texture(ctx: &egui::Context, icon: Icon, px: u32) -> Option<Entry> {
+fn texture(ctx: &egui::Context, icon: Icon, px: u32) -> Option<(TextureId, f32)> {
+    let k = key(icon, px);
+    let pass = ctx.cumulative_pass_nr();
     let cache = cache(ctx);
     let mut cache = cache.lock();
-    if let Some(entry) = cache.textures.get(&(icon.name, px)) {
-        return Some(entry.clone());
+    if let Some(slot) = cache.textures.get_mut(&k) {
+        slot.used = pass;
+        return Some((slot.id, slot.aspect));
     }
-    if cache.broken.contains_key(icon.name) {
+    if cache.broken.contains(&k.0) {
         return None;
     }
-    match rasterise(icon.svg, px) {
+    let made = match cache.ready.remove(&k) {
+        Some(ready) => Ok(ready),
+        None => rasterise(icon.svg, px),
+    };
+    match made {
         Ok((image, aspect)) => {
             let name = format!("icon:{}@{px}", icon.name);
             let texture = ctx.load_texture(name, image, egui::TextureOptions::LINEAR);
-            let entry = Entry { texture, aspect };
-            cache.textures.insert((icon.name, px), entry.clone());
-            Some(entry)
+            let id = texture.id();
+            if cache.textures.len() >= KEEP && cache.swept != pass {
+                cache.swept = pass;
+                cache.textures.retain(|_, s| s.used + UNUSED_PASSES >= pass);
+            }
+            cache.textures.insert(
+                k,
+                Slot {
+                    _texture: texture,
+                    id,
+                    aspect,
+                    used: pass,
+                },
+            );
+            Some((id, aspect))
         }
         Err(e) => {
             eprintln!("icon {}: {e}", icon.name);
-            cache.broken.insert(icon.name, ());
+            cache.broken.insert(k.0);
             None
         }
     }
+}
+
+/// Rasterise `icons` at each of `sizes` (points, at the context's current scale) on a
+/// worker thread, so drawing them first only uploads them. Never waits: the frame that
+/// draws one before the worker reached it rasterises it itself.
+pub fn prewarm(
+    ctx: &egui::Context,
+    icons: &'static [Icon],
+    sizes: &[f32],
+) -> Option<std::thread::JoinHandle<()>> {
+    let ppp = ctx.pixels_per_point();
+    let pxs: Vec<u32> = sizes
+        .iter()
+        .map(|s| (s * ppp).round())
+        .filter(|s| s.is_finite())
+        .map(|s| (s as u32).clamp(1, MAX_PX))
+        .collect();
+    let cache = cache(ctx);
+    std::thread::Builder::new()
+        .name("icons".into())
+        .spawn(move || {
+            for &icon in icons {
+                for &px in &pxs {
+                    let k = key(icon, px);
+                    {
+                        let c = cache.lock();
+                        if c.textures.contains_key(&k) || c.broken.contains(&k.0) {
+                            continue;
+                        }
+                    }
+                    // Rasterised outside the lock: the frame never waits on it.
+                    if let Ok(ready) = rasterise(icon.svg, px) {
+                        let mut c = cache.lock();
+                        if !c.textures.contains_key(&k) {
+                            c.ready.insert(k, ready);
+                        }
+                    }
+                }
+            }
+        })
+        .ok()
 }
 
 /// The SVG rendered so that its longest side is `px` pixels, and its aspect ratio.
@@ -224,8 +305,33 @@ mod tests {
         out.textures_delta.clear();
         let cache = cache(&ctx);
         let cache = cache.lock();
-        assert!(cache.broken.contains_key("test/broken"));
+        assert!(cache.broken.contains(&key(broken, 16).0));
         assert_eq!(cache.textures.len(), 1);
+    }
+
+    #[test]
+    fn prewarmed_icons_are_uploaded_from_the_workers_image() -> Result<(), String> {
+        let ctx = egui::Context::default();
+        let icons: &'static [Icon] = &[lucide::SERVER, lucide::MAP];
+        prewarm(&ctx, icons, &[16.0])
+            .ok_or("the worker did not start")?
+            .join()
+            .map_err(|_| "the worker panicked")?;
+        {
+            let cache = cache(&ctx);
+            let cache = cache.lock();
+            assert_eq!(cache.ready.len(), 2);
+            assert!(cache.textures.is_empty());
+        }
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            lucide::SERVER.show(ui, 16.0, Color32::RED);
+        });
+        out.textures_delta.clear();
+        let cache = cache(&ctx);
+        let cache = cache.lock();
+        assert_eq!(cache.ready.len(), 1, "the drawn one was taken");
+        assert!(cache.textures.contains_key(&key(lucide::SERVER, 16)));
+        Ok(())
     }
 
     /// `list.rs` names every SVG file of the icon folder, and nothing else (rerun

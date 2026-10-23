@@ -313,7 +313,6 @@ fn header(ui: &mut Ui, st: &mut Palette, open: bool, w: f32) {
     let icon_r = Rect::from_min_size(pos2(r.left() + 12.0, cy - 8.0), Vec2::splat(size::ICON));
     if st.asking {
         Spinner::paint(ui, icon_r, tk.accent);
-        ui.ctx().request_repaint_after(Duration::from_millis(33));
     } else {
         lucide::SEARCH.paint(ui.painter(), icon_r, tk.accent);
     }

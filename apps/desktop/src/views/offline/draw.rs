@@ -179,7 +179,6 @@ fn status_strip(ui: &mut Ui, st: &OfflineState) {
     );
     if st.installing || st.loading {
         Spinner::paint(ui, ir, ink);
-        ui.ctx().request_repaint();
     } else {
         let icon = match st.tone {
             Tone::Ok => lucide::CIRCLE_CHECK,

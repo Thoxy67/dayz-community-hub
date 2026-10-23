@@ -352,7 +352,7 @@ fn body(
                             .color(tk.fg_muted),
                     );
                 });
-                ui.ctx().request_repaint();
+                crate::kit::paint::animate(ui.ctx());
             }
         },
     }
@@ -369,9 +369,7 @@ fn html(
     let (ctx, hub, images) = (ui.ctx().clone(), cx.hub, st.images.clone());
     let action = SafeHtml::new(doc).zoomable().show(ui, |src| {
         let tex = images.texture(&ctx, hub, src)?;
-        Some(egui::ImageSource::Texture(
-            egui::load::SizedTexture::from_handle(&tex),
-        ))
+        Some(egui::ImageSource::Texture(tex.sized()))
     });
     match action {
         Some(HtmlAction::Open(url)) => run.push(("news.open_link", json!({ "url": url }))),

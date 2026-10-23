@@ -127,6 +127,22 @@ fn emath_ease_out(t: f32) -> f32 {
     egui::emath::easing::cubic_out(t)
 }
 
+/// Frames a looping decoration gets while the window has focus (about 30 a second) and
+/// while it is behind another window (4 a second).
+const LOOP_FOCUSED: std::time::Duration = std::time::Duration::from_millis(33);
+const LOOP_AWAY: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// Asks for the next frame of a decorative loop (a spinner, a shimmer, a pulse) that
+/// is on screen: about 30 a second with focus, 4 behind another window, never at the
+/// display's rate. A spinner turning once a second looks the same at 30 frames, and a
+/// download that lasts an hour no longer rebuilds the window 144 times a second while
+/// the game or SteamCMD needs the machine. Only for decoration: a repaint that carries
+/// state (a hub event, a debounce, a measured width) asks for its own.
+pub fn animate(ctx: &egui::Context) {
+    let focused = ctx.input(|i| i.viewport().focused.unwrap_or(i.focused));
+    ctx.request_repaint_after(if focused { LOOP_FOCUSED } else { LOOP_AWAY });
+}
+
 /// `a` → `b` by `t`.
 pub fn lerp(a: Color32, b: Color32, t: f32) -> Color32 {
     a.lerp_to_gamma(b, t.clamp(0.0, 1.0))

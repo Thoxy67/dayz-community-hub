@@ -3,6 +3,8 @@
 //! chips under the header.
 //!
 //! The articles load once per run, the first time the view shows; Refresh forces. The
+//! list fetched last time (kept on disk by the hub) shows meanwhile, so the first visit
+//! has articles at once and swaps the fresh list in when it comes, on the same article. The
 //! list has no bodies: the article on screen fetches its own (and the next one's, ahead
 //! of the reader), kept for the run. Each answer is read off the frame: the HTML is
 //! parsed into an [`HtmlDoc`] (the body, and an update's patch notes per platform) and
@@ -167,6 +169,10 @@ pub fn timestamp(d: &str) -> i64 {
 #[derive(Default)]
 pub struct NewsState {
     pub feed: Fetch<Arc<Feed>>,
+    /// The list kept from the last run, read while the first fetch runs.
+    kept: Fetch<Arc<Feed>>,
+    /// The list shown is the kept one: the fetched list replaces it in place.
+    from_kept: bool,
     /// The article on screen, as an index into the filtered list.
     pub selected: usize,
     pub category: Option<String>,
@@ -192,6 +198,15 @@ impl NewsState {
             return;
         }
         self.feed.error = None;
+        if self.feed.value.is_none() && !force {
+            let hub = hub.clone();
+            self.kept.load(async move {
+                let articles = hub.cached_news().await.ok_or_else(String::new)?;
+                tokio::task::spawn_blocking(move || Arc::new(Feed::new(articles)))
+                    .await
+                    .map_err(|e| e.to_string())
+            });
+        }
         let (hub, images) = (hub.clone(), self.images.clone());
         self.feed.load(async move {
             let articles = hub.fetch_news().await?;
@@ -205,11 +220,48 @@ impl NewsState {
     }
 
     /// Take finished loads in; a new list starts at its first article, and its bodies
-    /// are fetched again. The article on screen and the next one have theirs asked for.
-    fn poll(&mut self, hub: &Hub) {
-        if self.feed.poll() && self.feed.error.is_none() {
+    /// are fetched again, unless it replaces the kept list: the same article stays on
+    /// screen with the bodies already here. The article on screen and the next one have
+    /// theirs asked for. Returns a failed fetch's error when a list is still shown
+    /// (the reader tells a failure only with nothing to show).
+    fn poll(&mut self, hub: &Hub) -> Option<String> {
+        if self.kept.poll()
+            && let Some(kept) = self.kept.value.take()
+            && self.feed.value.is_none()
+        {
+            self.feed.value = Some(kept);
+            self.from_kept = true;
             self.selected = 0;
-            self.bodies.clear();
+        }
+        let was = self
+            .current()
+            .and_then(|i| self.item(i))
+            .map(|x| x.a.slug.clone());
+        let mut failed = None;
+        if self.feed.poll() {
+            if self.feed.error.is_none() {
+                if std::mem::take(&mut self.from_kept) {
+                    let slugs: std::collections::HashSet<String> = self
+                        .feed
+                        .value
+                        .iter()
+                        .flat_map(|f| f.items.iter().map(|x| x.a.slug.clone()))
+                        .collect();
+                    self.bodies.retain(|slug, _| slugs.contains(slug));
+                    self.selected = was
+                        .and_then(|slug| {
+                            self.shown()
+                                .iter()
+                                .position(|&i| self.item(i).is_some_and(|x| x.a.slug == slug))
+                        })
+                        .unwrap_or(0);
+                } else {
+                    self.selected = 0;
+                    self.bodies.clear();
+                }
+            } else if self.feed.value.is_some() {
+                failed.clone_from(&self.feed.error);
+            }
         }
         for b in self.bodies.values_mut() {
             b.poll();
@@ -219,6 +271,7 @@ impl NewsState {
         for i in shown.into_iter().skip(at).take(2) {
             self.want_body(hub, i, false);
         }
+        failed
     }
 
     /// Fetch article `i`'s body: once, unless `retry` and it failed.
@@ -368,7 +421,9 @@ impl View for NewsView {
         let mut run: Vec<(&'static str, Value)> = Vec::new();
         {
             let mut st = shared.lock();
-            st.poll(cx.hub);
+            if let Some(e) = st.poll(cx.hub) {
+                cx.stores.bus.err(e);
+            }
             keys(ui.ctx(), cx, &mut st, &mut run);
             draw(ui, cx, &mut st, &mut run);
         }
@@ -535,7 +590,7 @@ fn lightbox(ctx: &egui::Context, cx: &Ctx, shared: &Shared) {
     let mut open = true;
     match tex {
         Some(tex) => {
-            let src = egui::ImageSource::Texture(egui::load::SizedTexture::from_handle(&tex));
+            let src = egui::ImageSource::Texture(tex.sized());
             crate::parts::Lightbox::new(src, t("news", "close")).show(ctx, &mut open);
         }
         // Nothing to show (yet): Escape still closes; a picture that never comes closes.

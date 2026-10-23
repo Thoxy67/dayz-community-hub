@@ -54,12 +54,17 @@ impl Face {
         }
     }
 
+    /// The face's family. Built once: a named family holds an `Arc<str>`, and `font` is
+    /// called hundreds of times a frame, so each call clones it instead of allocating.
     pub fn family(self) -> FontFamily {
-        match self {
-            Face::Sans => FontFamily::Proportional,
-            Face::Mono => FontFamily::Monospace,
-            f => FontFamily::Name(f.name().into()),
-        }
+        static FAMILIES: std::sync::LazyLock<[FontFamily; 9]> = std::sync::LazyLock::new(|| {
+            Face::ALL.map(|f| match f {
+                Face::Sans => FontFamily::Proportional,
+                Face::Mono => FontFamily::Monospace,
+                f => FontFamily::Name(f.name().into()),
+            })
+        });
+        FAMILIES[self as usize].clone()
     }
 }
 
@@ -189,5 +194,19 @@ mod tests {
                 .collect();
             assert!(missing.is_empty(), "{face:?} lacks {missing}");
         }
+    }
+
+    /// `family` indexes the families by the face's number: `ALL` is in that order.
+    #[test]
+    fn each_face_has_its_own_family() {
+        for (i, face) in Face::ALL.into_iter().enumerate() {
+            assert_eq!(face as usize, i);
+        }
+        assert_eq!(Face::Sans.family(), FontFamily::Proportional);
+        assert_eq!(Face::Mono.family(), FontFamily::Monospace);
+        assert_eq!(
+            Face::DisplayBold.family(),
+            FontFamily::Name("display-800".into())
+        );
     }
 }

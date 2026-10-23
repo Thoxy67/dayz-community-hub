@@ -7,8 +7,8 @@
 use std::sync::Arc;
 
 use dz_hub::Hub;
+use egui::Context;
 use egui::mutex::Mutex;
-use egui::{Context, TextureHandle};
 use rustc_hash::FxHashMap;
 use tokio::sync::Semaphore;
 
@@ -73,7 +73,7 @@ impl Images {
     }
 
     /// The picture at `url` as a texture, once it is downloaded and decoded.
-    pub fn texture(&self, ctx: &Context, hub: &Hub, url: &str) -> Option<TextureHandle> {
+    pub fn texture(&self, ctx: &Context, hub: &Hub, url: &str) -> Option<crate::parts::image::Pic> {
         let path = self.want(hub, url)?;
         crate::parts::image::texture(ctx, &path)
     }

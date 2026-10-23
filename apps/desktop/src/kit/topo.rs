@@ -4,11 +4,15 @@
 //!
 //! The ten paths of `topo.svelte` (viewBox 400×300, `xMidYMid slice`), parsed once into
 //! cubic segments and drawn with the painter.
+//!
+//! The curves are flattened and stroked once per place, size and ink into a mesh the
+//! frame then hands over as it is: the rail draws them on every frame, and redoing 26
+//! curves each time bought nothing.
 
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
-use egui::epaint::CubicBezierShape;
-use egui::{Color32, Painter, Pos2, Rect, Stroke};
+use egui::epaint::{CubicBezierShape, Mesh, Tessellator};
+use egui::{Color32, Painter, Pos2, Rect, Shape, Stroke};
 
 use super::paint::alpha;
 use crate::theme::Tokens;
@@ -121,25 +125,77 @@ pub fn paint_tinted(painter: &Painter, rect: Rect, color: Color32, opacity: f32)
     );
 }
 
+/// Meshes kept: one per contour on screen (the rail, an empty state, the reader band)
+/// with room to spare; the oldest goes first.
+const MESHES_KEPT: usize = 6;
+
+type Meshes = Vec<(u64, Arc<Mesh>)>;
+
 fn paint_color(painter: &Painter, rect: Rect, color: Color32) {
     if !rect.is_positive() {
         return;
     }
+    let ctx = painter.ctx();
+    let ppp = ctx.pixels_per_point();
+    let key = {
+        use std::hash::{Hash, Hasher};
+        let mut h = rustc_hash::FxHasher::default();
+        [rect.min.x, rect.min.y, rect.max.x, rect.max.y, ppp]
+            .map(f32::to_bits)
+            .hash(&mut h);
+        color.to_array().hash(&mut h);
+        h.finish()
+    };
+    let id = egui::Id::new("kit::topo-meshes");
+    let hit = ctx.data_mut(|d| {
+        let kept = d.get_temp_mut_or_default::<Meshes>(id);
+        kept.iter()
+            .find(|(k, _)| *k == key)
+            .map(|(_, m)| Arc::clone(m))
+    });
+    let mesh = hit.unwrap_or_else(|| {
+        let options = ctx.tessellation_options(|o| *o);
+        let mesh = Arc::new(contours(rect, color, ppp, options));
+        ctx.data_mut(|d| {
+            let kept = d.get_temp_mut_or_default::<Meshes>(id);
+            if kept.len() >= MESHES_KEPT {
+                kept.remove(0);
+            }
+            kept.push((key, Arc::clone(&mesh)));
+        });
+        mesh
+    });
+    painter
+        .with_clip_rect(rect.intersect(painter.clip_rect()))
+        .add(Shape::Mesh(mesh));
+}
+
+/// The contours over `rect`, stroked in `color`, as one mesh.
+fn contours(
+    rect: Rect,
+    color: Color32,
+    ppp: f32,
+    options: egui::epaint::TessellationOptions,
+) -> Mesh {
     // xMidYMid slice: scale to cover, centred.
     let s = (rect.width() / 400.0).max(rect.height() / 300.0);
     let ox = rect.center().x - 200.0 * s;
     let oy = rect.center().y - 150.0 * s;
     let map = |p: [f32; 2]| Pos2::new(ox + p[0] * s, oy + p[1] * s);
-    let painter = painter.with_clip_rect(rect.intersect(painter.clip_rect()));
+    // The font texture's size only matters for text, which this has none of.
+    let mut tess = Tessellator::new(ppp, options, [1, 1], Vec::new());
+    let mut mesh = Mesh::default();
     for seg in segments() {
         let pts = [map(seg[0]), map(seg[1]), map(seg[2]), map(seg[3])];
-        painter.add(CubicBezierShape::from_points_stroke(
+        let curve = CubicBezierShape::from_points_stroke(
             pts,
             false,
             Color32::TRANSPARENT,
             Stroke::new(1.0, color),
-        ));
+        );
+        tess.tessellate_cubic_bezier(&curve, &mut mesh);
     }
+    mesh
 }
 
 #[cfg(test)]
@@ -149,5 +205,16 @@ mod tests {
         // 2+2+2+3+2+4+4+3+2+2 cubic segments; the two closed paths end where they start,
         // so their Z adds none.
         assert_eq!(super::segments().len(), 26);
+    }
+
+    #[test]
+    fn the_contours_are_one_mesh_inside_the_cover() {
+        let rect = egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(64.0, 400.0));
+        let mesh = super::contours(rect, egui::Color32::WHITE, 1.0, Default::default());
+        assert!(!mesh.is_empty());
+        // Scaled to cover and centred: nothing strays far past the slice's box.
+        let s = (64.0_f32 / 400.0).max(400.0 / 300.0);
+        let cover = egui::Rect::from_center_size(rect.center(), egui::vec2(440.0, 340.0) * s);
+        assert!(mesh.vertices.iter().all(|v| cover.contains(v.pos)));
     }
 }
