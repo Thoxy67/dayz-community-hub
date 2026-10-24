@@ -1,7 +1,9 @@
 //! The tray icon and its menu: show or hide the launcher, rejoin the last server,
 //! quit. What a pick does is decided in [`super::life`]; this module only puts the icon
 //! up and hands the picks over a channel, waking the window (`request_repaint`, which
-//! eframe honours while the window is hidden too).
+//! eframe honours while the window is hidden too) or, between windows (Wayland's close
+//! to the tray), `main`, which waits for them ([`crate::rt::Waker`]). The tray outlives
+//! the windows: it goes from one to the next with [`super::life::Life`].
 //!
 //! - Linux: a StatusNotifierItem through ksni (D-Bus over zbus, pure Rust: no GTK, no
 //!   libappindicator), on its own thread. It is up only once a StatusNotifierWatcher
@@ -23,6 +25,8 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
+
+use crate::rt::Waker;
 
 /// What was picked in the tray.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -55,12 +59,12 @@ pub struct Tray {
 impl Tray {
     /// Put the icon up with these words; `None` where there is no tray at all. The
     /// icon may come up a moment later (Linux), or never: see [`Tray::available`].
-    pub fn start(ctx: &egui::Context, view: TrayView) -> Option<Tray> {
+    pub fn start(waker: &Waker, view: TrayView) -> Option<Tray> {
         let up = Arc::new(AtomicBool::new(false));
         let (tx, picks) = mpsc::channel();
         let send = Sender {
             tx,
-            ctx: ctx.clone(),
+            waker: waker.clone(),
         };
         let inner = imp::start(send, Arc::clone(&up), view.clone())?;
         Some(Tray {
@@ -97,22 +101,22 @@ impl Tray {
     }
 }
 
-/// Hands a pick to the window and wakes it.
+/// Hands a pick to the window (or to `main` between windows) and wakes it.
 #[derive(Clone)]
 struct Sender {
     tx: mpsc::Sender<TrayMsg>,
-    ctx: egui::Context,
+    waker: Waker,
 }
 
 impl Sender {
     fn send(&self, m: TrayMsg) {
         let _ = self.tx.send(m);
-        self.ctx.request_repaint();
+        self.waker.repaint();
     }
 
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     fn wake(&self) {
-        self.ctx.request_repaint();
+        self.waker.repaint();
     }
 }
 

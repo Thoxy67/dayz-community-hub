@@ -588,10 +588,10 @@ impl Mods {
             return;
         };
         let flag = Arc::clone(&self.disk_changed);
-        let ctx = rt.ctx().clone();
+        let waker = rt.waker().clone();
         let on_change: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
             flag.store(true, Ordering::Release);
-            ctx.request_repaint();
+            waker.repaint();
         });
         let hub = self.hub.clone();
         self.watch_task = Some(rt::spawn(async move { hub.watch_mods(on_change).await }));

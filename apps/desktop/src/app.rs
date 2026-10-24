@@ -35,7 +35,7 @@
 //! Nothing here repaints on a timer: hub events, finished tasks, debounces and running
 //! animations ask for the frames they need, and an idle window draws nothing.
 
-use std::sync::{Arc, OnceLock, mpsc};
+use std::sync::{Arc, Mutex, PoisonError, mpsc};
 
 use dz_hub::features::browser::ServerRow;
 use dz_hub::{EventSink, Hub, HubEvent};
@@ -193,26 +193,88 @@ impl Ctx<'_> {
 }
 
 /// The pipe the hub's events come down: the sink handed to [`Hub::new`], the receiving
-/// end for [`HubApp::new`], and the slot the window's context goes in once it exists
-/// (events before that wait in the channel; the first frame drains them).
+/// end for [`HubApp::new`], and who to wake: the window of the moment once it exists
+/// (events before that wait in the channel; the first frame drains them), `main`
+/// between windows ([`crate::rt::Waker`]).
 pub struct EventPipe {
     pub sink: EventSink,
     pub rx: mpsc::Receiver<HubEvent>,
-    pub wake: Arc<OnceLock<Context>>,
+    pub wake: crate::rt::Waker,
 }
 
 impl EventPipe {
     pub fn new() -> Self {
         let (tx, rx) = mpsc::channel::<HubEvent>();
-        let wake: Arc<OnceLock<Context>> = Arc::new(OnceLock::new());
-        let w = Arc::clone(&wake);
+        let wake = crate::rt::Waker::default();
+        let w = wake.clone();
         let sink: EventSink = Arc::new(move |e| {
             let _ = tx.send(e);
-            if let Some(ctx) = w.get() {
-                ctx.request_repaint_after(EVENT_WAKE);
-            }
+            w.repaint_after(EVENT_WAKE);
         });
         Self { sink, rx, wake }
+    }
+}
+
+/// What outlives a window closed into the tray (Wayland, where a window cannot hide:
+/// `platform::life`): the hub's events, the preferences, the tray and the window's
+/// life, the control channel, and the events the next window needs. Handed back by
+/// the window as it closes ([`HubApp::hand_back_to`]), to `main`, which waits with it
+/// ([`Kept::wait`]) and makes the next window from it ([`HubApp::resume`]).
+pub struct Kept {
+    pub events: mpsc::Receiver<HubEvent>,
+    pub prefs: Prefs,
+    pub life: crate::platform::life::Life,
+    pub control: Option<crate::control::Control>,
+    /// Events that came while there was no window and that the next one needs.
+    pub replay: Vec<HubEvent>,
+    /// The view the last window showed: the next one opens on it.
+    pub view: Option<ViewId>,
+}
+
+/// Where a closing window leaves what it kept.
+pub type KeptSlot = Arc<Mutex<Option<Kept>>>;
+
+impl Kept {
+    pub fn new(events: mpsc::Receiver<HubEvent>, prefs: Prefs) -> Self {
+        Self {
+            events,
+            prefs,
+            life: crate::platform::life::Life::new(),
+            control: None,
+            replay: Vec::new(),
+            view: None,
+        }
+    }
+
+    /// Without a window: wait for what asks for one (the tray, a second launch, the
+    /// game stopping, the control channel's `window.show`) or for a quit, keeping up
+    /// with the hub meanwhile (the game's state, the notifications). Blocks: `main`'s
+    /// thread has no frame to keep. True when a window is wanted.
+    pub fn wait(&mut self) -> bool {
+        use crate::platform::life::Away;
+        let Some(waker) = self.life.session().map(|s| s.waker().clone()) else {
+            return false;
+        };
+        self.life.went_away();
+        if let Some(c) = &mut self.control {
+            c.forget_window();
+        }
+        loop {
+            let mut next =
+                self.life
+                    .away_pass(&self.prefs.get().life, &self.events, &mut self.replay);
+            if let Some(c) = &mut self.control {
+                next = next.and(c.away());
+            }
+            match next {
+                Away::Stay => {}
+                Away::Show => return true,
+                Away::Quit => return false,
+            }
+            // Every source wakes this (the hub's events, the tray, a second launch,
+            // a control request, a task done); the timeout is only a safety net.
+            waker.wait(std::time::Duration::from_secs(5));
+        }
     }
 }
 
@@ -261,6 +323,11 @@ pub struct HubApp {
     /// `logic` took the hub's events in for this pass (the window out of sight): the
     /// pass's `ui`, when it runs, does not take them in again.
     pumped: bool,
+    /// Events that came while there was no window, taken in before the channel's.
+    replay: Vec<HubEvent>,
+    /// Where this window leaves what outlives it when it closes (`main`'s; none in
+    /// tests and screenshots).
+    hand_back: Option<KeptSlot>,
 }
 
 fn cx<'a>(
@@ -313,7 +380,63 @@ impl HubApp {
             saved_window: None,
             life: crate::platform::life::Life::new(),
             pumped: false,
+            replay: Vec::new(),
+            hand_back: None,
         }
+    }
+
+    /// A window made from what the previous one kept (or what `main` gathered for
+    /// the first); it leaves it in `slot` when it closes.
+    pub fn resume(ctx: &Context, hub: Hub, kept: Kept, slot: KeptSlot) -> Self {
+        let Kept {
+            events,
+            prefs,
+            mut life,
+            control,
+            replay,
+            view,
+        } = kept;
+        let mut app = Self::new(ctx, hub, events, prefs);
+        if let Some(v) = view {
+            app.nav.go(v, None);
+        }
+        life.new_window();
+        app.life = life;
+        app.control = control;
+        app.replay = replay;
+        app.hand_back = Some(slot);
+        app
+    }
+
+    /// The window's life (to start the tray in it, once).
+    pub fn life_mut(&mut self) -> &mut crate::platform::life::Life {
+        &mut self.life
+    }
+
+    /// Whether this window is closing into the tray (Wayland), not quitting.
+    fn closing_away(&self) -> bool {
+        self.life.session().is_some_and(|s| s.closing_away())
+    }
+
+    /// Leave what outlives the window in its slot (once: at exit, else when dropped).
+    fn hand_back_to(&mut self) {
+        let Some(slot) = self.hand_back.take() else {
+            return;
+        };
+        let (_, dead) = mpsc::channel();
+        let mut control = self.control.take();
+        if let Some(c) = &mut control {
+            c.forget_window();
+        }
+        let kept = Kept {
+            events: std::mem::replace(&mut self.events, dead),
+            prefs: std::mem::take(&mut self.prefs),
+            life: std::mem::take(&mut self.life),
+            control,
+            replay: std::mem::take(&mut self.replay),
+            view: Some(self.nav.view),
+        };
+        *slot.lock().unwrap_or_else(PoisonError::into_inner) = Some(kept);
     }
 
     /// Take requests from the control channel ([`crate::control`]).
@@ -477,7 +600,7 @@ impl HubApp {
 
     /// Steps 2 and 3: hub events, then what async flows sent back.
     fn pump(&mut self, ctx: &Context) {
-        let mut events = Vec::new();
+        let mut events = std::mem::take(&mut self.replay);
         while events.len() < EVENTS_PER_FRAME {
             match self.events.try_recv() {
                 Ok(e) => events.push(e),
@@ -846,8 +969,15 @@ impl eframe::App for HubApp {
 
     fn on_exit(&mut self) {
         self.flush();
-        // The Discord activity is cleared (a short wait, only when one is shown).
-        self.hub.discord_quit(std::time::Duration::from_millis(300));
+        if self.closing_away() {
+            // Into the tray (Wayland): the launcher goes on; the pads speak to no
+            // window meanwhile.
+            self.hub.set_focused(false);
+        } else {
+            // The Discord activity is cleared (a short wait, only when one is shown).
+            self.hub.discord_quit(std::time::Duration::from_millis(300));
+        }
+        self.hand_back_to();
     }
 
     /// The window's geometry is the only thing eframe keeps (`platform::window`); egui's
@@ -874,6 +1004,16 @@ impl eframe::App for HubApp {
             }
         } else {
             self.saved_window = storage.get_string(KEY);
+        }
+    }
+}
+
+/// A window that ends without `on_exit` (an error) still hands back what it kept.
+impl Drop for HubApp {
+    fn drop(&mut self) {
+        if self.hand_back.is_some() {
+            self.flush();
+            self.hand_back_to();
         }
     }
 }
@@ -913,7 +1053,7 @@ mod tests {
                     None => {
                         if let Some((hub, rx, handle, wake)) = parts.take() {
                             crate::rt::Rt::install(handle, ui.ctx().clone());
-                            let _ = wake.set(ui.ctx().clone());
+                            wake.set(ui.ctx());
                             *app = Some(HubApp::new(ui.ctx(), hub, rx, Prefs::default()));
                         }
                     }

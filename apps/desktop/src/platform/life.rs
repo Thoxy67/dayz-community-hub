@@ -6,24 +6,25 @@
 //!   ([`LifePrefs`], kept in the preferences as `dzch.life`) and of what the platform
 //!   offers ([`Env`]): whether a tray is up, whether the window is on Wayland.
 //! - **Doing it** ([`apply`]) is a viewport command: minimise, hide, restore, close.
-//!   A hidden window is `ViewportCommand::Visible(false)` on Windows and X11; on
+//!   A hidden window is `ViewportCommand::Visible(false)` on Windows and X11. On
 //!   Wayland a window cannot hide itself (winit ignores `set_visible` there, and the
-//!   protocol has no un-minimise either), so it is minimised instead and stays in the
-//!   task bar. Restoring it there is a best effort only: winit ignores un-minimise
-//!   and sends no activation request on Wayland, so only the task bar reliably
-//!   brings it back; closing the window therefore quits there ([`on_close`]). A
-//!   Wayland window cannot tell either whether it is minimised (winit answers "no"
-//!   there), so the launcher remembers it minimised it ([`Shared`]) until the window
-//!   has the focus back, or kept it all along (a compositor without a minimised
-//!   state ignored the ask): the tray's toggle then brings it back instead of
-//!   minimising it again.
+//!   protocol has no un-minimise either), so going to the tray **closes the window
+//!   for real** ([`Act::Close`]) while the launcher goes on: `main` keeps the hub, the
+//!   runtime, the tray and the single-instance listener, waits ([`Life::away_pass`])
+//!   and makes a new window when asked (the tray, a second launch, the game stopping:
+//!   [`Session`]). That needs `main`'s [`Session`]; without one (tests, screenshots)
+//!   the window is minimised instead, and a close quits.
+//!   The plain minimise stays a minimise: a Wayland window cannot tell whether it is
+//!   minimised (winit answers "no" there), so the launcher remembers it minimised it
+//!   ([`Shared`]) until the window has the focus back, or kept it all along (a
+//!   compositor without a minimised state ignored the ask).
 //!   Whether the window is a Wayland one is read from its handle ([`Life::platform`]),
 //!   the environment being only the guess until then.
 //! - **Never unreachable**: closing hides to the tray only while a tray host shows the
 //!   icon. Without one (GNOME without the AppIndicator extension, a failed
 //!   registration, a host that went away), closing quits as it always did, and a
-//!   window hidden when the host leaves comes back at once. A second launch shows the
-//!   window too (`main.rs`, through [`show`]).
+//!   window hidden (or closed into the tray) when the host leaves comes back at once.
+//!   A second launch shows the window too (`main.rs`, through [`Session::show`]).
 //! - **Quitting for real** ([`quit`]: the tray's Quit, `app.quit`, a restart after an
 //!   update or an import, "close the launcher" when DayZ starts) marks the close so it
 //!   is not turned into a hide; the window then closes the normal way (preferences
@@ -32,11 +33,12 @@
 //! [`Life`] runs it, once per pass from `eframe::App::logic`, which eframe also calls
 //! while the window is hidden or minimised (no egui pass then): it takes the hub's
 //! events in itself on those passes, so the game stopping can bring a hidden window
-//! back.
+//! back. Between windows `main` runs it ([`Life::away_pass`]), and it goes from one
+//! window to the next with the tray it holds.
 
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 
 use dz_hub::HubEvent;
 use dz_hub::features::steamcmd::ModProgressKind;
@@ -47,6 +49,7 @@ use super::notify::{self, Note};
 use super::tray::{Tray, TrayMsg, TrayView};
 use crate::app::Ctx;
 use crate::i18n::{Locale, t, tf};
+use crate::rt::Waker;
 use crate::store::updater::UpdateState;
 
 // ── the settings ────────────────────────────────────────────────────────────
@@ -111,6 +114,8 @@ pub struct Env {
     pub tray: bool,
     /// The window is a Wayland one (it cannot hide itself).
     pub wayland: bool,
+    /// `main` makes a new window after one closed into the tray ([`Session`]).
+    pub reopen: bool,
 }
 
 /// What the window does.
@@ -124,28 +129,35 @@ pub enum Act {
     Restore {
         front: bool,
     },
+    /// Into the tray where a window cannot hide (Wayland): the window closes, the
+    /// launcher goes on, and a new window comes when asked ([`Session`]).
+    Close,
     Quit,
 }
 
-/// Out of the way into the tray: hidden, or minimised where a window cannot hide.
+/// Out of the way into the tray: hidden; on Wayland closed while the launcher goes on,
+/// or minimised when nothing would make a new window.
 pub fn to_tray(env: Env) -> Act {
-    if env.wayland {
-        Act::Minimize
-    } else {
+    if !env.wayland {
         Act::Hide
+    } else if env.reopen {
+        Act::Close
+    } else {
+        Act::Minimize
     }
 }
 
-/// The window was asked to close (its button, Alt+F4, the window manager). On
-/// Wayland it quits whatever the setting says: the window can only be minimised
-/// there, the tray cannot bring a minimised window back (winit has neither
-/// un-minimise nor activation on Wayland), and tiling compositors (sway, Hyprland,
-/// niri) ignore the minimise itself, which would leave a close that does nothing.
+/// The window was asked to close (its button, Alt+F4, the window manager): into the
+/// tray while one shows the icon and the setting is on, else a quit. Never into a
+/// minimise (Wayland without a [`Session`]): tiling compositors (sway, Hyprland, niri)
+/// ignore it, which would leave a close that does nothing.
 pub fn on_close(p: &LifePrefs, env: Env, quitting: bool) -> Act {
-    if quitting || !p.close_to_tray || !env.tray || env.wayland {
-        Act::Quit
-    } else {
-        to_tray(env)
+    if quitting || !p.close_to_tray || !env.tray {
+        return Act::Quit;
+    }
+    match to_tray(env) {
+        Act::Minimize => Act::Quit,
+        act => act,
     }
 }
 
@@ -239,6 +251,71 @@ pub fn start_choices(tray: bool) -> &'static [OnGameStart] {
     }
 }
 
+/// What the launcher does next while it has no window (Wayland, closed into the
+/// tray); a later one wins over an earlier ([`Away::and`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Away {
+    Stay,
+    /// Make a new window.
+    Show,
+    Quit,
+}
+
+impl Away {
+    /// Both asked: a quit over a show over nothing.
+    #[must_use]
+    pub fn and(self, other: Away) -> Away {
+        self.max(other)
+    }
+}
+
+/// Without a window: what the tray's picks, the game's starts and stops, a "show"
+/// asked from elsewhere (a second launch) and the tray's presence ask for. The tray
+/// gone, a window comes back at once (nothing else could bring it).
+pub fn while_away(
+    p: &LifePrefs,
+    tray_up: bool,
+    picks: &[TrayMsg],
+    turns: &[bool],
+    show_asked: bool,
+) -> Away {
+    let mut next = if !tray_up || show_asked {
+        Away::Show
+    } else {
+        Away::Stay
+    };
+    for m in picks {
+        next = next.and(match m {
+            TrayMsg::Toggle | TrayMsg::Rejoin => Away::Show,
+            TrayMsg::Quit => Away::Quit,
+        });
+    }
+    for now in turns {
+        let act = if *now {
+            on_game_start(p, Env::default())
+        } else {
+            on_game_stop(p)
+        };
+        next = next.and(match act {
+            Act::Restore { .. } => Away::Show,
+            // "Close the launcher when DayZ starts", as a hidden window would.
+            Act::Quit => Away::Quit,
+            Act::Nothing | Act::Minimize | Act::Hide | Act::Close => Away::Stay,
+        });
+    }
+    next
+}
+
+/// Hub events a window needs even when they came while there was none: a link or a
+/// file a second launch handed over (`HubEvent::CliArgs`). The rest the next window
+/// reads again from the hub.
+pub fn kept_for_window(e: &HubEvent) -> bool {
+    matches!(e, HubEvent::CliArgs(_))
+}
+
+/// At most this many events wait for the next window.
+const KEPT_EVENTS: usize = 16;
+
 /// Whether this process likely draws a Wayland window (winit's first choice when its
 /// socket is named): the guess until the window's handle says ([`Life::platform`]).
 pub fn wayland_guess() -> bool {
@@ -257,6 +334,62 @@ const MIN_ASKED: u8 = 1;
 /// Minimised by the launcher, and the window has lost the focus since.
 const MIN_AWAY: u8 = 2;
 
+/// What outlives the window, shared by `main`, the single-instance listener and each
+/// window's [`Life`]: whether the window is closing into the tray (Wayland, not a
+/// quit), and a "show" asked from elsewhere (a second launch), taken by the window of
+/// the moment or, between windows, by `main`.
+pub struct Session {
+    waker: Waker,
+    away: AtomicBool,
+    show: AtomicBool,
+}
+
+impl std::fmt::Debug for Session {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Session")
+            .field("away", &self.away)
+            .field("show", &self.show)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Session {
+    /// `waker` points at the window of the moment.
+    pub fn new(waker: Waker) -> Arc<Self> {
+        Arc::new(Self {
+            waker,
+            away: AtomicBool::new(false),
+            show: AtomicBool::new(false),
+        })
+    }
+
+    pub fn waker(&self) -> &Waker {
+        &self.waker
+    }
+
+    /// Show the window and bring it to the front, or make one if there is none (a
+    /// second launch). Any thread.
+    pub fn show(&self) {
+        self.show.store(true, Ordering::SeqCst);
+        self.waker.repaint();
+    }
+
+    fn take_show(&self) -> bool {
+        self.show.swap(false, Ordering::SeqCst)
+    }
+
+    /// The window is closing into the tray, not quitting.
+    pub fn closing_away(&self) -> bool {
+        self.away.load(Ordering::SeqCst)
+    }
+
+    /// After a window closed: whether it went into the tray (then the launcher goes
+    /// on without it). Reset for the next window.
+    pub fn take_away(&self) -> bool {
+        self.away.swap(false, Ordering::SeqCst)
+    }
+}
+
 /// What threads other than the frame's (the single-instance listener, a restart, a
 /// join's flow) and commands need to know, kept in the context's data.
 #[derive(Debug)]
@@ -273,6 +406,8 @@ pub struct Shared {
     min_asked_at: Mutex<f64>,
     /// Notes from other threads, taken by the next pass.
     notes: Mutex<Vec<Note>>,
+    /// `main`'s, which makes a new window after one closed into the tray.
+    session: Mutex<Option<Arc<Session>>>,
 }
 
 impl Default for Shared {
@@ -285,6 +420,7 @@ impl Default for Shared {
             minimized: AtomicU8::new(MIN_NO),
             min_asked_at: Mutex::new(0.0),
             notes: Mutex::new(Vec::new()),
+            session: Mutex::new(None),
         }
     }
 }
@@ -295,7 +431,27 @@ impl Shared {
             // Game Mode shows no tray: a window sent there could not come back.
             tray: self.tray.load(Ordering::SeqCst) && !super::deck::game_mode(),
             wayland: self.wayland.load(Ordering::SeqCst),
+            reopen: self.session().is_some(),
         }
+    }
+
+    fn session(&self) -> Option<Arc<Session>> {
+        self.session
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    fn set_session(&self, session: Arc<Session>) {
+        *self
+            .session
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(session);
+    }
+
+    /// The window is closing into the tray (asked by the launcher or the player).
+    fn closing_away(&self) -> bool {
+        self.session().is_some_and(|s| s.closing_away())
     }
 
     /// Whether the launcher minimised the window and it has not had the focus since.
@@ -335,7 +491,11 @@ pub fn tray_available(ctx: &egui::Context) -> bool {
 
 /// Close the launcher for real (not into the tray).
 pub fn quit(ctx: &egui::Context) {
-    shared(ctx).quitting.store(true, Ordering::SeqCst);
+    let s = shared(ctx);
+    s.quitting.store(true, Ordering::SeqCst);
+    if let Some(session) = s.session() {
+        session.away.store(false, Ordering::SeqCst);
+    }
     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
     ctx.request_repaint();
 }
@@ -381,6 +541,18 @@ pub fn apply(ctx: &egui::Context, act: Act) {
             s.hidden.store(true, Ordering::SeqCst);
             ctx.send_viewport_cmd(V::Visible(false));
         }
+        Act::Close => match s.session() {
+            // Not quitting: `close_asked` lets this close through, and `main` goes on.
+            Some(session) if !s.quitting() => {
+                session.away.store(true, Ordering::SeqCst);
+                ctx.send_viewport_cmd(V::Close);
+            }
+            Some(_) => {}
+            None => {
+                apply(ctx, Act::Minimize);
+                return;
+            }
+        },
         Act::Restore { front } => {
             if s.hidden.swap(false, Ordering::SeqCst) {
                 ctx.send_viewport_cmd(V::Visible(true));
@@ -483,6 +655,11 @@ pub struct Life {
     handle_seen: bool,
     /// What the tray's words were last made from (on screen, language, last server).
     tray_key: Option<(bool, Locale, u64)>,
+    /// The last server's name the tray offered to rejoin (for its words between
+    /// windows).
+    last_server: Option<String>,
+    /// `main`'s, when it makes a new window after one closed into the tray.
+    session: Option<Arc<Session>>,
 }
 
 impl Life {
@@ -493,6 +670,79 @@ impl Life {
     /// The tray `main` started (none in tests and screenshots).
     pub fn set_tray(&mut self, tray: Tray) {
         self.tray = Some(tray);
+    }
+
+    /// Whether the tray was started (it goes from one window to the next).
+    pub fn has_tray(&self) -> bool {
+        self.tray.is_some()
+    }
+
+    /// `main`'s session: going to the tray on Wayland closes the window for real.
+    pub fn set_session(&mut self, session: Arc<Session>) {
+        self.session = Some(session);
+    }
+
+    pub fn session(&self) -> Option<&Arc<Session>> {
+        self.session.as_ref()
+    }
+
+    /// A new window takes over (after one closed into the tray): its context, its
+    /// handle and the tray's words are looked at again.
+    pub fn new_window(&mut self) {
+        self.ctx = None;
+        self.handle_seen = false;
+        self.tray_key = None;
+    }
+
+    /// The window closed into the tray: the tray offers to show it.
+    pub fn went_away(&mut self) {
+        self.ctx = None;
+        self.tray_key = None;
+        let view = tray_view(false, self.last_server.as_deref());
+        if let Some(tray) = &mut self.tray {
+            tray.set_view(view);
+        }
+    }
+
+    /// One pass without a window (Wayland, closed into the tray), from `main` each
+    /// time something wakes it: the hub's events (kept in `replay` when a window
+    /// needs them), the tray, a second launch, the game's starts and stops, the
+    /// notifications the window would have sent. What to do next.
+    pub fn away_pass(
+        &mut self,
+        p: &LifePrefs,
+        events: &mpsc::Receiver<HubEvent>,
+        replay: &mut Vec<HubEvent>,
+    ) -> Away {
+        while let Ok(e) = events.try_recv() {
+            self.on_event(&e);
+            if kept_for_window(&e) && replay.len() < KEPT_EVENTS {
+                replay.push(e);
+            }
+        }
+        let tray_up = self.tray.as_ref().is_some_and(Tray::available) && !super::deck::game_mode();
+        let picks: Vec<TrayMsg> = self
+            .tray
+            .as_ref()
+            .map(|t| std::iter::from_fn(|| t.try_recv()).take(16).collect())
+            .unwrap_or_default();
+        let shown = self.session.as_ref().is_some_and(|s| s.take_show());
+        let turns = std::mem::take(&mut self.game_turns);
+        let next = while_away(p, tray_up, &picks, &turns, shown);
+        // Rejoin from the tray: the new window joins as `--reconnect` would.
+        if next == Away::Show && picks.contains(&TrayMsg::Rejoin) && replay.len() < KEPT_EVENTS {
+            replay.push(HubEvent::CliArgs(dz_hub::CliArgs {
+                reconnect: true,
+                ..dz_hub::CliArgs::none()
+            }));
+        }
+        // No window in front: everything is told (when notifications are on).
+        for n in std::mem::take(&mut self.notes) {
+            if should_notify(p.notify, false, true) {
+                notify::send(n);
+            }
+        }
+        next
     }
 
     /// One of the hub's events (every one, as the stores get them).
@@ -573,10 +823,13 @@ impl Life {
     /// window is out of sight).
     pub fn frame(&mut self, cx: &mut Ctx) {
         let ctx = cx.egui.clone();
+        let s = shared(&ctx);
         if self.ctx.is_none() {
             self.ctx = Some(ctx.clone());
+            if let Some(session) = &self.session {
+                s.set_session(Arc::clone(session));
+            }
         }
-        let s = shared(&ctx);
         let p = cx.prefs.get().life;
         let focused = ctx.input(|i| i.viewport().focused.unwrap_or(i.focused));
         let m = s.minimized.load(Ordering::SeqCst);
@@ -604,11 +857,15 @@ impl Life {
             apply(&ctx, on_tray_lost(s.hidden()));
         }
         self.tray_was = up;
-        let picked: Vec<TrayMsg> = self
-            .tray
-            .as_ref()
-            .map(|t| std::iter::from_fn(|| t.try_recv()).take(16).collect())
-            .unwrap_or_default();
+        // While the window closes into the tray, what comes is left for `main`.
+        let picked: Vec<TrayMsg> = if s.closing_away() {
+            Vec::new()
+        } else {
+            self.tray
+                .as_ref()
+                .map(|t| std::iter::from_fn(|| t.try_recv()).take(16).collect())
+                .unwrap_or_default()
+        };
         let env = s.env();
         for m in picked {
             match m {
@@ -624,8 +881,19 @@ impl Life {
         // A close asked for (the title bar, Alt+F4, the window manager).
         close_asked(&ctx, &p, &s);
 
-        // DayZ started or stopped.
-        for now in std::mem::take(&mut self.game_turns) {
+        // A second launch asked for the window.
+        if !s.closing_away() && self.session.as_ref().is_some_and(|se| se.take_show()) {
+            show(&ctx);
+        }
+
+        // DayZ started or stopped (left for `main` while the window closes into the
+        // tray).
+        let turns = if s.closing_away() {
+            Vec::new()
+        } else {
+            std::mem::take(&mut self.game_turns)
+        };
+        for now in turns {
             let act = if now {
                 on_game_start(&p, env)
             } else {
@@ -670,6 +938,7 @@ impl Life {
                 && let Some(tray) = &mut self.tray
             {
                 self.tray_key = Some(key);
+                self.last_server = last.map(str::to_owned);
                 tray.set_view(tray_view(on_screen, last));
             }
         }
@@ -684,8 +953,18 @@ impl Life {
 /// turned into a trip to the tray only while one shows the icon and it is no real quit.
 fn close_asked(ctx: &egui::Context, p: &LifePrefs, s: &Shared) {
     if ctx.input(|i| i.viewport().close_requested()) {
+        // Asked by the launcher on its way into the tray (Wayland): let it close.
+        if s.closing_away() && !s.quitting() {
+            return;
+        }
         match on_close(p, s.env(), s.quitting()) {
             Act::Quit => s.quitting.store(true, Ordering::SeqCst),
+            // Into the tray by closing: not cancelled, `main` goes on.
+            Act::Close => {
+                if let Some(session) = s.session() {
+                    session.away.store(true, Ordering::SeqCst);
+                }
+            }
             act => {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
                 apply(ctx, act);
@@ -746,14 +1025,25 @@ mod tests {
     const TRAY: Env = Env {
         tray: true,
         wayland: false,
+        reopen: true,
     };
     const NO_TRAY: Env = Env {
         tray: false,
         wayland: false,
+        reopen: true,
     };
+    /// Wayland without `main`'s session (tests, screenshots): nothing would make a
+    /// new window.
     const WAYLAND: Env = Env {
         tray: true,
         wayland: true,
+        reopen: false,
+    };
+    /// Wayland in the launcher: going to the tray closes the window, `main` goes on.
+    const WAYLAND_REOPEN: Env = Env {
+        tray: true,
+        wayland: true,
+        reopen: true,
     };
 
     #[test]
@@ -761,8 +1051,22 @@ mod tests {
         let p = LifePrefs::default();
         assert!(p.close_to_tray && p.notify);
         assert_eq!(on_close(&p, TRAY, false), Act::Hide);
-        // Wayland: nothing could bring a minimised window back, and tiling
-        // compositors ignore the minimise: a close quits.
+        // Wayland: the window closes into the tray and `main` makes a new one later.
+        assert_eq!(on_close(&p, WAYLAND_REOPEN, false), Act::Close);
+        assert_eq!(on_close(&p, WAYLAND_REOPEN, true), Act::Quit);
+        assert_eq!(
+            on_close(
+                &p,
+                Env {
+                    tray: false,
+                    ..WAYLAND_REOPEN
+                },
+                false
+            ),
+            Act::Quit
+        );
+        // Without `main` to make a new window, never a minimise that tiling
+        // compositors ignore: a close quits.
         assert_eq!(on_close(&p, WAYLAND, false), Act::Quit);
         // No tray host: the window must never be left invisible.
         assert_eq!(on_close(&p, NO_TRAY, false), Act::Quit);
@@ -785,6 +1089,7 @@ mod tests {
         p.on_game_start = OnGameStart::Tray;
         assert_eq!(on_game_start(&p, TRAY), Act::Hide);
         assert_eq!(on_game_start(&p, WAYLAND), Act::Minimize);
+        assert_eq!(on_game_start(&p, WAYLAND_REOPEN), Act::Close);
         // The tray went away since the choice: minimised, never hidden.
         assert_eq!(on_game_start(&p, NO_TRAY), Act::Minimize);
         p.on_game_start = OnGameStart::Close;
@@ -801,6 +1106,7 @@ mod tests {
         assert_eq!(on_tray_lost(false), Act::Nothing);
         assert_eq!(on_tray_toggle(true, TRAY), Act::Hide);
         assert_eq!(on_tray_toggle(true, WAYLAND), Act::Minimize);
+        assert_eq!(on_tray_toggle(true, WAYLAND_REOPEN), Act::Close);
         assert_eq!(on_tray_toggle(false, TRAY), Act::Restore { front: true });
         // Wayland: minimised by the launcher, the window still says "not minimised";
         // the toggle brings it back.
@@ -813,6 +1119,107 @@ mod tests {
         assert!(out_of_sight(false, Some(true), false, false));
         assert!(start_choices(true).contains(&OnGameStart::Tray));
         assert!(!start_choices(false).contains(&OnGameStart::Tray));
+    }
+
+    #[test]
+    fn without_a_window_the_tray_the_game_and_a_second_launch_decide() {
+        let mut p = LifePrefs::default();
+        assert_eq!(while_away(&p, true, &[], &[], false), Away::Stay);
+        // The tray gone: nothing else could bring the window back.
+        assert_eq!(while_away(&p, false, &[], &[], false), Away::Show);
+        // A second launch.
+        assert_eq!(while_away(&p, true, &[], &[], true), Away::Show);
+        assert_eq!(
+            while_away(&p, true, &[TrayMsg::Toggle], &[], false),
+            Away::Show
+        );
+        assert_eq!(
+            while_away(&p, true, &[TrayMsg::Rejoin], &[], false),
+            Away::Show
+        );
+        // Quit wins over anything asked with it.
+        assert_eq!(
+            while_away(&p, true, &[TrayMsg::Toggle, TrayMsg::Quit], &[], true),
+            Away::Quit
+        );
+        assert_eq!(
+            while_away(&p, false, &[TrayMsg::Quit], &[], false),
+            Away::Quit
+        );
+        // The game: nothing by default; restored when it stops if asked.
+        assert_eq!(while_away(&p, true, &[], &[true, false], false), Away::Stay);
+        p.on_game_stop = OnGameStop::Restore;
+        assert_eq!(while_away(&p, true, &[], &[true], false), Away::Stay);
+        assert_eq!(while_away(&p, true, &[], &[true, false], false), Away::Show);
+        p.on_game_stop = OnGameStop::Front;
+        assert_eq!(while_away(&p, true, &[], &[false], false), Away::Show);
+        // "Close the launcher when DayZ starts", as a hidden window would.
+        p.on_game_start = OnGameStart::Close;
+        assert_eq!(while_away(&p, true, &[], &[true], false), Away::Quit);
+        p.on_game_start = OnGameStart::Tray;
+        assert_eq!(while_away(&p, true, &[], &[true], false), Away::Stay);
+        assert_eq!(Away::Show.and(Away::Stay), Away::Show);
+        assert_eq!(Away::Stay.and(Away::Quit), Away::Quit);
+        // What a second launch handed over waits for the next window.
+        assert!(kept_for_window(&HubEvent::CliArgs(dz_hub::CliArgs::none())));
+        assert!(!kept_for_window(&HubEvent::GameRunning(true)));
+    }
+
+    #[test]
+    fn a_pass_without_a_window_keeps_links_and_asks_for_a_window() {
+        let session = Session::new(Waker::default());
+        let mut l = Life::new();
+        l.set_session(Arc::clone(&session));
+        let p = LifePrefs {
+            on_game_stop: OnGameStop::Restore,
+            ..LifePrefs::default()
+        };
+        let (tx, rx) = mpsc::channel();
+        let mut replay = Vec::new();
+        // No tray in a test: a window would be asked for at once; the events are
+        // taken in all the same.
+        tx.send(HubEvent::GameRunning(true)).unwrap();
+        tx.send(HubEvent::CliArgs(dz_hub::CliArgs::none())).unwrap();
+        tx.send(HubEvent::LaunchDone("x".into())).unwrap();
+        assert_eq!(l.away_pass(&p, &rx, &mut replay), Away::Show);
+        assert_eq!(replay.len(), 1, "only the link waits");
+        assert_eq!(l.game, Some(true));
+        // A second launch is taken once.
+        session.show();
+        assert!(session.take_show());
+        assert!(!session.take_show());
+    }
+
+    #[test]
+    fn a_close_into_the_tray_on_wayland_is_let_through_and_remembered() {
+        let ctx = egui::Context::default();
+        let p = LifePrefs::default();
+        let s = shared(&ctx);
+        let session = Session::new(Waker::default());
+        s.set_session(Arc::clone(&session));
+        s.wayland.store(true, Ordering::SeqCst);
+        s.tray.store(true, Ordering::SeqCst);
+        assert!(!close_pass(&ctx, &p), "closed for real, not cancelled");
+        assert!(session.take_away(), "into the tray: main goes on");
+        assert!(!s.quitting());
+        // Asked by the launcher (the tray's hide, the game starting): let through
+        // even with the setting off.
+        apply(&ctx, Act::Close);
+        let off = LifePrefs {
+            close_to_tray: false,
+            ..p
+        };
+        assert!(!close_pass(&ctx, &off));
+        assert!(session.take_away());
+        // The setting off: a plain close quits.
+        assert!(!close_pass(&ctx, &off));
+        assert!(!session.take_away() && s.quitting());
+        // A real quit is never turned into a trip to the tray.
+        s.quitting.store(false, Ordering::SeqCst);
+        apply(&ctx, Act::Close);
+        quit(&ctx);
+        assert!(!close_pass(&ctx, &p));
+        assert!(!session.take_away() && s.quitting());
     }
 
     #[test]

@@ -1512,7 +1512,6 @@
     "lifeStopRestore": "Restaurer la fenêtre",
     "lifeTrayOff": "Pas de zone de notification",
     "lifeTrayOn": "Icône affichée",
-    "lifeWaylandHint": "Sous Wayland, la zone de notification ne peut pas rouvrir une fenêtre réduite : fermer la fenêtre quitte le launcher. Son menu propose toujours de rejoindre et de quitter.",
     "locationDetected": "Détectée depuis votre adresse IP",
     "locationHelp": "La position est utilisée pour calculer la distance aux serveurs.",
     "locationInvalid": "La latitude va de −90 à 90, la longitude de −180 à 180.",

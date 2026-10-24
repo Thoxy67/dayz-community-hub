@@ -1512,7 +1512,6 @@
     "lifeStopRestore": "Restore the window",
     "lifeTrayOff": "No system tray",
     "lifeTrayOn": "Tray icon shown",
-    "lifeWaylandHint": "On Wayland the tray cannot bring a minimised window back: closing the window quits the launcher. The tray still offers rejoin and quit.",
     "locationDetected": "Detected from your IP address",
     "locationHelp": "Location is used to calculate distance to servers.",
     "locationInvalid": "Latitude is −90 to 90, longitude −180 to 180.",

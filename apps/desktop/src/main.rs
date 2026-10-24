@@ -8,12 +8,13 @@ use std::cell::RefCell;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use clap::Parser;
 use dz_hub::{CliArgs, Hub, HubConfig, HubMode};
-use dzch_ui::app::EventPipe;
+use dzch_ui::app::{EventPipe, Kept, KeptSlot};
 use dzch_ui::platform;
+use dzch_ui::platform::life::Session;
 use dzch_ui::prefs::Prefs;
 use eframe::{egui_wgpu, wgpu};
 
@@ -127,16 +128,18 @@ fn main() -> eframe::Result {
     // `dzch://` links and `.dzch` files open this executable (the AppImage and the zip
     // have no installer, and a moved executable needs it pointed at its new place).
     platform::register::spawn(args.mock);
-    // A later launch raises the window and hands its arguments on (queued until the
-    // app is initialised, as the start-up ones are).
-    let window: Arc<OnceLock<egui::Context>> = Arc::default();
+    // Who to wake: the window of the moment, or this thread between windows (on
+    // Wayland closing into the tray really closes the window, and the launcher goes
+    // on without one: `platform::life`).
+    let session = Session::new(pipe.wake.clone());
+    dzch_ui::rt::Rt::install_with(runtime.handle().clone(), pipe.wake.clone());
+    // A later launch raises the window, or makes one, and hands its arguments on
+    // (queued until the app is initialised, as the start-up ones are).
     if let Some(p) = &instance {
-        let (hub, window) = (hub.clone(), window.clone());
+        let (hub, session) = (hub.clone(), Arc::clone(&session));
         let listening = p.listen(move |args| {
-            // Also out of the tray: a hidden window is shown again.
-            if let Some(ctx) = window.get() {
-                platform::life::show(ctx);
-            }
+            // Also out of the tray: a hidden or closed window is shown again.
+            session.show();
             if platform::asks_something(&args) {
                 hub.hand_off(args);
             }
@@ -149,99 +152,43 @@ fn main() -> eframe::Result {
     // The interface's preferences, from the hub's data directory (a temporary one in
     // mock mode: the mock never touches the user's files).
     let data_dir = dz_hub::paths::data_dir();
-    let prefs = Prefs::load(Prefs::path_in(&data_dir));
-    // The window where it was (eframe's `window.ron` beside the preferences; see
-    // `platform::window`), else centred at Tauri's default size.
-    let window_file = platform::window::path_in(&data_dir);
-    platform::window::sanitize(&window_file);
-    let saved = prefs.get().window;
-    let centered = !platform::window::has_saved_position(&window_file);
+    let EventPipe { rx, wake, .. } = pipe;
+    let mut kept = Kept::new(rx, Prefs::load(Prefs::path_in(&data_dir)));
+    kept.life.set_session(Arc::clone(&session));
+    // The control channel outlives the windows too: one listener for the process.
+    kept.control = args.control.and_then(|port| {
+        dzch_ui::control::start(port, runtime.handle(), hub.clone(), wake.clone(), &data_dir)
+    });
     // A Steam Deck and Game Mode, read once here (sysfs) and kept for the frames.
     let deck = platform::deck::warm();
-    let options = |gpu: Gpu| {
-        let mut viewport = egui::ViewportBuilder::default()
-            .with_title(TITLE)
-            .with_app_id("dayz-community-hub")
-            .with_icon(Arc::new(platform::window::icon()))
-            .with_inner_size(SIZE)
-            .with_min_inner_size(MIN_SIZE)
-            .with_decorations(false)
-            .with_transparent(false);
-        // Before the first `window.ron`: the size the preferences kept (eframe's file,
-        // once written, takes over).
-        if let Some(w) = saved {
-            viewport = viewport
-                .with_inner_size([w.size[0].max(MIN_SIZE[0]), w.size[1].max(MIN_SIZE[1])])
-                .with_maximized(w.maximized);
-        }
-        // Game Mode shows one window over the whole screen and scales one of another
-        // size to fit (blurred): the window takes the screen's size (here for the first
-        // start, and again in `restored`, which runs after eframe's saved window).
-        let game_mode = deck.game_mode;
-        if game_mode {
-            viewport = viewport.with_fullscreen(true);
-        }
-        eframe::NativeOptions {
-            viewport,
-            centered,
-            persist_window: true,
-            persistence_path: Some(window_file.clone()),
-            window_builder: Some(Box::new(move |b| {
-                platform::window::restored(b, saved, game_mode)
-            })),
-            wgpu_options: wgpu_options(gpu),
-            ..Default::default()
+    let slot: KeptSlot = Arc::new(Mutex::new(None));
+    let result = loop {
+        let window = Window {
+            hub: &hub,
+            wake: &wake,
+            slot: &slot,
+            data_dir: &data_dir,
+            game_mode: deck.game_mode,
+        };
+        let result = window.run(kept);
+        wake.clear();
+        // What the window kept; none when it was never made.
+        let back = slot.lock().unwrap_or_else(PoisonError::into_inner).take();
+        let into_tray = session.take_away();
+        match back {
+            Some(mut k) if into_tray && result.is_ok() => {
+                if k.wait() {
+                    kept = k;
+                    continue;
+                }
+                // Quit from the tray: what a window's exit does.
+                k.prefs.flush();
+                hub.discord_quit(std::time::Duration::from_millis(300));
+                break result;
+            }
+            _ => break result,
         }
     };
-    let handle = runtime.handle().clone();
-    let EventPipe { rx, wake, .. } = pipe;
-    let creator: eframe::AppCreator<'static> = Box::new(move |cc| {
-        dzch_ui::rt::Rt::install(handle.clone(), cc.egui_ctx.clone());
-        let _ = wake.set(cc.egui_ctx.clone());
-        let _ = window.set(cc.egui_ctx.clone());
-        let control = args.control.and_then(|port| {
-            let dir = dz_hub::paths::data_dir();
-            dzch_ui::control::start(port, &handle, hub.clone(), cc.egui_ctx.clone(), &dir)
-        });
-        let mut app = dzch_ui::HubApp::new(&cc.egui_ctx, hub, rx, prefs);
-        app.set_saved_window(cc.storage.and_then(|s| s.get_string("window")));
-        if let Some(c) = control {
-            app.set_control(c);
-        }
-        // The tray icon (Linux: its own thread; Windows: this thread's message loop),
-        // with the mock too, to try it.
-        let view = platform::life::tray_view(true, None);
-        if let Some(tray) = platform::tray::Tray::start(&cc.egui_ctx, view) {
-            app.set_tray(tray);
-        }
-        Ok(Box::new(app))
-    });
-    // The app is made once, by whichever attempt gets a graphics device: a first
-    // attempt that fails before it (no adapter, no surface on the primary backend)
-    // leaves it for the fallback.
-    let creator = Rc::new(RefCell::new(Some(creator)));
-    let plan = gpu_plan();
-    let mut result = Ok(());
-    for (i, gpu) in plan.iter().enumerate() {
-        let slot = Rc::clone(&creator);
-        result = eframe::run_native(
-            TITLE,
-            options(*gpu),
-            Box::new(move |cc| match slot.borrow_mut().take() {
-                Some(make) => make(cc),
-                None => Err("the window was already made".into()),
-            }),
-        );
-        let retry = matches!(result, Err(eframe::Error::Wgpu(_)))
-            && creator.borrow().is_some()
-            && i + 1 < plan.len();
-        if !retry {
-            break;
-        }
-        if let Err(e) = &result {
-            eprintln!("DayZ Community Hub: {e}; trying the fallback graphics backend");
-        }
-    }
     // The window could not open (no graphics adapter, no display): say so, as for any
     // start-up failure.
     if let Err(e) = &result {
@@ -254,6 +201,108 @@ fn main() -> eframe::Result {
     runtime.shutdown_timeout(std::time::Duration::from_secs(1));
     drop(instance);
     result
+}
+
+/// One window, made from what the previous one kept (or what `main` gathered).
+struct Window<'a> {
+    hub: &'a Hub,
+    wake: &'a dzch_ui::rt::Waker,
+    slot: &'a KeptSlot,
+    data_dir: &'a std::path::Path,
+    game_mode: bool,
+}
+
+impl Window<'_> {
+    /// Open the window and run it until it closes (eframe reuses its event loop from
+    /// one window to the next). Returns when the window is gone; what outlives it is
+    /// then in the slot.
+    fn run(&self, kept: Kept) -> eframe::Result {
+        // The window where it was (eframe's `window.ron` beside the preferences; see
+        // `platform::window`), else centred at Tauri's default size.
+        let window_file = platform::window::path_in(self.data_dir);
+        platform::window::sanitize(&window_file);
+        let saved = kept.prefs.get().window;
+        let centered = !platform::window::has_saved_position(&window_file);
+        let game_mode = self.game_mode;
+        let options = |gpu: Gpu| {
+            let mut viewport = egui::ViewportBuilder::default()
+                .with_title(TITLE)
+                .with_app_id("dayz-community-hub")
+                .with_icon(Arc::new(platform::window::icon()))
+                .with_inner_size(SIZE)
+                .with_min_inner_size(MIN_SIZE)
+                .with_decorations(false)
+                .with_transparent(false);
+            // Before the first `window.ron`: the size the preferences kept (eframe's
+            // file, once written, takes over).
+            if let Some(w) = saved {
+                viewport = viewport
+                    .with_inner_size([w.size[0].max(MIN_SIZE[0]), w.size[1].max(MIN_SIZE[1])])
+                    .with_maximized(w.maximized);
+            }
+            // Game Mode shows one window over the whole screen and scales one of
+            // another size to fit (blurred): the window takes the screen's size (here
+            // for the first start, and again in `restored`, which runs after eframe's
+            // saved window).
+            if game_mode {
+                viewport = viewport.with_fullscreen(true);
+            }
+            eframe::NativeOptions {
+                viewport,
+                centered,
+                persist_window: true,
+                persistence_path: Some(window_file.clone()),
+                window_builder: Some(Box::new(move |b| {
+                    platform::window::restored(b, saved, game_mode)
+                })),
+                wgpu_options: wgpu_options(gpu),
+                ..Default::default()
+            }
+        };
+        let (hub, wake, slot) = (self.hub.clone(), self.wake.clone(), Arc::clone(self.slot));
+        let creator: eframe::AppCreator<'static> = Box::new(move |cc| {
+            wake.set(&cc.egui_ctx);
+            let mut app = dzch_ui::HubApp::resume(&cc.egui_ctx, hub, kept, slot);
+            app.set_saved_window(cc.storage.and_then(|s| s.get_string("window")));
+            // The tray icon (Linux: its own thread; Windows: this thread's message
+            // loop), with the mock too, to try it. Started with the first window, then
+            // kept from one to the next.
+            if !app.life_mut().has_tray() {
+                let view = platform::life::tray_view(true, None);
+                if let Some(tray) = platform::tray::Tray::start(&wake, view) {
+                    app.life_mut().set_tray(tray);
+                }
+            }
+            Ok(Box::new(app))
+        });
+        // The app is made once, by whichever attempt gets a graphics device: a first
+        // attempt that fails before it (no adapter, no surface on the primary backend)
+        // leaves it for the fallback.
+        let creator = Rc::new(RefCell::new(Some(creator)));
+        let plan = gpu_plan();
+        let mut result = Ok(());
+        for (i, gpu) in plan.iter().enumerate() {
+            let slot = Rc::clone(&creator);
+            result = eframe::run_native(
+                TITLE,
+                options(*gpu),
+                Box::new(move |cc| match slot.borrow_mut().take() {
+                    Some(make) => make(cc),
+                    None => Err("the window was already made".into()),
+                }),
+            );
+            let retry = matches!(result, Err(eframe::Error::Wgpu(_)))
+                && creator.borrow().is_some()
+                && i + 1 < plan.len();
+            if !retry {
+                break;
+            }
+            if let Err(e) = &result {
+                eprintln!("DayZ Community Hub: {e}; trying the fallback graphics backend");
+            }
+        }
+        result
+    }
 }
 
 /// The arguments, never fatal: `--help` and `--version` are shown (a message box on

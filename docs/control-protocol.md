@@ -29,7 +29,7 @@ any JSON value, or left out.
 Any local program (and possibly a web page) can reach a loopback port, so every request needs the
 window's key. Once the port is bound, the window writes a random key (256 bits from the OS, as
 hex) to `<data dir>/control-key.local-<port>`. The file is created with mode 0600 on Unix, a
-stale one is replaced, and the file is removed when the window closes. The data directory is the
+stale one is replaced, and the file is removed when the launcher exits. The data directory is the
 hub's: `dz_hub::paths::data_dir()`, which is `--data-dir` when given and a fresh temporary
 directory in `--mock` mode. The path is printed on stderr at start:
 
@@ -67,6 +67,10 @@ printf '{"id":1,"key":"%s","method":"ui.state"}\n' "$KEY" | nc -q1 127.0.0.1 798
 - Input methods (`ui.click`, `ui.key`, …) reply `{"queued": true}` once the events are queued.
   The events reach the widgets on the following frame, so read `ui.state` afterwards instead of
   assuming the effect is already there.
+- **Without a window.** On Wayland, closing into the tray closes the window for real while the
+  launcher goes on (the channel too). Until a window is back, `ui.state` answers
+  `{"window": false}`, `window.show` (as a method or through `ui.command`) makes a new window,
+  `app.quit` quits, `hub.*` works as usual, and every other request is refused with an error.
 
 ## Methods
 

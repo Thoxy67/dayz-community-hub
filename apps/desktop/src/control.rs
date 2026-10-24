@@ -27,6 +27,8 @@ use crate::HubApp;
 use crate::app::Ctx;
 use crate::commands;
 use crate::i18n::{self, Locale};
+use crate::platform::life::Away;
+use crate::rt::Waker;
 use crate::views::ViewId;
 
 /// Longer request lines are refused (and the connection closed).
@@ -110,6 +112,36 @@ impl Control {
             synthetic: Vec::new(),
             _key: key,
         }
+    }
+
+    /// The window closed (Wayland's close to the tray; the channel goes on to the next
+    /// one): screenshots it was to take are answered as dropped, its queued input is
+    /// forgotten.
+    pub fn forget_window(&mut self) {
+        self.shots.clear();
+        self.synthetic.clear();
+    }
+
+    /// Between windows: no request can reach a window. The command `window.show` (as a
+    /// method or through `ui.command`) brings one back, `app.quit` quits, `ui.state`
+    /// says there is no window; the rest are refused. What the requests ask for.
+    pub fn away(&mut self) -> Away {
+        let mut next = Away::Stay;
+        while let Ok(req) = self.rx.try_recv() {
+            let reply = match away_request(&req.method, &req.params) {
+                Ok(ask) => {
+                    next = next.and(ask);
+                    if ask == Away::Stay {
+                        ok(json!({"window": false}))
+                    } else {
+                        ok(json!({}))
+                    }
+                }
+                Err(e) => err(e),
+            };
+            let _ = req.reply.send(reply);
+        }
+        next
     }
 
     /// Before a frame: the queued pointer and key events join the window's input.
@@ -341,6 +373,22 @@ impl Control {
     }
 }
 
+/// What a request asks for between windows (see [`Control::away`]).
+fn away_request(method: &str, p: &Value) -> Result<Away, String> {
+    let id = match method {
+        "ui.command" => p.get("id").and_then(Value::as_str),
+        "ui.state" => return Ok(Away::Stay),
+        m => Some(m),
+    };
+    match id {
+        Some("window.show") => Ok(Away::Show),
+        Some("app.quit") => Ok(Away::Quit),
+        _ => Err(format!(
+            "`{method}`: no window now, the launcher is in the tray (`window.show` brings it back)"
+        )),
+    }
+}
+
 /// Run a command of the registry, refusing a disabled one.
 fn run(app: &mut HubApp, ctx: &egui::Context, id: &str, args: &Value) -> Value {
     app.with_ctx(ctx, |cx| {
@@ -556,7 +604,7 @@ pub fn start(
     port: u16,
     rt: &tokio::runtime::Handle,
     hub: Hub,
-    ctx: egui::Context,
+    waker: Waker,
     dir: &Path,
 ) -> Option<Control> {
     let listener = match std::net::TcpListener::bind(("127.0.0.1", port)) {
@@ -586,7 +634,7 @@ pub fn start(
         "control: listening on 127.0.0.1:{port}, key in {}",
         path.display()
     );
-    let rx = serve_on(listener, rt, Some(hub), ctx, key, FIRST_REQUEST);
+    let rx = serve_on(listener, rt, Some(hub), waker, key, FIRST_REQUEST);
     Some(Control::new(rx, Some(KeyFile(path))))
 }
 
@@ -627,7 +675,7 @@ fn serve_on(
     listener: std::net::TcpListener,
     rt: &tokio::runtime::Handle,
     hub: Option<Hub>,
-    ctx: egui::Context,
+    waker: Waker,
     key: String,
     first: Duration,
 ) -> mpsc::Receiver<ControlRequest> {
@@ -646,8 +694,8 @@ fn serve_on(
             let Ok((stream, _)) = listener.accept().await else {
                 continue;
             };
-            let (tx, ctx, key, hub) = (tx.clone(), ctx.clone(), Arc::clone(&key), hub.clone());
-            rt2.spawn(async move { serve(stream, tx, ctx, hub, &key, first).await });
+            let (tx, waker, key, hub) = (tx.clone(), waker.clone(), Arc::clone(&key), hub.clone());
+            rt2.spawn(async move { serve(stream, tx, waker, hub, &key, first).await });
         }
     });
     rx
@@ -681,7 +729,7 @@ async fn read_line<R: tokio::io::AsyncBufRead + Unpin>(
 async fn serve(
     stream: tokio::net::TcpStream,
     tx: mpsc::Sender<ControlRequest>,
-    ctx: egui::Context,
+    waker: Waker,
     hub: Option<Hub>,
     key: &str,
     first: Duration,
@@ -746,7 +794,7 @@ async fn serve(
             if tx.send(req).is_err() {
                 break;
             }
-            ctx.request_repaint();
+            waker.repaint();
             match tokio::time::timeout(UI_TIMEOUT, rrx).await {
                 Ok(Ok(v)) => v,
                 Ok(Err(_)) => err("the window dropped the request"),
@@ -801,7 +849,7 @@ mod tests {
             runtime().handle(),
             // No hub: a second mock hub would move the app test's data directory.
             None,
-            egui::Context::default(),
+            Waker::default(),
             KEY.into(),
             first,
         );
@@ -838,6 +886,34 @@ mod tests {
         let req = rx.recv_timeout(Duration::from_secs(5)).unwrap();
         let _ = req.reply.send(ok(json!({})));
         (req.method, req.params)
+    }
+
+    #[test]
+    fn without_a_window_only_show_quit_and_state_are_answered() {
+        let (tx, rx) = mpsc::channel();
+        let mut c = Control::new(rx, None);
+        assert_eq!(c.away(), Away::Stay);
+        let mut replies = Vec::new();
+        for (m, p) in [
+            ("ui.state", json!({})),
+            ("ui.click", json!({"x": 1, "y": 1})),
+            ("ui.command", json!({"id": "window.show"})),
+        ] {
+            let (req, r) = ControlRequest::new(m, p);
+            tx.send(req).unwrap();
+            replies.push(r);
+        }
+        assert_eq!(c.away(), Away::Show);
+        let got: Vec<Value> = replies
+            .into_iter()
+            .map(|mut r| r.try_recv().unwrap())
+            .collect();
+        assert_eq!(got[0]["result"]["window"], false);
+        assert_eq!(got[1]["ok"], false);
+        assert_eq!(got[2]["ok"], true);
+        let (req, _r) = ControlRequest::new("app.quit", json!({}));
+        tx.send(req).unwrap();
+        assert_eq!(c.away(), Away::Quit);
     }
 
     #[test]

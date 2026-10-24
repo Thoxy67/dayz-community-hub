@@ -50,19 +50,17 @@ impl SettingsView {
                     ui.add(Tag::new(label).tone(tone));
                 },
                 |ui| {
-                    let hint = if !env.tray {
-                        t("settings", "lifeNoTrayHint")
-                    } else if env.wayland {
-                        t("settings", "lifeWaylandHint")
-                    } else {
+                    let hint = if env.tray {
                         t("settings", "lifeCloseToTrayHint")
+                    } else {
+                        t("settings", "lifeNoTrayHint")
                     };
                     Field::new(t("settings", "lifeCloseToTray"))
                         .hint(hint)
                         .show(ui, |ui| {
-                            // Wayland quits on close whatever the setting
+                            // Without a tray a close quits whatever the setting
                             // (`life::on_close`): shown off and locked.
-                            let can = env.tray && !env.wayland;
+                            let can = env.tray;
                             let mut on = p.close_to_tray && can;
                             let changed = boxed(ui, |ui| {
                                 ui.set_width(ui.available_width());

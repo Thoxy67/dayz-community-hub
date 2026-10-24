@@ -666,8 +666,8 @@ impl Profile {
             match hub.import_profile(path).await.map(|_| ()) {
                 Ok(()) => match hub.relaunch_app().await {
                     Ok(true) => {
-                        if let Some(rt) = rt::Rt::get() {
-                            crate::platform::life::quit(rt.ctx());
+                        if let Some(ctx) = rt::Rt::get().and_then(rt::Rt::ctx) {
+                            crate::platform::life::quit(&ctx);
                         }
                     }
                     Ok(false) => crate::prefs::hold_writes(false),

@@ -176,7 +176,7 @@ fn window(
                 None => {
                     if let Some((hub, events, handle, wake, rx)) = parts.take() {
                         dzch_ui::rt::Rt::install(handle, ui.ctx().clone());
-                        let _ = wake.set(ui.ctx().clone());
+                        wake.set(ui.ctx());
                         // The user's preferences stay untouched: defaults, kept in memory.
                         let mut a = HubApp::new(ui.ctx(), hub, events, Prefs::default());
                         a.set_control(Control::new(rx, None));

@@ -4,24 +4,106 @@
 //! answer is on screen the frame after it arrives.
 
 use std::future::Future;
-use std::sync::OnceLock;
+use std::sync::{Arc, Condvar, Mutex, OnceLock, PoisonError, RwLock};
 use std::time::{Duration, Instant};
 
 use tokio::sync::oneshot;
 
 static RUNTIME: OnceLock<Rt> = OnceLock::new();
 
-/// The runtime and the context to wake.
+/// Whoever is to be woken when work finishes or something arrives: the window's
+/// context while there is a window, and, between windows (Wayland's close to the
+/// tray, where the window is really closed and made again), whoever waits in
+/// [`Waker::wait`] (`main`). Cheap to clone, `Send`; the context can be replaced.
+#[derive(Clone, Default)]
+pub struct Waker(Arc<WakerInner>);
+
+#[derive(Default)]
+struct WakerInner {
+    ctx: RwLock<Option<egui::Context>>,
+    nudged: Mutex<bool>,
+    cv: Condvar,
+}
+
+impl Waker {
+    /// A waker already pointing at `ctx`.
+    pub fn with(ctx: &egui::Context) -> Self {
+        let w = Self::default();
+        w.set(ctx);
+        w
+    }
+
+    /// The window's context from now on (a new window).
+    pub fn set(&self, ctx: &egui::Context) {
+        *self.0.ctx.write().unwrap_or_else(PoisonError::into_inner) = Some(ctx.clone());
+    }
+
+    /// No window any more: wakes go to [`Waker::wait`] only.
+    pub fn clear(&self) {
+        *self.0.ctx.write().unwrap_or_else(PoisonError::into_inner) = None;
+    }
+
+    /// The window's context, while there is a window.
+    pub fn ctx(&self) -> Option<egui::Context> {
+        self.0
+            .ctx
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Wake now.
+    pub fn repaint(&self) {
+        self.repaint_after(Duration::ZERO);
+    }
+
+    /// Wake the window after `d` (folding a burst into one frame); a waiter between
+    /// windows at once.
+    pub fn repaint_after(&self, d: Duration) {
+        if let Some(ctx) = self.ctx() {
+            if d.is_zero() {
+                ctx.request_repaint();
+            } else {
+                ctx.request_repaint_after(d);
+            }
+        }
+        let mut n = self.0.nudged.lock().unwrap_or_else(PoisonError::into_inner);
+        *n = true;
+        self.0.cv.notify_all();
+    }
+
+    /// Between windows: wait until something wakes, or `timeout`. True when woken.
+    pub fn wait(&self, timeout: Duration) -> bool {
+        let n = self.0.nudged.lock().unwrap_or_else(PoisonError::into_inner);
+        let (mut n, _) = self
+            .0
+            .cv
+            .wait_timeout_while(n, timeout, |n| !*n)
+            .unwrap_or_else(PoisonError::into_inner);
+        std::mem::take(&mut *n)
+    }
+}
+
+/// The runtime and who to wake.
 #[derive(Clone)]
 pub struct Rt {
     handle: tokio::runtime::Handle,
-    ctx: egui::Context,
+    waker: Waker,
 }
 
 impl Rt {
-    /// Install the runtime for this process. Later calls keep the first.
+    /// Install the runtime for this process, waking `ctx`. Later calls keep the first.
     pub fn install(handle: tokio::runtime::Handle, ctx: egui::Context) -> &'static Rt {
-        RUNTIME.get_or_init(|| Rt { handle, ctx })
+        RUNTIME.get_or_init(|| Rt {
+            handle,
+            waker: Waker::with(&ctx),
+        })
+    }
+
+    /// Install the runtime for this process, waking whoever `waker` points at (the
+    /// window of the moment). Later calls keep the first.
+    pub fn install_with(handle: tokio::runtime::Handle, waker: Waker) -> &'static Rt {
+        RUNTIME.get_or_init(|| Rt { handle, waker })
     }
 
     /// The installed runtime. `None` only before [`Rt::install`], which `main`
@@ -34,8 +116,13 @@ impl Rt {
         &self.handle
     }
 
-    pub fn ctx(&self) -> &egui::Context {
-        &self.ctx
+    /// The window's context; `None` between windows.
+    pub fn ctx(&self) -> Option<egui::Context> {
+        self.waker.ctx()
+    }
+
+    pub fn waker(&self) -> &Waker {
+        &self.waker
     }
 
     /// Run `fut` on the runtime; its output is the task's, and the window repaints.
@@ -45,10 +132,10 @@ impl Rt {
         F: Future<Output = T> + Send + 'static,
     {
         let (tx, rx) = oneshot::channel();
-        let ctx = self.ctx.clone();
+        let waker = self.waker.clone();
         self.handle.spawn(async move {
             let _ = tx.send(fut.await);
-            ctx.request_repaint();
+            waker.repaint();
         });
         Task {
             rx: Some(rx),
@@ -65,10 +152,10 @@ impl Rt {
         F: Future<Output = T> + Send + 'static,
     {
         let (tx, rx) = oneshot::channel();
-        let ctx = self.ctx.clone();
+        let waker = self.waker.clone();
         let join = self.handle.spawn(async move {
             let _ = tx.send(fut.await);
-            ctx.request_repaint();
+            waker.repaint();
         });
         Task {
             rx: Some(rx),
@@ -81,10 +168,10 @@ impl Rt {
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        let ctx = self.ctx.clone();
+        let waker = self.waker.clone();
         self.handle.spawn(async move {
             fut.await;
-            ctx.request_repaint();
+            waker.repaint();
         });
     }
 }
@@ -264,5 +351,31 @@ impl Debounce {
             }
             None => false,
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_waker_wakes_the_window_of_the_moment_or_the_waiter() {
+        let w = Waker::default();
+        assert!(w.ctx().is_none());
+        assert!(!w.wait(Duration::ZERO), "nothing woke it yet");
+        // Between windows: a wake from another thread ends the wait.
+        let w2 = w.clone();
+        let t = std::thread::spawn(move || w2.repaint());
+        assert!(w.wait(Duration::from_secs(5)));
+        t.join().unwrap();
+        assert!(!w.wait(Duration::ZERO), "taken once");
+        // A window, then another: the newest is the one woken.
+        let (a, b) = (egui::Context::default(), egui::Context::default());
+        w.set(&a);
+        w.set(&b);
+        assert!(w.ctx().is_some_and(|c| c == b));
+        w.clear();
+        assert!(w.ctx().is_none());
     }
 }

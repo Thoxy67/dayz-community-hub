@@ -198,8 +198,8 @@ impl Updater {
             changed = true;
             match r {
                 Ok(true) => {
-                    if let Some(rt) = rt::Rt::get() {
-                        crate::platform::life::quit(rt.ctx());
+                    if let Some(ctx) = rt::Rt::get().and_then(rt::Rt::ctx) {
+                        crate::platform::life::quit(&ctx);
                     }
                 }
                 Ok(false) => {}

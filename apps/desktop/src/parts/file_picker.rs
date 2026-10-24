@@ -141,7 +141,7 @@ pub async fn pick(p: Pick) -> Option<PathBuf> {
         return None;
     }
     if let Some(rt) = rt::Rt::get() {
-        rt.ctx().request_repaint();
+        rt.waker().repaint();
     }
     rx.await.ok().flatten()
 }

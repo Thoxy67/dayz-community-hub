@@ -1512,7 +1512,6 @@
     "lifeStopRestore": "Fenster wiederherstellen",
     "lifeTrayOff": "Kein System-Tray",
     "lifeTrayOn": "Tray-Symbol aktiv",
-    "lifeWaylandHint": "Unter Wayland kann der Tray ein minimiertes Fenster nicht zurückholen: Das Schließen des Fensters beendet den Launcher. Das Tray-Menü bietet weiterhin Wieder beitreten und Beenden.",
     "locationDetected": "Aus Ihrer IP-Adresse ermittelt",
     "locationHelp": "Standort wird zur Entfernungsberechnung verwendet.",
     "locationInvalid": "Breite −90 bis 90, Länge −180 bis 180.",

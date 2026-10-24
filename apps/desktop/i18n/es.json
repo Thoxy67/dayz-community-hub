@@ -1512,7 +1512,6 @@
     "lifeStopRestore": "Restaurar la ventana",
     "lifeTrayOff": "Sin bandeja del sistema",
     "lifeTrayOn": "Icono en la bandeja",
-    "lifeWaylandHint": "En Wayland la bandeja no puede recuperar una ventana minimizada: cerrar la ventana cierra el launcher. Su menú sigue ofreciendo volver a unirse y salir.",
     "locationDetected": "Detectada a partir de tu IP",
     "locationHelp": "La ubicación se usa para calcular la distancia a los servidores.",
     "locationInvalid": "Latitud de −90 a 90, longitud de −180 a 180.",
