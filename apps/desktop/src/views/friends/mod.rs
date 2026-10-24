@@ -319,7 +319,7 @@ fn detail(ui: &mut Ui, cx: &mut Ctx, s: &Selected) -> bool {
         (head.width() - 2.0 * size::PAD - 32.0).max(20.0),
     );
     let addr = format!("{}:{}", s.ip, s.port);
-    let ag = crate::kit::paint::galley(&hui, &addr, font(Face::Mono, size::TEXT_2XS), tk.fg_muted);
+    let ag = crate::kit::paint::galley(&hui, &addr, font(Face::Sans, size::TEXT_2XS), tk.fg_muted);
     let x = hui.max_rect().left();
     let cy = head.center().y;
     hui.painter()

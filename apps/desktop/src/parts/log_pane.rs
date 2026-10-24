@@ -406,7 +406,7 @@ impl<'a> LogPane<'a> {
         let tg = paint::tracked(
             &hui,
             self.title,
-            font(Face::Mono, size::TEXT_2XS),
+            font(Face::SansSemibold, size::TEXT_2XS),
             Color32::PLACEHOLDER,
             0.1,
             true,
@@ -418,7 +418,7 @@ impl<'a> LogPane<'a> {
         if self.live {
             let time = hui.input(|i| i.time);
             let pulse = 0.75 + 0.25 * ((time / 2.0).fract() as f32 * std::f32::consts::TAU).cos();
-            let lg = ph(&hui, t("common", "live"), font(Face::Mono, size::TEXT_3XS));
+            let lg = ph(&hui, t("common", "live"), font(Face::Sans, size::TEXT_3XS));
             let (lr, _) =
                 hui.allocate_exact_size(Vec2::new(10.0 + lg.size().x, 12.0), Sense::hover());
             hui.painter().circle_filled(

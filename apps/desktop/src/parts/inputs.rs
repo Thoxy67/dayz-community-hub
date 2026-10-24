@@ -52,7 +52,7 @@ impl egui::Widget for SecretInput<'_> {
             ui.spacing_mut().item_spacing.x = 8.0;
             let w = (ui.available_width() - size::CONTROL - 8.0).max(40.0);
             let kind = if shown {
-                InputKind::Mono
+                InputKind::Text
             } else {
                 InputKind::Password
             };
@@ -103,7 +103,7 @@ pub struct PathResponse {
     pub browse: bool,
 }
 
-/// `PathInput`: a file or folder path, typed (mono) or chosen with the system's picker.
+/// `PathInput`: a file or folder path, typed or chosen with the system's picker.
 pub struct PathInput<'a> {
     value: &'a mut String,
     placeholder: &'a str,
@@ -141,7 +141,7 @@ impl<'a> PathInput<'a> {
             let button_w = lw + size::ICON_SM + 6.0 + 22.0;
             let w = (ui.available_width() - button_w - 8.0).max(40.0);
             let mut input = Input::new(self.value)
-                .kind(InputKind::Mono)
+                .kind(InputKind::Text)
                 .placeholder(self.placeholder)
                 .width(w);
             if let Some(id) = self.id_salt {
@@ -292,7 +292,7 @@ impl egui::Widget for ColorToken<'_> {
                 .id(edit_id)
                 .frame(egui::Frame::NONE)
                 .margin(egui::Margin::ZERO)
-                .font(font(Face::Mono, size::TEXT_2XS))
+                .font(font(Face::Sans, size::TEXT_2XS))
                 .text_color(tk.fg)
                 .align(egui::Align2::LEFT_CENTER),
         );
@@ -508,7 +508,7 @@ impl LanguagePicker {
             let g = ph_trunc(ui, l.label(), font(Face::SansMedium, size::TEXT_XS), room);
             draw(p, &g, tx, r.top() + 8.0 + 8.0, tk.fg);
             let code = l.code().to_uppercase();
-            let cg = ph_trunc(ui, &code, font(Face::Mono, size::TEXT_3XS), room);
+            let cg = ph_trunc(ui, &code, font(Face::Sans, size::TEXT_3XS), room);
             draw(p, &cg, tx, r.top() + 8.0 + 16.0 + 6.5, tk.fg_faint);
             if on {
                 lucide::CHECK.paint(

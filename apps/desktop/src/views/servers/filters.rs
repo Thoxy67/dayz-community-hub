@@ -281,9 +281,9 @@ pub fn toolbar(ui: &mut Ui, f: &mut Filters, d: &ToolbarData, run: &mut Run) {
         // The count, at the right end, is measured first so the search can flex.
         let count_l = format::num(d.shown as f64);
         let count_r = format!(" / {}", format::num(f64::from(d.total)));
-        let mono = font(Face::Mono, size::TEXT_2XS);
-        let gl = ph(ui, &count_l, mono.clone());
-        let gr = ph(ui, &count_r, mono);
+        let figs = font(Face::Sans, size::TEXT_2XS);
+        let gl = ph(ui, &count_l, figs.clone());
+        let gr = ph(ui, &count_r, figs);
         let count_w = gl.size().x + gr.size().x + 4.0;
 
         let compact = win_w < 1500.0;
@@ -667,7 +667,7 @@ fn more_filters(ui: &mut Ui, f: &mut Filters, d: &ToolbarData, win_w: f32, run: 
         if n > 0 {
             let c = Pos2::new(x + 8.0, cy);
             p.circle_filled(c, 8.0, tk.accent);
-            let ng = ph(ui, &n.to_string(), font(Face::Mono, size::TEXT_3XS));
+            let ng = ph(ui, &n.to_string(), font(Face::Sans, size::TEXT_3XS));
             paint::text_center(
                 p,
                 &ng,
@@ -972,7 +972,7 @@ fn excluded_row(ui: &mut Ui, shown: bool, n: usize) -> Response {
     } else {
         t("servers", "excludedReveal")
     };
-    let count = ph(ui, &n.to_string(), font(Face::Mono, size::TEXT_2XS));
+    let count = ph(ui, &n.to_string(), font(Face::Sans, size::TEXT_2XS));
     // In the switches' columns above it: the icon centred on their track (8px in,
     // 28px wide), the words on their labels' edge, in their size.
     let icon_cx = 8.0 + 14.0;

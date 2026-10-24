@@ -546,7 +546,7 @@ fn key(ui: &Ui, r: Rect, k: K, shift: bool, look: Look) {
             let g = paint::galley(
                 ui,
                 if shift { up } else { lo },
-                font(Face::Mono, size::TEXT_LG),
+                font(Face::Sans, size::TEXT_LG),
                 t.fg,
             );
             paint::text_center(p, &g, r, t.fg);

@@ -447,7 +447,7 @@ fn card(
     };
     let g = paint::galley_trunc(ui, &text, small, ink, (right - x1).max(0.0));
     paint::text_at(&p, &g, x1, row_cy(1), ink);
-    // Folder: mono, cut, the whole id on hover, selectable.
+    // Folder: cut, the whole id on hover, selectable.
     let fr = Rect::from_min_max(
         pos2(x1, row_cy(2) - FACT_H / 2.0),
         pos2(right.max(x1), row_cy(2) + FACT_H / 2.0),
@@ -461,7 +461,7 @@ fn card(
     fui.add(
         egui::Label::new(
             egui::RichText::new(&m.id)
-                .font(font(Face::Mono, size::TEXT_2XS))
+                .font(font(Face::Sans, size::TEXT_2XS))
                 .color(tk.fg_muted),
         )
         .truncate()
@@ -635,7 +635,7 @@ fn how_it_works(ui: &mut Ui, tk: &Tokens, run: &mut Run) {
                 let n = paint::galley(
                     ui,
                     &(i + 1).to_string(),
-                    font(Face::Mono, size::TEXT_3XS),
+                    font(Face::Sans, size::TEXT_3XS),
                     tk.accent,
                 );
                 paint::text_center(p, &n, dot, tk.accent);
@@ -668,7 +668,7 @@ fn how_it_works(ui: &mut Ui, tk: &Tokens, run: &mut Run) {
             let url = paint::galley_trunc(
                 ui,
                 "github.com/Arkensor/DayZCommunityOfflineMode",
-                font(Face::Mono, size::TEXT_3XS),
+                font(Face::Sans, size::TEXT_3XS),
                 tk.fg_faint,
                 (r.right() - 8.0 - tx).max(0.0),
             );

@@ -404,9 +404,10 @@ fn dialog(ctx: &egui::Context, cx: &Ctx, st: &mut OpUi, run: &mut Vec<(&'static 
             Vec2::new(0.0, 2.0 * (1.0 - a) - inset / 2.0),
         ))
         .frame(egui::Frame::NONE)
-        .backdrop_color(alpha(tk.plot, 0.75 * a));
+        .backdrop_color(egui::Color32::TRANSPARENT);
     let mut esc = false;
     let r = modal.show(ctx, |ui| {
+        paint::veil(ui.painter(), alpha(tk.plot, 0.75 * a));
         ui.multiply_opacity(a);
         let (rect, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
         let p = ui.painter();
@@ -466,7 +467,7 @@ fn dialog(ctx: &egui::Context, cx: &Ctx, st: &mut OpUi, run: &mut Vec<(&'static 
         let mut x = top.right();
         for (label, value, ink) in figs.iter().rev() {
             let lg = crate::kit::panel::stencil(&ui, label, Color32::PLACEHOLDER, None);
-            let vg = ph(&ui, value, font(Face::MonoSemibold, size::TEXT_SM));
+            let vg = ph(&ui, value, font(Face::SansSemibold, size::TEXT_SM));
             let fw = lg.size().x.max(vg.size().x);
             draw(
                 ui.painter(),
@@ -511,8 +512,8 @@ fn dialog(ctx: &egui::Context, cx: &Ctx, st: &mut OpUi, run: &mut Vec<(&'static 
             draw(ui.painter(), &lg, row.left(), row.center().y, tk.fg_faint);
             let pct = format!("{}%", (overall * 100.0).round() as i64);
             let rest = format!(" · {}/{}", op.completed.len(), op.total);
-            let rg = ph(&ui, &rest, font(Face::Mono, size::TEXT_2XS));
-            let pg = ph(&ui, &pct, font(Face::Mono, size::TEXT_2XS));
+            let rg = ph(&ui, &rest, font(Face::Sans, size::TEXT_2XS));
+            let pg = ph(&ui, &pct, font(Face::Sans, size::TEXT_2XS));
             draw(
                 ui.painter(),
                 &rg,
@@ -737,7 +738,7 @@ fn aside(
                 let n = ph(
                     ui,
                     &(i + 1).to_string(),
-                    font(Face::MonoSemibold, size::TEXT_3XS),
+                    font(Face::SansSemibold, size::TEXT_3XS),
                 );
                 paint::text_center(ui.painter(), &n, c, ink);
                 let g = ph_trunc(
@@ -767,7 +768,7 @@ fn aside(
             let cg = ph(
                 ui,
                 &clock(guard_left * 1000.0),
-                font(Face::MonoSemibold, size::TEXT_2XS),
+                font(Face::SansSemibold, size::TEXT_2XS),
             );
             draw(
                 ui.painter(),
@@ -818,7 +819,7 @@ fn aside(
                 let cg = paint::galley_wrap(
                     ui,
                     &manual,
-                    font(Face::Mono, size::TEXT_2XS),
+                    font(Face::Sans, size::TEXT_2XS),
                     tk.fg,
                     cw - 16.0,
                 );
@@ -949,7 +950,7 @@ fn aside(
     if let Some(hint) = &op.hint {
         callout(ui, tk.err, |ui| {
             let hw = ui.available_width();
-            let g = paint::galley_wrap(ui, hint, font(Face::Mono, size::TEXT_2XS), tk.err, hw);
+            let g = paint::galley_wrap(ui, hint, font(Face::Sans, size::TEXT_2XS), tk.err, hw);
             let (r, _) = ui.allocate_exact_size(Vec2::new(hw, g.size().y), Sense::hover());
             ui.painter().galley(r.min, g, tk.err);
         });
@@ -1010,7 +1011,7 @@ fn aside(
             tk.fg_faint,
         );
         let cnt = format!("{}/{}", op.completed.len(), queue.len());
-        let cg = ph(ui, &cnt, font(Face::Mono, size::TEXT_2XS));
+        let cg = ph(ui, &cnt, font(Face::Sans, size::TEXT_2XS));
         draw(
             ui.painter(),
             &cg,
@@ -1106,7 +1107,7 @@ fn queue_row(ui: &mut Ui, cx: &Ctx, q: &QRow, progress: Option<Progress>, rule: 
         QState::Failed => (t("progress", "itemFailed").to_string(), tk.err),
         QState::Queued => (t("progress", "itemQueued").to_string(), tk.fg_faint),
     };
-    let fg = ph(ui, &fig, font(Face::Mono, size::TEXT_2XS));
+    let fg = ph(ui, &fig, font(Face::Sans, size::TEXT_2XS));
     let fx = r.right() - 12.0 - fg.size().x;
     draw(
         ui.painter(),
@@ -1134,7 +1135,7 @@ fn queue_row(ui: &mut Ui, cx: &Ctx, q: &QRow, progress: Option<Progress>, rule: 
     if let Some(m) = cx.stores.mods.by_id(q.id) {
         sub.push_str(&format!(" · {}", format::bytes(m.size as f64)));
     }
-    let sg = ph_trunc(ui, &sub, font(Face::Mono, size::TEXT_3XS), tw);
+    let sg = ph_trunc(ui, &sub, font(Face::Sans, size::TEXT_3XS), tw);
     draw(
         ui.painter(),
         &sg,

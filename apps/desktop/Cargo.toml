@@ -76,8 +76,9 @@ dz-steamcmd.workspace = true
 [target.'cfg(windows)'.dependencies]
 tray-icon = { version = "0.26.1", default-features = false }
 # platform::tray: whether Explorer's notification area is there (FindWindowW), the
-# same windows-sys tray-icon already links.
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+# same windows-sys tray-icon already links; platform::window: Windows 11's rounded
+# corners (DwmSetWindowAttribute).
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Dwm"] }
 notify-rust = { version = "4.18.2", default-features = false }
 # platform::shortcut: a server's desktop shortcut as a .lnk, written in Rust (no COM).
 mslnk = "0.1.8"

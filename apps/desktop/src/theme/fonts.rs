@@ -1,6 +1,7 @@
-//! The faces: IBM Plex Sans for text, IBM Plex Mono for figures and addresses,
-//! Sofia Sans Extra Condensed for titles, big figures and stencilled labels
-//! (`--font-sans`, `--font-mono`, `--font-display`).
+//! The faces: IBM Plex Sans for every word and figure of the interface (its digits are
+//! tabular: columns of figures stay aligned), IBM Plex Mono only for code (the log, the
+//! launch command line, code in the news), Sofia Sans Extra Condensed for titles, big
+//! figures and stencilled labels (`--font-sans`, `--font-mono`, `--font-display`).
 //!
 //! egui picks no weight from a variable font, so every weight is its own family
 //! of static instances (`assets/fonts`, made from the interface's woff2 files),
@@ -9,7 +10,7 @@
 
 use std::sync::Arc;
 
-use egui::{FontData, FontDefinitions, FontFamily, FontId, TextStyle};
+use egui::{FontData, FontDefinitions, FontFamily, FontId, FontTweak, TextStyle};
 
 /// A face and weight.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -18,9 +19,8 @@ pub enum Face {
     SansMedium,
     SansSemibold,
     SansBold,
+    /// Code only: the log, the launch command line, code in the news.
     Mono,
-    MonoMedium,
-    MonoSemibold,
     /// Display 600: titles.
     Display,
     /// Display 800: the big figures.
@@ -28,14 +28,12 @@ pub enum Face {
 }
 
 impl Face {
-    const ALL: [Face; 9] = [
+    const ALL: [Face; 7] = [
         Face::Sans,
         Face::SansMedium,
         Face::SansSemibold,
         Face::SansBold,
         Face::Mono,
-        Face::MonoMedium,
-        Face::MonoSemibold,
         Face::Display,
         Face::DisplayBold,
     ];
@@ -47,8 +45,6 @@ impl Face {
             Face::SansSemibold => "sans-600",
             Face::SansBold => "sans-700",
             Face::Mono => "mono",
-            Face::MonoMedium => "mono-500",
-            Face::MonoSemibold => "mono-600",
             Face::Display => "display-600",
             Face::DisplayBold => "display-800",
         }
@@ -57,7 +53,7 @@ impl Face {
     /// The face's family. Built once: a named family holds an `Arc<str>`, and `font` is
     /// called hundreds of times a frame, so each call clones it instead of allocating.
     pub fn family(self) -> FontFamily {
-        static FAMILIES: std::sync::LazyLock<[FontFamily; 9]> = std::sync::LazyLock::new(|| {
+        static FAMILIES: std::sync::LazyLock<[FontFamily; 7]> = std::sync::LazyLock::new(|| {
             Face::ALL.map(|f| match f {
                 Face::Sans => FontFamily::Proportional,
                 Face::Mono => FontFamily::Monospace,
@@ -110,10 +106,20 @@ fn files(face: Face) -> [Subset; 4] {
         Face::SansSemibold => subsets!("IBMPlexSans-600"),
         Face::SansBold => subsets!("IBMPlexSans-700"),
         Face::Mono => subsets!("IBMPlexMono-400"),
-        Face::MonoMedium => subsets!("IBMPlexMono-500"),
-        Face::MonoSemibold => subsets!("IBMPlexMono-600"),
         Face::Display => subsets!("SofiaSansExtraCondensed-600"),
         Face::DisplayBold => subsets!("SofiaSansExtraCondensed-800"),
+    }
+}
+
+/// The thousands' narrow space (U+202F, French and Russian groups) is drawn as a fraction
+/// of the face's space (egui's `thin_space_width`, half by default). Plex Sans's space is
+/// narrow (0.236 em): at half, `9 500` reads as `9500`. At 0.85 the group's gap is
+/// about 0.2 em, a browser's narrow space; Mono's wide space (0.6 em) keeps the default.
+fn tweak(face: Face) -> FontTweak {
+    let thin_space_width = if face == Face::Mono { 0.5 } else { 0.85 };
+    FontTweak {
+        thin_space_width,
+        ..FontTweak::default()
     }
 }
 
@@ -149,8 +155,10 @@ pub fn definitions() -> FontDefinitions {
         let mut chain = Vec::new();
         for (stem, sub, bytes) in files(face) {
             let key = format!("{stem}-{sub}");
-            defs.font_data
-                .insert(key.clone(), Arc::new(FontData::from_static(bytes)));
+            defs.font_data.insert(
+                key.clone(),
+                Arc::new(FontData::from_static(bytes).tweak(tweak(face))),
+            );
             chain.push(key);
         }
         chain.push(SYMBOLS.to_owned());

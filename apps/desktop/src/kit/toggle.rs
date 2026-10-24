@@ -463,7 +463,7 @@ impl Widget for Toggle<'_> {
                 let g = paint::galley(
                     ui,
                     &n.to_string(),
-                    font(Face::Mono, size::TEXT_2XS),
+                    font(Face::Sans, size::TEXT_2XS),
                     t.fg_faint,
                 );
                 right -= g.size().x;

@@ -350,7 +350,7 @@ fn entry(ui: &mut Ui, cx: &mut Ctx, p: &Place, collapsed: bool, w: f32, h: f32) 
             // Pops in once when the figure changes (a new mod update, a favourite added).
             let k = pop(ui, egui::Id::unique(("rail-count", p.id.id())), &c.value);
             let tone = c.tone.unwrap_or(tk.fg_faint).gamma_multiply(k);
-            let g = paint::galley(ui, &c.value, font(Face::Mono, size::TEXT_2XS), tone);
+            let g = paint::galley(ui, &c.value, font(Face::Sans, size::TEXT_2XS), tone);
             right -= g.size().x;
             paint::text_at(painter, &g, right, cy + 2.0 * (1.0 - k), tone);
             right -= 10.0;
@@ -628,7 +628,7 @@ fn rejoin(ui: &mut Ui, cx: &mut Ctx, collapsed: bool, fit: Fit, foot: Rect, y: f
     let ag = paint::galley_trunc(
         ui,
         &ago,
-        font(Face::Mono, size::TEXT_3XS),
+        font(Face::Sans, size::TEXT_3XS),
         tk.fg_faint,
         (close_r.left() - 6.0 - ago_x).max(0.0),
     );
@@ -775,7 +775,7 @@ fn listed_lines(
         let tg = paint::galley(
             ui,
             &row.server.time,
-            font(Face::Mono, size::TEXT_2XS),
+            font(Face::Sans, size::TEXT_2XS),
             tk.fg_faint,
         );
         map_right -= tg.size().x;

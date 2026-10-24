@@ -61,7 +61,7 @@ pub fn show(ui: &mut Ui, l: &Loaded, st: &mut StatsState, run: &mut Run) -> Opti
             {
                 run.push(("stats.calendar_prev", Value::Null));
             }
-            let g = ph(ui, &span, font(Face::Mono, size::TEXT_2XS));
+            let g = ph(ui, &span, font(Face::Sans, size::TEXT_2XS));
             let (r, _) = ui.allocate_exact_size(
                 Vec2::new(g.size().x.max(128.0), size::CONTROL_SM),
                 Sense::hover(),
@@ -178,12 +178,12 @@ pub fn show(ui: &mut Ui, l: &Loaded, st: &mut StatsState, run: &mut Run) -> Opti
     let active = st.cal.active.filter(|d| (start..=end).contains(d));
 
     // The months over the columns where they start.
-    let mono3 = font(Face::Mono, size::TEXT_3XS);
+    let figs3 = font(Face::Sans, size::TEXT_3XS);
     for c in 0..WEEKS {
         if let Some(d) = dates::date_of(start + c * 7)
             && chrono::Datelike::day(&d) <= 7
         {
-            let g = ph(ui, dates::month_short_in(loc, d), mono3.clone());
+            let g = ph(ui, dates::month_short_in(loc, d), figs3.clone());
             draw(
                 ui.painter(),
                 &g,
@@ -285,7 +285,7 @@ fn tip(ui: &Ui, l: &Loaded, id: egui::Id, anchor: Rect, day: i64) {
     job.append(
         &dur_or_dash(secs),
         0.0,
-        fmt(font(Face::Mono, size::TEXT_2XS), tk.accent),
+        fmt(font(Face::Sans, size::TEXT_2XS), tk.accent),
     );
     if sessions > 0 {
         job.append(

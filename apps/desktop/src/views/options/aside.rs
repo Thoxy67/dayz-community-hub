@@ -381,7 +381,7 @@ fn facts(ui: &mut Ui, tk: &Tokens, info: &SteamLaunchInfoDto) {
                 let g = paint::galley_trunc(
                     ui,
                     &program,
-                    font(Face::Mono, size::TEXT_3XS),
+                    font(Face::Sans, size::TEXT_3XS),
                     Color32::PLACEHOLDER,
                     ui.available_width(),
                 );
@@ -405,14 +405,14 @@ fn facts(ui: &mut Ui, tk: &Tokens, info: &SteamLaunchInfoDto) {
                     let tg = paint::galley_wrap(
                         ui,
                         tool,
-                        font(Face::Mono, size::TEXT_XS),
+                        font(Face::Sans, size::TEXT_XS),
                         Color32::PLACEHOLDER,
                         w,
                     );
                     let word_w = paint::galley(
                         ui,
                         word,
-                        font(Face::Mono, size::TEXT_2XS),
+                        font(Face::Sans, size::TEXT_2XS),
                         Color32::PLACEHOLDER,
                     )
                     .size()

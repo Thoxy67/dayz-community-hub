@@ -101,7 +101,7 @@ impl Widget for Signal {
         } else {
             signal_color(&t, level)
         };
-        let f = font(Face::Mono, size::TEXT_2XS);
+        let f = font(Face::Sans, size::TEXT_2XS);
         let (text, unit): (String, bool) = if !self.label {
             (String::new(), false)
         } else if self.pending {
@@ -252,7 +252,7 @@ impl Widget for Players<'_> {
         let n = paint::galley(
             ui,
             &self.players.to_string(),
-            font(Face::MonoSemibold, size::TEXT_2XS),
+            font(Face::SansSemibold, size::TEXT_2XS),
             ink,
         );
         let ink_n = if self.loading {
@@ -265,7 +265,7 @@ impl Widget for Players<'_> {
         let m = paint::galley(
             ui,
             &format!("/{}", self.max),
-            font(Face::Mono, size::TEXT_2XS),
+            font(Face::Sans, size::TEXT_2XS),
             t.fg_faint,
         );
         paint::text_at(p, &m, x, line_y, t.fg_faint);
@@ -274,7 +274,7 @@ impl Widget for Players<'_> {
             let q = paint::galley(
                 ui,
                 &format!("+{}", self.queue),
-                font(Face::Mono, size::TEXT_2XS),
+                font(Face::Sans, size::TEXT_2XS),
                 t.warn,
             );
             paint::text_at(p, &q, x, line_y, t.warn);
@@ -283,7 +283,7 @@ impl Widget for Players<'_> {
             let b = paint::galley(
                 ui,
                 &self.bots.to_string(),
-                font(Face::Mono, size::TEXT_2XS),
+                font(Face::Sans, size::TEXT_2XS),
                 t.fg_faint,
             );
             let bx = rect.right() - b.size().x;
@@ -398,7 +398,7 @@ impl Widget for Flag<'_> {
                     let g = paint::galley(
                         ui,
                         &code,
-                        font(Face::Mono, size::TEXT_3XS * self.size / size::ICON),
+                        font(Face::Sans, size::TEXT_3XS * self.size / size::ICON),
                         t.fg_faint,
                     );
                     paint::text_center(ui.painter(), &g, rect, t.fg_faint);

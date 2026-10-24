@@ -169,7 +169,7 @@ fn place_row(ui: &mut Ui, l: &Loaded, i: usize, p: &PlaceStatDto, last: bool, ru
     let painter = ui.painter().clone();
 
     // Rank.
-    let rank = ph(ui, &(i + 1).to_string(), font(Face::Mono, size::TEXT_2XS));
+    let rank = ph(ui, &(i + 1).to_string(), font(Face::Sans, size::TEXT_2XS));
     draw(
         &painter,
         &rank,
@@ -226,7 +226,7 @@ fn place_row(ui: &mut Ui, l: &Loaded, i: usize, p: &PlaceStatDto, last: bool, ru
 
     // Bar, time.
     bar(ui, x_bar, x_bar + bar_w, cy, p.secs, l.derived.top_place);
-    let dur = ph(ui, &dur_or_dash(p.secs), font(Face::Mono, size::TEXT_2XS));
+    let dur = ph(ui, &dur_or_dash(p.secs), font(Face::Sans, size::TEXT_2XS));
     let dur_rect =
         Rect::from_center_size(Pos2::new(x_dur + 80.0 - dur.size().x / 2.0, cy), dur.size());
     draw(&painter, &dur, dur_rect.left(), cy, tk.fg);
@@ -337,7 +337,7 @@ fn place_tip(ui: &Ui, l: &Loaded, id: egui::Id, anchor: Rect, p: &PlaceStatDto) 
     job.append(
         &dur_or_dash(p.secs),
         0.0,
-        tf_fmt(font(Face::Mono, size::TEXT_2XS), tk.accent),
+        tf_fmt(font(Face::Sans, size::TEXT_2XS), tk.accent),
     );
     job.append(
         &tf("stats", "tipShare", &[("share", &share(l, p.secs))]),
@@ -401,7 +401,7 @@ fn map_row(ui: &mut Ui, l: &Loaded, m: &MapStatDto, run: &mut Run) {
     let x_bar = inner.left() + 112.0 + 8.0;
     let x_dur = (inner.right() - 72.0).max(x_bar);
     bar(ui, x_bar, x_dur - 8.0, cy, m.secs, l.derived.top_map);
-    let dur = ph(ui, &dur_or_dash(m.secs), font(Face::Mono, size::TEXT_2XS));
+    let dur = ph(ui, &dur_or_dash(m.secs), font(Face::Sans, size::TEXT_2XS));
     draw(&painter, &dur, inner.right() - dur.size().x, cy, tk.fg);
     if resp.clicked() {
         run.push(("stats.filter_text", json!({ "text": m.map })));
@@ -419,7 +419,7 @@ fn map_row(ui: &mut Ui, l: &Loaded, m: &MapStatDto, run: &mut Run) {
         job.append(
             &dur_or_dash(m.secs),
             0.0,
-            tf_fmt(font(Face::Mono, size::TEXT_2XS), tk.accent),
+            tf_fmt(font(Face::Sans, size::TEXT_2XS), tk.accent),
         );
         job.append(
             &tf("stats", "tipShare", &[("share", &share(l, m.secs))]),

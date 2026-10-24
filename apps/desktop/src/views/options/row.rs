@@ -290,7 +290,7 @@ pub fn show(
         Input::new(&mut draft.text)
             .size(FieldSize::Xs)
             .width(fw)
-            .kind(InputKind::Mono)
+            .kind(InputKind::Text)
             .numeric(kind.numeric())
             .placeholder(t("options", "valuePlaceholder"))
             .char_limit(1024)

@@ -36,7 +36,7 @@ pub fn baseline(g: &Galley) -> f32 {
 }
 
 /// Draws `g` with its left edge at `x` and its first baseline on `base`: texts of
-/// different faces on one line (stencil, mono figures, words) read as one line.
+/// different faces on one line (stencil, figures, words) read as one line.
 pub fn draw_on(p: &Painter, g: &Arc<Galley>, x: f32, base: f32, color: Color32) {
     p.galley(Pos2::new(x, base - baseline(g)), Arc::clone(g), color);
 }

@@ -123,7 +123,7 @@ impl SettingsView {
                                 } else {
                                     tf("settings", "steamLinked", &[("login", &f.steam_login)])
                                 };
-                                line(ui, &sub, Face::Mono, size::TEXT_2XS, tk.fg_faint);
+                                line(ui, &sub, Face::Sans, size::TEXT_2XS, tk.fg_faint);
                             });
                         });
                     });
@@ -310,7 +310,7 @@ impl SettingsView {
                         .show(ui, |ui| {
                             ui.add(
                                 Input::new(&mut self.form.f.steam_login)
-                                    .kind(InputKind::Mono)
+                                    .kind(InputKind::Text)
                                     .id_salt("set-login"),
                             );
                         });
@@ -544,7 +544,7 @@ impl SettingsView {
                                         egui::Label::new(
                                             egui::RichText::new(&self.install_error)
                                                 .font(crate::theme::font(
-                                                    Face::Mono,
+                                                    Face::Sans,
                                                     size::TEXT_2XS,
                                                 ))
                                                 .color(tk.err),
@@ -673,7 +673,7 @@ impl SettingsView {
                             let keep = lw + button_w(ui, detect, true) + 12.0;
                             ui.add(
                                 Input::new(&mut self.form.f.steam_id)
-                                    .kind(InputKind::Mono)
+                                    .kind(InputKind::Text)
                                     .placeholder("76561198000000000")
                                     .width(room(ui, keep))
                                     .id_salt("set-steamid"),
@@ -767,7 +767,7 @@ impl SettingsView {
                                                 sub.push_str(" · ");
                                                 sub.push_str(t("settings", "locationDetected"));
                                             }
-                                            line(ui, &sub, Face::Mono, size::TEXT_2XS, tk.fg_faint);
+                                            line(ui, &sub, Face::Sans, size::TEXT_2XS, tk.fg_faint);
                                         },
                                     );
                                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -852,7 +852,7 @@ impl SettingsView {
                             paint::text_at(ui.painter(), &g, mr.left(), mr.center().y, tk.fg_faint);
                             ui.add(
                                 Input::new(&mut self.lat)
-                                    .kind(InputKind::Mono)
+                                    .kind(InputKind::Text)
                                     .numeric(true)
                                     .placeholder(t("settings", "lat"))
                                     .width(96.0)
@@ -860,7 +860,7 @@ impl SettingsView {
                             );
                             ui.add(
                                 Input::new(&mut self.lon)
-                                    .kind(InputKind::Mono)
+                                    .kind(InputKind::Text)
                                     .numeric(true)
                                     .placeholder(t("settings", "lon"))
                                     .width(96.0)
@@ -963,7 +963,7 @@ impl SettingsView {
                                 ui.allocate_ui_with_layout(
                                     Vec2::new(64.0, r.rect.height()),
                                     Layout::right_to_left(Align::Center),
-                                    |ui| line(ui, &shown, Face::Mono, size::TEXT_XS, tk.fg),
+                                    |ui| line(ui, &shown, Face::Sans, size::TEXT_XS, tk.fg),
                                 );
                             });
                     }
@@ -1070,7 +1070,7 @@ impl SettingsView {
                                 ui.add(
                                     egui::Label::new(
                                         egui::RichText::new(ip)
-                                            .font(crate::theme::font(Face::Mono, size::TEXT_XS))
+                                            .font(crate::theme::font(Face::Sans, size::TEXT_XS))
                                             .color(tk.fg),
                                     )
                                     .selectable(true),

@@ -159,7 +159,7 @@ impl PadGlyph {
     fn measure(&self, ui: &Ui) -> (f32, Option<Arc<Galley>>) {
         let b = self.button;
         let h = glyph_h();
-        let g = pad_text(b, self.kind).map(|s| ph(ui, s, font(Face::MonoSemibold, size::TEXT_3XS)));
+        let g = pad_text(b, self.kind).map(|s| ph(ui, s, font(Face::SansSemibold, size::TEXT_3XS)));
         let gw = g.as_ref().map_or(0.0, |g| g.size().x);
         let w = if round_face(b) || b == PadButton::Dpad {
             h
@@ -528,7 +528,7 @@ impl<'a> ShortcutList<'a> {
             let tg = paint::tracked(
                 ui,
                 g.title,
-                font(Face::Mono, size::TEXT_3XS),
+                font(Face::Sans, size::TEXT_3XS),
                 Color32::PLACEHOLDER,
                 0.08,
                 true,

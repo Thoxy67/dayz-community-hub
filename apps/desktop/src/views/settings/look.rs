@@ -153,7 +153,7 @@ fn grid(ui: &mut Ui, cards: &[Card<'_>], worn: Option<&str>) -> Option<String> {
     out
 }
 
-/// A group's heading (`font-mono text-2xs tracking-[0.08em] uppercase`).
+/// A group's heading (`font-sans text-2xs tracking-[0.08em] uppercase`).
 fn group(ui: &mut Ui, label: &str, ic: Icon) {
     let tk = ui.tokens();
     ui.add_space(10.0);
@@ -164,7 +164,7 @@ fn group(ui: &mut Ui, label: &str, ic: Icon) {
         let g = paint::tracked(
             ui,
             label,
-            font(Face::Mono, size::TEXT_2XS),
+            font(Face::Sans, size::TEXT_2XS),
             tk.fg_faint,
             0.08,
             true,
@@ -236,7 +236,7 @@ impl SettingsView {
                                 );
                             }
                         });
-                    seasons(ui, cx);
+                    switches(ui, cx);
                     // Follow the system, and which dark and light preset that means.
                     block(ui, 10, false, None, |ui| {
                         ui.horizontal_wrapped(|ui| {
@@ -576,11 +576,19 @@ impl SettingsView {
     }
 }
 
-/// The seasonal themes (October, December) and their effects, each on or off.
-fn seasons(ui: &mut Ui, cx: &mut Ctx) {
+/// The window's rounded corners, the seasonal themes (October, December) and their
+/// effects, each on or off.
+fn switches(ui: &mut Ui, cx: &mut Ctx) {
     let p = &cx.prefs.get().ui;
-    let (themes, effects) = (p.seasonal_themes, p.seasonal_effects);
+    let (corners, themes, effects) = (p.rounded_corners, p.seasonal_themes, p.seasonal_effects);
     for (on, label, hint, switch, cmd) in [
+        (
+            corners,
+            "roundedCorners",
+            "roundedCornersHint",
+            "roundedCornersSwitch",
+            "ui.set_rounded_corners",
+        ),
         (
             themes,
             "seasonalThemes",

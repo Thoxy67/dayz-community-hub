@@ -1,5 +1,5 @@
 //! `ui/kbd`: a key, as a menu or a hint shows a shortcut.
-//! `rounded-xs border bg-bg px-1 font-mono text-3xs leading-3.5 text-fg-faint`, with a
+//! `rounded-xs border bg-bg px-1 font-sans text-3xs leading-3.5 text-fg-faint`, with a
 //! one-pixel drop under it.
 
 use egui::{Color32, CornerRadius, Rect, Response, Sense, Ui, Vec2, Widget};
@@ -22,14 +22,14 @@ impl<'a> Kbd<'a> {
 
     /// The width it will take, for layouts that reserve room for it.
     pub fn width(ui: &Ui, keys: &str) -> f32 {
-        let g = paint::galley(ui, keys, font(Face::Mono, size::TEXT_3XS), Color32::WHITE);
+        let g = paint::galley(ui, keys, font(Face::Sans, size::TEXT_3XS), Color32::WHITE);
         g.size().x + 10.0
     }
 
     /// Paints it with its left edge at `x`, centred on `cy`; returns its rect.
     pub fn paint_at(ui: &Ui, keys: &str, x: f32, cy: f32) -> Rect {
         let t = ui.tokens();
-        let g = paint::galley(ui, keys, font(Face::Mono, size::TEXT_3XS), t.fg_faint);
+        let g = paint::galley(ui, keys, font(Face::Sans, size::TEXT_3XS), t.fg_faint);
         let r = Rect::from_min_size(egui::pos2(x, cy - H / 2.0), Vec2::new(g.size().x + 10.0, H));
         let p = ui.painter();
         p.rect_filled(

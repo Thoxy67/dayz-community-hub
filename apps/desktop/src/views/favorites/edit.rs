@@ -453,7 +453,7 @@ fn edit_dialog(ctx: &egui::Context, cx: &mut Ctx, st: &mut DialogsState) {
                 field_label(ui, t("favorites", "launchArgs"));
                 ui.add(
                     Input::new(&mut f.args)
-                        .kind(InputKind::Mono)
+                        .kind(InputKind::Text)
                         .placeholder("-maxMem=4096 -world=empty")
                         .char_limit(dz_profile::favorites::MAX_ARGS)
                         .id_salt("fav-edit-args"),

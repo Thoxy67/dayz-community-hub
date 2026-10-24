@@ -118,7 +118,7 @@ pub(super) fn language_menu(ui: &mut Ui, cx: &mut Ctx, rect: Rect) {
             let code = paint::tracked(
                 ui,
                 l.code(),
-                font(Face::Mono, size::TEXT_3XS),
+                font(Face::Sans, size::TEXT_3XS),
                 tk.fg_faint,
                 0.0,
                 true,

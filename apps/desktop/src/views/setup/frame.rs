@@ -65,7 +65,8 @@ pub(super) fn show(ctx: &egui::Context, cx: &mut Ctx, w: &mut Wizard, acts: &mut
             // The whole region answers the pointer: nothing behind it does.
             let _ = ui.allocate_rect(rect, Sense::CLICK);
             let tk = ui.tokens();
-            ui.painter().rect_filled(rect, 0, tk.bg);
+            // Down to the window's bottom corners: rounded as the window's are.
+            ui.painter().rect_filled(rect, bottom_corners(ctx), tk.bg);
             let aside_r =
                 Rect::from_min_size(rect.min, vec2(ASIDE_W.min(rect.width()), rect.height()));
             let pane_r = Rect::from_min_max(pos2(aside_r.right(), rect.top()), rect.max);
@@ -96,6 +97,16 @@ fn keys(ctx: &egui::Context, cx: &Ctx, _w: &Wizard, acts: &mut Acts) {
 }
 
 // ── the aside ────────────────────────────────────────────────────────────────
+
+/// The window's bottom corners, which the wizard reaches.
+fn bottom_corners(ctx: &egui::Context) -> CornerRadius {
+    let r = crate::kit::paint::window_radius(ctx);
+    CornerRadius {
+        sw: r,
+        se: r,
+        ..CornerRadius::ZERO
+    }
+}
 
 fn aside(ui: &mut Ui, w: &Wizard, r: Rect, acts: &mut Acts) {
     let tk = ui.tokens();
@@ -227,7 +238,7 @@ fn step_row(
         let g = paint::galley(
             ui,
             &(i + 1).to_string(),
-            font(Face::Mono, size::TEXT_2XS),
+            font(Face::Sans, size::TEXT_2XS),
             Color32::PLACEHOLDER,
         );
         paint::text_center(p, &g, circle, dim(ink));
@@ -284,7 +295,7 @@ fn pane(ui: &mut Ui, cx: &mut Ctx, w: &mut Wizard, r: Rect, rise: f32, acts: &mu
         pos2(r.left(), (r.bottom() - FOOTER_H).max(bar.bottom())),
         r.max,
     );
-    p.rect_filled(foot, 0, tk.panel);
+    p.rect_filled(foot, bottom_corners(ui.ctx()), tk.panel);
     p.hline(
         foot.x_range(),
         foot.top() + 0.5,
@@ -460,7 +471,7 @@ fn footer(ui: &mut Ui, cx: &Ctx, w: &Wizard, r: Rect, acts: &mut Acts) {
             }
         }
         let n = format!("{} / {}", w.index() + 1, Step::ALL.len());
-        let g = paint::galley(ui, &n, font(Face::Mono, size::TEXT_3XS), tk.fg_faint);
+        let g = paint::galley(ui, &n, font(Face::Sans, size::TEXT_3XS), tk.fg_faint);
         let (cr, _) = ui.allocate_exact_size(g.size(), Sense::hover());
         ui.painter().galley(cr.min, g, tk.fg_faint);
     });
@@ -751,7 +762,7 @@ fn summary_row(ui: &mut Ui, tk: &Tokens, row: &Row, last: bool) {
     let vg = ph_trunc(
         ui,
         &row.value,
-        font(Face::Mono, size::TEXT_2XS),
+        font(Face::Sans, size::TEXT_2XS),
         (r.right() - 12.0 - vx).max(8.0),
     );
     let ink = if row.ok {

@@ -118,6 +118,8 @@ pub struct UiPrefs {
     pub seasonal_themes: bool,
     /// A seasonal theme draws its effects (snow, fog…); off keeps only its colours.
     pub seasonal_effects: bool,
+    /// The window's corners are rounded while it is neither maximised nor full screen.
+    pub rounded_corners: bool,
     /// The month (`2026-10`) the player picked a theme by hand during, which keeps the
     /// seasonal theme away until the next period. Anything but a string reads as none.
     #[serde(deserialize_with = "lenient_string")]
@@ -149,6 +151,7 @@ impl Default for UiPrefs {
             pad_keyboard: OskChoice::Auto,
             seasonal_themes: true,
             seasonal_effects: true,
+            rounded_corners: true,
             season_opt_out: None,
         }
     }

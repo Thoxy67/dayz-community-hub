@@ -410,7 +410,7 @@ fn failed_body(ui: &mut Ui, err: &str, loading: bool, run: &mut Vec<(&'static st
     ui.add(
         egui::Label::new(
             egui::RichText::new(err)
-                .font(font(Face::Mono, size::TEXT_2XS))
+                .font(font(Face::Sans, size::TEXT_2XS))
                 .color(tk.fg_faint),
         )
         .wrap(),

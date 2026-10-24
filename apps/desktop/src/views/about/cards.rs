@@ -183,7 +183,7 @@ fn machine(ui: &mut Ui, specs: Specs<'_>, run: &mut Run) {
             ui.add(
                 egui::Label::new(
                     RichText::new(e)
-                        .font(font(Face::Mono, size::TEXT_2XS))
+                        .font(font(Face::Sans, size::TEXT_2XS))
                         .color(tk.err),
                 )
                 .wrap()
@@ -221,10 +221,10 @@ fn machine(ui: &mut Ui, specs: Specs<'_>, run: &mut Run) {
                 ("logical", &s.logical_cores),
             ],
         );
-        value(ui, &cores, Face::Mono, size::TEXT_2XS, tk.fg_muted);
+        value(ui, &cores, Face::Sans, size::TEXT_2XS, tk.fg_muted);
     });
     fact(ui, lucide::MEMORY_STICK, t("about", "systemMemory"), |ui| {
-        value(ui, &gb(s.total_memory_mb), Face::Mono, size::TEXT_XS, tk.fg);
+        value(ui, &gb(s.total_memory_mb), Face::Sans, size::TEXT_XS, tk.fg);
     });
     fact(ui, lucide::GPU, t("about", "systemGpu"), |ui| {
         if s.gpus.is_empty() {
@@ -243,7 +243,7 @@ fn machine(ui: &mut Ui, specs: Specs<'_>, run: &mut Run) {
             value(ui, &g.name, Face::Sans, size::TEXT_XS, tk.fg);
             if let Some(v) = g.vram_mb {
                 let vram = format!("{} VRAM", gb(v));
-                value(ui, &vram, Face::Mono, size::TEXT_2XS, tk.fg_muted);
+                value(ui, &vram, Face::Sans, size::TEXT_2XS, tk.fg_muted);
             }
         }
     });

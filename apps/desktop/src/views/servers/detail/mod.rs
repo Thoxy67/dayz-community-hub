@@ -499,7 +499,7 @@ fn hero(ui: &mut Ui, m: &Model, time: &str, closable: bool, run: &mut Run) {
                         let raw_differs =
                             !m.map.is_empty() && shown.to_lowercase() != m.map.to_lowercase();
                         let raw =
-                            raw_differs.then(|| ph(ui, &m.map, font(Face::Mono, size::TEXT_3XS)));
+                            raw_differs.then(|| ph(ui, &m.map, font(Face::Sans, size::TEXT_3XS)));
                         let room = w - raw.as_ref().map_or(0.0, |g| g.size().x + 8.0);
                         let g = paint::tracked(
                             ui,
@@ -667,7 +667,7 @@ fn meta_line(ui: &mut Ui, m: &Model) {
             .or_else(|| m.a2s.as_ref().map(|a| a.version.clone()))
             .unwrap_or_default();
         if !version.is_empty() {
-            let g = ph(ui, &format!("v{version}"), font(Face::Mono, size::TEXT_2XS));
+            let g = ph(ui, &format!("v{version}"), font(Face::Sans, size::TEXT_2XS));
             let (r, _) = ui.allocate_exact_size(Vec2::new(g.size().x, 16.0), Sense::hover());
             draw(ui.painter(), &g, r.left(), r.center().y, tk.fg_faint);
         }
@@ -779,7 +779,7 @@ fn live_strip(ui: &mut Ui, m: &Model, time: &str, run: &mut Run) {
             let g = ph_trunc(
                 ui,
                 &s,
-                font(Face::Mono, size::TEXT_3XS),
+                font(Face::Sans, size::TEXT_3XS),
                 ui.available_width(),
             );
             let (r, _) = ui.allocate_exact_size(g.size(), Sense::hover());
@@ -806,7 +806,7 @@ fn live_strip(ui: &mut Ui, m: &Model, time: &str, run: &mut Run) {
             } else {
                 crate::i18n::format::NONE.to_string()
             };
-            let g = ph(ui, &s, font(Face::Mono, size::TEXT_2XS));
+            let g = ph(ui, &s, font(Face::Sans, size::TEXT_2XS));
             let (r, _) = ui.allocate_exact_size(Vec2::new(g.size().x, 20.0), Sense::hover());
             draw(ui.painter(), &g, r.left(), r.center().y, tk.fg_muted);
         }

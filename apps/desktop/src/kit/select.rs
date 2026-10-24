@@ -5,7 +5,7 @@
 //! p-1`), at least the trigger's width and 8rem, at most 20rem tall and never past the
 //! window's edge; items `size::MENU_ROW` high (`rounded-xs px-1.5 text-xs
 //! text-fg-muted`, lit on hover), the chosen one accent with a tick. Options with a
-//! `group` sit under a mono, tracked heading, groups in first-seen order. Arrows
+//! `group` sit under a tracked heading, groups in first-seen order. Arrows
 //! move, Enter picks, Escape closes; typing a letter jumps to a match.
 
 use egui::{
@@ -336,13 +336,13 @@ fn item(ui: &mut Ui, label: &str, selected: bool, faint: bool, highlighted: bool
     resp
 }
 
-/// A group's heading: `px-1.5 pt-1.5 pb-0.5 font-mono text-2xs tracking-[0.08em] uppercase`.
+/// A group's heading: `px-1.5 pt-1.5 pb-0.5 font-sans text-2xs tracking-[0.08em] uppercase`.
 pub(crate) fn heading(ui: &mut Ui, text: &str, width: f32) {
     let t = ui.tokens();
     let g = paint::tracked(
         ui,
         text,
-        font(Face::Mono, size::TEXT_2XS),
+        font(Face::Sans, size::TEXT_2XS),
         t.fg_faint,
         0.08,
         true,

@@ -148,10 +148,11 @@ impl<'a> Dialog<'a> {
         let modal = egui::Modal::new(self.id)
             .area(area)
             .frame(egui::Frame::NONE)
-            .backdrop_color(paint::alpha(t.plot, 0.75 * a));
+            .backdrop_color(egui::Color32::TRANSPARENT);
         let mut close = false;
         let footer_w_id = self.id.with("footer-w");
         let r = modal.show(ctx, |ui| {
+            paint::veil(ui.painter(), paint::alpha(t.plot, 0.75 * a));
             ui.multiply_opacity(a);
             let scale = 0.97 + 0.03 * a;
             let w = w * scale;

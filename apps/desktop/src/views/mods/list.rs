@@ -461,13 +461,14 @@ fn group_head(
     let g = crate::shell::stencil(ui, t("mods", key), egui::Color32::PLACEHOLDER, None);
     draw(p, &g, x, cy, ink);
     x += g.size().x + 8.0;
-    let n = ph(ui, &count.to_string(), font(Face::Mono, size::TEXT_2XS));
-    draw(p, &n, x, cy - 2.0, tk.fg_faint);
+    // The count in the label's face: one family on the line.
+    let n = crate::shell::stencil(ui, &count.to_string(), egui::Color32::PLACEHOLDER, None);
+    draw(p, &n, x, cy, tk.fg_faint);
     if bytes > 0 {
         let s = ph(
             ui,
             &format::bytes(bytes as f64),
-            font(Face::Mono, size::TEXT_2XS),
+            font(Face::Sans, size::TEXT_2XS),
         );
         draw(
             p,
@@ -642,7 +643,7 @@ fn mod_row(
                     .interact(cr, ui.scope_id().with(("ingame", row.id)), Sense::hover())
                     .tip(t("mods", tip));
             }
-            let sg = ph(ui, &m.size_human, font(Face::Mono, size::TEXT_2XS));
+            let sg = ph(ui, &m.size_human, font(Face::Sans, size::TEXT_2XS));
             draw(
                 ui.painter(),
                 &sg,
@@ -652,7 +653,7 @@ fn mod_row(
             );
             if let Some(x) = cols.version {
                 let d = format::date(m.local_updated);
-                let g = ph_trunc(ui, &d, font(Face::Mono, size::TEXT_2XS), x.span());
+                let g = ph_trunc(ui, &d, font(Face::Sans, size::TEXT_2XS), x.span());
                 draw(ui.painter(), &g, x.min, cy, tk.fg_muted);
                 // The date is your copy's; the Workshop's, when known, on hover.
                 let mut tip = format!("{}: {d}", t("mods", "yourCopy"));
@@ -676,7 +677,7 @@ fn mod_row(
             } else {
                 format::NONE.to_string()
             };
-            let sg = ph(ui, &s, font(Face::Mono, size::TEXT_2XS));
+            let sg = ph(ui, &s, font(Face::Sans, size::TEXT_2XS));
             draw(
                 ui.painter(),
                 &sg,
@@ -1051,7 +1052,7 @@ impl StateLook {
                 let g = ph_trunc(
                     ui,
                     s,
-                    font(Face::Mono, size::TEXT_2XS),
+                    font(Face::Sans, size::TEXT_2XS),
                     ui.available_width(),
                 );
                 let (r, _) = ui.allocate_exact_size(Vec2::new(g.size().x, 14.0), Sense::hover());

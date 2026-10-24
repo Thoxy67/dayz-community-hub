@@ -316,6 +316,9 @@ pub struct HubApp {
     control: Option<crate::control::Control>,
     /// Minimised now: eframe's save keeps the last geometry ([`eframe::App::save`]).
     minimized: bool,
+    /// The corners last asked of Windows (`platform::window::round_corners`).
+    #[cfg_attr(not(windows), allow(dead_code))]
+    corners: Option<bool>,
     /// The last geometry eframe saved while the window was not minimised.
     saved_window: Option<String>,
     /// The tray, closing to it, the game's start and stop, notifications.
@@ -377,6 +380,7 @@ impl HubApp {
             reduced: None,
             control: None,
             minimized: false,
+            corners: None,
             saved_window: None,
             life: crate::platform::life::Life::new(),
             pumped: false,
@@ -779,15 +783,45 @@ impl HubApp {
         // The seasonal effects: whether they show and move this frame (the title's
         // candle reads it as the bar is drawn).
         shell::seasons::begin(ctx, &c);
+        // Rounded corners while the window stands free on a desktop that shows through
+        // it: the title bar holds the top two, the status bar the bottom two.
+        let radius = window_radius(ctx, c.prefs.get().ui.rounded_corners);
+        crate::kit::paint::set_window_radius(ctx, radius);
+        // The window's ground under the panels, out to its last pixel: the window is
+        // transparent, and the panels stop at the content rect, rounded to egui's grid,
+        // which at a fractional scale leaves a strip of the window's edge bare.
+        let window = ctx.viewport_rect().union(full);
+        let ground = if radius > 0 {
+            window
+        } else {
+            window.expand(2.0)
+        };
+        ctx.layer_painter(egui::LayerId::background()).rect_filled(
+            ground,
+            egui::CornerRadius::same(radius),
+            tk.bg,
+        );
+        let (top, bottom) = (
+            egui::CornerRadius {
+                nw: radius,
+                ne: radius,
+                ..egui::CornerRadius::ZERO
+            },
+            egui::CornerRadius {
+                sw: radius,
+                se: radius,
+                ..egui::CornerRadius::ZERO
+            },
+        );
         egui::Panel::top("shell.titlebar")
             .exact_size(size::TITLEBAR)
             .resizable(false)
-            .frame(Frame::new().fill(tk.bg))
+            .frame(Frame::new().fill(tk.bg).corner_radius(top))
             .show(ui, |ui| shell::titlebar(ui, &mut c));
         let status = egui::Panel::bottom("shell.statusbar")
             .exact_size(shell::STATUSBAR_HEIGHT)
             .resizable(false)
-            .frame(Frame::new().fill(tk.bg))
+            .frame(Frame::new().fill(tk.bg).corner_radius(bottom))
             .show(ui, |ui| shell::statusbar(ui, &mut c))
             .response
             .rect;
@@ -848,6 +882,42 @@ impl HubApp {
         }
         // The controller's focus ring, over what this frame drew.
         crate::pad::paint(ctx, &mut c);
+        // A rounded window's edge, a hairline over everything: without the frame a
+        // desktop draws around a window, its rounded corners would melt into a dark
+        // background.
+        if radius > 0 {
+            ctx.layer_painter(egui::LayerId::new(
+                egui::Order::Tooltip,
+                egui::Id::unique("dzch.window.edge"),
+            ))
+            .rect_stroke(
+                window,
+                egui::CornerRadius::same(radius),
+                egui::Stroke::new(1.0, tk.border_strong),
+                egui::StrokeKind::Inside,
+            );
+        }
+    }
+}
+
+/// The window's corner radius this frame: rounded only on a window that shows the
+/// desktop through it (`platform::window::see_through`), turned on, neither maximised
+/// nor full screen.
+fn window_radius(ctx: &Context, on: bool) -> u8 {
+    // A window as large as its screen is maximised whatever the system says (a
+    // compositor may not report it).
+    let free = ctx.input(|i| {
+        let v = i.viewport();
+        let screen_sized = match (v.inner_rect, v.monitor_size) {
+            (Some(r), Some(m)) => r.width() >= m.x - 2.0 && r.height() >= m.y - 64.0,
+            _ => false,
+        };
+        v.maximized != Some(true) && v.fullscreen != Some(true) && !screen_sized
+    });
+    if on && free && crate::platform::window::see_through() {
+        size::RADIUS_LG
+    } else {
+        0
     }
 }
 
@@ -926,7 +996,7 @@ fn init_screen(ui: &mut egui::Ui, c: &mut Ctx) {
                             ui.add(
                                 egui::Label::new(
                                     egui::RichText::new(e)
-                                        .font(theme::font(Face::Mono, size::TEXT_2XS))
+                                        .font(theme::font(Face::Sans, size::TEXT_2XS))
                                         .color(tk.fg_muted),
                                 )
                                 .selectable(true),
@@ -966,6 +1036,14 @@ impl eframe::App for HubApp {
     /// life ([`crate::platform::life`]) follows the game and the tray out of sight.
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         self.life.platform(ctx, frame);
+        #[cfg(windows)]
+        {
+            let on = self.prefs.get().ui.rounded_corners;
+            if self.corners != Some(on) {
+                self.corners = Some(on);
+                crate::platform::window::round_corners(frame, on);
+            }
+        }
         // `logic` always comes before the pass's `ui`: `ui` knows from this flag that
         // the events were taken in.
         self.pumped = self.started && self.life.out_of_sight(ctx);
@@ -1005,6 +1083,12 @@ impl eframe::App for HubApp {
 
     /// The window's geometry is the only thing eframe keeps (`platform::window`); egui's
     /// own memory is not (the preferences hold the panes).
+    /// Nothing behind the panels: a rounded corner shows the desktop (on an opaque
+    /// window the panels cover everything anyway).
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        [0.0; 4]
+    }
+
     fn persist_egui_memory(&self) -> bool {
         false
     }

@@ -307,6 +307,35 @@ pub fn tick(painter: &Painter, x: f32, cy: f32, t: &Tokens) {
     painter.rect_filled(r, CornerRadius::same(1), alpha(t.accent, 0.6));
 }
 
+/// The window's corner radius this frame: rounded while it stands free on a desktop
+/// that shows through it (the app sets it each frame), square when maximised, full
+/// screen, opaque or turned off.
+pub fn window_radius(ctx: &egui::Context) -> u8 {
+    ctx.data(|d| d.get_temp::<u8>(window_radius_id()))
+        .unwrap_or(0)
+}
+
+/// Set the window's corner radius for this frame (see [`window_radius`]).
+pub fn set_window_radius(ctx: &egui::Context, radius: u8) {
+    ctx.data_mut(|d| d.insert_temp(window_radius_id(), radius));
+}
+
+fn window_radius_id() -> Id {
+    Id::unique("kit::paint.window_radius")
+}
+
+/// A veil over the whole window, its corners following the window's: a square one
+/// would darken the desktop seen through a rounded corner.
+pub fn veil(painter: &Painter, color: Color32) {
+    let ctx = painter.ctx();
+    let r = window_radius(ctx);
+    painter.with_clip_rect(ctx.content_rect()).rect_filled(
+        ctx.content_rect(),
+        CornerRadius::same(r),
+        color,
+    );
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {

@@ -1234,6 +1234,18 @@ pub static COMMANDS: &[CommandSpec] = &[
         }
     ),
     cmd!(
+        "ui.set_rounded_corners",
+        ("settings", "roundedCorners"),
+        "settings",
+        |cx, a| {
+            let now = cx.prefs.get().ui.rounded_corners;
+            let on = arg_bool(a, "on").unwrap_or(!now);
+            if on != now {
+                cx.prefs.edit().ui.rounded_corners = on;
+            }
+        }
+    ),
+    cmd!(
         "theme.set_pair",
         ("theme", "followSystem"),
         "theme",

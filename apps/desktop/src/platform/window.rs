@@ -19,9 +19,14 @@
 //! - **Icon.** [`icon`] is the title-bar / taskbar / Alt+Tab icon (`WM_SETICON` on
 //!   Windows, `_NET_WM_ICON` on X11); the Windows executable also carries `icon.ico`
 //!   (`build.rs`), which Explorer and the registrations show.
+//! - **Corners.** Rounded while the window stands free (`HubApp::draw`). On Linux the
+//!   window is transparent and draws its own corners, once the surface it got can show
+//!   the desktop through ([`note_alpha_modes`]; else it stays square, not black-cornered).
+//!   On Windows 11 the system rounds them ([`round_corners`]), the window opaque.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use egui::{IconData, ViewportBuilder};
 
@@ -43,6 +48,53 @@ pub(crate) const PNG: &[u8] = include_bytes!("../../assets/app/icon-256.png");
 /// rules out).
 pub fn icon() -> IconData {
     eframe::icon_data::from_png_bytes(PNG).unwrap_or_default()
+}
+
+/// The window's surface blends with the desktop (`note_alpha_modes`).
+static SEE_THROUGH: AtomicBool = AtomicBool::new(false);
+
+/// Whether the window draws on a surface that shows the desktop through it: only then
+/// may it round its own corners.
+pub fn see_through() -> bool {
+    SEE_THROUGH.load(Ordering::Relaxed)
+}
+
+/// Record whether the window's surface can blend with the desktop, from the alpha modes
+/// it offers (eframe picks a blending one for a transparent window when there is one).
+pub fn note_alpha_modes(modes: &[eframe::wgpu::CompositeAlphaMode]) {
+    use eframe::wgpu::CompositeAlphaMode as M;
+    let blends = modes
+        .iter()
+        .any(|m| matches!(m, M::PreMultiplied | M::PostMultiplied));
+    SEE_THROUGH.store(blends, Ordering::Relaxed);
+}
+
+/// Ask Windows 11 to round the window's corners, or not (`DWMWA_WINDOW_CORNER_PREFERENCE`;
+/// Windows 10 has no such thing and says no, which changes nothing). The system squares
+/// a maximised window by itself.
+#[cfg(windows)]
+pub fn round_corners(frame: &eframe::Frame, on: bool) {
+    use eframe::wgpu::rwh::{HasWindowHandle, RawWindowHandle};
+    use windows_sys::Win32::Graphics::Dwm::{
+        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWMWCP_ROUND, DwmSetWindowAttribute,
+    };
+    let Ok(h) = frame.window_handle() else {
+        return;
+    };
+    let RawWindowHandle::Win32(w) = h.as_raw() else {
+        return;
+    };
+    let pref = if on { DWMWCP_ROUND } else { DWMWCP_DONOTROUND };
+    // SAFETY: `w.hwnd` is the live window's handle; the attribute is a 4-byte enum read
+    // from `pref` during the call.
+    unsafe {
+        DwmSetWindowAttribute(
+            w.hwnd.get() as _,
+            DWMWA_WINDOW_CORNER_PREFERENCE as u32,
+            std::ptr::from_ref(&pref).cast(),
+            std::mem::size_of_val(&pref) as u32,
+        );
+    }
 }
 
 /// `window.ron` in `dir`.

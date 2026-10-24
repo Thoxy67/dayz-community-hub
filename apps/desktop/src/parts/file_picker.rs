@@ -488,7 +488,7 @@ pub fn show(cx: &mut Ctx) {
 /// where the browser is.
 fn tail(ui: &Ui, path: &str, w: f32) -> std::sync::Arc<egui::Galley> {
     let tk = ui.tokens();
-    let f = font(Face::Mono, size::TEXT_XS);
+    let f = font(Face::Sans, size::TEXT_XS);
     let full = paint::galley(ui, path, f.clone(), tk.fg_muted);
     if full.size().x <= w {
         return full;

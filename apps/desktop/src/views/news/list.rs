@@ -241,7 +241,7 @@ fn row(
     let age = paint::galley(
         ui,
         &format::relative(item.ts),
-        font(Face::Mono, size::TEXT_3XS),
+        font(Face::Sans, size::TEXT_3XS),
         tk.fg_faint,
     );
     let age_rect = Rect::from_min_size(
@@ -254,9 +254,10 @@ fn row(
         let g = paint::tracked(
             ui,
             t("news", "latest"),
-            font(Face::DisplayBold, size::TEXT_2XS),
+            // The meta line's face: one family beside the category and the age.
+            font(Face::SansSemibold, size::TEXT_3XS),
             tk.accent,
-            0.12,
+            0.06,
             true,
             None,
         );
@@ -274,7 +275,7 @@ fn row(
             c,
             font(Face::Sans, size::TEXT_3XS),
             tk.fg_faint,
-            0.0,
+            0.06,
             true,
             Some(max),
         );

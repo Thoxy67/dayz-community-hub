@@ -50,7 +50,7 @@ const MAP_W: f32 = 136.0;
 /// date and time in the normal density.
 const EXTRA_W: f32 = 140.0;
 
-/// The list's own column in the density worn: its date (mono, `TEXT_3XS`) grows with the
+/// The list's own column in the density worn: its date (`TEXT_3XS`) grows with the
 /// pad density's text.
 fn extra_w() -> f32 {
     EXTRA_W * size::text(size::TEXT_3XS) / size::TEXT_3XS
@@ -339,7 +339,7 @@ const MAX_LABELS_SHOWN: usize = 3;
 /// A label pill's text is cut past this width.
 const LABEL_MAX_W: f32 = 72.0;
 
-/// The list's own column (`wide`): two lines, the second faint mono, with a hint.
+/// The list's own column (`wide`): two lines, the second faint, with a hint.
 #[derive(Clone, Copy, Debug)]
 pub struct RowExtra<'a> {
     pub top: &'a str,
@@ -505,7 +505,7 @@ impl RowCache {
                 self.rows.clear();
                 self.words = Some(Words {
                     flags: FlagWords::new(ui),
-                    ms: ph(ui, "ms", font(Face::Mono, size::TEXT_2XS)),
+                    ms: ph(ui, "ms", font(Face::Sans, size::TEXT_2XS)),
                     dash: ph(ui, i18n::format::NONE, font(Face::Sans, size::TEXT_XS)),
                 });
             }
@@ -645,13 +645,13 @@ impl<'a> ServerListRow<'a> {
     fn lay_out(&self, ui: &Ui, cols: &ListColumns, name_w: f32, stamp: u64, pass: u64) -> Laid {
         let game = self.game(ui.ctx());
         let d = &self.data;
-        let mono_2xs = font(Face::Mono, size::TEXT_2XS);
-        let mono_3xs = font(Face::Mono, size::TEXT_3XS);
+        let small_2xs = font(Face::Sans, size::TEXT_2XS);
+        let small_3xs = font(Face::Sans, size::TEXT_3XS);
         let server_w = cols.server.span();
         let address = ph_trunc(
             ui,
             &format!("{}:{}", d.ip, d.game_port),
-            mono_2xs.clone(),
+            small_2xs.clone(),
             (server_w - 16.0).max(20.0),
         );
         // The version only when it tells something: not the player's, or theirs unknown.
@@ -661,7 +661,7 @@ impl<'a> ServerListRow<'a> {
         let version_shown = game.is_none() || version_other;
         let version_room = server_w - address.size().x - 16.0 - 8.0;
         let version = (version_shown && !d.version.is_empty() && version_room > 8.0)
-            .then(|| ph_trunc(ui, d.version, mono_3xs.clone(), version_room));
+            .then(|| ph_trunc(ui, d.version, small_3xs.clone(), version_room));
         let map = match cols.map {
             Some(m) if !d.map.is_empty() => Some(ph_trunc(
                 ui,
@@ -672,27 +672,27 @@ impl<'a> ServerListRow<'a> {
             _ => None,
         };
         let time =
-            (!d.map.is_empty() && !d.time.is_empty()).then(|| ph(ui, d.time, mono_3xs.clone()));
+            (!d.map.is_empty() && !d.time.is_empty()).then(|| ph(ui, d.time, small_3xs.clone()));
         let (ping, ping_unit) = ping_text(d.ping_ms, d.ping_pending);
         let mods = (d.mods_count > 0).then(|| {
             (
-                ph(ui, &d.mods_count.to_string(), mono_2xs.clone()),
+                ph(ui, &d.mods_count.to_string(), small_2xs.clone()),
                 mods_extra(d.mods_missing, d.mods_stale)
-                    .map(|e| ph(ui, &e, font(Face::MonoSemibold, size::TEXT_2XS))),
+                    .map(|e| ph(ui, &e, font(Face::SansSemibold, size::TEXT_2XS))),
             )
         });
         let friends = (!self.friends.is_empty()).then(|| {
             ph(
                 ui,
                 &self.friends.len().to_string(),
-                font(Face::MonoSemibold, size::TEXT_3XS),
+                font(Face::SansSemibold, size::TEXT_3XS),
             )
         });
-        let tag = self.tag.map(|t| ph(ui, t.text, mono_2xs.clone()));
+        let tag = self.tag.map(|t| ph(ui, t.text, small_2xs.clone()));
         let extra = match (self.extra, cols.extra) {
             (Some(e), Some(x)) => Some((
                 ph_trunc(ui, e.top, font(Face::Sans, size::TEXT_2XS), x.span()),
-                ph_trunc(ui, e.bottom, mono_3xs.clone(), x.span()),
+                ph_trunc(ui, e.bottom, small_3xs.clone(), x.span()),
             )),
             _ => None,
         };
@@ -715,7 +715,7 @@ impl<'a> ServerListRow<'a> {
         }
         let more = self.labels.len().saturating_sub(labels.len());
         let labels_more = (more > 0).then(|| {
-            let g = ph(ui, &format!("+{more}"), mono_3xs.clone());
+            let g = ph(ui, &format!("+{more}"), small_3xs.clone());
             room -= g.size().x + 4.0;
             g
         });
@@ -746,7 +746,7 @@ impl<'a> ServerListRow<'a> {
             map,
             time,
             phase: day_phase(d.time),
-            ping: ph(ui, &ping, mono_2xs),
+            ping: ph(ui, &ping, small_2xs),
             ping_unit,
             players: PlayersText::new(ui, d.players, d.max_players, d.bots),
             mods,
@@ -816,7 +816,8 @@ impl<'a> ServerListRow<'a> {
         // Room for the name: the server column less what follows it on its line.
         let words = cache.words.as_ref()?;
         let mut fw = flags_width(&d.flags, &words.flags);
-        // Plex Mono advances 0.6em: the badges' widths are known before laying them out.
+        // Plex Sans's digits advance 0.6em (tabular): the friends badge's width is known
+        // before laying it out; the tag's words are measured.
         let friends_w = if self.friends.is_empty() {
             0.0
         } else {
@@ -824,7 +825,7 @@ impl<'a> ServerListRow<'a> {
             6.0 + 4.0 + 10.0 + 2.0 + 0.6 * size::text(size::TEXT_3XS) * digits + 4.0
         };
         let mut tag_w = self.tag.map_or(0.0, |t| {
-            6.0 + 12.0 + 0.6 * size::text(size::TEXT_2XS) * t.text.chars().count() as f32
+            6.0 + 12.0 + ph(ui, t.text, font(Face::Sans, size::TEXT_2XS)).size().x
         });
         let room = |fw: f32, tag_w: f32| {
             let flags = if fw > 0.0 { 6.0 + fw } else { 0.0 };

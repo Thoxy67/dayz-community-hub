@@ -29,7 +29,7 @@ pub fn show(ui: &mut Ui, st: &mut StatsState, run: &mut Run) {
             ui,
             |ui| {
                 let tk = ui.tokens();
-                let g = ph(ui, &count, font(Face::Mono, size::TEXT_2XS));
+                let g = ph(ui, &count, font(Face::Sans, size::TEXT_2XS));
                 let (r, _) = ui.allocate_exact_size(g.size(), Sense::hover());
                 draw(ui.painter(), &g, r.left(), r.center().y, tk.fg_faint);
             },
@@ -155,7 +155,7 @@ fn rows(ui: &mut Ui, st: &StatsState, run: &mut Run) {
         let x_dur = x_map + 112.0 + 12.0;
         let x_act = x_dur + 136.0 + 12.0;
         let cy = rect.center().y;
-        let f2 = font(Face::Mono, size::TEXT_2XS);
+        let f2 = font(Face::Sans, size::TEXT_2XS);
 
         let when = ph_trunc(ui, &format::date_time(r.start), f2.clone(), 152.0);
         draw(&p, &when, rect.left(), cy, tk.fg_muted);

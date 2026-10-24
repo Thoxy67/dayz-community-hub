@@ -441,7 +441,7 @@ fn card(ui: &mut Ui, st: &mut UiState, s: &Shown, acts: &mut Vec<Act>, tk: &crat
                 );
                 ui.label(
                     egui::RichText::new(text)
-                        .font(font(Face::Mono, size::TEXT_3XS))
+                        .font(font(Face::Sans, size::TEXT_3XS))
                         .color(tk.fg_faint),
                 );
             },

@@ -524,7 +524,7 @@ fn mod_row(ui: &mut Ui, m: &ConnectMod, divider: bool) {
     let fg = paint::galley_trunc(
         ui,
         &facts,
-        font(Face::Mono, size::TEXT_3XS),
+        font(Face::Sans, size::TEXT_3XS),
         tk.fg_faint,
         (right - left).max(0.0),
     );
@@ -748,7 +748,7 @@ pub(super) fn mod_op_fallback(ctx: &Context, cx: &mut Ctx, until: &mut f64) {
                     Meter::new(frac)
                 };
                 ui.add(m.tone(Tone::Info));
-                let g = paint::galley(ui, &counts, font(Face::Mono, size::TEXT_2XS), tk.fg_muted);
+                let g = paint::galley(ui, &counts, font(Face::Sans, size::TEXT_2XS), tk.fg_muted);
                 let (r, _) = ui.allocate_exact_size(g.size(), Sense::hover());
                 ui.painter().galley(r.min, g, tk.fg_muted);
             },

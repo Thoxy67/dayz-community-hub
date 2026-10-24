@@ -29,7 +29,7 @@ struct State {
     text: String,
     search: String,
     empty: String,
-    mono: String,
+    code: String,
     pass: String,
     port: f64,
     notes: String,
@@ -62,7 +62,7 @@ impl State {
             text: "Survivor".into(),
             search: "chernarus".into(),
             empty: String::new(),
-            mono: "45.0.0.0:2302".into(),
+            code: "-mod=@CF;@VPPAdminTools".into(),
             pass: "secret".into(),
             port: 2302.0,
             notes: "Two lines\nof notes".into(),
@@ -158,7 +158,7 @@ fn inputs(ui: &mut Ui, s: &mut State) {
     );
     ui.add_space(6.0);
     row(ui, |ui| {
-        ui.add(Input::new(&mut s.mono).kind(InputKind::Mono).width(150.0));
+        ui.add(Input::new(&mut s.code).kind(InputKind::Code).width(150.0));
         ui.add(
             Input::new(&mut s.pass)
                 .kind(InputKind::Password)

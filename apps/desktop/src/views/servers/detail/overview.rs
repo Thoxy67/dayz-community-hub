@@ -280,7 +280,7 @@ pub fn show(ui: &mut Ui, cx: &Ctx, m: &Model, run: &mut Run) {
                             .tip_kbd(t("detail", "copyIp"), "", Side::Top);
                     });
                     row(ui, &ports_label, &mut |ui| {
-                        let g = ph(ui, &ports, font(Face::Mono, size::TEXT_2XS));
+                        let g = ph(ui, &ports, font(Face::Sans, size::TEXT_2XS));
                         let (r, _) = ui.allocate_exact_size(g.size(), Sense::hover());
                         draw(ui.painter(), &g, r.left(), r.center().y, tk.fg_muted);
                     });
@@ -388,9 +388,9 @@ pub(super) fn error_box(ui: &mut Ui, text: &str) {
         });
 }
 
-/// A small tinted count (`rounded-xs bg-ok/12 px-1.5 py-0.5 font-mono text-ok`).
+/// A small tinted count (`rounded-xs bg-ok/12 px-1.5 py-0.5 text-ok`).
 fn pill(ui: &mut Ui, text: &str, c: Color32) {
-    let g = ph(ui, text, font(Face::Mono, size::TEXT_2XS));
+    let g = ph(ui, text, font(Face::Sans, size::TEXT_2XS));
     let (r, _) = ui.allocate_exact_size(g.size() + Vec2::new(12.0, 4.0), Sense::hover());
     ui.painter()
         .rect_filled(r, CornerRadius::same(size::RADIUS_XS), alpha(c, 0.12));
@@ -516,9 +516,9 @@ fn players(ui: &mut Ui, m: &Model, run: &mut Run) {
         for (i, p) in m.players.iter().take(5).enumerate() {
             let w = ui.available_width();
             let (r, _) = ui.allocate_exact_size(Vec2::new(w, 24.0), Sense::hover());
-            let mono = font(Face::Mono, size::TEXT_2XS);
-            let n = ph(ui, &(i + 1).to_string(), mono.clone());
-            let d = ph(ui, &format::duration(p.duration.max(0.0) as i64), mono);
+            let figs = font(Face::Sans, size::TEXT_2XS);
+            let n = ph(ui, &(i + 1).to_string(), figs.clone());
+            let d = ph(ui, &format::duration(p.duration.max(0.0) as i64), figs);
             let name = if p.name.is_empty() {
                 format::NONE
             } else {

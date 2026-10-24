@@ -173,7 +173,7 @@ fn group_heading(ui: &mut Ui, icon: crate::icons::Icon, title: &str, n: usize, w
     SectionLabel::new(title)
         .icon(icon)
         .show_with(&mut lui, |ui| {
-            let g = paint::galley(ui, &count, font(Face::Mono, size::TEXT_2XS), tk.fg_faint);
+            let g = paint::galley(ui, &count, font(Face::Sans, size::TEXT_2XS), tk.fg_faint);
             let (rr, _) = ui.allocate_exact_size(g.size(), Sense::hover());
             ui.painter().galley(rr.min, g, tk.fg_faint);
         });
@@ -216,7 +216,7 @@ fn cards(
     let cw = (w - gap * (cols as f32 - 1.0)) / cols as f32;
     let inner = cw - 20.0;
     let name_f = font(Face::SansSemibold, size::TEXT_XS);
-    let mono = font(Face::Mono, size::TEXT_3XS);
+    let figs = font(Face::Sans, size::TEXT_3XS);
     let small = font(Face::Sans, size::TEXT_2XS);
     let start = ui.cursor().min;
     let mut y = start.y;
@@ -305,12 +305,12 @@ fn cards(
             // address has more than half; past that both are cut (pad density, zoom).
             let when = p.ts.map(format::relative);
             let when_w = when.as_deref().map_or(0.0, |w| {
-                paint::galley(ui, w, mono.clone(), tk.fg_faint).size().x + 8.0
+                paint::galley(ui, w, figs.clone(), tk.fg_faint).size().x + 8.0
             });
             let addr = paint::galley_trunc(
                 ui,
                 &format!("{}:{port}", p.ip),
-                mono.clone(),
+                figs.clone(),
                 tk.fg_faint,
                 (inner - when_w).max(inner * 0.55),
             );
@@ -321,7 +321,7 @@ fn cards(
                 let g = paint::galley_trunc(
                     ui,
                     &when,
-                    mono.clone(),
+                    figs.clone(),
                     tk.fg_faint,
                     (inner - addr_w - 8.0).max(10.0),
                 );
@@ -330,11 +330,11 @@ fn cards(
             }
             cy += 14.0 + 5.0 + 1.0;
             if let Some(s) = &row {
-                let pl = paint::galley(ui, &s.players().to_string(), mono.clone(), tk.fg_muted);
+                let pl = paint::galley(ui, &s.players().to_string(), figs.clone(), tk.fg_muted);
                 let mx = paint::galley(
                     ui,
                     &format!("/{}", s.max_players()),
-                    mono.clone(),
+                    figs.clone(),
                     tk.fg_faint,
                 );
                 let px = r - mx.size().x;
@@ -381,7 +381,7 @@ fn compact(
 ) {
     let tk = ui.tokens();
     let w = ui.available_width();
-    let mono = font(Face::Mono, size::TEXT_3XS);
+    let figs = font(Face::Sans, size::TEXT_3XS);
     let n = picks.len();
     for (i, p) in picks.iter().enumerate() {
         let row = rows.get(i).copied().flatten();
@@ -417,7 +417,7 @@ fn compact(
             .map(|s| s.game_port())
             .filter(|p| *p != 0)
             .unwrap_or(p.port);
-        let addr = paint::galley(ui, &format!("{}:{port}", p.ip), mono.clone(), tk.fg_faint);
+        let addr = paint::galley(ui, &format!("{}:{port}", p.ip), figs.clone(), tk.fg_faint);
         let painter = ui.painter();
         painter.galley(Pos2::new(tx, rect.top() + 6.0), name, tk.fg);
         let ay = rect.top() + 6.0 + 15.0;
@@ -427,7 +427,7 @@ fn compact(
             let g = paint::galley_trunc(
                 ui,
                 &format::relative(ts),
-                mono.clone(),
+                figs.clone(),
                 tk.fg_faint,
                 (tw - aw - 8.0).max(10.0),
             );

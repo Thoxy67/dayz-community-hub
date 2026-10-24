@@ -63,14 +63,14 @@ impl FlagWords {
             official: ph(
                 ui,
                 t("servers", "officialBadge"),
-                font(Face::MonoSemibold, size::TEXT_3XS),
+                font(Face::SansSemibold, size::TEXT_3XS),
             ),
             mimics: ph(
                 ui,
                 t("servers", "mimicsOfficial"),
                 font(Face::Sans, size::TEXT_3XS),
             ),
-            fpp: ph(ui, "1PP", font(Face::MonoSemibold, size::TEXT_3XS)),
+            fpp: ph(ui, "1PP", font(Face::SansSemibold, size::TEXT_3XS)),
         }
     }
 }
@@ -254,7 +254,7 @@ pub fn day_phase(time: &str) -> Icon {
     }
 }
 
-/// Draws the clock (icon 12px faint, the time in mono `fg-muted`) from `x`; returns the end.
+/// Draws the clock (icon 12px faint, the time in `fg-muted`) from `x`; returns the end.
 pub(crate) fn paint_time(p: &Painter, x: f32, cy: f32, phase: Icon, g: &Arc<Galley>, t: &Tokens) {
     phase.paint(
         p,
@@ -296,7 +296,7 @@ impl Widget for TimeOfDay<'_> {
         } else {
             self.time
         };
-        let g = ph(ui, text, font(Face::Mono, px));
+        let g = ph(ui, text, font(Face::Sans, px));
         let (rect, resp) =
             ui.allocate_exact_size(Vec2::new(16.0 + g.size().x, 14.0), Sense::hover());
         if ui.is_rect_visible(rect) {
@@ -508,10 +508,10 @@ impl Widget for ModsCount {
             );
             return resp;
         }
-        let f = font(Face::Mono, size::TEXT_2XS);
+        let f = font(Face::Sans, size::TEXT_2XS);
         let count = ph(ui, &self.count.to_string(), f);
         let extra = mods_extra(self.missing, self.stale)
-            .map(|e| ph(ui, &e, font(Face::MonoSemibold, size::TEXT_2XS)));
+            .map(|e| ph(ui, &e, font(Face::SansSemibold, size::TEXT_2XS)));
         let w = mods_width(&count, extra.as_ref());
         let sense = if self.clickable {
             Sense::click()
@@ -738,10 +738,10 @@ impl PlayersText {
             count: ph(
                 ui,
                 &players.to_string(),
-                font(Face::MonoSemibold, size::TEXT_2XS),
+                font(Face::SansSemibold, size::TEXT_2XS),
             ),
-            max: ph(ui, &format!("/{max}"), font(Face::Mono, size::TEXT_2XS)),
-            bots: (bots > 0).then(|| ph(ui, &bots.to_string(), font(Face::Mono, size::TEXT_2XS))),
+            max: ph(ui, &format!("/{max}"), font(Face::Sans, size::TEXT_2XS)),
+            bots: (bots > 0).then(|| ph(ui, &bots.to_string(), font(Face::Sans, size::TEXT_2XS))),
         }
     }
 }

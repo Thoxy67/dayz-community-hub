@@ -439,7 +439,7 @@ fn header(ui: &mut Ui, cx: &Ctx, st: &mut UiState, out: &mut Vec<(&'static str, 
             let no_answer = t("mods", "steamNoAnswer");
             let steam_short = steam_active.to_string();
             let wide = |s: &str, f: egui::FontId| crate::parts::ph(ui, s, f).size().x;
-            let mono = || font(Face::Mono, size::TEXT_2XS);
+            let figs = || font(Face::Sans, size::TEXT_2XS);
             let segs_w: f32 = labels
                 .iter()
                 .map(|l| 16.0 + wide(l, font(Face::Sans, size::TEXT_XS)))
@@ -447,18 +447,18 @@ fn header(ui: &mut Ui, cx: &Ctx, st: &mut UiState, out: &mut Vec<(&'static str, 
                 + 2.0;
             let chips = |dl: &str, err: &str| {
                 let dl = if steam_active > 0 {
-                    wide(dl, mono()) + 40.0 + 8.0
+                    wide(dl, figs()) + 40.0 + 8.0
                 } else {
                     0.0
                 };
                 let err = if mods.steam_error.is_some() {
-                    wide(err, mono()) + 40.0 + 8.0
+                    wide(err, figs()) + 40.0 + 8.0
                 } else {
                     0.0
                 };
                 dl + err
             };
-            let fixed = segs_w + wide(&counter, mono()) + 3.0 * 8.0;
+            let fixed = segs_w + wide(&counter, figs()) + 3.0 * 8.0;
             let full = ui.available_width();
             let tight = 288.0 + fixed + chips(&steam_dl, no_answer) > full;
             let search_w = if tight {
@@ -483,7 +483,7 @@ fn header(ui: &mut Ui, cx: &Ctx, st: &mut UiState, out: &mut Vec<(&'static str, 
             ui.add(Segmented::new(filter, &segs));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
-                let g = crate::parts::ph(ui, &counter, font(Face::Mono, size::TEXT_2XS));
+                let g = crate::parts::ph(ui, &counter, font(Face::Sans, size::TEXT_2XS));
                 let (r, _) = ui.allocate_exact_size(g.size(), egui::Sense::hover());
                 crate::parts::draw(ui.painter(), &g, r.left(), r.center().y, tk.fg_faint);
                 if steam_active > 0 {

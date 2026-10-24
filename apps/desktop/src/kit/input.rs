@@ -56,8 +56,8 @@ pub enum InputKind {
     Search,
     /// Dots for letters.
     Password,
-    /// Mono figures (`type="number"`'s face), for addresses and ports.
-    Mono,
+    /// The code face, for launch arguments (what is typed is a command line).
+    Code,
 }
 
 /// The field's frame, painted under a borderless `TextEdit`.
@@ -202,7 +202,7 @@ impl Widget for Input<'_> {
             egui::pos2(rect.left() + pl, rect.top()),
             egui::pos2(rect.right() - pr, rect.bottom()),
         );
-        let face = if self.kind == InputKind::Mono {
+        let face = if self.kind == InputKind::Code {
             Face::Mono
         } else {
             Face::Sans
@@ -292,7 +292,7 @@ impl Widget for Input<'_> {
     }
 }
 
-/// A number typed in a field: mono figures, the arrows and the wheel step it (a
+/// A number typed in a field: the arrows and the wheel step it (a
 /// controller's Left and Right too), and what is typed is kept until the field is left
 /// (then clamped). `NumberInput::new(&mut port)` over an `f64`; convert integers at the
 /// call.
@@ -362,7 +362,7 @@ impl Widget for NumberInput<'_> {
             .data(|d| d.get_temp::<String>(id))
             .unwrap_or_else(|| shown.clone());
         let mut input = Input::new(&mut text)
-            .kind(InputKind::Mono)
+            .kind(InputKind::Text)
             .size(self.size)
             .enabled(self.enabled)
             .id_salt(id);
@@ -423,7 +423,6 @@ pub struct TextArea<'a> {
     value: &'a mut String,
     rows: usize,
     placeholder: &'a str,
-    mono: bool,
     enabled: bool,
 }
 
@@ -433,7 +432,6 @@ impl<'a> TextArea<'a> {
             value,
             rows: 3,
             placeholder: "",
-            mono: false,
             enabled: true,
         }
     }
@@ -448,11 +446,6 @@ impl<'a> TextArea<'a> {
         self
     }
 
-    pub fn mono(mut self) -> Self {
-        self.mono = true;
-        self
-    }
-
     pub fn enabled(mut self, on: bool) -> Self {
         self.enabled = on;
         self
@@ -463,10 +456,7 @@ impl Widget for TextArea<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
         let t = ui.tokens();
         let bg = ui.painter().add(Shape::Noop);
-        let f = font(
-            if self.mono { Face::Mono } else { Face::Sans },
-            size::TEXT_XS,
-        );
+        let f = font(Face::Sans, size::TEXT_XS);
         let edit = TextEdit::multiline(self.value)
             .frame(egui::Frame::NONE.inner_margin(egui::Margin::symmetric(8, 6)))
             .font(f)

@@ -356,7 +356,7 @@ pub fn game(ui: &mut Ui, w: &mut Wizard, acts: &mut Acts) {
                         size::TEXT_XS,
                         tk.ok,
                     ),
-                    Line::new(dir.clone(), Face::Mono, size::TEXT_2XS, tk.fg_muted).selectable(),
+                    Line::new(dir.clone(), Face::Sans, size::TEXT_2XS, tk.fg_muted).selectable(),
                 ];
                 if g.workshop_mods > 0 {
                     let n = format::num(f64::from(g.workshop_mods));
@@ -633,7 +633,7 @@ fn steamcmd(ui: &mut Ui, w: &mut Wizard, acts: &mut Acts) {
                     size::TEXT_XS,
                     tk.ok,
                 ),
-                Line::new(path, Face::Mono, size::TEXT_2XS, tk.fg_muted).selectable(),
+                Line::new(path, Face::Sans, size::TEXT_2XS, tk.fg_muted).selectable(),
             ],
             None,
             acts,
@@ -839,7 +839,7 @@ fn install_windows(ui: &mut Ui, w: &Wizard, acts: &mut Acts) {
                     ui.add(
                         egui::Label::new(
                             RichText::new(&w.download_error)
-                                .font(font(Face::Mono, size::TEXT_2XS))
+                                .font(font(Face::Sans, size::TEXT_2XS))
                                 .color(tk.err),
                         )
                         .wrap()
@@ -864,7 +864,7 @@ pub fn account(ui: &mut Ui, w: &mut Wizard) {
                     Field::new(t("setup", "username")).last().show(ui, |ui| {
                         ui.add(
                             Input::new(&mut w.steam_login)
-                                .kind(InputKind::Mono)
+                                .kind(InputKind::Text)
                                 .placeholder(t("setup", "steamUsernamePlaceholder"))
                                 .id_salt("dzch.setup.login"),
                         );
@@ -985,7 +985,7 @@ pub fn services(ui: &mut Ui, w: &mut Wizard) {
                     .show(ui, |ui| {
                         ui.add(
                             Input::new(&mut w.steam_id)
-                                .kind(InputKind::Mono)
+                                .kind(InputKind::Text)
                                 .placeholder(t("setup", "steamIdPlaceholder"))
                                 .id_salt("dzch.setup.sid"),
                         );

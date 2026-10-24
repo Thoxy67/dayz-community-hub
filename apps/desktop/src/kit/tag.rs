@@ -1,4 +1,4 @@
-//! `ui/tag`: a small mono label in a tone (`rounded-sm px-1.5 py-px font-mono text-2xs
+//! `ui/tag`: a small label in a tone (`rounded-sm px-1.5 py-px font-sans text-2xs
 //! leading-4`): tinted (`bg-<tone>/12 text-<tone> ring-1 ring-<tone>/25`) or filled.
 
 use egui::{CornerRadius, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2, Widget};
@@ -101,7 +101,7 @@ impl Widget for Tag<'_> {
                 None => (alpha(t.raised, 0.7), t.fg_muted, Some(alpha(t.border, 0.6))),
             }
         };
-        let g = paint::galley(ui, self.text, font(Face::Mono, size::TEXT_2XS), ink);
+        let g = paint::galley(ui, self.text, font(Face::Sans, size::TEXT_2XS), ink);
         let icon_w = self.icon.map_or(0.0, |_| 12.0 + 4.0)
             + if self.spinner { 10.0 + 4.0 } else { 0.0 }
             + self.brand.map_or(0.0, |_| 10.0 + 4.0)

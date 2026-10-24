@@ -4,7 +4,7 @@
 //! download; on the right, the state of things: the game, BattlEye, Steam, an update, the
 //! version.
 //!
-//! Every segment has the same anatomy ([`Segment`]): an icon, then pieces (figures in mono,
+//! Every segment has the same anatomy ([`Segment`]): an icon, then pieces (figures,
 //! words in sans, dots, meters) on **one baseline**, with one gap between pieces; running
 //! work shows an inline meter with its figures. Segments of one kind sit together; a thin
 //! separator marks where the group changes. A bar too narrow for everything drops pieces
@@ -201,7 +201,8 @@ enum Kind {
 struct Piece {
     kind: Kind,
     text: String,
-    mono: bool,
+    /// A figure: in the segment's figure tone.
+    figure: bool,
     /// Its own colour (else the segment's).
     color: Option<Color32>,
     /// Dropped from a narrow bar at this rank.
@@ -219,7 +220,7 @@ impl Piece {
         Self {
             kind: Kind::Text,
             text: s.into(),
-            mono: false,
+            figure: false,
             color: None,
             drop: None,
             max_w: None,
@@ -227,9 +228,9 @@ impl Piece {
             flash: None,
         }
     }
-    fn mono(s: impl Into<String>) -> Self {
+    fn figure(s: impl Into<String>) -> Self {
         Self {
-            mono: true,
+            figure: true,
             ..Self::text(s)
         }
     }
@@ -535,20 +536,19 @@ fn fit(ui: &Ui, left: &[Segment], right: &[Segment], bar_w: f32) -> u8 {
     level
 }
 
-fn piece_font(p: &Piece, tone: Tone) -> egui::FontId {
-    // Mono for figures, medium on good news (`text-ok font-medium`).
-    let face = match (p.mono, tone == Tone::Ok) {
-        (true, true) => Face::MonoMedium,
-        (true, false) => Face::Mono,
-        (false, true) => Face::SansMedium,
-        (false, false) => Face::Sans,
+fn piece_font(tone: Tone) -> egui::FontId {
+    // Medium on good news (`text-ok font-medium`).
+    let face = if tone == Tone::Ok {
+        Face::SansMedium
+    } else {
+        Face::Sans
     };
     font(face, size::TEXT_2XS)
 }
 
 /// A piece's text, laid out once in the placeholder colour (coloured when drawn).
 fn piece_galley(ui: &Ui, p: &Piece, tone: Tone) -> Arc<Galley> {
-    let f = piece_font(p, tone);
+    let f = piece_font(tone);
     match p.max_w {
         Some(w) => paint::galley_trunc(ui, &p.text, f, Color32::PLACEHOLDER, w.max(1.0)),
         None => paint::galley(ui, &p.text, f, Color32::PLACEHOLDER),
@@ -563,7 +563,7 @@ fn piece_width(ui: &Ui, p: &Piece, tone: Tone) -> f32 {
             let w = piece_galley(ui, p, tone).size().x;
             match &p.room {
                 Some(r) => w.max(
-                    paint::galley(ui, r, piece_font(p, tone), Color32::PLACEHOLDER)
+                    paint::galley(ui, r, piece_font(tone), Color32::PLACEHOLDER)
                         .size()
                         .x,
                 ),
@@ -667,7 +667,7 @@ fn draw(
                 let ink = match (piece.kind, piece.color) {
                     (Kind::Sep, _) => tk.fg_faint,
                     (_, Some(c)) => lift(c),
-                    (_, None) if piece.mono => lift(s.tone.figure(tk)),
+                    (_, None) if piece.figure => lift(s.tone.figure(tk)),
                     (_, None) => lift(s.tone.text(tk)),
                 };
                 let g = piece_galley(ui, piece, s.tone);
@@ -883,12 +883,12 @@ fn clock(ui: &Ui, cx: &mut Ctx, st: &mut StatusState, now: f64) {
 /// `done/total` as the bar writes it, with the room its widest value takes.
 fn count(done: impl Into<f64>, total: impl Into<f64>) -> Piece {
     let total = format::num(total.into());
-    Piece::mono(format!("{}/{total}", format::num(done.into()))).room(format!("{total}/{total}"))
+    Piece::figure(format!("{}/{total}", format::num(done.into()))).room(format!("{total}/{total}"))
 }
 
 /// A whole percent, with the room `100%` takes.
 fn percent(p: u32) -> Piece {
-    Piece::mono(format!("{p}%")).room("100%")
+    Piece::figure(format!("{p}%")).room("100%")
 }
 
 fn left_segments(cx: &Ctx, st: &StatusState, now: f64) -> Vec<Segment> {
@@ -962,7 +962,7 @@ fn list_segment(cx: &Ctx, st: &StatusState) -> Segment {
         lucide::SERVER
     });
     let count = |seg: Segment| {
-        seg.piece(Piece::mono(format::num(f64::from(s.total))).flash(st.flash_total.map(|f| f.1)))
+        seg.piece(Piece::figure(format::num(f64::from(s.total))).flash(st.flash_total.map(|f| f.1)))
             .piece(Piece::text(t("shell", "sbServersWord")).drop(rank::SERVERS_WORD))
     };
     if down {
@@ -1211,7 +1211,7 @@ fn mod_segments(cx: &Ctx, st: &StatusState, _now: f64) -> Vec<Segment> {
             )
             .act(Act::Go(ViewId::Mods, None))
             .group(1)
-            .piece(Piece::mono(behind.to_string()).flash(st.flash_behind.map(|f| f.1)))
+            .piece(Piece::figure(behind.to_string()).flash(st.flash_behind.map(|f| f.1)))
             .piece(Piece::text(t("shell", "sbModsBehind")).drop(rank::BEHIND_WORD)),
         );
     }
@@ -1250,13 +1250,13 @@ fn right_segments(cx: &Ctx, st: &StatusState, now: f64, tk: &Tokens) -> Vec<Segm
                     if !pre.trim().is_empty() {
                         seg = seg.piece(Piece::text(pre.trim()).drop(rank::UPDATE_WORD));
                     }
-                    seg = seg.piece(Piece::mono(figure));
+                    seg = seg.piece(Piece::figure(figure));
                     if !post.trim().is_empty() {
                         seg = seg.piece(Piece::text(post.trim()).drop(rank::UPDATE_WORD));
                     }
                 }
                 None => {
-                    seg = seg.piece(Piece::mono(tf(
+                    seg = seg.piece(Piece::figure(tf(
                         "nav",
                         "sbUpdate",
                         &[("version", &info.version)],
@@ -1290,7 +1290,7 @@ fn right_segments(cx: &Ctx, st: &StatusState, now: f64, tk: &Tokens) -> Vec<Segm
         .act(Act::Command("view.about"))
         .group(2)
         .drop(rank::VERSION)
-        .piece(Piece::mono(v).color(tk.fg_muted)),
+        .piece(Piece::figure(v).color(tk.fg_muted)),
     );
     out
 }
@@ -1348,7 +1348,7 @@ fn game_segment(cx: &Ctx, tk: &Tokens) -> Option<Segment> {
         None => s.piece(Piece::text("DayZ").drop(rank::GAME_WORD)),
     };
     if let Some(p) = played {
-        s = s.piece(Piece::mono(p));
+        s = s.piece(Piece::figure(p));
     }
     Some(s)
 }

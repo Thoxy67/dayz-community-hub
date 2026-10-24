@@ -198,9 +198,9 @@ pub fn players(ui: &mut Ui, cx: &Ctx, st: &mut DetailState, m: &Model, run: &mut
                         Stroke::new(1.0, alpha(tk.border, 0.5)),
                     );
                     let (n, name, score, time) = cols(r);
-                    let mono = font(Face::Mono, size::TEXT_2XS);
+                    let figs = font(Face::Sans, size::TEXT_2XS);
                     let cy = r.center().y;
-                    let g = ph(ui, &(i + 1).to_string(), mono.clone());
+                    let g = ph(ui, &(i + 1).to_string(), figs.clone());
                     draw(pt, &g, n.1 - g.size().x, cy, tk.fg_faint);
                     let nm = if p.name.is_empty() {
                         format::NONE
@@ -214,9 +214,9 @@ pub fn players(ui: &mut Ui, cx: &Ctx, st: &mut DetailState, m: &Model, run: &mut
                         (name.1 - name.0).max(10.0),
                     );
                     draw(pt, &g, name.0, cy, tk.fg);
-                    let g = ph(ui, &p.score.to_string(), mono.clone());
+                    let g = ph(ui, &p.score.to_string(), figs.clone());
                     draw(pt, &g, score.1 - g.size().x, cy, tk.fg_muted);
-                    let g = ph(ui, &format::duration(p.duration.max(0.0) as i64), mono);
+                    let g = ph(ui, &format::duration(p.duration.max(0.0) as i64), figs);
                     draw(pt, &g, time.1 - g.size().x, cy, tk.fg);
                 }
             });
@@ -287,8 +287,8 @@ pub fn rules(ui: &mut Ui, st: &mut DetailState, m: &Model) {
                     );
                     // [2fr | 3fr]
                     let split = row.left() + row.width() * 0.4;
-                    let mono = font(Face::Mono, size::TEXT_3XS);
-                    let g = ph_trunc(ui, &r.name, mono, split - row.left() - 16.0);
+                    let figs = font(Face::Sans, size::TEXT_3XS);
+                    let g = ph_trunc(ui, &r.name, figs, split - row.left() - 16.0);
                     let name_r = Rect::from_min_max(row.min, Pos2::new(split, row.bottom()));
                     draw(
                         ui.painter(),

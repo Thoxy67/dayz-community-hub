@@ -125,7 +125,7 @@ pub fn show(ui: &mut Ui, cx: &mut Ctx, r: &Resolved) {
                         let addr = ui
                             .add(
                                 Input::new(&mut d.address)
-                                    .kind(InputKind::Mono)
+                                    .kind(InputKind::Text)
                                     .placeholder(t("connect", "ipPlaceholder"))
                                     .error(d.touched && r.address_error)
                                     .id_salt("connect-address"),
@@ -227,7 +227,7 @@ pub fn show(ui: &mut Ui, cx: &mut Ctx, r: &Resolved) {
                                             );
                                             let p = ui.add(
                                                 Input::new(&mut d.port)
-                                                    .kind(InputKind::Mono)
+                                                    .kind(InputKind::Text)
                                                     .char_limit(5)
                                                     .numeric(true)
                                                     .error(r.port_error)
@@ -245,7 +245,7 @@ pub fn show(ui: &mut Ui, cx: &mut Ctx, r: &Resolved) {
                                                 label(ui, t("connect", "queryPortOptional"), "");
                                             let q = ui.add(
                                                 Input::new(&mut d.query_port)
-                                                    .kind(InputKind::Mono)
+                                                    .kind(InputKind::Text)
                                                     .char_limit(5)
                                                     .numeric(true)
                                                     .placeholder("27016")

@@ -3,7 +3,7 @@
 //! `border-b`, tabs `px-2.5 gap-1.5 text-xs text-fg-muted`, hover `bg-raised/60 text-fg`,
 //! the one that is on `text-accent` with the accent mark under it: one 2px bar that
 //! slides (`--duration-base`, ease-out) to the tab picked, inset 6px each side. A count
-//! after a label sits in a small mono well. The strip scrolls sideways without a bar when
+//! after a label sits in a small well. The strip scrolls sideways without a bar when
 //! the tabs do not fit. Arrows, Home and End move the tab from the keyboard.
 
 use egui::{Color32, CornerRadius, Id, Rect, Response, Role, Sense, Ui, Vec2, Widget, WidgetInfo};
@@ -127,7 +127,7 @@ impl<V: PartialEq + Clone> Widget for TabStrip<'_, V> {
         let h = self.height.unwrap_or(ctl);
         let (mut pad, gap) = if self.fill { (4.0, 4.0) } else { (10.0, 6.0) };
         let f = font(Face::Sans, text);
-        let mf = font(Face::Mono, size::TEXT_2XS);
+        let mf = font(Face::Sans, size::TEXT_2XS);
         let mut measured: Vec<Measured> = self
             .tabs
             .iter()

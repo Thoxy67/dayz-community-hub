@@ -70,7 +70,7 @@ pub(super) fn show(ui: &mut Ui, cx: &Ctx, m: &InstalledModDto, run: &mut Run) {
                 ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
                 state_look(mods, m.id, Some(m)).show(ui, false);
                 source_tag(ui, mods, m);
-                let g = ph(ui, &m.size_human, font(Face::Mono, size::TEXT_2XS));
+                let g = ph(ui, &m.size_human, font(Face::Sans, size::TEXT_2XS));
                 let (r, _) = ui.allocate_exact_size(Vec2::new(g.size().x, 18.0), Sense::hover());
                 draw(ui.painter(), &g, r.left(), r.center().y, tk.fg_faint);
             });
@@ -290,7 +290,7 @@ fn body(ui: &mut Ui, mods: &Mods, m: &InstalledModDto, busy: bool, run: &mut Run
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 8.0;
                     let s = format!("{} · {:.1}%", format::bytes(m.size as f64), share * 100.0);
-                    let g = ph(ui, &s, font(Face::Mono, size::TEXT_2XS));
+                    let g = ph(ui, &s, font(Face::Sans, size::TEXT_2XS));
                     let mw = (ui.available_width() - g.size().x - 8.0).max(8.0);
                     ui.add(Meter::new(share as f32).tone(Tone::Muted).width(mw))
                         .tip(t("mods", "detailsShare"));
@@ -456,7 +456,7 @@ fn body(ui: &mut Ui, mods: &Mods, m: &InstalledModDto, busy: bool, run: &mut Run
 }
 
 fn mono(ui: &mut Ui, text: &str, color: egui::Color32, px: f32) {
-    let g = ph(ui, text, font(Face::Mono, px));
+    let g = ph(ui, text, font(Face::Sans, px));
     let (r, _) = ui.allocate_exact_size(g.size(), Sense::hover());
     draw(ui.painter(), &g, r.left(), r.center().y, color);
 }

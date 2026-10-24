@@ -234,7 +234,7 @@ impl<'a> Alert<'a> {
 }
 
 /// A shell command to run by hand, with a button that copies it: `h-control-sm
-/// rounded-sm border bg-bg`, the command in faint mono (cut, whole in the hint), the copy
+/// rounded-sm border bg-bg`, the command in faint mono, as code (cut, whole in the hint), the copy
 /// button behind a hairline turning into a green tick for 1.5s.
 /// `CommandLine::new("sudo …", "Copy")`.
 #[must_use = "add it with ui.add(…)"]
@@ -402,7 +402,7 @@ impl<'a> Copy<'a> {
 impl Widget for Copy<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
         let t = ui.tokens();
-        let f = font(Face::Mono, self.px);
+        let f = font(Face::Sans, self.px);
         let rest = self.color.unwrap_or(t.fg_faint);
         let room = self.max_width.unwrap_or_else(|| ui.available_width()) - 16.0;
         let shown = self.shown.unwrap_or(self.text);

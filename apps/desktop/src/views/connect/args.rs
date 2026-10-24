@@ -218,7 +218,7 @@ fn body(ui: &mut Ui, cx: &mut Ctx, r: &Resolved, acts: &mut Vec<Act>) {
                         (t("connect", "custom"), Tone::Neutral)
                     };
                     // Tag and the three buttons on the right; the words take the rest.
-                    let tag_w = paint::galley(&row, tag.0, font(Face::Mono, size::TEXT_3XS), tk.fg)
+                    let tag_w = paint::galley(&row, tag.0, font(Face::Sans, size::TEXT_2XS), tk.fg)
                         .size()
                         .x
                         + 12.0;
@@ -345,7 +345,7 @@ fn body(ui: &mut Ui, cx: &mut Ctx, r: &Resolved, acts: &mut Vec<Act>) {
                 let add_w = add_width(ui);
                 let resp = ui.add(
                     Input::new(&mut d.custom)
-                        .kind(InputKind::Mono)
+                        .kind(InputKind::Code)
                         .placeholder(t("connect", "customArgPlaceholder"))
                         .width((ui.available_width() - add_w - 6.0).max(60.0))
                         .id_salt("connect-custom-arg"),

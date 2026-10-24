@@ -232,7 +232,9 @@ impl Window<'_> {
                 .with_inner_size(SIZE)
                 .with_min_inner_size(MIN_SIZE)
                 .with_decorations(false)
-                .with_transparent(false);
+                // On Linux the window draws its own rounded corners, the desktop seen
+                // through them (`platform::window`); Windows 11 rounds its own.
+                .with_transparent(cfg!(target_os = "linux") && !game_mode);
             // Before the first `window.ron`: the size the preferences kept (eframe's
             // file, once written, takes over).
             if let Some(w) = saved {
@@ -446,7 +448,12 @@ fn wgpu_options(gpu: Gpu) -> egui_wgpu::WgpuConfiguration {
             .filter(|a| surface.is_none_or(|s| a.is_surface_supported(s)))
             .filter_map(|a| adapter_rank(a.get_info().device_type, power, software).map(|r| (r, a)))
             .min_by_key(|(r, _)| *r)
-            .map(|(_, a)| a.clone())
+            .map(|(_, a)| {
+                if let Some(s) = surface {
+                    platform::window::note_alpha_modes(&s.get_capabilities(a).alpha_modes);
+                }
+                a.clone()
+            })
             .ok_or_else(|| "no graphics adapter can draw this window".to_owned())
     }));
     egui_wgpu::WgpuConfiguration {

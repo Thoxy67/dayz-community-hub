@@ -4,7 +4,7 @@
 //! One plate for all (`bg-overlay border rounded-md shadow-pop p-1`), `min-w-44` for a
 //! dropdown and `min-w-52` for a context menu. Items `size::MENU_ROW` high (`rounded-xs
 //! px-1.5 gap-2 text-xs text-fg-muted`), lit `bg-raised text-fg`; a danger item is red; the shortcut
-//! sits at the end. Labels are mono, tracked capitals; separators a hairline.
+//! sits at the end. Labels are tracked capitals; separators a hairline.
 //! A click anywhere closes a menu, Escape too.
 
 use egui::{
@@ -465,7 +465,7 @@ fn row(
     paint::text_at(p, &g, x, cy, ink);
 }
 
-/// A menu's group heading: `px-1.5 pt-1.5 pb-0.5 font-mono text-2xs tracking-[0.08em]
+/// A menu's group heading: `px-1.5 pt-1.5 pb-0.5 font-sans text-2xs tracking-[0.08em]
 /// uppercase text-fg-faint`.
 pub fn label(ui: &mut Ui, text: &str) {
     let w = menu_width(ui, 0.0);

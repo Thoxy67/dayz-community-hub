@@ -1016,9 +1016,9 @@ fn toolbar(ui: &mut Ui, st: &mut State, d: &Frame<'_>, run: &mut Run) {
         ui.spacing_mut().item_spacing.x = 6.0;
         let count_l = format::num(d.order.len() as f64);
         let count_r = format!(" / {}", format::num(d.entries.len() as f64));
-        let mono = font(Face::Mono, size::TEXT_2XS);
-        let gl = ph(ui, &count_l, mono.clone());
-        let gr = ph(ui, &count_r, mono);
+        let figs = font(Face::Sans, size::TEXT_2XS);
+        let gl = ph(ui, &count_l, figs.clone());
+        let gr = ph(ui, &count_r, figs);
         let count_w = gl.size().x + gr.size().x + 4.0;
         // As tall as the search beside it.
         let chip = Button::chip(t("favorites", "onlineOnly"), st.listed_only)
@@ -1179,7 +1179,7 @@ fn head_row(ui: &mut Ui, head: &Head, at: usize, first: bool) -> Option<HeadActi
         .as_deref()
         .unwrap_or_else(|| t("favorites", "ungrouped"));
     let count = format::num(head.count as f64);
-    let cg = ph(ui, &count, font(Face::Mono, size::TEXT_2XS));
+    let cg = ph(ui, &count, font(Face::Sans, size::TEXT_2XS));
     let room = (band.width() - 28.0 - cg.size().x - 20.0).max(16.0);
     let ng = crate::parts::ph_trunc(ui, name, font(Face::SansSemibold, size::TEXT_XS), room);
     let x = band.left() + 28.0;

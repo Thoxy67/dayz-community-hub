@@ -10,9 +10,9 @@
 //! IconButton                | `IconButton::new(lucide::X, "Close").kbd("Esc").side(Side::Bottom).size(Size::IconXs).variant(Variant::Ghost).active(b).danger_hover().tint(c)`
 //! Tooltip                   | `response.tip("text")`, `response.tip_kbd("text", "Ctrl K", Side::Bottom)` (trait `TipExt`)
 //! Kbd                       | `Kbd::new("Ctrl K")`; `Kbd::width(ui, keys)`, `Kbd::paint_at(ui, keys, x, cy)`
-//! Input                     | `Input::new(&mut s).search().placeholder("…").clear_label("Clear").size(FieldSize::Xs).width(w).kind(InputKind::Mono|Password).id_salt(id)`
+//! Input                     | `Input::new(&mut s).search().placeholder("…").clear_label("Clear").size(FieldSize::Xs).width(w).kind(InputKind::Text|Password).id_salt(id)`
 //! NumberInput               | `NumberInput::new(&mut f64).range(1.0, 65535.0).step(1.0).decimals(0)`
-//! TextArea                  | `TextArea::new(&mut s).rows(4).mono().placeholder("…")`
+//! TextArea                  | `TextArea::new(&mut s).rows(4).placeholder("…")`
 //! Select                    | `Select::new("map", &mut v, &[SelectOption::new(v, "Label").group("G")]).placeholder("All").none(v0).width(w).label(aria)`
 //! MultiSelect               | `MultiSelect::new("maps", &mut vec, &[SelectOption::new(v, "Label")]).placeholder("All maps").summary("2 maps").search("Find…", "Clear").empty("No match").width(w).list_width(w).label(aria)`
 //! Switch                    | `Switch::new(&mut on, "Label").hint("…").tone(Tone::Warn)`

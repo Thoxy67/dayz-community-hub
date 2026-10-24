@@ -61,7 +61,7 @@ pub fn show(ui: &mut Ui, run: &mut Run) {
 
     // ── measure ──
     let title = title_galley(ui, &tk);
-    let meta_font = font(Face::Mono, size::TEXT_2XS);
+    let meta_font = font(Face::Sans, size::TEXT_2XS);
     let meta: Vec<Arc<Galley>> = [
         format!("v{VERSION}"),
         "·".to_owned(),

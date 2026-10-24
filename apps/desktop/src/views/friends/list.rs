@@ -188,7 +188,7 @@ fn head(ui: &mut Ui, r: Rect, g: Group, count: usize) {
     );
     let n = count.to_string();
     SectionLabel::new(t("friends", g.label())).show_with(&mut lui, |ui| {
-        let g = paint::galley(ui, &n, font(Face::Mono, size::TEXT_2XS), tk.fg_faint);
+        let g = paint::galley(ui, &n, font(Face::Sans, size::TEXT_2XS), tk.fg_faint);
         let (rr, _) = ui.allocate_exact_size(g.size(), Sense::hover());
         ui.painter().galley(rr.min, g, tk.fg_faint);
     });
@@ -666,7 +666,7 @@ fn short_row(ui: &mut Ui, row: Rect, cx: &Ctx, b: &Block, acts: &mut Vec<Act>) {
         tui.painter().galley(r.min, g, tk.fg);
     }
     let ink = if b.listed { tk.fg_muted } else { tk.fg };
-    let g = paint::galley(&tui, &address, font(Face::Mono, size::TEXT_XS), ink);
+    let g = paint::galley(&tui, &address, font(Face::Sans, size::TEXT_XS), ink);
     let (r, _) = tui.allocate_exact_size(g.size(), Sense::hover());
     tui.painter().galley(r.min, g, ink);
     if !b.listed {

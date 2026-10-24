@@ -164,7 +164,16 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx, menus_state: &mut MenuState) {
                 paint::lerp(tk.fg_muted, tk.fg, h),
             )
         };
-        ui.painter().rect_filled(r, CornerRadius::ZERO, fill);
+        // The close button fills the window's top right corner: rounded as it is.
+        let corner = if close {
+            CornerRadius {
+                ne: paint::window_radius(ui.ctx()),
+                ..CornerRadius::ZERO
+            }
+        } else {
+            CornerRadius::ZERO
+        };
+        ui.painter().rect_filled(r, corner, fill);
         let px = if i == 1 { 12.0 } else { size::ICON_SM };
         icon.paint(
             ui.painter(),
@@ -295,7 +304,7 @@ fn figure_galleys(ui: &Ui, cx: &Ctx) -> ([Figure; 3], [Arc<egui::Galley>; 3]) {
     }
     let tk = ui.tokens();
     let f = figure_values(ui, cx);
-    let mk = |s: &str| paint::galley(ui, s, font(Face::MonoMedium, size::TEXT_2XS), tk.fg);
+    let mk = |s: &str| paint::galley(ui, s, font(Face::SansMedium, size::TEXT_2XS), tk.fg);
     let g = [mk(&f[0].value), mk(&f[1].value), mk(&f[2].value)];
     let tips = [f[0].tip, f[1].tip, f[2].tip];
     ui.data_mut(|d| d.insert_temp(id, Arc::new((pass, tips, g.clone()))));
@@ -417,7 +426,7 @@ fn profile(ui: &mut Ui, cx: &mut Ctx, right: f32, rect: Rect, win_w: f32) -> f32
                 paint::galley_trunc(
                     ui,
                     l,
-                    font(Face::Mono, size::TEXT_2XS),
+                    font(Face::Sans, size::TEXT_2XS),
                     tk.fg_faint,
                     (inner_max - ng.size().x - 8.0).max(0.0),
                 )

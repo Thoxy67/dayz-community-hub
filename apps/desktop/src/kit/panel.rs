@@ -26,6 +26,27 @@ pub fn stencil(ui: &Ui, text: &str, color: Color32, max_width: Option<f32>) -> A
     )
 }
 
+/// The stencil's inline twin, for a label that shares its line with words or figures in
+/// the text face (a card's title beside its description, the sources bar): Plex Sans
+/// semibold, text-3xs, tracked 0.06em, capitals. One family on a line; the stencil stays
+/// for labels standing alone or over their values.
+pub fn inline_label(
+    ui: &Ui,
+    text: &str,
+    color: Color32,
+    max_width: Option<f32>,
+) -> Arc<egui::Galley> {
+    paint::tracked(
+        ui,
+        text,
+        font(Face::SansSemibold, size::TEXT_3XS),
+        color,
+        0.06,
+        true,
+        max_width,
+    )
+}
+
 /// `ui/panel`: a flat instrument panel (`bg-panel`, no border, no radius). With a title,
 /// a header strip (`h-control border-b bg-raised/30`, the accent tick and the stencilled
 /// name, controls at the end). Its body scrolls unless told not to.
@@ -295,7 +316,7 @@ impl<'a> Field<'a> {
 }
 
 /// `ui/section-label`: the name of a cluster of rows: the accent tick, an optional icon,
-/// mono tracked capitals in `fg-muted`. `SectionLabel::new("Maps").icon(lucide::MAP)`.
+/// tracked capitals in `fg-muted`. `SectionLabel::new("Maps").icon(lucide::MAP)`.
 #[must_use = "add it with ui.add(…) or show_with(…)"]
 pub struct SectionLabel<'a> {
     text: &'a str,
@@ -360,7 +381,7 @@ impl<'a> SectionLabel<'a> {
         let g = paint::tracked(
             ui,
             self.text,
-            font(Face::Mono, size::TEXT_2XS),
+            font(Face::Sans, size::TEXT_2XS),
             t.fg_muted,
             0.08,
             true,
@@ -381,7 +402,7 @@ impl Widget for SectionLabel<'_> {
     }
 }
 
-/// One tile of a [`StatStrip`]: the number on top (mono, in its tone), what it is under
+/// One tile of a [`StatStrip`]: the number on top (in its tone), what it is under
 /// it (10px, faint). `Stat::new("Players", "258 643").tone(t.ok)`.
 #[must_use = "add it to a StatStrip"]
 pub struct Stat<'a> {
@@ -435,7 +456,7 @@ impl StatStrip {
     pub fn show(ui: &mut Ui, stats: &[Stat<'_>]) -> Response {
         let t = ui.tokens();
         let w = ui.available_width();
-        let vf = font(Face::Mono, size::TEXT_2XS);
+        let vf = font(Face::Sans, size::TEXT_2XS);
         let lf = font(Face::Sans, size::TEXT_3XS);
         let tiles: Vec<(Arc<egui::Galley>, Arc<egui::Galley>, f32)> = stats
             .iter()
@@ -551,7 +572,7 @@ impl<'a> EmptyState<'a> {
         self
     }
 
-    /// A raw detail (an error's own words) after the text: mono, faint, selectable.
+    /// A raw detail (an error's own words) after the text: faint, selectable.
     pub fn detail(mut self, d: &'a str) -> Self {
         self.detail = d;
         self
@@ -668,7 +689,7 @@ impl<'a> EmptyState<'a> {
                     ui.add(
                         egui::Label::new(
                             egui::RichText::new(self.detail)
-                                .font(font(Face::Mono, size::TEXT_3XS))
+                                .font(font(Face::Sans, size::TEXT_3XS))
                                 .color(t.fg_faint),
                         )
                         .wrap()

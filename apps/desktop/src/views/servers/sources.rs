@@ -89,9 +89,8 @@ pub fn bar(ui: &mut Ui, s: &SourcesChanged, open: bool) {
     let inner = rect.shrink2(Vec2::new(size::PAD, 0.0));
     let cy = rect.center().y;
     let small = font(Face::Sans, size::TEXT_2XS);
-    let mono = font(Face::Mono, size::TEXT_2XS);
-    // One baseline for the whole bar: the words' when centred, which the stencilled
-    // names and the mono figures sit on too.
+    // One baseline for the whole bar: the words' when centred, which the sources'
+    // names and the figures sit on too.
     let base = line_base(ui, &small, cy);
     let now = now_s();
     let steam = &s.steam;
@@ -113,7 +112,7 @@ pub fn bar(ui: &mut Ui, s: &SourcesChanged, open: bool) {
         8.0,
     );
     right.push(
-        ph(ui, &format::num(f64::from(s.total)), mono.clone()),
+        ph(ui, &format::num(f64::from(s.total)), small.clone()),
         tk.fg,
         8.0,
     );
@@ -200,7 +199,7 @@ pub fn bar(ui: &mut Ui, s: &SourcesChanged, open: bool) {
         if s.dzsa.phase == Phase::Running {
             ui.add(Spinner::new().size(12.0));
         }
-        text(ui, &format::num(f64::from(s.dzsa.count)), &mono, tk.fg);
+        text(ui, &format::num(f64::from(s.dzsa.count)), &small, tk.fg);
     });
 
     // Kept: the servers earlier lists had, checked again; its room is kept from Steam's
@@ -212,9 +211,8 @@ pub fn bar(ui: &mut Ui, s: &SourcesChanged, open: bool) {
         s.kept.total
     };
     let kept_w = {
-        let name =
-            crate::views::servers::stencil_galley(ui, t("sources", "kept"), tk.fg_muted, None);
-        let num = ph(ui, &format::num(f64::from(kept_n)), mono.clone());
+        let name = crate::kit::panel::inline_label(ui, t("sources", "kept"), tk.fg_muted, None);
+        let num = ph(ui, &format::num(f64::from(kept_n)), small.clone());
         12.0 + name.size().x + 8.0 + num.size().x
     };
     let kept_room = if s.kept.total > 0 { kept_w + 20.0 } else { 0.0 };
@@ -258,13 +256,13 @@ pub fn bar(ui: &mut Ui, s: &SourcesChanged, open: bool) {
             // The meter, then the figures, only when they fit whole: a figure cut by the
             // left part's end reads as a different one.
             let figs = format!("{}/{}", steam.requests_done, steam.requests_total);
-            let figs_w = ph(ui, &figs, mono.clone()).size().x;
+            let figs_w = ph(ui, &figs, small.clone()).size().x;
             if ui.available_width() >= 80.0 + 8.0 + figs_w {
                 ui.add(Meter::new(frac).size(MeterSize::Xs).width(80.0))
                     .tip_kbd(&label, "", Side::Bottom);
             }
             if ui.available_width() >= figs_w {
-                text(ui, &figs, &mono, tk.fg_muted);
+                text(ui, &figs, &small, tk.fg_muted);
             }
         } else if steam.phase != Phase::Running {
             // A listing skipped because the last one is recent says when that was.
@@ -293,7 +291,7 @@ pub fn bar(ui: &mut Ui, s: &SourcesChanged, open: bool) {
                 t("sources", "listed"),
                 format::num(f64::from(steam.listed)),
             );
-            let ga = ph(ui, &added, mono.clone());
+            let ga = ph(ui, &added, small.clone());
             // The figure whole or nothing; its word may shorten.
             if room >= ga.size().x {
                 let gr = ph_trunc(ui, &word, small.clone(), room - ga.size().x);
@@ -318,12 +316,12 @@ pub fn bar(ui: &mut Ui, s: &SourcesChanged, open: bool) {
                 s.kept.phase,
                 t("sources", "keptHint"),
             );
-            text(ui, &format::num(f64::from(kept_n)), &mono, tk.fg);
+            text(ui, &format::num(f64::from(kept_n)), &small, tk.fg);
             if s.kept.removed > 0 {
                 text(
                     ui,
                     &format!("−{}", format::num(f64::from(s.kept.removed))),
-                    &mono,
+                    &small,
                     tk.err,
                 );
             }
@@ -344,19 +342,19 @@ fn text(ui: &mut Ui, s: &str, f: &egui::FontId, c: Color32) {
     draw_on(ui.painter(), &g, r.left(), base, c);
 }
 
-/// A source's dot and stencilled name, with its hint.
+/// A source's dot and name (upper case, in the bar's text face), with its hint.
 /// A running source's dot is lit, not pulsed: a scan runs for minutes, and an idle
 /// window draws nothing.
 fn cell(ui: &mut Ui, label: &str, phase: Phase, hint: &str) {
     let tk = ui.tokens();
-    let g = crate::views::servers::stencil_galley(ui, label, tk.fg_muted, None);
+    let g = crate::kit::panel::inline_label(ui, label, tk.fg_muted, None);
     let (r, resp) =
         ui.allocate_exact_size(Vec2::new(6.0 + 6.0 + g.size().x, BAR_H), Sense::hover());
     let p = ui.painter();
     let base = line_base(ui, &font(Face::Sans, size::TEXT_2XS), r.center().y);
     // The dot on the capitals' middle (cap height ≈ 0.7 em), not the box's.
     p.circle_filled(
-        Pos2::new(r.left() + 3.0, base - size::TEXT_2XS * 0.35),
+        Pos2::new(r.left() + 3.0, base - size::TEXT_3XS * 0.35),
         3.0,
         dot(&tk, phase),
     );
@@ -529,7 +527,7 @@ fn hint(ui: &mut Ui, s: &str, w: f32) {
 fn line(ui: &mut Ui, label: &str, value: &str, tone: Color32) {
     let tk = ui.tokens();
     let w = ui.available_width();
-    let gv = ph(ui, value, font(Face::Mono, size::TEXT_2XS));
+    let gv = ph(ui, value, font(Face::Sans, size::TEXT_2XS));
     let gl = ph_trunc(
         ui,
         label,

@@ -188,7 +188,7 @@ fn install(ctx: &egui::Context, cx: &Ctx, open: &mut bool, text: &mut String, ru
                     r.center().y,
                     tk.fg_faint,
                 );
-                ui.add(TextArea::new(text).rows(6).mono().placeholder(
+                ui.add(TextArea::new(text).rows(6).placeholder(
                     "1559212036\nhttps://steamcommunity.com/sharedfiles/filedetails/?id=1564026768",
                 ));
                 // What was read from the text, once there is text: no blank line under
@@ -465,7 +465,7 @@ impl ReviewRow {
         };
         let mut tags: Vec<(String, Tone, f32)> = Vec::new();
         let mut add = |text: String, tone: Tone| {
-            let g = ph(ui, &text, font(Face::Mono, size::TEXT_2XS));
+            let g = ph(ui, &text, font(Face::Sans, size::TEXT_2XS));
             let tw = g.size().x + 12.0;
             tags.push((text, tone, tw));
         };
@@ -502,7 +502,7 @@ impl ReviewRow {
         let meta = crate::kit::paint::galley_wrap(
             ui,
             &parts.join("   "),
-            font(Face::Mono, size::TEXT_3XS),
+            font(Face::Sans, size::TEXT_3XS),
             egui::Color32::PLACEHOLDER,
             text_w,
         );

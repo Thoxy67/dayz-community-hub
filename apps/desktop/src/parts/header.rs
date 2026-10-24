@@ -75,7 +75,7 @@ fn num(n: f64) -> String {
     format::num(n)
 }
 
-/// `Figure`: one figure in a header, a stencilled label over a mono value. Clickable, it
+/// `Figure`: one figure in a header, a stencilled label over a value. Clickable, it
 /// is a shortcut to what it counts (a filter, a sort): a dotted underline on hover, and an
 /// accent bar under it while `active`. A count given as `amount` rolls to new values.
 #[must_use = "add it with ui.add(…)"]
@@ -179,7 +179,7 @@ impl Widget for Figure<'_> {
             true,
             None,
         );
-        let value = ph(ui, &shown, font(Face::MonoSemibold, size::TEXT_SM));
+        let value = ph(ui, &shown, font(Face::SansSemibold, size::TEXT_SM));
         let w = label.size().x.max(value.size().x);
         // label (11px, leading 1) · gap-0.5 · value (13px, leading 1.5)
         let h = 11.0 + 2.0 + 19.5;

@@ -236,10 +236,10 @@ impl Widget for PlayerChart<'_> {
             });
         let _ = hover_id;
         let faint = tk.fg_faint;
-        let mono = font(Face::Mono, size::TEXT_3XS);
+        let figs = font(Face::Sans, size::TEXT_3XS);
         let ty = rect.top() + line_h / 2.0;
         let label = self.label.unwrap_or_else(|| t("detail", "bmPlayerHistory"));
-        draw(p, &ph(ui, label, mono.clone()), rect.left(), ty, faint);
+        draw(p, &ph(ui, label, figs.clone()), rect.left(), ty, faint);
         if let Some(i) = hovered
             && let Some((ts, v)) = pts.get(i)
         {
@@ -247,7 +247,7 @@ impl Widget for PlayerChart<'_> {
             pp.vline(hx, plot.y_range(), Stroke::new(1.0, tk.fg_faint));
             pp.circle_filled(Pos2::new(hx, y(*v)), 2.5, tk.accent);
             let s = format!("{} · {}", num(*v), when(*ts, long));
-            let g = ph(ui, &s, mono.clone());
+            let g = ph(ui, &s, figs.clone());
             draw(p, &g, rect.right() - g.size().x, ty, tk.fg);
         } else {
             // "Min 3 · avg: 21 · Peak 58", the figures brighter.
@@ -266,7 +266,7 @@ impl Widget for PlayerChart<'_> {
             ];
             let gs: Vec<_> = parts
                 .iter()
-                .map(|(s, c)| (ph(ui, s, mono.clone()), *c))
+                .map(|(s, c)| (ph(ui, s, figs.clone()), *c))
                 .collect();
             let total: f32 = gs.iter().map(|(g, _)| g.size().x).sum();
             let mut gx = rect.right() - total;
@@ -277,9 +277,9 @@ impl Widget for PlayerChart<'_> {
         }
         let by = rect.bottom() - line_h / 2.0;
         let since = self.since.unwrap_or_else(|| t("detail", "bm24hAgo"));
-        draw(p, &ph(ui, since, mono.clone()), rect.left(), by, faint);
-        let ng = ph(ui, &num(now), mono.clone());
-        let lg = ph(ui, &format!("{} · ", t("detail", "bmNow")), mono);
+        draw(p, &ph(ui, since, figs.clone()), rect.left(), by, faint);
+        let ng = ph(ui, &num(now), figs.clone());
+        let lg = ph(ui, &format!("{} · ", t("detail", "bmNow")), figs);
         draw(p, &ng, rect.right() - ng.size().x, by, tk.fg_muted);
         draw(p, &lg, rect.right() - ng.size().x - lg.size().x, by, faint);
         resp
@@ -347,10 +347,10 @@ impl<'a, F: Fn(&str, u32, f64) -> String> WeekHeat<'a, F> {
             .iter()
             .flatten()
             .fold(1.0_f64, |a, v| if v.is_finite() { a.max(*v) } else { a });
-        let mono = font(Face::Mono, size::TEXT_3XS);
-        let mono_b = font(Face::MonoSemibold, size::TEXT_3XS);
+        let figs = font(Face::Sans, size::TEXT_3XS);
+        let figs_b = font(Face::SansSemibold, size::TEXT_3XS);
         let label_w = (0..7)
-            .map(|d| ph(ui, weekday_short(loc, d), mono_b.clone()).size().x)
+            .map(|d| ph(ui, weekday_short(loc, d), figs_b.clone()).size().x)
             .fold(0.0_f32, f32::max)
             + 6.0;
         let w = ui.available_width();
@@ -441,7 +441,7 @@ impl<'a, F: Fn(&str, u32, f64) -> String> WeekHeat<'a, F> {
             let g = ph(
                 ui,
                 weekday_short(loc, d),
-                if on_day { mono_b.clone() } else { mono.clone() },
+                if on_day { figs_b.clone() } else { figs.clone() },
             );
             let r0 = cell_rect(d, 0);
             draw(
@@ -501,7 +501,7 @@ impl<'a, F: Fn(&str, u32, f64) -> String> WeekHeat<'a, F> {
                 let g = ph(
                     ui,
                     &hr.to_string(),
-                    if on { mono_b.clone() } else { mono.clone() },
+                    if on { figs_b.clone() } else { figs.clone() },
                 );
                 draw(
                     p,

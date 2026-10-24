@@ -280,8 +280,9 @@ pub(super) fn show(ctx: &Context, cx: &mut Ctx, st: &mut Palette) {
     let modal = egui::Modal::new(egui::Id::unique("dzch.palette"))
         .area(area)
         .frame(egui::Frame::NONE)
-        .backdrop_color(paint::alpha(tk.plot, 0.6 * a));
+        .backdrop_color(egui::Color32::TRANSPARENT);
     let r = modal.show(ctx, |ui| {
+        paint::veil(ui.painter(), paint::alpha(tk.plot, 0.6 * a));
         ui.multiply_opacity(a);
         egui::Frame::new()
             .fill(tk.panel)
@@ -545,7 +546,7 @@ fn draw_item(ui: &Ui, r: Rect, item: &Item, on: bool, tk: &Tokens) {
         let g = paint::galley_trunc(
             ui,
             sub,
-            font(Face::Mono, size::TEXT_3XS),
+            font(Face::Sans, size::TEXT_3XS),
             tk.fg_faint,
             right - x,
         );

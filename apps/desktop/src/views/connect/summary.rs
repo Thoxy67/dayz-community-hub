@@ -87,7 +87,7 @@ pub fn show(ui: &mut Ui, cx: &mut Ctx, r: &Resolved, ip: &str, port: i64) {
                     let ag = paint::galley(
                         ui,
                         &format!("{ip}:{}", r.game_port),
-                        font(Face::Mono, size::TEXT_2XS),
+                        font(Face::Sans, size::TEXT_2XS),
                         tk.fg_faint,
                     );
                     let (hr, _) = ui.allocate_exact_size(

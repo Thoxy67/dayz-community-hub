@@ -55,7 +55,7 @@ impl<'a> Fact<'a> {
 }
 
 /// `Facts`: labelled figures in a tight grid (`gap-x-3 gap-y-1 text-2xs`): the label faint
-/// on the left, the value in mono on the right; two pairs per line by default, one when a
+/// on the left, the value on the right; two pairs per line by default, one when a
 /// label would not fit whole.
 #[must_use = "add it with ui.add(…)"]
 pub struct Facts<'a> {
@@ -79,13 +79,13 @@ impl Widget for Facts<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
         let tk = ui.tokens();
         let w = ui.available_width();
-        let mono = font(Face::Mono, size::TEXT_2XS);
+        let figs = font(Face::Sans, size::TEXT_2XS);
         let sans = font(Face::Sans, size::TEXT_2XS);
         let gap = 12.0;
         let value_full: Vec<f32> = self
             .items
             .iter()
-            .map(|f| ph(ui, f.value, mono.clone()).size().x)
+            .map(|f| ph(ui, f.value, figs.clone()).size().x)
             .collect();
         let label_full: Vec<f32> = self
             .items
@@ -125,7 +125,7 @@ impl Widget for Facts<'_> {
             let cy = rect.top() + r as f32 * (LINE_2XS + 4.0) + LINE_2XS / 2.0;
             let lg = ph_trunc(ui, f.label, sans.clone(), label_w);
             draw(ui.painter(), &lg, x, cy, tk.fg_faint);
-            let vg = ph_trunc(ui, f.value, mono.clone(), vw.max(8.0));
+            let vg = ph_trunc(ui, f.value, figs.clone(), vw.max(8.0));
             let vx = x + label_w + gap + vw - vg.size().x;
             draw(ui.painter(), &vg, vx, cy, f.tone.unwrap_or(tk.fg));
             if !f.tip.is_empty() {
@@ -144,7 +144,7 @@ impl Widget for Facts<'_> {
 
 // ---------------------------------------------------------------------------------------
 
-/// One fact of a [`DetailList`]: a plain value is set in mono, as figures and ids are.
+/// One fact of a [`DetailList`]: a plain value, as figures and ids are.
 #[derive(Clone, Copy, Debug)]
 pub struct DetailRow<'a> {
     pub label: &'a str,
@@ -205,7 +205,7 @@ impl DetailRows<'_> {
         let (x, top) = self.label(row.label);
         let room = (self.ui.max_rect().right() - x).max(8.0);
         let text = row.value.unwrap_or(format::NONE);
-        let g = ph_trunc(self.ui, text, font(Face::Mono, size::TEXT_XS), room);
+        let g = ph_trunc(self.ui, text, font(Face::Sans, size::TEXT_XS), room);
         let r = Rect::from_min_size(Pos2::new(x, top), Vec2::new(room, 17.4));
         draw(
             self.ui.painter(),
@@ -398,7 +398,7 @@ impl<'a> ModStatusList<'a> {
                         "modsLocalSize",
                         &[("size", &format::bytes(bytes as f64))],
                     );
-                    text(ui, &s, font(Face::Mono, size::TEXT_2XS), tk.fg_faint);
+                    text(ui, &s, font(Face::Sans, size::TEXT_2XS), tk.fg_faint);
                 }
             });
         }
@@ -476,7 +476,7 @@ fn mod_row(ui: &mut Ui, m: &ModRef, last: bool, w: f32) -> bool {
     let pg = paint::tracked(
         ui,
         word,
-        font(Face::Mono, size::TEXT_3XS),
+        font(Face::Sans, size::TEXT_3XS),
         Color32::PLACEHOLDER,
         0.0,
         true,
@@ -502,7 +502,7 @@ fn mod_row(ui: &mut Ui, m: &ModRef, last: bool, w: f32) -> bool {
         .tip_kbd(t("detail", "openWorkshop"), "", Side::Top)
         .clicked();
     right = wr.left() - 8.0;
-    let cg = ph(ui, &m.id_text, font(Face::Mono, size::TEXT_3XS));
+    let cg = ph(ui, &m.id_text, font(Face::Sans, size::TEXT_3XS));
     let cw = cg.size().x + 16.0;
     let mut cui = ui.new_child(
         egui::UiBuilder::new()
@@ -530,7 +530,7 @@ fn mod_row(ui: &mut Ui, m: &ModRef, last: bool, w: f32) -> bool {
         right -= 12.0 + 8.0;
     }
     if !m.size_text.is_empty() {
-        let sg = ph(ui, &m.size_text, font(Face::Mono, size::TEXT_3XS));
+        let sg = ph(ui, &m.size_text, font(Face::Sans, size::TEXT_3XS));
         right -= sg.size().x;
         draw(ui.painter(), &sg, right, cy, tk.fg_faint);
         right -= 8.0;
@@ -591,7 +591,7 @@ impl Widget for TransferProgress<'_> {
                 let pct = self
                     .percent
                     .map_or_else(|| format::NONE.to_owned(), |p| format!("{p:.1}%"));
-                let pg = ph(ui, &pct, font(Face::Mono, size::TEXT_XS));
+                let pg = ph(ui, &pct, font(Face::Sans, size::TEXT_XS));
                 draw(
                     ui.painter(),
                     &pg,
@@ -630,7 +630,7 @@ impl Widget for TransferProgress<'_> {
                 };
                 let eta_v = self.eta.map_or_else(dash, clock);
                 let el_v = self.elapsed.map_or_else(dash, clock);
-                let mono = font(Face::Mono, size::TEXT_2XS);
+                let figs = font(Face::Sans, size::TEXT_2XS);
                 let pairs = [
                     (self.labels.size, size_v),
                     (self.labels.speed, speed_v),
@@ -643,9 +643,9 @@ impl Widget for TransferProgress<'_> {
                         ui.add_space(4.0);
                     }
                     let (r, _) = ui.allocate_exact_size(Vec2::new(w, LINE_2XS), Sense::hover());
-                    let lg = ph_trunc(ui, l, mono.clone(), col);
+                    let lg = ph_trunc(ui, l, figs.clone(), col);
                     draw(ui.painter(), &lg, r.left(), r.center().y, tk.fg_faint);
-                    let vg = ph_trunc(ui, v, mono.clone(), col);
+                    let vg = ph_trunc(ui, v, figs.clone(), col);
                     draw(
                         ui.painter(),
                         &vg,

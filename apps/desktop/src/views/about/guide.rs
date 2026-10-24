@@ -208,7 +208,7 @@ fn share_left(ui: &mut Ui) {
             ui.spacing_mut().item_spacing.x = 12.0;
             ui.allocate_ui_with_layout(vec2(88.0, 0.0), Layout::top_down(Align::Min), |ui| {
                 ui.set_width(88.0);
-                words(ui, term, Face::Mono, size::TEXT_2XS, tk.accent);
+                words(ui, term, Face::Sans, size::TEXT_2XS, tk.accent);
             });
             words(ui, a(key), Face::Sans, size::TEXT_2XS, tk.fg_muted);
         });
@@ -307,7 +307,7 @@ fn steps(ui: &mut Ui, list: &[&str]) {
             let n = paint::galley(
                 ui,
                 &(i + 1).to_string(),
-                font(Face::Mono, size::TEXT_3XS),
+                font(Face::Sans, size::TEXT_3XS),
                 tk.accent,
             );
             paint::text_center(p, &n, r, tk.accent);
@@ -355,7 +355,7 @@ pub fn footer(ui: &mut Ui, run: &mut Run) {
         );
         ui.add_space(4.0);
         for (i, (name, _)) in STACK.iter().enumerate() {
-            let g = paint::galley(ui, name, font(Face::Mono, size::TEXT_3XS), tk.fg_muted);
+            let g = paint::galley(ui, name, font(Face::Sans, size::TEXT_3XS), tk.fg_muted);
             let (r, resp) =
                 ui.allocate_exact_size(vec2(g.size().x + 12.0, g.size().y + 4.0), Sense::click());
             resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Link, true, *name));

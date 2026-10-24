@@ -177,12 +177,23 @@ impl<'a> SectionCard<'a> {
             );
             x += size::ICON_SM + 8.0;
         }
-        let tg = panel::stencil(
-            ui,
-            self.title,
-            Color32::PLACEHOLDER,
-            Some((room - x).max(8.0)),
-        );
+        // With a description beside it, the title takes the text face (one family on
+        // the line); alone, the stencil.
+        let tg = if self.description.is_empty() {
+            panel::stencil(
+                ui,
+                self.title,
+                Color32::PLACEHOLDER,
+                Some((room - x).max(8.0)),
+            )
+        } else {
+            panel::inline_label(
+                ui,
+                self.title,
+                Color32::PLACEHOLDER,
+                Some((room - x).max(8.0)),
+            )
+        };
         draw(ui.painter(), &tg, x, cy, tk.fg_muted);
         x += tg.size().x + 8.0;
         if !self.description.is_empty() && room - x > 16.0 {
@@ -542,7 +553,7 @@ impl<'a> BulkBar<'a> {
         let (lr, _) = c.allocate_exact_size(lg.size(), Sense::hover());
         draw(c.painter(), &lg, lr.left(), lr.center().y, tk.fg);
         if !self.info.is_empty() {
-            let ig = super::text::ph(&c, self.info, font(Face::Mono, size::TEXT_2XS));
+            let ig = super::text::ph(&c, self.info, font(Face::Sans, size::TEXT_2XS));
             let (ir, _) = c.allocate_exact_size(ig.size(), Sense::hover());
             draw(c.painter(), &ig, ir.left(), ir.center().y, tk.fg_faint);
         }
@@ -607,7 +618,7 @@ impl<'a> Empty<'a> {
         self
     }
 
-    /// A raw detail (an error's own words) after the text: mono, faint, selectable.
+    /// A raw detail (an error's own words) after the text: faint, selectable.
     pub fn detail(mut self, d: &'a str) -> Self {
         self.detail = d;
         self
@@ -782,8 +793,7 @@ impl<'a> Lightbox<'a> {
             .show(ctx, |ui| {
                 let a = paint::ease_for(ui, id.with("in"), true, motion::FAST);
                 let (rect, bg) = ui.allocate_exact_size(screen.size(), Sense::click());
-                ui.painter()
-                    .rect_filled(rect, CornerRadius::ZERO, alpha(tk.plot, 0.9 * a));
+                paint::veil(ui.painter(), alpha(tk.plot, 0.9 * a));
                 let inner = rect.shrink(32.0);
                 let img = egui::Image::new(self.image)
                     .max_size(inner.size())

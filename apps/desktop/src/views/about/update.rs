@@ -153,10 +153,10 @@ fn body(ui: &mut Ui, up: &Updater, run: &mut Run) {
                 format::bytes(up.received as f64)
             };
             ui.horizontal(|ui| {
-                words(ui, &got, Face::Mono, size::TEXT_2XS, tk.fg_faint);
+                words(ui, &got, Face::Sans, size::TEXT_2XS, tk.fg_faint);
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let pct = format!("{}%", up.percent());
-                    words(ui, &pct, Face::Mono, size::TEXT_2XS, tk.fg_faint);
+                    words(ui, &pct, Face::Sans, size::TEXT_2XS, tk.fg_faint);
                 });
             });
         }
@@ -206,7 +206,7 @@ fn body(ui: &mut Ui, up: &Updater, run: &mut Run) {
                 ui.add(
                     egui::Label::new(
                         RichText::new(&up.error)
-                            .font(font(Face::Mono, size::TEXT_2XS))
+                            .font(font(Face::Sans, size::TEXT_2XS))
                             .color(tk.err),
                     )
                     .wrap()
@@ -269,14 +269,12 @@ fn available(ui: &mut Ui, up: &Updater, run: &mut Run) {
                         size::TEXT_SM,
                         tk.fg,
                     );
-                    let v = paint::tracked(
+                    // The version in the sentence's face: one family on the line.
+                    let v = paint::galley(
                         ui,
                         &format!("v{}", info.version),
-                        font(Face::DisplayBold, size::TEXT_LG),
+                        font(Face::SansSemibold, size::TEXT_SM),
                         tk.ok,
-                        0.02,
-                        true,
-                        None,
                     );
                     let (r, _) = ui.allocate_exact_size(v.size(), Sense::hover());
                     ui.painter().galley(r.min, v, tk.ok);
@@ -291,7 +289,7 @@ fn available(ui: &mut Ui, up: &Updater, run: &mut Run) {
                         &[("date", &format::date_str(d))],
                     ));
                 }
-                words(ui, &meta, Face::Mono, size::TEXT_2XS, tk.fg_faint);
+                words(ui, &meta, Face::Sans, size::TEXT_2XS, tk.fg_faint);
                 if let Some(notes) = info.body.as_deref().filter(|b| !b.trim().is_empty()) {
                     ui.add_space(8.0);
                     Frame::new()
@@ -309,7 +307,7 @@ fn available(ui: &mut Ui, up: &Updater, run: &mut Run) {
                                     ui.add(
                                         egui::Label::new(
                                             RichText::new(notes)
-                                                .font(font(Face::Mono, size::TEXT_2XS))
+                                                .font(font(Face::Sans, size::TEXT_2XS))
                                                 .color(tk.fg_muted),
                                         )
                                         .wrap()

@@ -47,7 +47,7 @@ fn skeleton(ui: &mut Ui, h: f32) {
 
 /// A small tone tag with a dot (`Tag` with `size-1.5 rounded-full bg-current`).
 fn status_tag(ui: &mut Ui, text: &str, c: Color32) {
-    let g = ph(ui, text, font(Face::Mono, size::TEXT_2XS));
+    let g = ph(ui, text, font(Face::Sans, size::TEXT_2XS));
     let (r, _) = ui.allocate_exact_size(
         Vec2::new(6.0 + 6.0 + 4.0 + g.size().x + 6.0, 18.0),
         Sense::hover(),
@@ -417,7 +417,7 @@ fn figures(ui: &mut Ui, cx: &Ctx, x: &dz_hub::features::metrics::ServerMetricsDt
                 ui.painter().galley(Pos2::new(r.left() + 8.0 + vw, y), g, c);
             }
             Some((text, c, Some(arrow))) => {
-                let g = ph(ui, &text, font(Face::Mono, size::TEXT_2XS));
+                let g = ph(ui, &text, font(Face::Sans, size::TEXT_2XS));
                 let x0 = r.left() + 8.0 + vw + 6.0;
                 let cy = r.bottom() - 13.0;
                 let icon = if arrow {
@@ -591,7 +591,7 @@ fn schedule(ui: &mut Ui, x: &dz_hub::features::metrics::ServerMetricsDto) {
                             words(
                                 ui,
                                 &format!("{} UTC", r.slots_utc.join(" · ")),
-                                font(Face::Mono, size::TEXT_3XS),
+                                font(Face::Sans, size::TEXT_3XS),
                                 tk.fg_faint,
                             );
                         }
@@ -679,7 +679,7 @@ fn schedule(ui: &mut Ui, x: &dz_hub::features::metrics::ServerMetricsDto) {
                             words(
                                 ui,
                                 &past.join(" · "),
-                                font(Face::Mono, size::TEXT_3XS),
+                                font(Face::Sans, size::TEXT_3XS),
                                 tk.fg_muted,
                             );
                         });
