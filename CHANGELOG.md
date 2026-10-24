@@ -16,7 +16,32 @@ notes; without one, the notes are the commit titles since the last release.
   follows the system's.
 - **Controller support everywhere.** A gamepad (Steam Deck, Xbox,
   PlayStation) moves through every view and dialog, with a focus ring and
-  a hint bar showing what each button does.
+  a hint bar showing what each button does. While a controller is in use,
+  rows and buttons grow and the text is easier to read from a distance;
+  each row's actions open with Menu, an on-screen keyboard types into
+  fields, a built-in file picker replaces the system's, and tooltips show
+  on focus. The hint bar sits beside the side bar instead of over it.
+- **Steam Deck.** The launcher recognises a Deck and Game Mode: Deck
+  button labels, full screen without window buttons, links opened through
+  Steam, the Steam client as the default mod downloader, and an "Add to
+  Steam" button that adds the launcher to your Steam library.
+- **New filters:** servers by in-game time (day or night, estimated from
+  each server's clock speed), by a mod, and "ready to join" (every mod
+  installed and up to date, same game version).
+- **Mods you no longer use** (needed by no favourite and no played
+  server) are listed and can be removed together, a server's own mods can
+  be removed from its details, and the offline mode can load mods you pick.
+- **Favourites** take a note, coloured labels and groups, and each can
+  have its own character name and launch arguments.
+- **Tray icon.** Closing the window keeps the launcher in the system tray
+  (when your desktop shows one); its menu brings the window back or quits.
+  When the game starts the launcher can stay, minimise, hide or close,
+  and come back when the game stops (Settings → Window).
+- **Notifications** when a mod download ends or fails, an update is ready
+  or a join fails, while the launcher is in the background.
+- **Discord Rich Presence**, off by default: shows that you play DayZ and,
+  if you want, on which server.
+- **Desktop shortcuts** that join a server in one click.
 - **The news works again.** dayz.com moved to a new site and the news
   view stopped loading. It now reads the new site: the latest 50
   articles, each opened with its pictures, its videos (a click opens them
@@ -44,7 +69,9 @@ notes; without one, the notes are the commit titles since the last release.
   reuses Steam's last server list when it is under ten minutes old,
   instead of asking Steam again; when it does ask, it needs about a third
   of the requests. The full server list costs less to keep up to date,
-  and the launcher stays idle when nothing happens.
+  and the launcher stays idle when nothing happens. Servers are now asked
+  through one paced connection, as the official launcher does, and the
+  server list loads from a cache several times smaller and faster to read.
 - **One notification per message.** Some notifications appeared twice;
   launch steps now replace each other instead of piling up.
 - **The window can be resized from its edges again** after it has been
