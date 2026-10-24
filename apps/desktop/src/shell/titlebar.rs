@@ -104,6 +104,7 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx, menus_state: &mut MenuState) {
     let face = font(Face::DisplayBold, 15.0);
     let dayz = paint::tracked(ui, "DayZ ", face.clone(), tk.fg, 0.06, true, None);
     let hub = paint::tracked(ui, "Community Hub", face, tk.accent, 0.06, true, None);
+    super::seasons::title(ui, x, cy, dayz.size() + egui::vec2(hub.size().x, 0.0));
     paint::text_at(ui.painter(), &dayz, x, cy + 0.5, tk.fg);
     x += dayz.size().x;
     paint::text_at(ui.painter(), &hub, x, cy + 0.5, tk.accent);

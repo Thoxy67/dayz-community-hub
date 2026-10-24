@@ -8,6 +8,9 @@
 
 pub mod fonts;
 pub mod presets;
+pub mod season;
+
+pub use presets::Ambient;
 
 use egui::Color32;
 
@@ -67,6 +70,12 @@ pub struct Tokens {
     pub info: Color32,
     pub map: Color32,
     pub mods: Color32,
+    // the seasons (`kit::season`)
+    /// Snow resting on an edge: near white, cold.
+    pub snow: Color32,
+    /// A falling flake: the snow on a dark ground, an icy blue on a light one (where
+    /// white would not show).
+    pub frost: Color32,
 }
 
 impl Tokens {
@@ -102,6 +111,11 @@ impl Tokens {
             info: legible(raw.info, raw.panel, scheme),
             map: legible(raw.map, raw.panel, scheme),
             mods: legible(raw.mods, raw.panel, scheme),
+            snow: rgb([0.985, 0.008, raw.info[2]]),
+            frost: match scheme {
+                Scheme::Dark => rgb([0.97, 0.012, raw.info[2]]),
+                Scheme::Light => rgb([0.72, 0.05, raw.info[2]]),
+            },
         }
     }
 

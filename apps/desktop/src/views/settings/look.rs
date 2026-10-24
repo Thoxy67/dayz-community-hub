@@ -6,14 +6,14 @@ use std::sync::OnceLock;
 use egui::{Align, Color32, CornerRadius, Layout, Pos2, Rect, Sense, Ui, Vec2};
 use serde_json::{Value, json};
 
-use super::{SettingsView, block, line, rule, words};
+use super::{SettingsView, block, boxed, line, rule, words};
 use crate::app::Ctx;
 use crate::i18n::{self, t};
 use crate::icons::{Icon, lucide};
 use crate::kit::paint::{self, alpha};
 use crate::kit::{
-    Button, Field, IconButton, Input, Segment, Segmented, Select, SelectOption, Side, Tag, TipExt,
-    Tone, Variant,
+    Button, Field, IconButton, Input, Segment, Segmented, Select, SelectOption, Side, Switch, Tag,
+    TipExt, Tone, Variant,
 };
 use crate::parts::{ColorToken, LanguagePicker, SettingsSection, preset_name, theme_preview};
 use crate::store::theme::{TOKEN_NAMES, raw_get};
@@ -195,12 +195,18 @@ impl SettingsView {
     pub(super) fn appearance(&mut self, ui: &mut Ui, cx: &mut Ctx) {
         let tk = ui.tokens();
         let selected = cx.stores.theme.selected(cx.prefs).map(str::to_string);
-        let worn = cx.prefs.get().theme.preset.clone();
+        // A seasonal theme worn over the player's is the one marked: it is what shows.
+        let seasonal = cx.stores.theme.seasonal(cx.prefs);
+        let worn = seasonal
+            .map(str::to_string)
+            .or_else(|| cx.prefs.get().theme.preset.clone());
         let custom = cx.stores.theme.custom(cx.prefs).cloned();
-        let worn_name = match (&selected, &custom) {
-            (None, _) => t("theme", "followSystem").to_string(),
-            (_, Some(c)) => c.name.clone(),
-            (Some(id), None) => crate::theme::presets::by_id(id)
+        let worn_name = match (seasonal, &selected, &custom) {
+            (Some(id), _, _) => crate::theme::presets::by_id(id)
+                .map_or_else(|| id.to_string(), |p| preset_name(p).to_string()),
+            (None, None, _) => t("theme", "followSystem").to_string(),
+            (None, _, Some(c)) => c.name.clone(),
+            (None, Some(id), None) => crate::theme::presets::by_id(id)
                 .map_or_else(|| id.clone(), |p| preset_name(p).to_string()),
         };
         SettingsSection::new(t("settings", "sectionAppearance"))
@@ -232,6 +238,7 @@ impl SettingsView {
                                 );
                             }
                         });
+                    seasons(ui, cx);
                     // Follow the system, and which dark and light preset that means.
                     block(ui, 10, false, None, |ui| {
                         ui.horizontal_wrapped(|ui| {
@@ -568,6 +575,41 @@ impl SettingsView {
                     });
                 },
             );
+    }
+}
+
+/// The seasonal themes (October, December) and their effects, each on or off.
+fn seasons(ui: &mut Ui, cx: &mut Ctx) {
+    let p = &cx.prefs.get().ui;
+    let (themes, effects) = (p.seasonal_themes, p.seasonal_effects);
+    for (on, label, hint, switch, cmd) in [
+        (
+            themes,
+            "seasonalThemes",
+            "seasonalThemesHint",
+            "seasonalThemesSwitch",
+            "ui.set_seasonal_themes",
+        ),
+        (
+            effects,
+            "seasonalEffects",
+            "seasonalEffectsHint",
+            "seasonalEffectsSwitch",
+            "ui.set_seasonal_effects",
+        ),
+    ] {
+        Field::new(t("settings", label))
+            .hint(t("settings", hint))
+            .show(ui, |ui| {
+                let mut v = on;
+                let changed = boxed(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.add(Switch::new(&mut v, t("settings", switch))).changed()
+                });
+                if changed {
+                    let _ = cx.run(cmd, &json!({ "on": v }));
+                }
+            });
     }
 }
 

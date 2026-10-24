@@ -215,6 +215,8 @@ impl<'a> SectionCard<'a> {
             Stroke::new(1.0, tk.border),
             StrokeKind::Inside,
         );
+        // In winter, snow rests on the card.
+        crate::kit::season::snow_on(ui.painter(), rect, &tk);
         r.inner
     }
 }

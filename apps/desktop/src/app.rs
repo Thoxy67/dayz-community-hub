@@ -397,6 +397,11 @@ impl HubApp {
             view,
         } = kept;
         let mut app = Self::new(ctx, hub, events, prefs);
+        // The real window goes by the local date for the seasonal themes (tests and
+        // screenshots have none unless they set one).
+        app.stores
+            .theme
+            .set_clock(crate::store::theme::Clock::Local);
         if let Some(v) = view {
             app.nav.go(v, None);
         }
@@ -771,35 +776,53 @@ impl HubApp {
             &mut self.prefs,
             &mut self.nav,
         );
+        // The seasonal effects: whether they show and move this frame (the title's
+        // candle reads it as the bar is drawn).
+        shell::seasons::begin(ctx, &c);
         egui::Panel::top("shell.titlebar")
             .exact_size(size::TITLEBAR)
             .resizable(false)
             .frame(Frame::new().fill(tk.bg))
             .show(ui, |ui| shell::titlebar(ui, &mut c));
-        egui::Panel::bottom("shell.statusbar")
+        let status = egui::Panel::bottom("shell.statusbar")
             .exact_size(shell::STATUSBAR_HEIGHT)
             .resizable(false)
             .frame(Frame::new().fill(tk.bg))
-            .show(ui, |ui| shell::statusbar(ui, &mut c));
-        egui::Panel::left("shell.rail")
+            .show(ui, |ui| shell::statusbar(ui, &mut c))
+            .response
+            .rect;
+        let rail = egui::Panel::left("shell.rail")
             .exact_size(rail_w)
             .resizable(false)
             .frame(Frame::new().fill(tk.bg))
-            .show(ui, |ui| shell::rail(ui, &mut c));
+            .show(ui, |ui| shell::rail(ui, &mut c))
+            .response
+            .rect;
         // What the pad's buttons do, under the main area beside the rail: in pad mode
         // only, its height taken from the main area rather than drawn over it.
-        if shell::pad_hints_shown(&c) {
+        let hints = shell::pad_hints_shown(&c).then(|| {
             egui::Panel::bottom("shell.padhints")
                 .exact_size(shell::PAD_HINTS_HEIGHT)
                 .resizable(false)
                 .show_separator_line(false)
                 .frame(Frame::new().fill(tk.panel))
-                .show(ui, |ui| shell::pad_hints(ui, &mut c));
-        }
+                .show(ui, |ui| shell::pad_hints(ui, &mut c))
+                .response
+                .rect
+        });
         let views = &mut self.views;
         egui::CentralPanel::default()
             .frame(Frame::new().fill(tk.panel))
             .show(ui, |ui| main_area(ui, &mut c, views));
+        shell::seasons::paint(
+            ctx,
+            shell::seasons::Regions {
+                window: full,
+                rail,
+                status,
+                hints,
+            },
+        );
         // In pad mode the status bar and the pad hints' bar stay readable over the veil:
         // dialogs keep clear of them.
         let kept = if shell::pad_hints_shown(&c) {

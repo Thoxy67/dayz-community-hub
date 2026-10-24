@@ -113,6 +113,21 @@ pub struct UiPrefs {
     pub pad_scale: f32,
     /// The on-screen keyboard a controller's text field brings up.
     pub pad_keyboard: OskChoice,
+    /// October and December wear their seasonal theme over the player's
+    /// (`theme::season`).
+    pub seasonal_themes: bool,
+    /// A seasonal theme draws its effects (snow, fog…); off keeps only its colours.
+    pub seasonal_effects: bool,
+    /// The month (`2026-10`) the player picked a theme by hand during, which keeps the
+    /// seasonal theme away until the next period. Anything but a string reads as none.
+    #[serde(deserialize_with = "lenient_string")]
+    pub season_opt_out: Option<String>,
+}
+
+/// A string, or `None` for anything else (a hand edit, a later version's value).
+fn lenient_string<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    let v = serde_json::Value::deserialize(d)?;
+    Ok(v.as_str().map(|s| s.chars().take(16).collect()))
 }
 
 /// The pad scale out of the box, and its smallest value. The pad density (`theme::size`)
@@ -132,6 +147,9 @@ impl Default for UiPrefs {
             pad_mode: PadMode::Auto,
             pad_scale: PAD_SCALE_DEFAULT,
             pad_keyboard: OskChoice::Auto,
+            seasonal_themes: true,
+            seasonal_effects: true,
+            season_opt_out: None,
         }
     }
 }
@@ -473,6 +491,21 @@ mod tests {
         }
         assert_eq!(v["dzch.prefs"]["railCollapsed"], false);
         assert_eq!(v["dzch.prefs"]["padMode"], "auto");
+    }
+
+    #[test]
+    fn the_seasons_default_on_and_a_strange_opt_out_reads_as_none() {
+        let s: Stored = serde_json::from_str(r#"{"dzch.prefs": {"railCollapsed": true}}"#).unwrap();
+        assert!(s.ui.seasonal_themes && s.ui.seasonal_effects);
+        assert_eq!(s.ui.season_opt_out, None);
+        let s: Stored =
+            serde_json::from_str(r#"{"dzch.prefs": {"seasonOptOut": 42, "railCollapsed": true}}"#)
+                .unwrap();
+        assert!(s.ui.rail_collapsed);
+        assert_eq!(s.ui.season_opt_out, None);
+        let s: Stored =
+            serde_json::from_str(r#"{"dzch.prefs": {"seasonOptOut": "2026-10"}}"#).unwrap();
+        assert_eq!(s.ui.season_opt_out.as_deref(), Some("2026-10"));
     }
 
     #[test]

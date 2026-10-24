@@ -23,6 +23,7 @@
 //! | `palette`     | `CommandPalette.svelte` (+ `lib/shortcuts/fuzzy.ts` in `fuzzy`) |
 //! | `pad_hints`   | `PadHints.svelte`                                            |
 //! | `window`      | the resize edges of the undecorated window                   |
+//! | `seasons`     | (new) the seasonal themes' effects over the window             |
 //!
 //! The mod operation's dialog and the setup wizard belong to the mods and setup views:
 //! they install themselves with [`set_mod_op_host`] / [`set_wizard_host`]; until then a
@@ -38,6 +39,7 @@ mod menus;
 mod pad_hints;
 mod palette;
 mod rail;
+pub mod seasons;
 mod statusbar;
 mod titlebar;
 mod window;

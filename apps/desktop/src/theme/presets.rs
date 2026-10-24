@@ -12,7 +12,19 @@ pub struct Preset {
     /// A key of the `theme` dictionary: the one-line character.
     pub blurb: &'static str,
     pub scheme: Scheme,
+    /// The seasonal effect drawn over the window while it is worn.
+    pub ambient: Ambient,
     pub raw: Raw,
+}
+
+/// A seasonal effect a preset brings (`kit::season`): nothing, Halloween's fog,
+/// candle-lit title and spider, or winter's snow.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Ambient {
+    #[default]
+    None,
+    Halloween,
+    Winter,
 }
 
 const fn c(l: f32, c: f32, h: f32) -> [f32; 3] {
@@ -25,6 +37,7 @@ pub const PRESETS: &[Preset] = &[
         name: "Chernarus",
         blurb: "blurbChernarus",
         scheme: Scheme::Dark,
+        ambient: Ambient::None,
         raw: Raw {
             bg: c(0.1830, 0.007, 135.0),
             panel: c(0.2170, 0.012, 129.0),
@@ -45,6 +58,7 @@ pub const PRESETS: &[Preset] = &[
         name: "Topo",
         blurb: "blurbTopo",
         scheme: Scheme::Light,
+        ambient: Ambient::None,
         raw: Raw {
             bg: c(0.9030, 0.018, 121.0),
             panel: c(0.9510, 0.012, 117.0),
@@ -65,6 +79,7 @@ pub const PRESETS: &[Preset] = &[
         name: "OLED",
         blurb: "blurbOled",
         scheme: Scheme::Dark,
+        ambient: Ambient::None,
         raw: Raw {
             bg: c(0.0000, 0.0, 0.0),
             panel: c(0.1050, 0.004, 85.0),
@@ -85,6 +100,7 @@ pub const PRESETS: &[Preset] = &[
         name: "GitHub Dark",
         blurb: "blurbGithubDark",
         scheme: Scheme::Dark,
+        ambient: Ambient::None,
         raw: Raw {
             bg: c(0.1760, 0.014, 258.0),
             panel: c(0.2200, 0.016, 257.0),
@@ -105,6 +121,7 @@ pub const PRESETS: &[Preset] = &[
         name: "Tokyo Night",
         blurb: "blurbTokyonight",
         scheme: Scheme::Dark,
+        ambient: Ambient::None,
         raw: Raw {
             bg: c(0.2040, 0.016, 285.0),
             panel: c(0.2260, 0.021, 280.0),
@@ -125,6 +142,7 @@ pub const PRESETS: &[Preset] = &[
         name: "Nord",
         blurb: "blurbNord",
         scheme: Scheme::Dark,
+        ambient: Ambient::None,
         raw: Raw {
             bg: c(0.3240, 0.023, 264.0),
             panel: c(0.3520, 0.026, 267.0),
@@ -145,6 +163,7 @@ pub const PRESETS: &[Preset] = &[
         name: "Forest",
         blurb: "blurbForest",
         scheme: Scheme::Dark,
+        ambient: Ambient::None,
         raw: Raw {
             bg: c(0.1600, 0.022, 150.0),
             panel: c(0.1950, 0.026, 150.0),
@@ -165,6 +184,7 @@ pub const PRESETS: &[Preset] = &[
         name: "Military",
         blurb: "blurbMilitary",
         scheme: Scheme::Dark,
+        ambient: Ambient::None,
         raw: Raw {
             bg: c(0.2000, 0.02, 115.0),
             panel: c(0.2400, 0.025, 115.0),
@@ -185,6 +205,7 @@ pub const PRESETS: &[Preset] = &[
         name: "Blood Moon",
         blurb: "blurbBloodMoon",
         scheme: Scheme::Dark,
+        ambient: Ambient::None,
         raw: Raw {
             bg: c(0.1300, 0.018, 20.0),
             panel: c(0.1700, 0.024, 20.0),
@@ -205,6 +226,7 @@ pub const PRESETS: &[Preset] = &[
         name: "Sepia",
         blurb: "blurbSepia",
         scheme: Scheme::Dark,
+        ambient: Ambient::None,
         raw: Raw {
             bg: c(0.2100, 0.022, 60.0),
             panel: c(0.2500, 0.027, 60.0),
@@ -225,6 +247,7 @@ pub const PRESETS: &[Preset] = &[
         name: "Gruvbox Dark",
         blurb: "blurbGruvboxDark",
         scheme: Scheme::Dark,
+        ambient: Ambient::None,
         raw: Raw {
             bg: c(0.2770, 0.0, 90.0),
             panel: c(0.3110, 0.003, 49.0),
@@ -245,6 +268,7 @@ pub const PRESETS: &[Preset] = &[
         name: "Catppuccin Mocha",
         blurb: "blurbCatppuccin",
         scheme: Scheme::Dark,
+        ambient: Ambient::None,
         raw: Raw {
             bg: c(0.2160, 0.025, 284.0),
             panel: c(0.2430, 0.03, 284.0),
@@ -265,6 +289,7 @@ pub const PRESETS: &[Preset] = &[
         name: "Sand",
         blurb: "blurbSand",
         scheme: Scheme::Light,
+        ambient: Ambient::None,
         raw: Raw {
             bg: c(0.8800, 0.025, 70.0),
             panel: c(0.9500, 0.018, 75.0),
@@ -285,6 +310,7 @@ pub const PRESETS: &[Preset] = &[
         name: "GitHub Light",
         blurb: "blurbGithubLight",
         scheme: Scheme::Light,
+        ambient: Ambient::None,
         raw: Raw {
             bg: c(0.9780, 0.003, 248.0),
             panel: c(1.0000, 0.0, 90.0),
@@ -305,6 +331,7 @@ pub const PRESETS: &[Preset] = &[
         name: "Gruvbox Light",
         blurb: "blurbGruvboxLight",
         scheme: Scheme::Light,
+        ambient: Ambient::None,
         raw: Raw {
             bg: c(0.9220, 0.055, 93.0),
             panel: c(0.9560, 0.055, 96.0),
@@ -325,6 +352,7 @@ pub const PRESETS: &[Preset] = &[
         name: "Catppuccin Latte",
         blurb: "blurbCatppuccinLatte",
         scheme: Scheme::Light,
+        ambient: Ambient::None,
         raw: Raw {
             bg: c(0.9330, 0.009, 265.0),
             panel: c(0.9580, 0.006, 265.0),
@@ -345,6 +373,7 @@ pub const PRESETS: &[Preset] = &[
         name: "Rosé Pine Dawn",
         blurb: "blurbRosepineDawn",
         scheme: Scheme::Light,
+        ambient: Ambient::None,
         raw: Raw {
             bg: c(0.9700, 0.011, 72.0),
             panel: c(0.9870, 0.011, 77.0),
@@ -358,6 +387,70 @@ pub const PRESETS: &[Preset] = &[
             info: c(0.5500, 0.09, 300.0),
             map: c(0.5700, 0.1, 78.0),
             mods: c(0.5500, 0.07, 205.0),
+        },
+    },
+    // ── the seasonal presets: worn on their own in October and December (`theme::season`) ──
+    Preset {
+        id: "halloween",
+        name: "Pumpkin Night",
+        blurb: "blurbHalloween",
+        scheme: Scheme::Dark,
+        ambient: Ambient::Halloween,
+        raw: Raw {
+            bg: c(0.1650, 0.025, 305.0),
+            panel: c(0.2050, 0.032, 302.0),
+            raised: c(0.2550, 0.04, 300.0),
+            fg: c(0.9300, 0.03, 80.0),
+            accent: c(0.7400, 0.17, 52.0),
+            accent_fg: c(0.1800, 0.03, 40.0),
+            ok: c(0.8000, 0.18, 135.0),
+            warn: c(0.8200, 0.15, 85.0),
+            err: c(0.6300, 0.21, 25.0),
+            info: c(0.6800, 0.15, 300.0),
+            map: c(0.7800, 0.1, 70.0),
+            mods: c(0.7600, 0.14, 150.0),
+        },
+    },
+    Preset {
+        id: "christmas",
+        name: "Christmas Night",
+        blurb: "blurbChristmas",
+        scheme: Scheme::Dark,
+        ambient: Ambient::Winter,
+        raw: Raw {
+            bg: c(0.1900, 0.035, 255.0),
+            panel: c(0.2250, 0.04, 252.0),
+            raised: c(0.2750, 0.045, 250.0),
+            fg: c(0.9600, 0.012, 235.0),
+            accent: c(0.6200, 0.2, 25.0),
+            accent_fg: c(0.9800, 0.01, 90.0),
+            ok: c(0.7200, 0.14, 155.0),
+            warn: c(0.8400, 0.13, 88.0),
+            err: c(0.6400, 0.21, 22.0),
+            info: c(0.8000, 0.09, 232.0),
+            map: c(0.8200, 0.06, 232.0),
+            mods: c(0.7400, 0.11, 170.0),
+        },
+    },
+    Preset {
+        id: "powder",
+        name: "Powder",
+        blurb: "blurbPowder",
+        scheme: Scheme::Light,
+        ambient: Ambient::Winter,
+        raw: Raw {
+            bg: c(0.9500, 0.012, 235.0),
+            panel: c(0.9850, 0.006, 235.0),
+            raised: c(0.9050, 0.02, 235.0),
+            fg: c(0.2500, 0.04, 255.0),
+            accent: c(0.5500, 0.2, 25.0),
+            accent_fg: c(0.9800, 0.01, 90.0),
+            ok: c(0.5500, 0.14, 155.0),
+            warn: c(0.6200, 0.14, 75.0),
+            err: c(0.5300, 0.2, 25.0),
+            info: c(0.5000, 0.11, 240.0),
+            map: c(0.4800, 0.07, 240.0),
+            mods: c(0.5200, 0.1, 170.0),
         },
     },
 ];

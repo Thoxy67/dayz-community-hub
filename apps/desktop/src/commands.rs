@@ -1182,6 +1182,30 @@ pub static COMMANDS: &[CommandSpec] = &[
         }
     ),
     cmd!(
+        "ui.set_seasonal_themes",
+        ("settings", "seasonalThemes"),
+        "settings",
+        |cx, a| {
+            let now = cx.prefs.get().ui.seasonal_themes;
+            let on = arg_bool(a, "on").unwrap_or(!now);
+            if on != now {
+                cx.prefs.edit().ui.seasonal_themes = on;
+            }
+        }
+    ),
+    cmd!(
+        "ui.set_seasonal_effects",
+        ("settings", "seasonalEffects"),
+        "settings",
+        |cx, a| {
+            let now = cx.prefs.get().ui.seasonal_effects;
+            let on = arg_bool(a, "on").unwrap_or(!now);
+            if on != now {
+                cx.prefs.edit().ui.seasonal_effects = on;
+            }
+        }
+    ),
+    cmd!(
         "theme.set_pair",
         ("theme", "followSystem"),
         "theme",

@@ -13,6 +13,7 @@
 //! | `{"ppp": 1.0}` | pixels per point (default 1: a shot is `w × h` pixels) |
 //! | `{"locale": "fr"}` | the interface language (en fr de es ru) |
 //! | `{"theme": "chernarus"}` | a theme: a preset id, a custom theme's id, or `system` |
+//! | `{"date": "2026-10-15"}` | the day the seasonal themes go by (`null`: none, the default; `"local"`: today), to see October's or December's override |
 //! | `{"view": "servers"}` | open a view by its id (`"focus"` optional) |
 //! | `{"command": "id", "args": {…}}` | run a command of the registry (`commands.rs`) |
 //! | `{"steps": n}` | settle (below), then run `n` frames |
@@ -205,6 +206,26 @@ fn run_line(h: &mut H, tx: &mpsc::Sender<ControlRequest>, l: &Value) -> Result<(
         let r = with_ctx(h, |cx| control::set_theme(cx, id))?;
         step_n(h, 2);
         return reply_ok(&r);
+    }
+    if let Some(d) = l.get("date") {
+        use dzch_ui::store::theme::Clock;
+        let clock = match d.as_str() {
+            None if d.is_null() => Clock::Off,
+            Some("local") => Clock::Local,
+            Some(day) => Clock::Fixed(
+                dzch_ui::theme::season::Day::parse(day)
+                    .ok_or_else(|| format!("not a date: `{day}`"))?,
+            ),
+            None => return Err("`date` is a string or null".into()),
+        };
+        h.state_mut()
+            .as_mut()
+            .ok_or_else(|| "the window is not made yet".to_string())?
+            .stores_mut()
+            .theme
+            .set_clock(clock);
+        step_n(h, 2);
+        return Ok(());
     }
     if let Some(id) = s("view") {
         let v = ViewId::from_id(id).ok_or_else(|| format!("unknown view `{id}`"))?;

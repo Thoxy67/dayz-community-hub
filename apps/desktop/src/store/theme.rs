@@ -9,7 +9,8 @@ use egui::Context;
 
 use crate::prefs::{CustomTheme, Prefs};
 use crate::theme::presets::{self, DEFAULT_DARK};
-use crate::theme::{self, Oklch, Raw, Scheme, Tokens};
+use crate::theme::season::{self, Day};
+use crate::theme::{self, Ambient, Oklch, Raw, Scheme, Tokens};
 
 /// The names of the twelve colours, in the editor's order (= `TOKEN_NAMES`).
 pub const TOKEN_NAMES: [&str; 12] = [
@@ -116,16 +117,95 @@ pub fn parse_oklch(s: &str) -> Option<Oklch> {
     ok.then_some([l.clamp(0.0, 1.0), c.clamp(0.0, 0.5), h.rem_euclid(360.0)])
 }
 
+/// Where the seasonal switch reads the date from.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Clock {
+    /// No date: no seasonal theme (tests, screenshots unless they ask for one).
+    #[default]
+    Off,
+    /// The local date (the window `main` makes).
+    Local,
+    /// This day (`ui_shot`'s `{"date": …}`, tests).
+    Fixed(Day),
+}
+
+/// How often the local date is read again.
+const DATE_CHECK: std::time::Duration = std::time::Duration::from_secs(60);
+
 #[derive(Default)]
 pub struct Theme {
     /// The OS's scheme, as egui reports it.
     pub os: Option<Scheme>,
     /// A theme shown while the pointer rests on it in a menu; never stored.
     preview: Option<String>,
-    applied: Option<(Scheme, Raw)>,
+    applied: Option<(Scheme, Raw, Ambient)>,
+    clock: Clock,
+    /// The date the seasonal switch goes by (`None`: no seasonal theme).
+    today: Option<Day>,
+    /// When the local date was last read, and when the next month begins.
+    checked: Option<std::time::Instant>,
+    month_ends: Option<std::time::Instant>,
 }
 
 impl Theme {
+    /// Where the seasonal switch reads the date from; read again at once.
+    pub fn set_clock(&mut self, clock: Clock) {
+        self.clock = clock;
+        self.checked = None;
+        self.month_ends = None;
+        self.today = match clock {
+            Clock::Off => None,
+            Clock::Local => Some(Day::today()),
+            Clock::Fixed(d) => Some(d),
+        };
+    }
+
+    /// The local date, read once a minute at most (a frame's input or a hub event
+    /// brings the check; no frame of its own but one when the month turns).
+    fn tick(&mut self, ctx: &Context, prefs: &Prefs) {
+        if self.clock != Clock::Local {
+            return;
+        }
+        let now = std::time::Instant::now();
+        if self
+            .checked
+            .is_none_or(|c| now.duration_since(c) >= DATE_CHECK)
+        {
+            self.checked = Some(now);
+            self.today = Some(Day::today());
+            self.month_ends = Some(now + season::until_next_month());
+        }
+        // One wake when the month turns, while the switch is on: the override starts
+        // or ends without waiting for input.
+        if prefs.get().ui.seasonal_themes
+            && let Some(end) = self.month_ends
+        {
+            ctx.request_repaint_after(end.saturating_duration_since(now));
+        }
+    }
+
+    /// The seasonal preset worn over the player's theme now, if any.
+    pub fn seasonal(&self, prefs: &Prefs) -> Option<&'static str> {
+        let p = prefs.get();
+        let own = self.resolve(prefs, p.theme.preset.as_deref()).scheme;
+        season::override_for(
+            self.today,
+            p.ui.seasonal_themes,
+            p.ui.season_opt_out.as_deref(),
+            own,
+        )
+    }
+
+    /// A theme picked by hand: while a seasonal theme is worn, the player's choice wins
+    /// for the rest of the month.
+    fn picked(&self, prefs: &mut Prefs) {
+        if self.seasonal(prefs).is_some()
+            && let Some(d) = self.today
+        {
+            prefs.edit().ui.season_opt_out = Some(d.period_key());
+        }
+    }
+
     fn os_scheme(&self) -> Scheme {
         self.os.unwrap_or(Scheme::Dark)
     }
@@ -174,6 +254,7 @@ impl Theme {
         let id = self
             .preview
             .clone()
+            .or_else(|| self.seasonal(prefs).map(str::to_string))
             .or_else(|| prefs.get().theme.preset.clone());
         self.resolve(prefs, id.as_deref())
     }
@@ -204,6 +285,7 @@ impl Theme {
     /// or `None` to follow the system.
     pub fn use_theme(&mut self, prefs: &mut Prefs, id: Option<&str>) {
         self.preview = None;
+        self.picked(prefs);
         let id = match id {
             Some("custom") => prefs.get().theme.customs.first().map(|c| c.id.clone()),
             Some(i) if is_custom(Some(i)) => prefs
@@ -249,6 +331,7 @@ impl Theme {
             Some(id) => self.resolve(prefs, Some(id)),
             None => self.current(prefs),
         };
+        self.picked(prefs);
         let base = if is_custom(Some(&src.id)) {
             src.base.clone()
         } else {
@@ -271,6 +354,7 @@ impl Theme {
 
     /// The worn custom theme, a copy of what is worn made first if none is.
     fn edit<'p>(&mut self, prefs: &'p mut Prefs) -> Option<&'p mut CustomTheme> {
+        self.picked(prefs);
         if self.custom(prefs).is_none() {
             self.duplicate(prefs, None, None);
         }
@@ -391,6 +475,7 @@ impl Theme {
         } else {
             Scheme::Dark
         };
+        self.picked(prefs);
         let c = CustomTheme {
             id: new_id(),
             name,
@@ -414,12 +499,17 @@ impl Theme {
         if os.is_some() {
             self.os = os;
         }
+        self.tick(ctx, prefs);
         let w = self.current(prefs);
-        let key = (w.scheme, w.raw);
+        let ambient = presets::by_id(&w.id)
+            .filter(|_| !is_custom(Some(&w.id)))
+            .map_or(Ambient::None, |p| p.ambient);
+        let key = (w.scheme, w.raw, ambient);
         if self.applied.as_ref() == Some(&key) {
             return false;
         }
         theme::apply(ctx, Tokens::derive(&w.raw, w.scheme));
+        crate::kit::season::set_ambient(ctx, ambient);
         self.applied = Some(key);
         true
     }
@@ -480,6 +570,78 @@ mod tests {
         th.remove(&mut prefs, &back.id);
         assert_eq!(prefs.get().theme.customs.len(), 1);
         assert_eq!(prefs.get().theme.preset, None);
+    }
+
+    #[test]
+    fn the_season_overrides_without_touching_the_choice() {
+        let mut prefs = Prefs::default();
+        let mut th = Theme {
+            os: Some(Scheme::Dark),
+            ..Theme::default()
+        };
+        th.use_theme(&mut prefs, Some("nord"));
+        th.set_clock(Clock::Fixed(Day::new(2026, 9, 30)));
+        assert_eq!(th.current(&prefs).id, "nord");
+        th.set_clock(Clock::Fixed(Day::new(2026, 10, 1)));
+        assert_eq!(th.current(&prefs).id, "halloween");
+        assert_eq!(prefs.get().theme.preset.as_deref(), Some("nord"));
+        th.set_clock(Clock::Fixed(Day::new(2026, 12, 31)));
+        assert_eq!(th.current(&prefs).id, "christmas");
+        th.set_clock(Clock::Fixed(Day::new(2027, 1, 1)));
+        assert_eq!(th.current(&prefs).id, "nord");
+        // Switched off: the player's own.
+        th.set_clock(Clock::Fixed(Day::new(2026, 10, 3)));
+        prefs.edit().ui.seasonal_themes = false;
+        assert_eq!(th.current(&prefs).id, "nord");
+        prefs.edit().ui.seasonal_themes = true;
+        // A preview still shows what it previews.
+        th.preview(Some("topo"));
+        assert_eq!(th.current(&prefs).id, "topo");
+        th.preview(None);
+        assert_eq!(th.current(&prefs).id, "halloween");
+    }
+
+    #[test]
+    fn a_light_theme_wears_powder_in_december() {
+        let mut prefs = Prefs::default();
+        let mut th = Theme {
+            os: Some(Scheme::Light),
+            ..Theme::default()
+        };
+        th.set_clock(Clock::Fixed(Day::new(2026, 12, 1)));
+        // Following the system, which is light: topo.
+        assert_eq!(th.current(&prefs).id, "powder");
+        th.use_theme(&mut prefs, Some("gruvbox_dark"));
+        prefs.edit().ui.season_opt_out = None;
+        assert_eq!(th.current(&prefs).id, "christmas");
+    }
+
+    #[test]
+    fn a_choice_during_the_season_holds_until_the_next() {
+        let mut prefs = Prefs::default();
+        let mut th = Theme {
+            os: Some(Scheme::Dark),
+            ..Theme::default()
+        };
+        // Outside a season a choice records nothing.
+        th.set_clock(Clock::Fixed(Day::new(2026, 9, 12)));
+        th.use_theme(&mut prefs, Some("nord"));
+        assert_eq!(prefs.get().ui.season_opt_out, None);
+        th.set_clock(Clock::Fixed(Day::new(2026, 10, 12)));
+        assert_eq!(th.current(&prefs).id, "halloween");
+        th.use_theme(&mut prefs, Some("oled"));
+        assert_eq!(prefs.get().ui.season_opt_out.as_deref(), Some("2026-10"));
+        assert_eq!(th.current(&prefs).id, "oled");
+        th.set_clock(Clock::Fixed(Day::new(2026, 10, 31)));
+        assert_eq!(th.current(&prefs).id, "oled");
+        th.set_clock(Clock::Fixed(Day::new(2026, 12, 2)));
+        assert_eq!(th.current(&prefs).id, "christmas");
+        th.set_clock(Clock::Fixed(Day::new(2027, 10, 1)));
+        assert_eq!(th.current(&prefs).id, "halloween");
+        // Picking the seasonal theme itself is a choice like any other: it stays.
+        th.use_theme(&mut prefs, Some("halloween"));
+        th.set_clock(Clock::Fixed(Day::new(2027, 11, 1)));
+        assert_eq!(th.current(&prefs).id, "halloween");
     }
 
     #[test]

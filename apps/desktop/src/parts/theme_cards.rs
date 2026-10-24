@@ -151,6 +151,9 @@ pub fn preset_name(p: &Preset) -> &'static str {
     match p.id {
         "chernarus" => t("theme", "presetChernarus"),
         "topo" => t("theme", "presetTopo"),
+        "halloween" => t("theme", "presetHalloween"),
+        "christmas" => t("theme", "presetChristmas"),
+        "powder" => t("theme", "presetPowder"),
         _ => p.name,
     }
 }

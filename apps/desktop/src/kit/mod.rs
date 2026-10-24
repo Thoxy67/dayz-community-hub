@@ -64,6 +64,7 @@ pub mod osk;
 pub mod paint;
 pub mod panel;
 pub mod progress;
+pub mod season;
 pub mod segmented;
 pub mod select;
 pub mod slider;
