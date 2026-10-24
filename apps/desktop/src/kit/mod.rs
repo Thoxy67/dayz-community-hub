@@ -21,6 +21,7 @@
 //! Toggle (filter row)       | `Toggle::new(&mut on, "Official").count(412).swatch(c).tip("…")`
 //! Segmented                 | `Segmented::new(&mut v, &[Segment::new(v, "Label").icon(i).title("…")]).size(FieldSize::Xs).icon_only().fill()`
 //! TabStrip                  | `TabStrip::new("id", &mut v, &[Tab::new(v, "Label").icon(i).count(n)]).size(FieldSize::Sm).fill().height(h)`
+//! On-screen keyboard        | `osk::open(ctx, field_id, osk::Layout::for_locale("fr"))`, `osk::press(ctx, osk::Press::Type)`, `osk::is_open(ctx)`; the window calls `osk::begin_frame(ctx)` before the views and `osk::show(ctx, &labels, \|ui\| hints)` after
 //! Dialog                    | `Dialog::new("id", "Title").description("…").size(DialogSize::Md).close_label("Close").show(ctx, &mut open, \|ui, open\| body, \|ui, open\| footer)`
 //! Confirm                   | `Confirm::new("id", "Delete?", "Delete", "Cancel").description("…").safe().show(ctx, &mut open) -> bool`
 //! Toasts                    | `toast::ok(ctx, "Saved")`, `toast::warn/err/say(ctx, text, ToastTone)`, `toast::say_with_action(ctx, text, tone, "Undo", "cmd.id")`, `toast::dismiss(ctx, id)`; the window calls `toast::host(ctx, "Dismiss") -> Option<command id>`
@@ -59,6 +60,7 @@ pub mod kbd;
 pub mod marks;
 pub mod menu;
 pub mod multi_select;
+pub mod osk;
 pub mod paint;
 pub mod panel;
 pub mod progress;
@@ -78,7 +80,7 @@ pub mod virtual_list;
 mod tests;
 
 pub use alert::{Alert, AlertResponse, CommandLine, Copy};
-pub use button::{Button, IconButton, Size, Variant};
+pub use button::{Button, IconButton, PadKey, Size, Variant};
 pub use dialog::{Confirm, Dialog, DialogSize};
 pub use input::{FieldSize, Input, InputKind, NumberInput, TextArea};
 pub use kbd::Kbd;

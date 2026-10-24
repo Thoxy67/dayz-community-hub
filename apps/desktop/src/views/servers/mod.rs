@@ -207,7 +207,7 @@ impl View for ServersView {
 /// The list's keys (registry scope `list`), while nothing else has them.
 fn keys(ctx: &egui::Context, cx: &Ctx, st: &mut UiState, run: &mut Run) {
     let overlay = cx.stores.dialogs.open()
-        || ctx.any_popup_open()
+        || egui::Popup::is_any_open(ctx)
         || ctx.memory(|m| m.top_modal_layer().is_some())
         || cx.stores.connect.request.is_some();
     if overlay {

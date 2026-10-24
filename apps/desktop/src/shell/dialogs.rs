@@ -425,6 +425,9 @@ fn mod_list(ui: &mut Ui, mods: &[ConnectMod]) {
         .corner_radius(egui::CornerRadius::same(size::RADIUS_SM))
         .show(ui, |ui| {
             ui.set_width(w - 2.0);
+            // `show_rows` counts the item spacing between rows: none, or the box ends in
+            // a blank band as tall as the gaps the rows never take.
+            ui.spacing_mut().item_spacing = Vec2::ZERO;
             egui::ScrollArea::vertical()
                 .id_salt("dzch.connect.mods")
                 .max_height(288.0)
@@ -473,7 +476,7 @@ fn mod_row(ui: &mut Ui, m: &ConnectMod, divider: bool) {
             "https://steamcommunity.com/sharedfiles/filedetails/?id={}",
             m.id
         );
-        let _ = open::that_detached(url);
+        let _ = crate::platform::deck::open(url);
     }
     right = br.left() - 8.0;
     let days = match (m.local_updated, m.remote_updated) {
@@ -558,6 +561,7 @@ fn scope_title(s: Scope) -> &'static str {
         Scope::Connect => t("nav", "connect"),
         Scope::Offline => t("nav", "offline"),
         Scope::Options => t("nav", "options"),
+        Scope::Friends => t("nav", "friends"),
         other => t("keys", other.label()),
     }
 }
@@ -579,6 +583,7 @@ pub(super) fn shortcuts(ctx: &Context, cx: &mut Ctx, st: &mut DialogState) {
     Dialog::new("dzch.shortcuts", t("keys", "title"))
         .size(DialogSize::Lg)
         .close_label(t("common", "close"))
+        .without_footer()
         .show(
             ctx,
             &mut open,

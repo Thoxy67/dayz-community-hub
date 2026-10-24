@@ -629,16 +629,15 @@ impl Profile {
         let hub = self.hub.clone();
         let bus = self.bus.clone();
         rt::fire(async move {
-            let Some(path) = rfd::AsyncFileDialog::new()
-                .set_title(t("settings", "profileExportTitle"))
-                .set_file_name("dayz-community-hub-profile.dchub")
-                .add_filter(t("settings", "profileFilterName"), &["dchub"])
-                .save_file()
-                .await
-            else {
+            let pick = crate::parts::file_picker::Pick::save(
+                t("settings", "profileExportTitle"),
+                "dayz-community-hub-profile.dchub",
+            )
+            .filter(t("settings", "profileFilterName"), &["dchub"]);
+            let Some(path) = crate::parts::file_picker::pick(pick).await else {
                 return;
             };
-            let path = path.path().to_string_lossy().into_owned();
+            let path = path.to_string_lossy().into_owned();
             match hub.export_profile(path, include_mods).await {
                 Ok(()) => bus.ok(t("settings", "profileExported")),
                 Err(e) => bus.err(tf("settings", "profileExportFailed", &[("error", &e)])),
@@ -651,12 +650,9 @@ impl Profile {
         let hub = self.hub.clone();
         let bus = self.bus.clone();
         rt::fire(async move {
-            let Some(path) = rfd::AsyncFileDialog::new()
-                .set_title(t("settings", "profileImportTitle"))
-                .add_filter(t("settings", "profileFilterName"), &["dchub"])
-                .pick_file()
-                .await
-            else {
+            let pick = crate::parts::file_picker::Pick::file(t("settings", "profileImportTitle"))
+                .filter(t("settings", "profileFilterName"), &["dchub"]);
+            let Some(path) = crate::parts::file_picker::pick(pick).await else {
                 return;
             };
             let req = ConfirmRequest::new(
@@ -666,7 +662,7 @@ impl Profile {
             if !bus.confirm(req).await {
                 return;
             }
-            let path = path.path().to_string_lossy().into_owned();
+            let path = path.to_string_lossy().into_owned();
             // Restarted as the update restarts: the hub starts the new instance
             // (which waits for this one to be gone), then this window closes the
             // normal way, its GPU and drivers torn down by the main thread rather

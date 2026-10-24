@@ -62,14 +62,26 @@ fn figures(ui: &mut Ui, s: &Stats) {
             .value(&last)
             .tip(&last_tip),
     );
-    ui.add(Figure::new(t("history", "statThisWeek")).amount(s.this_week as f64));
-    ui.add(Figure::new(t("favorites", "statOnline")).value(&format!("{}/{}", s.listed, s.total)));
+    ui.add(
+        Figure::new(t("history", "statThisWeek"))
+            .amount(s.this_week as f64)
+            .secondary(),
+    );
+    ui.add(
+        Figure::new(t("favorites", "statOnline"))
+            .value(&format!("{}/{}", s.listed, s.total))
+            .secondary(),
+    );
     ui.add(
         Figure::new(t("favorites", "statPlayers"))
             .amount(s.players as f64)
             .tone(tk.ok),
     );
-    ui.add(Figure::new(t("favorites", "statBestPing")).value(&ms(s.best_ping)));
+    ui.add(
+        Figure::new(t("favorites", "statBestPing"))
+            .value(&ms(s.best_ping))
+            .secondary(),
+    );
 }
 
 /// After the tools, where the browser has Refresh: "Clear all history", while there is any.

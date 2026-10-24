@@ -213,7 +213,10 @@ fn header(ui: &mut Ui, st: &mut UiState, opts: &[LaunchOptionDto], acts: &mut Ve
 fn toolbar(ui: &mut Ui, st: &mut UiState, wide: bool, acts: &mut Vec<Act>) {
     {
         ui.spacing_mut().item_spacing.x = 6.0;
-        let chip_w = 120.0;
+        // As tall as the search beside it.
+        let chip =
+            Button::chip(t("options", "showActiveOnly"), st.active_only).size(crate::kit::Size::Sm);
+        let chip_w = chip.natural_width(ui) + 6.0;
         let room = (ui.available_width() - chip_w).max(128.0);
         let w = if wide {
             room.min(320.0)
@@ -229,10 +232,7 @@ fn toolbar(ui: &mut Ui, st: &mut UiState, wide: bool, acts: &mut Vec<Act>) {
                 .char_limit(256)
                 .id_salt("dzch.options.search"),
         );
-        if ui
-            .add(Button::chip(t("options", "showActiveOnly"), st.active_only))
-            .clicked()
-        {
+        if ui.add(chip).clicked() {
             acts.push(Act::ActiveOnly);
         }
     }
@@ -599,14 +599,11 @@ pub fn command(cx: &mut Ctx, what: &str, a: &Value) {
             };
             let bus = cx.stores.bus.clone();
             rt::fire(async move {
-                let Some(dir) = rfd::AsyncFileDialog::new()
-                    .set_title(t("options", "browseFolder"))
-                    .pick_folder()
-                    .await
-                else {
+                let pick = crate::parts::file_picker::Pick::folder(t("options", "browseFolder"));
+                let Some(dir) = crate::parts::file_picker::pick(pick).await else {
                     return;
                 };
-                let path = dir.path().to_string_lossy().into_owned();
+                let path = dir.to_string_lossy().into_owned();
                 bus.run(move |cx| set_value(cx, &k, Some(&path)));
             });
         }

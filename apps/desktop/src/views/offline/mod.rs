@@ -516,7 +516,7 @@ fn open_folder(cx: &Ctx, f: impl FnOnce(dz_hub::Hub) -> PathFuture + Send + 'sta
     let hub = cx.hub.clone();
     rt::fire(async move {
         if let Ok(p) = f(hub).await {
-            let _ = open::that_detached(p);
+            let _ = crate::platform::deck::open(p);
         }
     });
 }

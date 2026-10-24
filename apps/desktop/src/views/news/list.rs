@@ -68,7 +68,12 @@ pub fn show(ui: &mut Ui, cx: &Ctx, st: &mut NewsState, run: &mut Vec<(&'static s
                     continue;
                 };
                 let on = current == Some(*idx);
-                if row(ui, cx, st, item, on, pos == 0 && latest_badge).clicked() {
+                let r = row(ui, cx, st, item, on, pos == 0 && latest_badge);
+                // A controller lands on the article shown, else the first on screen.
+                if on || (current.is_none() && pos == 0) {
+                    crate::pad::primary(ui.ctx(), r.id);
+                }
+                if r.clicked() {
                     run.push(("news.select", json!({ "index": pos })));
                 }
             }

@@ -135,12 +135,17 @@ impl Widget for Switch<'_> {
                 CornerRadius::ZERO,
                 paint::lerp(Color32::TRANSPARENT, t.raised, hover),
             );
-            let cy = rect.top() + 6.0 + text_h.max(TRACK.y) / 2.0;
+            let top = rect.top() + 6.0 + (text_h.max(TRACK.y) - text_h) / 2.0;
+            // With a hint under it, the track sits on the label's line, not the block's.
+            let cy = if hg.is_some() {
+                top + lg.size().y / 2.0
+            } else {
+                rect.top() + 6.0 + text_h.max(TRACK.y) / 2.0
+            };
             let track =
                 Rect::from_min_size(egui::pos2(rect.left() + 8.0, cy - TRACK.y / 2.0), TRACK);
             paint_track(ui, track, on, self.tone, self.enabled, 4.0, 13.0);
             let x = track.right() + 8.0;
-            let top = rect.top() + 6.0 + (text_h.max(TRACK.y) - text_h) / 2.0;
             let ink = fade(if now { t.fg } else { t.fg_muted }, self.enabled);
             p.galley_with_override_text_color(egui::pos2(x, top), lg.clone(), ink);
             if let Some(hg) = hg {
@@ -413,7 +418,7 @@ impl Widget for Toggle<'_> {
         let t = ui.tokens();
         let w = ui.available_width();
         let h = if self.compact {
-            size::CONTROL_SM
+            size::control_sm()
         } else {
             size::ROW
         };

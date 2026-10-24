@@ -57,11 +57,13 @@
 pub mod cells;
 pub mod charts;
 pub mod facts;
+pub mod file_picker;
 pub mod header;
 pub mod html;
 pub mod image;
 pub mod inputs;
 pub mod log_pane;
+pub mod osk;
 pub mod pad;
 pub mod sections;
 pub mod server_row;
@@ -95,7 +97,7 @@ pub use sections::{
 pub use server_row::{
     Col, Host, ListColumns, NARROW_PX, ROW_PX, RowAction, RowButton, RowCache, RowData, RowExtra,
     RowLabel, RowMenuItem, RowResponse, RowTag, ServerListRow, SortHead, TableHead, head_cell,
-    head_label, server_menu,
+    head_label, row_px, server_menu,
 };
 pub use text::{clock, draw, is_cut, map_name, ph, ph_trunc};
 pub use theme_cards::{ThemePick, ThemePreview, ThemeSwatches, preset_name, theme_preview};

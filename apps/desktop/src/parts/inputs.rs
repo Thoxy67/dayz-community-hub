@@ -215,6 +215,8 @@ impl egui::Widget for ColorToken<'_> {
         let sw = Rect::from_min_size(Pos2::new(rect.left() + 8.0, cy - 14.0), Vec2::splat(28.0));
         let srgb = rgb(*self.value);
         let swatch = ui.interact(sw, resp.id.with("swatch"), Sense::click());
+        let label = self.label;
+        swatch.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
         ui.painter()
             .rect_filled(sw, CornerRadius::same(size::RADIUS_SM), srgb);
         ui.painter().rect_stroke(
@@ -227,6 +229,7 @@ impl egui::Widget for ColorToken<'_> {
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .tip_kbd(self.label, "", Side::Top);
         let mut picked = srgb;
+        let mut lch = *self.value;
         egui::Popup::from_toggle_button_response(&swatch)
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .frame(paint::float_frame(&tk, 8))
@@ -236,8 +239,14 @@ impl egui::Widget for ColorToken<'_> {
                     &mut picked,
                     egui::color_picker::Alpha::Opaque,
                 );
+                // The same colour as three sliders, which arrows and a controller move
+                // (the square above is for a pointer).
+                lch_sliders(ui, &mut lch);
             });
-        if picked != srgb {
+        if lch != *self.value {
+            *self.value = lch;
+            resp.mark_changed();
+        } else if picked != srgb {
             *self.value = oklch(picked);
             resp.mark_changed();
         }
@@ -300,6 +309,39 @@ impl egui::Widget for ColorToken<'_> {
             }
         }
         resp
+    }
+}
+
+/// Lightness, chroma and hue as sliders under the colour picker; the first is where a
+/// controller lands in it.
+fn lch_sliders(ui: &mut Ui, c: &mut Oklch) {
+    let tk = ui.tokens();
+    // As wide as the picker above.
+    let w = ui.min_rect().width().max(size::ROW * 3.0);
+    let rows: [(&str, f64, std::ops::RangeInclusive<f64>, f64); 3] = [
+        (t("theme", "lightness"), f64::from(c[0]), 0.0..=1.0, 0.01),
+        (t("theme", "chroma"), f64::from(c[1]), 0.0..=0.37, 0.005),
+        (t("theme", "hue"), f64::from(c[2]), 0.0..=360.0, 1.0),
+    ];
+    ui.add_space(ui.spacing().item_spacing.y);
+    for (i, (label, mut v, range, step)) in rows.into_iter().enumerate() {
+        let lg = ph_trunc(ui, label, font(Face::Sans, size::TEXT_2XS), w);
+        let (lr, _) = ui.allocate_exact_size(Vec2::new(w, lg.size().y), Sense::hover());
+        draw(ui.painter(), &lg, lr.left(), lr.center().y, tk.fg_muted);
+        let r = ui.add(
+            crate::kit::Slider::new(&mut v, range)
+                .step(step)
+                .width(w)
+                .label(label),
+        );
+        if i == 0 {
+            crate::pad::primary(ui.ctx(), r.id);
+        }
+        if r.changed()
+            && let Some(slot) = c.get_mut(i)
+        {
+            *slot = v as f32;
+        }
     }
 }
 

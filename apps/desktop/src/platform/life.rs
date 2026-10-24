@@ -275,7 +275,8 @@ impl Default for Shared {
 impl Shared {
     pub fn env(&self) -> Env {
         Env {
-            tray: self.tray.load(Ordering::SeqCst),
+            // Game Mode shows no tray: a window sent there could not come back.
+            tray: self.tray.load(Ordering::SeqCst) && !super::deck::game_mode(),
             wayland: self.wayland.load(Ordering::SeqCst),
         }
     }

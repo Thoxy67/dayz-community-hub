@@ -228,7 +228,7 @@ fn cards(
             .map(|(ci, p)| {
                 let i = ri * cols + ci;
                 let row = rows.get(i).copied().flatten();
-                let name_w = inner - 14.0 - 8.0 - if row.is_some() { 19.0 } else { 0.0 };
+                let name_w = inner - 14.0 - 8.0 - if row.is_some() { 14.0 + 10.0 } else { 0.0 };
                 let mut job = egui::text::LayoutJob::single_section(
                     p.name.clone(),
                     egui::TextFormat {

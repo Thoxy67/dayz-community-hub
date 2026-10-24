@@ -251,14 +251,17 @@ pub fn bar(ui: &mut Ui, s: &SourcesChanged, open: bool) {
                     ("total", &steam.requests_total),
                 ],
             );
-            ui.add(Meter::new(frac).size(MeterSize::Xs).width(80.0))
-                .tip_kbd(&label, "", Side::Bottom);
-            text(
-                ui,
-                &format!("{}/{}", steam.requests_done, steam.requests_total),
-                &mono,
-                tk.fg_muted,
-            );
+            // The meter, then the figures, only when they fit whole: a figure cut by the
+            // left part's end reads as a different one.
+            let figs = format!("{}/{}", steam.requests_done, steam.requests_total);
+            let figs_w = ph(ui, &figs, mono.clone()).size().x;
+            if ui.available_width() >= 80.0 + 8.0 + figs_w {
+                ui.add(Meter::new(frac).size(MeterSize::Xs).width(80.0))
+                    .tip_kbd(&label, "", Side::Bottom);
+            }
+            if ui.available_width() >= figs_w {
+                text(ui, &figs, &mono, tk.fg_muted);
+            }
         } else if steam.phase != Phase::Running {
             // A listing skipped because the last one is recent says when that was.
             let word = match steam.finished.filter(|_| steam.recent) {

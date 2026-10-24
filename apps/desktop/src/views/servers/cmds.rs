@@ -758,7 +758,7 @@ pub fn open_link(cx: &mut Ctx, a: &Value) {
     if !(url.starts_with("https://") || url.starts_with("http://")) || url.len() > 2048 {
         return;
     }
-    if let Err(e) = open::that_detached(url) {
+    if let Err(e) = crate::platform::deck::open(url) {
         cx.stores.bus.err(e.to_string());
     }
 }

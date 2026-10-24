@@ -21,7 +21,7 @@ use crate::parts::{
     PadButton, PadGlyph, PathInput, SecretInput, SettingsSection, ShortcutGroup, ShortcutRow,
     pad_legend,
 };
-use crate::prefs::{GlyphChoice, PadMode};
+use crate::prefs::{GlyphChoice, OskChoice, PadMode};
 use crate::store::pad::InputMode;
 use crate::theme::{TokensExt, fonts::Face, size};
 
@@ -437,6 +437,10 @@ impl SettingsView {
                                 ui.add(Copy::new(dir).max_width(w).color(ui.tokens().fg_muted));
                             }
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                // Game Mode has no file manager to show it in.
+                                if !crate::platform::deck::folders() {
+                                    return;
+                                }
                                 let c = ui
                                     .add(
                                         Button::new(open)
@@ -849,6 +853,7 @@ impl SettingsView {
                             ui.add(
                                 Input::new(&mut self.lat)
                                     .kind(InputKind::Mono)
+                                    .numeric(true)
                                     .placeholder(t("settings", "lat"))
                                     .width(96.0)
                                     .id_salt("set-lat"),
@@ -856,6 +861,7 @@ impl SettingsView {
                             ui.add(
                                 Input::new(&mut self.lon)
                                     .kind(InputKind::Mono)
+                                    .numeric(true)
                                     .placeholder(t("settings", "lon"))
                                     .width(96.0)
                                     .id_salt("set-lon"),
@@ -953,8 +959,9 @@ impl SettingsView {
                                     3 => slot.to_string(),
                                     _ => secs(*slot),
                                 };
+                                // As tall as the slider: the value sits on its centre line.
                                 ui.allocate_ui_with_layout(
-                                    Vec2::new(64.0, size::CONTROL),
+                                    Vec2::new(64.0, r.rect.height()),
                                     Layout::right_to_left(Align::Center),
                                     |ui| line(ui, &shown, Face::Mono, size::TEXT_XS, tk.fg),
                                 );
@@ -1102,6 +1109,7 @@ impl SettingsView {
         let mut mode = prefs.ui.pad_mode;
         let mut scale = ((prefs.ui.pad_scale * 100.0).round() as i32).clamp(50, 300);
         let mut glyphs = prefs.pad_glyphs;
+        let mut keyboard = prefs.ui.pad_keyboard;
         SettingsSection::new(t("pad", "section"))
             .description(t("pad", "sectionHint"))
             .icon(lucide::GAMEPAD_2)
@@ -1170,6 +1178,44 @@ impl SettingsView {
                                 };
                                 let _ = cx.run("pad.set_glyphs", &json!({ "glyphs": g }));
                             }
+                        });
+                    // The keyboard a text field picked with the pad brings up.
+                    Field::new(t("pad", "osk"))
+                        .hint(t("pad", "oskHint"))
+                        .show(ui, |ui| {
+                            let opts = [
+                                Segment::new(OskChoice::Auto, t("pad", "modeAuto")),
+                                Segment::new(OskChoice::Steam, t("pad", "oskSteam")),
+                                Segment::new(OskChoice::Builtin, t("pad", "oskBuiltin")),
+                                Segment::new(OskChoice::None, t("pad", "oskNone")),
+                            ];
+                            if ui.add(Segmented::new(&mut keyboard, &opts)).changed() {
+                                let k = match keyboard {
+                                    OskChoice::Auto => "auto",
+                                    OskChoice::Steam => "steam",
+                                    OskChoice::Builtin => "builtin",
+                                    OskChoice::None => "none",
+                                };
+                                let _ = cx.run("pad.set_keyboard", &json!({ "keyboard": k }));
+                            }
+                        });
+                    // The launcher in Steam's library, to start it from Game Mode.
+                    // Steam never closes in Game Mode: offered, but only from the desktop.
+                    let can_add = !crate::platform::deck::game_mode();
+                    let hint = if can_add {
+                        "addToSteamHint"
+                    } else {
+                        "addToSteamGameMode"
+                    };
+                    Field::new(t("pad", "addToSteam"))
+                        .hint(t("pad", hint))
+                        .show(ui, |ui| {
+                            let b = Button::new(t("pad", "addToSteam"))
+                                .icon(lucide::PLUS)
+                                .size(Size::Sm)
+                                .enabled(can_add);
+                            let c = ui.add(b).clicked();
+                            run_on(cx, c, "steam.add_shortcut", Value::Null);
                         });
                     Field::new(t("pad", "connected")).show(ui, |ui| {
                         ui.vertical(|ui| {
@@ -1528,6 +1574,7 @@ fn scope_title(s: Scope) -> &'static str {
         Scope::Connect => t("nav", "connect"),
         Scope::Offline => t("nav", "offline"),
         Scope::Options => t("nav", "options"),
+        Scope::Friends => t("nav", "friends"),
         other => t("keys", other.label()),
     }
 }

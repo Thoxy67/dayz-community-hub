@@ -67,6 +67,11 @@ impl<'a, V> Tab<'a, V> {
     }
 }
 
+/// The widget of a strip's tab `i` (the strip's id is `base`): the pad presses it.
+pub fn tab_id(base: Id, i: usize) -> Id {
+    base.with(("tab", i))
+}
+
 /// `TabStrip::new("mods-tabs", &mut tab, &tabs)`; `changed()` when the tab moved.
 #[must_use = "add it with ui.add(…)"]
 pub struct TabStrip<'a, V: PartialEq + Clone> {
@@ -118,8 +123,8 @@ impl<V: PartialEq + Clone> Widget for TabStrip<'_, V> {
     fn ui(self, ui: &mut Ui) -> Response {
         let t = ui.tokens();
         let (ctl, text) = match self.size {
-            FieldSize::Sm => (size::CONTROL, size::TEXT_XS),
-            FieldSize::Xs => (size::CONTROL_SM, size::TEXT_2XS),
+            FieldSize::Sm => (size::control(), size::TEXT_XS),
+            FieldSize::Xs => (size::control_sm(), size::TEXT_2XS),
         };
         let h = self.height.unwrap_or(ctl);
         let (pad, gap) = if self.fill { (4.0, 4.0) } else { (10.0, 6.0) };
@@ -178,7 +183,7 @@ impl<V: PartialEq + Clone> Widget for TabStrip<'_, V> {
                 let w = if self.fill { avail / n } else { m.w };
                 let r = Rect::from_min_size(egui::pos2(x, strip.top()), Vec2::new(w, h));
                 x += w;
-                let id = self.id.with(("tab", i));
+                let id = tab_id(self.id, i);
                 let tr = ui.interact(r, id, Sense::click());
                 let on = Some(i) == current;
                 let label = tab.label;
@@ -276,6 +281,15 @@ impl<V: PartialEq + Clone> Widget for TabStrip<'_, V> {
                 p.rect_filled(bar, CornerRadius::same(1), t.accent);
             }
         });
+        // LT and RT switch the tabs while the pad is in the pane they head.
+        crate::pad::registry::tabs(
+            ui.ctx(),
+            ui.layer_id(),
+            outer,
+            self.id,
+            self.tabs.len(),
+            current,
+        );
         if let (Some(_), Some(cur)) = (focused, current) {
             let (l, r, home, end) = ui.input(|i| {
                 (
@@ -301,7 +315,7 @@ impl<V: PartialEq + Clone> Widget for TabStrip<'_, V> {
                 && let Some(tab) = self.tabs.get(k)
             {
                 moved = Some(tab.id.clone());
-                ui.memory_mut(|m| m.request_focus(self.id.with(("tab", k))));
+                ui.memory_mut(|m| m.request_focus(tab_id(self.id, k)));
             }
         }
         if let Some(v) = moved {

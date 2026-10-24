@@ -70,7 +70,7 @@ impl Face {
 
 /// `FontId` for a face at a size (see [`super::size`] for the scale).
 pub fn font(face: Face, size: f32) -> FontId {
-    FontId::new(size, face.family())
+    FontId::new(super::size::text(size), face.family())
 }
 
 macro_rules! subsets {

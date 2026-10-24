@@ -1173,9 +1173,9 @@ fn steam_menu(ui: &Ui, cx: &mut Ctx, resp: &egui::Response) {
         ] {
             let on = current == value;
             let enabled = !(busy && !on);
-            let w = ui.available_width().max(232.0);
+            // A fixed width: the popup's room is the window's, and the hint truncates.
             let (r, item) = ui.allocate_exact_size(
-                vec2(w, 36.0),
+                vec2(240.0 - 8.0, 36.0),
                 if enabled {
                     Sense::click()
                 } else {

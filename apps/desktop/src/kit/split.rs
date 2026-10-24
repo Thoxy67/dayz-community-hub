@@ -274,6 +274,32 @@ impl<'a> Splitter<'a> {
         if resp.double_clicked() {
             out.reset = true;
         }
+        // A controller grabs the handle with A (a click while it has the focus): then its
+        // directions move it along its axis, held down they keep moving it, and B or A
+        // lets it go.
+        let held_id = self.id.with("pad-held");
+        let mut held = ui.data(|d| d.get_temp::<bool>(held_id)).unwrap_or(false);
+        // Not a click of the pointer (an AccessKit one: the pad's A, Enter).
+        let pointer = ui.input(|i| i.pointer.any_down() || i.pointer.any_released());
+        if resp.clicked() && !pointer && resp.has_focus() {
+            held = !held;
+        }
+        if held
+            && (!resp.has_focus()
+                || ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)))
+        {
+            held = false;
+        }
+        ui.data_mut(|d| d.insert_temp(held_id, held));
+        if held {
+            let ctx = ui.ctx();
+            crate::pad::registry::held(ctx, self.id);
+            if self.vertical {
+                crate::pad::slider(ctx, self.id);
+            } else {
+                crate::pad::vslider(ctx, self.id);
+            }
+        }
         if resp.has_focus() {
             let (back, fwd, home, shift) = ui.input(|i| {
                 use egui::Key;
@@ -298,7 +324,8 @@ impl<'a> Splitter<'a> {
                 out.reset = true;
             }
         }
-        let focus = paint::keyboard_focus(ui, &resp) || (resp.has_focus() && resp.dragged());
+        let focus =
+            held || paint::keyboard_focus(ui, &resp) || (resp.has_focus() && resp.dragged());
         let hover = paint::ease(ui, self.id.with("hover"), resp.hovered() || resp.dragged());
         let grip_size = if self.vertical {
             Vec2::new(3.0, 16.0)

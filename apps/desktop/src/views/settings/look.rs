@@ -65,7 +65,19 @@ fn grid(ui: &mut Ui, cards: &[Card<'_>], worn: Option<&str>) -> Option<String> {
     let gap = 8.0;
     let cols = (((w + gap) / (152.0 + gap)).floor() as usize).clamp(1, 12);
     let cw = (w - gap * (cols as f32 - 1.0)) / cols as f32;
-    let ch = 6.0 + 72.0 + 6.0 + 14.0 + 26.0 + 4.0;
+    // The name's line and the description's two (`line-clamp-2`), in the density worn:
+    // the pad density's text is taller.
+    let name_font = font(Face::SansMedium, size::TEXT_2XS);
+    let sub_font = font(Face::Sans, size::TEXT_3XS);
+    let name_h = crate::parts::ph(ui, "A", name_font.clone())
+        .size()
+        .y
+        .max(14.0);
+    let sub_h = crate::parts::ph(ui, "A\nA", sub_font.clone())
+        .size()
+        .y
+        .max(26.0);
+    let ch = 6.0 + 72.0 + 6.0 + name_h + sub_h + 4.0;
     let rows = cards.len().div_ceil(cols);
     let height = rows as f32 * ch + rows.saturating_sub(1) as f32 * gap;
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, height), Sense::hover());
@@ -104,14 +116,9 @@ fn grid(ui: &mut Ui, cards: &[Card<'_>], worn: Option<&str>) -> Option<String> {
         let inner = r.shrink(6.0);
         let pr = Rect::from_min_size(inner.min, Vec2::new(inner.width(), 72.0));
         theme_preview(p, pr, &c.tokens, true);
-        let ty = pr.bottom() + 6.0 + 7.0;
+        let ty = pr.bottom() + 6.0 + name_h / 2.0;
         let check = if on { 14.0 } else { 0.0 };
-        let ng = crate::parts::ph_trunc(
-            ui,
-            c.name,
-            font(Face::SansMedium, size::TEXT_2XS),
-            inner.width() - 4.0 - check,
-        );
+        let ng = crate::parts::ph_trunc(ui, c.name, name_font.clone(), inner.width() - 4.0 - check);
         crate::parts::draw(p, &ng, inner.left() + 2.0, ty, tk.fg);
         if on {
             lucide::CHECK.paint(
@@ -123,14 +130,14 @@ fn grid(ui: &mut Ui, cards: &[Card<'_>], worn: Option<&str>) -> Option<String> {
         let sub = paint::galley_wrap(
             ui,
             c.sub,
-            font(Face::Sans, size::TEXT_3XS),
+            sub_font.clone(),
             tk.fg_faint,
             inner.width() - 4.0,
         );
         // Two lines at most (`line-clamp-2`).
         let clip = Rect::from_min_size(
-            Pos2::new(inner.left() + 2.0, ty + 8.0),
-            Vec2::new(inner.width(), 26.0),
+            Pos2::new(inner.left() + 2.0, ty + name_h / 2.0 + 1.0),
+            Vec2::new(inner.width(), sub_h),
         );
         ui.painter()
             .with_clip_rect(clip.intersect(ui.clip_rect()))
@@ -231,6 +238,25 @@ impl SettingsView {
                             }
                             let os = cx.stores.theme.os.unwrap_or(Scheme::Dark);
                             for scheme in [Scheme::Dark, Scheme::Light] {
+                                // A group is one piece for the wrapping row: measured
+                                // first, it starts a new line when it would run past
+                                // the card's edge.
+                                let word = match scheme {
+                                    Scheme::Dark => "whenDark",
+                                    Scheme::Light => "whenLight",
+                                };
+                                let label_w = paint::galley(
+                                    ui,
+                                    t("theme", word),
+                                    font(Face::Sans, size::TEXT_2XS),
+                                    tk.fg_faint,
+                                )
+                                .size()
+                                .x;
+                                let need = size::ICON_SM + 6.0 + label_w + 6.0 + 160.0;
+                                if ui.available_size_before_wrap().x < need {
+                                    ui.end_row();
+                                }
                                 ui.horizontal(|ui| {
                                     ui.spacing_mut().item_spacing.x = 6.0;
                                     let (ic, word, key) = match scheme {

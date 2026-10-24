@@ -1,6 +1,6 @@
 //! The shell (the Svelte interface's `src/shell`, ported): title bar, rail, status bar, and what floats over
 //! everything (the dialog host, the command palette, the shortcuts sheet, the mod
-//! operation's dialog, the setup wizard, the pad hints, the window's resize edges).
+//! operation's dialog, the setup wizard, the window's resize edges), and the pad hints.
 //!
 //! [`crate::app::HubApp`] lays the window out and calls these hooks into their regions:
 //!
@@ -9,6 +9,7 @@
 //! | [`titlebar`]`(ui, cx)`   | the top strip, `theme::size::TITLEBAR` high          |
 //! | [`rail`]`(ui, cx)`       | the left column, `RAIL` or `RAIL_COLLAPSED` wide (`cx.prefs.get().ui.rail_collapsed`) |
 //! | [`statusbar`]`(ui, cx)`  | the bottom strip, [`STATUSBAR_HEIGHT`] high          |
+//! | [`pad_hints`]`(ui, cx)`  | above it beside the rail, [`PAD_HINTS_HEIGHT`] high, in pad mode ([`pad_hints_shown`]) |
 //! | [`overlays`]`(ctx, cx)`  | the whole window, after the views, before the toasts |
 //!
 //! Module by module (each a port of its Svelte namesake):
@@ -53,8 +54,9 @@ use crate::app::Ctx;
 /// The status bar's height (`h-7`).
 pub const STATUSBAR_HEIGHT: f32 = 28.0;
 
-/// The pad hints' bar height (`h-7`), drawn just above the status bar in pad mode.
-pub const PAD_HINTS_HEIGHT: f32 = 28.0;
+/// The pad hints' bar height: a panel above the status bar, beside the rail, in pad
+/// mode only (the main area is that much shorter).
+pub const PAD_HINTS_HEIGHT: f32 = 36.0;
 
 /// A dialog a view owns, drawn by the shell over everything: the mod operation's
 /// (`ModOpDialog.svelte`) or the setup wizard (`SetupWizard.svelte`).
@@ -235,18 +237,27 @@ pub fn statusbar(ui: &mut egui::Ui, cx: &mut Ctx) {
     statusbar::show(ui, cx, &mut st.status);
 }
 
+/// Whether the pad hints' bar shows this frame: a controller drives the window.
+pub fn pad_hints_shown(cx: &Ctx) -> bool {
+    cx.stores.pad.mode(cx.prefs.get().ui.pad_mode) == crate::store::pad::InputMode::Gamepad
+}
+
+/// The pad hints' bar, in its panel ([`PAD_HINTS_HEIGHT`] high).
+pub fn pad_hints(ui: &mut egui::Ui, cx: &mut Ctx) {
+    pad_hints::show(ui, cx);
+}
+
 /// Whether the setup wizard covers the window below the title bar this frame: the main
 /// area's view is then not drawn (nobody would see it, and it would cost a frame).
 pub fn wizard_covers(cx: &Ctx) -> bool {
     cx.stores.app.show_wizard && WIZARD_HOST.get().is_some()
 }
 
-/// Everything that floats: dialogs, palette, sheet, mod operation, wizard, pad hints,
-/// and the window's resize edges.
+/// Everything that floats: dialogs, palette, sheet, mod operation, wizard, and the
+/// window's resize edges.
 pub fn overlays(ctx: &egui::Context, cx: &mut Ctx) {
     let st = state(ctx);
     let mut st = st.lock();
-    pad_hints::show(ctx, cx);
     match MOD_OP_HOST.get() {
         Some(host) => {
             if cx.stores.mods.op.active && !cx.stores.mods.op.minimised {

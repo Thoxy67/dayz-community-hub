@@ -2,8 +2,8 @@
 //! beside what opened them.
 //!
 //! One plate for all (`bg-overlay border rounded-md shadow-pop p-1`), `min-w-44` for a
-//! dropdown and `min-w-52` for a context menu. Items `h-row rounded-xs px-1.5 gap-2
-//! text-xs text-fg-muted`, lit `bg-raised text-fg`; a danger item is red; the shortcut
+//! dropdown and `min-w-52` for a context menu. Items `size::MENU_ROW` high (`rounded-xs
+//! px-1.5 gap-2 text-xs text-fg-muted`), lit `bg-raised text-fg`; a danger item is red; the shortcut
 //! sits at the end. Labels are mono, tracked capitals; separators a hairline.
 //! A click anywhere closes a menu, Escape too.
 
@@ -56,6 +56,21 @@ fn dress(ui: &mut Ui, t: &Tokens, min_w: f32) {
     ui.spacing_mut().menu_margin = egui::Margin::same(4);
 }
 
+/// The height a popup beside `trigger` can take without leaving the window: the larger
+/// room above or below it (egui flips the popup to the side it fits), less the gap, the
+/// plate's padding and an 8-point margin from the edge. Beside it, the window's height.
+fn room(trigger: &Response, side: Side, gap: f32, pad: f32) -> f32 {
+    let screen = trigger.ctx.content_rect();
+    let r = trigger.rect;
+    let room = match side {
+        Side::Bottom | Side::Top => {
+            (screen.bottom() - r.bottom()).max(r.top() - screen.top()) - gap
+        }
+        Side::Left | Side::Right => screen.height(),
+    };
+    (room - 2.0 * pad - 2.0 - 16.0).max(size::ROW * 2.0)
+}
+
 /// A dropdown menu opened by clicking `trigger`, below it and lined up with its end
 /// (`side="bottom" align="end"`). `menu::dropdown(&resp, Side::Bottom, Align::End, |ui| {
 /// ui.add(MenuItem::new("Copy").icon(lucide::COPY)); })`.
@@ -66,27 +81,46 @@ pub fn dropdown<R>(
     add: impl FnOnce(&mut Ui) -> R,
 ) -> Option<InnerResponse<R>> {
     let t = trigger.ctx.tokens();
-    Popup::menu(trigger)
+    let max_h = room(trigger, side, 4.0, 4.0);
+    let popup = Popup::menu(trigger)
         .frame(paint::float_frame(&t, 4))
         .align(rect_align(side, align))
         .gap(4.0)
-        .close_behavior(PopupCloseBehavior::CloseOnClick)
-        .show(|ui| {
+        .close_behavior(PopupCloseBehavior::CloseOnClick);
+    sized(popup, trigger, max_h + 16.0, |popup| {
+        popup.show(|ui| {
             dress(ui, &t, 176.0);
-            add(ui)
+            bounded(ui, max_h, 176.0, add)
         })
+    })
 }
 
 /// The menu a right-click on `target` opens, at the pointer (`min-w-52`).
 pub fn context<R>(target: &Response, add: impl FnOnce(&mut Ui) -> R) -> Option<InnerResponse<R>> {
     let t = target.ctx.tokens();
-    Popup::context_menu(target)
+    // The pad's Menu opens it too (`crate::pad`): then at the widget, not the pointer,
+    // below or above it as it fits (scrolling when neither side has the room).
+    crate::pad::registry::menu(&target.ctx, target.id, target.interact_rect);
+    let mut popup = Popup::context_menu(target);
+    let at = crate::pad::registry::menu_anchor(&target.ctx, target.id, target.interact_rect);
+    let side = if at.is_some() {
+        Side::Bottom
+    } else {
+        Side::Right
+    };
+    let max_h = room(target, side, 0.0, 4.0);
+    if let Some(at) = at {
+        popup = popup.anchor(at);
+    }
+    let popup = popup
         .frame(paint::float_frame(&t, 4))
-        .close_behavior(PopupCloseBehavior::CloseOnClick)
-        .show(|ui| {
+        .close_behavior(PopupCloseBehavior::CloseOnClick);
+    sized(popup, target, max_h + 16.0, |popup| {
+        popup.show(|ui| {
             dress(ui, &t, 208.0);
-            add(ui)
+            bounded(ui, max_h, 208.0, add)
         })
+    })
 }
 
 /// A small panel beside its trigger that stays open while used inside
@@ -99,15 +133,57 @@ pub fn popover<R>(
 ) -> Option<InnerResponse<R>> {
     let t = trigger.ctx.tokens();
     let gap = if side == Side::Right { 8.0 } else { 4.0 };
-    Popup::from_toggle_button_response(trigger)
+    let max_h = room(trigger, side, gap, 0.0);
+    let popup = Popup::from_toggle_button_response(trigger)
         .frame(paint::float_frame(&t, 0))
         .align(rect_align(side, align))
         .gap(gap)
-        .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
-        .show(|ui| {
-            ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
+        .close_behavior(PopupCloseBehavior::CloseOnClickOutside);
+    sized(popup, trigger, max_h + 16.0, |popup| {
+        popup.show(|ui| {
+            egui::ScrollArea::vertical()
+                .id_salt("kit-popover-scroll")
+                .max_height(max_h)
+                .auto_shrink([true, true])
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
+                    add(ui)
+                })
+                .inner
+        })
+    })
+}
+
+/// Shows a popup with room for `h` points on its first frame. egui lays a popup out
+/// once inside `default_area_size` (400 points tall) and keeps that height after, so
+/// without this a menu stops at 400 however much room the window has.
+fn sized<R>(popup: Popup<'_>, trigger: &Response, h: f32, show: impl FnOnce(Popup<'_>) -> R) -> R {
+    let ctx = trigger.ctx.clone();
+    let was = ctx.global_style().spacing.default_area_size;
+    // Only while open or opening: the style is not touched for every closed trigger.
+    let opening = popup.is_open() || trigger.clicked() || trigger.secondary_clicked();
+    if !opening || was.y >= h {
+        return show(popup);
+    }
+    ctx.global_style_mut(|s| s.spacing.default_area_size.y = h);
+    let r = show(popup);
+    ctx.global_style_mut(|s| s.spacing.default_area_size = was);
+    r
+}
+
+/// A menu's items in a scroll area no taller than `max_h`: a long list (the themes, the
+/// languages) scrolls instead of running off a short window.
+fn bounded<R>(ui: &mut Ui, max_h: f32, min_w: f32, add: impl FnOnce(&mut Ui) -> R) -> R {
+    egui::ScrollArea::vertical()
+        .id_salt("kit-menu-scroll")
+        .max_height(max_h)
+        .auto_shrink([true, true])
+        .show(ui, |ui| {
+            ui.set_min_width(min_w);
+            ui.spacing_mut().item_spacing = Vec2::ZERO;
             add(ui)
         })
+        .inner
 }
 
 /// Whether the popup (dropdown or popover) `trigger` opens is open now, for a trigger
@@ -241,9 +317,14 @@ impl Widget for MenuItem<'_> {
         } else {
             Sense::hover()
         };
-        let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, size::ROW), sense);
+        let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, size::menu_row()), sense);
         let label = self.label;
         resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, label));
+        // A click without the pointer (the pad's A, AccessKit) closes the menu too: the
+        // popup only sees the pointer's.
+        if resp.clicked() {
+            ui.close();
+        }
         if ui.is_rect_visible(rect) {
             let lit = self.enabled && (resp.hovered() || resp.has_focus());
             row(
@@ -369,7 +450,7 @@ pub fn submenu<R>(
     let t = ui.tokens();
     let nat = natural(ui, icon.is_some(), label, "", false, true);
     let w = menu_width(ui, nat);
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, size::ROW), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, size::menu_row()), Sense::click());
     let open = Popup::is_id_open(
         ui.ctx(),
         egui::containers::menu::SubMenu::id_from_widget_id(resp.id),
@@ -389,6 +470,7 @@ pub fn submenu<R>(
     );
     egui::containers::menu::SubMenu::new().show(ui, &resp, |ui| {
         dress(ui, &t, 176.0);
-        add(ui)
+        let max_h = (ui.ctx().content_rect().height() - 26.0).max(size::ROW * 2.0);
+        bounded(ui, max_h, 176.0, add)
     })
 }

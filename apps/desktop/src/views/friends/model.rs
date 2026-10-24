@@ -92,7 +92,10 @@ pub enum Item {
 /// the room left after a block so blocks part more than a friend and its server.
 pub const FRIEND_H: f32 = 44.0;
 pub const HEAD_H: f32 = 28.0;
-pub const SERVER_H: f32 = 48.0;
+/// The server's row: the shared server row's height (taller in the pad density).
+pub fn server_h() -> f32 {
+    crate::parts::row_px()
+}
 pub const SHORT_H: f32 = 36.0;
 pub const BLOCK_GAP: f32 = 10.0;
 
@@ -101,7 +104,7 @@ impl Item {
         match self {
             Item::Head(..) => HEAD_H,
             Item::Friend(..) => FRIEND_H,
-            Item::Server { full: true, .. } => SERVER_H + BLOCK_GAP,
+            Item::Server { full: true, .. } => server_h() + BLOCK_GAP,
             Item::Server { full: false, .. } => SHORT_H + BLOCK_GAP,
         }
     }
@@ -395,7 +398,7 @@ mod tests {
                 full: true
             }
             .height()
-                > SERVER_H
+                > server_h()
         );
         let (tops, total) = m.offsets();
         assert_eq!(tops.len(), m.items.len());

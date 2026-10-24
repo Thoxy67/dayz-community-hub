@@ -80,7 +80,10 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx, menus_state: &mut MenuState) {
     // the button never saw its release. Sensing clicks, the topmost control wins.
     // (Not focusable: the bar is no stop for Tab.)
     let drag = ui.interact(rect, ui.id().with("titlebar-drag"), Sense::CLICK);
-    if let Some(press) = drag_press(ui, &drag) {
+    // Game Mode (gamescope) has no window manager: nothing moves, maximises or
+    // minimises there, only the close button is drawn.
+    let game_mode = crate::platform::deck::game_mode();
+    if let Some(press) = drag_press(ui, &drag).filter(|_| !game_mode) {
         match press {
             Press::Second => toggle_maximized(ui.ctx()),
             Press::First => {
@@ -137,6 +140,7 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx, menus_state: &mut MenuState) {
     ]
     .into_iter()
     .enumerate()
+    .take(if game_mode { 1 } else { 3 })
     {
         right -= WIN_BTN;
         let r = Rect::from_min_max(
@@ -203,8 +207,12 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx, menus_state: &mut MenuState) {
     right -= 8.0;
     right = search_pill(ui, cx, right, rect, win_w);
 
+    // The figures only where they clear the search pill (the pad density's wider text
+    // can bring it past the centre).
+    let figures_on =
+        win_w > FIGURES_MIN && rect.center().x + figures_half_width(ui, cx) + 12.0 <= right;
     // Where we are, cut to what is left.
-    let max_here = (right.min(if win_w > FIGURES_MIN {
+    let max_here = (right.min(if figures_on {
         rect.center().x - figures_half_width(ui, cx)
     } else {
         right
@@ -215,7 +223,7 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx, menus_state: &mut MenuState) {
     paint::text_at(ui.painter(), &g, left_end, cy + 0.5, tk.fg_muted);
 
     // ── the live figures, centred on the window ──
-    if win_w > FIGURES_MIN {
+    if figures_on {
         figures(ui, cx, rect);
     }
 }
@@ -626,7 +634,7 @@ mod drag_tests {
                     log.borrow_mut().push("move");
                 }
                 let b = Rect::from_min_size(pos2(360.0, 5.0), vec2(30.0, 24.0));
-                if ui.put(b, egui::Button::new("x")).clicked() {
+                if ui.place(b, egui::Button::new("x")).clicked() {
                     log.borrow_mut().push("button");
                 }
             });

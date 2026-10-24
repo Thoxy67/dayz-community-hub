@@ -30,9 +30,9 @@ use crate::i18n::{format, t, tf};
 use crate::icons::{Icon, lucide};
 use crate::kit::{Button, IconButton, Input, Side, TipExt, Tone, Variant, VirtualList};
 use crate::parts::{
-    Empty, Host, ListColumns, MasterDetail, PageHeader, ROW_PX, RowAction, RowButton, RowCache,
-    RowData, RowExtra, RowLabel, RowMenuItem, RowTag, ServerListRow, ShortcutsButton, SortHead,
-    TableHead, draw, head_cell, ph,
+    Empty, Host, ListColumns, MasterDetail, PageHeader, RowAction, RowButton, RowCache, RowData,
+    RowExtra, RowLabel, RowMenuItem, RowTag, ServerListRow, ShortcutsButton, SortHead, TableHead,
+    draw, head_cell, ph,
 };
 use crate::store::servers::Live;
 use crate::theme::{TokensExt, font, fonts::Face, size};
@@ -845,7 +845,7 @@ fn keys(
     run: &mut Run,
 ) {
     let overlay = cx.stores.dialogs.open()
-        || ctx.any_popup_open()
+        || egui::Popup::is_any_open(ctx)
         || ctx.memory(|m| m.top_modal_layer().is_some())
         || cx.stores.connect.request.is_some();
     if overlay {
@@ -1020,11 +1020,11 @@ fn toolbar(ui: &mut Ui, st: &mut State, d: &Frame<'_>, run: &mut Run) {
         let gl = ph(ui, &count_l, mono.clone());
         let gr = ph(ui, &count_r, mono);
         let count_w = gl.size().x + gr.size().x + 4.0;
-        let chip_label = t("favorites", "onlineOnly");
-        let chip_w = ph(ui, chip_label, font(Face::SansMedium, size::TEXT_2XS))
-            .size()
-            .x
-            + 16.0;
+        // As tall as the search beside it.
+        let chip = Button::chip(t("favorites", "onlineOnly"), st.listed_only)
+            .size(crate::kit::Size::Sm)
+            .tip(t("favorites", "onlineOnlyTitle"));
+        let chip_w = chip.natural_width(ui);
         let max_search = if win_w >= 1280.0 {
             320.0
         } else {
@@ -1048,8 +1048,7 @@ fn toolbar(ui: &mut Ui, st: &mut State, d: &Frame<'_>, run: &mut Run) {
             st.scroll_to = Some(0);
             ui.ctx().request_repaint();
         }
-        let chip =
-            ui.add(Button::chip(chip_label, st.listed_only).tip(t("favorites", "onlineOnlyTitle")));
+        let chip = ui.add(chip);
         if chip.clicked() {
             run.push((d.kind.cmd(Cmd::Listed), Value::Null));
         }
@@ -1115,6 +1114,8 @@ const BTN_REMOVE: u32 = 2;
 const BTN_EDIT: u32 = 3;
 /// "Take out of its group".
 const BTN_UNGROUP: u32 = 4;
+/// "Remove this server's mods" (a listed server with one of them installed).
+const MENU_REMOVE_MODS: u32 = 5;
 /// "Move to group n": `BTN_GROUP + n`.
 const BTN_GROUP: u32 = 100;
 
@@ -1129,15 +1130,19 @@ enum HeadAction {
 
 /// A group's heading, one row tall: the fold chevron, the name and the count on a band
 /// at the row's foot (the space above parts it from the group before). A click folds or
-/// unfolds it; the right-click menu moves, renames or deletes the group.
-fn head_row(ui: &mut Ui, head: &Head, at: usize) -> Option<HeadAction> {
+/// unfolds it; the right-click menu moves, renames or deletes the group. The list's first
+/// row has no group above it to part from: its band fills the row, with no empty strip
+/// under the column heading.
+fn head_row(ui: &mut Ui, head: &Head, at: usize, first: bool) -> Option<HeadAction> {
     let tk = ui.tokens();
     let w = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(w, ROW_PX), Sense::hover());
-    let band = egui::Rect::from_min_max(
-        egui::pos2(rect.left(), rect.bottom() - 30.0),
-        rect.right_bottom(),
-    );
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(w, crate::parts::row_px()), Sense::hover());
+    let top = if first {
+        rect.top()
+    } else {
+        rect.bottom() - 30.0
+    };
+    let band = egui::Rect::from_min_max(egui::pos2(rect.left(), top), rect.right_bottom());
     let id = ui.id().with(("saved-head", at));
     let resp = ui.interact(band, id, Sense::click());
     let hover = crate::kit::paint::ease(ui, id.with("hover"), resp.hovered());
@@ -1284,6 +1289,7 @@ fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCac
     let servers = &cx.stores.servers;
     let data = &cx.stores.server_data;
     let profile = &cx.stores.profile;
+    let mods = &cx.stores.mods;
     let friends = &cx.stores.friends;
     let has_friends = !friends.list().is_empty();
     let direct = t("favorites", "openDirect");
@@ -1334,13 +1340,20 @@ fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCac
     let remove_kbd = commands::shortcut("saved.remove")
         .and_then(commands::Shortcut::key_text)
         .unwrap_or_default();
-    let menu_items = [RowMenuItem {
+    let remove_item = RowMenuItem {
         id: BTN_REMOVE,
         icon: lucide::TRASH_2,
         label: remove,
         danger: true,
         kbd: &remove_kbd,
-    }];
+    };
+    let remove_mods = RowMenuItem {
+        id: MENU_REMOVE_MODS,
+        icon: lucide::TRASH_2,
+        label: t("mods", "removeServerMods"),
+        danger: true,
+        kbd: "",
+    };
     // Filled again for each row on screen, so a row allocates nothing.
     let fav_menu = |items: &mut Vec<_>, group: Option<&str>| {
         items.clear();
@@ -1400,7 +1413,7 @@ fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCac
     };
     let out =
         VirtualList::new(("saved-list", kind.id()), d.rows.len())
-            .row_height(ROW_PX)
+            .row_height(crate::parts::row_px())
             .overscan(OVERSCAN)
             .header(HEAD_H)
             .scroll_to(scroll_to)
@@ -1413,7 +1426,7 @@ fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCac
                         Some(Row::Entry(at)) => *at,
                         Some(Row::Head(h)) => {
                             if let Some(head) = d.heads.get(*h)
-                                && let Some(a) = head_row(ui, head, *h)
+                                && let Some(a) = head_row(ui, head, *h, i == 0)
                             {
                                 head_acts.push((a, *h));
                             }
@@ -1486,10 +1499,20 @@ fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCac
                     }));
                     if wide {
                         row_menu.clear();
+                        row_menu.push(remove_item);
                     } else {
                         fav_menu(&mut row_menu, e.group.as_deref());
                     }
-                    let menu: &[RowMenuItem] = if wide { &menu_items } else { &row_menu };
+                    // "Remove this server's mods" when one of them is installed.
+                    if listed.as_ref().is_some_and(|r| {
+                        r.server
+                            .mods
+                            .iter()
+                            .any(|m| mods.by_id(m.steam_workshop_id as u64).is_some())
+                    }) {
+                        row_menu.push(remove_mods);
+                    }
+                    let menu: &[RowMenuItem] = &row_menu;
                     let mut row = ServerListRow::new(rd)
                         .selected(sel.as_ref() == Some(&l.key))
                         .friends(&names)
@@ -1515,7 +1538,7 @@ fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCac
     st.times = times;
     drop((row_menu, labels));
     st.move_words = move_words;
-    st.page_rows = ((out.viewport.height() / ROW_PX).floor() as usize).max(1);
+    st.page_rows = ((out.viewport.height() / crate::parts::row_px()).floor() as usize).max(1);
     // The rows on screen, for their pings.
     let on: Vec<String> = out
         .visible
@@ -1588,6 +1611,16 @@ fn list(ui: &mut Ui, cx: &Ctx, st: &mut State, d: &Frame<'_>, cache: &mut RowCac
             RowAction::ToggleExclude => "servers.row.exclude_ip",
             RowAction::Custom(BTN_REMOVE) => kind.cmd(Cmd::Remove),
             RowAction::Custom(BTN_EDIT) => "favorites.edit",
+            RowAction::Custom(MENU_REMOVE_MODS) => {
+                // Asked by the listed server's address (its mods are the list's).
+                if let Some(a) = l.addr {
+                    run.push((
+                        "servers.row.remove_mods",
+                        json!({ "ip": a.ip().to_string(), "port": a.port() }),
+                    ));
+                }
+                continue;
+            }
             RowAction::Custom(BTN_UNGROUP) => {
                 let mut args = args;
                 if let Some(o) = args.as_object_mut() {

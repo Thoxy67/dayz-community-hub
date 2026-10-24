@@ -387,7 +387,7 @@ pub fn open_url(bus: &Bus, url: &str) {
     }
     let (bus, url) = (bus.clone(), url.to_owned());
     crate::rt::fire(async move {
-        if let Err(e) = open::that_detached(&url) {
+        if let Err(e) = crate::platform::deck::open(&url) {
             bus.err(e.to_string());
         }
     });
@@ -439,7 +439,7 @@ impl View for NewsView {
 /// The view's keys (registry scope `news`), while nothing else has them.
 fn keys(ctx: &egui::Context, cx: &Ctx, st: &mut NewsState, run: &mut Vec<(&'static str, Value)>) {
     let overlay = cx.stores.dialogs.open()
-        || ctx.any_popup_open()
+        || egui::Popup::is_any_open(ctx)
         || ctx.memory(|m| m.top_modal_layer().is_some())
         || st.lightbox.is_some();
     if overlay {

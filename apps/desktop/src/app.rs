@@ -168,15 +168,12 @@ impl Ctx<'_> {
     pub fn pick_dzch(&mut self) {
         let bus = self.stores.bus.clone();
         crate::rt::fire(async move {
-            let Some(f) = rfd::AsyncFileDialog::new()
-                .set_title(t("connect", "openDzchTitle"))
-                .add_filter(t("connect", "dzchFilter"), &["dzch"])
-                .pick_file()
-                .await
-            else {
+            let pick = crate::parts::file_picker::Pick::file(t("connect", "openDzchTitle"))
+                .filter(t("connect", "dzchFilter"), &["dzch"]);
+            let Some(f) = crate::parts::file_picker::pick(pick).await else {
                 return;
             };
-            let path = f.path().to_string_lossy().into_owned();
+            let path = f.to_string_lossy().into_owned();
             bus.run(move |cx| {
                 let snap = cx.stores.cli_snapshot();
                 cx.stores.connect.open_dzch(path, snap);
@@ -287,6 +284,7 @@ impl HubApp {
     pub fn new(ctx: &Context, hub: Hub, events: mpsc::Receiver<HubEvent>, prefs: Prefs) -> Self {
         ctx.set_fonts(theme::fonts::definitions());
         theme::apply(ctx, theme::Tokens::default());
+        crate::parts::pad::install_chips();
         kit::install(ctx);
         views::install();
         // Ctrl+0 is the statistics view's, not egui's zoom reset.
@@ -446,8 +444,16 @@ impl HubApp {
                 self.stores.app.away();
             }
         }
-        if ctx.input(|i| i.pointer.is_moving() || i.pointer.any_pressed()) {
-            self.stores.pad.used_pointer();
+        // A finger on a touch screen also moves egui's pointer: it is no mouse, and
+        // leaves the controller's density and zoom as they are (`Pad::used_touch`).
+        let touched = ctx.input(|i| {
+            i.any_touches() || i.events.iter().any(|e| matches!(e, Event::Touch { .. }))
+        });
+        let now = ctx.input(|i| i.time);
+        if touched {
+            self.stores.pad.used_touch(now);
+        } else if ctx.input(|i| i.pointer.is_moving() || i.pointer.any_pressed()) {
+            self.stores.pad.used_pointer_at(now);
         }
         if !ctx.egui_wants_keyboard_input() {
             let pasted = ctx.input(|i| {
@@ -539,7 +545,38 @@ impl HubApp {
             });
         }
         let pad = self.stores.pad.mode(p.ui.pad_mode) == crate::store::pad::InputMode::Gamepad;
-        let zoom = p.scale * if pad { p.ui.pad_scale } else { 1.0 };
+        // Files and folders are picked in the window's own browser with a pad or in
+        // Game Mode (the system's dialog is mouse-only, or not shown by gamescope).
+        crate::parts::file_picker::set_in_app(pad || self.stores.pad.game_mode);
+        // The pad density: taller controls, no text under 13 px; a mouse undoes it.
+        if pad {
+            crate::parts::pad::set_kind(ctx, self.stores.pad.kind(p.pad_glyphs));
+        }
+        if size::set_pad_density(pad) {
+            ctx.all_styles_mut(|s| {
+                s.spacing.interact_size.y = size::control();
+                s.text_styles = crate::theme::fonts::text_styles();
+            });
+            ctx.request_repaint();
+        }
+        // Touch: a wider reach around each widget.
+        let reach = if self.stores.pad.touch {
+            size::TOUCH_REACH
+        } else {
+            size::POINTER_REACH
+        };
+        if (ctx.global_style().interaction.interact_radius - reach).abs() > f32::EPSILON {
+            ctx.all_styles_mut(|s| s.interaction.interact_radius = reach);
+        }
+        // The density already enlarges what a controller drives by about the default pad
+        // scale (115 %): the zoom is only what the player asked beyond it. Never below 1:
+        // a smaller scale would draw the window smaller than with a mouse.
+        let zoom = p.scale
+            * if pad {
+                (p.ui.pad_scale / crate::prefs::PAD_SCALE_DEFAULT).clamp(1.0, 3.0)
+            } else {
+                1.0
+            };
         if zoom.is_finite() && (zoom - self.zoom).abs() > 1e-3 {
             self.zoom = zoom;
             ctx.set_zoom_factor(zoom);
@@ -626,12 +663,40 @@ impl HubApp {
             .resizable(false)
             .frame(Frame::new().fill(tk.bg))
             .show(ui, |ui| shell::rail(ui, &mut c));
+        // What the pad's buttons do, under the main area beside the rail: in pad mode
+        // only, its height taken from the main area rather than drawn over it.
+        if shell::pad_hints_shown(&c) {
+            egui::Panel::bottom("shell.padhints")
+                .exact_size(shell::PAD_HINTS_HEIGHT)
+                .resizable(false)
+                .show_separator_line(false)
+                .frame(Frame::new().fill(tk.panel))
+                .show(ui, |ui| shell::pad_hints(ui, &mut c));
+        }
         let views = &mut self.views;
         egui::CentralPanel::default()
             .frame(Frame::new().fill(tk.panel))
             .show(ui, |ui| main_area(ui, &mut c, views));
+        // In pad mode the status bar and the pad hints' bar stay readable over the veil:
+        // dialogs keep clear of them.
+        let kept = if shell::pad_hints_shown(&c) {
+            shell::STATUSBAR_HEIGHT + shell::PAD_HINTS_HEIGHT
+        } else {
+            0.0
+        };
+        crate::kit::dialog::set_bottom_inset(ctx, kept);
         shell::overlays(ctx, &mut c);
-        // The toasts, over everything; a toast's button runs its command line.
+        // The file browser and the on-screen keyboard, over the dialogs.
+        crate::parts::file_picker::show(&mut c);
+        crate::parts::osk::show(&c);
+        // The toasts, over everything (above the status bar and the pad hints); a
+        // toast's button runs its command line.
+        let hints_h = if shell::pad_hints_shown(&c) {
+            shell::PAD_HINTS_HEIGHT
+        } else {
+            0.0
+        };
+        toast::set_inset(ctx, shell::STATUSBAR_HEIGHT + hints_h + 8.0);
         if let Some(line) = toast::host(ctx, t("common", "close")) {
             let _ = c.run_line(&line);
         }
@@ -775,6 +840,8 @@ impl eframe::App for HubApp {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         shell::release_after_hand_over(ctx, raw_input);
         self.control_input(raw_input);
+        // Keys acting as the pad leave before egui reads them.
+        self.with_ctx(ctx, |c| crate::pad::take_keys(c, raw_input));
     }
 
     fn on_exit(&mut self) {
@@ -929,7 +996,7 @@ mod tests {
             assert_eq!(cx.nav.focus.as_deref(), Some("apis"));
             cx.run("rail.toggle_collapse", &serde_json::Value::Null)
                 .unwrap();
-            assert!(cx.prefs.get().ui.rail_collapsed);
+            assert!(crate::pad::rail_collapsed(cx.egui, cx.stores, cx.prefs));
             cx.run("palette.toggle", &serde_json::Value::Null).unwrap();
             assert!(cx.stores.dialogs.palette);
             cx.run("sheet.toggle", &serde_json::Value::Null).unwrap();

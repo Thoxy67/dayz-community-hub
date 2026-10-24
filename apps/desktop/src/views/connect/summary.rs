@@ -137,7 +137,7 @@ pub fn show(ui: &mut Ui, cx: &mut Ctx, r: &Resolved, ip: &str, port: i64) {
         });
     if let Some(id) = open {
         let url = format!("https://steamcommunity.com/sharedfiles/filedetails/?id={id}");
-        if let Err(e) = open::that_detached(&url) {
+        if let Err(e) = crate::platform::deck::open(&url) {
             cx.stores.bus.err(e.to_string());
         }
     }

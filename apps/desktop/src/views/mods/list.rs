@@ -57,8 +57,11 @@ impl Cols {
         let actions = take(60.0);
         let version = show_version.then(|| take(104.0));
         let size = take(72.0);
-        let in_game = show_in_game.then(|| take(96.0));
-        let status = take(168.0);
+        // Room for "Linked to game" whole, larger in the pad density too.
+        let grow = size::text(size::TEXT_2XS) / size::TEXT_2XS;
+        let in_game = show_in_game.then(|| take(112.0 * grow));
+        // The tag's text grows with the pad density ("Mise à jour disponible" in 13 px).
+        let status = take(168.0 * grow);
         let name = Rangef::new(tick.max + GAP, (r + GAP - GAP).max(tick.max + GAP + 8.0));
         Self {
             tick,
@@ -139,7 +142,7 @@ fn loading(ui: &mut Ui) {
         draw(ui.painter(), &g, x.min, head.center().y, tk.fg_faint);
     }
     for i in 0..10usize {
-        let (r, _) = ui.allocate_exact_size(Vec2::new(w, ROW_H), Sense::hover());
+        let (r, _) = ui.allocate_exact_size(Vec2::new(w, size::row(ROW_H)), Sense::hover());
         let p = ui.painter();
         p.hline(
             r.x_range(),
@@ -243,7 +246,7 @@ fn table(ui: &mut Ui, cx: &Ctx, st: &mut UiState, run: &mut Run) {
             .any(|i| matches!(i, model::Item::Row(_)))
     });
     let out = VirtualList::new("mods-list", count)
-        .row_height(ROW_H)
+        .row_height(size::row(ROW_H))
         .header(HEAD_H)
         .scroll_to(scroll)
         .cursor(cursor)
@@ -302,7 +305,7 @@ fn table(ui: &mut Ui, cx: &Ctx, st: &mut UiState, run: &mut Run) {
                     count,
                     size,
                 }) => {
-                    if group_head(ui, *status, *count, *size, folded.contains(status)) {
+                    if group_head(ui, *status, *count, *size, folded.contains(status), i == 0) {
                         fold = Some(*status);
                     }
                 }
@@ -402,8 +405,17 @@ fn table(ui: &mut Ui, cx: &Ctx, st: &mut UiState, run: &mut Run) {
 }
 
 /// A status group's heading (`groupHead`): chevron, stencilled label in its tone, count,
-/// total size at the right; a click folds it. True when clicked.
-fn group_head(ui: &mut Ui, status: i8, count: usize, bytes: u64, folded: bool) -> bool {
+/// total size at the right; a click folds it. True when clicked. The words sit on a band
+/// at the row's foot (the room above parts the group from the one before), as the
+/// favourites' do; the list's first heading's band fills its row: nothing above it.
+fn group_head(
+    ui: &mut Ui,
+    status: i8,
+    count: usize,
+    bytes: u64,
+    folded: bool,
+    first: bool,
+) -> bool {
     let tk = ui.tokens();
     let r = ui.max_rect();
     let resp = ui
@@ -411,15 +423,21 @@ fn group_head(ui: &mut Ui, status: i8, count: usize, bytes: u64, folded: bool) -
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let h = paint::ease(ui, resp.id.with("h"), resp.hovered());
     let p = ui.painter();
-    p.rect_filled(r, CornerRadius::ZERO, alpha(tk.bg, 0.5));
+    // The band is the heading's own: the room above it stays the list's ground.
+    let band = if first {
+        r
+    } else {
+        Rect::from_min_max(Pos2::new(r.left(), r.bottom() - 30.0), r.max)
+    };
+    p.rect_filled(band, CornerRadius::ZERO, alpha(tk.bg, 0.5));
     if h > 0.0 {
-        p.rect_filled(r, CornerRadius::ZERO, alpha(tk.raised, 0.4 * h));
+        p.rect_filled(band, CornerRadius::ZERO, alpha(tk.raised, 0.4 * h));
     }
     p.hline(r.x_range(), r.bottom() - 0.5, Stroke::new(1.0, tk.border));
     if paint::keyboard_focus(ui, &resp) {
         paint::focus_ring(p, r.shrink(2.0), size::RADIUS_XS, &tk);
     }
-    let cy = r.bottom() - 12.5;
+    let cy = band.center().y + 1.5;
     let mut x = r.left() + size::PAD;
     let icon = if folded {
         lucide::CHEVRON_RIGHT
@@ -757,9 +775,10 @@ pub(super) fn menu_items(ui: &mut Ui, mods: &Mods, m: &InstalledModDto, run: &mu
     {
         run.push(("mods.toggle_managed", id.clone()));
     }
-    if ui
-        .add(MenuItem::new(t("mods", "openModFolder")).icon(lucide::FOLDER_OPEN))
-        .clicked()
+    if crate::platform::deck::folders()
+        && ui
+            .add(MenuItem::new(t("mods", "openModFolder")).icon(lucide::FOLDER_OPEN))
+            .clicked()
     {
         run.push(("mods.open_mod_dir", id.clone()));
     }

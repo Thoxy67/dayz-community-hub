@@ -85,7 +85,8 @@ pub(super) fn language_menu(ui: &mut Ui, cx: &mut Ctx, rect: Rect) {
     menu::dropdown(&resp, Side::Bottom, Align::End, |ui| {
         let tk = ui.tokens();
         for l in Locale::ALL {
-            let (r, item) = ui.allocate_exact_size(Vec2::new(LANG_W, size::ROW), Sense::click());
+            let (r, item) =
+                ui.allocate_exact_size(Vec2::new(LANG_W, size::menu_row()), Sense::click());
             let lit = item.hovered() || item.has_focus();
             let p = ui.painter();
             if lit {
@@ -165,10 +166,10 @@ fn swatch(ui: &Ui, x: f32, cy: f32, colors: &[Color32; 5], tk: &Tokens) -> f32 {
     r.width()
 }
 
-/// One theme row (`h-control px-1.5 gap-2 text-xs`): a swatch, the name, a tick.
+/// One theme row (a menu row high, `px-1.5 gap-2 text-xs`): a swatch, the name, a tick.
 fn theme_row(ui: &mut Ui, width: f32, colors: &[Color32; 5], name: &str, on: bool) -> Response {
     let tk = ui.tokens();
-    let (r, resp) = ui.allocate_exact_size(Vec2::new(width, size::CONTROL), Sense::click());
+    let (r, resp) = ui.allocate_exact_size(Vec2::new(width, size::menu_row()), Sense::click());
     let lit = resp.hovered() || resp.has_focus();
     let p = ui.painter();
     if lit {
@@ -203,7 +204,7 @@ fn theme_row(ui: &mut Ui, width: f32, colors: &[Color32; 5], name: &str, on: boo
 /// A plain row: an icon, the label, a tick.
 fn icon_row(ui: &mut Ui, icon: Icon, label: &str, on: bool) -> Response {
     let tk = ui.tokens();
-    let (r, resp) = ui.allocate_exact_size(Vec2::new(THEME_W, size::CONTROL), Sense::click());
+    let (r, resp) = ui.allocate_exact_size(Vec2::new(THEME_W, size::menu_row()), Sense::click());
     let lit = resp.hovered() || resp.has_focus();
     let p = ui.painter();
     if lit {
@@ -235,7 +236,7 @@ fn icon_row(ui: &mut Ui, icon: Icon, label: &str, on: bool) -> Response {
 /// "When dark: Chernarus ‹": the item opening the list of one scheme's presets.
 fn pair_choice(ui: &mut Ui, cx: &mut Ctx, scheme: Scheme) {
     let tk = ui.tokens();
-    let (r, resp) = ui.allocate_exact_size(Vec2::new(THEME_W, size::CONTROL), Sense::click());
+    let (r, resp) = ui.allocate_exact_size(Vec2::new(THEME_W, size::menu_row()), Sense::click());
     let sub_id = egui::containers::menu::SubMenu::id_from_widget_id(resp.id);
     let open = Popup::is_id_open(ui.ctx(), sub_id);
     let lit = resp.hovered() || resp.has_focus() || open;
@@ -330,64 +331,58 @@ pub(super) fn theme_menu(ui: &mut Ui, cx: &mut Ctx, rect: Rect, st: &mut MenuSta
     } else {
         Vec::new()
     };
-    let max_h = (ui.ctx().content_rect().height() - size::TITLEBAR - 16.0 - 8.0).max(120.0);
     let mut hovered: Option<String> = None;
     let mut pick: Option<Option<String>> = None;
     let mut edit = false;
     let shown = menu::dropdown(&resp, Side::Bottom, Align::End, |ui| {
+        // The kit's menu scrolls a list taller than the window.
         ui.set_width(THEME_W);
-        egui::ScrollArea::vertical()
-            .max_height(max_h)
-            .min_scrolled_height(max_h)
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
-                ui.spacing_mut().item_spacing = Vec2::ZERO;
-                if icon_row(
-                    ui,
-                    lucide::MONITOR,
-                    t("theme", "followSystem"),
-                    worn.is_none(),
-                )
-                .clicked()
-                {
-                    pick = Some(None);
+        ui.spacing_mut().item_spacing = Vec2::ZERO;
+        if icon_row(
+            ui,
+            lucide::MONITOR,
+            t("theme", "followSystem"),
+            worn.is_none(),
+        )
+        .clicked()
+        {
+            pick = Some(None);
+        }
+        pair_choice(ui, cx, Scheme::Dark);
+        pair_choice(ui, cx, Scheme::Light);
+        for (scheme, title) in [(Scheme::Dark, "dark"), (Scheme::Light, "light")] {
+            menu::separator(ui);
+            menu::label(ui, t("theme", title));
+            for p in PRESETS.iter().filter(|p| p.scheme == scheme) {
+                let colors = swatch_colors(&p.raw);
+                let on = worn.as_deref() == Some(p.id);
+                let r = theme_row(ui, THEME_W, &colors, preset_name(p), on);
+                if r.hovered() {
+                    hovered = Some(p.id.to_string());
                 }
-                pair_choice(ui, cx, Scheme::Dark);
-                pair_choice(ui, cx, Scheme::Light);
-                for (scheme, title) in [(Scheme::Dark, "dark"), (Scheme::Light, "light")] {
-                    menu::separator(ui);
-                    menu::label(ui, t("theme", title));
-                    for p in PRESETS.iter().filter(|p| p.scheme == scheme) {
-                        let colors = swatch_colors(&p.raw);
-                        let on = worn.as_deref() == Some(p.id);
-                        let r = theme_row(ui, THEME_W, &colors, preset_name(p), on);
-                        if r.hovered() {
-                            hovered = Some(p.id.to_string());
-                        }
-                        if r.clicked() {
-                            pick = Some(Some(p.id.to_string()));
-                        }
-                    }
+                if r.clicked() {
+                    pick = Some(Some(p.id.to_string()));
                 }
-                if !customs.is_empty() {
-                    menu::separator(ui);
-                    menu::label(ui, t("theme", "custom"));
-                    for (id, name, colors) in &customs {
-                        let on = worn.as_deref() == Some(id.as_str());
-                        let r = theme_row(ui, THEME_W, colors, name, on);
-                        if r.hovered() {
-                            hovered = Some(id.clone());
-                        }
-                        if r.clicked() {
-                            pick = Some(Some(id.clone()));
-                        }
-                    }
+            }
+        }
+        if !customs.is_empty() {
+            menu::separator(ui);
+            menu::label(ui, t("theme", "custom"));
+            for (id, name, colors) in &customs {
+                let on = worn.as_deref() == Some(id.as_str());
+                let r = theme_row(ui, THEME_W, colors, name, on);
+                if r.hovered() {
+                    hovered = Some(id.clone());
                 }
-                menu::separator(ui);
-                if icon_row(ui, lucide::PENCIL, t("theme", "editCustom"), false).clicked() {
-                    edit = true;
+                if r.clicked() {
+                    pick = Some(Some(id.clone()));
                 }
-            });
+            }
+        }
+        menu::separator(ui);
+        if icon_row(ui, lucide::PENCIL, t("theme", "editCustom"), false).clicked() {
+            edit = true;
+        }
     });
     let open = shown.is_some();
     let now = ui.input(|i| i.time);

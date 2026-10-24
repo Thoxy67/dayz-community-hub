@@ -256,19 +256,32 @@ fn head(
         if let Some(b) = &by {
             meta(ui, lucide::PEN_LINE, b);
         }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui
-                .add(
-                    Button::new(t("news", "openBrowser"))
-                        .icon(lucide::EXTERNAL_LINK)
-                        .size(Size::Xs)
-                        .variant(Variant::Ghost),
-                )
-                .clicked()
-            {
-                run.push(("news.open_article", Value::Null));
-            }
-        });
+        let open = || {
+            Button::new(t("news", "openBrowser"))
+                .icon(lucide::EXTERNAL_LINK)
+                .size(Size::Xs)
+                .variant(Variant::Ghost)
+        };
+        // Its width is last frame's: with too little room left on the line, the button
+        // takes the next one instead of being drawn over the author.
+        let wid = ui.id().with("open-w");
+        let bw: f32 = ui.data(|d| d.get_temp(wid)).unwrap_or(0.0);
+        if ui.available_size_before_wrap().x < bw {
+            ui.end_row();
+        }
+        let drawn = ui
+            .with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let r = ui.add(open());
+                if r.clicked() {
+                    run.push(("news.open_article", Value::Null));
+                }
+                r.rect.width()
+            })
+            .inner;
+        if (drawn - bw).abs() > 0.5 {
+            ui.data_mut(|d| d.insert_temp(wid, drawn));
+            ui.ctx().request_discard("news open button width");
+        }
     });
 }
 

@@ -2,10 +2,11 @@
 //!
 //! Trigger: `h-control rounded-sm border bg-bg px-1.5 text-xs`, the chevron at the end,
 //! accent-edged while open. List: the floating plate (`bg-overlay rounded-md shadow-pop
-//! p-1`), at least the trigger's width and 8rem, at most 20rem tall; items `h-row
-//! rounded-xs px-1.5 text-xs text-fg-muted`, lit on hover, the chosen one accent with a
-//! tick. Options with a `group` sit under a mono, tracked heading, groups in first-seen
-//! order. Arrows move, Enter picks, Escape closes; typing a letter jumps to a match.
+//! p-1`), at least the trigger's width and 8rem, at most 20rem tall and never past the
+//! window's edge; items `size::MENU_ROW` high (`rounded-xs px-1.5 text-xs
+//! text-fg-muted`, lit on hover), the chosen one accent with a tick. Options with a
+//! `group` sit under a mono, tracked heading, groups in first-seen order. Arrows
+//! move, Enter picks, Escape closes; typing a letter jumps to a match.
 
 use egui::{
     Color32, CornerRadius, Id, Popup, PopupCloseBehavior, Rect, RectAlign, Response, Sense, Ui,
@@ -124,7 +125,7 @@ impl<V: PartialEq + Clone> Widget for Select<'_, V> {
         } else {
             Sense::hover()
         };
-        let (rect, mut resp) = ui.allocate_exact_size(Vec2::new(w, size::CONTROL), sense);
+        let (rect, mut resp) = ui.allocate_exact_size(Vec2::new(w, size::control()), sense);
         let popup_id = self.id.with("popup");
         let open = Popup::is_id_open(ui.ctx(), popup_id);
         let label = if self.label.is_empty() {
@@ -153,11 +154,16 @@ impl<V: PartialEq + Clone> Widget for Select<'_, V> {
             .align(RectAlign::BOTTOM_START)
             .gap(4.0)
             .width(w.max(128.0) - 8.0);
+        // The list flips above the trigger when there is more room there; either way it
+        // stops 8 points short of the window's edge.
+        let screen = ui.ctx().content_rect();
+        let room = (screen.bottom() - rect.bottom()).max(rect.top() - screen.top()) - 4.0 - 26.0;
+        let max_h = (320.0 - 10.0_f32).min(room).max(size::menu_row() * 3.0);
         popup.show(|ui| {
             ui.spacing_mut().item_spacing = Vec2::ZERO;
             ui.set_min_width(w.max(128.0) - 10.0);
             egui::ScrollArea::vertical()
-                .max_height(320.0 - 10.0)
+                .max_height(max_h)
                 .show(ui, |ui| {
                     // Keyboard: a highlighted row, moved by the arrows, picked by Enter.
                     let hl_id = self.id.with("hl");
@@ -299,7 +305,7 @@ pub(super) fn trigger(
 fn item(ui: &mut Ui, label: &str, selected: bool, faint: bool, highlighted: bool) -> Response {
     let t = ui.tokens();
     let w = ui.available_width();
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, size::ROW), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, size::menu_row()), Sense::click());
     resp.widget_info(|| WidgetInfo::selected(WidgetType::SelectableLabel, true, selected, label));
     let lit = highlighted || resp.hovered();
     let p = ui.painter();

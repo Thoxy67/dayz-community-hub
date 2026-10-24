@@ -116,6 +116,67 @@ pub fn err(ctx: &Context, text: impl Into<String>) -> u64 {
     say(ctx, text, ToastTone::Err)
 }
 
+/// The newest toast on screen with a button: (its id, the button's words, its command
+/// line). A controller presses it from the hint bar ([`take_action`]).
+pub fn action(ctx: &Context) -> Option<(u64, String, String)> {
+    ctx.data_mut(|d| {
+        d.get_temp_mut_or_default::<Toasts>(store_id())
+            .list
+            .iter()
+            .rev()
+            .filter(|t| t.leaving.is_none())
+            .find_map(|t| t.action.as_ref().map(|(l, c)| (t.id, l.clone(), c.clone())))
+    })
+}
+
+/// What the hint bar says for [`action`]: the button's words and what the toast is
+/// about, cut short ("Join · Alex is on Chernarus…"), so L3 is not mistaken for the
+/// view's own action of the same word.
+pub fn action_hint(ctx: &Context) -> Option<String> {
+    let id = action(ctx)?.0;
+    ctx.data_mut(|d| {
+        d.get_temp_mut_or_default::<Toasts>(store_id())
+            .list
+            .iter()
+            .find(|t| t.id == id)
+            .and_then(|t| t.action.as_ref().map(|(l, _)| hint_text(l, &t.text)))
+    })
+}
+
+/// "label · text", the text cut to [`HINT_CHARS`] characters.
+fn hint_text(label: &str, text: &str) -> String {
+    const HINT_CHARS: usize = 28;
+    let text = text.lines().next().unwrap_or("").trim();
+    if text.is_empty() {
+        return label.to_string();
+    }
+    let mut cut: String = text.chars().take(HINT_CHARS).collect();
+    if text.chars().count() > HINT_CHARS {
+        cut = format!("{}…", cut.trim_end());
+    }
+    format!("{label} · {cut}")
+}
+
+/// Presses the newest toast's button, as a click would: takes the toast down and returns
+/// its command line for the window to run.
+pub fn take_action(ctx: &Context) -> Option<String> {
+    let (id, _, cmd) = action(ctx)?;
+    dismiss(ctx, id);
+    Some(cmd)
+}
+
+/// How far above the window's bottom edge the toasts stack (the status bar and the
+/// pad hints under them); set by the window each frame before [`host`].
+pub fn set_inset(ctx: &Context, px: f32) {
+    if px.is_finite() {
+        ctx.data_mut(|d| d.insert_temp(inset_id(), px.clamp(0.0, 400.0)));
+    }
+}
+
+fn inset_id() -> Id {
+    Id::new("kit::toasts.inset")
+}
+
 /// Takes a toast down (it slides out).
 pub fn dismiss(ctx: &Context, id: u64) {
     let now = ctx.input(|i| i.time);
@@ -212,7 +273,8 @@ pub fn host(ctx: &Context, dismiss_label: &str) -> Option<String> {
     let text_w = w - 8.0 - 6.0 - size::ICON - 8.0 - 8.0 - 16.0;
     let mut fired = None;
     let mut next_wake = f64::INFINITY;
-    let mut bottom = screen.bottom() - 36.0;
+    let inset: f32 = ctx.data(|d| d.get_temp(inset_id())).unwrap_or(36.0);
+    let mut bottom = screen.bottom() - inset;
     for toast in list.iter().rev() {
         let id = Id::new(("kit::toast", toast.id));
         let action_w = toast.action.as_ref().map_or(0.0, |(l, _)| {
@@ -386,5 +448,40 @@ mod tests {
         say_topic(&ctx, "launch", "Waiting for Steam", ToastTone::Neutral);
         say_topic(&ctx, "launch", "Started", ToastTone::Ok);
         assert_eq!(live(&ctx), ["Copied", "Copied", "Started"]);
+    }
+
+    #[test]
+    fn a_pad_presses_the_newest_toast_button() {
+        let ctx = Context::default();
+        assert!(take_action(&ctx).is_none());
+        say_with_action(
+            &ctx,
+            "Update ready",
+            ToastTone::Ok,
+            "Restart",
+            "app.restart",
+        );
+        ok(&ctx, "Copied");
+        say_with_action(
+            &ctx,
+            "Mods behind",
+            ToastTone::Warn,
+            "Update",
+            "mods.update",
+        );
+        assert_eq!(
+            action(&ctx).map(|(_, l, c)| (l, c)),
+            Some(("Update".into(), "mods.update".into()))
+        );
+        assert_eq!(take_action(&ctx).as_deref(), Some("mods.update"));
+        // That toast is leaving: the one before is next.
+        assert_eq!(take_action(&ctx).as_deref(), Some("app.restart"));
+        assert!(action(&ctx).is_none());
+        assert_eq!(hint_text("Join", ""), "Join");
+        assert_eq!(hint_text("Join", "Alex joined X"), "Join · Alex joined X");
+        assert_eq!(
+            hint_text("Join", "Alex joined a very long server name here"),
+            "Join · Alex joined a very long serv…"
+        );
     }
 }

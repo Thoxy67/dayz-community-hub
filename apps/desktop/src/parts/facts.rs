@@ -55,7 +55,8 @@ impl<'a> Fact<'a> {
 }
 
 /// `Facts`: labelled figures in a tight grid (`gap-x-3 gap-y-1 text-2xs`): the label faint
-/// on the left, the value in mono on the right; two pairs per line by default.
+/// on the left, the value in mono on the right; two pairs per line by default, one when a
+/// label would not fit whole.
 #[must_use = "add it with ui.add(…)"]
 pub struct Facts<'a> {
     items: &'a [Fact<'a>],
@@ -78,21 +79,38 @@ impl Widget for Facts<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
         let tk = ui.tokens();
         let w = ui.available_width();
-        let cols = self.columns;
         let mono = font(Face::Mono, size::TEXT_2XS);
         let sans = font(Face::Sans, size::TEXT_2XS);
         let gap = 12.0;
+        let value_full: Vec<f32> = self
+            .items
+            .iter()
+            .map(|f| ph(ui, f.value, mono.clone()).size().x)
+            .collect();
+        let label_full: Vec<f32> = self
+            .items
+            .iter()
+            .map(|f| ph(ui, f.label, sans.clone()).size().x)
+            .collect();
         // The value columns are as wide as their widest value; the labels share the rest.
-        let mut value_w = [0.0_f32; 2];
-        for (i, f) in self.items.iter().enumerate() {
-            let g = ph(ui, f.value, mono.clone());
-            let c = i % cols;
-            if let Some(v) = value_w.get_mut(c) {
-                *v = v.max(g.size().x);
+        let fit = |cols: usize| {
+            let mut value_w = [0.0_f32; 2];
+            for (i, v) in value_full.iter().enumerate() {
+                if let Some(c) = value_w.get_mut(i % cols) {
+                    *c = c.max(*v);
+                }
             }
+            let fixed: f32 = value_w.iter().take(cols).sum();
+            let label_w = ((w - fixed - gap * (2 * cols - 1) as f32) / cols as f32).max(16.0);
+            (value_w, label_w)
+        };
+        // Two pairs a line only while every label fits whole: else one pair a line.
+        let mut cols = self.columns;
+        let (mut value_w, mut label_w) = fit(cols);
+        if cols > 1 && label_full.iter().any(|l| *l > label_w + 0.5) {
+            cols = 1;
+            (value_w, label_w) = fit(1);
         }
-        let fixed: f32 = value_w.iter().take(cols).sum();
-        let label_w = ((w - fixed - gap * (2 * cols - 1) as f32) / cols as f32).max(16.0);
         let rows = self.items.len().div_ceil(cols);
         let h = rows as f32 * LINE_2XS + rows.saturating_sub(1) as f32 * 4.0;
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());

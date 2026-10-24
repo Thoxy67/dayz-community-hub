@@ -298,7 +298,7 @@ fn poll_disk(ui: &Ui, cx: &mut Ctx, st: &mut UiState) {
 /// The view's keys (registry scope `mods`), while nothing else has them.
 fn keys(ctx: &egui::Context, cx: &Ctx, st: &mut UiState, run: &mut Vec<(&'static str, Value)>) {
     let overlay = cx.stores.dialogs.open()
-        || ctx.any_popup_open()
+        || egui::Popup::is_any_open(ctx)
         || ctx.memory(|m| m.top_modal_layer().is_some())
         || st.review.is_some()
         || st.install_open;
@@ -617,9 +617,10 @@ fn header(ui: &mut Ui, cx: &Ctx, st: &mut UiState, out: &mut Vec<(&'static str, 
                 {
                     run.borrow_mut().push(("mods.update_all", Value::Null));
                 }
-                if ui
-                    .add(MenuItem::new(t("mods", "openFolderTitle")).icon(lucide::FOLDER_OPEN))
-                    .clicked()
+                if crate::platform::deck::folders()
+                    && ui
+                        .add(MenuItem::new(t("mods", "openFolderTitle")).icon(lucide::FOLDER_OPEN))
+                        .clicked()
                 {
                     run.borrow_mut()
                         .push(("mods.open_workshop_dir", Value::Null));
@@ -1206,7 +1207,7 @@ pub fn cmd_open_workshop(cx: &mut Ctx, a: &Value) {
         let url = model::workshop_url(id);
         let bus = cx.stores.bus.clone();
         crate::rt::fire(async move {
-            if let Err(e) = open::that_detached(&url) {
+            if let Err(e) = crate::platform::deck::open(&url) {
                 bus.err(e.to_string());
             }
         });

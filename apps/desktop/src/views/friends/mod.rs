@@ -101,7 +101,7 @@ impl Default for FriendsView {
 /// protocol": `steam://url/SteamIDPage/<id>` the profile, `steam://friends/message/<id>`
 /// a chat).
 pub fn open_steam(cx: &Ctx, url: &str) {
-    if let Err(e) = open::that_detached(url) {
+    if let Err(e) = crate::platform::deck::open(url) {
         cx.stores.bus.err(e.to_string());
     }
 }
@@ -375,6 +375,8 @@ fn header(ui: &mut Ui, cx: &mut Ctx) {
                 .width(w)
                 .id_salt("friends-search"),
         );
+        // Where a controller lands in the view.
+        crate::pad::primary(ui.ctx(), r.id);
         if focus {
             r.request_focus();
         }

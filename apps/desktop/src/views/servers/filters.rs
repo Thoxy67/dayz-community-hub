@@ -965,7 +965,7 @@ fn suggestion_row(ui: &mut Ui, name: &str) -> Response {
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
-/// "Click to reveal excluded" / "Click to hide excluded", with how many there are.
+/// "Show the excluded servers" / "Hide the excluded servers", with how many there are.
 fn excluded_row(ui: &mut Ui, shown: bool, n: usize) -> Response {
     let tk = ui.tokens();
     let w = ui.available_width();
@@ -975,13 +975,16 @@ fn excluded_row(ui: &mut Ui, shown: bool, n: usize) -> Response {
         t("servers", "excludedReveal")
     };
     let count = ph(ui, &n.to_string(), font(Face::Mono, size::TEXT_2XS));
-    let x0 = 10.0 + size::ICON_SM + 8.0;
+    // In the switches' columns above it: the icon centred on their track (8px in,
+    // 28px wide), the words on their labels' edge, in their size.
+    let icon_cx = 8.0 + 14.0;
+    let x0 = 8.0 + 28.0 + 8.0;
     let room = w - x0 - 10.0 - count.size().x - 8.0;
     // `flex-1`: the words wrap rather than cut.
     let g = paint::galley_wrap(
         ui,
         words,
-        font(Face::Sans, size::TEXT_XS),
+        font(Face::Sans, size::TEXT_2XS),
         egui::Color32::PLACEHOLDER,
         room.max(20.0),
     );
@@ -1005,7 +1008,10 @@ fn excluded_row(ui: &mut Ui, shown: bool, n: usize) -> Response {
     icon.paint(
         p,
         Rect::from_min_size(
-            Pos2::new(rect.left() + 10.0, cy - size::ICON_SM / 2.0),
+            Pos2::new(
+                rect.left() + icon_cx - size::ICON_SM / 2.0,
+                cy - size::ICON_SM / 2.0,
+            ),
             Vec2::splat(size::ICON_SM),
         ),
         ink,

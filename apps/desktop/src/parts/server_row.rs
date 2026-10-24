@@ -33,12 +33,34 @@ use crate::theme::{Tokens, TokensExt, font, fonts::Face, motion, size};
 
 /// Pixels per row: two lines of text and the players bar (`LIST_ROW_PX`).
 pub const ROW_PX: f32 = 48.0;
+
+/// A row's height in the density worn (taller while a controller drives the window).
+pub fn row_px() -> f32 {
+    crate::theme::size::row(ROW_PX)
+}
 /// Below this width of its own the list drops the map column (`@max-[720px]`).
 pub const NARROW_PX: f32 = 720.0;
 /// `gap-x-3` between columns.
 const COL_GAP: f32 = 12.0;
 /// `pl-2 pr-2`.
 const ROW_PAD: f32 = 8.0;
+/// The map column (map and clock).
+const MAP_W: f32 = 136.0;
+/// The list's own column (history: when you last played), wide enough for an English
+/// date and time in the normal density.
+const EXTRA_W: f32 = 140.0;
+
+/// The list's own column in the density worn: its date (mono, `TEXT_3XS`) grows with the
+/// pad density's text.
+fn extra_w() -> f32 {
+    EXTRA_W * size::text(size::TEXT_3XS) / size::TEXT_3XS
+}
+/// The map column is kept only while the server column keeps this much beside it.
+const MAP_MIN_SERVER: f32 = 220.0;
+/// The server column's widest: past it, the room goes before the actions.
+const SERVER_MAX: f32 = 720.0;
+/// The name's narrowest: the tag, then the flags, give way before it is cut further.
+const MIN_NAME: f32 = 120.0;
 
 /// A column of the server lists.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -72,34 +94,43 @@ pub struct ListColumns {
 
 impl ListColumns {
     /// The columns across `x` (the list's full width; the row padding is inside).
+    ///
+    /// The server column gives way last: the map column goes first (when the list is
+    /// narrow, or when keeping it would leave the server column under
+    /// [`MAP_MIN_SERVER`]); on a wide screen the server column stops at [`SERVER_MAX`]
+    /// and the spare room goes before the actions, so the map and the mods stay next to
+    /// the name instead of drifting to the far edge.
     pub fn new(x: Rangef, wide: bool) -> Self {
-        let narrow = x.span() < NARROW_PX;
-        let mut fixed: f32 = 24.0 + 76.0 + 100.0 + 72.0 + 120.0;
-        let mut n = 6.0;
-        if !narrow {
-            fixed += 136.0;
-            n += 1.0;
-        }
-        if wide {
-            fixed += 120.0;
-            n += 1.0;
-        }
         let inner = x.span() - 2.0 * ROW_PAD;
-        let server_w = (inner - fixed - (n - 1.0) * COL_GAP).max(40.0);
+        let mut fixed: f32 = 24.0 + 76.0 + 100.0 + 72.0 + 120.0;
+        let mut n: f32 = 6.0;
+        let extra_w = extra_w();
+        if wide {
+            fixed += extra_w;
+            n += 1.0;
+        }
+        let bare = inner - fixed - (n - 1.0) * COL_GAP;
+        let with_map = bare - MAP_W - COL_GAP;
+        let map_on = x.span() >= NARROW_PX && with_map >= MAP_MIN_SERVER;
+        let room = if map_on { with_map } else { bare };
+        let server_w = room.clamp(40.0, SERVER_MAX);
+        let spare = (room - server_w).max(0.0);
         let mut at = x.min + ROW_PAD;
-        let mut take = |w: f32| {
+        // `lead`: room left empty before the column.
+        let mut take = |w: f32, lead: f32| {
+            at += lead;
             let r = Rangef::new(at, at + w);
             at += w + COL_GAP;
             r
         };
-        let star = take(24.0);
-        let ping = take(76.0);
-        let players = take(100.0);
-        let server = take(server_w);
-        let map = (!narrow).then(|| take(136.0));
-        let mods = take(72.0);
-        let extra = wide.then(|| take(120.0));
-        let actions = take(120.0);
+        let star = take(24.0, 0.0);
+        let ping = take(76.0, 0.0);
+        let players = take(100.0, 0.0);
+        let server = take(server_w, 0.0);
+        let map = map_on.then(|| take(MAP_W, 0.0));
+        let mods = take(72.0, 0.0);
+        let extra = wide.then(|| take(extra_w, 0.0));
+        let actions = take(120.0, spare);
         Self {
             star,
             ping,
@@ -466,6 +497,8 @@ impl RowCache {
             let mut h = FxHasher::default();
             i18n::locale().hash(&mut h);
             ctx.pixels_per_point().to_bits().hash(&mut h);
+            // The pad density's text is larger: its galleys are not the mouse's.
+            size::pad_density().hash(&mut h);
             let stamp = h.finish();
             if self.words.is_none() || stamp != self.words_stamp {
                 self.words_stamp = stamp;
@@ -726,11 +759,11 @@ impl<'a> ServerListRow<'a> {
         }
     }
 
-    /// Draws the row across the full width at the cursor, `ROW_PX` tall, with its columns
+    /// Draws the row across the full width at the cursor, [`row_px`] tall, with its columns
     /// at `cols` (from [`ListColumns::new`] over the same width).
     pub fn show(self, ui: &mut Ui, cols: &ListColumns, cache: &mut RowCache) -> RowResponse {
         let w = ui.available_width();
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(w, ROW_PX), Sense::hover());
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(w, row_px()), Sense::hover());
         let key = self.data.key();
         let id = ui.id().with(("server-row", key));
         let row = ui.interact(rect, id, Sense::click());
@@ -782,21 +815,38 @@ impl<'a> ServerListRow<'a> {
 
         // Room for the name: the server column less what follows it on its line.
         let words = cache.words.as_ref()?;
-        let mut after = 0.0;
-        let fw = flags_width(&d.flags, &words.flags);
-        if fw > 0.0 {
-            after += 6.0 + fw;
-        }
+        let mut fw = flags_width(&d.flags, &words.flags);
         // Plex Mono advances 0.6em: the badges' widths are known before laying them out.
-        if !self.friends.is_empty() {
+        let friends_w = if self.friends.is_empty() {
+            0.0
+        } else {
             let digits = (self.friends.len().checked_ilog10().unwrap_or(0) + 1) as f32;
-            after += 6.0 + 4.0 + 10.0 + 2.0 + 6.0 * digits + 4.0;
+            6.0 + 4.0 + 10.0 + 2.0 + 0.6 * size::text(size::TEXT_3XS) * digits + 4.0
+        };
+        let mut tag_w = self.tag.map_or(0.0, |t| {
+            6.0 + 12.0 + 0.6 * size::text(size::TEXT_2XS) * t.text.chars().count() as f32
+        });
+        let room = |fw: f32, tag_w: f32| {
+            let flags = if fw > 0.0 { 6.0 + fw } else { 0.0 };
+            cols.server.span() - flags - friends_w - tag_w
+        };
+        // The name keeps its narrowest (or its whole width, when shorter): the tag goes
+        // first, then the flags. The name is measured only when the room is short.
+        if room(fw, tag_w) < MIN_NAME {
+            let whole = ph(ui, d.name, font(Face::SansSemibold, size::TEXT_XS))
+                .size()
+                .x;
+            let keep = MIN_NAME.min(whole);
+            if room(fw, tag_w) < keep {
+                tag_w = 0.0;
+            }
+            if room(fw, tag_w) < keep {
+                fw = 0.0;
+            }
         }
-        if let Some(t) = self.tag {
-            after += 6.0 + 12.0 + 6.6 * t.text.chars().count() as f32;
-        }
+        let show_tag = tag_w > 0.0;
         let key = d.key();
-        let name_w = cols.server.span() - after;
+        let name_w = room(fw, tag_w);
         let stamp = self.stamp(cols, name_w, self.game(ui.ctx()).as_deref());
         let fresh = cache.rows.get(&key).is_some_and(|l| l.stamp == stamp);
         if !fresh {
@@ -844,6 +894,8 @@ impl<'a> ServerListRow<'a> {
             }
         }
         let cy = rect.center().y;
+        // The two lines' places, spread over a taller row (the pad density's).
+        let k = (rect.height() / ROW_PX).max(1.0);
 
         // Star.
         let star = Rect::from_center_size(Pos2::new(cols.star.min + 10.0, cy), Vec2::splat(20.0));
@@ -984,8 +1036,8 @@ impl<'a> ServerListRow<'a> {
 
         // Server: the name and what follows it, the address and (when it matters) the
         // version under.
-        let top_cy = rect.top() + 15.3;
-        let bot_cy = rect.top() + 31.7;
+        let top_cy = rect.top() + 15.3 * k;
+        let bot_cy = rect.top() + 31.7 * k;
         let mut x = cols.server.min;
         // What does not fit the column is cut, never drawn over the map.
         let row_clip = ui.clip_rect();
@@ -1031,7 +1083,7 @@ impl<'a> ServerListRow<'a> {
             }
             x += w;
         }
-        if let (Some(g), Some(tag)) = (&l.tag, self.tag) {
+        if let (true, Some(g), Some(tag)) = (show_tag, &l.tag, self.tag) {
             x += 6.0;
             paint_tag(ui, x, top_cy, g, tag, id.with("tag"), &tk);
         }
@@ -1175,7 +1227,7 @@ impl<'a> ServerListRow<'a> {
             let p = ui.painter();
             match &l.map {
                 Some(g) => {
-                    let my = rect.top() + 17.0;
+                    let my = rect.top() + 17.0 * k;
                     draw(p, g, mc.min, my, tk.map);
                     let r = Rect::from_min_size(Pos2::new(mc.min, my - 8.0), g.size());
                     let _ = ui.interact(r, id.with("map"), Sense::hover()).tip_kbd(
@@ -1184,7 +1236,14 @@ impl<'a> ServerListRow<'a> {
                         Side::Top,
                     );
                     if let Some(tg) = &l.time {
-                        paint_time(ui.painter(), mc.min, rect.top() + 33.0, l.phase, tg, &tk);
+                        paint_time(
+                            ui.painter(),
+                            mc.min,
+                            rect.top() + 33.0 * k,
+                            l.phase,
+                            tg,
+                            &tk,
+                        );
                     }
                 }
                 None => draw(p, &words.dash, mc.min, cy, dash_color(&tk)),
@@ -1241,11 +1300,11 @@ impl<'a> ServerListRow<'a> {
         // The list's own column.
         if let (Some((top, bottom)), Some(xc), Some(e)) = (&l.extra, cols.extra, self.extra) {
             let p = ui.painter();
-            let ty = rect.top() + 16.0;
+            let ty = rect.top() + 16.0 * k;
             draw(p, top, xc.min, ty, tk.fg);
-            draw(p, bottom, xc.min, rect.top() + 32.0, tk.fg_faint);
+            draw(p, bottom, xc.min, rect.top() + 32.0 * k, tk.fg_faint);
             if !e.tip.is_empty() {
-                let r = Rect::from_x_y_ranges(xc, Rangef::new(ty - 8.0, rect.top() + 39.0));
+                let r = Rect::from_x_y_ranges(xc, Rangef::new(ty - 8.0, rect.top() + 39.0 * k));
                 let _ =
                     ui.interact(r, id.with("extra"), Sense::hover())
                         .tip_kbd(e.tip, "", Side::Top);
@@ -1631,6 +1690,24 @@ mod tests {
         assert!(n.narrow() && n.extra.is_some());
         let w = ListColumns::new(Rangef::new(0.0, 1000.0), true);
         assert!((w.actions.max - 992.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn the_server_column_gives_way_last() {
+        // Too tight for the map beside a readable name: the map goes, not the name.
+        let c = ListColumns::new(Rangef::new(0.0, 820.0), false);
+        assert!(c.narrow());
+        assert!(c.server.span() >= MAP_MIN_SERVER);
+        let h = ListColumns::new(Rangef::new(0.0, 820.0), true);
+        assert!(h.narrow() && h.server.span() >= 200.0);
+        // Room enough: the map stays.
+        let m = ListColumns::new(Rangef::new(0.0, 1000.0), false);
+        assert!(m.map.is_some() && m.server.span() >= MAP_MIN_SERVER);
+        // A very wide list caps the name's column; the actions keep the right edge.
+        let w = ListColumns::new(Rangef::new(0.0, 1900.0), false);
+        assert!((w.server.span() - SERVER_MAX).abs() < 0.01);
+        assert_eq!(w.map.map(|m| m.min), Some(w.server.max + COL_GAP));
+        assert!((w.actions.max - 1892.0).abs() < 0.01);
     }
 
     fn frame(

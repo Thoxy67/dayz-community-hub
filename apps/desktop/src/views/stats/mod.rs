@@ -512,7 +512,10 @@ fn header(ui: &mut Ui, st: &mut StatsState, out: &mut Run) {
                     Segment::new(StatsRange::Year, t("stats", "rangeYear")),
                     Segment::new(StatsRange::All, t("stats", "rangeAll")),
                 ];
+                let shown = opts.iter().position(|o| o.value == range).unwrap_or(0);
                 let r = ui.add(Segmented::new(&mut range, &opts));
+                // A controller lands on the range shown.
+                crate::pad::primary(ui.ctx(), crate::kit::segmented::segment_id(r.id, shown));
                 if r.changed() {
                     run.borrow_mut().push((
                         "stats.set_range",

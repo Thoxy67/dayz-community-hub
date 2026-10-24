@@ -103,12 +103,13 @@ pub(super) fn show(ui: &mut Ui, cx: &Ctx, m: &InstalledModDto, run: &mut Run) {
                 {
                     run.push(("mods.open_workshop", id.clone()));
                 }
-                if ui
-                    .add(
-                        IconButton::new(lucide::FOLDER_OPEN, t("mods", "openModFolder"))
-                            .variant(Variant::Ghost),
-                    )
-                    .clicked()
+                if crate::platform::deck::folders()
+                    && ui
+                        .add(
+                            IconButton::new(lucide::FOLDER_OPEN, t("mods", "openModFolder"))
+                                .variant(Variant::Ghost),
+                        )
+                        .clicked()
                 {
                     run.push(("mods.open_mod_dir", id.clone()));
                 }
@@ -246,13 +247,17 @@ fn body(ui: &mut Ui, mods: &Mods, m: &InstalledModDto, busy: bool, run: &mut Run
                             .max_width(room.max(40.0)),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui
-                            .add(
-                                IconButton::new(lucide::FOLDER_OPEN, t("mods", "openModFolder"))
+                        if crate::platform::deck::folders()
+                            && ui
+                                .add(
+                                    IconButton::new(
+                                        lucide::FOLDER_OPEN,
+                                        t("mods", "openModFolder"),
+                                    )
                                     .size(Size::IconXs)
                                     .variant(Variant::Ghost),
-                            )
-                            .clicked()
+                                )
+                                .clicked()
                         {
                             run.push(("mods.open_mod_dir", id.clone()));
                         }

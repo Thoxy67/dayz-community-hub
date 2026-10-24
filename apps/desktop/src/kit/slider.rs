@@ -84,7 +84,7 @@ impl Widget for Slider<'_> {
         } else {
             Sense::hover()
         };
-        let (rect, mut resp) = ui.allocate_exact_size(Vec2::new(w, size::CONTROL_SM), sense);
+        let (rect, mut resp) = ui.allocate_exact_size(Vec2::new(w, size::control_sm()), sense);
         let span = (self.max - self.min).max(f64::EPSILON);
         let track = Rect::from_min_max(
             Pos2::new(rect.left() + THUMB / 2.0, rect.center().y - 2.0),

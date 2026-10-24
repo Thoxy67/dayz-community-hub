@@ -16,8 +16,8 @@ use crate::i18n::{t, tf};
 use crate::icons::lucide;
 use crate::kit::{Button, Skeleton, Variant, VirtualList};
 use crate::parts::{
-    Empty, ListColumns, ROW_PX, RowAction, RowButton, RowCache, RowData, RowMenuItem,
-    ServerListRow, SortHead, TableHead, head_cell,
+    Empty, ListColumns, RowAction, RowButton, RowCache, RowData, RowMenuItem, ServerListRow,
+    SortHead, TableHead, head_cell,
 };
 use crate::theme::TokensExt;
 
@@ -133,8 +133,8 @@ pub fn show(ui: &mut Ui, cx: &Ctx, st: &mut UiState, cache: &mut RowCache, run: 
         let top = ui.cursor().top();
         for i in 0..14 {
             let r = Rect::from_min_size(
-                Pos2::new(full.left(), top + i as f32 * ROW_PX),
-                Vec2::new(full.width(), ROW_PX),
+                Pos2::new(full.left(), top + i as f32 * crate::parts::row_px()),
+                Vec2::new(full.width(), crate::parts::row_px()),
             );
             if r.top() > full.bottom() {
                 break;
@@ -216,7 +216,7 @@ pub fn show(ui: &mut Ui, cx: &Ctx, st: &mut UiState, cache: &mut RowCache, run: 
     // The rows show each server's clock now, estimated by the hub from the last seen.
     let now = dz_common::time::now_secs();
     let out = VirtualList::new("servers-list", total)
-        .row_height(ROW_PX)
+        .row_height(crate::parts::row_px())
         .overscan(OVERSCAN)
         .header(HEAD_H)
         .offset(offset)
@@ -295,7 +295,7 @@ pub fn show(ui: &mut Ui, cx: &Ctx, st: &mut UiState, cache: &mut RowCache, run: 
                 }
             },
         );
-    st.page_rows = ((out.viewport.height() / ROW_PX).floor() as usize).max(1);
+    st.page_rows = ((out.viewport.height() / crate::parts::row_px()).floor() as usize).max(1);
     st.list_offset = out.offset;
     for (a, i) in acts {
         let Some(r) = order.get(i) else {

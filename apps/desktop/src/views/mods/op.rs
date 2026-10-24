@@ -393,14 +393,16 @@ fn dialog(ctx: &egui::Context, cx: &Ctx, st: &mut OpUi, run: &mut Vec<(&'static 
     let w = if show_log { 1088.0_f32 } else { 480.0 }
         .min(screen.width() - 32.0)
         .max(240.0);
-    let h = 736.0_f32.min(screen.height() - 48.0).max(240.0);
+    // Clear of the pad's bar, which stays over the veil.
+    let inset = crate::kit::dialog::bottom_inset(ctx);
+    let h = 736.0_f32.min(screen.height() - 48.0 - inset).max(240.0);
     let id = Id::new("dzch.mods.opdialog");
     let a = ctx.animate_bool_with_time(id.with("in"), true, 0.14);
     let modal = egui::Modal::new(id)
-        .area(
-            egui::Modal::default_area(id)
-                .anchor(egui::Align2::CENTER_CENTER, Vec2::new(0.0, 2.0 * (1.0 - a))),
-        )
+        .area(egui::Modal::default_area(id).anchor(
+            egui::Align2::CENTER_CENTER,
+            Vec2::new(0.0, 2.0 * (1.0 - a) - inset / 2.0),
+        ))
         .frame(egui::Frame::NONE)
         .backdrop_color(alpha(tk.plot, 0.75 * a));
     let mut esc = false;
@@ -529,7 +531,7 @@ fn dialog(ctx: &egui::Context, cx: &Ctx, st: &mut OpUi, run: &mut Vec<(&'static 
                 Pos2::new(row.left() + lg.size().x + 12.0, row.center().y - 3.0),
                 Pos2::new(row.right() - 96.0 - 12.0, row.center().y + 3.0),
             );
-            ui.put(
+            ui.place(
                 mr,
                 Meter::new(overall as f32)
                     .size(MeterSize::Md)

@@ -314,7 +314,7 @@ fn body(ui: &mut Ui, cx: &mut Ctx, r: &Resolved, acts: &mut Vec<Act>) {
                     .collect();
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
-                    let add_w = button_width(ui, t("connect", "addMod"));
+                    let add_w = add_width(ui);
                     ui.add(
                         Select::new("connect-pick-mod", &mut d.pick, &opts)
                             .placeholder(t("connect", "pickMod"))
@@ -325,6 +325,7 @@ fn body(ui: &mut Ui, cx: &mut Ctx, r: &Resolved, acts: &mut Vec<Act>) {
                         .add(
                             Button::new(t("connect", "addMod"))
                                 .icon(lucide::PLUS)
+                                .width(add_w)
                                 .enabled(d.pick.is_some()),
                         )
                         .clicked()
@@ -336,7 +337,7 @@ fn body(ui: &mut Ui, cx: &mut Ctx, r: &Resolved, acts: &mut Vec<Act>) {
             }
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
-                let add_w = button_width(ui, t("connect", "addArg"));
+                let add_w = add_width(ui);
                 let resp = ui.add(
                     Input::new(&mut d.custom)
                         .kind(InputKind::Mono)
@@ -349,6 +350,7 @@ fn body(ui: &mut Ui, cx: &mut Ctx, r: &Resolved, acts: &mut Vec<Act>) {
                     .add(
                         Button::new(t("connect", "addArg"))
                             .icon(lucide::PLUS)
+                            .width(add_w)
                             .enabled(!d.custom.trim().is_empty()),
                     )
                     .clicked();
@@ -398,6 +400,11 @@ fn body(ui: &mut Ui, cx: &mut Ctx, r: &Resolved, acts: &mut Vec<Act>) {
                         });
                 });
         });
+}
+
+/// The two "add" buttons' shared width: the wider label's, so they line up.
+fn add_width(ui: &Ui) -> f32 {
+    button_width(ui, t("connect", "addMod")).max(button_width(ui, t("connect", "addArg")))
 }
 
 fn button_width(ui: &Ui, label: &str) -> f32 {

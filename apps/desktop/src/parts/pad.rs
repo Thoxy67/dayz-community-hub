@@ -149,31 +149,99 @@ impl PadGlyph {
     pub fn new(button: PadButton, kind: PadKind) -> Self {
         Self { button, kind }
     }
+
+    /// How wide it is drawn, without drawing it.
+    pub fn width(&self, ui: &Ui) -> f32 {
+        self.measure(ui).0
+    }
+
+    /// Its width and its text laid out.
+    fn measure(&self, ui: &Ui) -> (f32, Option<Arc<Galley>>) {
+        let b = self.button;
+        let h = glyph_h();
+        let g = pad_text(b, self.kind).map(|s| ph(ui, s, font(Face::MonoSemibold, size::TEXT_3XS)));
+        let gw = g.as_ref().map_or(0.0, |g| g.size().x);
+        let w = if round_face(b) || b == PadButton::Dpad {
+            h
+        } else if matches!(b, PadButton::L3 | PadButton::R3 | PadButton::Rs) {
+            let extra = if b == PadButton::Rs { 10.0 } else { 0.0 };
+            (gw + extra + 10.0).max(h)
+        } else {
+            (gw + 10.0).max(h + 6.0)
+        };
+        (w, g)
+    }
 }
 
-const GLYPH: f32 = 18.0;
+/// The glyph's height: 18 px, taller in the pad density.
+pub fn glyph_h() -> f32 {
+    size::control_sm() - 4.0
+}
+
+fn kind_id() -> egui::Id {
+    egui::Id::new("parts::pad.kind")
+}
+
+/// The pad in hand's glyphs, for what draws them without the stores (a dialog's
+/// buttons); the window sets it each frame.
+pub fn set_kind(ctx: &egui::Context, kind: PadKind) {
+    ctx.data_mut(|d| d.insert_temp(kind_id(), kind));
+}
+
+pub fn kind(ui: &Ui) -> PadKind {
+    ui.data(|d| d.get_temp(kind_id())).unwrap_or(PadKind::Xbox)
+}
+
+fn key_button(k: crate::kit::PadKey) -> PadButton {
+    match k {
+        crate::kit::PadKey::Back => PadButton::B,
+        crate::kit::PadKey::Confirm => PadButton::X,
+    }
+}
+
+/// Lets the kit's buttons draw the glyph of the pad key they answer to.
+pub fn install_chips() {
+    crate::kit::button::set_pad_chips(crate::kit::button::PadChips {
+        width: |ui, k| PadGlyph::new(key_button(k), kind(ui)).width(ui),
+        paint: |ui, k, r| PadGlyph::new(key_button(k), kind(ui)).paint(ui, r),
+    });
+}
+
+fn round_face(b: PadButton) -> bool {
+    matches!(
+        b,
+        PadButton::A
+            | PadButton::B
+            | PadButton::X
+            | PadButton::Y
+            | PadButton::Menu
+            | PadButton::View
+    )
+}
 
 impl Widget for PadGlyph {
     fn ui(self, ui: &mut Ui) -> Response {
+        let w = self.width(ui);
+        let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, glyph_h()), Sense::hover());
+        if ui.is_rect_visible(rect) {
+            self.paint(ui, rect);
+        }
+        resp
+    }
+}
+
+impl PadGlyph {
+    /// Draws it in `rect` (as wide as [`Self::width`], [`glyph_h`] high) without
+    /// taking room: on a button, beside its label.
+    pub fn paint(&self, ui: &Ui, rect: Rect) {
         let tk = ui.tokens();
         let b = self.button;
-        let text = pad_text(b, self.kind);
-        let g = text.map(|s| ph(ui, s, font(Face::MonoSemibold, size::TEXT_3XS)));
-        let round_face = matches!(b, PadButton::A | PadButton::B | PadButton::X | PadButton::Y)
-            || matches!(b, PadButton::Menu | PadButton::View);
+        let (_, g) = self.measure(ui);
+        let h = rect.height();
+        // The drawn shapes are made for 18 px; they grow with the glyph.
+        let k = h / 18.0;
+        let round_face = round_face(b);
         let stick = matches!(b, PadButton::L3 | PadButton::R3 | PadButton::Rs);
-        let w = if round_face || b == PadButton::Dpad {
-            GLYPH
-        } else if stick {
-            let extra = if b == PadButton::Rs { 10.0 } else { 0.0 };
-            (g.as_ref().map_or(0.0, |g| g.size().x) + extra + 10.0).max(GLYPH)
-        } else {
-            (g.as_ref().map_or(0.0, |g| g.size().x) + 10.0).max(24.0)
-        };
-        let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, GLYPH), Sense::hover());
-        if !ui.is_rect_visible(rect) {
-            return resp;
-        }
         let p = ui.painter();
         let ink = if matches!(b, PadButton::A | PadButton::B | PadButton::X | PadButton::Y) {
             face_tone(b, self.kind, &tk)
@@ -181,14 +249,14 @@ impl Widget for PadGlyph {
             tk.fg_muted
         };
         if round_face {
-            p.circle_filled(rect.center(), GLYPH / 2.0, tk.raised);
+            p.circle_filled(rect.center(), h / 2.0, tk.raised);
             p.circle_stroke(
                 rect.center(),
-                GLYPH / 2.0 - 0.5,
+                h / 2.0 - 0.5,
                 Stroke::new(1.0, tk.border_strong),
             );
         } else if stick {
-            p.rect_filled(rect, CornerRadius::same(9), tk.raised);
+            p.rect_filled(rect, CornerRadius::same((h / 2.0) as u8), tk.raised);
             p.add(egui::Shape::dashed_line(
                 &capsule(rect.shrink(0.5)),
                 Stroke::new(1.0, tk.border_strong),
@@ -206,9 +274,9 @@ impl Widget for PadGlyph {
             );
         };
         match (b, &g) {
-            (PadButton::Dpad, _) => icon(lucide::MOVE, 12.0),
-            (PadButton::Menu, None) => icon(lucide::MENU, 10.0),
-            (PadButton::View, None) => icon(lucide::COPY, 10.0),
+            (PadButton::Dpad, _) => icon(lucide::MOVE, 12.0 * k),
+            (PadButton::Menu, None) => icon(lucide::MENU, 10.0 * k),
+            (PadButton::View, None) => icon(lucide::COPY, 10.0 * k),
             (PadButton::Rs, Some(g)) => {
                 let x = rect.center().x - (g.size().x + 10.0) / 2.0;
                 draw(p, g, x, rect.center().y, ink);
@@ -226,19 +294,19 @@ impl Widget for PadGlyph {
                 if face_set(self.kind) == FaceSet::Shapes =>
             {
                 let c = rect.center();
-                let st = Stroke::new(1.3, ink);
+                let st = Stroke::new(1.3 * k, ink);
                 match b {
                     PadButton::A => {
-                        let d = Vec2::splat(3.2);
+                        let d = Vec2::splat(3.2 * k);
                         p.line_segment([c - d, c + d], st);
-                        p.line_segment([c + Vec2::new(-3.2, 3.2), c + Vec2::new(3.2, -3.2)], st);
+                        p.line_segment([c + Vec2::new(-d.x, d.y), c + Vec2::new(d.x, -d.y)], st);
                     }
                     PadButton::B => {
-                        p.circle_stroke(c, 3.6, st);
+                        p.circle_stroke(c, 3.6 * k, st);
                     }
                     PadButton::X => {
                         p.rect_stroke(
-                            Rect::from_center_size(c, Vec2::splat(6.6)),
+                            Rect::from_center_size(c, Vec2::splat(6.6 * k)),
                             CornerRadius::ZERO,
                             st,
                             egui::StrokeKind::Middle,
@@ -246,9 +314,9 @@ impl Widget for PadGlyph {
                     }
                     _ => {
                         let pts = vec![
-                            c + Vec2::new(0.0, -3.8),
-                            c + Vec2::new(3.6, 2.6),
-                            c + Vec2::new(-3.6, 2.6),
+                            c + Vec2::new(0.0, -3.8) * k,
+                            c + Vec2::new(3.6, 2.6) * k,
+                            c + Vec2::new(-3.6, 2.6) * k,
                         ];
                         p.add(egui::Shape::closed_line(pts, st));
                     }
@@ -265,7 +333,6 @@ impl Widget for PadGlyph {
             }
             _ => {}
         }
-        resp
     }
 }
 
@@ -303,10 +370,23 @@ pub struct ShortcutGroup<'a> {
 
 /// A combination split into the chips the lists draw: "Ctrl+K" is "Ctrl", "K".
 pub fn chips(combo: &str) -> impl Iterator<Item = &str> {
-    let whole = combo == "+";
-    let mut it = combo.split('+');
-    let mut once = whole.then_some(combo);
-    std::iter::from_fn(move || if whole { once.take() } else { it.next() })
+    // The plus key is itself a `+`: it leaves two empty pieces ("Ctrl++", "+"), which
+    // make one chip.
+    let mut it = (!combo.is_empty())
+        .then(|| combo.split('+'))
+        .into_iter()
+        .flatten()
+        .peekable();
+    std::iter::from_fn(move || {
+        let part = it.next()?;
+        if part.is_empty() {
+            if it.peek().is_some_and(|n| n.is_empty()) {
+                let _ = it.next();
+            }
+            return Some("+");
+        }
+        Some(part)
+    })
 }
 
 /// `ShortcutList`: every shortcut by where it works, the keyboard's or the controller's
@@ -656,5 +736,16 @@ mod tests {
         assert_eq!(chips("Ctrl+K").collect::<Vec<_>>(), ["Ctrl", "K"]);
         assert_eq!(chips("+").collect::<Vec<_>>(), ["+"]);
         assert_eq!(chips("F5").collect::<Vec<_>>(), ["F5"]);
+    }
+
+    #[test]
+    fn chips_keep_the_plus_key() {
+        assert_eq!(chips("Ctrl++").collect::<Vec<_>>(), ["Ctrl", "+"]);
+        assert_eq!(
+            chips("Ctrl+Shift++").collect::<Vec<_>>(),
+            ["Ctrl", "Shift", "+"]
+        );
+        assert_eq!(chips("Ctrl+-").collect::<Vec<_>>(), ["Ctrl", "-"]);
+        assert_eq!(chips("").count(), 0);
     }
 }

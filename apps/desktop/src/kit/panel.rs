@@ -156,7 +156,8 @@ impl<'a> Panel<'a> {
 }
 
 /// `ui/field`: one row of a settings form: the name (and a hint under it) on the left in
-/// a 176px column, the control on the right; `border-b border/60 px-pad py-2`.
+/// a 176px column (wider in the pad density), the control on the right;
+/// `border-b border/60 px-pad py-2`.
 /// `Field::new("Steam folder").hint("…").show(ui, |ui| { ui.add(Input::new(&mut p)); })`.
 #[must_use = "call show(…)"]
 pub struct Field<'a> {
@@ -200,7 +201,8 @@ impl<'a> Field<'a> {
         let label_w = if self.stacked {
             w - 2.0 * size::PAD
         } else {
-            176.0
+            // Wider with the pad's larger words, so the hints keep their line count.
+            (176.0 * size::text(size::TEXT_2XS) / size::TEXT_2XS).min((w * 0.4).max(176.0))
         };
         // `text-xs` (line height 1.45) and `text-2xs leading-snug` (1.375), `mt-0.5`.
         let (lg, l_off) = paint::galley_lh(

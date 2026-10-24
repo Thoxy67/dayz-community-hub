@@ -270,6 +270,8 @@ pub mod size {
     pub const CONTROL: f32 = 28.0;
     pub const CONTROL_LG: f32 = 34.0;
     pub const ROW: f32 = 44.0;
+    /// A menu's or a select's item: a compact row, so a short list stays short.
+    pub const MENU_ROW: f32 = 30.0;
     pub const TITLEBAR: f32 = 34.0;
     pub const RAIL: f32 = 208.0;
     pub const RAIL_COLLAPSED: f32 = 52.0;
@@ -294,6 +296,87 @@ pub mod size {
     pub const RADIUS_SM: u8 = 4;
     pub const RADIUS_MD: u8 = 6;
     pub const RADIUS_LG: u8 = 10;
+
+    // ── the pad density ──
+    //
+    // While a controller drives the window, controls grow and no text is smaller than
+    // `PAD_MIN_TEXT`: read from arm's length on a 7" screen, without zooming the whole
+    // window (a zoom past 1.33 at 1280x800 breaks the layouts). A mouse brings the
+    // normal density back. Worn per thread (the window's), set once a frame.
+
+    /// How much taller a control (`CONTROL`, `CONTROL_LG`) is in the pad density.
+    pub const PAD_GROW: f32 = 6.0;
+    /// How much taller a small control (`CONTROL_SM`) is in the pad density.
+    pub const PAD_GROW_SM: f32 = 4.0;
+    /// The smallest text in the pad density.
+    pub const PAD_MIN_TEXT: f32 = 13.0;
+    /// The controller's focus ring: its line, and in the pad density.
+    pub const RING: f32 = 2.0;
+    pub const RING_PAD: f32 = 3.0;
+    /// How far around a widget a press still hits it: a mouse (egui's own), and a
+    /// finger on a touch screen (a Deck's), which covers more than it sees.
+    pub const POINTER_REACH: f32 = 5.0;
+    pub const TOUCH_REACH: f32 = 14.0;
+
+    thread_local! {
+        static PAD_DENSITY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+
+    /// Wear the pad density (or the normal one); whether that changed.
+    pub fn set_pad_density(on: bool) -> bool {
+        PAD_DENSITY.with(|c| c.replace(on) != on)
+    }
+
+    /// Whether the pad density is worn.
+    pub fn pad_density() -> bool {
+        PAD_DENSITY.with(std::cell::Cell::get)
+    }
+
+    fn grow(px: f32, by: f32) -> f32 {
+        if pad_density() { px + by } else { px }
+    }
+
+    /// `CONTROL` in the density worn.
+    pub fn control() -> f32 {
+        grow(CONTROL, PAD_GROW)
+    }
+
+    /// `CONTROL_SM` in the density worn.
+    pub fn control_sm() -> f32 {
+        grow(CONTROL_SM, PAD_GROW_SM)
+    }
+
+    /// `CONTROL_LG` in the density worn.
+    pub fn control_lg() -> f32 {
+        grow(CONTROL_LG, PAD_GROW)
+    }
+
+    /// A text size in the density worn (`theme::font` applies it to every face).
+    pub fn text(px: f32) -> f32 {
+        if pad_density() {
+            px.max(PAD_MIN_TEXT)
+        } else {
+            px
+        }
+    }
+
+    /// How much taller a list's row is in the pad density.
+    pub const PAD_ROW_GROW: f32 = 8.0;
+
+    /// A list row's height (`px` in the normal density) in the density worn.
+    pub fn row(px: f32) -> f32 {
+        grow(px, PAD_ROW_GROW)
+    }
+
+    /// A menu's or a select's item ([`MENU_ROW`]) in the density worn.
+    pub fn menu_row() -> f32 {
+        grow(MENU_ROW, PAD_GROW)
+    }
+
+    /// The focus ring's line in the density worn.
+    pub fn ring() -> f32 {
+        if pad_density() { RING_PAD } else { RING }
+    }
 }
 
 /// Durations (`--duration-*`), in seconds. Motion is subtle: ≤ 6 px, ease-out, never a bounce.
@@ -375,7 +458,7 @@ pub fn apply(ctx: &egui::Context, t: Tokens) {
     ctx.all_styles_mut(|s| {
         s.spacing.item_spacing = egui::vec2(8.0, 6.0);
         s.spacing.button_padding = egui::vec2(10.0, 4.0);
-        s.spacing.interact_size.y = size::CONTROL;
+        s.spacing.interact_size.y = size::control();
         s.animation_time = motion::FAST;
         s.text_styles = fonts::text_styles();
     });

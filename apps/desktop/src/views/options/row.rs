@@ -227,7 +227,7 @@ pub fn show(
     // The switch, at the end.
     let sx = rect.right() - PAD_X - SWITCH_W;
     let mut on = opt.enabled;
-    let sw = ui.put(
+    let sw = ui.place(
         Rect::from_min_size(Pos2::new(sx, cy - 7.0), Vec2::new(SWITCH_W, 14.0)),
         MiniSwitch::new(&mut on).label(label),
     );
@@ -285,12 +285,13 @@ pub fn show(
     let fw = kind.width();
     let field = ctl(cx, fw, size::CONTROL_SM);
     let esc = ui.input(|i| i.key_pressed(egui::Key::Escape));
-    let fr = ui.put(
+    let fr = ui.place(
         field,
         Input::new(&mut draft.text)
             .size(FieldSize::Xs)
             .width(fw)
             .kind(InputKind::Mono)
+            .numeric(kind.numeric())
             .placeholder(t("options", "valuePlaceholder"))
             .char_limit(1024)
             .id_salt(("opt-value", &opt.key)),
@@ -338,7 +339,7 @@ pub fn show(
     cx += fw + 4.0;
 
     if kind == ValueKind::Folder {
-        let b = ui.put(
+        let b = ui.place(
             ctl(cx, size::CONTROL_SM, size::CONTROL_SM),
             IconButton::new(lucide::FOLDER_OPEN, t("options", "browseFolder"))
                 .size(Size::IconXs)

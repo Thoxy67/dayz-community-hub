@@ -23,7 +23,7 @@ use dz_hub::features::gamepad::PadAction;
 
 use crate::app::Ctx;
 use crate::i18n::{Locale, t};
-use crate::prefs::{GlyphChoice, PadMode};
+use crate::prefs::{GlyphChoice, OskChoice, PadMode};
 use crate::store::ConfirmRequest;
 use crate::theme::Scheme;
 use crate::views::ViewId;
@@ -65,6 +65,7 @@ pub enum Scope {
     Connect,
     Offline,
     Options,
+    Friends,
 }
 
 impl Scope {
@@ -80,7 +81,7 @@ impl Scope {
             Scope::Palette => "groupPalette",
             Scope::Dialog => "groupDialog",
             Scope::Pad => "groupPad",
-            Scope::Connect | Scope::Offline | Scope::Options => "groupViews",
+            Scope::Connect | Scope::Offline | Scope::Options | Scope::Friends => "groupViews",
         }
     }
 }
@@ -318,7 +319,7 @@ pub const SHORTCUTS: &[Shortcut] = &[
             &[Combo::ctrl(Key::K)],
             "palette",
         ),
-        &[P::Menu],
+        &[P::View],
         Some("search"),
     ),
     sc(
@@ -327,15 +328,12 @@ pub const SHORTCUTS: &[Shortcut] = &[
         &[Combo::ctrl(Key::F), Combo::key(Key::Slash)],
         "search",
     ),
-    pad(
-        sc(
-            "sheet.toggle",
-            S::Global,
-            &[Combo::key(Key::Questionmark)],
-            "sheet",
-        ),
-        &[P::View],
-        Some("shortcuts"),
+    // On a pad the sheet is one of the palette's actions (View, then "shortcuts").
+    sc(
+        "sheet.toggle",
+        S::Global,
+        &[Combo::key(Key::Questionmark)],
+        "sheet",
     ),
     sc(
         "servers.refresh",
@@ -474,11 +472,15 @@ pub const SHORTCUTS: &[Shortcut] = &[
         &[P::B],
         Some("back"),
     ),
-    sc(
-        "saved.remove",
-        S::Saved,
-        &[Combo::key(Key::Delete)],
-        "remove",
+    pad(
+        sc(
+            "saved.remove",
+            S::Saved,
+            &[Combo::key(Key::Delete)],
+            "remove",
+        ),
+        &[P::X],
+        Some("remove"),
     ),
     // ── mods ──
     pad(
@@ -550,6 +552,16 @@ pub const SHORTCUTS: &[Shortcut] = &[
         sc("servers.refresh_pad", S::Servers, &[], "refresh"),
         &[P::Y],
         Some("refresh"),
+    ),
+    pad(
+        sc("servers.filters_pad", S::Servers, &[], "filters"),
+        &[P::X],
+        Some("filters"),
+    ),
+    pad(
+        sc("friends.join", S::Friends, &[], "join"),
+        &[P::X],
+        Some("join"),
     ),
     pad(
         sc("connect.query", S::Connect, &[], "query"),
@@ -624,7 +636,7 @@ pub const SHORTCUTS: &[Shortcut] = &[
             &[Combo::key(Key::Escape)],
             "close",
         ),
-        &[P::B, P::Menu],
+        &[P::B, P::View],
         Some("back"),
     ),
     // ── dialogs ──
@@ -649,6 +661,16 @@ pub const SHORTCUTS: &[Shortcut] = &[
         &[P::A],
         Some("select"),
     ),
+    pad(
+        sc("pad.menu", S::Pad, &[], "rowMenu"),
+        &[P::Menu],
+        Some("actions"),
+    ),
+    pad(
+        sc("pad.tabs", S::Pad, &[], "tabs"),
+        &[P::Lt, P::Rt],
+        Some("tabs"),
+    ),
     pad(sc("pad.scroll", S::Pad, &[], "scroll"), &[P::Rs], None),
 ];
 
@@ -670,9 +692,11 @@ pub const PAD_GROUPS: &[Scope] = &[
     S::Global,
     S::Views,
     S::List,
+    S::Saved,
     S::Mods,
     S::News,
     S::Servers,
+    S::Friends,
     S::Connect,
     S::Offline,
     S::Options,
@@ -1009,8 +1033,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         ("nav", "collapse"),
         "shell",
         |cx, _| {
-            let s = cx.prefs.edit();
-            s.ui.rail_collapsed = !s.ui.rail_collapsed;
+            crate::pad::toggle_rail(cx.egui, cx.stores, cx.prefs);
         }
     ),
     cmd!(
@@ -1098,6 +1121,16 @@ pub static COMMANDS: &[CommandSpec] = &[
             _ => return,
         };
         cx.prefs.edit().pad_glyphs = g;
+    }),
+    cmd!("pad.set_keyboard", ("pad", "osk"), "settings", |cx, a| {
+        let k = match arg_str(a, "keyboard") {
+            Some("auto") => OskChoice::Auto,
+            Some("steam") => OskChoice::Steam,
+            Some("builtin") => OskChoice::Builtin,
+            Some("none") => OskChoice::None,
+            _ => return,
+        };
+        cx.prefs.edit().ui.pad_keyboard = k;
     }),
     // ── the controller's own moves (`crate::pad`): as if a pad had sent them ──
     cmd!("pad.move", ("keys", "move"), "pad", |cx, a| {
@@ -1378,7 +1411,8 @@ pub static COMMANDS: &[CommandSpec] = &[
         "settings.steam.open_steamcmd_dir",
         ("settings", "openFolder"),
         "settings",
-        |cx, a| crate::views::settings::command(cx, "steam.open_steamcmd_dir", a)
+        |cx, a| crate::views::settings::command(cx, "steam.open_steamcmd_dir", a),
+        crate::platform::deck::can_open_folders
     ),
     cmd!(
         "settings.steam.detect_steamcmd",
@@ -1391,6 +1425,13 @@ pub static COMMANDS: &[CommandSpec] = &[
         ("settings", "steamcmdInstallWin"),
         "settings",
         |cx, a| crate::views::settings::command(cx, "steam.install_steamcmd", a)
+    ),
+    cmd!(
+        "steam.add_shortcut",
+        ("pad", "addToSteam"),
+        "settings",
+        crate::platform::deck::cmd_add_to_steam,
+        crate::platform::deck::can_add_to_steam
     ),
     cmd!(
         "settings.apis.edit_key",
@@ -2001,7 +2042,8 @@ pub static COMMANDS: &[CommandSpec] = &[
         "mods",
         |cx, _| {
             cx.stores.mods.open_workshop_dir();
-        }
+        },
+        crate::platform::deck::can_open_folders
     ),
     cmd!(
         "mods.open_mod_dir",
@@ -2011,7 +2053,8 @@ pub static COMMANDS: &[CommandSpec] = &[
             if let Some(id) = arg_u64(a, "id") {
                 cx.stores.mods.open_mod_dir(id);
             }
-        }
+        },
+        crate::platform::deck::can_open_folders
     ),
     cmd!("mods.repair", ("mods", "repair"), "mods", |cx, a| {
         if let Some(id) = arg_u64(a, "id") {
@@ -3064,7 +3107,8 @@ pub static COMMANDS: &[CommandSpec] = &[
         "offline.open_missions_dir",
         ("offline", "exploreTitle"),
         "offline",
-        crate::views::offline::cmd_open_missions_dir
+        crate::views::offline::cmd_open_missions_dir,
+        crate::platform::deck::can_open_folders
     ),
     cmd!(
         "offline.install",
@@ -3095,7 +3139,8 @@ pub static COMMANDS: &[CommandSpec] = &[
         "offline.open_dir",
         ("offline", "openFolder"),
         "offline",
-        crate::views::offline::cmd_open_dir
+        crate::views::offline::cmd_open_dir,
+        crate::platform::deck::can_open_folders
     ),
     cmd!(
         "offline.clear_save",
@@ -3256,7 +3301,7 @@ pub fn run_line(cx: &mut Ctx, line: &str) -> Result<(), String> {
 pub fn handle_keys(cx: &mut Ctx) {
     let typing = cx.egui.egui_wants_keyboard_input();
     let overlay = cx.stores.dialogs.open()
-        || cx.egui.any_popup_open()
+        || egui::Popup::is_any_open(cx.egui)
         || cx.egui.memory(|m| m.top_modal_layer().is_some());
     let mut hits: Vec<(usize, &'static str)> = Vec::new();
     cx.egui.input(|i| {

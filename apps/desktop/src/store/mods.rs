@@ -744,7 +744,7 @@ impl Mods {
         let hub = self.hub.clone();
         rt::fire(async move {
             if let Ok(p) = hub.open_workshop_dir().await {
-                let _ = open::that_detached(p);
+                let _ = crate::platform::deck::open(p);
             }
         });
     }
@@ -753,7 +753,7 @@ impl Mods {
         let hub = self.hub.clone();
         rt::fire(async move {
             if let Ok(p) = hub.open_mod_dir(id).await {
-                let _ = open::that_detached(p);
+                let _ = crate::platform::deck::open(p);
             }
         });
     }

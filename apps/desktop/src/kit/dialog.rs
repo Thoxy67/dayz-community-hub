@@ -4,7 +4,8 @@
 //! The veil is flat `bg-plot/75`; the plate `bg-panel border-border-strong rounded-md
 //! shadow-pop`, 22 / 32 / 44 rem wide (never wider than the window less 1rem), popping in
 //! (140ms, from 97% and 2px down) and fading out (100ms). Header: the accent tick, the
-//! title (`text-sm font-semibold`), the description under it, the close button. Body
+//! title's first line (`text-sm font-semibold`) and the close button on one centre line,
+//! the description under the title. Body
 //! scrolls (`px-3 py-2.5 text-xs`); footer `border-t px-3 py-2`, buttons at the end, the
 //! safe one first. Escape and a click on the veil close it.
 
@@ -16,6 +17,24 @@ use super::button::{Button, Variant};
 use super::paint;
 use crate::icons::lucide;
 use crate::theme::{TokensExt, font, fonts::Face, size};
+
+/// What the window keeps at its bottom over the veil this frame (in pad mode the status
+/// bar and the pad hints' bar, drawn above dialogs): dialogs centre in the room above it
+/// and never reach into it. Set by the window before the dialogs are drawn.
+pub fn set_bottom_inset(ctx: &Context, px: f32) {
+    if px.is_finite() {
+        ctx.data_mut(|d| d.insert_temp(inset_id(), px.clamp(0.0, 400.0)));
+    }
+}
+
+/// The room kept at the window's bottom ([`set_bottom_inset`]), 0 when none.
+pub fn bottom_inset(ctx: &Context) -> f32 {
+    ctx.data(|d| d.get_temp::<f32>(inset_id())).unwrap_or(0.0)
+}
+
+fn inset_id() -> Id {
+    Id::new("kit::dialog.bottom_inset")
+}
 
 /// How wide a dialog is.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -48,6 +67,7 @@ pub struct Dialog<'a> {
     size: DialogSize,
     close_label: &'a str,
     body: bool,
+    footer: bool,
 }
 
 impl<'a> Dialog<'a> {
@@ -59,12 +79,20 @@ impl<'a> Dialog<'a> {
             size: DialogSize::Sm,
             close_label: "",
             body: true,
+            footer: true,
         }
     }
 
     /// Header and footer only (the body closure is not called).
     pub fn without_body(mut self) -> Self {
         self.body = false;
+        self
+    }
+
+    /// Header and body only (the footer closure is not called): a sheet that is read and
+    /// closed from its header, such as the shortcuts.
+    pub fn without_footer(mut self) -> Self {
+        self.footer = false;
         self
     }
 
@@ -111,8 +139,10 @@ impl<'a> Dialog<'a> {
             .min(screen.width() - 16.0)
             .min(screen.width() - 32.0)
             .max(120.0);
-        let max_h = (screen.height() - 32.0).max(120.0);
-        let lift = 2.0 * (1.0 - a);
+        // Centred in the room above what the window keeps at its bottom (the pad's bar).
+        let inset = bottom_inset(ctx);
+        let max_h = (screen.height() - 32.0 - inset).max(120.0);
+        let lift = 2.0 * (1.0 - a) - inset / 2.0;
         let area = egui::Modal::default_area(self.id)
             .anchor(egui::Align2::CENTER_CENTER, Vec2::new(0.0, lift));
         let modal = egui::Modal::new(self.id)
@@ -152,30 +182,38 @@ impl<'a> Dialog<'a> {
                             text_w,
                         )
                     });
-                    let text_h = tg.size().y + dg.as_ref().map_or(0.0, |g| g.size().y + 2.0);
-                    let hh = text_h.max(size::CONTROL_SM) + 16.0;
+                    // The tick, the title's first line and the close button share one
+                    // centre line, `cy` below the header's top.
+                    let cy = 8.0 + size::CONTROL_SM / 2.0;
+                    let line_h = tg.rows.first().map_or(tg.size().y, |r| r.rect().height());
+                    let title_top = cy - line_h / 2.0;
+                    let text_h =
+                        title_top + tg.size().y + dg.as_ref().map_or(0.0, |g| g.size().y + 2.0);
+                    let hh = text_h.max(8.0 + size::CONTROL_SM) + 8.0;
                     let (hr, _) = ui.allocate_exact_size(Vec2::new(w, hh), Sense::hover());
                     let p = ui.painter();
-                    let tick = Rect::from_min_size(
-                        egui::pos2(hr.left() + 12.0, hr.top() + 8.0 + 4.0),
+                    let tick = Rect::from_center_size(
+                        egui::pos2(hr.left() + 12.0 + 1.0, hr.top() + cy),
                         Vec2::new(2.0, 12.0),
                     );
                     p.rect_filled(tick, CornerRadius::same(1), t.accent);
                     let tx = tick.right() + 8.0;
-                    p.galley(egui::pos2(tx, hr.top() + 8.0), tg.clone(), t.fg);
+                    p.galley(egui::pos2(tx, hr.top() + title_top), tg.clone(), t.fg);
                     if let Some(dg) = dg {
                         p.galley(
-                            egui::pos2(tx, hr.top() + 8.0 + tg.size().y + 2.0),
+                            egui::pos2(tx, hr.top() + title_top + tg.size().y + 2.0),
                             dg,
                             t.fg_muted,
                         );
                     }
                     p.hline(hr.x_range(), hr.bottom() - 0.5, Stroke::new(1.0, t.border));
-                    let cr = Rect::from_min_size(
-                        egui::pos2(hr.right() - 12.0 - size::CONTROL_SM, hr.top() + 8.0),
+                    let cr = Rect::from_center_size(
+                        egui::pos2(hr.right() - 12.0 - size::CONTROL_SM / 2.0, hr.top() + cy),
                         Vec2::splat(size::CONTROL_SM),
                     );
                     let cb = ui.interact(cr, self.id.with("close"), Sense::click());
+                    // A controller's press never lands on it.
+                    crate::pad::registry::cross(ui.ctx(), cb.id);
                     let label = self.close_label;
                     cb.widget_info(|| {
                         egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label)
@@ -197,6 +235,7 @@ impl<'a> Dialog<'a> {
                     }
                     // Body.
                     let mut still = true;
+                    let foot_room = if self.footer { 60.0 } else { 20.0 };
                     if self.body {
                         egui::Frame::new()
                             .inner_margin(Margin::symmetric(12, 10))
@@ -205,7 +244,7 @@ impl<'a> Dialog<'a> {
                                 ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
                                 egui::ScrollArea::vertical()
                                     .id_salt(self.id.with("body"))
-                                    .max_height((max_h - hh - 60.0).max(40.0))
+                                    .max_height((max_h - hh - foot_room).max(40.0))
                                     .auto_shrink([false, true])
                                     .show(ui, |ui| {
                                         ui.style_mut().override_font_id =
@@ -215,7 +254,13 @@ impl<'a> Dialog<'a> {
                             });
                     }
                     // Footer: laid out at the end, its width remembered from the last frame.
-                    let fh = size::CONTROL + 16.0;
+                    if !self.footer {
+                        if !still {
+                            close = true;
+                        }
+                        return;
+                    }
+                    let fh = size::control() + 16.0;
                     let (fr, _) = ui.allocate_exact_size(Vec2::new(w, fh), Sense::hover());
                     ui.painter()
                         .hline(fr.x_range(), fr.top() + 0.5, Stroke::new(1.0, t.border));
@@ -233,7 +278,16 @@ impl<'a> Dialog<'a> {
                             .layout(Layout::left_to_right(Align::Center)),
                     );
                     fui.spacing_mut().item_spacing = Vec2::new(6.0, 0.0);
+                    // Its buttons show the pad keys their places answer to (B, X).
+                    let count_id = self.id.with("footer-n");
+                    let last_n: usize = ui.data(|d| d.get_temp(count_id)).unwrap_or(0);
+                    super::button::footer_begin(last_n);
                     footer(&mut fui, &mut still);
+                    let n = super::button::footer_end();
+                    if n != last_n {
+                        ui.data_mut(|d| d.insert_temp(count_id, n));
+                        ui.ctx().request_repaint();
+                    }
                     let used = fui.min_rect().width();
                     if (used - fw).abs() > 0.5 {
                         ui.data_mut(|d| d.insert_temp(footer_w_id, used));

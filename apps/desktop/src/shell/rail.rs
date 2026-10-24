@@ -22,10 +22,97 @@ const PAD_X: f32 = 6.0;
 /// An entry's height (`h-control-lg`) and the gap between entries (`gap-0.5`).
 const ENTRY_H: f32 = size::CONTROL_LG;
 const ENTRY_GAP: f32 = 2.0;
-/// Below this window height the last-played card is one line.
-const SHORT_WINDOW: f32 = 760.0;
+/// The space above a group and its heading's height (a thin line when compact).
+const GROUP_GAP: f32 = 12.0;
+const GROUP_GAP_COMPACT: f32 = 6.0;
+const HEADING_H: f32 = 15.0;
+const DIVIDER_H: f32 = 5.0;
+/// The air above and below the places.
+const PLACES_PAD: f32 = 10.0;
 /// The last-played card's name line (`text-xs`, its line and the space under it).
 const NAME_H: f32 = 18.0;
+/// The "DayZ is running" block's height, open.
+const GAME_BLOCK_H: f32 = 62.0;
+
+/// How the rail fits the window's height: the full card and entries while they fit,
+/// then the card on one line, then compact entries under thin dividers (and past that,
+/// the places scroll).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Fit {
+    entry_h: f32,
+    compact: bool,
+    card_short: bool,
+}
+
+impl Fit {
+    const FULL: Self = Self {
+        entry_h: ENTRY_H,
+        compact: false,
+        card_short: false,
+    };
+    const SHORT_CARD: Self = Self {
+        card_short: true,
+        ..Self::FULL
+    };
+    const COMPACT: Self = Self {
+        entry_h: size::CONTROL,
+        compact: true,
+        card_short: true,
+    };
+}
+
+/// The places' natural height: their groups, headings (or lines) and entries.
+fn places_height(collapsed: bool, fit: Fit) -> f32 {
+    let mut h = 2.0 * PLACES_PAD;
+    for (gi, (g, _)) in GROUPS.iter().enumerate() {
+        let n = PLACES.iter().filter(|p| p.group == *g).count() as f32;
+        h += n * (ENTRY_GAP + fit.entry_h);
+        h += match (gi, collapsed || fit.compact) {
+            (0, true) => 0.0,
+            (0, false) => HEADING_H,
+            (_, true) => group_gap(fit) + DIVIDER_H,
+            (_, false) => GROUP_GAP + HEADING_H,
+        };
+    }
+    h
+}
+
+fn group_gap(fit: Fit) -> f32 {
+    if fit.compact {
+        GROUP_GAP_COMPACT
+    } else {
+        GROUP_GAP
+    }
+}
+
+/// The first fit whose places, the game's block (`extra`) and foot hold in `height`,
+/// else the most compact.
+fn pick_fit(collapsed: bool, height: f32, extra: f32, mut foot: impl FnMut(Fit) -> f32) -> Fit {
+    for fit in [Fit::FULL, Fit::SHORT_CARD] {
+        if places_height(collapsed, fit) + extra + foot(fit) <= height {
+            return fit;
+        }
+    }
+    Fit::COMPACT
+}
+
+/// The height of "DayZ is running" and its button, with the space under it.
+fn game_block_height(collapsed: bool) -> f32 {
+    (if collapsed { ENTRY_H } else { GAME_BLOCK_H }) + 10.0
+}
+
+fn fit_for(cx: &mut Ctx, collapsed: bool, height: f32) -> Fit {
+    // The game's block shows at the places' foot while it runs (not with a pad).
+    let pad = cx.stores.pad.mode(cx.prefs.get().ui.pad_mode) == InputMode::Gamepad;
+    let extra = if cx.stores.game.running && !pad {
+        game_block_height(collapsed)
+    } else {
+        0.0
+    };
+    pick_fit(collapsed, height, extra, |fit| {
+        foot_height(cx, collapsed, fit)
+    })
+}
 
 /// The figure beside a place, and its tone.
 struct Count {
@@ -76,7 +163,8 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx) {
     let collapsed = crate::pad::rail_collapsed(ui.ctx(), cx.stores, cx.prefs);
     // (The right border is the panel's separator line.)
     let inner = rect;
-    let foot_h = foot_height(cx, collapsed, ui.ctx().content_rect().height());
+    let fit = fit_for(cx, collapsed, inner.height());
+    let foot_h = foot_height(cx, collapsed, fit);
     let split = (inner.bottom() - foot_h).max(inner.top());
     let top = Rect::from_min_max(inner.min, pos2(inner.right(), split));
     let foot = Rect::from_min_max(pos2(inner.left(), split), inner.max);
@@ -89,6 +177,8 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx) {
     // A short window cannot hold every place: the handle shows without a hover, so the
     // places below the fold are known to be there.
     child.spacing_mut().scroll.dormant_handle_opacity = 0.6;
+    // Inset from the rail's border, so the handle does not sit on the separator.
+    child.spacing_mut().scroll.bar_outer_margin = 3.0;
     // The current place is scrolled into sight when it changes (a shortcut, the palette).
     let seen_id = ui.id().with("rail-seen-view");
     let changed = ui.data(|d| d.get_temp::<ViewId>(seen_id)) != Some(cx.nav.view);
@@ -102,20 +192,26 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx) {
         .show(&mut child, |ui| {
             ui.spacing_mut().item_spacing = Vec2::ZERO;
             let w = ui.available_width();
-            ui.add_space(10.0);
+            ui.add_space(PLACES_PAD);
             for (gi, (g, label)) in GROUPS.iter().enumerate() {
-                if gi > 0 {
-                    ui.add_space(12.0);
-                }
-                if collapsed {
-                    let (r, _) = ui.allocate_exact_size(vec2(w, 5.0), Sense::hover());
-                    ui.painter().hline(
-                        (r.center().x - 10.0)..=(r.center().x + 10.0),
-                        r.top() + 0.5,
-                        Stroke::new(1.0, tk.border),
-                    );
+                if collapsed || fit.compact {
+                    // A thin line between groups; none above the first.
+                    if gi > 0 {
+                        ui.add_space(group_gap(fit));
+                        let (r, _) = ui.allocate_exact_size(vec2(w, DIVIDER_H), Sense::hover());
+                        let x = if collapsed {
+                            (r.center().x - 10.0)..=(r.center().x + 10.0)
+                        } else {
+                            (r.left() + PAD_X + 10.0)..=(r.right() - PAD_X - 10.0)
+                        };
+                        ui.painter()
+                            .hline(x, r.top() + 0.5, Stroke::new(1.0, tk.border));
+                    }
                 } else {
-                    let (r, _) = ui.allocate_exact_size(vec2(w, 15.0), Sense::hover());
+                    if gi > 0 {
+                        ui.add_space(GROUP_GAP);
+                    }
+                    let (r, _) = ui.allocate_exact_size(vec2(w, HEADING_H), Sense::hover());
                     let gl = super::stencil(ui, t("nav", label), tk.fg_faint, Some(w - 32.0));
                     ui.painter().galley_with_override_text_color(
                         pos2(r.left() + PAD_X + 10.0, r.top() + 5.5 - gl.size().y / 2.0),
@@ -125,7 +221,7 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx) {
                 }
                 for p in PLACES.iter().filter(|p| p.group == *g) {
                     ui.add_space(ENTRY_GAP);
-                    let r = entry(ui, cx, p, collapsed, w);
+                    let r = entry(ui, cx, p, collapsed, w, fit.entry_h);
                     if cx.nav.view == p.id {
                         active = Some(r);
                         if changed {
@@ -134,12 +230,11 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx) {
                     }
                 }
             }
-            ui.add_space(10.0);
+            ui.add_space(PLACES_PAD);
             // The game is open: a way to close it, pushed to the foot of the places.
             let pad = cx.stores.pad.mode(cx.prefs.get().ui.pad_mode) == InputMode::Gamepad;
             if cx.stores.game.running && !pad {
-                let block_h = if collapsed { ENTRY_H } else { 62.0 };
-                let room = ui.available_height() - block_h - 10.0;
+                let room = ui.available_height() - game_block_height(collapsed);
                 if room > 0.0 {
                     ui.add_space(room);
                 }
@@ -162,7 +257,7 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx) {
         0.4,
     );
     let mut y = foot.top() + 1.0 + 8.0;
-    y = rejoin(ui, cx, collapsed, foot, y);
+    y = rejoin(ui, cx, collapsed, fit, foot, y);
     let mut fui = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(Rect::from_min_max(pos2(foot.left(), y), foot.max))
@@ -171,7 +266,7 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx) {
     fui.spacing_mut().item_spacing = Vec2::ZERO;
     let w = fui.available_width();
     for p in PLACES.iter().filter(|p| p.group == Group::Foot) {
-        let r = entry(&mut fui, cx, p, collapsed, w);
+        let r = entry(&mut fui, cx, p, collapsed, w, fit.entry_h);
         if cx.nav.view == p.id {
             active = Some(r);
             active_in_foot = true;
@@ -201,9 +296,9 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx) {
 }
 
 /// One place: icon, name, count (`h-control-lg rounded-sm gap-2.5 text-sm`).
-fn entry(ui: &mut Ui, cx: &mut Ctx, p: &Place, collapsed: bool, w: f32) -> Rect {
+fn entry(ui: &mut Ui, cx: &mut Ctx, p: &Place, collapsed: bool, w: f32, h: f32) -> Rect {
     let tk = ui.tokens();
-    let (row, _) = ui.allocate_exact_size(vec2(w, ENTRY_H), Sense::hover());
+    let (row, _) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
     let r = Rect::from_min_max(
         pos2(row.left() + PAD_X, row.top()),
         pos2(row.right() - PAD_X, row.bottom()),
@@ -238,12 +333,9 @@ fn entry(ui: &mut Ui, cx: &mut Ctx, p: &Place, collapsed: bool, w: f32) -> Rect 
             Rect::from_center_size(r.center(), Vec2::splat(size::ICON)),
             icon_ink,
         );
-        if count.as_ref().is_some_and(|c| c.tone.is_some()) {
-            painter.circle_filled(
-                pos2(r.right() - 8.0 - 3.0, r.top() + 6.0 + 3.0),
-                3.0,
-                tk.warn,
-            );
+        // The figure's own tone: amber for mod updates, green for friends in game.
+        if let Some(tone) = count.as_ref().and_then(|c| c.tone) {
+            painter.circle_filled(pos2(r.right() - 8.0 - 3.0, r.top() + 6.0 + 3.0), 3.0, tone);
         }
     } else {
         let mut x = r.left() + 10.0;
@@ -316,7 +408,7 @@ fn game_block(ui: &mut Ui, cx: &mut Ctx, collapsed: bool, w: f32) {
     let tk = ui.tokens();
     let closing = cx.stores.game.closing;
     let label = t("nav", "killGame");
-    let h = if collapsed { ENTRY_H } else { 62.0 };
+    let h = if collapsed { ENTRY_H } else { GAME_BLOCK_H };
     let (row, _) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
     let r = row.shrink2(vec2(PAD_X, 0.0));
     let p = ui.painter();
@@ -406,11 +498,11 @@ fn last_played(cx: &Ctx) -> Option<(String, u16, String, i64)> {
 
 /// The foot's height: border, `pt-2`, the card and its gap, two entries, the collapse
 /// button, `pb-1.5`.
-fn foot_height(cx: &mut Ctx, collapsed: bool, window_h: f32) -> f32 {
-    let entries = 2.0 * ENTRY_H + 2.0 * ENTRY_GAP + size::CONTROL;
+fn foot_height(cx: &mut Ctx, collapsed: bool, fit: Fit) -> f32 {
+    let entries = 2.0 * fit.entry_h + 2.0 * ENTRY_GAP + size::CONTROL;
     let card = match last_played(cx) {
         None => 0.0,
-        Some(_) if collapsed || window_h <= SHORT_WINDOW => ENTRY_H + 8.0,
+        Some(_) if collapsed || fit.card_short => fit.entry_h + 8.0,
         Some((ip, port, ..)) => {
             let listed = cx.stores.servers.row_of(&ip, i64::from(port)).is_some();
             card_height(listed) + 8.0
@@ -431,23 +523,22 @@ fn card_height(listed: bool) -> f32 {
 
 /// The last-played card (or its one-line and collapsed forms) from `y`; returns the
 /// next free y.
-fn rejoin(ui: &mut Ui, cx: &mut Ctx, collapsed: bool, foot: Rect, y: f32) -> f32 {
+fn rejoin(ui: &mut Ui, cx: &mut Ctx, collapsed: bool, fit: Fit, foot: Rect, y: f32) -> f32 {
     let Some((ip, port, name, ts)) = last_played(cx) else {
         return y;
     };
     let tk = ui.tokens();
     let rejoin_label = t("nav", "rejoin");
-    let short = ui.ctx().content_rect().height() <= SHORT_WINDOW;
-    if collapsed || short {
+    if collapsed || fit.card_short {
         let r = if collapsed {
             Rect::from_min_size(
                 pos2(foot.left() + PAD_X, y),
-                vec2(foot.width() - 2.0 * PAD_X, ENTRY_H),
+                vec2(foot.width() - 2.0 * PAD_X, fit.entry_h),
             )
         } else {
             Rect::from_min_size(
                 pos2(foot.left() + 8.0, y),
-                vec2(foot.width() - 16.0, ENTRY_H),
+                vec2(foot.width() - 16.0, fit.entry_h),
             )
         };
         let resp = ui.interact(r, ui.id().with("rejoin-line"), Sense::click());
@@ -647,7 +738,7 @@ fn listed_lines(
     let pr = Rect::from_min_size(pos2(left, y), vec2(64.0, 21.0));
     let players = u32::try_from(row.players().max(0)).unwrap_or(0);
     let max = u32::try_from(row.max_players().max(0)).unwrap_or(0);
-    ui.put(pr, Players::new(players, max).bots(row.bots()).compact());
+    ui.place(pr, Players::new(players, max).bots(row.bots()).compact());
     let key = row.addr().to_string();
     let ms = crate::store::servers::Servers::listed_ping(&row)
         .or_else(|| cx.stores.servers.ping.get(&key).copied());
@@ -738,5 +829,45 @@ fn collapse_button(ui: &mut Ui, cx: &mut Ctx, collapsed: bool, w: f32) {
     super::ring(ui, &resp, r, size::RADIUS_SM);
     if resp.clicked() {
         let _ = cx.run("rail.toggle_collapse", &serde_json::Value::Null);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Fit, game_block_height, pick_fit, places_height};
+
+    #[test]
+    fn compact_places_are_shorter_and_collapsed_has_no_headings() {
+        let full = places_height(false, Fit::FULL);
+        assert_eq!(full, places_height(false, Fit::SHORT_CARD));
+        let compact = places_height(false, Fit::COMPACT);
+        assert!(compact < full, "{compact} < {full}");
+        // Collapsed: thin lines instead of headings, so shorter than the full rail.
+        assert!(places_height(true, Fit::FULL) < full);
+    }
+
+    #[test]
+    fn the_fit_steps_down_as_the_rail_shortens() {
+        // A foot whose card is 150 tall in full and 40 on one line.
+        let foot = |f: Fit| if f.card_short { 40.0 } else { 150.0 };
+        let full = places_height(false, Fit::FULL) + 150.0;
+        let short = places_height(false, Fit::SHORT_CARD) + 40.0;
+        assert_eq!(pick_fit(false, full, 0.0, foot), Fit::FULL);
+        assert_eq!(pick_fit(false, full - 1.0, 0.0, foot), Fit::SHORT_CARD);
+        assert_eq!(pick_fit(false, short, 0.0, foot), Fit::SHORT_CARD);
+        assert_eq!(pick_fit(false, short - 1.0, 0.0, foot), Fit::COMPACT);
+        // The game's block counts: the height that held the full rail no longer does.
+        assert_eq!(
+            pick_fit(false, full, game_block_height(false), foot),
+            Fit::SHORT_CARD
+        );
+        // The 900x600 window's rail (600 less the title and status bars) holds the
+        // compact places with a one-line card.
+        use crate::theme::size;
+        let rail = 600.0 - size::TITLEBAR - crate::shell::STATUSBAR_HEIGHT;
+        let c = Fit::COMPACT.entry_h;
+        let foot = 1.0 + 8.0 + (c + 8.0) + 2.0 * c + 2.0 * super::ENTRY_GAP + size::CONTROL + 6.0;
+        let need = places_height(false, Fit::COMPACT) + foot;
+        assert!(need <= rail, "{need} <= {rail}");
     }
 }

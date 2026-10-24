@@ -13,6 +13,105 @@ use super::tooltip::{Side, TipExt};
 use crate::icons::Icon;
 use crate::theme::{Tokens, TokensExt, font, fonts::Face, size};
 
+/// The controller button a button answers to (a dialog's B closes it, X confirms it):
+/// its glyph shows before the label while the pad density is worn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PadKey {
+    Back,
+    Confirm,
+}
+
+/// How the window draws a [`PadKey`]'s glyph (`parts::pad`, which knows the pad in
+/// hand): its width, and drawing it in a rect.
+#[derive(Clone, Copy)]
+pub struct PadChips {
+    pub width: fn(&Ui, PadKey) -> f32,
+    pub paint: fn(&Ui, PadKey, Rect),
+}
+
+static PAD_CHIPS: std::sync::OnceLock<PadChips> = std::sync::OnceLock::new();
+
+/// Installs the glyph drawing; the first call wins.
+pub fn set_pad_chips(c: PadChips) {
+    let _ = PAD_CHIPS.set(c);
+}
+
+/// The glyph drawing, while the pad density is worn.
+pub fn pad_chips() -> Option<PadChips> {
+    if size::pad_density() {
+        PAD_CHIPS.get().copied()
+    } else {
+        None
+    }
+}
+
+/// A dialog's footer being laid out: how many labelled buttons it had last frame, and
+/// how many it has had so far this frame (`kit::dialog` opens and closes it).
+#[derive(Clone, Copy)]
+struct Footer {
+    last: usize,
+    seen: usize,
+}
+
+thread_local! {
+    static FOOTER: std::cell::Cell<Option<Footer>> = const { std::cell::Cell::new(None) };
+}
+
+/// A dialog's footer starts: its buttons take their pad keys from their place (the
+/// first is the safe one, B; the last acts, X), knowing `last` buttons were there the
+/// frame before.
+pub(super) fn footer_begin(last: usize) {
+    FOOTER.with(|f| f.set(Some(Footer { last, seen: 0 })));
+}
+
+/// The footer ends: how many labelled buttons it had.
+pub(super) fn footer_end() -> usize {
+    FOOTER.with(|f| f.take()).map_or(0, |f| f.seen)
+}
+
+fn confirm_chip_id() -> egui::Id {
+    egui::Id::new("kit::button.confirm_chip")
+}
+
+/// Whether an enabled button wore the X (confirm) chip this frame or the last: the pad
+/// hints' bar, drawn before the dialogs, says what X does then.
+pub fn confirm_chip_shown(ctx: &egui::Context) -> bool {
+    let now = ctx.cumulative_frame_nr();
+    ctx.data(|d| d.get_temp::<u64>(confirm_chip_id()))
+        .is_some_and(|f| f + 1 >= now)
+}
+
+/// The pad key of the `i`-th labelled button of a footer of `n` (the dialog's B closes
+/// it, X presses its last button): the first of several is B, the last X; a lone button
+/// is B when it only dismisses (ghost or plain), else X.
+fn footer_key(i: usize, n: usize, v: Variant) -> Option<PadKey> {
+    if n == 0 || i >= n {
+        None
+    } else if n == 1 {
+        Some(match v {
+            Variant::Ghost | Variant::Default => PadKey::Back,
+            _ => PadKey::Confirm,
+        })
+    } else if i == 0 {
+        Some(PadKey::Back)
+    } else if i + 1 == n {
+        Some(PadKey::Confirm)
+    } else {
+        None
+    }
+}
+
+/// The key a labelled button laid out now takes from its place in a dialog's footer.
+fn footer_next(v: Variant) -> Option<PadKey> {
+    FOOTER.with(|c| {
+        let mut f = c.get()?;
+        let k = footer_key(f.seen, f.last, v);
+        f.seen += 1;
+        c.set(Some(f));
+        k
+    })
+}
+
 /// What a button wears.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Variant {
@@ -48,9 +147,9 @@ pub enum Size {
 impl Size {
     fn height(self) -> f32 {
         match self {
-            Size::Lg => size::CONTROL_LG,
-            Size::Sm | Size::Icon => size::CONTROL,
-            Size::Xs | Size::IconXs => size::CONTROL_SM,
+            Size::Lg => size::control_lg(),
+            Size::Sm | Size::Icon => size::control(),
+            Size::Xs | Size::IconXs => size::control_sm(),
         }
     }
 
@@ -221,6 +320,7 @@ pub struct Button<'a> {
     spinning: bool,
     start: bool,
     tint: Option<Color32>,
+    pad_key: Option<PadKey>,
 }
 
 impl<'a> Button<'a> {
@@ -241,7 +341,15 @@ impl<'a> Button<'a> {
             spinning: false,
             start: false,
             tint: None,
+            pad_key: None,
         }
+    }
+
+    /// The controller button it answers to, shown as a glyph before the label while a
+    /// controller drives the window.
+    pub fn pad_key(mut self, k: PadKey) -> Self {
+        self.pad_key = Some(k);
+        self
     }
 
     /// The label in its own colour whatever the state (a chip's count in `text-err`
@@ -324,12 +432,45 @@ impl<'a> Button<'a> {
         self
     }
 
-    /// `ui/chip`: an `Xs` button that says "on" by outline, not by fill.
+    /// `ui/chip`: an `Xs` button that says "on" by outline, not by fill. Beside a
+    /// `CONTROL`-high field (a toolbar's search) it takes `.size(Size::Sm)` to match.
     pub fn chip(label: &'a str, on: bool) -> Self {
         let mut b = Self::new(label).size(Size::Xs);
         b.chip = true;
         b.active = on;
         b
+    }
+
+    /// The width the button takes at its natural size (its icons, label and padding;
+    /// not a pad chip): what a row measures before it shares out the rest.
+    pub fn natural_width(&self, ui: &Ui) -> f32 {
+        let s = self.size;
+        let h = s.height();
+        if s.square() {
+            return h;
+        }
+        let icon_px = self.icon_size.unwrap_or_else(|| s.icon());
+        let mut parts: Vec<f32> = Vec::with_capacity(3);
+        if self.icon.is_some() {
+            parts.push(icon_px);
+        }
+        if !self.label.is_empty() {
+            let face = if self.variant == Variant::Play && !self.active {
+                Face::DisplayBold
+            } else {
+                Face::SansMedium
+            };
+            parts.push(
+                paint::galley(ui, self.label, font(face, s.text()), Color32::WHITE)
+                    .size()
+                    .x,
+            );
+        }
+        if self.trailing.is_some() {
+            parts.push(icon_px);
+        }
+        let gaps = 6.0 * parts.len().saturating_sub(1) as f32;
+        parts.iter().sum::<f32>() + gaps + 2.0 * s.pad() + 2.0
     }
 }
 
@@ -355,6 +496,25 @@ impl Widget for Button<'_> {
         let gap = 6.0;
         let mut content = 0.0;
         let mut parts = 0;
+        // In a dialog's footer its place gives the key, unless it was given one.
+        let placed = if g.is_some() {
+            footer_next(self.variant)
+        } else {
+            None
+        };
+        let key = self.pad_key.or(placed);
+        if key == Some(PadKey::Confirm) && self.enabled && pad_chips().is_some() {
+            let frame = ui.ctx().cumulative_frame_nr();
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(confirm_chip_id(), frame));
+        }
+        let chip = key
+            .filter(|_| !s.square())
+            .and_then(|k| pad_chips().map(|c| (k, c, (c.width)(ui, k))));
+        if let Some((_, _, cw)) = chip {
+            content += cw;
+            parts += 1;
+        }
         if self.icon.is_some() {
             content += icon_px;
             parts += 1;
@@ -449,6 +609,15 @@ impl Widget for Button<'_> {
                 r.center().x - content / 2.0
             };
             let cy = r.center().y;
+            if let Some((k, c, cw)) = chip {
+                let gh = (size::control_sm() - 4.0).min(r.height() - 4.0);
+                (c.paint)(
+                    ui,
+                    k,
+                    Rect::from_min_size(egui::pos2(x, cy - gh / 2.0), Vec2::new(cw, gh)),
+                );
+                x += cw + gap;
+            }
             if let Some(icon) = self.icon {
                 let ir =
                     Rect::from_min_size(egui::pos2(x, cy - icon_px / 2.0), Vec2::splat(icon_px));
@@ -484,6 +653,10 @@ impl Widget for Button<'_> {
         let resp = if self.enabled {
             resp.on_hover_cursor(egui::CursorIcon::PointingHand)
         } else {
+            crate::pad::registry::dormant(ui.ctx(), resp.id);
+            if self.tip.is_some_and(|(text, _, _)| !text.is_empty()) {
+                super::tooltip::reachable(&resp);
+            }
             resp
         };
         match self.tip {
@@ -629,8 +802,64 @@ impl Widget for IconButton<'_> {
         let resp = if self.enabled {
             resp.on_hover_cursor(egui::CursorIcon::PointingHand)
         } else {
+            crate::pad::registry::dormant(ui.ctx(), resp.id);
+            if !self.label.is_empty() {
+                super::tooltip::reachable(&resp);
+            }
             resp
         };
         resp.tip_kbd(self.label, self.kbd, self.side)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_footer_gives_its_buttons_their_pad_keys() {
+        assert_eq!(footer_key(0, 2, Variant::Ghost), Some(PadKey::Back));
+        assert_eq!(footer_key(1, 2, Variant::Accent), Some(PadKey::Confirm));
+        assert_eq!(footer_key(1, 3, Variant::Default), None);
+        assert_eq!(footer_key(0, 1, Variant::Ghost), Some(PadKey::Back));
+        assert_eq!(footer_key(0, 1, Variant::Danger), Some(PadKey::Confirm));
+        // A button more than last frame's count waits a frame.
+        assert_eq!(footer_key(2, 2, Variant::Accent), None);
+        assert_eq!(footer_key(0, 0, Variant::Accent), None);
+        footer_begin(2);
+        assert_eq!(footer_next(Variant::Ghost), Some(PadKey::Back));
+        assert_eq!(footer_next(Variant::Accent), Some(PadKey::Confirm));
+        assert_eq!(footer_end(), 2);
+        assert_eq!(footer_next(Variant::Accent), None);
+    }
+
+    /// Puts the normal density back when dropped, even when an assert fails first.
+    struct NormalDensity;
+    impl Drop for NormalDensity {
+        fn drop(&mut self) {
+            size::set_pad_density(false);
+        }
+    }
+
+    #[test]
+    fn a_footer_of_three_gives_b_and_x_to_its_ends() {
+        assert_eq!(footer_key(0, 3, Variant::Ghost), Some(PadKey::Back));
+        assert_eq!(footer_key(1, 3, Variant::Default), None);
+        assert_eq!(footer_key(2, 3, Variant::Accent), Some(PadKey::Confirm));
+        assert_eq!(footer_key(3, 3, Variant::Accent), None);
+    }
+
+    #[test]
+    fn the_pad_density_grows_controls_and_small_text() {
+        let _normal = NormalDensity;
+        size::set_pad_density(true);
+        assert_eq!(Size::Sm.height(), size::CONTROL + size::PAD_GROW);
+        assert_eq!(size::text(size::TEXT_3XS), size::PAD_MIN_TEXT);
+        assert_eq!(size::text(size::TEXT_LG), size::TEXT_LG);
+        assert!(size::ring() > size::RING);
+        assert!(size::set_pad_density(false));
+        assert_eq!(Size::Sm.height(), size::CONTROL);
+        assert_eq!(size::text(size::TEXT_3XS), size::TEXT_3XS);
+        assert!(pad_chips().is_none());
     }
 }

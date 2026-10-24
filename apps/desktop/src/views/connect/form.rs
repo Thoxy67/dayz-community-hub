@@ -131,6 +131,8 @@ pub fn show(ui: &mut Ui, cx: &mut Ctx, r: &Resolved) {
                                     .id_salt("connect-address"),
                             )
                             .tip(t("connect", "addressHint"));
+                        // Where a controller lands in the view.
+                        crate::pad::primary(ui.ctx(), addr.id);
                         if addr.lost_focus() {
                             d.split_address();
                         }
@@ -227,6 +229,7 @@ pub fn show(ui: &mut Ui, cx: &mut Ctx, r: &Resolved) {
                                                 Input::new(&mut d.port)
                                                     .kind(InputKind::Mono)
                                                     .char_limit(5)
+                                                    .numeric(true)
                                                     .error(r.port_error)
                                                     .id_salt("connect-port"),
                                             );
@@ -244,6 +247,7 @@ pub fn show(ui: &mut Ui, cx: &mut Ctx, r: &Resolved) {
                                                 Input::new(&mut d.query_port)
                                                     .kind(InputKind::Mono)
                                                     .char_limit(5)
+                                                    .numeric(true)
                                                     .placeholder("27016")
                                                     .id_salt("connect-query-port"),
                                             );

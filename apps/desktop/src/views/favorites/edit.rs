@@ -323,11 +323,12 @@ fn edit_dialog(ctx: &egui::Context, cx: &mut Ctx, st: &mut DialogsState) {
                             let mut on = f.labels.contains(name);
                             let r = ui
                                 .allocate_ui_with_layout(
-                                    Vec2::new(col, size::ROW),
+                                    Vec2::new(col, size::control_sm()),
                                     Layout::left_to_right(Align::Center),
                                     |ui| {
                                         ui.add(
                                             Toggle::new(&mut on, name)
+                                                .compact()
                                                 .swatch(label_color(&tk, *color)),
                                         )
                                     },

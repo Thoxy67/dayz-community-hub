@@ -3,7 +3,7 @@
 //! (`bg-accent/15 text-accent`). Arrows move the choice.
 
 use egui::{
-    Color32, CornerRadius, Rect, Response, Sense, Ui, Vec2, Widget, WidgetInfo, WidgetType,
+    Color32, CornerRadius, Id, Rect, Response, Sense, Ui, Vec2, Widget, WidgetInfo, WidgetType,
 };
 
 use super::input::FieldSize;
@@ -50,6 +50,12 @@ impl<'a, V> Segment<'a, V> {
     }
 }
 
+/// The widget of segment `i` of the control whose response id is `base` (a view makes
+/// one the pad's landing spot).
+pub fn segment_id(base: Id, i: usize) -> Id {
+    base.with(("seg", i))
+}
+
 /// `Segmented::new(&mut mode, &segments)`; `changed()` when the choice moved.
 #[must_use = "add it with ui.add(…)"]
 pub struct Segmented<'a, V: PartialEq + Clone> {
@@ -82,7 +88,8 @@ impl<'a, V: PartialEq + Clone> Segmented<'a, V> {
         self
     }
 
-    /// Stretch to the width on offer, the choices sharing it equally.
+    /// Stretch to the width on offer: each choice keeps its natural width and the spare
+    /// room is shared equally (short of room, the widths shrink in proportion).
     pub fn fill(mut self) -> Self {
         self.fill = true;
         self
@@ -93,12 +100,12 @@ impl<V: PartialEq + Clone> Widget for Segmented<'_, V> {
     fn ui(self, ui: &mut Ui) -> Response {
         let t = ui.tokens();
         let (h, text) = match self.size {
-            FieldSize::Sm => (size::CONTROL, size::TEXT_XS),
-            FieldSize::Xs => (size::CONTROL_SM, size::TEXT_2XS),
+            FieldSize::Sm => (size::control(), size::TEXT_XS),
+            FieldSize::Xs => (size::control_sm(), size::TEXT_2XS),
         };
         let f = font(Face::Sans, text);
-        let n = self.options.len().max(1);
-        // Widths first: each item's natural width, or equal shares when filling.
+        // Widths first: each item's natural width, plus a share of the spare room when
+        // filling, so a short word ("Tout") is never cut to pay for a long one.
         let natural: Vec<f32> = self
             .options
             .iter()
@@ -121,21 +128,21 @@ impl<V: PartialEq + Clone> Widget for Segmented<'_, V> {
         let base = resp.id;
         let p = ui.painter().clone();
         paint::plate(&p, rect, size::RADIUS_SM, t.bg, t.border);
-        let share = (w - 2.0) / n as f32;
+        let widths = fill_widths(&natural, w - 2.0);
         let mut x = rect.left() + 1.0;
         let mut moved: Option<V> = None;
         let mut focus_idx: Option<usize> = None;
         let current = self.options.iter().position(|o| o.value == *self.value);
         for (i, o) in self.options.iter().enumerate() {
             let iw = if self.fill {
-                share
+                widths.get(i).copied().unwrap_or(h)
             } else {
                 natural.get(i).copied().unwrap_or(h)
             };
             let r = Rect::from_min_size(egui::pos2(x, rect.top() + 1.0), Vec2::new(iw, h - 2.0));
             x += iw;
             let en = !o.disabled;
-            let id = base.with(("seg", i));
+            let id = segment_id(base, i);
             let sense = if en { Sense::click() } else { Sense::hover() };
             let ir = ui.interact(r, id, sense);
             let label = o.label;
@@ -241,7 +248,7 @@ impl<V: PartialEq + Clone> Widget for Segmented<'_, V> {
                 && let Some(o) = self.options.get(k)
             {
                 moved = Some(o.value.clone());
-                ui.memory_mut(|m| m.request_focus(base.with(("seg", k))));
+                ui.memory_mut(|m| m.request_focus(segment_id(base, k)));
             }
         }
         if let Some(v) = moved {
@@ -249,5 +256,36 @@ impl<V: PartialEq + Clone> Widget for Segmented<'_, V> {
             resp.mark_changed();
         }
         resp
+    }
+}
+
+/// The filled widths: `natural` plus an equal share of what is left of `inner`, or, when
+/// `inner` is short, `natural` scaled down to it.
+fn fill_widths(natural: &[f32], inner: f32) -> Vec<f32> {
+    let sum: f32 = natural.iter().sum();
+    if natural.is_empty() || sum <= 0.0 {
+        return natural.to_vec();
+    }
+    let spare = inner - sum;
+    if spare >= 0.0 {
+        let share = spare / natural.len() as f32;
+        natural.iter().map(|w| w + share).collect()
+    } else {
+        let k = (inner / sum).max(0.0);
+        natural.iter().map(|w| w * k).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fill_widths;
+
+    #[test]
+    fn filling_keeps_natural_widths_and_shares_the_rest() {
+        let w = fill_widths(&[40.0, 100.0], 200.0);
+        assert_eq!(w, vec![70.0, 130.0]);
+        let w = fill_widths(&[40.0, 160.0], 100.0);
+        assert_eq!(w, vec![20.0, 80.0]);
+        assert!(fill_widths(&[], 100.0).is_empty());
     }
 }

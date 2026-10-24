@@ -421,6 +421,17 @@ pub(super) fn words(ui: &mut Ui, s: &str, f: egui::FontId, c: Color32) -> egui::
 
 // ── the hero ────────────────────────────────────────────────────────────────
 
+/// A galley's first baseline, from its top.
+fn baseline(g: &egui::Galley) -> f32 {
+    g.rows.first().map_or(g.size().y * 0.8, |r| {
+        r.pos.y
+            + r.row
+                .glyphs
+                .first()
+                .map_or(r.row.size.y * 0.8, |gl| gl.pos.y)
+    })
+}
+
 /// The map is what a player recognises first, so it is the anchor, set large over
 /// contour lines in the map's colour; then the server's name, what it asks of you, where
 /// it is, and the live strip (line, head-count, clock, mods) that decides whether to join.
@@ -498,18 +509,21 @@ fn hero(ui: &mut Ui, m: &Model, time: &str, closable: bool, run: &mut Run) {
                         );
                         let (r, resp) =
                             ui.allocate_exact_size(Vec2::new(g.size().x, 30.0), Sense::hover());
-                        ui.painter().galley(
-                            Pos2::new(r.left(), r.center().y - g.size().y / 2.0),
-                            g,
-                            tk.map,
-                        );
+                        let gy = r.center().y - g.size().y / 2.0;
+                        let title_base = gy + baseline(&g);
+                        ui.painter().galley(Pos2::new(r.left(), gy), g, tk.map);
                         if !m.map.is_empty() {
                             let _ = resp.tip_kbd(&m.map, "", Side::Bottom);
                         }
                         if let Some(raw) = raw {
                             let (r, _) = ui
                                 .allocate_exact_size(Vec2::new(raw.size().x, 30.0), Sense::hover());
-                            draw(ui.painter(), &raw, r.left(), r.bottom() - 6.0, tk.fg_faint);
+                            // On the title's baseline, read from both galleys' glyphs.
+                            ui.painter().galley(
+                                Pos2::new(r.left(), title_base - baseline(&raw)),
+                                raw,
+                                tk.fg_faint,
+                            );
                         }
                     });
                     // The name, two lines at most.

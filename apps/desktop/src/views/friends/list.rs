@@ -12,7 +12,7 @@ use dz_hub::features::friends::{FriendDto, FriendStatus};
 use egui::text::{LayoutJob, TextFormat};
 use egui::{CornerRadius, Pos2, Rangef, Rect, Sense, Stroke, Ui, UiBuilder, Vec2};
 
-use super::model::{Block, Group, HEAD_H, Item, Model, SERVER_H, SHORT_H, Tie};
+use super::model::{Block, Group, HEAD_H, Item, Model, SHORT_H, Tie, server_h};
 use super::{Act, now_unix};
 use crate::app::Ctx;
 use crate::i18n::{format, t, tf};
@@ -116,9 +116,15 @@ pub fn show(ui: &mut Ui, cx: &Ctx, model: &Model, cache: &mut RowCache, acts: &m
                     Item::Server { block, full } => {
                         if let Some(b) = model.blocks.get(block) {
                             // The row on top, the block's room under it.
-                            let h = if full { SERVER_H } else { SHORT_H };
+                            let h = if full { server_h() } else { SHORT_H };
                             let row = Rect::from_min_size(r.min, Vec2::new(w, h));
                             guide_elbow(&rui, row);
+                            // The pad's X joins the server under its focus.
+                            crate::pad::tag(
+                                rui.ctx(),
+                                row,
+                                serde_json::json!({ "ip": b.ip.to_string(), "port": b.port }),
+                            );
                             if full {
                                 server_row(&mut rui, row, cx, b, cache, acts);
                             } else {
@@ -155,7 +161,8 @@ pub fn show(ui: &mut Ui, cx: &Ctx, model: &Model, cache: &mut RowCache, acts: &m
             {
                 let y = at.min(next_top - HEAD_H);
                 let r = Rect::from_min_size(origin + Vec2::new(0.0, y), Vec2::new(w, HEAD_H));
-                let _ = ui.interact(r, ui.id().with("friends-sticky"), Sense::CLICK);
+                let sticky = ui.interact(r, ui.id().with("friends-sticky"), Sense::CLICK);
+                crate::pad::sticky(ui.ctx(), sticky.id, ui.layer_id(), r);
                 head(ui, r, *g, *count);
             }
         });
@@ -285,7 +292,7 @@ fn friend_row(ui: &mut Ui, r: Rect, cx: &Ctx, f: &FriendDto, tie: Tie, acts: &mu
     let y = cy - h / 2.0;
     // The name can be selected and copied (`data-selectable`).
     let nr = Rect::from_min_size(Pos2::new(x0, y), name.size());
-    ui.put(nr, egui::Label::new(name.clone()).selectable(true));
+    ui.place(nr, egui::Label::new(name.clone()).selectable(true));
     p.galley(Pos2::new(x0, y + name.size().y + gap), sub, tk.fg_muted);
 
     if hover > 0.01 {
@@ -583,7 +590,7 @@ fn short_row(ui: &mut Ui, row: Rect, cx: &Ctx, b: &Block, acts: &mut Vec<Act>) {
         Vec2::splat(size::CONTROL),
     );
     if ui
-        .put(
+        .place(
             join,
             JoinButton::new()
                 .compact()

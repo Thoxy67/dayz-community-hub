@@ -70,8 +70,9 @@ const SCROLL_MARGIN: f32 = 16.0;
 const SCROLL_SECS: f64 = 0.35;
 /// The page's column (`max-w-4xl`).
 const COLUMN: f32 = 896.0;
-/// Below this window width the index gives its room to the fields.
-const INDEX_MIN: f32 = 1024.0;
+/// Below this width of the page's body (the window less the rail) the index gives its
+/// room to the fields.
+const INDEX_MIN: f32 = 900.0;
 
 // ── requests (commands that need the page's state) ──────────────────────────
 
@@ -214,9 +215,32 @@ pub fn command(cx: &mut Ctx, what: &str, a: &Value) {
                 Some("steamworks") => D::Steamworks,
                 _ => return,
             };
-            if !cx.stores.mods.busy() {
-                cx.stores.profile.set_mod_downloader(d);
+            if cx.stores.mods.busy() {
+                return;
             }
+            // On a Steam Deck the Steam client is the way (Game Mode included):
+            // leaving it for SteamCMD is asked first, unless the caller already did.
+            let from_steam = cx
+                .stores
+                .profile
+                .data
+                .as_ref()
+                .is_some_and(|p| p.mod_downloader == D::Steamworks);
+            let confirmed = a.get("confirmed").and_then(Value::as_bool) == Some(true);
+            if d == D::Steamcmd && from_steam && cx.stores.pad.steam_deck && !confirmed {
+                let req = crate::store::dialogs::ConfirmRequest::new(
+                    t("settings", "steamcmdOnDeckTitle"),
+                    t("settings", "steamcmdOnDeckMessage"),
+                )
+                .confirm_label(t("settings", "steamcmdOnDeckConfirm"));
+                cx.stores.bus.confirm_then(req, |cx| {
+                    if !cx.stores.mods.busy() {
+                        cx.stores.profile.set_mod_downloader(D::Steamcmd);
+                    }
+                });
+                return;
+            }
+            cx.stores.profile.set_mod_downloader(d);
         }
         "steam.toggle_steam_server_list" => {
             let now = cx
@@ -232,7 +256,7 @@ pub fn command(cx: &mut Ctx, what: &str, a: &Value) {
             let hub = cx.hub.clone();
             rt::fire(async move {
                 if let Ok(p) = hub.open_steamcmd_dir().await {
-                    let _ = open::that_detached(p);
+                    let _ = crate::platform::deck::open(p);
                 }
             });
         }
@@ -303,15 +327,12 @@ pub fn cmd_theme_import(cx: &mut Ctx, a: &Value) {
         let path = match given {
             Some(p) => p,
             None => {
-                let Some(f) = rfd::AsyncFileDialog::new()
-                    .set_title(t("theme", "import"))
-                    .add_filter("JSON", &["json"])
-                    .pick_file()
-                    .await
-                else {
+                let pick = crate::parts::file_picker::Pick::file(t("theme", "import"))
+                    .filter("JSON", &["json"]);
+                let Some(f) = crate::parts::file_picker::pick(pick).await else {
                     return;
                 };
-                f.path().to_path_buf()
+                f
             }
         };
         let name = path
@@ -372,16 +393,15 @@ pub fn cmd_theme_export(cx: &mut Ctx, a: &Value) {
         let path = match given {
             Some(p) => p,
             None => {
-                let Some(f) = rfd::AsyncFileDialog::new()
-                    .set_title(t("theme", "export"))
-                    .set_file_name(format!("{slug}.dzch-theme.json"))
-                    .add_filter("JSON", &["json"])
-                    .save_file()
-                    .await
-                else {
+                let pick = crate::parts::file_picker::Pick::save(
+                    t("theme", "export"),
+                    format!("{slug}.dzch-theme.json"),
+                )
+                .filter("JSON", &["json"]);
+                let Some(f) = crate::parts::file_picker::pick(pick).await else {
                     return;
                 };
-                f.path().to_path_buf()
+                f
             }
         };
         match tokio::fs::write(&path, json).await {
@@ -628,14 +648,13 @@ impl SettingsView {
                     _ => (t("settings", "selectSteamcmd"), false),
                 };
                 rt::fire(async move {
-                    let d = rfd::AsyncFileDialog::new().set_title(title);
-                    let picked = if folder {
-                        d.pick_folder().await
+                    let pick = if folder {
+                        crate::parts::file_picker::Pick::folder(title)
                     } else {
-                        d.pick_file().await
+                        crate::parts::file_picker::Pick::file(title)
                     };
-                    if let Some(f) = picked {
-                        let p = f.path().to_string_lossy().into_owned();
+                    if let Some(f) = crate::parts::file_picker::pick(pick).await {
+                        let p = f.to_string_lossy().into_owned();
                         request(&ctx, Req::Set(id, p));
                     }
                 });
@@ -666,7 +685,9 @@ impl SettingsView {
             }
             Req::OpenMaps => {
                 if let Some((lo, la)) = self.form.f.location {
-                    let _ = open::that_detached(format!("https://www.google.com/maps?q={la},{lo}"));
+                    let _ = crate::platform::deck::open(format!(
+                        "https://www.google.com/maps?q={la},{lo}"
+                    ));
                 }
             }
             Req::ClearLocation => {
@@ -729,7 +750,7 @@ impl SettingsView {
         PageHeader::new(t("nav", "settings")).show(ui, |_| {}, |_| {}, None::<fn(&mut Ui)>);
         let body = ui.available_rect_before_wrap();
         ui.allocate_rect(body, Sense::hover());
-        let wide = ui.ctx().content_rect().width() >= INDEX_MIN;
+        let wide = body.width() >= INDEX_MIN;
         let dirty = self.form.dirty();
 
         // The index.
@@ -1076,7 +1097,7 @@ pub(crate) fn link(ui: &mut Ui, label: &str, url: &str) {
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
     {
-        let _ = open::that_detached(url);
+        let _ = crate::platform::deck::open(url);
     }
 }
 

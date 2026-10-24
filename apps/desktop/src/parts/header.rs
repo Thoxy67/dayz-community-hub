@@ -134,7 +134,8 @@ impl<'a> Figure<'a> {
         self
     }
 
-    /// Gives way when the window is 1240px or narrower.
+    /// Gives way when the page header is narrower than [`SECONDARY_MIN`] (about a
+    /// 1240px window beside the open rail).
     pub fn secondary(mut self) -> Self {
         self.secondary = true;
         self
@@ -154,7 +155,10 @@ impl<'a> Figure<'a> {
 
 impl Widget for Figure<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
-        if self.secondary && ui.ctx().content_rect().width() <= 1240.0 {
+        let header_w = ui
+            .data(|d| d.get_temp::<f32>(header_width_id()))
+            .unwrap_or_else(|| ui.ctx().content_rect().width());
+        if self.secondary && header_w < SECONDARY_MIN {
             // Nothing laid out: even an empty allocation would add the row's spacing.
             return ui.interact(egui::Rect::NOTHING, ui.next_auto_id(), Sense::hover());
         }
@@ -250,6 +254,16 @@ impl Widget for Figure<'_> {
 
 use egui::Rangef;
 
+/// Below this width of the page header, secondary figures give way.
+const SECONDARY_MIN: f32 = 1032.0;
+/// Below this width of its own the header puts its figures under the name.
+const NARROW: f32 = 760.0;
+
+/// Where the header being drawn leaves its width for its figures.
+fn header_width_id() -> Id {
+    Id::new("page-header-width")
+}
+
 /// `PageHeader`: the top of every view: its name in the display face, its figures, its
 /// actions on the right, and its toolbar (search, filters) under. Below 760px of its own
 /// width the figures take a line of their own under the name and the actions.
@@ -279,7 +293,10 @@ impl<'a> PageHeader<'a> {
             Pos2::new(full.left() + size::PAD, full.top() + 10.0),
             Pos2::new(full.right() - size::PAD, full.bottom()),
         );
-        let narrow = full.width() < 760.0;
+        // The figures' width on one line (last frame's; infinite once they wrapped beside
+        // the name): when they would not fit beside it they take a line of their own, so
+        // a wrapped block never leaves the name floating low.
+        let natural: f32 = ui.data(|d| d.get_temp(id.with("nat"))).unwrap_or(0.0);
 
         // The actions' width is last frame's: placed in reading order from the right.
         let actions_w: f32 = ui.data(|d| d.get_temp(id.with("aw"))).unwrap_or(0.0);
@@ -296,6 +313,10 @@ impl<'a> PageHeader<'a> {
             true,
             Some((inner.width() - actions_w - 24.0).max(40.0)),
         );
+        let beside = (inner.width() - title_g.size().x - 24.0 - actions_w - 24.0).max(0.0);
+        // Leaning narrow: figures that just fit wrap beside the name, so the switch is made
+        // half a pixel early and never flips back and forth.
+        let narrow = full.width() < NARROW || natural > beside - 0.5;
         let title_rect = Rect::from_min_size(
             Pos2::new(inner.left(), inner.top() + row_h - 30.0),
             Vec2::new(title_g.size().x, 30.0),
@@ -357,9 +378,25 @@ impl<'a> PageHeader<'a> {
                 .id_salt("stats"),
         );
         sui.spacing_mut().item_spacing = Vec2::new(20.0, 4.0);
+        ui.data_mut(|d| d.insert_temp(header_width_id(), full.width()));
         stats(&mut sui);
         let measured = sui.min_rect().height().max(0.0);
         let one_row = ((measured + 4.0) / (band + 4.0)).round() <= 1.0;
+        let nat = if one_row {
+            sui.min_rect().width().max(0.0)
+        } else if narrow {
+            natural
+        } else {
+            f32::INFINITY
+        };
+        if (nat - natural).abs() > 0.5 && !(nat.is_infinite() && natural.is_infinite()) {
+            ui.data_mut(|d| d.insert_temp(id.with("nat"), nat));
+            // A rolling count changes the width every frame: a new pass only when the
+            // figures move between beside the name and under it.
+            if (nat > beside - 0.5) != (natural > beside - 0.5) {
+                ui.ctx().request_discard("page header figures width");
+            }
+        }
         if one_row && measured > 0.0 && (measured.max(30.0) - band).abs() > 0.5 {
             ui.data_mut(|d| d.insert_temp(id.with("fb"), measured.max(30.0)));
             ui.ctx().request_discard("page header figure height");

@@ -74,6 +74,19 @@ pub enum GlyphChoice {
     SteamDeck,
 }
 
+/// The keyboard a text field brings up when a controller picks it: Steam's own (only
+/// inside Steam's big-screen interface, else the built-in one), the launcher's
+/// (`kit::osk`), or none. Auto is Steam's under Steam, else the built-in one.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum OskChoice {
+    #[default]
+    Auto,
+    Steam,
+    Builtin,
+    None,
+}
+
 /// `dzch.prefs`: the window's layout.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
@@ -82,21 +95,31 @@ pub struct UiPrefs {
     pub panes: BTreeMap<String, f32>,
     /// The navigation rail shows icons only.
     pub rail_collapsed: bool,
+    /// The player opened the rail on a window narrow enough to fold it on its own.
+    pub rail_expanded: bool,
     /// The last-played strip was put away for this server ("ip:port").
     pub dismissed_rejoin: Option<String>,
     pub pad_mode: PadMode,
     /// How much larger the interface is drawn while a controller drives it.
     pub pad_scale: f32,
+    /// The on-screen keyboard a controller's text field brings up.
+    pub pad_keyboard: OskChoice,
 }
+
+/// The pad scale out of the box. The pad density (`theme::size`) enlarges the controls
+/// and the text by about as much, so this scale draws the window unzoomed.
+pub const PAD_SCALE_DEFAULT: f32 = 1.15;
 
 impl Default for UiPrefs {
     fn default() -> Self {
         Self {
             panes: BTreeMap::new(),
             rail_collapsed: false,
+            rail_expanded: false,
             dismissed_rejoin: None,
             pad_mode: PadMode::Auto,
-            pad_scale: 1.15,
+            pad_scale: PAD_SCALE_DEFAULT,
+            pad_keyboard: OskChoice::Auto,
         }
     }
 }
@@ -206,7 +229,7 @@ impl Stored {
         }
         let ps = self.ui.pad_scale;
         if !ps.is_finite() || !(0.5..=3.0).contains(&ps) {
-            self.ui.pad_scale = 1.15;
+            self.ui.pad_scale = PAD_SCALE_DEFAULT;
         }
         self.ui
             .panes

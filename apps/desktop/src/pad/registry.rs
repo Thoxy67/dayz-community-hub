@@ -10,6 +10,8 @@
 use egui::{Context, Id, LayerId, Rect, Ui};
 use serde_json::Value;
 
+use crate::theme::size;
+
 /// A list a controller walks row by row (`kit::VirtualList` with a cursor).
 #[derive(Clone, Debug)]
 pub struct ListSlot {
@@ -48,6 +50,45 @@ pub struct Frame {
     pub anchors: Vec<(Id, Rect)>,
     /// Widgets that take Left and Right themselves (sliders).
     pub sliders: Vec<Id>,
+    /// Number fields: Left and Right step them, the on-screen keyboard has digits.
+    pub numbers: Vec<Id>,
+    /// Text fields holding a number they do not step: the on-screen keyboard has digits.
+    pub digits: Vec<Id>,
+    /// Disabled controls carrying a hint: reachable in gamepad mode, so the hint (why it
+    /// is disabled) can be read.
+    pub tipped: Vec<Id>,
+    /// Disabled buttons of the kit: no stop of their own (unless tipped), but a dialog's
+    /// footer counts them, so X never confirms through the button before a disabled one.
+    pub dormant: Vec<Id>,
+    /// Widgets that take Up and Down themselves (a stacked split's handle).
+    pub vsliders: Vec<Id>,
+    /// Widgets holding the pad's directions until B lets them go (a grabbed handle).
+    pub held: Vec<Id>,
+    /// Widgets with a context menu the pad's Menu opens: (widget id, its rect).
+    pub menus: Vec<(Id, Rect)>,
+    /// Where a press lands in a view or a dialog with nothing focused yet.
+    pub primaries: Vec<Id>,
+    /// Headings drawn over the rows scrolled under them.
+    pub stickies: Vec<Cover>,
+    /// Strips of tabs LT and RT switch.
+    pub tabs: Vec<Tabs>,
+    /// Dialogs' close crosses: a press never lands on one.
+    pub crosses: Vec<Id>,
+}
+
+/// A strip of tabs the pad switches ([`tabs`]).
+#[derive(Clone, Debug)]
+pub struct Tabs {
+    pub layer: LayerId,
+    /// The strip: LT and RT switch it while the focus is in the pane it heads (the
+    /// smallest part of the window around it).
+    pub strip: Rect,
+    /// The strip's id: tab `i`'s widget is `kit::tabs::tab_id(base, i)` (a click shows it).
+    pub base: Id,
+    /// How many tabs.
+    pub count: usize,
+    /// The tab shown now.
+    pub current: Option<usize>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -164,6 +205,164 @@ pub fn slider(ctx: &Context, id: Id) {
             f.sliders.push(id);
         }
     });
+}
+
+/// The text field `id` holds a number: a controller's Left and Right step it (as the
+/// arrow keys Down and Up), and the on-screen keyboard opens on its digits.
+pub fn number(ctx: &Context, id: Id) {
+    with_cur(ctx, |f| {
+        if f.numbers.len() < MAX_ITEMS {
+            f.numbers.push(id);
+        }
+    });
+}
+
+/// The text field `id` holds a number typed only (no stepping): the on-screen keyboard
+/// opens on its digits, Left and Right still leave it.
+pub fn digits(ctx: &Context, id: Id) {
+    with_cur(ctx, |f| {
+        if f.digits.len() < MAX_ITEMS {
+            f.digits.push(id);
+        }
+    });
+}
+
+/// The disabled control `id` carries a hint: in gamepad mode the focus may rest on it,
+/// and its hint shows (`kit::tooltip`).
+pub fn tipped(ctx: &Context, id: Id) {
+    with_cur(ctx, |f| {
+        if f.tipped.len() < MAX_ITEMS {
+            f.tipped.push(id);
+        }
+    });
+}
+
+/// The kit button `id` is disabled this frame (it senses hover only, so egui's own
+/// widget list does not say it is a button).
+pub fn dormant(ctx: &Context, id: Id) {
+    with_cur(ctx, |f| {
+        if f.dormant.len() < MAX_ITEMS {
+            f.dormant.push(id);
+        }
+    });
+}
+
+/// The widget `id` takes Up and Down itself (a handle between stacked panes).
+pub fn vslider(ctx: &Context, id: Id) {
+    with_cur(ctx, |f| {
+        if f.vsliders.len() < MAX_ITEMS {
+            f.vsliders.push(id);
+        }
+    });
+}
+
+/// The widget `id` holds the pad's directions (a split handle grabbed with A): B lets it
+/// go (an Escape it reads while it keeps the focus) instead of leaving the view.
+pub fn held(ctx: &Context, id: Id) {
+    with_cur(ctx, |f| {
+        if f.held.len() < MAX_ITEMS {
+            f.held.push(id);
+        }
+    });
+}
+
+/// The widget `id` (at `rect`) has a context menu (`kit::menu::context` says so): the
+/// pad's Menu opens it when the focus is on it, or on the list row it is.
+pub fn menu(ctx: &Context, id: Id, rect: Rect) {
+    if !rect.is_finite() {
+        return;
+    }
+    with_cur(ctx, |f| {
+        if f.menus.len() < MAX_ITEMS {
+            f.menus.push((id, rect));
+        }
+    });
+}
+
+/// The widget `id` is a dialog's close cross (`kit::Dialog` says so): a press never
+/// lands on it.
+pub fn cross(ctx: &Context, id: Id) {
+    with_cur(ctx, |f| {
+        if f.crosses.len() < MAX_ITEMS {
+            f.crosses.push(id);
+        }
+    });
+}
+
+/// The widget `id` is where a press lands when nothing in its view or dialog has the
+/// focus yet: the view's first field, a dialog's safe button. Call after adding it.
+pub fn primary(ctx: &Context, id: Id) {
+    with_cur(ctx, |f| {
+        if f.primaries.len() < MAX_ITEMS {
+            f.primaries.push(id);
+        }
+    });
+}
+
+/// `rect` (in `layer`) is drawn over the pane's content scrolled under it (a sticky
+/// heading, widget `id`): what is under it is not in sight, and it is no stop itself.
+pub fn sticky(ctx: &Context, id: Id, layer: LayerId, rect: Rect) {
+    if !rect.is_finite() {
+        return;
+    }
+    with_cur(ctx, |f| {
+        if f.stickies.len() < MAX_ITEMS {
+            f.stickies.push(Cover { id, layer, rect });
+        }
+    });
+}
+
+/// A strip of tabs (`kit::TabStrip` does it): while the pad's focus is in the pane the
+/// strip heads, LT and RT press the tab before or after `current` of its `count`.
+pub fn tabs(
+    ctx: &Context,
+    layer: LayerId,
+    strip: Rect,
+    base: Id,
+    count: usize,
+    current: Option<usize>,
+) {
+    if !strip.is_finite() || count == 0 || count > 64 {
+        return;
+    }
+    with_cur(ctx, |f| {
+        if f.tabs.len() < MAX_ITEMS {
+            f.tabs.push(Tabs {
+                layer,
+                strip,
+                base,
+                count,
+                current,
+            });
+        }
+    });
+}
+
+/// The context menu the pad opened (the widget it belongs to), kept while it is open.
+fn pad_menu_id() -> Id {
+    Id::new("dzch.pad.menu")
+}
+
+/// The pad opens `target`'s context menu (it is shown at the widget, not the pointer).
+pub fn open_menu(ctx: &Context, target: Id) {
+    egui::Popup::open_id(ctx, target.with("popup"));
+    ctx.data_mut(|d| d.insert_temp(pad_menu_id(), target));
+}
+
+/// Where `target`'s context menu shows when the pad opened it: a line down `rect` (the
+/// widget's) near its start, so the menu opens below it, or above it when there is no
+/// room below; `None` when the pointer did (it shows at the pointer).
+pub fn menu_anchor(ctx: &Context, target: Id, rect: Rect) -> Option<Rect> {
+    let opened: Option<Id> = ctx.data(|d| d.get_temp(pad_menu_id()));
+    if opened != Some(target) {
+        return None;
+    }
+    if !egui::Popup::is_id_open(ctx, target.with("popup")) {
+        ctx.data_mut(|d| d.remove::<Id>(pad_menu_id()));
+        return None;
+    }
+    let x = rect.left() + (rect.width() * 0.25).min(size::ROW * 3.0);
+    Some(Rect::from_x_y_ranges(x..=x, rect.y_range()))
 }
 
 /// Marks the scroll area `ui` is in as a reading pane (a server's details, an article):

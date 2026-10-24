@@ -251,7 +251,16 @@ fn run_line(h: &mut H, tx: &mpsc::Sender<ControlRequest>, l: &Value) -> Result<(
     }
     if let Some(name) = s("key") {
         let key = egui::Key::from_name(name).ok_or_else(|| format!("unknown key `{name}`"))?;
-        h.key_press(key);
+        // Into the next frame's input, where the window's raw input hook sees it.
+        for pressed in [true, false] {
+            h.input_mut().events.push(egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            });
+        }
         step_n(h, 3);
         return Ok(());
     }
@@ -331,8 +340,10 @@ fn with_ctx<R>(h: &mut H, f: impl FnOnce(&mut dzch_ui::app::Ctx) -> R) -> Result
 /// One frame, with the control channel's input, then a little real time.
 fn step(h: &mut H) {
     let mut raw = std::mem::take(h.input_mut());
+    let ctx = h.ctx.clone();
     if let Some(app) = h.state_mut().as_mut() {
         app.control_input(&mut raw);
+        app.with_ctx(&ctx, |c| dzch_ui::pad::take_keys(c, &mut raw));
     }
     *h.input_mut() = raw;
     h.step();

@@ -109,7 +109,8 @@ fn header(ui: &mut Ui, st: &OfflineState, out: &mut Run) {
             ui.add(
                 Figure::new(t("offline", "maps"))
                     .amount(maps as f64)
-                    .tone(tk.map),
+                    .tone(tk.map)
+                    .secondary(),
             );
         },
         |ui| {
@@ -125,13 +126,15 @@ fn header(ui: &mut Ui, st: &OfflineState, out: &mut Run) {
             {
                 run.borrow_mut().push(("offline.refresh", Value::Null));
             }
-            if ui
-                .add(
-                    Button::new(t("offline", "explore"))
-                        .icon(lucide::FOLDER_OPEN)
-                        .tip(t("offline", "exploreTitle")),
-                )
-                .clicked()
+            // No file manager in Game Mode.
+            if crate::platform::deck::folders()
+                && ui
+                    .add(
+                        Button::new(t("offline", "explore"))
+                            .icon(lucide::FOLDER_OPEN)
+                            .tip(t("offline", "exploreTitle")),
+                    )
+                    .clicked()
             {
                 run.borrow_mut()
                     .push(("offline.open_missions_dir", Value::Null));
@@ -483,21 +486,23 @@ fn card(
     f.spacing_mut().item_spacing.x = 4.0;
     let play_w = (f.available_width() - 3.0 * (size::CONTROL + 4.0)).max(size::CONTROL);
     let mission = json!({ "mission": m.id });
-    if f.add(
+    let launch = f.add(
         Button::new(t("offline", "launch"))
             .icon(lucide::PLAY)
             .variant(Variant::Play)
             .width(play_w),
-    )
-    .clicked()
-    {
+    );
+    // A controller lands on the first card's Launch on screen.
+    crate::pad::primary(f.ctx(), launch.id);
+    if launch.clicked() {
         run.push(("offline.launch", mission.clone()));
     }
-    if f.add(IconButton::new(
-        lucide::FOLDER_OPEN,
-        t("offline", "openFolder"),
-    ))
-    .clicked()
+    if crate::platform::deck::folders()
+        && f.add(IconButton::new(
+            lucide::FOLDER_OPEN,
+            t("offline", "openFolder"),
+        ))
+        .clicked()
     {
         run.push(("offline.open_dir", mission.clone()));
     }

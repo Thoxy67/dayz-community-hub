@@ -165,7 +165,7 @@ impl<V: PartialEq + Clone> Widget for MultiSelect<'_, V> {
             Sense::hover()
         };
         let w = self.width;
-        let (rect, mut resp) = ui.allocate_exact_size(Vec2::new(w, size::CONTROL), sense);
+        let (rect, mut resp) = ui.allocate_exact_size(Vec2::new(w, size::control()), sense);
         let popup_id = self.id.with("popup");
         let find_id = self.id.with("find");
         let open = Popup::is_id_open(ui.ctx(), popup_id);
@@ -371,7 +371,10 @@ fn list<V: PartialEq + Clone>(
 /// "Nothing matches", faint, the height of a row.
 fn empty_row(ui: &mut Ui, text: &str) {
     let t = ui.tokens();
-    let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), size::ROW), Sense::hover());
+    let (r, _) = ui.allocate_exact_size(
+        Vec2::new(ui.available_width(), size::menu_row()),
+        Sense::hover(),
+    );
     let f = font(Face::Sans, size::TEXT_XS);
     let g = paint::galley_trunc(ui, text, f, t.fg_faint, r.width() - 12.0);
     paint::text_at(ui.painter(), &g, r.left() + 6.0, r.center().y, t.fg_faint);
@@ -381,7 +384,7 @@ fn empty_row(ui: &mut Ui, text: &str) {
 fn check_item(ui: &mut Ui, label: &str, on: bool, faint: bool, highlighted: bool) -> Response {
     let t = ui.tokens();
     let w = ui.available_width();
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, size::ROW), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, size::menu_row()), Sense::click());
     resp.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, true, on, label));
     let lit = highlighted || resp.hovered() || resp.has_focus();
     let hover = paint::ease(ui, resp.id.with("hover"), lit);

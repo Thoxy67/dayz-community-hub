@@ -42,6 +42,15 @@ const ROW_H: f32 = size::ROW;
 const HEAD_H: f32 = 44.0;
 const FOOT_H: f32 = 26.0;
 
+/// The footer's height: taller in the pad density, for the pad's glyphs.
+fn foot_h() -> f32 {
+    if size::pad_density() {
+        FOOT_H + size::PAD_GROW
+    } else {
+        FOOT_H
+    }
+}
+
 /// The settings sections the palette finds: id, words key (`None`: the controller's).
 const SECTIONS: [(&str, Option<&str>); 12] = [
     ("account", Some("sectionAccount")),
@@ -283,7 +292,7 @@ pub(super) fn show(ctx: &Context, cx: &mut Ctx, st: &mut Palette) {
                 ui.set_width(w);
                 ui.spacing_mut().item_spacing = Vec2::ZERO;
                 header(ui, st, open, w);
-                let list_max = (max_h - HEAD_H - FOOT_H - 2.0).max(80.0);
+                let list_max = (max_h - HEAD_H - foot_h() - 2.0).max(80.0);
                 if let Some(item) = list(ui, st, w, list_max, &tk) {
                     chosen = Some(item);
                 }
@@ -597,17 +606,50 @@ fn label_galley(ui: &Ui, item: &Item, ink: Color32, tk: &Tokens, max_w: f32) -> 
 
 /// The keys, and "searching the server list…" while it does.
 fn footer(ui: &mut Ui, st: &Palette, w: f32, tk: &Tokens) {
-    let (r, _) = ui.allocate_exact_size(vec2(w, FOOT_H), Sense::hover());
+    let (r, _) = ui.allocate_exact_size(vec2(w, foot_h()), Sense::hover());
     let p = ui.painter();
     p.hline(r.x_range(), r.top() + 0.5, Stroke::new(1.0, tk.border));
     let cy = r.center().y + 0.5;
     let mut x = r.left() + 12.0;
+    // While a controller drives the window: its buttons, not the keys.
+    if size::pad_density() {
+        use crate::parts::{PadButton as P, PadGlyph};
+        let kind = crate::parts::pad::kind(ui);
+        let gh = crate::parts::pad::glyph_h();
+        for (buttons, word) in [
+            (&[P::Dpad][..], "footerMove"),
+            (&[P::A][..], "footerRun"),
+            (&[P::Lb, P::Rb][..], "footerSection"),
+            (&[P::B][..], "footerClose"),
+        ] {
+            for b in buttons {
+                let g = PadGlyph::new(*b, kind);
+                let gw = g.width(ui);
+                g.paint(
+                    ui,
+                    Rect::from_min_size(pos2(x, cy - gh / 2.0), vec2(gw, gh)),
+                );
+                x += gw + 4.0;
+            }
+            let g = paint::galley(
+                ui,
+                t("keys", word),
+                font(Face::Sans, size::TEXT_3XS),
+                tk.fg_faint,
+            );
+            paint::text_at(ui.painter(), &g, x, cy, tk.fg_faint);
+            x += g.size().x + 12.0;
+        }
+    }
     for (keys, word) in [
         ("↑↓", "footerMove"),
         ("Enter", "footerRun"),
         ("Tab", "footerSection"),
         ("Esc", "footerClose"),
-    ] {
+    ]
+    .into_iter()
+    .filter(|_| !size::pad_density())
+    {
         let kr = Kbd::paint_at(ui, keys, x, cy - 0.5);
         x = kr.right() + 4.0;
         let g = paint::galley(

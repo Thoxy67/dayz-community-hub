@@ -1,6 +1,8 @@
 //! What the operating system hands the launcher, and what it tells the system about
 //! itself (as Tauri's single-instance and deep-link plugins and `dzch_cli` did):
 //!
+//! - [`deck`]: a Steam Deck and Steam's Game Mode, links through Steam's browser
+//!   there, and "Add to Steam".
 //! - [`instance`]: one window per user. A second launch hands its arguments (a
 //!   `dzch://` link, a `.dzch` file, `--connect`, `--reconnect`) to the first over
 //!   127.0.0.1, keyed by a per-user file with a random token, and exits; the first
@@ -18,6 +20,7 @@
 //! Paste-to-connect needs no platform code: egui turns Ctrl+V into `Event::Paste`,
 //! which `HubApp` hands to `Ctx::paste` outside text fields.
 
+pub mod deck;
 pub mod instance;
 pub mod life;
 pub mod notify;

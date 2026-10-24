@@ -327,14 +327,30 @@ impl<'a> SettingsSection<'a> {
             Sense::hover(),
         );
         let slot = ground(ui);
-        // The panel's 1px border is outside its rows, as the CSS box has it.
-        let r = egui::Frame::new()
-            .inner_margin(egui::Margin::same(1))
-            .show(ui, |ui| {
-                ui.set_width(w - 2.0);
-                body(ui);
-            });
-        let panel = r.response.rect;
+        // The panel's 1px border is outside its rows, as the CSS box has it. The panel
+        // keeps the column's width: a row wider than it is cut at the border, never
+        // allowed to widen the card (and the page) past the window's edge.
+        let y0 = ui.cursor().top();
+        let inner = Rect::from_min_size(
+            Pos2::new(left + 1.0, y0 + 1.0),
+            Vec2::new((w - 2.0).max(0.0), f32::INFINITY),
+        );
+        let mut bui = ui.new_child(
+            UiBuilder::new()
+                .max_rect(inner)
+                .layout(Layout::top_down(Align::Min)),
+        );
+        bui.set_width(inner.width());
+        bui.set_clip_rect(ui.clip_rect().intersect(Rect::from_x_y_ranges(
+            inner.x_range(),
+            ui.clip_rect().y_range(),
+        )));
+        body(&mut bui);
+        let panel = Rect::from_min_size(
+            Pos2::new(left, y0),
+            Vec2::new(w, bui.min_rect().height() + 2.0),
+        );
+        ui.allocate_rect(panel, Sense::hover());
         ui.painter().set(
             slot,
             egui::Shape::rect_filled(

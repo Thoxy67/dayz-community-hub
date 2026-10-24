@@ -191,10 +191,15 @@ fn install(ctx: &egui::Context, cx: &Ctx, open: &mut bool, text: &mut String, ru
                 ui.add(TextArea::new(text).rows(6).mono().placeholder(
                     "1559212036\nhttps://steamcommunity.com/sharedfiles/filedetails/?id=1564026768",
                 ));
+                // What was read from the text, once there is text: no blank line under
+                // an empty field.
+                if text.trim().is_empty() {
+                    return;
+                }
                 ui.horizontal_wrapped(|ui| {
                     ui.set_min_height(24.0);
                     ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
-                    if !text.trim().is_empty() && ids.is_empty() {
+                    if ids.is_empty() {
                         let g = ph(
                             ui,
                             t("mods", "noValidDetected"),
@@ -366,7 +371,7 @@ fn review(ctx: &egui::Context, cx: &Ctx, pending: &mut Option<Review>, out: &mut
 fn review_list(ui: &mut Ui, p: &Review, install: bool, run: &mut Run) {
     let tk = ui.tokens();
     let w = ui.available_width();
-    // Each row: its tags and the room left for the words (the meta line wraps there).
+    // Each row measured: the meta line wraps in the room left of the link.
     let inner_w = w - 2.0 - 16.0;
     let rows: Vec<ReviewRow> = p
         .mods
@@ -411,13 +416,14 @@ fn review_list(ui: &mut Ui, p: &Review, install: bool, run: &mut Run) {
                     Pos2::new(inner.right() - size::CONTROL_SM / 2.0, inner.center().y),
                     Vec2::splat(size::CONTROL_SM),
                 );
+                // The tags sit on the name's line; the meta line below has the width.
                 let mut right = lr.left() - 8.0;
                 for (text, tone, tw) in &row.tags {
                     let tr = Rect::from_min_size(
-                        Pos2::new(right - tw, inner.center().y - 9.0),
-                        Vec2::new(*tw, 18.0),
+                        Pos2::new(right - tw, inner.top()),
+                        Vec2::new(*tw, 16.0),
                     );
-                    ui.put(tr, Tag::new(text).tone(*tone));
+                    ui.place(tr, Tag::new(text).tone(*tone));
                     right = tr.left() - 8.0;
                 }
                 let text_w = (right - inner.left()).max(8.0);
@@ -429,7 +435,7 @@ fn review_list(ui: &mut Ui, p: &Review, install: bool, run: &mut Run) {
                     tk.fg_faint,
                 );
                 if ui
-                    .put(
+                    .place(
                         lr,
                         IconButton::new(lucide::EXTERNAL_LINK, t("mods", "confirmOpenWorkshop"))
                             .size(Size::IconXs)
@@ -443,8 +449,8 @@ fn review_list(ui: &mut Ui, p: &Review, install: bool, run: &mut Run) {
         });
 }
 
-/// One row of the review, measured: its tags (text, tone, width), the meta line laid
-/// out in the room they leave, and the row's height.
+/// One row of the review, measured: its tags (text, tone, width), shown on the name's
+/// line, the meta line laid out below, and the row's height.
 struct ReviewRow {
     tags: Vec<(String, Tone, f32)>,
     meta: std::sync::Arc<egui::Galley>,
@@ -469,8 +475,7 @@ impl ReviewRow {
         if install && m.installed {
             add(t("mods", "installAlready").to_string(), Tone::Neutral);
         }
-        let tags_w: f32 = tags.iter().map(|(_, _, w)| w + 8.0).sum();
-        let text_w = (inner_w - size::CONTROL_SM - 8.0 - tags_w).max(40.0);
+        let text_w = (inner_w - size::CONTROL_SM - 8.0).max(40.0);
         // `gap-x-3` between the parts; a part never splits across lines.
         let mut parts: Vec<String> = vec![format!("#{}", m.id)];
         if let Some(l) = m.local_updated.filter(|l| *l > 0) {
