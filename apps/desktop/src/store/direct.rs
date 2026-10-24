@@ -702,16 +702,11 @@ impl Direct {
         let hub = self.hub.clone();
         let file = export_name(&c);
         self.export = Some(rt::spawn(async move {
-            let Some(f) = rfd::AsyncFileDialog::new()
-                .set_title(t("connect", "exportTitle"))
-                .set_file_name(file)
-                .add_filter(t("connect", "dzchFilter"), &["dzch"])
-                .save_file()
-                .await
-            else {
+            let pick = crate::parts::file_picker::Pick::save(t("connect", "exportTitle"), file)
+                .filter(t("connect", "dzchFilter"), &["dzch"]);
+            let Some(path) = crate::parts::file_picker::pick(pick).await else {
                 return Ok(None);
             };
-            let path = f.path().to_path_buf();
             let shown = path.file_name().map_or_else(
                 || path.to_string_lossy().into_owned(),
                 |n| n.to_string_lossy().into_owned(),

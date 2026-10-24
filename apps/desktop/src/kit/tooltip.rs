@@ -4,6 +4,10 @@
 //! by [`super::install`]; the first hint waits, and for a moment after one was up the
 //! next comes at once. The plate: overlay, border, `rounded-md`, `px-2 py-1`, `text-2xs`,
 //! wrapped at 20rem, 6px from the control.
+//!
+//! While a controller drives the window ([`set_pad_mode`], each frame) a hint shows on
+//! the control that has the focus instead of under a pointer, and a disabled control
+//! carrying one stays reachable ([`reachable`]) so the reason can be read.
 
 use egui::{RectAlign, Response};
 
@@ -74,9 +78,65 @@ impl TipExt for Response {
     }
 }
 
+fn pad_id() -> egui::Id {
+    egui::Id::new("dzch.kit.pad_mode")
+}
+
+/// Whether a controller drives the window: set once a frame by the window, before the
+/// views draw.
+pub fn set_pad_mode(ctx: &egui::Context, on: bool) {
+    if pad_mode(ctx) != on {
+        ctx.data_mut(|d| d.insert_temp(pad_id(), on));
+    }
+}
+
+/// See [`set_pad_mode`].
+pub fn pad_mode(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(pad_id())).unwrap_or(false)
+}
+
+fn pad_focus_id() -> egui::Id {
+    egui::Id::new("dzch.kit.pad_focus")
+}
+
+/// The widget the pad rests on (egui's focus, or a disabled control egui gives none
+/// to): set once a frame by the window, before the views draw.
+pub fn set_pad_focus(ctx: &egui::Context, id: Option<egui::Id>) {
+    if pad_focus(ctx) != id {
+        ctx.data_mut(|d| {
+            if let Some(id) = id {
+                d.insert_temp(pad_focus_id(), id);
+            } else {
+                d.remove::<egui::Id>(pad_focus_id());
+            }
+        });
+    }
+}
+
+fn pad_focus(ctx: &egui::Context) -> Option<egui::Id> {
+    ctx.data(|d| d.get_temp::<egui::Id>(pad_focus_id()))
+}
+
+/// A disabled control whose hint says why: in gamepad mode the focus may land on it
+/// (`crate::pad` reads the registry), and its hint shows there.
+pub fn reachable(resp: &Response) {
+    if pad_mode(&resp.ctx) {
+        crate::pad::registry::tipped(&resp.ctx, resp.id);
+    }
+}
+
 fn show(resp: &Response, text: &str, kbd: &str, side: Side) {
     let t = resp.ctx.tokens();
-    let mut tip = egui::Tooltip::for_enabled(resp);
+    // A controller has no pointer: the hint follows the focus (and a pointer resting
+    // somewhere brings none up).
+    let mut tip = if pad_mode(&resp.ctx) {
+        let mut tip = egui::Tooltip::for_widget(resp);
+        let on = resp.has_focus() || pad_focus(&resp.ctx) == Some(resp.id);
+        tip.popup = tip.popup.open(on);
+        tip
+    } else {
+        egui::Tooltip::for_enabled(resp)
+    };
     if !tip.popup.is_open() {
         return;
     }

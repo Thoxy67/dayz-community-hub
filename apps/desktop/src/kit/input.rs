@@ -27,8 +27,8 @@ pub enum FieldSize {
 impl FieldSize {
     fn height(self) -> f32 {
         match self {
-            FieldSize::Sm => size::CONTROL,
-            FieldSize::Xs => size::CONTROL_SM,
+            FieldSize::Sm => size::control(),
+            FieldSize::Xs => size::control_sm(),
         }
     }
 
@@ -101,6 +101,7 @@ pub struct Input<'a> {
     id_salt: Option<Id>,
     char_limit: usize,
     error: bool,
+    numeric: bool,
 }
 
 impl<'a> Input<'a> {
@@ -116,7 +117,15 @@ impl<'a> Input<'a> {
             id_salt: None,
             char_limit: usize::MAX,
             error: false,
+            numeric: false,
         }
+    }
+
+    /// The value is a number (a port, a coordinate): a controller's on-screen keyboard
+    /// opens on its digits. The arrows still move the caret (`NumberInput` steps).
+    pub fn numeric(mut self, on: bool) -> Self {
+        self.numeric = on;
+        self
     }
 
     /// A wrong value: the border turns red (`[&_input]:border-err/60`).
@@ -219,6 +228,9 @@ impl Widget for Input<'_> {
             field.disable();
         }
         let mut resp = field.put(inner, edit);
+        if self.numeric {
+            crate::pad::registry::digits(ui.ctx(), resp.id);
+        }
         let hover = paint::ease(
             ui,
             resp.id.with("hover"),
@@ -266,9 +278,10 @@ impl Widget for Input<'_> {
     }
 }
 
-/// A number typed in a field: mono figures, the arrows and the wheel step it, and what
-/// is typed is kept until the field is left (then clamped). `NumberInput::new(&mut port)`
-/// over an `f64`; convert integers at the call.
+/// A number typed in a field: mono figures, the arrows and the wheel step it (a
+/// controller's Left and Right too), and what is typed is kept until the field is left
+/// (then clamped). `NumberInput::new(&mut port)` over an `f64`; convert integers at the
+/// call.
 #[must_use = "add it with ui.add(…)"]
 pub struct NumberInput<'a> {
     value: &'a mut f64,
@@ -343,6 +356,8 @@ impl Widget for NumberInput<'_> {
             input = input.width(w);
         }
         let mut resp = ui.add(input);
+        // A controller steps it with Left and Right, and types it on digits.
+        crate::pad::registry::number(ui.ctx(), resp.id);
         let clamp = |v: f64| {
             if v.is_finite() {
                 v.clamp(self.min, self.max)

@@ -21,6 +21,14 @@ pub mod lucide {
         )),
         false,
     );
+    pub const ARROW_BIG_UP: Icon = Icon::new(
+        "lucide/arrow-big-up",
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/assets/icons/lucide/arrow-big-up.svg"
+        )),
+        false,
+    );
     pub const ARROW_DOWN: Icon = Icon::new(
         "lucide/arrow-down",
         include_bytes!(concat!(
@@ -317,6 +325,14 @@ pub mod lucide {
         )),
         false,
     );
+    pub const CORNER_LEFT_UP: Icon = Icon::new(
+        "lucide/corner-left-up",
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/assets/icons/lucide/corner-left-up.svg"
+        )),
+        false,
+    );
     pub const CPU: Icon = Icon::new(
         "lucide/cpu",
         include_bytes!(concat!(
@@ -338,6 +354,14 @@ pub mod lucide {
         include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/assets/icons/lucide/database.svg"
+        )),
+        false,
+    );
+    pub const DELETE: Icon = Icon::new(
+        "lucide/delete",
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/assets/icons/lucide/delete.svg"
         )),
         false,
     );
@@ -389,6 +413,14 @@ pub mod lucide {
         )),
         false,
     );
+    pub const FILE: Icon = Icon::new(
+        "lucide/file",
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/assets/icons/lucide/file.svg"
+        )),
+        false,
+    );
     pub const FILE_CODE: Icon = Icon::new(
         "lucide/file-code",
         include_bytes!(concat!(
@@ -426,6 +458,14 @@ pub mod lucide {
         include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/assets/icons/lucide/flame.svg"
+        )),
+        false,
+    );
+    pub const FOLDER: Icon = Icon::new(
+        "lucide/folder",
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/assets/icons/lucide/folder.svg"
         )),
         false,
     );
@@ -501,6 +541,14 @@ pub mod lucide {
         )),
         false,
     );
+    pub const HARD_DRIVE: Icon = Icon::new(
+        "lucide/hard-drive",
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/assets/icons/lucide/hard-drive.svg"
+        )),
+        false,
+    );
     pub const HARD_DRIVE_DOWNLOAD: Icon = Icon::new(
         "lucide/hard-drive-download",
         include_bytes!(concat!(
@@ -530,6 +578,14 @@ pub mod lucide {
         include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/assets/icons/lucide/history.svg"
+        )),
+        false,
+    );
+    pub const HOUSE: Icon = Icon::new(
+        "lucide/house",
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/assets/icons/lucide/house.svg"
         )),
         false,
     );
@@ -1077,6 +1133,14 @@ pub mod lucide {
         )),
         false,
     );
+    pub const SPACE: Icon = Icon::new(
+        "lucide/space",
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/assets/icons/lucide/space.svg"
+        )),
+        false,
+    );
     pub const SPARKLES: Icon = Icon::new(
         "lucide/sparkles",
         include_bytes!(concat!(
@@ -1298,6 +1362,7 @@ pub mod lucide {
     pub const ALL: &[Icon] = &[
         ACTIVITY,
         APP_WINDOW,
+        ARROW_BIG_UP,
         ARROW_DOWN,
         ARROW_DOWN_TO_LINE,
         ARROW_LEFT,
@@ -1335,20 +1400,24 @@ pub mod lucide {
         CODE_XML,
         CONSTRUCTION,
         COPY,
+        CORNER_LEFT_UP,
         CPU,
         CROSSHAIR,
         DATABASE,
+        DELETE,
         DOWNLOAD,
         ELLIPSIS,
         ERASER,
         EXTERNAL_LINK,
         EYE,
         EYE_OFF,
+        FILE,
         FILE_CODE,
         FILE_DOWN,
         FILE_UP,
         FILTER_X,
         FLAME,
+        FOLDER,
         FOLDER_COG,
         FOLDER_OPEN,
         FOLDER_SEARCH,
@@ -1358,10 +1427,12 @@ pub mod lucide {
         GIT_BRANCH,
         GLOBE,
         GPU,
+        HARD_DRIVE,
         HARD_DRIVE_DOWNLOAD,
         HASH,
         HEART,
         HISTORY,
+        HOUSE,
         ID_CARD,
         IMAGE,
         IMAGE_OFF,
@@ -1430,6 +1501,7 @@ pub mod lucide {
         SHIELD_X,
         SKIP_FORWARD,
         SLIDERS_HORIZONTAL,
+        SPACE,
         SPARKLES,
         SQUARE,
         SQUARE_ARROW_OUT_UP_RIGHT,
