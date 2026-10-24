@@ -9,6 +9,11 @@
 //! window listens, and `Hub::ping_scan_state` tells a window that has just
 //! (re)loaded how far it has got. A `Channel` dies with the page that made
 //! it, so a reload used to leave the scan running unseen.
+//!
+//! How many servers are asked at once is the shared A2S engine's to say
+//! (`dz_a2s::Engine::window`): a scan hands it what its pace sends within one
+//! timeout, so silent servers do not hold the scan below that pace. The
+//! profile's old `ping_concurrency` is no longer read (see `dz_profile`).
 
 use crate::{Hub, HubEvent};
 use dz_api::{Ipv4Addr, SocketAddrV4};
@@ -25,8 +30,6 @@ use crate::features::browser::live::{self, Live};
 const LIST_TIMEOUT_MS: u64 = 5_000;
 /// Default timeout of a manual ping.
 const MANUAL_TIMEOUT_MS: u64 = 10_000;
-/// Default concurrency for an explicit list.
-const LIST_CONCURRENT: usize = 10;
 /// Results per `PingResults` event for an explicit list.
 const BATCH_SIZE: usize = 50;
 /// How often partial batches of an explicit list are sent (at most).
@@ -77,14 +80,14 @@ pub struct ScanProgress {
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct PingScanProgress(pub ScanProgress);
 
-/// What started a whole-list scan.
+/// What started a whole-list scan. Only one kind is left: the servers a
+/// Steam listing adds are measured by its own A2S_INFO, not by a scan of
+/// their own; the field stays so `ping_scan_state` keeps its shape.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ScanKind {
     /// The whole list (`start_scan`, or the end of a refresh).
     Whole,
-    /// Only servers added to the list after a scan had ended (`enqueue`).
-    Added,
 }
 
 /// The scan as a window that has just loaded finds it.
@@ -102,7 +105,7 @@ pub struct ScanState {
     pub lists_running: u32,
 }
 
-/// One whole-list scan's counters, shared by its loop, its queue and
+/// One whole-list scan's counters, shared by its loop and
 /// [`ping_scan_state`].
 struct Run {
     id: u32,
@@ -142,9 +145,6 @@ pub struct PingState {
     pause_changed: tokio::sync::Notify,
     /// The running scan, so a new one (or a refresh) can abort it.
     background: Mutex<Option<tokio::task::JoinHandle<()>>>,
-    /// The running whole-list scan's queue, which servers added to the list
-    /// meanwhile join ([`enqueue`]).
-    queue: Mutex<Option<Queue>>,
     /// The last whole-list scan, running or not, for [`ping_scan_state`].
     last: Mutex<Option<Arc<Run>>>,
     /// The last scan id handed out.
@@ -153,19 +153,10 @@ pub struct PingState {
     lists: Arc<AtomicU32>,
 }
 
-struct Queue {
-    /// Targets, with the tries each has had.
-    tx: mpsc::UnboundedSender<(SocketAddrV4, u32)>,
-    run: Arc<Run>,
-}
-
 impl PingState {
     pub(crate) fn abort_background(&self) {
         if let Some(handle) = self.background.lock().ok().and_then(|mut h| h.take()) {
             handle.abort();
-        }
-        if let Ok(mut q) = self.queue.lock() {
-            *q = None;
         }
         // An aborted loop never reaches its own end: say it is over here.
         if let Some(run) = self.last.lock().ok().and_then(|l| l.clone()) {
@@ -275,14 +266,12 @@ enum Sink {
     Event(Hub),
 }
 
-/// Ping `targets` with `concurrency` queries in flight, recording each result
-/// in the live store as it lands. A server that does not answer is asked
-/// again up to `retries` times, after the targets queued before it: one lost
-/// UDP packet should not mark it dead, nor should it hold a slot meanwhile.
-/// A `whole` scan takes more targets while it runs ([`enqueue`]).
+/// Ping `targets` through the shared engine, recording each result in the
+/// live store as it lands. A server that does not answer is asked again up
+/// to `retries` times, after the targets queued before it: one lost UDP
+/// packet should not mark it dead, nor should it hold a slot meanwhile.
 async fn scan(
     targets: Vec<SocketAddrV4>,
-    concurrency: usize,
     timeout: Duration,
     retries: u32,
     sink: Sink,
@@ -306,13 +295,7 @@ async fn scan(
             run.total.fetch_add(1, Ordering::Relaxed);
         }
     }
-    let again = tx.clone();
-    if whole && let Ok(mut q) = ping.queue.lock() {
-        *q = Some(Queue {
-            tx,
-            run: Arc::clone(&run),
-        });
-    }
+    let again = tx;
     let done = &run.done;
     let total = &run.total;
     let progress = |running: bool| progress_of(&run, ping.is_paused(), running);
@@ -324,31 +307,18 @@ async fn scan(
             ))));
         }
     };
-    // A scan is over when it has done every target it was sent (retries
-    // keep the queue open, so it never runs dry by itself). A whole scan's
-    // queue then closes, under its lock so nothing is sent into it after.
-    let finished = || {
-        if done.load(Ordering::Relaxed) < total.load(Ordering::Relaxed) {
-            return false;
-        }
-        if !whole {
-            return true;
-        }
-        let Ok(mut q) = ping.queue.lock() else {
-            return true;
-        };
-        if done.load(Ordering::Relaxed) < total.load(Ordering::Relaxed) {
-            return false;
-        }
-        *q = None;
-        true
-    };
+    // A scan is over when it has done every target it was sent: retries
+    // keep the queue open, so it never runs dry by itself.
+    let finished = || done.load(Ordering::Relaxed) >= total.load(Ordering::Relaxed);
 
     // The app's one A2S engine: every query goes over its shared socket at
     // its pace, the challenge and the answer within `timeout` from the send.
-    // `concurrency` bounds the targets handed to it at once, so a pause
-    // leaves no more than that to finish.
+    // It is handed what it sends within one timeout (its window, capped by
+    // its in-flight ceiling): enough that its pace, not the silent servers
+    // each waiting out their timeout, sets the scan's speed, and no more, so
+    // a pause leaves only that to finish.
     let engine = crate::net::a2s();
+    let window = engine.window(timeout);
 
     let targets = Box::pin(stream::unfold(rx, |mut rx| async move {
         rx.recv().await.map(|t| (t, rx))
@@ -371,7 +341,7 @@ async fn scan(
                 Asked::Done(target, l)
             }
         })
-        .buffer_unordered(concurrency)
+        .buffer_unordered(window)
         .fuse();
 
     let mut batch: Vec<PingResultDto> = Vec::new();
@@ -501,7 +471,6 @@ pub(crate) fn start_whole_scan(
     hub: &Hub,
     ping: &Arc<PingState>,
     targets: Vec<SocketAddrV4>,
-    concurrency: usize,
     timeout: Duration,
     retries: u32,
 ) -> ScanProgress {
@@ -511,72 +480,12 @@ pub(crate) fn start_whole_scan(
     let state = Arc::clone(ping);
     let hub = hub.clone();
     let handle = tokio::spawn(async move {
-        scan(
-            targets,
-            concurrency,
-            timeout,
-            retries,
-            Sink::Event(hub),
-            state,
-            run,
-        )
-        .await;
+        scan(targets, timeout, retries, Sink::Event(hub), state, run).await;
     });
     if let Ok(mut h) = ping.background.lock() {
         *h = Some(handle);
     }
     first
-}
-
-/// Have `targets` pinged with the whole-list scan: into its queue when one
-/// runs (its progress grows), else in a scan of their own, whose progress
-/// the status bar hears as `ping-scan-progress`.
-pub(crate) fn enqueue(
-    hub: &Hub,
-    ping: &Arc<PingState>,
-    targets: Vec<SocketAddrV4>,
-    concurrency: usize,
-    timeout: Duration,
-    retries: u32,
-) {
-    if targets.is_empty() {
-        return;
-    }
-    if let Ok(mut q) = ping.queue.lock()
-        && let Some(queue) = q.as_ref()
-    {
-        let mut sent = true;
-        for t in &targets {
-            if queue.tx.send((*t, 0)).is_err() {
-                sent = false;
-                break;
-            }
-            queue.run.total.fetch_add(1, Ordering::Relaxed);
-        }
-        if sent {
-            return;
-        }
-        // The scan was stopped without closing its queue.
-        *q = None;
-    }
-    let run = ping.begin(ScanKind::Added);
-    let state = Arc::clone(ping);
-    let hub = hub.clone();
-    let handle = tokio::spawn(async move {
-        scan(
-            targets,
-            concurrency,
-            timeout,
-            retries,
-            Sink::Event(hub),
-            state,
-            run,
-        )
-        .await;
-    });
-    if let Ok(mut h) = ping.background.lock() {
-        *h = Some(handle);
-    }
 }
 
 impl Hub {
@@ -586,14 +495,12 @@ impl Hub {
     pub async fn ping_servers(
         &self,
         targets: Vec<SocketAddrV4>,
-        concurrency: Option<usize>,
         timeout_ms: Option<u64>,
     ) -> Result<(), String> {
         let ping = self.ping();
         if targets.is_empty() || ping.is_paused() {
             return Ok(());
         }
-        let concurrency = concurrency.unwrap_or(LIST_CONCURRENT).clamp(5, 100);
         let timeout =
             Duration::from_millis(timeout_ms.unwrap_or(LIST_TIMEOUT_MS).clamp(1000, 5000));
         let state = Arc::clone(ping);
@@ -603,7 +510,6 @@ impl Hub {
         tokio::spawn(async move {
             scan(
                 targets,
-                concurrency,
                 timeout,
                 0,
                 Sink::Batches(hub),
@@ -702,9 +608,26 @@ mod tests {
         assert_eq!(s.progress.done, 4);
 
         // A later scan has a later id.
-        let next = ping.begin(ScanKind::Added);
+        let next = ping.begin(ScanKind::Whole);
         assert_eq!(next.id, 2);
-        assert_eq!(ping.state().kind, Some(ScanKind::Added));
+        assert_eq!(ping.state().progress.id, 2);
+    }
+
+    /// The profile once capped a scan at 5-100 targets at once: with most
+    /// of a full list silent, each holding its slot for the whole timeout,
+    /// that held the scan to a fraction of the engine's pace. The window a
+    /// scan now hands the engine is what that pace sends in one timeout.
+    #[tokio::test]
+    async fn a_scan_hands_the_engine_what_its_pace_sends_in_one_timeout() {
+        let pace = dz_a2s::Pace::default();
+        let engine = dz_a2s::Engine::new(pace);
+        let timeout = Duration::from_millis(2000);
+        let window = engine.window(timeout);
+        assert!(window > 100, "above the old setting's top: {window}");
+        assert!(window <= pace.in_flight, "within the in-flight ceiling");
+        // Silent servers alone still leave the engine at its pace.
+        let silent_rate = window as f64 / timeout.as_secs_f64();
+        assert!(silent_rate >= f64::from(pace.rate), "{silent_rate}/s");
     }
 
     #[tokio::test(start_paused = true)]

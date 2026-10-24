@@ -56,8 +56,6 @@ pub struct ProfileDto {
     pub options: Vec<LaunchOptionDto>,
     /// IPs hidden from the server browser.
     pub excluded_ips: Vec<String>,
-    /// Ping concurrency (5-100).
-    pub ping_concurrency: u32,
     /// Background ping timeout in ms (1000-5000).
     pub ping_timeout_auto: u32,
     /// Manual ping timeout in ms (1000-30000).
@@ -116,7 +114,6 @@ pub(crate) fn profile_to_dto(profile: &Profile) -> ProfileDto {
             })
             .collect(),
         excluded_ips: profile.excluded_ips.clone(),
-        ping_concurrency: profile.ping_concurrency,
         ping_timeout_auto: profile.ping_timeout_auto,
         ping_timeout_manual: profile.ping_timeout_manual,
         ping_max_retries: profile.ping_max_retries,

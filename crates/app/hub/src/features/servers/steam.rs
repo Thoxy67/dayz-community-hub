@@ -11,10 +11,10 @@
 //! showed DayZ running for each request and answered about once a minute.
 //!
 //! Both give addresses only: each new one is queried here (A2S_INFO, and
-//! A2S_RULES for its mods), many at once, and lands in the list as soon as
-//! it answers, joining the ping scan's queue (the burst of queries would
-//! skew a round trip measured here, so it is shown at once and measured
-//! again). Farms are left out: many empty servers on one address, and any
+//! A2S_RULES for its mods), through the shared engine at its pace, and
+//! lands in the list as soon as it answers, its A2S_INFO's round trip and
+//! counts recorded as its live ping (it is not sent to the ping scan to be
+//! asked again). Farms are left out: many empty servers on one address, and any
 //! server whose master row counts bots (DayZ has none: farm emulators pad
 //! their count with them), before anything is asked of them; any server
 //! reporting bots once it answers, for emulators that tell the master
@@ -551,7 +551,7 @@ async fn run(hub: &Hub) {
     let Some(state) = hub.try_state() else {
         return;
     };
-    let (enabled, maps, known, mut names, ping_settings) = {
+    let (enabled, maps, known, mut names) = {
         let s = state.read().await;
         let known: FxHashSet<Addr> = s.servers.result.iter().map(key).collect();
         let p = s.ctl.profile();
@@ -560,13 +560,6 @@ async fn run(hub: &Hub) {
             maps_by_size(&s.servers),
             known,
             mod_names(&s.servers),
-            // As the window's scan asks (browser::start_scan); `None` when
-            // the profile does not scan the list.
-            p.ping_scan_servers.then(|| PingSettings {
-                concurrency: (p.ping_concurrency as usize).clamp(5, 200),
-                timeout: Duration::from_millis(u64::from(p.ping_timeout_auto).clamp(1000, 5000)),
-                retries: p.ping_max_retries.min(5),
-            }),
         )
     };
     if !enabled {
@@ -669,7 +662,7 @@ async fn run(hub: &Hub) {
             .buffer_unordered(window)
             .fuse(),
     );
-    take_answers(hub, &state, &mut answers, &mut names, ping_settings).await;
+    take_answers(hub, &state, &mut answers, &mut names).await;
     let outcome = lister.await.unwrap_or_else(|e| Err(e.to_string()));
 
     let list = Arc::clone(&state.read().await.servers);
@@ -729,14 +722,6 @@ fn learned(complete: Option<WebOutcome>, started_at: i64) -> ListingMemory {
     m
 }
 
-/// How the profile has the list pinged.
-#[derive(Clone, Copy)]
-struct PingSettings {
-    concurrency: usize,
-    timeout: Duration,
-    retries: u32,
-}
-
 /// The mod names `list` holds, one each: the names a listing's servers
 /// share (see [`share_names`]).
 fn mod_names(list: &ServerList) -> FxHashSet<Arc<str>> {
@@ -770,7 +755,6 @@ async fn take_answers(
     state: &SharedState,
     answers: &mut (impl Unpin + futures_util::stream::FusedStream<Item = Outcome>),
     names: &mut FxHashSet<Arc<str>>,
-    ping: Option<PingSettings>,
 ) {
     let mut fresh: Vec<SteamListed> = Vec::new();
     let mut tick = tokio::time::interval(PUBLISH_EVERY);
@@ -786,10 +770,10 @@ async fn take_answers(
                 Some(Outcome::Rejected(addr, verdict)) => judged(addr, verdict),
                 None => break,
             },
-            _ = tick.tick() => publish(hub, state, std::mem::take(&mut fresh), ping).await,
+            _ = tick.tick() => publish(hub, state, std::mem::take(&mut fresh)).await,
         }
     }
-    publish(hub, state, fresh, ping).await;
+    publish(hub, state, fresh).await;
 }
 
 /// Remember how `addr`, listed now, answered.
@@ -807,23 +791,20 @@ fn judged(addr: Addr, verdict: Verdict) {
 
 static LAST_SAVE: Mutex<Option<Instant>> = Mutex::new(None);
 
-/// Put `rows` in the list the app shows, and in the ping scan's queue. The
-/// cache is written every [`SAVE_EVERY`] meanwhile.
-async fn publish(
-    hub: &Hub,
-    state: &SharedState,
-    rows: Vec<SteamListed>,
-    ping: Option<PingSettings>,
-) {
+/// Put `rows` in the list the app shows. Their pings are in the live store
+/// already, from the A2S_INFO that listed them ([`query`]): they are not
+/// sent to the ping scan to be asked again. The cache is written every
+/// [`SAVE_EVERY`] meanwhile.
+async fn publish(hub: &Hub, state: &SharedState, rows: Vec<SteamListed>) {
     if rows.is_empty() {
         return;
     }
-    let added: Vec<Addr> = {
+    let added = {
         let mut f = found();
-        let mut added = Vec::new();
+        let mut added = 0u32;
         for r in rows {
             if f.keys.insert(r.addr) {
-                added.push(r.addr);
+                added += 1;
                 f.rows.push(SteamRow::from(r));
             }
         }
@@ -831,10 +812,10 @@ async fn publish(
     };
     // Only servers another pass already put in: the list is as it was, and
     // composing, indexing and combing 10 000 servers again would change nothing.
-    if added.is_empty() {
+    if added == 0 {
         return;
     }
-    sources::update(|s| s.steam.added += added.len() as u32);
+    sources::update(|s| s.steam.added += added);
     let list = show(hub, state).await;
     let due = LAST_SAVE.lock().is_ok_and(|mut last| {
         let due = last.is_none_or(|t| t.elapsed() >= SAVE_EVERY);
@@ -845,9 +826,6 @@ async fn publish(
     });
     if due {
         super::save_cache_in_background(list);
-    }
-    if let Some(p) = ping {
-        crate::features::ping::enqueue(hub, hub.ping(), added, p.concurrency, p.timeout, p.retries);
     }
 }
 
@@ -1178,8 +1156,10 @@ async fn query(engine: dz_a2s::Engine, c: Candidate) -> Outcome {
         sources::update(|s| s.steam.fakes += 1);
         return Outcome::Rejected(c.addr, Verdict::Fake);
     }
-    // Its counts and its round trip now, shown at once; the ping scan
-    // measures it again once it is in the list, away from this burst.
+    // Its counts, its round trip and its clock: the live ping a scan would
+    // have measured, so a new server is not asked again. The engine paces
+    // this query as it paces a scan's, and a whole-list scan measures it
+    // afresh later with the rest.
     let ping = answer.ping();
     live::store().record(c.addr, Live::from_result(&Ok(ping)));
     let ext = &info.extended_server_info;
@@ -1239,6 +1219,56 @@ async fn query(engine: dz_a2s::Engine, c: Candidate) -> Outcome {
 mod tests {
     use super::*;
     use std::sync::atomic::AtomicU32;
+
+    /// A fake DayZ server on localhost answering A2S_INFO (no challenge, no
+    /// mods): 3 of 60 players.
+    async fn answering_server() -> Addr {
+        let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let addr = match socket.local_addr().unwrap() {
+            std::net::SocketAddr::V4(a) => a,
+            std::net::SocketAddr::V6(_) => unreachable!(),
+        };
+        tokio::spawn(async move {
+            let mut buf = [0u8; 1500];
+            while let Ok((_, from)) = socket.recv_from(&mut buf).await {
+                let mut p = vec![0xFF, 0xFF, 0xFF, 0xFF, b'I', 17];
+                for s in ["Listed", "chernarusplus", "dayz", "DayZ"] {
+                    p.extend_from_slice(s.as_bytes());
+                    p.push(0);
+                }
+                p.extend_from_slice(&0u16.to_le_bytes());
+                p.extend_from_slice(&[3, 60, 0, b'd', b'w', 0, 1]);
+                p.extend_from_slice(b"1.26.0\0");
+                p.push(0x80 | 0x20);
+                p.extend_from_slice(&2302u16.to_le_bytes());
+                p.extend_from_slice(b"battleye\0");
+                let _ = socket.send_to(&p, from).await;
+            }
+        });
+        addr
+    }
+
+    /// The listing's own A2S_INFO is the new server's live ping: its round
+    /// trip and counts are in the live store when it is listed, so
+    /// nothing sends it to the ping scan to be asked again.
+    #[tokio::test]
+    async fn a_listed_servers_answer_is_its_live_ping() {
+        let addr = answering_server().await;
+        let c = Candidate {
+            addr,
+            game_port: 2302,
+            empty: None,
+            bots: 0,
+        };
+        let Outcome::Row(row) = query(crate::net::a2s(), c).await else {
+            panic!("the server answered");
+        };
+        assert_eq!(row.players, 3);
+        let map = live::store().read();
+        let l = map.get(addr).expect("recorded by the listing");
+        assert!(l.ms.is_some() && !l.failed, "{l:?}");
+        assert_eq!((l.players, l.max_players), (Some(3), Some(60)));
+    }
 
     fn at(s: &str) -> Addr {
         s.parse().unwrap()

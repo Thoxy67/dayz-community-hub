@@ -830,8 +830,8 @@ fn ping_on_screen(cx: &mut Ctx, shared: &Shared) {
         st.pinged_hash = st.on_screen_hash;
         st.on_screen.clone()
     };
-    let (concurrency, timeout, _) = cx.stores.profile.ping_settings();
-    cx.stores.servers.ping_visible(&keys, concurrency, timeout);
+    let (timeout, _) = cx.stores.profile.ping_settings();
+    cx.stores.servers.ping_visible(&keys, timeout);
 }
 
 /// The list's keys (registry scopes `list` and `saved`), while nothing else has them.

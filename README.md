@@ -29,8 +29,8 @@ A fast, feature-rich DayZ launcher that replaces the official one — browse ser
 ### Browse
 
 - **18,000+ servers** — the public list plus the servers Steam's master lists, with live ping
-- **Filter & search** — by map, mods, 1PP, password, BattleEye
-- **Favorites & history** — star servers and track your sessions
+- **Filter & search** — by maps, mods, 1PP, password, BattlEye, in-game day or night, a given mod, or ready to join (every mod installed and current)
+- **Favorites & history** — star servers with notes, coloured labels and groups, and track your sessions
 - **Friends** — see which friends play DayZ, on which server, and join them
 - **Server stats** — rank, uptime, restarts, wipes and player graphs from DayZ Metrics (no key)
 
@@ -40,20 +40,24 @@ A fast, feature-rich DayZ launcher that replaces the official one — browse ser
 - **Update checker** — detect stale mods with one click
 - **Bulk operations** — update, link, or delete multiple mods at once
 - **Symlink management** — clean mod organization without duplicating files
+- **Cleanup** — list the mods nothing uses any more and remove them together, or a server's mods from its details
 
 ### Launch
 
 - **One-click connect** — starts Steam if needed, sets up mods, and joins
 - **Direct connect** — join any server by IP:port
-- **Launch options** — full control over DayZ startup flags
-- **Offline mode** — play [DayZ Community Offline Mode](https://github.com/Arkensor/DayZCommunityOfflineMode) missions locally
+- **Launch options** — full control over DayZ startup flags, and a character name and arguments per favourite server
+- **Desktop shortcuts** — join a server from a shortcut on the desktop
+- **Offline mode** — play [DayZ Community Offline Mode](https://github.com/Arkensor/DayZCommunityOfflineMode) missions locally, with the mods you pick
 
 ### Extras
 
 - **News feed** — latest DayZ articles in-app
 - **Auto-updater** — Windows: updates apply in-place
 - **Cross-platform** — runs on Windows and Linux
-- **Keyboard, controller, Steam Deck** — one set of shortcuts, a Ctrl+K palette and a hint bar for the pad
+- **Keyboard, controller, Steam Deck** — one set of shortcuts, a Ctrl+K palette and a hint bar for the pad; an on-screen keyboard and file picker, Game Mode, and Add to Steam
+- **Tray & notifications** — keep the launcher in the tray, have it step aside while the game runs, and hear when a download or update is done
+- **Discord Rich Presence** — off by default; shows that you play, and on which server if you want
 - **Themes** — seventeen legible presets and your own, dark or light with the system
 
 ---

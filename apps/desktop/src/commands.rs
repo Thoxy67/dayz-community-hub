@@ -1478,12 +1478,6 @@ pub static COMMANDS: &[CommandSpec] = &[
         |cx, a| crate::views::settings::command(cx, "location.apply_manual", a)
     ),
     cmd!(
-        "settings.ping.set_concurrency",
-        ("about", "pingConcurrency"),
-        "settings",
-        |cx, a| crate::views::settings::command(cx, "ping.set_concurrency", a)
-    ),
-    cmd!(
         "settings.ping.set_timeout_auto",
         ("about", "pingTimeoutAuto"),
         "settings",

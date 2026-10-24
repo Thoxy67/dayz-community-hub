@@ -4161,8 +4161,8 @@ pub const CATALOG: &[Feature] = &[
     Feature {
         id: "settings.ping.concurrency",
         view: "settings",
-        what: "Concurrency slider 5–100 step 1 (default 64), value shown right; saved when the thumb is released (no toast)",
-        kind: Kind::Command("settings.ping.set_concurrency"),
+        what: "Concurrency slider 5–100 step 1 (default 64), value shown right; saved when the thumb is released (no toast). Retired on purpose: every A2S query goes through one paced engine whose pace and in-flight ceiling decide how many servers are asked at once, so the slider no longer meant anything; the profile keeps the value for older builds",
+        kind: Kind::Display,
         done: true,
     },
     Feature {

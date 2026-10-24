@@ -326,10 +326,7 @@ pub fn steam_session_env(
             .filter(|e| !e.is_empty() && !is_overlay_lib(e))
             .collect();
         if kept.len() != pre.split([':', ' ']).filter(|e| !e.is_empty()).count() {
-            out.push((
-                "LD_PRELOAD",
-                (!kept.is_empty()).then(|| kept.join(":")),
-            ));
+            out.push(("LD_PRELOAD", (!kept.is_empty()).then(|| kept.join(":"))));
         }
     }
     out
@@ -667,7 +664,10 @@ mod tests {
         let mine = [("SteamGameId", "1"), ("LD_PRELOAD", "/usr/lib/libmine.so")];
         assert_eq!(steam_session_env(&env(&mine)), vec![("SteamGameId", None)]);
         // Outside a Steam session nothing is touched, not even an overlay path.
-        let outside = [("LD_PRELOAD", "/s/gameoverlayrenderer.so"), ("SteamAppId", "221100")];
+        let outside = [
+            ("LD_PRELOAD", "/s/gameoverlayrenderer.so"),
+            ("SteamAppId", "221100"),
+        ];
         assert!(steam_session_env(&env(&outside)).is_empty());
     }
 

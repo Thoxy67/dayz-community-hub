@@ -753,7 +753,7 @@ fn listed_lines(
     let click = ui.interact(sresp.rect, ui.id().with("rejoin-ping"), Sense::click());
     super::ring(ui, &click, sresp.rect, size::RADIUS_XS);
     if click.clicked() {
-        let timeout = cx.stores.profile.ping_settings().2;
+        let timeout = cx.stores.profile.ping_settings().1;
         cx.stores
             .servers
             .ping_one(&row.ip().to_string(), i64::from(row.query_port()), timeout);

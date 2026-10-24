@@ -71,7 +71,12 @@ pub struct Profile {
     /// IPs excluded from the server browser (persisted across restarts).
     #[serde(default)]
     pub excluded_ips: Vec<String>,
-    /// Ping concurrency level (5-100, default 25).
+    /// Once how many servers a ping scan asked at once (5-100, default 64).
+    /// No longer read: every A2S query goes through the app's one paced
+    /// engine, whose pace and in-flight ceiling decide how many are out, and
+    /// a cap here held full scans well under that pace while silent servers
+    /// waited out their timeout. Kept, and written back as read, so older
+    /// profiles load and an older build reading this file finds its value.
     #[serde(default = "default_ping_concurrency")]
     pub ping_concurrency: u32,
     /// Auto ping timeout in milliseconds (1000-5000, default 2000).
@@ -513,9 +518,23 @@ mod tests {
     }
 
     #[test]
+    fn the_retired_ping_concurrency_still_loads_and_is_written_back() {
+        let p: Profile = serde_json::from_str(r#"{"ping_concurrency": 20}"#).unwrap();
+        assert_eq!(p.ping_concurrency, 20);
+        let again: serde_json::Value = serde_json::to_value(&p).unwrap();
+        assert_eq!(again["ping_concurrency"], 20);
+    }
+
+    #[test]
     fn a_first_start_on_a_deck_downloads_through_steam() {
-        assert_eq!(Profile::fresh(true).mod_downloader, ModDownloader::Steamworks);
-        assert_eq!(Profile::fresh(false).mod_downloader, ModDownloader::Steamcmd);
+        assert_eq!(
+            Profile::fresh(true).mod_downloader,
+            ModDownloader::Steamworks
+        );
+        assert_eq!(
+            Profile::fresh(false).mod_downloader,
+            ModDownloader::Steamcmd
+        );
     }
 
     #[test]

@@ -89,7 +89,7 @@
 //!   - `launch_offline_mission(&self, mission: String) -> Result<(), String>`
 //!   - `open_mission_dir(&self, mission: String) -> Result<std::path::PathBuf, String>`
 //! - `ping`:
-//!   - `ping_servers(&self, targets: Vec<SocketAddrV4>, concurrency: Option<usize>, timeout_ms: Option<u64>) -> Result<(), String>`
+//!   - `ping_servers(&self, targets: Vec<SocketAddrV4>, timeout_ms: Option<u64>) -> Result<(), String>`
 //!   - `ping_scan_state(&self) -> Result<ScanState, String>`
 //!   - `ping_single(&self, ip: String, port: i64, timeout_ms: Option<u64>) -> Result<u32, String>`
 //!   - `cancel_ping(&self) -> Result<(), String>`

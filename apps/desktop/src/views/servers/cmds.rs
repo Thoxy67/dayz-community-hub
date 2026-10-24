@@ -264,7 +264,7 @@ pub fn ping(cx: &mut Ctx, a: &Value) {
     let Some(tg) = target(cx, a) else {
         return no_target(cx);
     };
-    let (_, _, manual) = cx.stores.profile.ping_settings();
+    let (_, manual) = cx.stores.profile.ping_settings();
     cx.stores.servers.ping_one(&tg.ip, tg.query_port, manual);
 }
 

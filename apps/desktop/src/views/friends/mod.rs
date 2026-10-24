@@ -128,7 +128,7 @@ fn apply(cx: &mut Ctx, act: Act) {
         }
         Act::Favorite(name, ip, port, _) => cx.stores.profile.toggle_favorite(&name, &ip, port),
         Act::Ping(ip, port) => {
-            let timeout = cx.stores.profile.ping_settings().2;
+            let timeout = cx.stores.profile.ping_settings().1;
             cx.stores.servers.ping_one(&ip, port, timeout);
         }
         Act::Players(ip, port) => {

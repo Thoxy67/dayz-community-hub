@@ -564,7 +564,7 @@ impl Direct {
                         .listed
                         .as_ref()
                         .map_or_else(|| self.address.trim().to_string(), |l| l.ip.to_string());
-                    let (_, _, manual) = profile.ping_settings();
+                    let (_, manual) = profile.ping_settings();
                     servers.ping_one(&ip, a2s.query_port, manual);
                     self.a2s = Some(a2s);
                 }

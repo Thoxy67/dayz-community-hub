@@ -33,7 +33,6 @@ pub struct AccountSettings {
 /// The ping part of the settings.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PingSettings {
-    pub concurrency: u32,
     pub timeout_auto: u32,
     pub timeout_manual: u32,
     pub max_retries: u32,
@@ -231,14 +230,10 @@ impl Profile {
             .is_some_and(|p| p.mod_downloader == ModDownloaderDto::Steamworks)
     }
 
-    /// (concurrency, background timeout, manual timeout), with the defaults.
-    pub fn ping_settings(&self) -> (u32, u32, u32) {
-        self.data.as_ref().map_or((64, 2000, 10_000), |p| {
-            (
-                p.ping_concurrency,
-                p.ping_timeout_auto,
-                p.ping_timeout_manual,
-            )
+    /// (background timeout, manual timeout), with the defaults.
+    pub fn ping_settings(&self) -> (u32, u32) {
+        self.data.as_ref().map_or((2000, 10_000), |p| {
+            (p.ping_timeout_auto, p.ping_timeout_manual)
         })
     }
 
@@ -292,7 +287,6 @@ impl Profile {
             steam_api_key: p.and_then(|p| p.steam_api_key.clone()),
             steam_id: p.and_then(|p| p.steam_id.clone()),
             user_location: p.and_then(|p| p.user_location),
-            ping_concurrency: p.map_or(64, |p| p.ping_concurrency),
             ping_timeout_auto: p.map_or(2000, |p| p.ping_timeout_auto),
             ping_timeout_manual: p.map_or(10_000, |p| p.ping_timeout_manual),
             ping_max_retries: p.map_or(0, |p| p.ping_max_retries),
@@ -334,7 +328,6 @@ impl Profile {
             return;
         }
         if let Some(d) = &mut self.data {
-            d.ping_concurrency = p.concurrency;
             d.ping_timeout_auto = p.timeout_auto;
             d.ping_timeout_manual = p.timeout_manual;
             d.ping_max_retries = p.max_retries;

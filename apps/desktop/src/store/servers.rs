@@ -581,7 +581,7 @@ impl Servers {
     }
 
     /// Ping a few servers that have never answered (favourites, history).
-    pub fn ping_visible(&mut self, keys: &[String], concurrency: u32, timeout_ms: u32) {
+    pub fn ping_visible(&mut self, keys: &[String], timeout_ms: u32) {
         let todo: Vec<String> = keys
             .iter()
             .filter(|k| {
@@ -598,14 +598,8 @@ impl Servers {
         // Only an IPv4 address is pinged in a list; one that is not stays pending
         // until the list ends.
         let targets: Vec<SocketAddrV4> = todo.iter().filter_map(|k| k.parse().ok()).collect();
-        let task = rt::spawn(async move {
-            hub.ping_servers(
-                targets,
-                Some(usize::try_from(concurrency).unwrap_or(64)),
-                Some(u64::from(timeout_ms)),
-            )
-            .await
-        });
+        let task =
+            rt::spawn(async move { hub.ping_servers(targets, Some(u64::from(timeout_ms))).await });
         self.ping_lists.push((todo, task));
     }
 

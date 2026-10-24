@@ -139,7 +139,6 @@ fn arg_num(a: &Value, k: &str) -> Option<f64> {
 pub fn ping_of(cx_profile: &crate::store::profile::Profile) -> PingSettings {
     cx_profile.data.as_ref().map_or(
         PingSettings {
-            concurrency: 64,
             timeout_auto: 2000,
             timeout_manual: 10_000,
             max_retries: 0,
@@ -148,7 +147,6 @@ pub fn ping_of(cx_profile: &crate::store::profile::Profile) -> PingSettings {
             scan_servers: true,
         },
         |p| PingSettings {
-            concurrency: p.ping_concurrency,
             timeout_auto: p.ping_timeout_auto,
             timeout_manual: p.ping_timeout_manual,
             max_retries: p.ping_max_retries,
@@ -160,7 +158,7 @@ pub fn ping_of(cx_profile: &crate::store::profile::Profile) -> PingSettings {
 }
 
 /// A setting's command (`commands.rs` registers each id and calls this with its tail:
-/// `settings.ping.set_concurrency` → `ping.set_concurrency`). Arguments are hostile.
+/// `settings.ping.set_retries` → `ping.set_retries`). Arguments are hostile.
 pub fn command(cx: &mut Ctx, what: &str, a: &Value) {
     let field = |k: &str| arg(a, k).map(|s| s.chars().take(512).collect::<String>());
     match what {
@@ -274,17 +272,13 @@ pub fn command(cx: &mut Ctx, what: &str, a: &Value) {
             };
             request(cx.egui, Req::ApplyLocation(typed));
         }
-        "ping.set_concurrency"
-        | "ping.set_timeout_auto"
-        | "ping.set_timeout_manual"
-        | "ping.set_retries" => {
+        "ping.set_timeout_auto" | "ping.set_timeout_manual" | "ping.set_retries" => {
             let Some(v) = arg_num(a, "value") else {
                 return;
             };
             let mut p = ping_of(&cx.stores.profile);
             let v = v.round();
             match what {
-                "ping.set_concurrency" => p.concurrency = v.clamp(5.0, 100.0) as u32,
                 "ping.set_timeout_auto" => p.timeout_auto = v.clamp(1000.0, 5000.0) as u32,
                 "ping.set_timeout_manual" => p.timeout_manual = v.clamp(1000.0, 30_000.0) as u32,
                 _ => p.max_retries = v.clamp(0.0, 5.0) as u32,

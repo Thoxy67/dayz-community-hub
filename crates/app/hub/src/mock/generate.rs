@@ -557,7 +557,6 @@ pub(super) fn profile(world: &World) -> Profile {
             .map(|s| s.ip.to_string())
             .into_iter()
             .collect(),
-        ping_concurrency: 64,
         ping_timeout_auto: 2000,
         ping_timeout_manual: 10_000,
         ping_max_retries: 0,

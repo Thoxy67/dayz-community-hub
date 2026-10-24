@@ -911,8 +911,10 @@ impl SettingsView {
                 ui,
                 |_| {},
                 |ui| {
-                    let rows: [(&str, &str, f64, f64, f64); 4] = [
-                        ("pingConcurrency", "pingConcurrencyHint", 5.0, 100.0, 1.0),
+                    // No concurrency row: the shared A2S engine's pace and
+                    // in-flight ceiling decide how many servers are asked at
+                    // once (see `dz_profile::Profile::ping_concurrency`).
+                    let rows: [(&str, &str, f64, f64, f64); 3] = [
                         (
                             "pingTimeoutAuto",
                             "pingTimeoutAutoHint",
@@ -931,9 +933,8 @@ impl SettingsView {
                     ];
                     for (i, (label, hint, min, max, step)) in rows.into_iter().enumerate() {
                         let slot = match i {
-                            0 => &mut v.concurrency,
-                            1 => &mut v.timeout_auto,
-                            2 => &mut v.timeout_manual,
+                            0 => &mut v.timeout_auto,
+                            1 => &mut v.timeout_manual,
                             _ => &mut v.max_retries,
                         };
                         Field::new(t("about", label))
@@ -954,9 +955,8 @@ impl SettingsView {
                                     commit = true;
                                 }
                                 let shown = match i {
-                                    0 => slot.to_string(),
-                                    3 if *slot == 0 => t("about", "pingRetryDisabled").to_string(),
-                                    3 => slot.to_string(),
+                                    2 if *slot == 0 => t("about", "pingRetryDisabled").to_string(),
+                                    2 => slot.to_string(),
                                     _ => secs(*slot),
                                 };
                                 // As tall as the slider: the value sits on its centre line.

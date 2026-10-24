@@ -189,18 +189,17 @@ pub(crate) async fn scan_whole(
     state: &SharedState,
     ping: &Arc<PingState>,
 ) -> ScanProgress {
-    let (targets, concurrency, timeout, retries, every_server) = {
+    let (targets, timeout, retries, every_server) = {
         let s = state.read().await;
         let p = s.ctl.profile();
         (
             scan_targets(&s),
-            (p.ping_concurrency as usize).clamp(5, 200),
             Duration::from_millis(u64::from(p.ping_timeout_auto).clamp(1000, 5000)),
             p.ping_max_retries.min(5),
             p.ping_scan_servers,
         )
     };
-    let progress = ping::start_whole_scan(hub, ping, targets, concurrency, timeout, retries);
+    let progress = ping::start_whole_scan(hub, ping, targets, timeout, retries);
     if let Ok(mut s) = SCAN.lock() {
         *s = Some((Arc::downgrade(ping), every_server));
     }

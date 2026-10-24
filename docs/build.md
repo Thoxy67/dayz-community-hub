@@ -31,6 +31,17 @@ var/                 what builds leave behind (git-ignored): var/dist/
   (always installed), `systemd-devel` on Fedora; and zstd's (`libzstd-dev`).
   At run time the app reads pads from `/dev/input/event*`; without access to
   them it starts anyway and says so on stderr ("controllers unavailable").
+- Nothing more for the tray, the notifications, Discord or the desktop
+  shortcuts. On Linux the tray (ksni) and the notifications (notify-rust's
+  zbus backend) speak D-Bus in pure Rust: no libdbus, GTK or
+  libappindicator headers to install, nothing more linked. At run time the
+  tray needs a StatusNotifierItem host (KDE, most panels, GNOME with the
+  AppIndicator extension) and notifications a notification daemon; without
+  them the launcher runs without (closing the window then quits). On
+  Windows the tray is `Shell_NotifyIcon` through tray-icon (windows-sys) and
+  the notifications WinRT toasts, both in the executable; the desktop
+  shortcut is a `.lnk` written by mslnk, without COM. Discord's Rich
+  Presence is its local IPC socket or named pipe, no SDK.
 - uv for everything under `tools/`: `tools/pyproject.toml` and `tools/uv.lock`
   are the one Python project, and every `make` target that needs it runs it as
   `uv run --project tools ...`. Nothing here touches the system Python.

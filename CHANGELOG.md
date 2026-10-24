@@ -72,6 +72,9 @@ notes; without one, the notes are the commit titles since the last release.
   and the launcher stays idle when nothing happens. Servers are now asked
   through one paced connection, as the official launcher does, and the
   server list loads from a cache several times smaller and faster to read.
+  That pace now sets how fast a scan goes, so the ping settings' "Concurrency"
+  slider is gone, and a server Steam's listing finds is no longer asked a
+  second time to measure its ping.
 - **One notification per message.** Some notifications appeared twice;
   launch steps now replace each other instead of piling up.
 - **The window can be resized from its edges again** after it has been

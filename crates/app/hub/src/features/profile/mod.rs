@@ -25,8 +25,6 @@ pub struct ProfileSettingsInput {
     pub steam_id: Option<String>,
     /// (longitude, latitude).
     pub user_location: Option<(f64, f64)>,
-    /// Clamped to 5-100.
-    pub ping_concurrency: u32,
     /// Clamped to 1000-5000 ms.
     pub ping_timeout_auto: u32,
     /// Clamped to 1000-30000 ms.
@@ -99,7 +97,6 @@ impl Hub {
             steam_api_key,
             steam_id,
             user_location,
-            ping_concurrency,
             ping_timeout_auto,
             ping_timeout_manual,
             ping_max_retries,
@@ -128,7 +125,6 @@ impl Hub {
             profile.steam_api_key = steam_api_key;
             profile.steam_id = steam_id;
             profile.user_location = user_location;
-            profile.ping_concurrency = ping_concurrency.clamp(5, 100);
             profile.ping_timeout_auto = ping_timeout_auto.clamp(1000, 5000);
             profile.ping_timeout_manual = ping_timeout_manual.clamp(1000, 30000);
             profile.ping_max_retries = ping_max_retries.min(5);
