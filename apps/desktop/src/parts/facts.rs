@@ -254,9 +254,9 @@ pub struct DetailList {
 }
 
 impl DetailList {
-    pub fn new(id_salt: impl egui::AsId) -> Self {
+    pub fn new(id_salt: impl egui::AsIdSalt) -> Self {
         Self {
-            id: egui::Id::new(id_salt),
+            id: egui::Id::unique(id_salt),
         }
     }
 

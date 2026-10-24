@@ -122,7 +122,7 @@ fn clamp(ui: &Ui, text: &str, font: FontId, line_h: f32, width: f32, rows: usize
         break_anywhere: false,
         overflow_character: Some('…'),
     };
-    let g = ui.painter().layout_job(job.clone());
+    let g = paint::layout_top(ui, job.clone());
     if !g.elided {
         return g;
     }
@@ -140,7 +140,7 @@ fn clamp(ui: &Ui, text: &str, font: FontId, line_h: f32, width: f32, rows: usize
         .unwrap_or_default();
     let mut cut = LayoutJob::single_section(format!("{}…", kept.trim_end()), fmt);
     cut.wrap = job.wrap;
-    ui.painter().layout_job(cut)
+    paint::layout_top(ui, cut)
 }
 
 fn row(

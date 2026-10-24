@@ -41,7 +41,8 @@ pub fn galley_wrap(ui: &Ui, text: &str, font: FontId, color: Color32, width: f32
 /// Text wrapped at `width` with a CSS line height `lh` (px, e.g. `text-xs` = 12 × 1.45):
 /// rows are `lh` apart and the galley is `lines × lh` tall, as the browser lays it out.
 /// The second value is the half-leading: add it to the top when drawing so the glyphs sit
-/// mid-row where CSS puts them (egui sets them at the top of a taller row).
+/// mid-row where CSS puts them (the galley has them at the top of a taller row, as egui
+/// 0.36 did: [`rows_at_top`]).
 pub fn galley_lh(
     ui: &Ui,
     text: &str,
@@ -61,8 +62,67 @@ pub fn galley_lh(
         },
     );
     job.wrap.max_width = width.max(1.0);
-    let g = ui.painter().layout_job(job);
+    let g = layout_top(ui, job);
     (g, ((lh - natural) / 2.0).max(0.0))
+}
+
+/// `job` laid out with its glyphs where egui 0.36 put them in a row of a custom line
+/// height: at the row's top, the leading below them (see [`rows_at_top`]).
+pub fn layout_top(ui: &Ui, job: LayoutJob) -> Arc<Galley> {
+    rows_at_top(ui.painter().layout_job(job))
+}
+
+/// `job` as a wrapping [`egui::Label`] lays it out in a vertical layout, with
+/// [`rows_at_top`]: give it to `Label::new`.
+pub fn label_top(ui: &Ui, mut job: LayoutJob) -> Arc<Galley> {
+    job.wrap.max_width = ui.available_width();
+    job.halign = ui.layout().horizontal_placement();
+    job.justify = ui.layout().horizontal_justify();
+    layout_top(ui, job)
+}
+
+/// Text in rows of a custom line height, moved back to where egui 0.36 drew it: since
+/// 0.37 egui centres the glyphs in the row as CSS does (half the leading above), and the
+/// views that draw such text were placed for the glyphs at the row's top. Each row moves
+/// up by the shift egui applied to its first glyph (exactly, rounding included); a galley
+/// without custom line heights comes back as it was.
+pub fn rows_at_top(g: Arc<Galley>) -> Arc<Galley> {
+    let ppp = g.pixels_per_point.max(f32::EPSILON);
+    let round = |v: f32| (v * ppp).round() / ppp;
+    // The jobs given here share one `valign` across their sections.
+    let valign = g
+        .job
+        .sections
+        .first()
+        .map_or(0.0, |s| s.format.valign.to_factor());
+    let shifts: Vec<f32> = g
+        .rows
+        .iter()
+        .map(|r| {
+            r.row.glyphs.first().map_or(0.0, |gl| {
+                // epaint's placement before the centring term (0.36's whole formula).
+                let at = gl.font_face_ascent
+                    + valign * (r.row.size.y - gl.line_height)
+                    + 0.5 * (gl.font_height - gl.font_face_height);
+                round(at + 0.5 * (gl.line_height - gl.font_height)) - round(at)
+            })
+        })
+        .collect();
+    if shifts.iter().all(|s| *s == 0.0) {
+        return g;
+    }
+    let lo = shifts.iter().copied().fold(f32::INFINITY, f32::min);
+    let hi = shifts.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let mut moved = (*g).clone();
+    for (row, s) in moved.rows.iter_mut().zip(&shifts) {
+        row.pos.y -= s;
+    }
+    let b = moved.mesh_bounds;
+    moved.mesh_bounds = Rect::from_min_max(
+        egui::pos2(b.min.x, b.min.y - hi),
+        egui::pos2(b.max.x, b.max.y - lo),
+    );
+    Arc::new(moved)
 }
 
 /// One line with letter spacing (`tracking`, in em) and optionally upper-cased
@@ -245,4 +305,59 @@ pub fn plate(painter: &Painter, rect: Rect, radius: u8, fill: Color32, border: C
 pub fn tick(painter: &Painter, x: f32, cy: f32, t: &Tokens) {
     let r = Rect::from_center_size(egui::pos2(x + 1.0, cy), egui::vec2(2.0, 10.0));
     painter.rect_filled(r, CornerRadius::same(1), alpha(t.accent, 0.6));
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use crate::theme::fonts::{Face, definitions};
+
+    /// [`rows_at_top`] puts the glyphs exactly where egui 0.36 did: the baselines below
+    /// were read from 0.36 for these sizes, line heights and pixel densities.
+    #[test]
+    fn rows_at_top_matches_egui_0_36() {
+        // (pixels per point, size, line height, 0.36's baseline)
+        let cases: [(f32, f32, f32, f32); 12] = [
+            (1.0, 12.0, 17.4, 12.0),
+            (1.0, 13.0, 17.4, 13.0),
+            (1.0, 11.0, 15.125, 11.0),
+            (1.0, 13.0, 15.125, 13.0),
+            (1.25, 12.0, 17.4, 12.8),
+            (1.25, 13.0, 17.4, 13.6),
+            (1.25, 11.0, 15.125, 11.2),
+            (1.25, 13.0, 15.125, 13.6),
+            (1.5, 12.0, 17.4, 12.0),
+            (1.5, 13.0, 17.4, 13.333_333),
+            (1.5, 11.0, 15.125, 11.333_333),
+            (1.5, 13.0, 15.125, 13.333_333),
+        ];
+        for (ppp, size, lh, want) in cases {
+            let ctx = egui::Context::default();
+            ctx.set_fonts(definitions());
+            let mut raw = egui::RawInput::default();
+            raw.viewports
+                .entry(egui::ViewportId::ROOT)
+                .or_default()
+                .native_pixels_per_point = Some(ppp);
+            for _ in 0..2 {
+                ctx.run_ui(raw.clone(), |_| {}).textures_delta.clear();
+            }
+            let job = LayoutJob::single_section(
+                "Identité".into(),
+                TextFormat {
+                    font_id: FontId::new(size, Face::Sans.family()),
+                    line_height: Some(lh),
+                    ..Default::default()
+                },
+            );
+            let g = rows_at_top(ctx.fonts_mut(|f| f.layout_job(job)));
+            let row = &g.rows[0];
+            let y = row.pos.y + row.row.glyphs[0].pos.y;
+            assert!(
+                (y - want).abs() < 1e-3,
+                "ppp {ppp} size {size} lh {lh}: {y} ≠ {want}"
+            );
+        }
+    }
 }

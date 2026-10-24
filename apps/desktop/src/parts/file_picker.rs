@@ -665,9 +665,9 @@ fn list(
                 egui::pos2(ui.min_rect().left(), top + row_h * i as f32),
                 Vec2::new(rw, row_h),
             );
-            let id = egui::Id::new(("dzch.picker.row", &e.name, e.dir));
+            let id = egui::Id::unique(("dzch.picker.row", &e.name, e.dir));
             let resp = ui.interact(r, id, Sense::click());
-            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &e.name));
+            resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &e.name));
             if i == 0 {
                 crate::pad::primary(ui.ctx(), id);
             }

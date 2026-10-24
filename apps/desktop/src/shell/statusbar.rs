@@ -419,7 +419,7 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx, st: &mut StatusState) {
         if s.act == Some(Act::SteamMenu) {
             ui.ctx().data_mut(|d| {
                 d.insert_temp(
-                    Id::new(("dzch.shell.menu", "steam")),
+                    Id::unique(("dzch.shell.menu", "steam")),
                     egui::Popup::default_response_id(&resp),
                 )
             });
@@ -612,7 +612,7 @@ fn draw(
         pos2(x, line.mid - BODY_H / 2.0),
         vec2(total_w - actions_width(s), BODY_H),
     );
-    let id = Id::new(("sb-seg", s.key));
+    let id = Id::unique(("sb-seg", s.key));
     let sense = if s.act.is_some() {
         Sense::click()
     } else {

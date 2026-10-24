@@ -145,9 +145,7 @@ fn grid(ui: &mut Ui, cards: &[Card<'_>], worn: Option<&str>) -> Option<String> {
         ui.painter()
             .with_clip_rect(clip.intersect(ui.clip_rect()))
             .galley(clip.min, sub, tk.fg_faint);
-        b.widget_info(|| {
-            egui::WidgetInfo::selected(egui::WidgetType::RadioButton, true, on, c.name)
-        });
+        b.widget_info(|| egui::WidgetInfo::selected(egui::Role::RadioButton, true, on, c.name));
         if b.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
             out = Some(c.id.to_string());
         }
@@ -664,7 +662,7 @@ fn follow_button(ui: &mut Ui, on: bool) -> bool {
             tk.accent,
         );
     }
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, label));
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, label));
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
 }

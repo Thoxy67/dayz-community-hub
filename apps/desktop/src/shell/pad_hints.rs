@@ -163,7 +163,7 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx) {
         let r = ui.max_rect();
         // Foreground: over the dialogs' veil and plates (dialogs keep clear of the bar,
         // `kit::dialog::bottom_inset`), under the keyboard and tooltips (`Order::Tooltip`).
-        let layer = LayerId::new(Order::Foreground, Id::new("shell.padhints.over"));
+        let layer = LayerId::new(Order::Foreground, Id::unique("shell.padhints.over"));
         let mut over = ui.new_child(UiBuilder::new().layer_id(layer).max_rect(r));
         over.set_clip_rect(r);
         draw(&mut over, cx);

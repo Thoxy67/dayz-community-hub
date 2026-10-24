@@ -67,9 +67,9 @@ pub struct Split<'a> {
 
 impl<'a> Split<'a> {
     /// Side by side, the sized pane at the end, `initial` wide.
-    pub fn new(id_salt: impl egui::AsId, initial: f32) -> Self {
+    pub fn new(id_salt: impl egui::AsIdSalt, initial: f32) -> Self {
         Self {
-            id: Id::new(id_salt),
+            id: Id::unique(id_salt),
             vertical: true,
             pane: Pane::End,
             initial,
@@ -211,14 +211,14 @@ impl<'a> Split<'a> {
     }
 
     /// The size remembered for a split (for a prefs store that saves it elsewhere).
-    pub fn saved(ctx: &egui::Context, id_salt: impl egui::AsId) -> Option<f32> {
-        ctx.data_mut(|d| d.get_persisted(Id::new(id_salt)))
+    pub fn saved(ctx: &egui::Context, id_salt: impl egui::AsIdSalt) -> Option<f32> {
+        ctx.data_mut(|d| d.get_persisted(Id::unique(id_salt)))
     }
 
     /// Sets the remembered size (restoring it from a prefs store).
-    pub fn restore(ctx: &egui::Context, id_salt: impl egui::AsId, size: f32) {
+    pub fn restore(ctx: &egui::Context, id_salt: impl egui::AsIdSalt, size: f32) {
         if size.is_finite() {
-            ctx.data_mut(|d| d.insert_persisted(Id::new(id_salt), size));
+            ctx.data_mut(|d| d.insert_persisted(Id::unique(id_salt), size));
         }
     }
 }
@@ -265,7 +265,7 @@ impl<'a> Splitter<'a> {
         };
         let resp = ui.interact(hit, self.id, Sense::click_and_drag());
         let label = self.label;
-        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, label));
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, label));
         let mut out = SplitterOutput::default();
         if resp.dragged() {
             let d = resp.drag_delta();

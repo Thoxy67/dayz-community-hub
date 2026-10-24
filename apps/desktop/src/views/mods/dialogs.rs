@@ -263,7 +263,7 @@ fn review(ctx: &egui::Context, cx: &Ctx, pending: &mut Option<Review>, out: &mut
     let run = std::cell::RefCell::new(Vec::<(&'static str, Value)>::new());
     let mut open = pending.is_some();
     // The dialog fades out with what it showed: kept for that moment.
-    let shown_id = egui::Id::new("mods-review-last");
+    let shown_id = egui::Id::unique("mods-review-last");
     if let Some(p) = pending.as_ref() {
         ctx.data_mut(|d| d.insert_temp(shown_id, std::sync::Arc::new(p.clone())));
     }

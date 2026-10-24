@@ -385,7 +385,8 @@ pub(crate) fn exe_from_zip(zip_bytes: &[u8]) -> Result<Vec<u8>, String> {
     let is_exe = |n: &str| n.to_ascii_lowercase().ends_with(".exe");
     let at_root = |n: &str| !n.contains('/') && !n.contains('\\');
     let names: Vec<(usize, String)> = (0..archive.len())
-        .filter_map(|i| archive.name_for_index(i).map(|n| (i, n.to_owned())))
+        // A name that does not decode cannot be the executable: skipped.
+        .filter_map(|i| Some((i, archive.name_for_index(i)?.ok()?.into_owned())))
         .collect();
     // The one at the root first (where the release puts it), else any.
     let exe_index = names
@@ -529,6 +530,27 @@ mod tests {
         verify_signature(&data, &right, &key.pubkey(), true, Some("0.6.0")).unwrap();
         // A signature that is not base64: an error, not a crash.
         assert!(verify_signature(&data, "%%%", &key.pubkey(), true, None).is_err());
+    }
+
+    /// A key and signatures frozen as ed25519-dalek 2 / blake2 0.10 made them (seed 7,
+    /// `TAURI_COMMENT`): Ed25519 is deterministic, so the test key must still produce
+    /// them byte for byte, and the updater must still accept them. Keeps an upgrade of
+    /// the signing crates from drifting away from the format installed copies check.
+    #[test]
+    fn a_frozen_signature_still_verifies() {
+        use crate::features::updater::testkit::{TAURI_COMMENT, TestKey};
+        const DATA: &[u8] = b"dzch known vector";
+        const PUB: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDA3MDYwNTA0MDMwMjAxMDcKUldRSEFRSURCQVVHQitwS2JHUGluRklLdnZWUWV4TXV4Zm1WUjNhdXZyNTdra0llNm1rVVJ0SXMK";
+        const SIG_PREHASHED: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRSEFRSURCQVVHQi8vSEV2QmJ0US9jNmFwUXoyZnhzV2R0TlVLeE94YmUzbGM0cHFWekdOeUVWeUR6cFVSSk92Y0dmUkNPL2lzT3VVeWxVYVQ3ZFh2U3Z0N1F0cURlR1FrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzYwMzE4MDMyCWZpbGU6ZGF5ei1jb21tdW5pdHktaHViLkFwcEltYWdlCk12cFMxUFRhcytjcXd6TEdUc0Z0ZGJYRTVhZjZrSmJESHdXc2tURWg0ZjgwRkl6QSt3elFSbFVadENYVDRLQWhTZEE5ZmUrRUtqUWt3N2VwWHVpaUFRPT0K";
+        const SIG_LEGACY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUldRSEFRSURCQVVHQjl6TE1LK1g3cnpIcUF5RHRuSnQ4UkljM3dRV0tRNUdFVDlVWS9SWTBQM204dXA3N0ZnYklaZDAySkRVakxxYWw1MEQ4dkZ1TGNaYnkrdnQ5SjAzMHd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzYwMzE4MDMyCWZpbGU6ZGF5ei1jb21tdW5pdHktaHViLkFwcEltYWdlCkE5STBGQnJXeEpZcFBaNWtSVXo0M3lteGlpNXdIVkxSMkJwa1RGUk5XSGN6TkNJcVJyR21KOHIzOEEyMlo2UWhhMzhDQ3NlUCt4NG1JeXh4b1NlN0NnPT0K";
+        let key = TestKey::new(7);
+        assert_eq!(key.pubkey(), PUB);
+        assert_eq!(key.sign(DATA, true, TAURI_COMMENT), SIG_PREHASHED);
+        assert_eq!(key.sign(DATA, false, TAURI_COMMENT), SIG_LEGACY);
+        verify_signature(DATA, SIG_PREHASHED, PUB, true, None).unwrap();
+        verify_signature(DATA, SIG_PREHASHED, PUB, false, None).unwrap();
+        verify_signature(DATA, SIG_LEGACY, PUB, true, None).unwrap();
+        assert!(verify_signature(b"dzch known vectoR", SIG_PREHASHED, PUB, true, None).is_err());
     }
 
     fn zip_of(entries: &[(&str, &[u8])]) -> Vec<u8> {

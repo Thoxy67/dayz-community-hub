@@ -6,9 +6,7 @@
 //! after a label sits in a small mono well. The strip scrolls sideways without a bar when
 //! the tabs do not fit. Arrows, Home and End move the tab from the keyboard.
 
-use egui::{
-    Color32, CornerRadius, Id, Rect, Response, Sense, Ui, Vec2, Widget, WidgetInfo, WidgetType,
-};
+use egui::{Color32, CornerRadius, Id, Rect, Response, Role, Sense, Ui, Vec2, Widget, WidgetInfo};
 
 use super::input::FieldSize;
 use super::paint::{self, alpha};
@@ -84,9 +82,9 @@ pub struct TabStrip<'a, V: PartialEq + Clone> {
 }
 
 impl<'a, V: PartialEq + Clone> TabStrip<'a, V> {
-    pub fn new(id_salt: impl egui::AsId, value: &'a mut V, tabs: &'a [Tab<'a, V>]) -> Self {
+    pub fn new(id_salt: impl egui::AsIdSalt, value: &'a mut V, tabs: &'a [Tab<'a, V>]) -> Self {
         Self {
-            id: Id::new(id_salt),
+            id: Id::unique(id_salt),
             value,
             tabs,
             size: FieldSize::Sm,
@@ -198,9 +196,7 @@ impl<V: PartialEq + Clone> Widget for TabStrip<'_, V> {
                 let tr = ui.interact(r, id, Sense::click());
                 let on = Some(i) == current;
                 let label = tab.label;
-                tr.widget_info(|| {
-                    WidgetInfo::selected(WidgetType::SelectableLabel, true, on, label)
-                });
+                tr.widget_info(|| WidgetInfo::selected(Role::Button, true, on, label));
                 if tr.clicked() && !on {
                     moved = Some(tab.id.clone());
                 }

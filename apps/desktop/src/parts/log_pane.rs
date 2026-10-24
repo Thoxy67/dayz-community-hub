@@ -234,6 +234,8 @@ struct LogState {
     started: bool,
     /// A command asked to go back to the end (`log.follow`).
     jump: bool,
+    /// The offset the next frame's scroller starts at (going back to the end).
+    scroll_to: Option<f32>,
 }
 
 type Shared = Arc<Mutex<LogState>>;
@@ -316,9 +318,9 @@ pub struct LogPane<'a> {
 const LINE_H: f32 = 17.0;
 
 impl<'a> LogPane<'a> {
-    pub fn new(id_salt: impl egui::AsId, lines: &'a [String]) -> Self {
+    pub fn new(id_salt: impl egui::AsIdSalt, lines: &'a [String]) -> Self {
         Self {
-            id: Id::new(id_salt),
+            id: Id::unique(id_salt),
             lines,
             times: None,
             title: "log",
@@ -349,15 +351,15 @@ impl<'a> LogPane<'a> {
     }
 
     /// `log.filter`: the filter of the pane shown under `id_salt` (applied as it draws).
-    pub fn set_filter(ctx: &egui::Context, id_salt: impl egui::AsId, text: &str) {
-        let st = state_of(ctx, Id::new(id_salt));
+    pub fn set_filter(ctx: &egui::Context, id_salt: impl egui::AsIdSalt, text: &str) {
+        let st = state_of(ctx, Id::unique(id_salt));
         st.lock().filter = text.chars().take(256).collect();
         ctx.request_repaint();
     }
 
     /// `log.follow`: back to the end, following it.
-    pub fn follow(ctx: &egui::Context, id_salt: impl egui::AsId) {
-        let st = state_of(ctx, Id::new(id_salt));
+    pub fn follow(ctx: &egui::Context, id_salt: impl egui::AsIdSalt) {
+        let st = state_of(ctx, Id::unique(id_salt));
         st.lock().jump = true;
         ctx.request_repaint();
     }
@@ -365,12 +367,12 @@ impl<'a> LogPane<'a> {
     /// `log.copy`: copy the lines (the pane's button says "Copied" a moment).
     pub fn copy(
         ctx: &egui::Context,
-        id_salt: impl egui::AsId,
+        id_salt: impl egui::AsIdSalt,
         lines: &[String],
         times: Option<&[f64]>,
     ) {
         ctx.copy_text(copy_text(lines, times));
-        let st = state_of(ctx, Id::new(id_salt));
+        let st = state_of(ctx, Id::unique(id_salt));
         st.lock().copied_at = Some(ctx.input(|i| i.time));
         ctx.request_repaint();
     }
@@ -471,10 +473,13 @@ impl<'a> LogPane<'a> {
         let n = st.shown.len();
         let cursor = self.live && st.filter.trim().is_empty();
         let rows = n + usize::from(cursor);
-        let area = egui::ScrollArea::vertical()
+        let mut area = egui::ScrollArea::vertical()
             .id_salt(self.id.with("scroll"))
             .auto_shrink([false, false])
             .stick_to_bottom(true);
+        if let Some(y) = st.scroll_to.take() {
+            area = area.vertical_scroll_offset(y);
+        }
         let mono = font(Face::Mono, size::TEXT_2XS);
         let time_w = if self.times.is_some() {
             56.0 + 12.0
@@ -542,12 +547,11 @@ impl<'a> LogPane<'a> {
                 }
             }
         });
-        let at_end = out.state.offset.y + out.inner_rect.height() >= out.content_size.y - 24.0;
+        let at_end =
+            out.state.clamped_offset().y + out.inner_rect.height() >= out.content_size.y - 24.0;
         st.follow = at_end;
         if std::mem::take(&mut st.jump) && !at_end {
-            let mut s = out.state;
-            s.offset.y = (out.content_size.y - out.inner_rect.height()).max(0.0);
-            s.store(ui.ctx(), out.id);
+            st.scroll_to = Some((out.content_size.y - out.inner_rect.height()).max(0.0));
             st.follow = true;
             ui.ctx().request_repaint();
         }
@@ -574,9 +578,7 @@ impl<'a> LogPane<'a> {
             );
             draw(p, &g, br.left() + 30.0, br.center().y, tk.accent_fg);
             if r.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                let mut s = out.state;
-                s.offset.y = (out.content_size.y - out.inner_rect.height()).max(0.0);
-                s.store(ui.ctx(), out.id);
+                st.scroll_to = Some((out.content_size.y - out.inner_rect.height()).max(0.0));
                 st.follow = true;
                 ui.ctx().request_repaint();
             }

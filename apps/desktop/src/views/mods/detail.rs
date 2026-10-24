@@ -274,7 +274,7 @@ fn body(ui: &mut Ui, mods: &Mods, m: &InstalledModDto, busy: bool, run: &mut Run
                             Pos2::new(ui.max_rect().right(), ui.cursor().top()),
                         );
                         let _ = ui
-                            .interact(r, ui.id().with("steam-reason"), Sense::hover())
+                            .interact(r, ui.scope_id().with("steam-reason"), Sense::hover())
                             .tip(reason);
                     }
                 }

@@ -194,13 +194,13 @@ pub(super) fn show(ctx: &Context, cx: &mut Ctx, st: &mut Palette) {
         st.searched.clear();
         st.sig = None;
         // What `palette.connect_address` opens it typed into.
-        if let Some(seed) = ctx.data_mut(|d| d.remove_temp::<String>(egui::Id::new(SEED))) {
+        if let Some(seed) = ctx.data_mut(|d| d.remove_temp::<String>(egui::Id::unique(SEED))) {
             st.query = seed;
         }
     }
     st.was_open = open;
     let a = ctx.animate_bool_with_time(
-        egui::Id::new("dzch.palette.shown"),
+        egui::Id::unique("dzch.palette.shown"),
         open,
         if open { 0.14 } else { 0.10 },
     );
@@ -253,7 +253,7 @@ pub(super) fn show(ctx: &Context, cx: &mut Ctx, st: &mut Palette) {
             close = true;
         }
         // Moves asked by `palette.navigate` (a pad, the control channel).
-        let moves = ctx.data_mut(|d| d.remove_temp::<Vec<String>>(egui::Id::new(MOVES)));
+        let moves = ctx.data_mut(|d| d.remove_temp::<Vec<String>>(egui::Id::unique(MOVES)));
         for m in moves.unwrap_or_default() {
             match m.as_str() {
                 "down" => go(st, (st.active + 1) % n, flat_len),
@@ -273,11 +273,11 @@ pub(super) fn show(ctx: &Context, cx: &mut Ctx, st: &mut Palette) {
     let screen = ctx.content_rect();
     let w = (screen.width() - 32.0).clamp(200.0, 672.0);
     let max_h = (screen.height() * 0.72).max(160.0);
-    let area = egui::Modal::default_area(egui::Id::new("dzch.palette")).anchor(
+    let area = egui::Modal::default_area(egui::Id::unique("dzch.palette")).anchor(
         Align2::CENTER_TOP,
         vec2(0.0, screen.height() * 0.12 + 2.0 * (1.0 - a)),
     );
-    let modal = egui::Modal::new(egui::Id::new("dzch.palette"))
+    let modal = egui::Modal::new(egui::Id::unique("dzch.palette"))
         .area(area)
         .frame(egui::Frame::NONE)
         .backdrop_color(paint::alpha(tk.plot, 0.6 * a));
@@ -348,7 +348,11 @@ fn header(ui: &mut Ui, st: &mut Palette, open: bool, w: f32) {
             .text_color(tk.fg)
             .hint_text(hint)
             .desired_width(field.width())
-            .margin(egui::Margin::ZERO),
+            .margin(egui::Margin::ZERO)
+            // Centred in the field's height (egui 0.37 lays the hint at the top of a
+            // taller widget).
+            .min_size(Vec2::new(0.0, field.height()))
+            .align(Align2::LEFT_CENTER),
     );
     if open && !resp.has_focus() {
         resp.request_focus();
@@ -391,7 +395,7 @@ fn list(ui: &mut Ui, st: &mut Palette, w: f32, max_h: f32, tk: &Tokens) -> Optio
                         pos2(row.left() + 4.0, row.top()),
                         vec2(inner_w, ROW_H),
                     );
-                    let resp = ui.interact(r, ui.id().with(("pal", i)), Sense::click());
+                    let resp = ui.interact(r, ui.scope_id().with(("pal", i)), Sense::click());
                     if resp.hovered() && pointer_moved {
                         st.active = i;
                     }

@@ -8,8 +8,8 @@
 //! control. The pad walks the rows (each is focusable) and A ticks.
 
 use egui::{
-    Color32, CornerRadius, Id, Popup, PopupCloseBehavior, Rect, RectAlign, Response, Sense, Ui,
-    Vec2, Widget, WidgetInfo, WidgetType,
+    Color32, CornerRadius, Id, Popup, PopupCloseBehavior, Rect, RectAlign, Response, Role, Sense,
+    Ui, Vec2, Widget, WidgetInfo,
 };
 
 use super::paint;
@@ -36,12 +36,12 @@ pub struct MultiSelect<'a, V: PartialEq + Clone> {
 
 impl<'a, V: PartialEq + Clone> MultiSelect<'a, V> {
     pub fn new(
-        id_salt: impl egui::AsId,
+        id_salt: impl egui::AsIdSalt,
         values: &'a mut Vec<V>,
         options: &'a [SelectOption<'a, V>],
     ) -> Self {
         Self {
-            id: Id::new(id_salt),
+            id: Id::unique(id_salt),
             values,
             options,
             placeholder: "",
@@ -174,7 +174,7 @@ impl<V: PartialEq + Clone> Widget for MultiSelect<'_, V> {
         } else {
             self.label
         };
-        resp.widget_info(|| WidgetInfo::labeled(WidgetType::ComboBox, true, label));
+        resp.widget_info(|| WidgetInfo::labeled(Role::ComboBox, true, label));
         let set = !self.values.is_empty();
         trigger(ui, rect, &resp, shown, set, open, self.enabled);
         if !self.enabled {
@@ -390,7 +390,7 @@ fn check_item(ui: &mut Ui, label: &str, on: bool, faint: bool, highlighted: bool
     let t = ui.tokens();
     let w = ui.available_width();
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, size::menu_row()), Sense::click());
-    resp.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, true, on, label));
+    resp.widget_info(|| WidgetInfo::selected(Role::CheckBox, true, on, label));
     let lit = highlighted || resp.hovered() || resp.has_focus();
     let hover = paint::ease(ui, resp.id.with("hover"), lit);
     ui.painter().rect_filled(

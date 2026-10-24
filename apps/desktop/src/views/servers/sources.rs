@@ -148,12 +148,12 @@ pub fn bar(ui: &mut Ui, s: &SourcesChanged, open: bool) {
                 Vec2::new(g.size().x, BAR_H),
             );
             let _ = ui
-                .interact(r, ui.id().with("dup-hint"), Sense::hover())
+                .interact(r, ui.scope_id().with("dup-hint"), Sense::hover())
                 .tip_kbd(t("sources", "duplicatesHint"), "", Side::Bottom);
         }
     }
     let dr = Rect::from_min_size(Pos2::new(x, cy - 9.0), Vec2::new(details_w, 18.0));
-    let dresp = ui.interact(dr, ui.id().with("sources-details"), Sense::click());
+    let dresp = ui.interact(dr, ui.scope_id().with("sources-details"), Sense::click());
     let open_now = menu::is_open(&dresp);
     let h = paint::ease(ui, dresp.id.with("hover"), dresp.hovered() || open_now);
     {
@@ -170,7 +170,7 @@ pub fn bar(ui: &mut Ui, s: &SourcesChanged, open: bool) {
             paint::focus_ring(p, dr, size::RADIUS_XS, &tk);
         }
     }
-    dresp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, details_label));
+    dresp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, details_label));
     let dresp = dresp.on_hover_cursor(egui::CursorIcon::PointingHand);
     if open && !open_now {
         egui::Popup::open_id(ui.ctx(), egui::Popup::default_response_id(&dresp));

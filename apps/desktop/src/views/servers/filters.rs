@@ -441,7 +441,7 @@ fn map_names(
 ) -> Arc<MapNames> {
     // The length too: a guard should the maps ever change under one generation.
     let key = generation ^ ((maps.len() as u64) << 48);
-    let id = egui::Id::new("dzch.servers.map_names");
+    let id = egui::Id::unique("dzch.servers.map_names");
     if let Some(n) = ctx.data(|d| d.get_temp::<Arc<MapNames>>(id))
         && n.key == key
     {
@@ -608,9 +608,7 @@ impl Widget for TriChip<'_> {
             Tri::Only | Tri::None => true,
         };
         let label = self.label;
-        resp.widget_info(|| {
-            egui::WidgetInfo::selected(egui::WidgetType::Button, true, pressed, label)
-        });
+        resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, pressed, label));
         resp.on_hover_cursor(egui::CursorIcon::PointingHand)
             .tip_kbd(self.tip, "", Side::Bottom)
     }
@@ -681,7 +679,7 @@ fn more_filters(ui: &mut Ui, f: &mut Filters, d: &ToolbarData, win_w: f32, run: 
             paint::focus_ring(p, rect, size::RADIUS_SM, &tk);
         }
     }
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
     let resp = resp
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .tip_kbd(label, "", Side::Bottom);
@@ -925,7 +923,7 @@ fn suggestion_row(ui: &mut Ui, name: &str) -> Response {
     let tk = ui.tokens();
     let w = ui.available_width();
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 26.0), Sense::click());
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, name));
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
     if ui.is_rect_visible(rect) {
         let hover = paint::ease(
             ui,
@@ -1027,7 +1025,7 @@ fn excluded_row(ui: &mut Ui, shown: bool, n: usize) -> Response {
     if paint::keyboard_focus(ui, &resp) {
         paint::focus_ring(p, rect.shrink(2.0), size::RADIUS_XS, &tk);
     }
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, words));
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, words));
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
@@ -1140,7 +1138,7 @@ fn chip_line(ui: &mut Ui, chips: &[(&'static str, String)], run: &mut Run) {
                 Vec2::splat(16.0),
             );
             let remove = tf("servers", "filterRemove", &[("label", text)]);
-            let x = ui.interact(xr, ui.id().with(("chip-x", *key)), Sense::click());
+            let x = ui.interact(xr, ui.scope_id().with(("chip-x", *key)), Sense::click());
             let h = paint::ease(ui, x.id.with("hover"), x.hovered());
             let p = ui.painter();
             p.rect_filled(
@@ -1156,9 +1154,7 @@ fn chip_line(ui: &mut Ui, chips: &[(&'static str, String)], run: &mut Run) {
             if paint::keyboard_focus(ui, &x) {
                 paint::focus_ring(p, xr, size::RADIUS_XS, &tk);
             }
-            x.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::Button, true, remove.as_str())
-            });
+            x.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, remove.as_str()));
             let x = x.on_hover_cursor(egui::CursorIcon::PointingHand).tip_kbd(
                 &remove,
                 "",
@@ -1193,7 +1189,7 @@ fn chip_line(ui: &mut Ui, chips: &[(&'static str, String)], run: &mut Run) {
         if paint::keyboard_focus(ui, &resp) {
             paint::focus_ring(p, rect, size::RADIUS_SM, &tk);
         }
-        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
         if resp
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .clicked()

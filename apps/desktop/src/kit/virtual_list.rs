@@ -43,9 +43,9 @@ pub struct VirtualList {
 }
 
 impl VirtualList {
-    pub fn new(id_salt: impl egui::AsId, count: usize) -> Self {
+    pub fn new(id_salt: impl egui::AsIdSalt, count: usize) -> Self {
         Self {
-            id: Id::new(id_salt),
+            id: Id::unique(id_salt),
             count,
             row_height: crate::theme::size::ROW,
             overscan: 1,
@@ -172,7 +172,7 @@ impl VirtualList {
             }
             first..last
         });
-        let offset = out.state.offset.y;
+        let offset = out.state.clamped_offset().y;
         ui.data_mut(|d| d.insert_temp(self.id.with("view"), (offset, out.inner_rect.height())));
         if let Some(cursor) = self.cursor {
             let vp = out.inner_rect;

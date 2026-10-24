@@ -132,7 +132,7 @@ struct Cache {
 type SharedCache = Arc<Mutex<Cache>>;
 
 fn cache(ctx: &egui::Context) -> SharedCache {
-    let id = egui::Id::new("dzch-icon-cache");
+    let id = egui::Id::unique("dzch-icon-cache");
     // A read lock on the context once the cache exists; the write lock only to make it.
     ctx.data(|d| d.get_temp::<SharedCache>(id))
         .unwrap_or_else(|| ctx.data_mut(|d| d.get_temp_mut_or_default::<SharedCache>(id).clone()))

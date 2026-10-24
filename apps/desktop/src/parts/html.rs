@@ -13,6 +13,7 @@ use egui::{
     Color32, CornerRadius, FontId, Pos2, Rect, Sense, Stroke, StrokeKind, TextFormat, Ui, Vec2,
 };
 
+use crate::kit::paint;
 use crate::theme::{Tokens, TokensExt, font, fonts::Face, size};
 
 /// A run of text and how it is set.
@@ -699,7 +700,7 @@ impl<'a> SafeHtml<'a> {
         // Each block's height the last time it was laid out: one memo per pane and
         // document, started over when the width changes (a resize does not leave one
         // per width behind). Taken out for the pass and put back at the end.
-        let key = ui.id().with(("html-heights", self.doc.stamp));
+        let key = ui.scope_id().with(("html-heights", self.doc.stamp));
         let width = w.round() as i32;
         let mut heights = ui.data_mut(|d| {
             let m = d.get_temp_mut_or_default::<Heights>(key);
@@ -743,7 +744,7 @@ impl<'a> SafeHtml<'a> {
                 ui.add_space(known);
                 continue;
             }
-            let id = ui.id().with(("html-block", bi));
+            let id = ui.scope_id().with(("html-block", bi));
             match block {
                 Block::Heading(l, spans) => {
                     let s = heading_size(*l);
@@ -916,7 +917,7 @@ impl<'a> SafeHtml<'a> {
         links: &[(Range<usize>, usize)],
         id: egui::Id,
     ) -> Option<HtmlAction> {
-        let g = ui.painter().layout_job(j);
+        let g = paint::layout_top(ui, j);
         let sense = if links.is_empty() {
             Sense::hover()
         } else {

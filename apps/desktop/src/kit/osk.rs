@@ -213,7 +213,7 @@ struct State {
 }
 
 fn state_id() -> Id {
-    Id::new("dzch.kit.osk")
+    Id::unique("dzch.kit.osk")
 }
 
 fn load(ctx: &Context) -> Option<State> {
@@ -471,7 +471,7 @@ pub fn show(ctx: &Context, labels: &Labels<'_>, hints: impl FnOnce(&mut Ui)) {
                                 K::Right => "\u{2192}",
                             };
                             resp.widget_info(|| {
-                                egui::WidgetInfo::labeled(egui::WidgetType::Button, true, name)
+                                egui::WidgetInfo::labeled(egui::Role::Button, true, name)
                             });
                             let look = Look {
                                 on: s.row == ri && s.col == ci,
@@ -566,7 +566,7 @@ mod tests {
 
     fn state(layout: Layout) -> State {
         State {
-            target: Id::new("field"),
+            target: Id::unique("field"),
             layout,
             shift: false,
             row: 1,

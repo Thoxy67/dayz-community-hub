@@ -119,7 +119,7 @@ pub(crate) fn ring(ui: &egui::Ui, resp: &egui::Response, rect: egui::Rect, radiu
 
 fn state(ctx: &egui::Context) -> Arc<Mutex<State>> {
     ctx.data_mut(|d| {
-        d.get_temp_mut_or_default::<Arc<Mutex<State>>>(egui::Id::new("dzch.shell"))
+        d.get_temp_mut_or_default::<Arc<Mutex<State>>>(egui::Id::unique("dzch.shell"))
             .clone()
     })
 }
@@ -155,7 +155,7 @@ pub fn cmd_window(cx: &mut Ctx, a: &serde_json::Value) {
 fn open_menu(cx: &Ctx, which: &str) {
     let id = cx
         .egui
-        .data(|d| d.get_temp::<egui::Id>(egui::Id::new(("dzch.shell.menu", which))));
+        .data(|d| d.get_temp::<egui::Id>(egui::Id::unique(("dzch.shell.menu", which))));
     if let Some(id) = id {
         egui::Popup::open_id(cx.egui, id);
     }
@@ -182,7 +182,7 @@ pub fn cmd_palette_actions(cx: &mut Ctx, _: &serde_json::Value) {
 pub fn cmd_palette_address(cx: &mut Ctx, a: &serde_json::Value) {
     let text: String = arg(a, "address").unwrap_or("").chars().take(256).collect();
     cx.egui
-        .data_mut(|d| d.insert_temp(egui::Id::new(palette::SEED), text));
+        .data_mut(|d| d.insert_temp(egui::Id::unique(palette::SEED), text));
     cx.stores.dialogs.shortcuts = false;
     cx.stores.dialogs.palette = false;
     // Reopened on the next frame so the seed is read as it opens.
@@ -197,7 +197,7 @@ pub fn cmd_palette_navigate(cx: &mut Ctx, a: &serde_json::Value) {
     };
     let m = m.to_string();
     cx.egui.data_mut(|d| {
-        let q = d.get_temp_mut_or_default::<Vec<String>>(egui::Id::new(palette::MOVES));
+        let q = d.get_temp_mut_or_default::<Vec<String>>(egui::Id::unique(palette::MOVES));
         if q.len() < 64 {
             q.push(m);
         }

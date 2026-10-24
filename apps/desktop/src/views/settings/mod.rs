@@ -109,7 +109,7 @@ type Queue = Arc<Mutex<Vec<Req>>>;
 
 fn queue(ctx: &egui::Context) -> Queue {
     ctx.data_mut(|d| {
-        d.get_temp_mut_or_default::<Queue>(Id::new("dzch.settings.queue"))
+        d.get_temp_mut_or_default::<Queue>(Id::unique("dzch.settings.queue"))
             .clone()
     })
 }
@@ -854,7 +854,7 @@ impl SettingsView {
             // Room for the unsaved bar under the last field (`pb-24`).
             ui.add_space(96.0);
         });
-        self.offset = out.state.offset.y;
+        self.offset = out.state.clamped_offset().y;
         self.tops = tops;
         // The section being read: the last whose top passed the scroller's top.
         let screen: Vec<(&str, f32)> = self
@@ -869,7 +869,7 @@ impl SettingsView {
         }
 
         // The unsaved bar.
-        let shown = paint::ease(ui, Id::new("settings.unsaved"), dirty);
+        let shown = paint::ease(ui, Id::unique("settings.unsaved"), dirty);
         if shown > 0.0 {
             self.unsaved_bar(ui, cx, srect, shown, &tk);
         }
@@ -901,7 +901,7 @@ impl SettingsView {
         p.add(paint::shadow_pop().as_shape(rect, CornerRadius::same(size::RADIUS_MD)));
         paint::plate(&p, rect, size::RADIUS_MD, tk.overlay, alpha(tk.warn, 0.5));
         // Clicks on the bar never reach the page under it.
-        bui.interact(rect, Id::new("settings-unsaved-bg"), Sense::CLICK);
+        bui.interact(rect, Id::unique("settings-unsaved-bg"), Sense::CLICK);
         bui.add_space(12.0);
         let (ir, _) = bui.allocate_exact_size(Vec2::splat(size::ICON), Sense::hover());
         lucide::TRIANGLE_ALERT.paint(&p, ir, tk.warn);

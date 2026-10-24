@@ -2,9 +2,7 @@
 //! (`rounded-sm border bg-bg`, hairlines between), the chosen one lit
 //! (`bg-accent/15 text-accent`). Arrows move the choice.
 
-use egui::{
-    Color32, CornerRadius, Id, Rect, Response, Sense, Ui, Vec2, Widget, WidgetInfo, WidgetType,
-};
+use egui::{Color32, CornerRadius, Id, Rect, Response, Role, Sense, Ui, Vec2, Widget, WidgetInfo};
 
 use super::input::FieldSize;
 use super::paint::{self, alpha, fade};
@@ -147,7 +145,7 @@ impl<V: PartialEq + Clone> Widget for Segmented<'_, V> {
             let ir = ui.interact(r, id, sense);
             let label = o.label;
             let checked = o.value == *self.value;
-            ir.widget_info(|| WidgetInfo::selected(WidgetType::RadioButton, en, checked, label));
+            ir.widget_info(|| WidgetInfo::selected(Role::RadioButton, en, checked, label));
             if ir.clicked() && !checked {
                 moved = Some(o.value.clone());
             }

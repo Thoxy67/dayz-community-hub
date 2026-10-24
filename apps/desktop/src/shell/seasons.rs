@@ -74,7 +74,7 @@ pub fn paint(ctx: &Context, r: Regions) {
         return;
     }
     let tk = ctx.tokens();
-    let layer = LayerId::new(Order::Middle, Id::new("dzch.season"));
+    let layer = LayerId::new(Order::Middle, Id::unique("dzch.season"));
     let p = ctx.layer_painter(layer).with_clip_rect(r.window);
     // The edge things rest on: the status bar's, or in pad mode the pad hints' beside
     // the rail (snow on the hints' glyphs would cover them).

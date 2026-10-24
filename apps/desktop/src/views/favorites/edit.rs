@@ -91,7 +91,7 @@ type Shared = Arc<Mutex<DialogsState>>;
 
 fn shared(ctx: &egui::Context) -> Shared {
     ctx.data_mut(|d| {
-        d.get_temp_mut_or_insert_with(Id::new("dzch.favorites.dialogs"), || {
+        d.get_temp_mut_or_insert_with(Id::unique("dzch.favorites.dialogs"), || {
             Arc::new(Mutex::new(DialogsState::default()))
         })
         .clone()
@@ -225,7 +225,7 @@ fn swatches(
     let tk = ui.tokens();
     let (rect, _) =
         ui.allocate_exact_size(Vec2::new(swatches_width(), size::CONTROL), Sense::hover());
-    let base = ui.id().with(("label-swatches", id));
+    let base = ui.scope_id().with(("label-swatches", id));
     let mut changed = false;
     for (i, c) in LabelColor::ALL.into_iter().enumerate() {
         let x = rect.left() + i as f32 * (SWATCH + SWATCH_GAP);

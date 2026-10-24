@@ -9,8 +9,8 @@
 use std::sync::Arc;
 
 use egui::{
-    Color32, CornerRadius, Galley, Id, Painter, Pos2, Rect, Response, Sense, Stroke, StrokeKind,
-    Ui, Vec2, Widget, WidgetInfo, WidgetType,
+    Color32, CornerRadius, Galley, Id, Painter, Pos2, Rect, Response, Role, Sense, Stroke,
+    StrokeKind, Ui, Vec2, Widget, WidgetInfo,
 };
 
 use super::text::{draw, ph};
@@ -532,7 +532,7 @@ impl Widget for ModsCount {
             );
         }
         let tip = mods_tip(self.count, self.missing, self.stale);
-        resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &tip));
+        resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, &tip));
         let resp = if self.clickable {
             resp.on_hover_cursor(egui::CursorIcon::PointingHand)
         } else {
@@ -994,7 +994,7 @@ impl Widget for FavoriteButton {
         }
         let label = star_label(self.on);
         let on = self.on;
-        resp.widget_info(|| WidgetInfo::selected(WidgetType::Button, true, on, label));
+        resp.widget_info(|| WidgetInfo::selected(Role::Button, true, on, label));
         resp.on_hover_cursor(egui::CursorIcon::PointingHand)
             .tip_kbd(label, "", Side::Top)
     }
@@ -1185,7 +1185,7 @@ impl Widget for JoinButton {
         };
         if self.quiet && self.compact {
             let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size::CONTROL), Sense::click());
-            resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, label));
+            resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, label));
             if ui.is_rect_visible(rect) {
                 let hover = paint::ease(ui, resp.id.with("hover"), resp.hovered());
                 let lit = paint::ease(

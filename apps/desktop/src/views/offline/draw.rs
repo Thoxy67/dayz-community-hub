@@ -337,7 +337,7 @@ fn card(
     run: &mut Run,
 ) -> bool {
     let tk = ui.tokens();
-    let id = ui.id().with(("offline-card", &m.id));
+    let id = ui.scope_id().with(("offline-card", &m.id));
     let resp = ui.interact(rect, id, Sense::click());
     // A controller's X launches the card its focus is on.
     crate::pad::tag(ui.ctx(), rect, json!({ "mission": m.id }));
@@ -589,7 +589,7 @@ fn para(
     );
     // A browser lets a line's trailing space hang past the edge; egui counts it.
     job.wrap.max_width = (width + 3.0).max(1.0);
-    ui.painter().layout_job(job)
+    paint::layout_top(ui, job)
 }
 
 fn place(ui: &mut Ui, g: Arc<egui::Galley>, x: f32, color: Color32) {

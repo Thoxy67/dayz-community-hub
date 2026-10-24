@@ -9,8 +9,8 @@
 //! move, Enter picks, Escape closes; typing a letter jumps to a match.
 
 use egui::{
-    Color32, CornerRadius, Id, Popup, PopupCloseBehavior, Rect, RectAlign, Response, Sense, Ui,
-    Vec2, Widget, WidgetInfo, WidgetType,
+    Color32, CornerRadius, Id, Popup, PopupCloseBehavior, Rect, RectAlign, Response, Role, Sense,
+    Ui, Vec2, Widget, WidgetInfo,
 };
 
 use super::paint::{self, alpha, fade};
@@ -57,12 +57,12 @@ pub struct Select<'a, V: PartialEq + Clone> {
 
 impl<'a, V: PartialEq + Clone> Select<'a, V> {
     pub fn new(
-        id_salt: impl egui::AsId,
+        id_salt: impl egui::AsIdSalt,
         value: &'a mut V,
         options: &'a [SelectOption<'a, V>],
     ) -> Self {
         Self {
-            id: Id::new(id_salt),
+            id: Id::unique(id_salt),
             value,
             options,
             placeholder: "",
@@ -133,7 +133,7 @@ impl<V: PartialEq + Clone> Widget for Select<'_, V> {
         } else {
             self.label
         };
-        resp.widget_info(|| WidgetInfo::labeled(WidgetType::ComboBox, true, label));
+        resp.widget_info(|| WidgetInfo::labeled(Role::ComboBox, true, label));
         trigger(ui, rect, &resp, shown, chosen.is_some(), open, self.enabled);
         if !self.enabled {
             return resp;
@@ -306,7 +306,7 @@ fn item(ui: &mut Ui, label: &str, selected: bool, faint: bool, highlighted: bool
     let t = ui.tokens();
     let w = ui.available_width();
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, size::menu_row()), Sense::click());
-    resp.widget_info(|| WidgetInfo::selected(WidgetType::SelectableLabel, true, selected, label));
+    resp.widget_info(|| WidgetInfo::selected(Role::Button, true, selected, label));
     let lit = highlighted || resp.hovered();
     let p = ui.painter();
     p.rect_filled(

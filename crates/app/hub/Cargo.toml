@@ -39,7 +39,7 @@ dz-steamworks.workspace = true
 dz-game.workspace = true
 dz-news.workspace = true
 dz-dayzmetrics.workspace = true
-lru = "0.18.5"
+lru = "0.19.0"
 # Controllers (Steam Deck, Xbox, PlayStation) for the gamepad navigation mode.
 gilrs = "0.11.2"
 # Watches the mod folders (inotify, ReadDirectoryChangesW), so the window
@@ -47,17 +47,17 @@ gilrs = "0.11.2"
 notify-debouncer-full = { version = "0.7.0", default-features = false }
 
 [target."cfg(not(windows))".dependencies]
-zstd = { version = "0.14.0", features = ["pkg-config"] }
+zstd = { version = "0.14.3", features = ["pkg-config"] }
 
 [target."cfg(target_os = \"linux\")".dependencies]
 openssl = { version = "0.10.81", features = ["vendored"] }
 
 [target."cfg(windows)".dependencies]
-zstd = "0.14.0"
+zstd = "0.14.3"
 
 [dev-dependencies]
 # Paused clocks for the wake-on-change loops' tests.
 tokio = { workspace = true, features = ["test-util"] }
 # Signs test updates with a throwaway key, in the minisign format the release uses.
-ed25519-dalek = "2.2.0"
-blake2 = "0.10.6"
+ed25519-dalek = "3.0.0"
+blake2 = "0.11.0"

@@ -479,7 +479,7 @@ impl Shared {
 /// The context's shared state (made on first use).
 pub fn shared(ctx: &egui::Context) -> Arc<Shared> {
     ctx.data_mut(|d| {
-        d.get_temp_mut_or_default::<Arc<Shared>>(egui::Id::new("dzch.life"))
+        d.get_temp_mut_or_default::<Arc<Shared>>(egui::Id::unique("dzch.life"))
             .clone()
     })
 }

@@ -447,7 +447,7 @@ impl Brand {
         }
         let ctx = painter.ctx();
         let px = ((side * ctx.pixels_per_point()).round() as u32).clamp(1, 512);
-        let cache_id = egui::Id::new("kit::brand-cache");
+        let cache_id = egui::Id::unique("kit::brand-cache");
         // A read lock on the context once the cache exists; the write lock only to make it.
         let cache: Arc<Mutex<BrandCache>> = ctx
             .data(|d| d.get_temp::<Arc<Mutex<BrandCache>>>(cache_id))

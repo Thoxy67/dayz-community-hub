@@ -25,7 +25,7 @@ const LG: f32 = 1024.0;
 pub fn show(ui: &mut Ui, cx: &mut Ctx, st: &mut AboutState, run: &mut Run) {
     let w = ui.available_width();
     let wide = ui.ctx().content_rect().width() >= LG;
-    let hid = ui.id().with("about.cards.h");
+    let hid = ui.scope_id().with("about.cards.h");
     let row_h: f32 = ui.data(|d| d.get_temp(hid)).unwrap_or(0.0);
     let pad = cx.stores.pad.mode(cx.prefs.get().ui.pad_mode) == InputMode::Gamepad;
     let kind = cx.stores.pad.kind(cx.prefs.get().pad_glyphs);
@@ -334,7 +334,7 @@ fn sources(ui: &mut Ui, run: &mut Run) {
         let (rect, resp) = ui.allocate_exact_size(vec2(w, h), sense);
         if src.url.is_some() {
             resp.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::Link, true, t("about", src.title))
+                egui::WidgetInfo::labeled(egui::Role::Link, true, t("about", src.title))
             });
         }
         let hover = if src.url.is_some() {
@@ -400,5 +400,5 @@ pub fn wrap(
         },
     );
     job.wrap.max_width = width.max(40.0);
-    ui.painter().layout_job(job)
+    paint::layout_top(ui, job)
 }

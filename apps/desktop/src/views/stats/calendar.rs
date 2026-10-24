@@ -91,7 +91,7 @@ pub fn show(ui: &mut Ui, l: &Loaded, st: &mut StatsState, run: &mut Run) -> Opti
     let (mr, _) = ui.allocate_exact_size(Vec2::new(w, 12.0), Sense::hover());
     let grid_h = 7.0 * cell + 6.0 * GAP;
     let (grid, _) = ui.allocate_exact_size(Vec2::new(w, grid_h), Sense::hover());
-    let id = ui.id().with("stats-calendar");
+    let id = ui.scope_id().with("stats-calendar");
     let resp = ui.interact(grid, id, Sense::click());
 
     // The keyboard first: it may move the year shown.
@@ -239,7 +239,7 @@ pub fn show(ui: &mut Ui, l: &Loaded, st: &mut StatsState, run: &mut Run) -> Opti
     let hint = t("stats", "activityHint");
     let keys = t("common", "chartKeys");
     resp.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Other, true, format!("{hint} {keys}"))
+        egui::WidgetInfo::labeled(egui::Role::Unknown, true, format!("{hint} {keys}"))
     });
 
     // The hint and the legend.

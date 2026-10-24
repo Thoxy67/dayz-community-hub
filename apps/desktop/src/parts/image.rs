@@ -176,7 +176,7 @@ impl<T> Slots<T> {
 type Cache = Arc<Mutex<Slots<Loaded>>>;
 
 fn cache(ctx: &Context) -> Cache {
-    let id = egui::Id::new("dzch.images");
+    let id = egui::Id::unique("dzch.images");
     // A read lock on the context in the common case; the write lock only the first time.
     if let Some(c) = ctx.data(|d| d.get_temp::<Cache>(id)) {
         return c;

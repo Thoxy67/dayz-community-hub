@@ -141,7 +141,7 @@ type Shared = Arc<Mutex<UiState>>;
 /// The view's state, shared with its commands.
 pub fn shared(ctx: &egui::Context) -> Shared {
     ctx.data_mut(|d| {
-        d.get_temp_mut_or_insert_with(Id::new("dzch.mods.view"), || {
+        d.get_temp_mut_or_insert_with(Id::unique("dzch.mods.view"), || {
             Arc::new(Mutex::new(UiState::new()))
         })
         .clone()
@@ -207,7 +207,7 @@ impl View for ModsView {
             poll_disk(ui, cx, &mut st);
             // Ctrl+F / `/`: the search field (drawn when there are mods to search).
             if cx.nav.take_focus_search() {
-                ui.memory_mut(|m| m.request_focus(egui::Id::new("mods-search")));
+                ui.memory_mut(|m| m.request_focus(egui::Id::unique("mods-search")));
             }
             let UiState {
                 listing,

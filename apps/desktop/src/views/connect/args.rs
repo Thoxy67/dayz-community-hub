@@ -33,7 +33,7 @@ pub fn section(ui: &mut Ui, cx: &mut Ctx, r: &Resolved) {
         t("connect", "extraMods"),
         tf("connect", "argsCount", &[("count", &active)])
     );
-    let did = Id::new("connect-args");
+    let did = Id::unique("connect-args");
     let open = cx.stores.direct.args_open;
     ui.data_mut(|m| m.insert_persisted(did, open));
     let top = ui.cursor().min;
@@ -184,7 +184,7 @@ fn body(ui: &mut Ui, cx: &mut Ctx, r: &Resolved, acts: &mut Vec<Act>) {
                     let fade = if a.enabled { 1.0 } else { 0.5 };
                     let shown = paint::ease(
                         ui,
-                        Id::new(("connect-arg-row", a.id)),
+                        Id::unique(("connect-arg-row", a.id)),
                         ui.rect_contains_pointer(rect),
                     );
                     if i + 1 < n {
@@ -401,7 +401,9 @@ fn body(ui: &mut Ui, cx: &mut Ctx, r: &Resolved, acts: &mut Vec<Act>) {
                         .max_height(96.0)
                         .auto_shrink([false, true])
                         .show(ui, |ui| {
-                            ui.add(egui::Label::new(preview).selectable(true).wrap());
+                            ui.add(
+                                egui::Label::new(paint::label_top(ui, preview)).selectable(true),
+                            );
                         });
                 });
         });

@@ -19,7 +19,7 @@ const EDGE: f32 = 4.0;
 const CORNER: f32 = 10.0;
 
 fn handed_over_id() -> Id {
-    Id::new("dzch.window.handed_over")
+    Id::unique("dzch.window.handed_over")
 }
 
 /// Hand the pointer to the window manager: a move (`StartDrag`) or a resize

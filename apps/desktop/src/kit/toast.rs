@@ -68,7 +68,7 @@ const OUT: f64 = 0.16;
 const KEEP: usize = 4;
 
 pub(crate) fn store_id() -> Id {
-    Id::new("kit::toasts")
+    Id::unique("kit::toasts")
 }
 
 /// Says something. Returns its id, for [`dismiss`].
@@ -174,7 +174,7 @@ pub fn set_inset(ctx: &Context, px: f32) {
 }
 
 fn inset_id() -> Id {
-    Id::new("kit::toasts.inset")
+    Id::unique("kit::toasts.inset")
 }
 
 /// Takes a toast down (it slides out).
@@ -276,7 +276,7 @@ pub fn host(ctx: &Context, dismiss_label: &str) -> Option<String> {
     let inset: f32 = ctx.data(|d| d.get_temp(inset_id())).unwrap_or(36.0);
     let mut bottom = screen.bottom() - inset;
     for toast in list.iter().rev() {
-        let id = Id::new(("kit::toast", toast.id));
+        let id = Id::unique(("kit::toast", toast.id));
         let action_w = toast.action.as_ref().map_or(0.0, |(l, _)| {
             ctx.fonts_mut(|f| {
                 f.layout_no_wrap(l.clone(), font(Face::SansMedium, size::TEXT_2XS), t.accent)
@@ -370,7 +370,7 @@ pub fn host(ctx: &Context, dismiss_label: &str) -> Option<String> {
                 );
                 let xb = ui.interact(xr, id.with("x"), Sense::click());
                 xb.widget_info(|| {
-                    egui::WidgetInfo::labeled(egui::WidgetType::Button, true, dismiss_label)
+                    egui::WidgetInfo::labeled(egui::Role::Button, true, dismiss_label)
                 });
                 let hx = paint::ease(ui, xb.id, xb.hovered());
                 let p = ui.painter();

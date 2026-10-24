@@ -294,7 +294,7 @@ pub fn show(ui: &mut Ui, cx: &Ctx, st: &mut DetailState, m: &Model, run: &mut Ru
             if paint::keyboard_focus(ui, &resp) {
                 paint::focus_ring(ui.painter(), r, size::RADIUS_XS, &tk);
             }
-            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Link, true, label));
+            resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Link, true, label));
             if resp
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .clicked()
@@ -438,7 +438,7 @@ fn figures(ui: &mut Ui, cx: &Ctx, x: &dz_hub::features::metrics::ServerMetricsDt
                         Vec2::new(14.0 + g.size().x, 16.0),
                     );
                     let _ = ui
-                        .interact(tr, ui.id().with(("stat-tip", i)), Sense::hover())
+                        .interact(tr, ui.scope_id().with(("stat-tip", i)), Sense::hover())
                         .tip_kbd(tip, "", Side::Top);
                 }
             }
@@ -825,7 +825,7 @@ fn link_button(ui: &mut Ui, label: &str, url: &str) -> egui::Response {
     if paint::keyboard_focus(ui, &resp) {
         paint::focus_ring(p, r, size::RADIUS_SM, &tk);
     }
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Link, true, label));
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Link, true, label));
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
         .tip_kbd(url, "", Side::Top)
 }

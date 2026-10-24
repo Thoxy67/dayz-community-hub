@@ -214,9 +214,9 @@ pub fn show(ui: &mut Ui, run: &mut Run) {
         let bw = 8.0 + 14.0 + 6.0 + g.size().x + 8.0;
         let r = Rect::from_min_size(pos2(lx, ly), vec2(bw, size::CONTROL));
         let resp = ui
-            .interact(r, ui.id().with(("about.link", key)), Sense::click())
+            .interact(r, ui.scope_id().with(("about.link", key)), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand);
-        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
         let hover = paint::ease(ui, resp.id.with("h"), resp.hovered());
         if hover > 0.0 {
             p.rect_filled(
@@ -258,7 +258,7 @@ fn title_galley(ui: &Ui, tk: &Tokens) -> Arc<Galley> {
             },
         );
     }
-    ui.painter().layout_job(job)
+    paint::layout_top(ui, job)
 }
 
 /// The pills in rows no wider than `room` (each row keeps at least one pill).

@@ -99,7 +99,7 @@ struct Store {
 }
 
 fn store_id() -> Id {
-    Id::new("dzch.pad.registry")
+    Id::unique("dzch.pad.registry")
 }
 
 /// Bounds, so a view that registers in a loop cannot grow the set without end.
@@ -340,7 +340,7 @@ pub fn tabs(
 
 /// The context menu the pad opened (the widget it belongs to), kept while it is open.
 fn pad_menu_id() -> Id {
-    Id::new("dzch.pad.menu")
+    Id::unique("dzch.pad.menu")
 }
 
 /// The pad opens `target`'s context menu (it is shown at the widget, not the pointer).
@@ -368,7 +368,7 @@ pub fn menu_anchor(ctx: &Context, target: Id, rect: Rect) -> Option<Rect> {
 /// Marks the scroll area `ui` is in as a reading pane (a server's details, an article):
 /// the right stick scrolls it. Call inside the area's content, after the content.
 pub fn reading_pane(ui: &mut Ui) {
-    let id = ui.id().with("dzch.pad.anchor");
+    let id = ui.scope_id().with("dzch.pad.anchor");
     let clip = ui.clip_rect();
     let at = ui.cursor().min;
     // A widget of no size where the content ends: AccessKit's scroll requests aimed at

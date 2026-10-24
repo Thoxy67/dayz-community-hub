@@ -166,7 +166,7 @@ fn article(
             ],
         );
         let hit = ui
-            .interact(r, ui.id().with("hero"), Sense::click())
+            .interact(r, ui.scope_id().with("hero"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::ZoomIn);
         if paint::keyboard_focus(ui, &hit) {
             paint::focus_ring(ui.painter(), r.shrink(3.0), size::RADIUS_SM, &tk);
@@ -232,7 +232,7 @@ fn head(
         max_width: w,
         ..Default::default()
     };
-    let g = ui.painter().layout_job(job);
+    let g = paint::layout_top(ui, job);
     // egui sets the capitals lower in a 0.95 line than the browser does: drawn 7px up,
     // the block 4px shorter, the meta row lands where the reference has it.
     let (r, _) = ui.allocate_exact_size(Vec2::new(w, (g.size().y - 4.0).max(0.0)), Sense::hover());
@@ -264,7 +264,7 @@ fn head(
         };
         // Its width is last frame's: with too little room left on the line, the button
         // takes the next one instead of being drawn over the author.
-        let wid = ui.id().with("open-w");
+        let wid = ui.scope_id().with("open-w");
         let bw: f32 = ui.data(|d| d.get_temp(wid)).unwrap_or(0.0);
         if ui.available_size_before_wrap().x < bw {
             ui.end_row();
@@ -326,7 +326,7 @@ fn body(
             max_width: (w - 14.0).max(20.0),
             ..Default::default()
         };
-        let g = ui.painter().layout_job(job);
+        let g = paint::layout_top(ui, job);
         let (r, _) = ui.allocate_exact_size(Vec2::new(w, g.size().y), Sense::hover());
         ui.painter().rect_filled(
             Rect::from_min_size(r.min, Vec2::new(2.0, r.height())),

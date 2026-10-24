@@ -194,7 +194,7 @@ fn inputs(ui: &mut Ui, s: &mut State) {
                 .width(160.0),
         );
         if s.mode == Mode::Float(1) && s.frame == 3 {
-            Popup::open_id(ui.ctx(), egui::Id::new("g-map").with("popup"));
+            Popup::open_id(ui.ctx(), egui::Id::unique("g-map").with("popup"));
         }
         let _ = r;
         let mut none: Option<&str> = None;

@@ -161,7 +161,7 @@ pub fn show(ui: &mut Ui, cx: &Ctx, model: &Model, cache: &mut RowCache, acts: &m
             {
                 let y = at.min(next_top - HEAD_H);
                 let r = Rect::from_min_size(origin + Vec2::new(0.0, y), Vec2::new(w, HEAD_H));
-                let sticky = ui.interact(r, ui.id().with("friends-sticky"), Sense::CLICK);
+                let sticky = ui.interact(r, ui.scope_id().with("friends-sticky"), Sense::CLICK);
                 crate::pad::sticky(ui.ctx(), sticky.id, ui.layer_id(), r);
                 head(ui, r, *g, *count);
             }
@@ -202,7 +202,7 @@ fn ago(ts: i64) -> String {
 /// One friend: avatar and dot, name, what they are doing, Steam buttons on hover.
 fn friend_row(ui: &mut Ui, r: Rect, cx: &Ctx, f: &FriendDto, tie: Tie, acts: &mut Vec<Act>) {
     let tk = ui.tokens();
-    let id = ui.id().with(("friend", &f.steam_id));
+    let id = ui.scope_id().with(("friend", &f.steam_id));
     let row = ui.interact(r, id, Sense::hover());
     let hovered = ui.rect_contains_pointer(r);
     let hover = paint::ease(ui, id.with("hover"), hovered);
@@ -530,7 +530,7 @@ fn short_row(ui: &mut Ui, row: Rect, cx: &Ctx, b: &Block, acts: &mut Vec<Act>) {
     let tk = ui.tokens();
     let rr = indented(row);
     let key = b.key();
-    let id = ui.id().with(("friend-server", &key));
+    let id = ui.scope_id().with(("friend-server", &key));
     let resp = ui.interact(rr, id, Sense::click());
     let selected = is_selected(cx, b);
     let hovered = resp.contains_pointer() || resp.has_focus();

@@ -89,7 +89,7 @@ fn toolbar(ui: &mut Ui, st: &mut StatsState, run: &mut Run) {
                     Pos2::new(cr.right() - 2.0 - 8.0, cr.center().y),
                     Vec2::splat(16.0),
                 );
-                let x = ui.interact(xr, Id::new("stats-day-chip-x"), Sense::click());
+                let x = ui.interact(xr, Id::unique("stats-day-chip-x"), Sense::click());
                 let hv = x.hovered() || x.has_focus();
                 if paint::keyboard_focus(ui, &x) {
                     paint::focus_ring(ui.painter(), xr, size::RADIUS_XS, &tk);
@@ -138,7 +138,7 @@ fn rows(ui: &mut Ui, st: &StatsState, run: &mut Run) {
             Pos2::new(all.left(), all.top() + i as f32 * ROW_H),
             Vec2::new(w, ROW_H),
         );
-        let id = Id::new(("stats-session", r.start, r.name.as_str()));
+        let id = Id::unique(("stats-session", r.start, r.name.as_str()));
         let hovered = ui.rect_contains_pointer(rect);
         let p = ui.painter().clone();
         if i + 1 < n {

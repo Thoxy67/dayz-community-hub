@@ -765,7 +765,7 @@ impl<'a> ServerListRow<'a> {
         let w = ui.available_width();
         let (rect, _) = ui.allocate_exact_size(Vec2::new(w, row_px()), Sense::hover());
         let key = self.data.key();
-        let id = ui.id().with(("server-row", key));
+        let id = ui.scope_id().with(("server-row", key));
         let row = ui.interact(rect, id, Sense::click());
         let mut action = None;
         if row.clicked() {
@@ -1657,7 +1657,7 @@ impl egui::Widget for SortHead<'_> {
 }
 
 fn game_version_id() -> Id {
-    Id::new("dzch.game_version")
+    Id::unique("dzch.game_version")
 }
 
 /// Keep the installed game's version where every server row finds it (the app sets it

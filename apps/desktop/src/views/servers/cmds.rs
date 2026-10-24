@@ -642,7 +642,7 @@ pub fn resize(cx: &mut Ctx, a: &Value) {
         .unwrap_or(400.0)
         .clamp(320.0, 620.0) as f32;
     cx.egui
-        .data_mut(|d| d.insert_persisted(egui::Id::new("servers-detail"), w));
+        .data_mut(|d| d.insert_persisted(egui::Id::unique("servers-detail"), w));
     cx.egui.request_repaint();
 }
 

@@ -445,7 +445,7 @@ impl<'a> SectionNav<'a> {
         let mut clicked = None;
         for (i, s) in self.sections.iter().enumerate() {
             let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, size::CONTROL));
-            let resp = ui.interact(r, ui.id().with(("section-nav", i)), Sense::click());
+            let resp = ui.interact(r, ui.scope_id().with(("section-nav", i)), Sense::click());
             let on = s.id == self.active;
             let hover = paint::ease(ui, resp.id.with("hover"), resp.hovered());
             let p = ui.painter();
@@ -661,9 +661,9 @@ pub struct MasterDetail {
 }
 
 impl MasterDetail {
-    pub fn new(id_salt: impl egui::AsId) -> Self {
+    pub fn new(id_salt: impl egui::AsIdSalt) -> Self {
         Self {
-            id: Id::new(id_salt),
+            id: Id::unique(id_salt),
             show: true,
             selected: true,
             initial: 400.0,
@@ -775,7 +775,7 @@ impl<'a> Lightbox<'a> {
         }
         let tk = ctx.tokens();
         let screen = ctx.content_rect();
-        let id = Id::new("parts-lightbox");
+        let id = Id::unique("parts-lightbox");
         egui::Area::new(id)
             .order(egui::Order::Foreground)
             .fixed_pos(screen.min)

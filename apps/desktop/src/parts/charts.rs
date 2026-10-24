@@ -535,11 +535,7 @@ impl<'a, F: Fn(&str, u32, f64) -> String> WeekHeat<'a, F> {
         let hint = self.hint;
         let chart_keys = t("common", "chartKeys");
         resp.widget_info(|| {
-            egui::WidgetInfo::labeled(
-                egui::WidgetType::Other,
-                true,
-                format!("{hint} {chart_keys}"),
-            )
+            egui::WidgetInfo::labeled(egui::Role::Unknown, true, format!("{hint} {chart_keys}"))
         });
         let _ = Color32::TRANSPARENT;
         resp

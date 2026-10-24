@@ -72,7 +72,7 @@ type Shared = Arc<Mutex<OpUi>>;
 
 fn shared(ctx: &egui::Context) -> Shared {
     ctx.data_mut(|d| {
-        d.get_temp_mut_or_insert_with(Id::new("dzch.mods.op"), || {
+        d.get_temp_mut_or_insert_with(Id::unique("dzch.mods.op"), || {
             Arc::new(Mutex::new(OpUi::default()))
         })
         .clone()
@@ -396,7 +396,7 @@ fn dialog(ctx: &egui::Context, cx: &Ctx, st: &mut OpUi, run: &mut Vec<(&'static 
     // Clear of the pad's bar, which stays over the veil.
     let inset = crate::kit::dialog::bottom_inset(ctx);
     let h = 736.0_f32.min(screen.height() - 48.0 - inset).max(240.0);
-    let id = Id::new("dzch.mods.opdialog");
+    let id = Id::unique("dzch.mods.opdialog");
     let a = ctx.animate_bool_with_time(id.with("in"), true, 0.14);
     let modal = egui::Modal::new(id)
         .area(egui::Modal::default_area(id).anchor(
@@ -1030,7 +1030,7 @@ fn aside(
             .id_salt("op-queue-scroll")
             .auto_shrink([false, false]);
         // The row being downloaded stays in sight as the queue moves on.
-        let key = Id::new("op-queue-cur");
+        let key = Id::unique("op-queue-cur");
         let last: Option<usize> = ui.data(|d| d.get_temp(key));
         if cur != last {
             ui.data_mut(|d| d.insert_temp(key, cur));
@@ -1144,7 +1144,7 @@ fn queue_row(ui: &mut Ui, cx: &Ctx, q: &QRow, progress: Option<Progress>, rule: 
     );
     if crate::parts::is_cut(&ng, &q.name) {
         let _ = crate::kit::TipExt::tip(
-            ui.interact(r, ui.id().with(("q", q.id)), Sense::hover()),
+            ui.interact(r, ui.scope_id().with(("q", q.id)), Sense::hover()),
             &q.name,
         );
     }

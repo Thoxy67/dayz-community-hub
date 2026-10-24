@@ -280,7 +280,7 @@ type PathFuture =
 /// The view's state, shared with its commands and the status bar.
 pub fn shared(ctx: &egui::Context) -> Shared {
     ctx.data_mut(|d| {
-        d.get_temp_mut_or_insert_with(Id::new("dzch.offline.view"), || {
+        d.get_temp_mut_or_insert_with(Id::unique("dzch.offline.view"), || {
             Arc::new(Mutex::new(OfflineState::default()))
         })
         .clone()

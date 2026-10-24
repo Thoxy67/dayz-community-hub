@@ -9,7 +9,7 @@
 
 use egui::{
     Color32, CornerRadius, InnerResponse, Popup, PopupCloseBehavior, Rect, RectAlign, Response,
-    Sense, Ui, Vec2, Widget, WidgetInfo, WidgetType,
+    Role, Sense, Ui, Vec2, Widget, WidgetInfo,
 };
 
 use super::kbd::Kbd;
@@ -109,7 +109,7 @@ pub fn clear_of_bars<'a>(
     };
     let need = popup.get_expected_size().map_or(0.0, |s| s.y);
     let flip = need > pref && other > pref;
-    let align = if flip { align.flip_y() } else { align };
+    let align = if flip { align.flipped_y() } else { align };
     popup.align(align).align_alternatives(&[])
 }
 
@@ -243,7 +243,7 @@ pub fn popover_trigger(ui: &mut Ui, icon: Icon, label: &str, side: f32) -> Respo
     let t = ui.tokens();
     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(side), Sense::click());
     let open = is_open(&resp);
-    resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, label));
+    resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, label));
     let hover = paint::ease(ui, resp.id.with("hover"), resp.hovered() || open);
     let p = ui.painter();
     p.rect_filled(
@@ -267,7 +267,7 @@ pub fn popover_trigger(ui: &mut Ui, icon: Icon, label: &str, side: f32) -> Respo
 /// The width a menu's rows share: the widest row's natural width (remembered from the
 /// last frame), never under the menu's minimum.
 fn menu_width(ui: &Ui, natural: f32) -> f32 {
-    let id = ui.id().with("kit-menu-w");
+    let id = ui.scope_id().with("kit-menu-w");
     let last: f32 = ui.data(|d| d.get_temp(id)).unwrap_or(0.0);
     let w = natural.max(last).max(ui.min_rect().width()).min(480.0);
     if w > last + 0.5 {
@@ -364,7 +364,7 @@ impl Widget for MenuItem<'_> {
         };
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, size::menu_row()), sense);
         let label = self.label;
-        resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, label));
+        resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, label));
         // A click without the pointer (the pad's A, AccessKit) closes the menu too: the
         // popup only sees the pointer's.
         if resp.clicked() {

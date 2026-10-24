@@ -79,7 +79,7 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx, menus_state: &mut MenuState) {
     // even below a button, so a press on a title-bar button also moved the window and
     // the button never saw its release. Sensing clicks, the topmost control wins.
     // (Not focusable: the bar is no stop for Tab.)
-    let drag = ui.interact(rect, ui.id().with("titlebar-drag"), Sense::CLICK);
+    let drag = ui.interact(rect, ui.scope_id().with("titlebar-drag"), Sense::CLICK);
     // Game Mode (gamescope) has no window manager: nothing moves, maximises or
     // minimises there, only the close button is drawn.
     let game_mode = crate::platform::deck::game_mode();
@@ -148,8 +148,8 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx, menus_state: &mut MenuState) {
             pos2(right, rect.top()),
             pos2(right + WIN_BTN, rect.bottom() - 1.0),
         );
-        let resp = ui.interact(r, ui.id().with(("win", i)), Sense::click());
-        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+        let resp = ui.interact(r, ui.scope_id().with(("win", i)), Sense::click());
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
         let h = paint::ease(ui, resp.id, resp.hovered());
         let close = i == 0;
         let (fill, ink) = if close {
@@ -258,7 +258,7 @@ fn figure_values(ui: &Ui, cx: &Ctx) -> [Figure; 3] {
         .or((s.total > 0).then_some(f64::from(s.total)));
     let ingame = s.stats.as_ref().map(|st| st.total_players as f64);
     let steam = s.steam_players.map(f64::from);
-    let id = ui.id().with("figures");
+    let id = ui.scope_id().with("figures");
     let roll = |k: &str, v: Option<f64>| match v {
         Some(v) => format::num(rolling(ui, id.with(k), v).round()),
         None => format::NONE.to_string(),
@@ -282,7 +282,7 @@ fn figure_values(ui: &Ui, cx: &Ctx) -> [Figure; 3] {
 /// The figures laid out, once per pass: the bar's centring and its drawing both ask.
 fn figure_galleys(ui: &Ui, cx: &Ctx) -> ([Figure; 3], [Arc<egui::Galley>; 3]) {
     type Laid = (u64, [&'static str; 3], [Arc<egui::Galley>; 3]);
-    let id = egui::Id::new("dzch.titlebar.figures-laid");
+    let id = egui::Id::unique("dzch.titlebar.figures-laid");
     let pass = ui.ctx().cumulative_pass_nr();
     let figure = |tip: &'static str| Figure {
         value: String::new(),
@@ -325,7 +325,7 @@ fn figures(ui: &mut Ui, cx: &Ctx, rect: Rect) {
     for (i, (fig, g)) in f.iter().zip(g.iter()).enumerate() {
         let item_w = size::ICON_SM + 6.0 + g.size().x;
         let r = Rect::from_min_size(pos2(x, cy - 8.0), vec2(item_w, 16.0));
-        let resp = ui.interact(r, ui.id().with(("figure", i)), Sense::hover());
+        let resp = ui.interact(r, ui.scope_id().with(("figure", i)), Sense::hover());
         let icon_r = Rect::from_center_size(
             pos2(x + size::ICON_SM / 2.0, cy),
             Vec2::splat(size::ICON_SM),
@@ -355,7 +355,7 @@ fn search_pill(ui: &mut Ui, cx: &mut Ctx, right: f32, rect: Rect, win_w: f32) ->
         pos2(right - w, rect.top() + 6.0),
         pos2(right, rect.bottom() - 7.0),
     );
-    let resp = ui.interact(r, ui.id().with("search-pill"), Sense::click());
+    let resp = ui.interact(r, ui.scope_id().with("search-pill"), Sense::click());
     let h = paint::ease(ui, resp.id, resp.hovered());
     let p = ui.painter();
     paint::plate(
@@ -456,7 +456,7 @@ fn profile(ui: &mut Ui, cx: &mut Ctx, right: f32, rect: Rect, win_w: f32) -> f32
         pos2(right - w, rect.top()),
         pos2(right, rect.bottom() - 1.0),
     );
-    let resp = ui.interact(r, ui.id().with("profile"), Sense::click());
+    let resp = ui.interact(r, ui.scope_id().with("profile"), Sense::click());
     let h = paint::ease(ui, resp.id, resp.hovered());
     let p = ui.painter();
     p.rect_filled(
@@ -522,7 +522,7 @@ fn layer(ui: &Ui, rect: Rect, svg: &'static [u8], key: &'static str, tint: Color
     let px = (rect.width() * ctx.pixels_per_point())
         .round()
         .clamp(1.0, 256.0) as u32;
-    let id = egui::Id::new(("dzch.logo", key, px));
+    let id = egui::Id::unique(("dzch.logo", key, px));
     let tex: Option<Option<egui::TextureHandle>> = ctx.data(|d| d.get_temp(id));
     let tex = match tex {
         Some(t) => t,
@@ -600,7 +600,7 @@ mod drag_tests {
             .with_step_dt(1.0 / 60.0)
             .build_ui(move |ui| {
                 let rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(400.0, 34.0));
-                let r = ui.interact(rect, ui.id().with("bar"), Sense::click());
+                let r = ui.interact(rect, ui.scope_id().with("bar"), Sense::click());
                 match drag_press(ui, &r) {
                     Some(Press::First) => log.borrow_mut().push("move"),
                     Some(Press::Second) => log.borrow_mut().push("maximise"),
@@ -639,7 +639,7 @@ mod drag_tests {
             .with_step_dt(1.0 / 60.0)
             .build_ui(move |ui| {
                 let rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(400.0, 34.0));
-                let r = ui.interact(rect, ui.id().with("bar"), Sense::click());
+                let r = ui.interact(rect, ui.scope_id().with("bar"), Sense::click());
                 if drag_press(ui, &r).is_some() {
                     log.borrow_mut().push("move");
                 }

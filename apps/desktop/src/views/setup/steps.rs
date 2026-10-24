@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use egui::text::{LayoutJob, TextFormat, TextWrapping};
 use egui::{
-    Align, Color32, CornerRadius, FontId, Galley, Id, Layout, Rect, RichText, Sense, Stroke, Ui,
-    UiBuilder, Vec2, WidgetInfo, WidgetType, pos2, vec2,
+    Align, Color32, CornerRadius, FontId, Galley, Id, Layout, Rect, RichText, Role, Sense, Stroke,
+    Ui, UiBuilder, Vec2, WidgetInfo, pos2, vec2,
 };
 use serde_json::{Value, json};
 
@@ -57,7 +57,7 @@ fn job(
         break_anywhere: max_rows == 1,
         overflow_character: (max_rows == 1).then_some('…'),
     };
-    ui.painter().layout_job(j)
+    paint::layout_top(ui, j)
 }
 
 /// A paragraph wrapped at `width`, lines `line_h` apart, coloured when drawn.
@@ -545,8 +545,8 @@ fn choices(ui: &mut Ui, w: &Wizard, acts: &mut Acts) {
             vec2(cw, row.height()),
         );
         let on = w.downloader == *value;
-        let resp = ui.interact(r, Id::new(("dzch.setup.downloader", k)), Sense::click());
-        resp.widget_info(|| WidgetInfo::selected(WidgetType::RadioButton, true, on, *title));
+        let resp = ui.interact(r, Id::unique(("dzch.setup.downloader", k)), Sense::click());
+        resp.widget_info(|| WidgetInfo::selected(Role::RadioButton, true, on, *title));
         let h = paint::ease(ui, resp.id.with("hover"), resp.hovered());
         let p = ui.painter();
         if on {
@@ -745,8 +745,8 @@ fn install_linux(ui: &mut Ui, w: &Wizard, acts: &mut Acts) {
                         pos2(bx + size::CONTROL_SM / 2.0, cy),
                         Vec2::splat(size::CONTROL_SM),
                     );
-                    let resp = ui.interact(b, Id::new(("dzch.setup.copy", i)), Sense::click());
-                    resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, copy));
+                    let resp = ui.interact(b, Id::unique(("dzch.setup.copy", i)), Sense::click());
+                    resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, copy));
                     let h = paint::ease(ui, resp.id.with("hover"), resp.hovered());
                     let copied = w.copied.as_ref().is_some_and(|(c, _)| c == cmd);
                     let p = ui.painter();

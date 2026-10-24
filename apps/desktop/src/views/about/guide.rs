@@ -109,7 +109,7 @@ fn body(ui: &mut Ui, guide: Guide) {
                 ],
                 size::TEXT_XS,
             );
-            ui.add(egui::Label::new(job).wrap());
+            ui.add(egui::Label::new(paint::label_top(ui, job)));
             ui.add_space(8.0);
             steps(ui, &[a("modStep1"), a("modStep2"), a("modStep3")]);
             ui.add_space(12.0);
@@ -314,7 +314,7 @@ fn steps(ui: &mut Ui, list: &[&str]) {
             ui.vertical(|ui| {
                 ui.add_space(2.0);
                 let job = rich(&[(text, Face::Sans, tk.fg_muted)], size::TEXT_XS);
-                ui.add(egui::Label::new(job).wrap());
+                ui.add(egui::Label::new(paint::label_top(ui, job)));
             });
         });
     }
@@ -358,7 +358,7 @@ pub fn footer(ui: &mut Ui, run: &mut Run) {
             let g = paint::galley(ui, name, font(Face::Mono, size::TEXT_3XS), tk.fg_muted);
             let (r, resp) =
                 ui.allocate_exact_size(vec2(g.size().x + 12.0, g.size().y + 4.0), Sense::click());
-            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Link, true, *name));
+            resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Link, true, *name));
             let hover = paint::ease(ui, resp.id.with("h"), resp.hovered());
             paint::plate(
                 ui.painter(),

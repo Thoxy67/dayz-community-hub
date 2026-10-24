@@ -2,8 +2,8 @@
 //! (`rolling.svelte.ts`) a figure, the title bar and the status bar share.
 
 use egui::{
-    Align, Color32, CornerRadius, Id, Layout, Pos2, Rect, Response, Sense, Stroke, Ui, UiBuilder,
-    Vec2, Widget, WidgetInfo, WidgetType,
+    Align, Color32, CornerRadius, Id, Layout, Pos2, Rect, Response, Role, Sense, Stroke, Ui,
+    UiBuilder, Vec2, Widget, WidgetInfo,
 };
 
 use super::text::{draw, ph};
@@ -234,9 +234,9 @@ impl Widget for Figure<'_> {
         let (active, label_s) = (self.active, self.label);
         resp.widget_info(|| {
             if self.clickable {
-                WidgetInfo::selected(WidgetType::Button, true, active, label_s)
+                WidgetInfo::selected(Role::Button, true, active, label_s)
             } else {
-                WidgetInfo::labeled(WidgetType::Label, true, label_s)
+                WidgetInfo::labeled(Role::Label, true, label_s)
             }
         });
         let resp = if self.clickable {
@@ -261,7 +261,7 @@ const NARROW: f32 = 760.0;
 
 /// Where the header being drawn leaves its width for its figures.
 fn header_width_id() -> Id {
-    Id::new("page-header-width")
+    Id::unique("page-header-width")
 }
 
 /// `PageHeader`: the top of every view: its name in the display face, its figures, its

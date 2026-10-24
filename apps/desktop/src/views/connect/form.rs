@@ -195,7 +195,7 @@ pub fn show(ui: &mut Ui, cx: &mut Ctx, r: &Resolved) {
                             (true, true) => "—".to_string(),
                         };
                         let summary = tf("connect", "portsSummary", &[("ports", &ports)]);
-                        let did = Id::new("connect-ports");
+                        let did = Id::unique("connect-ports");
                         let open = d.ports_open;
                         ui.data_mut(|m| m.insert_persisted(did, open));
                         let full = ui.available_width() + 24.0;

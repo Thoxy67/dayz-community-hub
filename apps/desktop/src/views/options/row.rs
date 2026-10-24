@@ -156,7 +156,7 @@ pub fn show(
         job.wrap.max_rows = 2;
         job.wrap.break_anywhere = false;
         job.wrap.overflow_character = Some('…');
-        ui.fonts_mut(|f| f.layout_job(job))
+        paint::layout_top(ui, job)
     };
     let lines_h = if stacked {
         CODE_H + 2.0 + desc_g.size().y
@@ -219,7 +219,7 @@ pub fn show(
     p.galley(desc_rect.min, desc_g, tk.fg_faint);
     ui.interact(
         Rect::from_min_max(code.min, desc_rect.max.max(code.max)),
-        ui.id().with("desc"),
+        ui.scope_id().with("desc"),
         Sense::hover(),
     )
     .tip(desc);
@@ -248,14 +248,14 @@ pub fn show(
         Rec::Matches => {
             let r = ctl(cx, size::ICON_SM, size::ICON_SM);
             lucide::CHECK.paint(&p, r, tk.ok);
-            ui.interact(r, ui.id().with("rec-ok"), Sense::hover())
+            ui.interact(r, ui.scope_id().with("rec-ok"), Sense::hover())
                 .tip(t("options", "matchesRecommended"));
             cx += rec.width() + 4.0;
         }
         Rec::Offer(value, g) => {
             let r = ctl(cx, rec.width(), size::CONTROL_SM);
             let b = ui
-                .interact(r, ui.id().with("rec"), Sense::click())
+                .interact(r, ui.scope_id().with("rec"), Sense::click())
                 .on_hover_cursor(egui::CursorIcon::PointingHand);
             let hv = paint::ease(ui, b.id.with("hover"), b.hovered());
             if paint::keyboard_focus(ui, &b) {
@@ -353,7 +353,7 @@ pub fn show(
 
     if has_value {
         // Shown while the row is under the pointer or the button has the focus.
-        let id = ui.id().with("clear");
+        let id = ui.scope_id().with("clear");
         let focused = ui.memory(|m| m.focused()).is_some_and(|f| f == id);
         let vis = paint::ease(ui, id.with("vis"), hovered || focused);
         let mut s = ui.new_child(

@@ -121,7 +121,7 @@ pub type Shared = Arc<Mutex<DetailState>>;
 
 pub fn shared(ctx: &egui::Context) -> Shared {
     ctx.data_mut(|d| {
-        d.get_temp_mut_or_insert_with(Id::new("dzch.servers.detail"), || {
+        d.get_temp_mut_or_insert_with(Id::unique("dzch.servers.detail"), || {
             Arc::new(Mutex::new(DetailState {
                 range: "1d",
                 ..Default::default()
@@ -444,7 +444,7 @@ fn hero(ui: &mut Ui, m: &Model, time: &str, closable: bool, run: &mut Run) {
     let start = ui.cursor().top();
     // The map's ground, under the words: a wash of its colour over survey contours, as
     // tall as the hero was last frame (a change is redrawn at once).
-    let hid = ui.id().with("hero-h");
+    let hid = ui.scope_id().with("hero-h");
     let last_h: f32 = ui.data(|d| d.get_temp(hid)).unwrap_or(180.0);
     let ground = Rect::from_min_size(
         Pos2::new(full.left(), start),

@@ -348,7 +348,7 @@ type Shared = Arc<Mutex<StatsState>>;
 /// The view's state, shared with its commands.
 pub fn shared(ctx: &egui::Context) -> Shared {
     ctx.data_mut(|d| {
-        d.get_temp_mut_or_insert_with(Id::new("dzch.stats.view"), || {
+        d.get_temp_mut_or_insert_with(Id::unique("dzch.stats.view"), || {
             Arc::new(Mutex::new(StatsState::default()))
         })
         .clone()
@@ -452,7 +452,7 @@ impl View for StatsView {
             st.poll(cx.hub, ui.ctx(), &cx.stores.bus);
             // Ctrl+F / `/`: the history's search field (when the history is drawn).
             if cx.nav.take_focus_search() {
-                ui.memory_mut(|m| m.request_focus(egui::Id::new("stats-history-search")));
+                ui.memory_mut(|m| m.request_focus(egui::Id::unique("stats-history-search")));
             }
             draw(ui, cx, &mut st, &mut run);
         }

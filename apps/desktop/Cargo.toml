@@ -37,10 +37,14 @@ serde_json.workspace = true
 clap.workspace = true
 rustc-hash.workspace = true
 # persistence: the window's size, position and maximised state (`platform::window`).
-eframe = { workspace = true, features = ["wgpu", "wayland", "x11", "accesskit", "default_fonts", "persistence"] }
+# clipboard: copy and paste (a default of eframe 0.37, always on before it). Not
+# system_fonts: the window draws only its bundled faces, the same on every machine.
+eframe = { workspace = true, features = ["wgpu", "wayland", "x11", "accesskit", "clipboard", "default_fonts", "persistence"] }
 # Reads the saved window geometry (eframe's file) to drop values that would hurt startup.
 ron = "0.12.2"
-egui = { workspace = true, features = ["default_fonts"] }
+# monochrome_emoji_fonts: Noto Emoji, the last fallback of every face (theme/fonts.rs),
+# part of default_fonts until egui 0.37.
+egui = { workspace = true, features = ["default_fonts", "monochrome_emoji_fonts"] }
 resvg.workspace = true
 rfd.workspace = true
 open.workspace = true
@@ -50,7 +54,7 @@ dirs.workspace = true
 sys-locale = "0.3.2"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 # The control channel: its random key, and `ui.screenshot`'s PNG.
-getrandom = "0.3.4"
+getrandom = "0.4.3"
 # Pictures the window loads at run time (parts/image.rs): the Steam avatar, friends'
 # avatars, news images. Steam serves JPEG, the news WebP and PNG.
 image = { workspace = true, features = ["jpeg", "webp"] }

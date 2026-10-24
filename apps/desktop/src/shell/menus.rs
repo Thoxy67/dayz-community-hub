@@ -42,17 +42,17 @@ fn flag_of(l: Locale) -> Option<Icon> {
 /// while its menu is open).
 fn trigger(ui: &mut Ui, rect: Rect, salt: &str, label: &str) -> (Response, f32) {
     let tk = ui.tokens();
-    let resp = ui.interact(rect, ui.id().with(salt), Sense::click());
+    let resp = ui.interact(rect, ui.scope_id().with(salt), Sense::click());
     // Where a command (`theme.menu`) finds the menu to open.
     ui.ctx().data_mut(|d| {
         d.insert_temp(
-            egui::Id::new(("dzch.shell.menu", salt)),
+            egui::Id::unique(("dzch.shell.menu", salt)),
             Popup::default_response_id(&resp),
         )
     });
     let open = menu::is_open(&resp);
     let label_s = label.to_string();
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label_s));
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label_s));
     let h = paint::ease(ui, resp.id, resp.hovered() || open);
     ui.painter().rect_filled(
         rect,

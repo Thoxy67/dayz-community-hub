@@ -98,7 +98,7 @@ type Shared = Arc<Mutex<UiState>>;
 /// The view's state, shared with its commands.
 fn shared(ctx: &egui::Context) -> Shared {
     ctx.data_mut(|d| {
-        d.get_temp_mut_or_insert_with(Id::new("dzch.options.view"), || {
+        d.get_temp_mut_or_insert_with(Id::unique("dzch.options.view"), || {
             Arc::new(Mutex::new(UiState::default()))
         })
         .clone()
@@ -149,7 +149,7 @@ impl View for OptionsView {
             let mut st = shared.lock();
             st.poll();
             if cx.nav.take_focus_search() {
-                ui.memory_mut(|m| m.request_focus(Id::new("dzch.options.search")));
+                ui.memory_mut(|m| m.request_focus(Id::unique("dzch.options.search")));
             }
             ui.spacing_mut().item_spacing = Vec2::ZERO;
             let opts: &[LaunchOptionDto] = cx
@@ -640,7 +640,7 @@ pub fn command(cx: &mut Ctx, what: &str, a: &Value) {
             }
         }
         "linux_raw" => {
-            let id = Id::new(RAW_ID);
+            let id = Id::unique(RAW_ID);
             cx.egui.data_mut(|d| {
                 let open = d.get_persisted::<bool>(id).unwrap_or(false);
                 let want = a.get("open").and_then(Value::as_bool).unwrap_or(!open);

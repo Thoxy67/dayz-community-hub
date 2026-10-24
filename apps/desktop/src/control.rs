@@ -99,16 +99,22 @@ pub struct Control {
     rx: mpsc::Receiver<ControlRequest>,
     shots: Vec<(u64, Option<PathBuf>, oneshot::Sender<Value>)>,
     next_shot: u64,
+    /// The screenshots' images, sent by the integration's callback with their number.
+    shot_tx: mpsc::Sender<(u64, Arc<egui::ColorImage>)>,
+    shot_rx: mpsc::Receiver<(u64, Arc<egui::ColorImage>)>,
     synthetic: Vec<egui::Event>,
     _key: Option<KeyFile>,
 }
 
 impl Control {
     pub fn new(rx: mpsc::Receiver<ControlRequest>, key: Option<KeyFile>) -> Self {
+        let (shot_tx, shot_rx) = mpsc::channel();
         Self {
             rx,
             shots: Vec::new(),
             next_shot: 1,
+            shot_tx,
+            shot_rx,
             synthetic: Vec::new(),
             _key: key,
         }
@@ -119,6 +125,7 @@ impl Control {
     /// forgotten.
     pub fn forget_window(&mut self) {
         self.shots.clear();
+        while self.shot_rx.try_recv().is_ok() {}
         self.synthetic.clear();
     }
 
@@ -152,7 +159,7 @@ impl Control {
     /// At the start of a frame: screenshots that arrived, then the requests waiting.
     pub fn frame(&mut self, app: &mut HubApp, ctx: &egui::Context) {
         if !self.shots.is_empty() {
-            self.take_screenshots(ctx);
+            self.take_screenshots();
         }
         for _ in 0..PER_FRAME {
             let Ok(req) = self.rx.try_recv() else {
@@ -170,29 +177,19 @@ impl Control {
                     .and_then(Value::as_str)
                     .map(PathBuf::from);
                 self.shots.push((id, path, req.reply));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(id)));
+                let tx = self.shot_tx.clone();
+                let waker = ctx.clone();
+                ctx.request_screenshot(move |image| {
+                    let _ = tx.send((id, image));
+                    waker.request_repaint();
+                });
             }
         }
         ctx.request_repaint();
     }
 
-    fn take_screenshots(&mut self, ctx: &egui::Context) {
-        let images: Vec<(u64, Arc<egui::ColorImage>)> = ctx.input(|i| {
-            i.raw
-                .events
-                .iter()
-                .filter_map(|e| match e {
-                    egui::Event::Screenshot {
-                        image, user_data, ..
-                    } => {
-                        let id = user_data.data.as_ref()?.downcast_ref::<u64>()?;
-                        Some((*id, Arc::clone(image)))
-                    }
-                    _ => None,
-                })
-                .collect()
-        });
-        for (id, image) in images {
+    fn take_screenshots(&mut self) {
+        while let Ok((id, image)) = self.shot_rx.try_recv() {
             let Some(i) = self.shots.iter().position(|(s, _, _)| *s == id) else {
                 continue;
             };
@@ -333,6 +330,7 @@ impl Control {
                             unit: egui::MouseWheelUnit::Point,
                             delta,
                             phase: egui::TouchPhase::Move,
+                            source: egui::MouseWheelSource::Wheel,
                             modifiers: modifiers(p),
                         },
                     ])

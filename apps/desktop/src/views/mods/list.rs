@@ -421,7 +421,7 @@ fn group_head(
     let tk = ui.tokens();
     let r = ui.max_rect();
     let resp = ui
-        .interact(r, ui.id().with(("group", status)), Sense::click())
+        .interact(r, ui.scope_id().with(("group", status)), Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let h = paint::ease(ui, resp.id.with("h"), resp.hovered());
     let p = ui.painter();
@@ -512,7 +512,7 @@ fn mod_row(
     } else {
         Sense::hover()
     };
-    let resp = ui.interact(r, ui.id().with(("mod", row.id)), sense);
+    let resp = ui.interact(r, ui.scope_id().with(("mod", row.id)), sense);
     let menu_open = menu::is_open(&resp);
     let h = paint::ease(ui, resp.id.with("h"), resp.hovered());
     let fill = if look.focused {
@@ -580,7 +580,7 @@ fn mod_row(
     paint_source_line(ui, lr, &line);
     if !line.tip.is_empty() {
         let _ = ui
-            .interact(lr, ui.id().with(("src", row.id)), Sense::hover())
+            .interact(lr, ui.scope_id().with(("src", row.id)), Sense::hover())
             .tip(&line.tip);
     }
 
@@ -639,7 +639,7 @@ fn mod_row(
                     Vec2::new(16.0 + g.size().x, 16.0),
                 );
                 let _ = ui
-                    .interact(cr, ui.id().with(("ingame", row.id)), Sense::hover())
+                    .interact(cr, ui.scope_id().with(("ingame", row.id)), Sense::hover())
                     .tip(t("mods", tip));
             }
             let sg = ph(ui, &m.size_human, font(Face::Mono, size::TEXT_2XS));
@@ -666,7 +666,7 @@ fn mod_row(
                 let vr =
                     Rect::from_min_size(Pos2::new(x.min, cy - 8.0), Vec2::new(g.size().x, 16.0));
                 let _ = ui
-                    .interact(vr, ui.id().with(("ver", row.id)), Sense::hover())
+                    .interact(vr, ui.scope_id().with(("ver", row.id)), Sense::hover())
                     .tip(&tip);
             }
         }

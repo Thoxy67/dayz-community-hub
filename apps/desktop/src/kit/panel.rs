@@ -39,9 +39,9 @@ pub struct Panel<'a> {
 }
 
 impl<'a> Panel<'a> {
-    pub fn new(id_salt: impl egui::AsId) -> Self {
+    pub fn new(id_salt: impl egui::AsIdSalt) -> Self {
         Self {
-            id: Id::new(id_salt),
+            id: Id::unique(id_salt),
             title: "",
             scroll: true,
             padded: false,
@@ -226,7 +226,7 @@ impl<'a> Field<'a> {
         let text_h = lg.size().y + hg.as_ref().map_or(0.0, |(g, _)| g.size().y + 2.0);
         // The control's height is last frame's (a control rarely changes height), so it
         // can be centred on the name before it is drawn.
-        let hid = ui.id().with(("kit-field", self.label));
+        let hid = ui.scope_id().with(("kit-field", self.label));
         let last_ctl: f32 = ui.data(|d| d.get_temp(hid)).unwrap_or(size::CONTROL);
         let ctl_left = if self.stacked {
             left.x + size::PAD
@@ -604,7 +604,7 @@ impl<'a> EmptyState<'a> {
         );
         child.spacing_mut().item_spacing = Vec2::new(6.0, 8.0);
         // Centred vertically: the height is last frame's, the first frame settles at once.
-        let hid = ui.id().with(("empty-h", self.title));
+        let hid = ui.scope_id().with(("empty-h", self.title));
         let last_h: f32 = ui.data(|d| d.get_temp(hid)).unwrap_or(0.0);
         child.add_space(((full.height() - 48.0 - last_h) / 2.0).max(0.0));
         let start = child.cursor().top();
@@ -713,9 +713,9 @@ pub struct Disclosure<'a> {
 }
 
 impl<'a> Disclosure<'a> {
-    pub fn new(id_salt: impl egui::AsId, label: &'a str) -> Self {
+    pub fn new(id_salt: impl egui::AsIdSalt, label: &'a str) -> Self {
         Self {
-            id: Id::new(id_salt),
+            id: Id::unique(id_salt),
             label,
             default_open: false,
         }
@@ -737,9 +737,7 @@ impl<'a> Disclosure<'a> {
             ui.data_mut(|d| d.insert_persisted(self.id, open));
         }
         let label = self.label;
-        resp.widget_info(|| {
-            egui::WidgetInfo::selected(egui::WidgetType::CollapsingHeader, true, open, label)
-        });
+        resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, open, label));
         let hover = paint::ease(ui, resp.id.with("hover"), resp.hovered());
         let p = ui.painter();
         p.rect_filled(

@@ -6,7 +6,7 @@
 //! field wears the glass on the left and, once filled, a button that empties it.
 
 use egui::{
-    Align, Color32, CornerRadius, Id, Rect, Response, RichText, Sense, Shape, Stroke, StrokeKind,
+    Align2, Color32, CornerRadius, Id, Rect, Response, RichText, Sense, Shape, Stroke, StrokeKind,
     TextEdit, Ui, Vec2, Widget,
 };
 
@@ -172,8 +172,8 @@ impl<'a> Input<'a> {
     }
 
     /// A stable id (for `request_focus` from a shortcut).
-    pub fn id_salt(mut self, salt: impl egui::AsId) -> Self {
-        self.id_salt = Some(Id::new(salt));
+    pub fn id_salt(mut self, salt: impl egui::AsIdSalt) -> Self {
+        self.id_salt = Some(Id::unique(salt));
         self
     }
 
@@ -213,7 +213,7 @@ impl Widget for Input<'_> {
             .margin(egui::Margin::ZERO)
             .font(f.clone())
             .text_color(t.fg)
-            .vertical_align(Align::Center)
+            .align(Align2::LEFT_CENTER)
             .desired_width(inner.width())
             .password(self.kind == InputKind::Password)
             .char_limit(self.char_limit)
@@ -224,10 +224,26 @@ impl Widget for Input<'_> {
         // A child that does not allocate in `ui`: a scope here would add the row's
         // spacing a second time after the field.
         let mut field = ui.new_child(egui::UiBuilder::new().max_rect(inner));
+        // egui 0.37 makes a text edit at least `interact_size.y` tall (the theme's
+        // `CONTROL`): a smaller field would centre its text below the middle.
+        field.spacing_mut().interact_size.y = 0.0;
         if !self.enabled {
             field.disable();
         }
         let mut resp = field.put(inner, edit);
+        // A name for screen readers (the hint is only a placeholder to them; egui_kittest
+        // 0.37 fails a test on an unnamed input): the placeholder, else what a search
+        // field is.
+        let name = if !self.placeholder.is_empty() {
+            Some(self.placeholder.to_owned())
+        } else if search {
+            Some(crate::i18n::t("common", "search").to_string())
+        } else {
+            None
+        };
+        if let Some(name) = name {
+            resp = resp.accessible_name(name);
+        }
         if self.numeric {
             crate::pad::registry::digits(ui.ctx(), resp.id);
         }
@@ -256,9 +272,7 @@ impl Widget for Input<'_> {
                 );
                 let clear = ui.interact(cr, resp.id.with("clear"), Sense::click());
                 let label = self.clear_label;
-                clear.widget_info(|| {
-                    egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label)
-                });
+                clear.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
                 let ch = paint::ease(ui, clear.id, clear.hovered());
                 let p = ui.painter();
                 p.rect_filled(

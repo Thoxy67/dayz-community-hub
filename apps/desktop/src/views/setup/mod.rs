@@ -39,7 +39,7 @@ type Shared = Arc<Mutex<Option<Wizard>>>;
 
 fn shared(ctx: &egui::Context) -> Shared {
     ctx.data_mut(|d| {
-        d.get_temp_mut_or_default::<Shared>(egui::Id::new("dzch.setup"))
+        d.get_temp_mut_or_default::<Shared>(egui::Id::unique("dzch.setup"))
             .clone()
     })
 }

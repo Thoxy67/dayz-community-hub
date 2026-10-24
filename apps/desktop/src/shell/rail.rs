@@ -180,7 +180,7 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx) {
     // Inset from the rail's border, so the handle does not sit on the separator.
     child.spacing_mut().scroll.bar_outer_margin = 3.0;
     // The current place is scrolled into sight when it changes (a shortcut, the palette).
-    let seen_id = ui.id().with("rail-seen-view");
+    let seen_id = ui.scope_id().with("rail-seen-view");
     let changed = ui.data(|d| d.get_temp::<ViewId>(seen_id)) != Some(cx.nav.view);
     if changed {
         ui.data_mut(|d| d.insert_temp(seen_id, cx.nav.view));
@@ -277,7 +277,7 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx) {
 
     // ── the accent bar beside the current place, sliding to the next ──
     if let Some(r) = active {
-        let id = ui.id().with("rail-bar");
+        let id = ui.scope_id().with("rail-bar");
         let dur = if crate::app::reduced_motion(ui.ctx()) {
             0.0
         } else {
@@ -303,9 +303,9 @@ fn entry(ui: &mut Ui, cx: &mut Ctx, p: &Place, collapsed: bool, w: f32, h: f32) 
         pos2(row.left() + PAD_X, row.top()),
         pos2(row.right() - PAD_X, row.bottom()),
     );
-    let resp = ui.interact(r, ui.id().with(("rail", p.id.id())), Sense::click());
+    let resp = ui.interact(r, ui.scope_id().with(("rail", p.id.id())), Sense::click());
     let label = t("nav", p.label);
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
     let on = cx.nav.view == p.id;
     let h = paint::ease(ui, resp.id, resp.hovered());
     let painter = ui.painter();
@@ -348,7 +348,7 @@ fn entry(ui: &mut Ui, cx: &mut Ctx, p: &Place, collapsed: bool, w: f32, h: f32) 
         let mut right = r.right() - 10.0;
         if let Some(c) = &count {
             // Pops in once when the figure changes (a new mod update, a favourite added).
-            let k = pop(ui, egui::Id::new(("rail-count", p.id.id())), &c.value);
+            let k = pop(ui, egui::Id::unique(("rail-count", p.id.id())), &c.value);
             let tone = c.tone.unwrap_or(tk.fg_faint).gamma_multiply(k);
             let g = paint::galley(ui, &c.value, font(Face::Mono, size::TEXT_2XS), tone);
             right -= g.size().x;
@@ -383,7 +383,7 @@ fn entry(ui: &mut Ui, cx: &mut Ctx, p: &Place, collapsed: bool, w: f32, h: f32) 
 fn pop(ui: &Ui, id: egui::Id, value: &str) -> f32 {
     const POP: f64 = 0.14;
     let now = ui.input(|i| i.time);
-    let hash = egui::Id::new(value);
+    let hash = egui::Id::unique(value);
     let prev: Option<(egui::Id, f64)> = ui.data(|d| d.get_temp(id));
     let at = match prev {
         Some((h, at)) if h == hash => at,
@@ -438,7 +438,7 @@ fn game_block(ui: &mut Ui, cx: &mut Ctx, collapsed: bool, w: f32) {
     };
     let resp = ui.interact(
         btn,
-        ui.id().with("kill-game"),
+        ui.scope_id().with("kill-game"),
         if !closing {
             Sense::click()
         } else {
@@ -541,7 +541,7 @@ fn rejoin(ui: &mut Ui, cx: &mut Ctx, collapsed: bool, fit: Fit, foot: Rect, y: f
                 vec2(foot.width() - 16.0, fit.entry_h),
             )
         };
-        let resp = ui.interact(r, ui.id().with("rejoin-line"), Sense::click());
+        let resp = ui.interact(r, ui.scope_id().with("rejoin-line"), Sense::click());
         let h = paint::ease(ui, resp.id, resp.hovered());
         let p = ui.painter();
         p.rect_filled(
@@ -604,7 +604,7 @@ fn rejoin(ui: &mut Ui, cx: &mut Ctx, collapsed: bool, fit: Fit, foot: Rect, y: f
     let sg = super::stencil(ui, t("nav", "lastPlayed"), tk.fg_faint, None);
     paint::text_at(p, &sg, head.left() + 8.0, cy + 0.5, tk.fg_faint);
     let close_r = Rect::from_min_size(pos2(head.right() - 8.0 - 16.0, cy - 8.0), Vec2::splat(16.0));
-    let close = ui.interact(close_r, ui.id().with("rejoin-close"), Sense::click());
+    let close = ui.interact(close_r, ui.scope_id().with("rejoin-close"), Sense::click());
     let ch = paint::ease(ui, close.id, close.hovered());
     let p = ui.painter();
     p.rect_filled(
@@ -638,7 +638,7 @@ fn rejoin(ui: &mut Ui, cx: &mut Ctx, collapsed: bool, fit: Fit, foot: Rect, y: f
     );
     paint::text_at(ui.painter(), &ag, ag_r.left(), cy, tk.fg_faint);
     let _ = ui
-        .interact(ag_r, ui.id().with("rejoin-ago"), Sense::hover())
+        .interact(ag_r, ui.scope_id().with("rejoin-ago"), Sense::hover())
         .tip_kbd(&format::date_time(ts), "", Side::Top);
 
     // Body.
@@ -646,7 +646,7 @@ fn rejoin(ui: &mut Ui, cx: &mut Ctx, collapsed: bool, fit: Fit, foot: Rect, y: f
     let right = card.right() - 1.0 - 8.0;
     let mut y = head.bottom() + 1.0 + 6.0;
     let name_r = Rect::from_min_size(pos2(left, y), vec2(right - left, 16.0));
-    let nresp = ui.interact(name_r, ui.id().with("rejoin-name"), Sense::click());
+    let nresp = ui.interact(name_r, ui.scope_id().with("rejoin-name"), Sense::click());
     let nh = paint::ease(ui, nresp.id, nresp.hovered());
     let ink = paint::lerp(tk.fg, tk.accent, nh);
     let ng = paint::galley_trunc(
@@ -680,7 +680,7 @@ fn rejoin(ui: &mut Ui, cx: &mut Ctx, collapsed: bool, fit: Fit, foot: Rect, y: f
     }
     // REJOIN.
     let br = Rect::from_min_size(pos2(left, y), vec2(right - left, size::CONTROL));
-    let bresp = ui.interact(br, ui.id().with("rejoin-btn"), Sense::click());
+    let bresp = ui.interact(br, ui.scope_id().with("rejoin-btn"), Sense::click());
     let bh = paint::ease(ui, bresp.id, bresp.hovered());
     let p = ui.painter();
     p.rect_filled(
@@ -750,7 +750,11 @@ fn listed_lines(
             .layout(egui::Layout::right_to_left(egui::Align::Center)),
     );
     let sresp = sui.add(Signal::new(ms).pending(pending).size(SignalSize::Xs));
-    let click = ui.interact(sresp.rect, ui.id().with("rejoin-ping"), Sense::click());
+    let click = ui.interact(
+        sresp.rect,
+        ui.scope_id().with("rejoin-ping"),
+        Sense::click(),
+    );
     super::ring(ui, &click, sresp.rect, size::RADIUS_XS);
     if click.clicked() {
         let timeout = cx.stores.profile.ping_settings().1;
@@ -794,13 +798,13 @@ fn collapse_button(ui: &mut Ui, cx: &mut Ctx, collapsed: bool, w: f32) {
     let tk = ui.tokens();
     let (row, _) = ui.allocate_exact_size(vec2(w, size::CONTROL), Sense::hover());
     let r = row.shrink2(vec2(PAD_X, 0.0));
-    let resp = ui.interact(r, ui.id().with("rail-collapse"), Sense::click());
+    let resp = ui.interact(r, ui.scope_id().with("rail-collapse"), Sense::click());
     let label = if collapsed {
         t("nav", "expand")
     } else {
         t("nav", "collapse")
     };
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
     let h = paint::ease(ui, resp.id, resp.hovered());
     let p = ui.painter();
     p.rect_filled(

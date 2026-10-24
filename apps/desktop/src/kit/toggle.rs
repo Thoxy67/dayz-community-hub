@@ -6,9 +6,7 @@
 //! `--duration-fast`. Box `size-3.5 rounded-xs border-border-strong bg-bg`, filled accent
 //! when ticked, the tick popping in.
 
-use egui::{
-    Color32, CornerRadius, Rect, Response, Sense, Ui, Vec2, Widget, WidgetInfo, WidgetType,
-};
+use egui::{Color32, CornerRadius, Rect, Response, Role, Sense, Ui, Vec2, Widget, WidgetInfo};
 
 use super::Tone;
 use super::paint::{self, fade};
@@ -125,7 +123,7 @@ impl Widget for Switch<'_> {
         }
         let now = *self.on;
         let label = self.label;
-        resp.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, true, now, label));
+        resp.widget_info(|| WidgetInfo::selected(Role::CheckBox, true, now, label));
         if ui.is_rect_visible(rect) {
             let hover = paint::ease(ui, resp.id.with("hover"), self.enabled && resp.hovered());
             let on = paint::ease(ui, resp.id.with("on"), now);
@@ -222,7 +220,7 @@ impl Widget for MiniSwitch<'_> {
         }
         let now = *self.on;
         let label = self.label;
-        resp.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, true, now, label));
+        resp.widget_info(|| WidgetInfo::selected(Role::CheckBox, true, now, label));
         if ui.is_rect_visible(rect) {
             let on = paint::ease(ui, resp.id.with("on"), now);
             let t = ui.tokens();
@@ -347,7 +345,7 @@ impl Widget for Checkbox<'_> {
         }
         let now = *self.on;
         let label = self.label;
-        resp.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, true, now, label));
+        resp.widget_info(|| WidgetInfo::selected(Role::CheckBox, true, now, label));
         if ui.is_rect_visible(rect) {
             let hover = paint::ease(ui, resp.id.with("hover"), resp.hovered());
             let tick = paint::ease_for(ui, resp.id.with("tick"), now, 0.14);
@@ -429,7 +427,7 @@ impl Widget for Toggle<'_> {
         }
         let now = *self.on;
         let label = self.label;
-        resp.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, true, now, label));
+        resp.widget_info(|| WidgetInfo::selected(Role::CheckBox, true, now, label));
         if ui.is_rect_visible(rect) {
             let hover = paint::ease(ui, resp.id.with("hover"), resp.hovered());
             let tick = paint::ease_for(ui, resp.id.with("tick"), now, 0.14);

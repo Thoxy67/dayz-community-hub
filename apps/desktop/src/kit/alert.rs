@@ -102,7 +102,7 @@ impl<'a> Alert<'a> {
         let text_left = top.x + 10.0 + size::CONTROL + 10.0;
         let right = top.x + w - 10.0 - dismiss_w;
         // Actions: laid out into a right-aligned row, measured, then the words take the rest.
-        let actions_w_id = ui.id().with(("alert-actions", self.title));
+        let actions_w_id = ui.scope_id().with(("alert-actions", self.title));
         let last_aw: f32 = ui.data(|d| d.get_temp(actions_w_id)).unwrap_or(0.0);
         let words_w = if wide {
             (right - text_left - last_aw - 12.0).max(80.0)
@@ -207,7 +207,11 @@ impl<'a> Alert<'a> {
                 Pos2::new(rect.right() - 10.0 - size::CONTROL_SM, rect.top() + 8.0),
                 Vec2::splat(size::CONTROL_SM),
             );
-            let xb = ui.interact(xr, ui.id().with(("alert-x", self.title)), Sense::click());
+            let xb = ui.interact(
+                xr,
+                ui.scope_id().with(("alert-x", self.title)),
+                Sense::click(),
+            );
             let hx = paint::ease(ui, xb.id, xb.hovered());
             let p = ui.painter();
             p.rect_filled(

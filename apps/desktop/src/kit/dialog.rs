@@ -33,7 +33,7 @@ pub fn bottom_inset(ctx: &Context) -> f32 {
 }
 
 fn inset_id() -> Id {
-    Id::new("kit::dialog.bottom_inset")
+    Id::unique("kit::dialog.bottom_inset")
 }
 
 /// How wide a dialog is.
@@ -71,9 +71,9 @@ pub struct Dialog<'a> {
 }
 
 impl<'a> Dialog<'a> {
-    pub fn new(id_salt: impl egui::AsId, title: &'a str) -> Self {
+    pub fn new(id_salt: impl egui::AsIdSalt, title: &'a str) -> Self {
         Self {
-            id: Id::new(id_salt),
+            id: Id::unique(id_salt),
             title,
             description: "",
             size: DialogSize::Sm,
@@ -215,9 +215,7 @@ impl<'a> Dialog<'a> {
                     // A controller's press never lands on it.
                     crate::pad::registry::cross(ui.ctx(), cb.id);
                     let label = self.close_label;
-                    cb.widget_info(|| {
-                        egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label)
-                    });
+                    cb.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
                     let hov = paint::ease(ui, cb.id, cb.hovered());
                     let p = ui.painter();
                     p.rect_filled(
@@ -324,13 +322,13 @@ pub struct Confirm<'a> {
 
 impl<'a> Confirm<'a> {
     pub fn new(
-        id_salt: impl egui::AsId,
+        id_salt: impl egui::AsIdSalt,
         title: &'a str,
         confirm: &'a str,
         cancel: &'a str,
     ) -> Self {
         Self {
-            id: Id::new(id_salt),
+            id: Id::unique(id_salt),
             title,
             description: "",
             confirm,

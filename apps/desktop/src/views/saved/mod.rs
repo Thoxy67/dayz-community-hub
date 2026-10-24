@@ -436,7 +436,7 @@ pub type Shared = Arc<Mutex<State>>;
 
 pub fn shared(ctx: &egui::Context, kind: Kind) -> Shared {
     ctx.data_mut(|d| {
-        d.get_temp_mut_or_insert_with(Id::new(("dzch.saved", kind.id())), || {
+        d.get_temp_mut_or_insert_with(Id::unique(("dzch.saved", kind.id())), || {
             Arc::new(Mutex::new(State::new(kind)))
         })
         .clone()
@@ -1149,7 +1149,7 @@ fn head_row(ui: &mut Ui, head: &Head, at: usize, first: bool) -> Option<HeadActi
         rect.bottom() - 30.0
     };
     let band = egui::Rect::from_min_max(egui::pos2(rect.left(), top), rect.right_bottom());
-    let id = ui.id().with(("saved-head", at));
+    let id = ui.scope_id().with(("saved-head", at));
     let resp = ui.interact(band, id, Sense::click());
     let hover = crate::kit::paint::ease(ui, id.with("hover"), resp.hovered());
     let p = ui.painter();

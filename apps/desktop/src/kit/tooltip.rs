@@ -79,7 +79,7 @@ impl TipExt for Response {
 }
 
 fn pad_id() -> egui::Id {
-    egui::Id::new("dzch.kit.pad_mode")
+    egui::Id::unique("dzch.kit.pad_mode")
 }
 
 /// Whether a controller drives the window: set once a frame by the window, before the
@@ -96,7 +96,7 @@ pub fn pad_mode(ctx: &egui::Context) -> bool {
 }
 
 fn pad_focus_id() -> egui::Id {
-    egui::Id::new("dzch.kit.pad_focus")
+    egui::Id::unique("dzch.kit.pad_focus")
 }
 
 /// The widget the pad rests on (egui's focus, or a disabled control egui gives none

@@ -220,8 +220,8 @@ impl Window<'_> {
         // The window where it was (eframe's `window.ron` beside the preferences; see
         // `platform::window`), else centred at Tauri's default size.
         let window_file = platform::window::path_in(self.data_dir);
-        platform::window::sanitize(&window_file);
         let saved = kept.prefs.get().window;
+        platform::window::sanitize(&window_file, saved);
         let centered = !platform::window::has_saved_position(&window_file);
         let game_mode = self.game_mode;
         let options = |gpu: Gpu| {

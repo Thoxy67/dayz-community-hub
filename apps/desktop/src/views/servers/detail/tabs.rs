@@ -299,7 +299,11 @@ pub fn rules(ui: &mut Ui, st: &mut DetailState, m: &Model) {
                     );
                     if crate::parts::is_cut(&g, &r.name) {
                         let _ = ui
-                            .interact(name_r, ui.id().with(("rule", &r.name)), Sense::hover())
+                            .interact(
+                                name_r,
+                                ui.scope_id().with(("rule", &r.name)),
+                                Sense::hover(),
+                            )
                             .on_hover_text(&r.name);
                     }
                     let vr = Rect::from_min_max(

@@ -411,7 +411,7 @@ pub(super) fn link(ui: &mut Ui, text: &str) -> egui::Response {
     if crate::kit::paint::keyboard_focus(ui, &resp) {
         crate::kit::paint::focus_ring(ui.painter(), r, size::RADIUS_XS, &tk);
     }
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Link, true, text));
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Link, true, text));
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 

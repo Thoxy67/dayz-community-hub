@@ -146,7 +146,7 @@ fn paint_color(painter: &Painter, rect: Rect, color: Color32) {
         color.to_array().hash(&mut h);
         h.finish()
     };
-    let id = egui::Id::new("kit::topo-meshes");
+    let id = egui::Id::unique("kit::topo-meshes");
     let hit = ctx.data_mut(|d| {
         let kept = d.get_temp_mut_or_default::<Meshes>(id);
         kept.iter()

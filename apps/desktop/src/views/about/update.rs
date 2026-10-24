@@ -28,7 +28,7 @@ pub fn show(ui: &mut Ui, cx: &mut Ctx, st: &mut AboutState, run: &mut Run) {
         ui.ctx()
             .request_repaint_after(Duration::from_secs_f64((st.glow_until - now).max(0.0)));
     }
-    let lit = paint::ease_for(ui, ui.id().with("about.update.glow"), glow, 0.3);
+    let lit = paint::ease_for(ui, ui.scope_id().with("about.update.glow"), glow, 0.3);
     let rest = if up.state == UpdateState::Available {
         alpha(tk.ok, 0.5)
     } else {

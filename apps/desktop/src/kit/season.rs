@@ -36,7 +36,7 @@ pub struct Fx {
 }
 
 fn key() -> Id {
-    Id::new("dzch.season")
+    Id::unique("dzch.season")
 }
 
 /// The effects of this frame.

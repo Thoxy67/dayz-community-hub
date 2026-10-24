@@ -286,7 +286,7 @@ impl Default for EventPipe {
 
 /// Whether motion is off (the preference): views appear without their rise.
 pub fn reduced_motion(ctx: &Context) -> bool {
-    ctx.data(|d| d.get_temp::<bool>(egui::Id::new("dzch.reduced_motion")))
+    ctx.data(|d| d.get_temp::<bool>(egui::Id::unique("dzch.reduced_motion")))
         .unwrap_or(false)
 }
 
@@ -667,7 +667,7 @@ impl HubApp {
         let reduced = p.reduced_motion;
         if themed || self.reduced != Some(reduced) {
             self.reduced = Some(reduced);
-            ctx.data_mut(|d| d.insert_temp(egui::Id::new("dzch.reduced_motion"), reduced));
+            ctx.data_mut(|d| d.insert_temp(egui::Id::unique("dzch.reduced_motion"), reduced));
             ctx.all_styles_mut(|s| {
                 s.animation_time = if reduced { 0.0 } else { motion::FAST };
             });

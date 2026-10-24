@@ -242,7 +242,7 @@ fn cards(
                 job.wrap.max_rows = 2;
                 job.wrap.break_anywhere = false;
                 job.wrap.overflow_character = Some('…');
-                let name = ui.painter().layout_job(job);
+                let name = paint::layout_top(ui, job);
                 let h = 10.0
                     + name.size().y.max(17.5)
                     + 5.0
@@ -259,11 +259,11 @@ fn cards(
             let rect = Rect::from_min_size(Pos2::new(x, y), Vec2::new(cw, row_h));
             let resp = ui.interact(
                 rect,
-                ui.id().with(("recent-card", base + i)),
+                ui.scope_id().with(("recent-card", base + i)),
                 Sense::click(),
             );
             let label = p.name.clone();
-            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
+            resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
             let hover = paint::ease(ui, resp.id.with("h"), resp.hovered() || resp.has_focus());
             let painter = ui.painter();
             painter.rect(
@@ -386,7 +386,7 @@ fn compact(
     for (i, p) in picks.iter().enumerate() {
         let row = rows.get(i).copied().flatten();
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 42.0), Sense::click());
-        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &p.name));
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &p.name));
         let hover = paint::ease(ui, resp.id.with("h"), resp.hovered() || resp.has_focus());
         let painter = ui.painter();
         painter.rect_filled(rect, CornerRadius::ZERO, alpha(tk.raised, 0.6 * hover));

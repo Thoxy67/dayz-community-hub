@@ -2128,7 +2128,7 @@ mod tests {
     fn cand(n: u64, x: f32, y: f32, w: f32, h: f32) -> Cand {
         let r = Rect::from_min_size(egui::pos2(x, y), egui::vec2(w, h));
         Cand {
-            id: Id::new(n),
+            id: Id::unique(n),
             rect: r,
             full: r,
             layer: LayerId::background(),
@@ -2162,14 +2162,14 @@ mod tests {
         let main_below = cand(3, 400.0, 400.0, 100.0, 30.0);
         let s = snap(vec![from, rail_below, main_below], vec![main, rail]);
         let to = pick(&s, &from, from.rect, Dir::Down).map(|c| c.id);
-        assert_eq!(to, Some(Id::new(3u64)), "down stays in the main area");
+        assert_eq!(to, Some(Id::unique(3u64)), "down stays in the main area");
         // Left leaves the region: the rail is that way.
         let to = pick(&s, &from, from.rect, Dir::Left).map(|c| c.id);
-        assert_eq!(to, Some(Id::new(2u64)));
+        assert_eq!(to, Some(Id::unique(2u64)));
         // Nothing more down in the main area: down may leave it.
         let s = snap(vec![from, rail_below], vec![main, rail]);
         let to = pick(&s, &from, from.rect, Dir::Down).map(|c| c.id);
-        assert_eq!(to, Some(Id::new(2u64)));
+        assert_eq!(to, Some(Id::unique(2u64)));
     }
 
     #[test]
@@ -2185,7 +2185,7 @@ mod tests {
         let to = pick(&s, &from, from.rect, Dir::Down).map(|c| c.id);
         assert_eq!(
             to,
-            Some(Id::new(2u64)),
+            Some(Id::unique(2u64)),
             "the next field of the page, not the status bar"
         );
         // Out of sight beside the region: never.
@@ -2253,7 +2253,7 @@ mod tests {
     #[test]
     fn rows_under_a_sticky_heading_are_out_of_sight() {
         let head = (
-            Id::new(9u64),
+            Id::unique(9u64),
             Rect::from_min_size(egui::pos2(0.0, 100.0), egui::vec2(400.0, 30.0)),
         );
         let under = Rect::from_min_size(egui::pos2(10.0, 105.0), egui::vec2(100.0, 20.0));
@@ -2281,9 +2281,9 @@ mod tests {
         let cancel = cand(3, 300.0, 200.0, 80.0, 28.0);
         let ok = cand(4, 390.0, 200.0, 80.0, 28.0);
         let s = overlay(vec![cross, field, cancel, ok]);
-        assert_eq!(dialog_safe(&s).map(|c| c.id), Some(Id::new(3u64)));
-        assert_eq!(dialog_confirm(&s).map(|c| c.id), Some(Id::new(4u64)));
-        assert_eq!(close_cross(&s), Some(Id::new(1u64)));
+        assert_eq!(dialog_safe(&s).map(|c| c.id), Some(Id::unique(3u64)));
+        assert_eq!(dialog_confirm(&s).map(|c| c.id), Some(Id::unique(4u64)));
+        assert_eq!(close_cross(&s), Some(Id::unique(1u64)));
         // A lone button at the foot is no footer to land on.
         let s = overlay(vec![cross, field, ok]);
         assert!(dialog_safe(&s).is_none());
@@ -2302,7 +2302,7 @@ mod tests {
         // Up still reaches it.
         assert_eq!(
             pick(&s, &row, row.rect, Dir::Up).map(|c| c.id),
-            Some(Id::new(2u64))
+            Some(Id::unique(2u64))
         );
         // A pane beside the row: Right goes there.
         let pane = cand(3, 700.0, 300.0, 200.0, 30.0);
@@ -2310,13 +2310,13 @@ mod tests {
         s.bars = true;
         assert_eq!(
             pick(&s, &row, row.rect, Dir::Right).map(|c| c.id),
-            Some(Id::new(3u64))
+            Some(Id::unique(3u64))
         );
     }
 
     #[test]
     fn lt_and_rt_go_round_the_tabs_of_the_pane() {
-        let base = Id::new("strip");
+        let base = Id::unique("strip");
         let mut s = snap(
             vec![],
             vec![Rect::from_min_size(
@@ -2404,7 +2404,7 @@ mod tests {
         let ok = cand(2, 300.0, 200.0, 80.0, 24.0);
         s.overlay_all = vec![wide, ok];
         assert_eq!(close_cross(&s), None);
-        s.reg.crosses.push(Id::new(1u64));
-        assert_eq!(close_cross(&s), Some(Id::new(1u64)));
+        s.reg.crosses.push(Id::unique(1u64));
+        assert_eq!(close_cross(&s), Some(Id::unique(1u64)));
     }
 }

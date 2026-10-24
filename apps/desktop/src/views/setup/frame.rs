@@ -3,8 +3,8 @@
 //! done steps, and Enter.
 
 use egui::{
-    Align, Color32, CornerRadius, Id, Key, Layout, Order, Rect, Sense, Stroke, Ui, UiBuilder, Vec2,
-    WidgetInfo, WidgetType, pos2, vec2,
+    Align, Color32, CornerRadius, Id, Key, Layout, Order, Rect, Role, Sense, Stroke, Ui, UiBuilder,
+    Vec2, WidgetInfo, pos2, vec2,
 };
 use serde_json::{Value, json};
 
@@ -53,7 +53,7 @@ pub(super) fn show(ctx: &egui::Context, cx: &mut Ctx, w: &mut Wizard, acts: &mut
     if rise < 1.0 || fade < 1.0 {
         ctx.request_repaint();
     }
-    egui::Area::new(Id::new("dzch.setup"))
+    egui::Area::new(Id::unique("dzch.setup"))
         .order(Order::Middle)
         .fixed_pos(rect.min)
         .constrain(false)
@@ -185,8 +185,8 @@ fn step_row(
     } else {
         Sense::hover()
     };
-    let resp = ui.interact(row, Id::new(("dzch.setup.step", i)), sense);
-    resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, reachable, label));
+    let resp = ui.interact(row, Id::unique(("dzch.setup.step", i)), sense);
+    resp.widget_info(|| WidgetInfo::labeled(Role::Button, reachable, label));
     let on = i == cur;
     let done = i < cur;
     let hover = paint::ease(ui, resp.id.with("hover"), reachable && resp.hovered());
@@ -269,7 +269,7 @@ fn pane(ui: &mut Ui, cx: &mut Ctx, w: &mut Wizard, r: Rect, rise: f32, acts: &mu
         target
     } else {
         ui.ctx()
-            .animate_value_with_time(Id::new("dzch.setup.progress"), target, motion::SLOW)
+            .animate_value_with_time(Id::unique("dzch.setup.progress"), target, motion::SLOW)
     };
     let p = ui.painter();
     p.rect_filled(bar, 0, tk.raised);

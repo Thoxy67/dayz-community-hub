@@ -179,7 +179,7 @@ pub fn glyph_h() -> f32 {
 }
 
 fn kind_id() -> egui::Id {
-    egui::Id::new("parts::pad.kind")
+    egui::Id::unique("parts::pad.kind")
 }
 
 /// The pad in hand's glyphs, for what draws them without the stores (a dialog's

@@ -367,7 +367,7 @@ type Shared = Arc<Mutex<NewsState>>;
 /// The view's state, shared with its commands.
 pub fn shared(ctx: &egui::Context) -> Shared {
     ctx.data_mut(|d| {
-        d.get_temp_mut_or_insert_with(Id::new("dzch.news.view"), || {
+        d.get_temp_mut_or_insert_with(Id::unique("dzch.news.view"), || {
             Arc::new(Mutex::new(NewsState::default()))
         })
         .clone()

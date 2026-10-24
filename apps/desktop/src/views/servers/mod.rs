@@ -93,7 +93,7 @@ pub type Shared = Arc<Mutex<UiState>>;
 /// The view's state, shared with its commands.
 pub fn shared(ctx: &egui::Context) -> Shared {
     ctx.data_mut(|d| {
-        d.get_temp_mut_or_insert_with(Id::new("dzch.servers.view"), || {
+        d.get_temp_mut_or_insert_with(Id::unique("dzch.servers.view"), || {
             Arc::new(Mutex::new(UiState::default()))
         })
         .clone()
@@ -537,7 +537,7 @@ fn stale_strip(ui: &mut Ui, cx: &Ctx, run: &mut Run) {
         Pos2::new(rect.right() - size::PAD - bg.size().x - 12.0, cy - 9.0),
         Vec2::new(bg.size().x + 12.0, 18.0),
     );
-    let b = ui.interact(br, ui.id().with("stale-refresh"), Sense::click());
+    let b = ui.interact(br, ui.scope_id().with("stale-refresh"), Sense::click());
     let h = paint::ease(ui, b.id.with("hover"), b.hovered());
     ui.painter().rect_filled(
         br,
@@ -548,7 +548,7 @@ fn stale_strip(ui: &mut Ui, cx: &Ctx, run: &mut Run) {
     if paint::keyboard_focus(ui, &b) {
         paint::focus_ring(ui.painter(), br, size::RADIUS_XS, &tk);
     }
-    b.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+    b.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
     if b.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
         run.push(("servers.refresh", Value::Null));
     }

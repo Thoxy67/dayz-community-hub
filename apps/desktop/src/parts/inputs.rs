@@ -36,8 +36,8 @@ impl<'a> SecretInput<'a> {
         self
     }
 
-    pub fn id_salt(mut self, salt: impl egui::AsId) -> Self {
-        self.id_salt = Some(Id::new(salt));
+    pub fn id_salt(mut self, salt: impl egui::AsIdSalt) -> Self {
+        self.id_salt = Some(Id::unique(salt));
         self
     }
 }
@@ -124,8 +124,8 @@ impl<'a> PathInput<'a> {
         self
     }
 
-    pub fn id_salt(mut self, salt: impl egui::AsId) -> Self {
-        self.id_salt = Some(Id::new(salt));
+    pub fn id_salt(mut self, salt: impl egui::AsIdSalt) -> Self {
+        self.id_salt = Some(Id::unique(salt));
         self
     }
 
@@ -216,7 +216,7 @@ impl egui::Widget for ColorToken<'_> {
         let srgb = rgb(*self.value);
         let swatch = ui.interact(sw, resp.id.with("swatch"), Sense::click());
         let label = self.label;
-        swatch.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+        swatch.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
         ui.painter()
             .rect_filled(sw, CornerRadius::same(size::RADIUS_SM), srgb);
         ui.painter().rect_stroke(
@@ -284,6 +284,8 @@ impl egui::Widget for ColorToken<'_> {
             oklch_text(*self.value)
         };
         let bg = ui.painter().add(egui::Shape::Noop);
+        // egui 0.37 makes a text edit at least `interact_size.y` tall: the field is smaller.
+        let interact_h = std::mem::replace(&mut ui.spacing_mut().interact_size.y, 0.0);
         let edit = ui.put(
             field.shrink2(Vec2::new(4.0, 0.0)),
             TextEdit::singleline(&mut draft)
@@ -292,8 +294,9 @@ impl egui::Widget for ColorToken<'_> {
                 .margin(egui::Margin::ZERO)
                 .font(font(Face::Mono, size::TEXT_2XS))
                 .text_color(tk.fg)
-                .vertical_align(egui::Align::Center),
+                .align(egui::Align2::LEFT_CENTER),
         );
+        ui.spacing_mut().interact_size.y = interact_h;
         let hover = ui.rect_contains_pointer(field);
         let border = if edit.has_focus() {
             alpha(tk.accent, 0.6)
@@ -449,7 +452,7 @@ impl LanguagePicker {
             );
             let b = b.on_hover_cursor(egui::CursorIcon::PointingHand);
             b.widget_info(|| {
-                egui::WidgetInfo::selected(egui::WidgetType::RadioButton, true, on, l.label())
+                egui::WidgetInfo::selected(egui::Role::RadioButton, true, on, l.label())
             });
             if b.clicked() && !on {
                 out = Some(*l);
@@ -522,7 +525,7 @@ impl LanguagePicker {
             }
             let b = b.on_hover_cursor(egui::CursorIcon::PointingHand);
             b.widget_info(|| {
-                egui::WidgetInfo::selected(egui::WidgetType::RadioButton, true, on, l.label())
+                egui::WidgetInfo::selected(egui::Role::RadioButton, true, on, l.label())
             });
             if b.clicked() && !on {
                 out = Some(*l);

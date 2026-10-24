@@ -9,7 +9,8 @@
 //!   Windows, the position moved onto a connected monitor (a window last seen on a
 //!   monitor since unplugged would open where nobody can see it). [`sanitize`] first drops
 //!   a file holding values that would hurt (not finite, absurd, or the `-32000` Windows
-//!   gives a minimised window), and [`restored`] corrects what eframe hands back: never
+//!   gives a minimised window), after rewriting a file eframe 0.36 wrote in the format
+//!   0.37 reads (eframe would ignore it), and [`restored`] corrects what eframe hands back: never
 //!   full screen, at least the minimum size, and a maximised window gets back the size it
 //!   had before it was maximised (kept in the preferences, `dzch.window`), so restoring
 //!   it does not leave a screen-sized window. A minimised window is never saved
@@ -49,12 +50,20 @@ pub fn path_in(dir: &Path) -> PathBuf {
     dir.join(FILE_NAME)
 }
 
-/// Remove the file at `path` if its window would be wrong to restore. Blocking: call
-/// it before the window opens. Never fails (an error is printed).
-pub fn sanitize(path: &Path) {
-    let Ok(text) = std::fs::read_to_string(path) else {
+/// Rewrite the file at `path` if eframe 0.36 wrote it, then remove it if its window
+/// would be wrong to restore. `saved` is the preferences' geometry (the size before
+/// maximising). Blocking: call it before the window opens. Never fails (an error is
+/// printed).
+pub fn sanitize(path: &Path, saved: Option<WindowState>) {
+    let Ok(mut text) = std::fs::read_to_string(path) else {
         return;
     };
+    if let Some(new) = migrate(&text, saved, cfg!(windows)) {
+        match std::fs::write(path, &new) {
+            Ok(()) => text = new,
+            Err(e) => eprintln!("window: cannot rewrite {}: {e}", path.display()),
+        }
+    }
     if let Err(why) = check(&text) {
         eprintln!("window: ignoring {}: {why}", path.display());
         if let Err(e) = std::fs::remove_file(path) {
@@ -69,7 +78,8 @@ pub fn has_saved_position(path: &Path) -> bool {
     std::fs::read_to_string(path)
         .ok()
         .and_then(|t| window(&t))
-        .and_then(|w| field(&w, "outer_position_pixels").cloned())
+        .and_then(|w| field(&w, GEOMETRY).cloned())
+        .and_then(|g| field(&g, "outer_position_pixels").cloned())
         .is_some_and(|p| matches!(p, ron::Value::Option(Some(_))))
 }
 
@@ -112,19 +122,81 @@ fn window(text: &str) -> Option<ron::Value> {
     ron::from_str::<ron::Value>(kv.get(WINDOW_KEY)?).ok()
 }
 
+/// eframe's (0.37) key for the window's position and size when neither maximised nor
+/// full screen: `(outer_position_pixels: Option<Pos2>, scale_factor, inner_size_points:
+/// Vec2)`.
+const GEOMETRY: &str = "normal_geometry";
+
+/// eframe 0.36's window entry, `(inner_position_pixels, outer_position_pixels,
+/// fullscreen, maximized, inner_size_points)` (the last three optional), in 0.37's
+/// format: the whole file again, or `None` when there is nothing to rewrite (already
+/// 0.37's, unreadable, no window). 0.37 restores a position as pixels over the saved
+/// scale factor, which 0.36 did not save: the position is kept only on Windows, where
+/// eframe then places the window in pixels whatever the factor; elsewhere the window
+/// opens centred once. A maximised window's size was the screen's: the preferences'
+/// size before maximising is the one to come back to.
+fn migrate(text: &str, saved: Option<WindowState>, keep_position: bool) -> Option<String> {
+    let mut kv = ron::from_str::<HashMap<String, String>>(text).ok()?;
+    let w = ron::from_str::<ron::Value>(kv.get(WINDOW_KEY)?).ok()?;
+    if field(&w, GEOMETRY).is_some() {
+        return None;
+    }
+    let pair = |key: &str| match field(&w, key) {
+        Some(ron::Value::Option(Some(v))) => Some((
+            field(v, "x").and_then(as_f64)?,
+            field(v, "y").and_then(as_f64)?,
+        )),
+        _ => None,
+    };
+    let flag = |key: &str| matches!(field(&w, key), Some(ron::Value::Bool(true)));
+    let maximized = flag("maximized");
+    let mut size = pair("inner_size_points");
+    if maximized && let (Some((sw, sh)), Some(before)) = (size, saved) {
+        let (bw, bh) = (f64::from(before.size[0]), f64::from(before.size[1]));
+        if bw.is_finite() && bh.is_finite() && bw >= 1.0 && bh >= 1.0 {
+            size = Some((bw.min(sw), bh.min(sh)));
+        }
+    }
+    let entry = match size {
+        // Nothing eframe 0.37 can restore: no entry, the window opens at the default.
+        None => None,
+        Some((sw, sh)) => {
+            let pos = match pair("outer_position_pixels").filter(|_| keep_position) {
+                Some((x, y)) => format!("Some((x:{x:?},y:{y:?}))"),
+                None => "None".to_owned(),
+            };
+            Some(format!(
+                "({GEOMETRY}:(outer_position_pixels:{pos},scale_factor:1.0,inner_size_points:(x:{sw:?},y:{sh:?})),fullscreen:{},maximized:{maximized})",
+                flag("fullscreen")
+            ))
+        }
+    };
+    match entry {
+        Some(e) => kv.insert(WINDOW_KEY.to_owned(), e),
+        None => kv.remove(WINDOW_KEY),
+    };
+    ron::to_string(&kv).ok()
+}
+
 /// `Err` says why the saved window must not be restored. A file eframe cannot read
 /// (not RON, no window) is fine: eframe ignores it.
 fn check(text: &str) -> Result<(), String> {
     let Some(w) = window(text) else {
         return Ok(());
     };
-    for key in [
-        "outer_position_pixels",
-        "inner_position_pixels",
-        "inner_size_points",
-    ] {
-        let Some(ron::Value::Option(Some(v))) = field(&w, key) else {
-            continue;
+    let Some(g) = field(&w, GEOMETRY) else {
+        return Ok(());
+    };
+    if let Some(f) = field(g, "scale_factor").and_then(as_f64)
+        && !(f.is_finite() && f > 0.0 && f <= 16.0)
+    {
+        return Err(format!("scale_factor = {f}"));
+    }
+    for key in ["outer_position_pixels", "inner_size_points"] {
+        let v = match field(g, key) {
+            Some(ron::Value::Option(Some(v))) => &**v,
+            Some(v @ ron::Value::Map(_)) => v,
+            _ => continue,
         };
         for axis in ["x", "y"] {
             let f = field(v, axis).and_then(as_f64);
@@ -169,7 +241,10 @@ mod tests {
         format!("{{\"window\":{window:?}}}")
     }
 
-    const WINDOW: &str = "(inner_position_pixels:Some((x:101.0,y:132.0)),outer_position_pixels:Some((x:100.0,y:100.0)),fullscreen:false,maximized:false,inner_size_points:Some((x:1200.0,y:780.0)))";
+    /// eframe 0.37's window entry.
+    const WINDOW: &str = "(normal_geometry:(outer_position_pixels:Some((x:100.0,y:100.0)),scale_factor:1.0,inner_size_points:(x:1200.0,y:780.0)),fullscreen:false,maximized:false)";
+    /// eframe 0.36's.
+    const OLD_WINDOW: &str = "(inner_position_pixels:Some((x:101.0,y:132.0)),outer_position_pixels:Some((x:100.0,y:100.0)),fullscreen:false,maximized:false,inner_size_points:Some((x:1200.0,y:780.0)))";
 
     #[test]
     fn the_icon_decodes() {
@@ -192,10 +267,10 @@ mod tests {
 
     #[test]
     fn minimised_or_corrupt_windows_are_dropped() {
-        let minimised = WINDOW
-            .replace("(x:100.0,y:100.0)", "(x:-32000.0,y:-32000.0)")
-            .replace("(x:101.0,y:132.0)", "(x:-32000.0,y:-32000.0)");
+        let minimised = WINDOW.replace("(x:100.0,y:100.0)", "(x:-32000.0,y:-32000.0)");
         assert!(check(&file(&minimised)).is_err());
+        let zero_scale = WINDOW.replace("scale_factor:1.0", "scale_factor:0.0");
+        assert!(check(&file(&zero_scale)).is_err());
         for size in ["(x:NaN,y:780.0)", "(x:1200.0,y:1e30)", "(x:0.0,y:0.0)"] {
             let w = WINDOW.replace("(x:1200.0,y:780.0)", size);
             assert!(check(&file(&w)).is_err(), "{size}");
@@ -208,21 +283,100 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = path_in(&dir);
         std::fs::write(&path, file(WINDOW)).unwrap();
-        sanitize(&path);
+        sanitize(&path, None);
         assert!(path.exists());
         assert!(has_saved_position(&path));
         std::fs::write(&path, file(&WINDOW.replace("x:1200.0", "x:inf"))).unwrap();
-        sanitize(&path);
+        sanitize(&path, None);
         assert!(!path.exists());
         assert!(!has_saved_position(&path));
         // Wayland: no position saved, so the window is centred.
         std::fs::write(
             &path,
-            file("(fullscreen:false,maximized:false,inner_size_points:Some((x:1200.0,y:780.0)))"),
+            file("(normal_geometry:(outer_position_pixels:None,scale_factor:1.0,inner_size_points:(x:1200.0,y:780.0)),fullscreen:false,maximized:false)"),
         )
         .unwrap();
         assert!(!has_saved_position(&path));
+        // eframe 0.36's file: rewritten in place, then kept.
+        std::fs::write(&path, file(OLD_WINDOW)).unwrap();
+        sanitize(&path, None);
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            window(&text)
+                .and_then(|w| field(&w, GEOMETRY).cloned())
+                .is_some()
+        );
+        assert_eq!(has_saved_position(&path), cfg!(windows));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The entry rewritten, as eframe 0.37 deserialises it.
+    fn migrated(old: &str, saved: Option<WindowState>, keep_position: bool) -> ron::Value {
+        let text = migrate(&file(old), saved, keep_position).unwrap();
+        window(&text).unwrap()
+    }
+
+    fn geometry(w: &ron::Value, key: &str) -> Option<(f64, f64)> {
+        let g = field(w, GEOMETRY)?;
+        let v = match field(g, key)? {
+            ron::Value::Option(Some(v)) => &**v,
+            v => v,
+        };
+        Some((
+            field(v, "x").and_then(as_f64)?,
+            field(v, "y").and_then(as_f64)?,
+        ))
+    }
+
+    #[test]
+    fn an_eframe_0_36_file_is_rewritten_for_0_37() {
+        // The new entry deserialises as egui-winit's own type.
+        let text = migrate(&file(OLD_WINDOW), None, true).unwrap();
+        let kv = ron::from_str::<HashMap<String, String>>(&text).unwrap();
+        let typed: egui_winit_window::WindowSettings = ron::from_str(&kv[WINDOW_KEY]).unwrap();
+        assert!(!typed.maximized);
+        let w = migrated(OLD_WINDOW, None, true);
+        assert_eq!(geometry(&w, "outer_position_pixels"), Some((100.0, 100.0)));
+        assert_eq!(geometry(&w, "inner_size_points"), Some((1200.0, 780.0)));
+        assert_eq!(check(&file(&ron::to_string(&w).unwrap())), Ok(()));
+        // Off Windows the position goes (no scale factor to read it with).
+        let w = migrated(OLD_WINDOW, None, false);
+        assert_eq!(geometry(&w, "outer_position_pixels"), None);
+        // Maximised: the size before maximising, within the saved one.
+        let max = OLD_WINDOW.replace("maximized:false", "maximized:true");
+        let before = Some(WindowState {
+            pos: None,
+            size: [1100.0, 700.0],
+            maximized: true,
+        });
+        let w = migrated(&max, before, true);
+        assert_eq!(geometry(&w, "inner_size_points"), Some((1100.0, 700.0)));
+        assert_eq!(field(&w, "maximized"), Some(&ron::Value::Bool(true)));
+        // Already 0.37's, or nothing readable: left alone.
+        assert_eq!(migrate(&file(WINDOW), None, true), None);
+        assert_eq!(migrate("not ron", None, true), None);
+        // No size: the entry goes.
+        let text = migrate(&file("(fullscreen:false,maximized:false)"), None, true).unwrap();
+        assert!(window(&text).is_none());
+    }
+
+    /// egui-winit 0.37's `WindowSettings`, mirrored with its serde names, to prove the
+    /// rewritten entry is what eframe reads.
+    mod egui_winit_window {
+        #[derive(serde::Deserialize)]
+        #[allow(dead_code)]
+        pub struct Geometry {
+            pub outer_position_pixels: Option<egui::Pos2>,
+            pub scale_factor: f32,
+            pub inner_size_points: egui::Vec2,
+        }
+        #[derive(serde::Deserialize)]
+        #[allow(dead_code)]
+        pub struct WindowSettings {
+            pub normal_geometry: Geometry,
+            pub fullscreen: bool,
+            pub maximized: bool,
+        }
     }
 
     #[test]

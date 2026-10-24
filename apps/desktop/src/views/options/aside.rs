@@ -53,7 +53,7 @@ fn para(ui: &mut Ui, text: &str, px: f32, line_h: f32, color: Color32) {
         },
     );
     job.wrap.max_width = ui.available_width();
-    let g = ui.fonts_mut(|f| f.layout_job(job));
+    let g = paint::layout_top(ui, job);
     let (r, _) = ui.allocate_exact_size(g.size(), Sense::hover());
     ui.painter().galley(r.min, g, color);
 }
@@ -294,7 +294,7 @@ fn code_block(ui: &mut Ui, tk: &Tokens, job: LayoutJob) {
     let w = ui.available_width();
     let mut job = job;
     job.wrap.max_width = w - 16.0;
-    let g: Arc<Galley> = ui.fonts_mut(|f| f.layout_job(job));
+    let g: Arc<Galley> = paint::layout_top(ui, job);
     let (r, _) = ui.allocate_exact_size(Vec2::new(w, g.size().y + 12.0), Sense::hover());
     ui.painter().rect(
         r,
@@ -506,7 +506,7 @@ fn command_block(
             Vec2::splat(size::CONTROL_SM),
         );
         let b = ui
-            .interact(br, ui.id().with("linux-copy"), Sense::click())
+            .interact(br, ui.scope_id().with("linux-copy"), Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand);
         let hv = paint::ease(ui, b.id.with("hover"), b.hovered());
         if paint::keyboard_focus(ui, &b) {
@@ -612,7 +612,7 @@ fn steam_options(
                             job.append(v, 4.0, mono_fmt(tk.fg));
                             job.wrap.max_width = ui.available_width();
                             job.wrap.break_anywhere = true;
-                            let g = ui.fonts_mut(|f| f.layout_job(job));
+                            let g = paint::layout_top(ui, job);
                             let (r, _) = ui.allocate_exact_size(g.size(), Sense::hover());
                             ui.painter().galley(r.min, g, tk.fg);
                         }

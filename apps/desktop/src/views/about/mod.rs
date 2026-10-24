@@ -179,7 +179,7 @@ type Shared = Arc<Mutex<AboutState>>;
 
 pub fn shared(ctx: &egui::Context) -> Shared {
     ctx.data_mut(|d| {
-        d.get_temp_mut_or_insert_with(Id::new("dzch.about.view"), || {
+        d.get_temp_mut_or_insert_with(Id::unique("dzch.about.view"), || {
             Arc::new(Mutex::new(AboutState::default()))
         })
         .clone()

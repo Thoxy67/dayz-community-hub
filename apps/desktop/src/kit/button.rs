@@ -4,9 +4,7 @@
 //! square `Icon` 28 / `IconXs` 22. Colours ease over `--duration-fast`; a press sinks the
 //! button a little (`active:scale-[0.98]`).
 
-use egui::{
-    Color32, CornerRadius, Rect, Response, Sense, Ui, Vec2, Widget, WidgetInfo, WidgetType,
-};
+use egui::{Color32, CornerRadius, Rect, Response, Role, Sense, Ui, Vec2, Widget, WidgetInfo};
 
 use super::paint::{self, alpha, lerp};
 use super::tooltip::{Side, TipExt};
@@ -70,7 +68,7 @@ pub(super) fn footer_end() -> usize {
 }
 
 fn confirm_chip_id() -> egui::Id {
-    egui::Id::new("kit::button.confirm_chip")
+    egui::Id::unique("kit::button.confirm_chip")
 }
 
 /// Whether an enabled button wore the X (confirm) chip this frame or the last: the pad
@@ -552,9 +550,9 @@ impl Widget for Button<'_> {
         let on = self.enabled;
         resp.widget_info(|| {
             if checked {
-                WidgetInfo::selected(WidgetType::Button, on, true, label)
+                WidgetInfo::selected(Role::Button, on, true, label)
             } else {
-                WidgetInfo::labeled(WidgetType::Button, on, label)
+                WidgetInfo::labeled(Role::Button, on, label)
             }
         });
         if ui.is_rect_visible(rect) {
@@ -760,7 +758,7 @@ impl Widget for IconButton<'_> {
         let (rect, resp) = ui.allocate_exact_size(Vec2::splat(h), sense);
         let label = self.label;
         let on = self.enabled;
-        resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, on, label));
+        resp.widget_info(|| WidgetInfo::labeled(Role::Button, on, label));
         if ui.is_rect_visible(rect) {
             let hover = paint::ease(ui, resp.id.with("hover"), self.enabled && resp.hovered());
             let press = self.enabled && resp.is_pointer_button_down_on();
