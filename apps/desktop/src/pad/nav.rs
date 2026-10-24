@@ -1251,7 +1251,7 @@ pub fn has_keyboard(cx: &Ctx) -> bool {
 fn open_keyboard(cx: &mut Ctx, id: Id, number: bool) {
     match keyboard_here(cx) {
         Keyboard::Steam => {
-            let _ = open::that_detached("steam://open/keyboard");
+            let _ = crate::platform::deck::detached("steam://open/keyboard");
         }
         Keyboard::Builtin => {
             let layout = if number {

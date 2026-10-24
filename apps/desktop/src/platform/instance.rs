@@ -77,9 +77,22 @@ pub fn key(mock: bool, instance: Option<&str>, data_dir: Option<&Path>) -> Optio
         return None;
     }
     Some(match data_dir {
-        Some(d) => format!("dir-{:016x}", fnv1a(d.to_string_lossy().as_bytes())),
+        Some(d) => format!("dir-{:016x}", fnv1a(folder_id(d).as_bytes())),
         None => "live".into(),
     })
+}
+
+/// One spelling for every way of naming the data folder: absolute (a shortcut and a
+/// restart pass it so), without `.` parts or trailing separators, and on Windows in
+/// one case. Not resolved through the file system: the folder may not exist yet.
+fn folder_id(dir: &Path) -> String {
+    let abs = std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf());
+    let id = abs
+        .components()
+        .collect::<PathBuf>()
+        .to_string_lossy()
+        .into_owned();
+    if cfg!(windows) { id.to_lowercase() } else { id }
 }
 
 fn fnv1a(bytes: &[u8]) -> u64 {
@@ -301,6 +314,12 @@ mod tests {
         let a = key(false, None, Some(Path::new("/a"))).unwrap();
         let b = key(false, None, Some(Path::new("/b"))).unwrap();
         assert!(a.starts_with("dir-") && a != b);
+        // A relative folder, a trailing separator and the absolute path a shortcut
+        // writes are one folder: one key, so the hand-off finds the window.
+        let abs = std::path::absolute("data").unwrap();
+        let rel = key(false, None, Some(Path::new("data"))).unwrap();
+        assert_eq!(rel, key(false, None, Some(&abs)).unwrap());
+        assert_eq!(rel, key(false, None, Some(Path::new("./data/"))).unwrap());
     }
 
     #[test]

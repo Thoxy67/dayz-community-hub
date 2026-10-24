@@ -60,12 +60,15 @@ impl SettingsView {
                     Field::new(t("settings", "lifeCloseToTray"))
                         .hint(hint)
                         .show(ui, |ui| {
-                            let mut on = p.close_to_tray && env.tray;
+                            // Wayland quits on close whatever the setting
+                            // (`life::on_close`): shown off and locked.
+                            let can = env.tray && !env.wayland;
+                            let mut on = p.close_to_tray && can;
                             let changed = boxed(ui, |ui| {
                                 ui.set_width(ui.available_width());
                                 ui.add(
                                     Switch::new(&mut on, t("settings", "lifeCloseToTraySwitch"))
-                                        .enabled(env.tray),
+                                        .enabled(can),
                                 )
                                 .changed()
                             });

@@ -9,11 +9,14 @@
 //!   A hidden window is `ViewportCommand::Visible(false)` on Windows and X11; on
 //!   Wayland a window cannot hide itself (winit ignores `set_visible` there, and the
 //!   protocol has no un-minimise either), so it is minimised instead and stays in the
-//!   task bar. Restoring it there is a best effort: un-minimise and an activation
-//!   request, which most compositors honour as "demands attention". A Wayland window
-//!   cannot tell either whether it is minimised (winit answers "no" there), so the
-//!   launcher remembers it minimised it ([`Shared`]) until the window has the focus
-//!   back: the tray's toggle then brings it back instead of minimising it again.
+//!   task bar. Restoring it there is a best effort only: winit ignores un-minimise
+//!   and sends no activation request on Wayland, so only the task bar reliably
+//!   brings it back; closing the window therefore quits there ([`on_close`]). A
+//!   Wayland window cannot tell either whether it is minimised (winit answers "no"
+//!   there), so the launcher remembers it minimised it ([`Shared`]) until the window
+//!   has the focus back, or kept it all along (a compositor without a minimised
+//!   state ignored the ask): the tray's toggle then brings it back instead of
+//!   minimising it again.
 //!   Whether the window is a Wayland one is read from its handle ([`Life::platform`]),
 //!   the environment being only the guess until then.
 //! - **Never unreachable**: closing hides to the tray only while a tray host shows the
@@ -133,9 +136,13 @@ pub fn to_tray(env: Env) -> Act {
     }
 }
 
-/// The window was asked to close (its button, Alt+F4, the window manager).
+/// The window was asked to close (its button, Alt+F4, the window manager). On
+/// Wayland it quits whatever the setting says: the window can only be minimised
+/// there, the tray cannot bring a minimised window back (winit has neither
+/// un-minimise nor activation on Wayland), and tiling compositors (sway, Hyprland,
+/// niri) ignore the minimise itself, which would leave a close that does nothing.
 pub fn on_close(p: &LifePrefs, env: Env, quitting: bool) -> Act {
-    if quitting || !p.close_to_tray || !env.tray {
+    if quitting || !p.close_to_tray || !env.tray || env.wayland {
         Act::Quit
     } else {
         to_tray(env)
@@ -183,11 +190,17 @@ pub fn out_of_sight(
     hidden || reported_minimized == Some(true) || (wayland && ours)
 }
 
-/// Where a minimise by the launcher stands, from the focus: it is over once the window
-/// lost the focus and got it back (whoever brought it back).
-fn follow_focus(state: u8, focused: bool) -> u8 {
+/// How long a window asked to minimise may keep the focus before the ask is taken
+/// as ignored (compositors without a minimised state: sway, Hyprland, niri).
+const MINIMIZE_IGNORED_AFTER: f64 = 0.5;
+
+/// Where a minimise by the launcher stands, from the focus and the seconds of passes
+/// since it was asked: it is over once the window lost the focus and got it back
+/// (whoever brought it back), or when the window kept the focus all along.
+fn follow_focus(state: u8, focused: bool, since_ask: f64) -> u8 {
     match state {
         MIN_ASKED if !focused => MIN_AWAY,
+        MIN_ASKED if since_ask >= MINIMIZE_IGNORED_AFTER => MIN_NO,
         MIN_AWAY if focused => MIN_NO,
         s => s,
     }
@@ -255,6 +268,9 @@ pub struct Shared {
     /// `MIN_*`: whether the launcher minimised the window (what a Wayland window cannot
     /// be asked).
     minimized: AtomicU8,
+    /// The input time (seconds) of the last minimise asked, to tell one the compositor
+    /// ignored.
+    min_asked_at: Mutex<f64>,
     /// Notes from other threads, taken by the next pass.
     notes: Mutex<Vec<Note>>,
 }
@@ -267,6 +283,7 @@ impl Default for Shared {
             tray: AtomicBool::new(false),
             wayland: AtomicBool::new(wayland_guess()),
             minimized: AtomicU8::new(MIN_NO),
+            min_asked_at: Mutex::new(0.0),
             notes: Mutex::new(Vec::new()),
         }
     }
@@ -350,8 +367,15 @@ pub fn apply(ctx: &egui::Context, act: Act) {
     match act {
         Act::Nothing => return,
         Act::Minimize => {
+            *s.min_asked_at
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = ctx.input(|i| i.time);
             s.minimized.store(MIN_ASKED, Ordering::SeqCst);
             ctx.send_viewport_cmd(V::Minimized(true));
+            // A pass after the delay, to see whether the minimise took.
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64(
+                MINIMIZE_IGNORED_AFTER + 0.1,
+            ));
         }
         Act::Hide => {
             s.hidden.store(true, Ordering::SeqCst);
@@ -556,7 +580,12 @@ impl Life {
         let p = cx.prefs.get().life;
         let focused = ctx.input(|i| i.viewport().focused.unwrap_or(i.focused));
         let m = s.minimized.load(Ordering::SeqCst);
-        let next = follow_focus(m, focused);
+        // Input time only moves with passes: a stale focus never ends a minimise.
+        let since_ask = ctx.input(|i| i.time)
+            - *s.min_asked_at
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let next = follow_focus(m, focused, since_ask);
         if next != m {
             // Only from the state seen: a minimise asked meanwhile is kept.
             let _ = s
@@ -732,7 +761,9 @@ mod tests {
         let p = LifePrefs::default();
         assert!(p.close_to_tray && p.notify);
         assert_eq!(on_close(&p, TRAY, false), Act::Hide);
-        assert_eq!(on_close(&p, WAYLAND, false), Act::Minimize);
+        // Wayland: nothing could bring a minimised window back, and tiling
+        // compositors ignore the minimise: a close quits.
+        assert_eq!(on_close(&p, WAYLAND, false), Act::Quit);
         // No tray host: the window must never be left invisible.
         assert_eq!(on_close(&p, NO_TRAY, false), Act::Quit);
         // Quit from the tray, a restart: a real close.
@@ -787,11 +818,14 @@ mod tests {
     #[test]
     fn a_minimise_is_over_once_the_focus_left_and_came_back() {
         // Still focused right after the ask: kept.
-        assert_eq!(follow_focus(MIN_ASKED, true), MIN_ASKED);
-        assert_eq!(follow_focus(MIN_ASKED, false), MIN_AWAY);
-        assert_eq!(follow_focus(MIN_AWAY, false), MIN_AWAY);
-        assert_eq!(follow_focus(MIN_AWAY, true), MIN_NO);
-        assert_eq!(follow_focus(MIN_NO, false), MIN_NO);
+        assert_eq!(follow_focus(MIN_ASKED, true, 0.1), MIN_ASKED);
+        assert_eq!(follow_focus(MIN_ASKED, false, 0.1), MIN_AWAY);
+        assert_eq!(follow_focus(MIN_AWAY, false, 5.0), MIN_AWAY);
+        assert_eq!(follow_focus(MIN_AWAY, true, 5.0), MIN_NO);
+        assert_eq!(follow_focus(MIN_NO, false, 5.0), MIN_NO);
+        // Still focused well after the ask: the compositor ignored it (sway,
+        // Hyprland, niri); the window is in front, not out of sight.
+        assert_eq!(follow_focus(MIN_ASKED, true, 1.0), MIN_NO);
     }
 
     /// One pass with a close asked for; whether it was cancelled.

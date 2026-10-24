@@ -6,9 +6,9 @@
 //! - Linux: a StatusNotifierItem through ksni (D-Bus over zbus, pure Rust: no GTK, no
 //!   libappindicator), on its own thread. It is up only once a StatusNotifierWatcher
 //!   took it and a host shows it: GNOME without the AppIndicator extension has none,
-//!   and [`Tray::available`] then stays false (so closing quits). A host that goes
-//!   away later (a shell restart, the plugin turned off) makes it false again until it
-//!   is back.
+//!   and [`Tray::available`] then stays false (so closing quits). A host missing at
+//!   start (the panel still loading, the extension turned on later) or that goes away
+//!   later (a shell restart, the plugin turned off) keeps it false until it is there.
 //! - Windows: `Shell_NotifyIcon` through tray-icon (windows-sys, no GTK). Win32 ties
 //!   the icon's hidden window to the thread that made it, which must pump messages:
 //!   it is made on the window's thread, whose event loop (winit's) pumps them.
@@ -183,6 +183,8 @@ mod imp {
         icon: Vec<ksni::Icon>,
         send: Sender,
         up: Arc<AtomicBool>,
+        /// The host was found missing at least once (at registration too).
+        missed: Arc<AtomicBool>,
     }
 
     impl ksni::Tray for Item {
@@ -233,7 +235,8 @@ mod imp {
         }
 
         fn watcher_offline(&self, reason: OfflineReason) -> bool {
-            eprintln!("tray: the tray host went away ({reason:?})");
+            eprintln!("tray: no tray host for now ({reason:?})");
+            self.missed.store(true, Ordering::SeqCst);
             self.up.store(false, Ordering::SeqCst);
             self.send.wake();
             // Keep waiting for it to come back.
@@ -255,8 +258,9 @@ mod imp {
         }
     }
 
-    /// The tray's thread: register (no host, no tray: `up` stays false), then pass
-    /// the words on until the window drops its end.
+    /// The tray's thread: register (no host, no tray: `up` stays false until one
+    /// appears, ksni then registers again and says so), then pass the words on until
+    /// the window drops its end.
     fn run(send: Sender, up: Arc<AtomicBool>, view: TrayView, rx: &mpsc::Receiver<TrayView>) {
         let (rgba, w, h) = icon_rgba(64);
         let icon = match (i32::try_from(w), i32::try_from(h)) {
@@ -267,20 +271,28 @@ mod imp {
             }],
             _ => Vec::new(),
         };
+        let missed = Arc::new(AtomicBool::new(false));
         let item = Item {
             view,
             icon,
             send: send.clone(),
             up: Arc::clone(&up),
+            missed: Arc::clone(&missed),
         };
-        let handle = match item.spawn() {
+        // A watcher missing at start (the panel still loading, the AppIndicator
+        // extension turned on later) is waited for, not taken as no tray for good.
+        let handle = match item.assume_sni_available(true).spawn() {
             Ok(h) => h,
             Err(e) => {
                 eprintln!("tray: no system tray ({e}); closing the window quits");
                 return;
             }
         };
-        up.store(true, Ordering::SeqCst);
+        // Registered now unless the host was missing (`watcher_online` says when
+        // it comes).
+        if !missed.load(Ordering::SeqCst) {
+            up.store(true, Ordering::SeqCst);
+        }
         send.wake();
         while let Ok(mut v) = rx.recv() {
             // Only the newest of a burst matters.

@@ -38,10 +38,26 @@ fn show(note: &Note) -> Result<(), String> {
         .summary(&note.title)
         .body(&note.body)
         .icon("dayz-community-hub")
-        .hint(notify_rust::Hint::DesktopEntry("dayz-community-hub".into()))
+        .hint(notify_rust::Hint::DesktopEntry(desktop_entry_id()))
         .show()
         .map(|_| ())
         .map_err(|e| e.to_string())
+}
+
+/// The desktop entry the notification belongs to: a package's
+/// `dayz-community-hub.desktop`, or from an AppImage the handler entry
+/// `register.rs` writes (no other is there).
+#[cfg(target_os = "linux")]
+fn desktop_entry_id() -> String {
+    if std::env::var_os("APPIMAGE").is_some_and(|a| !a.is_empty())
+        && let Some(bin) = std::env::current_exe()
+            .ok()
+            .and_then(|b| b.file_name().map(|n| n.to_string_lossy().into_owned()))
+    {
+        let file = super::register::handler_file_name(&bin);
+        return file.trim_end_matches(".desktop").to_string();
+    }
+    "dayz-community-hub".to_string()
 }
 
 #[cfg(windows)]

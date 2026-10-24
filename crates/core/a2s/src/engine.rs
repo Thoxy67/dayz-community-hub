@@ -370,8 +370,10 @@ impl Driver {
             let Some(req) = self.queue.pop_front() else {
                 break;
             };
-            // Its caller gave up (a scan stopped): nothing to send.
+            // Its caller gave up (a scan stopped): nothing to send, but
+            // what waits behind it at that address may go.
             if req.reply.is_closed() {
+                self.unblock(req.addr);
                 continue;
             }
             if self.pending.contains_key(&req.addr) || self.quiet.contains_key(&req.addr) {
@@ -382,6 +384,7 @@ impl Driver {
             let sent = Instant::now();
             if let Err(e) = self.send_to(req.addr) {
                 let _ = req.reply.send(Err(e));
+                self.unblock(req.addr);
                 continue;
             }
             self.tokens -= 1.0;
@@ -546,15 +549,28 @@ impl Driver {
         self.release(addr);
     }
 
-    /// Let the next request parked for `addr` go first.
+    /// Let the next live request parked for `addr` go first; those whose
+    /// caller gave up are dropped on the way.
     fn release(&mut self, addr: SocketAddr) {
         if let Some(waiting) = self.parked.get_mut(&addr) {
-            if let Some(next) = waiting.pop_front() {
-                self.queue.push_front(next);
+            while let Some(next) = waiting.pop_front() {
+                if !next.reply.is_closed() {
+                    self.queue.push_front(next);
+                    break;
+                }
             }
             if waiting.is_empty() {
                 self.parked.remove(&addr);
             }
+        }
+    }
+
+    /// A request released for `addr` ended without being sent: release the
+    /// next one unless another is in flight there or the address is quiet,
+    /// or the rest would wait forever.
+    fn unblock(&mut self, addr: SocketAddr) {
+        if !self.pending.contains_key(&addr) && !self.quiet.contains_key(&addr) {
+            self.release(addr);
         }
     }
 
@@ -1001,6 +1017,27 @@ mod tests {
         );
         assert!(rules.is_err());
         assert_eq!(info.unwrap().info.name, "Test server");
+    }
+
+    #[tokio::test]
+    async fn a_caller_that_gave_up_does_not_strand_those_behind_it() {
+        let (silent, got) = fake(Fake::Silent).await;
+        let engine = Engine::new(fast());
+        let short = Duration::from_millis(300);
+        let (first, second, third) = tokio::time::timeout(Duration::from_secs(3), async {
+            tokio::join!(
+                engine.info(silent, short),
+                tokio::time::timeout(Duration::from_millis(50), engine.info(silent, short)),
+                engine.info(silent, short),
+            )
+        })
+        .await
+        .expect("the third request was stranded");
+        assert!(first.is_err());
+        assert!(second.is_err());
+        assert!(third.is_err());
+        // The first and the third went out; the one given up never did.
+        assert_eq!(got.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]

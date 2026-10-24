@@ -3,7 +3,8 @@
 //!
 //! - [`open`] hands a web link to Steam's own browser in Game Mode
 //!   (`steam://openurl/…`: no other browser can show over gamescope) and refuses a
-//!   folder there (no file manager); elsewhere it is `open::that_detached`.
+//!   folder there (no file manager); elsewhere it is the system's opener
+//!   ([`detached`], with the child environment cleaned on Linux).
 //! - the title bar keeps only its close button and the window no resize edges
 //!   (`shell::titlebar`, `shell::window`); closing quits (`platform::life`).
 //! - [`cmd_add_to_steam`]: the launcher as a non-Steam game in Steam's library
@@ -64,11 +65,39 @@ pub fn route(target: &str, game_mode: bool) -> Option<String> {
 pub fn open(target: impl AsRef<OsStr>) -> std::io::Result<()> {
     let target = target.as_ref().to_string_lossy();
     match route(&target, game_mode()) {
-        Some(what) => open::that_detached(what),
+        Some(what) => detached(&what),
         None => Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
             t("pad", "gameModeNoFolders"),
         )),
+    }
+}
+
+/// Hand `what` (a link, a folder) to the system's opener, which outlives the
+/// launcher. On Linux the opener (`xdg-open`, then Steam or the browser) starts
+/// without the AppImage's variables nor those a Steam session set for the launcher
+/// (its overlay preload, its game id), as `dz_steamcmd::scrub_child_env` does for
+/// every other child; the process is reaped off the frames.
+pub fn detached(what: &str) -> std::io::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Stdio;
+        let mut last = None;
+        for mut cmd in open::commands(what) {
+            dz_steamcmd::scrub_child_env(&mut cmd);
+            cmd.stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+            match dz_steamcmd::spawn_detached(&mut cmd) {
+                Ok(()) => return Ok(()),
+                Err(e) => last = Some(e),
+            }
+        }
+        Err(last.unwrap_or_else(|| std::io::Error::other("no opener")))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        open::that_detached(what)
     }
 }
 

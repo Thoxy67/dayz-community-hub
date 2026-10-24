@@ -56,22 +56,28 @@ const SAVE_DELAY: Duration = Duration::from_millis(250);
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum PadMode {
-    #[default]
-    Auto,
     Always,
     Never,
+    /// Also what an unknown word in the file reads as (a later version's choice, a
+    /// hand edit), so the rest of the file survives it; serde wants it last.
+    #[default]
+    #[serde(other)]
+    Auto,
 }
 
 /// Which maker's button labels to draw: the pad's own, or one picked in the settings.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum GlyphChoice {
-    #[default]
-    Auto,
     Xbox,
     PlayStation,
     Nintendo,
     SteamDeck,
+    /// Also what an unknown word in the file reads as (a later version's choice, a
+    /// hand edit), so the rest of the file survives it; serde wants it last.
+    #[default]
+    #[serde(other)]
+    Auto,
 }
 
 /// The keyboard a text field brings up when a controller picks it: Steam's own (only
@@ -80,11 +86,14 @@ pub enum GlyphChoice {
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum OskChoice {
-    #[default]
-    Auto,
     Steam,
     Builtin,
     None,
+    /// Also what an unknown word in the file reads as (a later version's choice, a
+    /// hand edit), so the rest of the file survives it; serde wants it last.
+    #[default]
+    #[serde(other)]
+    Auto,
 }
 
 /// `dzch.prefs`: the window's layout.
@@ -475,6 +484,24 @@ mod tests {
         let text = serde_json::to_string(&s).unwrap();
         let back: Stored = serde_json::from_str(&text).unwrap();
         assert_eq!(back, s);
+    }
+
+    #[test]
+    fn an_unknown_pad_choice_keeps_the_rest_of_the_file() {
+        let s: Stored = serde_json::from_str(
+            r#"{"dzch.locale": "fr", "dzch.padGlyphs": "gameCube",
+                "dzch.prefs": {"padKeyboard": "braille", "padMode": "sometimes",
+                               "railCollapsed": true}}"#,
+        )
+        .unwrap();
+        assert_eq!(s.locale.as_deref(), Some("fr"));
+        assert!(s.ui.rail_collapsed);
+        assert_eq!(s.ui.pad_keyboard, OskChoice::Auto);
+        assert_eq!(s.ui.pad_mode, PadMode::Auto);
+        assert_eq!(s.pad_glyphs, GlyphChoice::Auto);
+        // Known words still read as themselves.
+        let s: Stored = serde_json::from_str(r#"{"dzch.prefs": {"padKeyboard": "none"}}"#).unwrap();
+        assert_eq!(s.ui.pad_keyboard, OskChoice::None);
     }
 
     #[test]

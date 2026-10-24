@@ -24,6 +24,7 @@ fn spawn_launch(
     extra: Vec<String>,
 ) {
     let extra = per_server(&mut ctl, &server, typed, &extra);
+    let joined_mods = joined_mods(&server, &extra, host.is_none());
     tokio::spawn(async move {
         // The `@<id>` links DayZ loads mods through: without them `-mod=@<id>`
         // points at nothing (notably on Windows, where they are NTFS
@@ -46,8 +47,11 @@ fn spawn_launch(
                         let p = s.ctl.profile_mut();
                         p.add_history(server.name.clone(), host.clone(), join.port());
                         // What it needs while the list does not show it (the
-                        // unused-mods filter keeps these).
-                        p.set_history_mods(&host, join.port(), server.mod_ids());
+                        // unused-mods filter keeps these); left unknown when
+                        // nothing says.
+                        if let Some(ids) = joined_mods {
+                            p.set_history_mods(&host, join.port(), ids);
+                        }
                         Ok(())
                     })
                     .await;
@@ -69,6 +73,32 @@ fn spawn_launch(
             }
         }
     });
+}
+
+/// The mods a join carried, for the history: the server's own and those the
+/// extra arguments name (`-mod=@1;@2`, the way Direct Connect passes an
+/// unlisted server's mods). `None` when there are none and the server is not
+/// `listed`: its mods are unknown, not known to be none, and the unused-mods
+/// filter must not take an unlisted server for one that runs no mods.
+fn joined_mods(server: &Server, extra: &[String], listed: bool) -> Option<Vec<u64>> {
+    let mut ids = server.mod_ids();
+    for arg in extra {
+        let Some((key, value)) = arg.split_once('=') else {
+            continue;
+        };
+        if !key.eq_ignore_ascii_case("-mod") {
+            continue;
+        }
+        for id in value.split(';') {
+            let id = id.trim().trim_start_matches('@');
+            if let Ok(id) = id.parse::<u64>()
+                && !ids.contains(&id)
+            {
+                ids.push(id);
+            }
+        }
+    }
+    (listed || !ids.is_empty()).then_some(ids)
 }
 
 /// A favourite's own character name and launch arguments over the global
@@ -425,6 +455,21 @@ mod tests {
         let mut s = Server::unlisted(SocketAddrV4::new(Ipv4Addr::new(10, 0, 0, 7), 2302));
         s.name = "Listed".into();
         s
+    }
+
+    #[test]
+    fn the_history_keeps_the_mods_a_join_carried() {
+        let s = listed();
+        let v = |a: &[&str]| a.iter().map(|x| (*x).to_string()).collect::<Vec<_>>();
+        // A listed server without mods is known to run none.
+        assert_eq!(joined_mods(&s, &[], true), Some(vec![]));
+        // An unlisted one without any is unknown.
+        assert_eq!(joined_mods(&s, &v(&["-nosplash"]), false), None);
+        // Direct Connect's mods arrive as `-mod=` arguments.
+        assert_eq!(
+            joined_mods(&s, &v(&["-mod=@12", "-MOD=@34;@12", "-mod=junk"]), false),
+            Some(vec![12, 34])
+        );
     }
 
     fn fav(ip: &str, port: u16, character: Option<&str>, args: &str) -> Favorite {

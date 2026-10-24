@@ -1167,6 +1167,7 @@ dependencies = [
  "dz-game",
  "dz-hub",
  "dz-profile",
+ "dz-steamcmd",
  "dz-steamworks",
  "eframe",
  "egui",

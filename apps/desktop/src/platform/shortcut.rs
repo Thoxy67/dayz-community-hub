@@ -78,21 +78,46 @@ pub fn file_stem(name: &str) -> Option<String> {
     if out.is_empty() {
         return None;
     }
-    let base = out
-        .split('.')
-        .next()
-        .unwrap_or(out)
-        .trim()
-        .to_ascii_uppercase();
-    let reserved = matches!(base.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        || ((base.starts_with("COM") || base.starts_with("LPT"))
-            && base.len() == 4
-            && base.as_bytes().get(3).is_some_and(u8::is_ascii_digit));
-    Some(if reserved {
-        format!("{out}_")
-    } else {
-        out.to_string()
-    })
+    // Windows takes the part before the first dot (its trailing spaces dropped)
+    // as the device, whatever follows: `NUL.txt` is NUL. The mark goes right
+    // after that part, so the name is no device any more.
+    let head = out.split('.').next().unwrap_or(out).trim_end();
+    if !is_reserved(head) {
+        return Some(out.to_string());
+    }
+    let mut marked = format!("{head}_{}", &out[head.len()..]);
+    while marked.len() > MAX_STEM_BYTES {
+        marked.pop();
+    }
+    Some(
+        marked
+            .trim_end_matches(|c: char| c == '.' || c.is_whitespace())
+            .to_string(),
+    )
+}
+
+/// Whether `base` (a name's part before its first dot) is one of Windows'
+/// reserved device names, in any case: CON, PRN, AUX, NUL, CONIN$, CONOUT$,
+/// COM0-9 and LPT0-9, with the superscript ¹ ² ³ too.
+fn is_reserved(base: &str) -> bool {
+    let upper = base.to_ascii_uppercase();
+    if matches!(
+        upper.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) {
+        return true;
+    }
+    let Some(rest) = upper
+        .strip_prefix("COM")
+        .or_else(|| upper.strip_prefix("LPT"))
+    else {
+        return false;
+    };
+    let mut chars = rest.chars();
+    matches!(
+        (chars.next(), chars.next()),
+        (Some('0'..='9' | '\u{b9}' | '\u{b2}' | '\u{b3}'), None)
+    )
 }
 
 /// The shortcut's file name: the server's name, else the fallback, else [`LAST_STEM`].
@@ -307,7 +332,16 @@ mod tests {
         assert_eq!(file_stem(" ... "), None);
         assert_eq!(file_stem("|||"), None);
         assert_eq!(stem("CON"), "CON_");
-        assert_eq!(stem("com1.txt"), "com1.txt_");
+        // The base before the first dot is what Windows reads as the device.
+        assert_eq!(stem("com1.txt"), "com1_.txt");
+        assert_eq!(stem("CON.PvE"), "CON_.PvE");
+        assert_eq!(stem("Aux. Hardcore"), "Aux_. Hardcore");
+        assert_eq!(stem("conin$"), "conin$_");
+        assert_eq!(stem("LPT\u{b9}.x"), "LPT\u{b9}_.x");
+        assert_eq!(stem("COM0"), "COM0_");
+        let long = format!("NUL.{}", "a".repeat(300));
+        assert!(stem(&long).starts_with("NUL_."));
+        assert!(stem(&long).len() <= MAX_STEM_BYTES);
         assert_eq!(stem("COM10"), "COM10");
         assert_eq!(stem("Console"), "Console");
         assert_eq!(stem("Сервер ДейЗ"), "Сервер ДейЗ");

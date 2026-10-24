@@ -9,7 +9,9 @@
 //! - Linux: `<data>/applications/<exe name>-handler.desktop` (Exec is `$APPIMAGE` when
 //!   set, else this executable), `<data>/mime/packages/dayz-community-hub.xml`; when
 //!   either changed, `update-mime-database`, `update-desktop-database` and
-//!   `xdg-mime default <file> x-scheme-handler/dzch application/x-dzch`.
+//!   `xdg-mime default <file> x-scheme-handler/dzch application/x-dzch`. From an
+//!   AppImage also the icon, `<data>/icons/hicolor/256x256/apps/dayz-community-hub.png`
+//!   (a package installs it in the system's theme).
 //! - Windows: `HKCU\Software\Classes\dzch` (URL protocol), `.dzch` →
 //!   `DayZCommunityHub.dzch` with its open command and icon; then the shell is told.
 
@@ -145,10 +147,20 @@ mod linux {
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| "dayz-community-hub".into());
-        let exec = std::env::var_os("APPIMAGE")
-            .filter(|a| !a.is_empty())
-            .unwrap_or_else(|| bin.into_os_string());
+        let appimage = std::env::var_os("APPIMAGE").filter(|a| !a.is_empty());
+        let in_appimage = appimage.is_some();
+        let exec = appimage.unwrap_or_else(|| bin.into_os_string());
         let data = dirs::data_dir().ok_or("no data directory")?;
+        // The AppImage's icons stay in its mount, out of the theme's sight: the
+        // icon the handler, the server shortcuts and the notifications name
+        // (`dayz-community-hub`) goes in the user's theme (a package installs it
+        // in the system's).
+        if in_appimage {
+            let icon = data.join("icons/hicolor/256x256/apps/dayz-community-hub.png");
+            if let Err(e) = write_bytes_if_changed(&icon, crate::platform::window::PNG) {
+                eprintln!("icon: {e}");
+            }
+        }
         let apps = data.join("applications");
         let mime = data.join("mime");
         let file_name = super::handler_file_name(&bin_name);
@@ -183,6 +195,17 @@ mod linux {
 
     fn write_if_changed(path: &Path, content: &str) -> Result<bool, String> {
         if std::fs::read_to_string(path).is_ok_and(|old| old == content) {
+            return Ok(false);
+        }
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        }
+        std::fs::write(path, content).map_err(|e| format!("{}: {e}", path.display()))?;
+        Ok(true)
+    }
+
+    fn write_bytes_if_changed(path: &Path, content: &[u8]) -> Result<bool, String> {
+        if std::fs::read(path).is_ok_and(|old| old == content) {
             return Ok(false);
         }
         if let Some(dir) = path.parent() {
