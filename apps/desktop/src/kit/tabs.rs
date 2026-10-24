@@ -127,10 +127,10 @@ impl<V: PartialEq + Clone> Widget for TabStrip<'_, V> {
             FieldSize::Xs => (size::control_sm(), size::TEXT_2XS),
         };
         let h = self.height.unwrap_or(ctl);
-        let (pad, gap) = if self.fill { (4.0, 4.0) } else { (10.0, 6.0) };
+        let (mut pad, gap) = if self.fill { (4.0, 4.0) } else { (10.0, 6.0) };
         let f = font(Face::Sans, text);
         let mf = font(Face::Mono, size::TEXT_2XS);
-        let measured: Vec<Measured> = self
+        let mut measured: Vec<Measured> = self
             .tabs
             .iter()
             .map(|tab| {
@@ -149,8 +149,19 @@ impl<V: PartialEq + Clone> Widget for TabStrip<'_, V> {
             })
             .collect();
         let avail = ui.available_width();
-        let natural: f32 = measured.iter().map(|m| m.w).sum();
         let n = self.tabs.len().max(1) as f32;
+        let mut natural: f32 = measured.iter().map(|m| m.w).sum();
+        // A little short (a narrow pane, the pad density's larger text): the tabs' padding
+        // gives first, down to 4 px, so the last one is not cut at the edge; past that the
+        // strip scrolls.
+        if !self.fill && natural > avail {
+            let tight = (pad - (natural - avail) / (2.0 * n)).max(4.0);
+            for m in &mut measured {
+                m.w -= 2.0 * (pad - tight);
+            }
+            pad = tight;
+            natural = measured.iter().map(|m| m.w).sum();
+        }
         let (outer, resp) = ui.allocate_exact_size(Vec2::new(avail, h), Sense::hover());
         let mut resp = resp;
         let p = ui.painter().clone();

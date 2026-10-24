@@ -1030,7 +1030,10 @@ fn toolbar(ui: &mut Ui, st: &mut State, d: &Frame<'_>, run: &mut Run) {
         } else {
             f32::INFINITY
         };
-        let rest = chip_w + count_w + 6.0 * 3.0;
+        // Too narrow for all three (a large interface size): the count goes, never
+        // under the chip.
+        let show_count = ui.available_width() - chip_w - 6.0 * 3.0 - count_w >= 128.0;
+        let rest = chip_w + if show_count { count_w } else { 0.0 } + 6.0 * 3.0;
         let search_w = (ui.available_width() - rest).clamp(128.0, max_search);
         let r = ui.add(
             Input::new(&mut st.query)
@@ -1051,6 +1054,9 @@ fn toolbar(ui: &mut Ui, st: &mut State, d: &Frame<'_>, run: &mut Run) {
         let chip = ui.add(chip);
         if chip.clicked() {
             run.push((d.kind.cmd(Cmd::Listed), Value::Null));
+        }
+        if !show_count {
+            return;
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let (rect, _) =

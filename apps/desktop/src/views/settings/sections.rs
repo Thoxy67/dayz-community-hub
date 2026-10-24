@@ -1107,7 +1107,7 @@ impl SettingsView {
         let kind = cx.stores.pad.kind(prefs.pad_glyphs);
         let connected = !cx.stores.pad.pads.is_empty();
         let mut mode = prefs.ui.pad_mode;
-        let mut scale = ((prefs.ui.pad_scale * 100.0).round() as i32).clamp(50, 300);
+        let mut scale = ((prefs.ui.pad_scale * 100.0).round() as i32).clamp(115, 300);
         let mut glyphs = prefs.pad_glyphs;
         let mut keyboard = prefs.ui.pad_keyboard;
         SettingsSection::new(t("pad", "section"))
@@ -1147,9 +1147,10 @@ impl SettingsView {
                         });
                     Field::new(t("pad", "scale")).show(ui, |ui| {
                         let opts = [
-                            Segment::new(100, "100 %"),
+                            // 115 % is what the pad density draws on its own: the least.
                             Segment::new(115, "115 %"),
                             Segment::new(130, "130 %"),
+                            Segment::new(150, "150 %"),
                         ];
                         if ui.add(Segmented::new(&mut scale, &opts)).changed() {
                             let _ = cx.run(

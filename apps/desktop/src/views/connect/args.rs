@@ -162,7 +162,11 @@ fn body(ui: &mut Ui, cx: &mut Ctx, r: &Resolved, acts: &mut Vec<Act>) {
     } else {
         ui.add_space(6.0);
         let n = d.args.len();
-        let list_h = (n as f32 * size::ROW).min(256.0);
+        // A row is `size::ROW`, taller in the pad density; `show_rows` counts the item
+        // spacing between rows: none, or rows drift from where it thinks they are.
+        let row_h = size::row(size::ROW);
+        let list_h = (n as f32 * row_h).min(256.0);
+        let gap = std::mem::replace(&mut ui.spacing_mut().item_spacing.y, 0.0);
         let top = ui.cursor().min.y;
         let x = ui.max_rect().x_range();
         ui.painter()
@@ -171,12 +175,12 @@ fn body(ui: &mut Ui, cx: &mut Ctx, r: &Resolved, acts: &mut Vec<Act>) {
             .id_salt("connect-args-list")
             .max_height(list_h)
             .auto_shrink([false, true])
-            .show_rows(ui, size::ROW, n, |ui, range| {
+            .show_rows(ui, row_h, n, |ui, range| {
+                ui.spacing_mut().item_spacing.y = 0.0;
                 for i in range {
                     let Some(a) = d.args.get_mut(i) else { continue };
                     let w = ui.available_width();
-                    let (rect, resp) =
-                        ui.allocate_exact_size(Vec2::new(w, size::ROW), Sense::hover());
+                    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, row_h), Sense::hover());
                     let fade = if a.enabled { 1.0 } else { 0.5 };
                     let shown = paint::ease(
                         ui,
@@ -278,6 +282,7 @@ fn body(ui: &mut Ui, cx: &mut Ctx, r: &Resolved, acts: &mut Vec<Act>) {
                     }
                 }
             });
+        ui.spacing_mut().item_spacing.y = gap;
         let bottom = ui.cursor().min.y;
         ui.painter()
             .hline(x, bottom - 0.5, Stroke::new(1.0, alpha(tk.border, 0.6)));

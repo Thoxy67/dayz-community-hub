@@ -200,16 +200,19 @@ impl<V: PartialEq + Clone> Widget for MultiSelect<'_, V> {
             .layout(egui::Layout::top_down_justified(egui::Align::Min))
             .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
             .frame(paint::float_frame(&ui.tokens(), 4))
-            .align(RectAlign::BOTTOM_START)
             .gap(4.0)
             .width(list_w - 8.0);
+        let popup = super::menu::clear_of_bars(popup, ui.ctx(), RectAlign::BOTTOM_START, 4.0);
+        // The room on the roomier side, 8 points short of the window's edge (or the bars).
+        let b = super::menu::bounds(ui.ctx());
+        let space = (b.bottom() - resp.rect.bottom()).max(resp.rect.top() - b.top()) - 4.0 - 26.0;
         let mut act: Option<Row> = None;
         let mut st: Find = ui.data(|d| d.get_temp(find_id)).unwrap_or_default();
         let values: &[V] = self.values;
         let shown_popup = popup.show(|ui| {
             ui.spacing_mut().item_spacing = Vec2::ZERO;
             ui.set_min_width(list_w - 10.0);
-            act = list(ui, &self, values, &mut st);
+            act = list(ui, &self, values, &mut st, space);
         });
         if shown_popup.is_some() {
             if !Popup::is_id_open(ui.ctx(), popup_id) && st.typing {
@@ -248,6 +251,7 @@ fn list<V: PartialEq + Clone>(
     m: &MultiSelect<'_, V>,
     values: &[V],
     st: &mut Find,
+    fit: f32,
 ) -> Option<Row> {
     let mut act = None;
     let mut shown = rows(m.options, &st.query);
@@ -329,7 +333,8 @@ fn list<V: PartialEq + Clone>(
         });
     }
     let moved = down || up;
-    let room = 320.0 - 10.0 - if m.search.is_some() { 30.0 } else { 0.0 };
+    let search = if m.search.is_some() { 30.0 } else { 0.0 };
+    let room = (320.0_f32 - 10.0).min(fit).max(size::menu_row() * 3.0) - search;
     egui::ScrollArea::vertical()
         .id_salt(m.id.with("scroll"))
         .max_height(room)

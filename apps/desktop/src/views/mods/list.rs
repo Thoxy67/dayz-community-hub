@@ -60,8 +60,10 @@ impl Cols {
         // Room for "Linked to game" whole, larger in the pad density too.
         let grow = size::text(size::TEXT_2XS) / size::TEXT_2XS;
         let in_game = show_in_game.then(|| take(112.0 * grow));
-        // The tag's text grows with the pad density ("Mise à jour disponible" in 13 px).
-        let status = take(168.0 * grow);
+        // The tag's text grows with the pad density ("Mise à jour disponible", "Steam
+        // downloading 100%" in 13 px, its spinner wider too).
+        let status_w = if size::pad_density() { 178.0 } else { 168.0 };
+        let status = take(status_w * grow);
         let name = Rangef::new(tick.max + GAP, (r + GAP - GAP).max(tick.max + GAP + 8.0));
         Self {
             tick,

@@ -1107,8 +1107,10 @@ pub static COMMANDS: &[CommandSpec] = &[
         }
     ),
     cmd!("pad.set_scale", ("pad", "scale"), "settings", |cx, a| {
+        // Below the density's own scale the window would draw no smaller: raised to it.
         if let Some(s) = arg_f32(a, "scale").filter(|s| (0.5..=3.0).contains(s)) {
-            cx.prefs.edit().ui.pad_scale = s;
+            cx.prefs.edit().ui.pad_scale =
+                s.clamp(crate::prefs::PAD_SCALE_DEFAULT, crate::prefs::PAD_SCALE_MAX);
         }
     }),
     cmd!("pad.set_glyphs", ("pad", "glyphs"), "settings", |cx, a| {

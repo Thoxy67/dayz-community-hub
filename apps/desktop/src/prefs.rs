@@ -106,9 +106,12 @@ pub struct UiPrefs {
     pub pad_keyboard: OskChoice,
 }
 
-/// The pad scale out of the box. The pad density (`theme::size`) enlarges the controls
-/// and the text by about as much, so this scale draws the window unzoomed.
+/// The pad scale out of the box, and its smallest value. The pad density (`theme::size`)
+/// enlarges the controls and the text by about as much, so this scale draws the window
+/// unzoomed; a larger one zooms beyond the density.
 pub const PAD_SCALE_DEFAULT: f32 = 1.15;
+/// The largest pad scale.
+pub const PAD_SCALE_MAX: f32 = 3.0;
 
 impl Default for UiPrefs {
     fn default() -> Self {
@@ -228,7 +231,10 @@ impl Stored {
             self.scale = 1.0;
         }
         let ps = self.ui.pad_scale;
-        if !ps.is_finite() || !(0.5..=3.0).contains(&ps) {
+        if !ps.is_finite() || !(0.5..=PAD_SCALE_MAX).contains(&ps) {
+            self.ui.pad_scale = PAD_SCALE_DEFAULT;
+        } else if ps < PAD_SCALE_DEFAULT {
+            // A scale below the density's (an older 100 %) drew the same as the default.
             self.ui.pad_scale = PAD_SCALE_DEFAULT;
         }
         self.ui
@@ -478,6 +484,8 @@ mod tests {
         let s = s.sanitized();
         assert_eq!(s.scale, 1.0);
         assert_eq!(s.ui.pad_scale, 1.15);
+        let s: Stored = serde_json::from_str(r#"{"dzch.prefs": {"padScale": 1.0}}"#).unwrap();
+        assert_eq!(s.sanitized().ui.pad_scale, PAD_SCALE_DEFAULT);
     }
 
     #[test]

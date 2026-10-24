@@ -36,8 +36,10 @@ const BANNER_H: f32 = 96.0;
 /// One fact row of a card (`text-2xs`, its line) and the gap between rows (`gap-y-1`).
 const FACT_H: f32 = 15.4;
 const FACT_GAP: f32 = 4.0;
-/// The card's foot: `py-1.5` around a control, its top border.
-const FOOT_H: f32 = 6.0 + size::CONTROL + 6.0 + 1.0;
+/// The card's foot: `py-1.5` around a control (taller in the pad density), its top border.
+fn foot_h() -> f32 {
+    6.0 + size::control() + 6.0 + 1.0
+}
 
 pub(super) fn show(ui: &mut Ui, st: &mut OfflineState, mods: &Mods, run: &mut Run) {
     let tk = ui.tokens();
@@ -297,7 +299,7 @@ fn missions(ui: &mut Ui, st: &mut OfflineState, run: &mut Run) {
                     let w = ui.available_width().max(1.0);
                     let cols = (((w + GAP) / (CARD_MIN + GAP)).floor() as usize).max(1);
                     let card_w = ((w - GAP * (cols - 1) as f32) / cols as f32).max(1.0);
-                    let card_h = BANNER_H + 16.0 + FACT_H * 3.0 + FACT_GAP * 2.0 + FOOT_H;
+                    let card_h = BANNER_H + 16.0 + FACT_H * 3.0 + FACT_GAP * 2.0 + foot_h();
                     let rows = st.missions.len().div_ceil(cols);
                     let total = rows as f32 * card_h + rows.saturating_sub(1) as f32 * GAP;
                     let (grid, _) = ui.allocate_exact_size(vec2(w, total), Sense::hover());
@@ -468,7 +470,7 @@ fn card(
     .tip(&m.id);
 
     // The foot: launch, the folder, clear the save, remove.
-    let foot = Rect::from_min_max(pos2(rect.left(), rect.bottom() - FOOT_H), rect.max);
+    let foot = Rect::from_min_max(pos2(rect.left(), rect.bottom() - foot_h()), rect.max);
     p.hline(
         foot.x_range(),
         foot.top() + 0.5,
@@ -484,7 +486,9 @@ fn card(
             .layout(Layout::left_to_right(Align::Center)),
     );
     f.spacing_mut().item_spacing.x = 4.0;
-    let play_w = (f.available_width() - 3.0 * (size::CONTROL + 4.0)).max(size::CONTROL);
+    let folders = crate::platform::deck::folders();
+    let icons = if folders { 3.0 } else { 2.0 };
+    let play_w = (f.available_width() - icons * (size::control() + 4.0)).max(size::control());
     let mission = json!({ "mission": m.id });
     let launch = f.add(
         Button::new(t("offline", "launch"))
@@ -497,7 +501,7 @@ fn card(
     if launch.clicked() {
         run.push(("offline.launch", mission.clone()));
     }
-    if crate::platform::deck::folders()
+    if folders
         && f.add(IconButton::new(
             lucide::FOLDER_OPEN,
             t("offline", "openFolder"),
@@ -736,13 +740,17 @@ fn mods_panel(ui: &mut Ui, tk: &Tokens, st: &mut OfflineState, mods: &Mods, run:
                 // Its own height (at most ten rows): inside the aside's scroller a
                 // shrinking one would collapse to its least height. Only the rows on
                 // screen are laid out.
-                let h = size::CONTROL_SM * (rows.len().min(10) as f32);
+                // A row is a compact toggle: `control_sm`, taller in the pad density.
+                let row_h = size::control_sm();
+                let h = row_h * (rows.len().min(10) as f32);
+                // `show_rows` counts the item spacing between rows: none here.
+                ui.spacing_mut().item_spacing = Vec2::ZERO;
                 egui::ScrollArea::vertical()
                     .id_salt("offline-mods-list")
                     .min_scrolled_height(h)
                     .max_height(h)
                     .auto_shrink([false, true])
-                    .show_rows(ui, size::CONTROL_SM, rows.len(), |ui, range| {
+                    .show_rows(ui, row_h, rows.len(), |ui, range| {
                         ui.spacing_mut().item_spacing = Vec2::ZERO;
                         for id in &rows[range] {
                             let Some(m) = mods.by_id(*id) else {

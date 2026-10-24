@@ -60,7 +60,7 @@ fn dress(ui: &mut Ui, t: &Tokens, min_w: f32) {
 /// room above or below it (egui flips the popup to the side it fits), less the gap, the
 /// plate's padding and an 8-point margin from the edge. Beside it, the window's height.
 fn room(trigger: &Response, side: Side, gap: f32, pad: f32) -> f32 {
-    let screen = trigger.ctx.content_rect();
+    let screen = bounds(&trigger.ctx);
     let r = trigger.rect;
     let room = match side {
         Side::Bottom | Side::Top => {
@@ -69,6 +69,48 @@ fn room(trigger: &Response, side: Side, gap: f32, pad: f32) -> f32 {
         Side::Left | Side::Right => screen.height(),
     };
     (room - 2.0 * pad - 2.0 - 16.0).max(size::ROW * 2.0)
+}
+
+/// Where a popup may lie: the window less the room kept at its bottom (in pad mode the
+/// status bar and the pad hints' bar, [`super::dialog::set_bottom_inset`]).
+pub fn bounds(ctx: &egui::Context) -> Rect {
+    let mut r = ctx.content_rect();
+    r.max.y = (r.max.y - super::dialog::bottom_inset(ctx)).max(r.min.y);
+    r
+}
+
+/// Keeps a popup above or below its anchor out of the bars [`bounds`] leaves out: while
+/// the window's bottom is kept (pad mode), the side is chosen here (the asked one when the
+/// popup fits there, else the one it fits, else the roomier) and egui does not flip it
+/// back over the bars, whose height it counts as room. Its height must be bounded by the
+/// room of the roomier side. Beside its anchor, or at the pointer, the popup as it was.
+pub fn clear_of_bars<'a>(
+    popup: Popup<'a>,
+    ctx: &egui::Context,
+    align: RectAlign,
+    gap: f32,
+) -> Popup<'a> {
+    if super::dialog::bottom_inset(ctx) <= 0.0 {
+        return popup.align(align);
+    }
+    let Some(a) = popup.get_anchor_rect() else {
+        return popup.align(align);
+    };
+    let b = bounds(ctx);
+    let below = b.bottom() - a.bottom() - gap;
+    let above = a.top() - b.top() - gap;
+    let (py, cy) = (align.parent().y(), align.child().y());
+    let (pref, other) = if py == egui::Align::Max && cy == egui::Align::Min {
+        (below, above)
+    } else if py == egui::Align::Min && cy == egui::Align::Max {
+        (above, below)
+    } else {
+        return popup.align(align);
+    };
+    let need = popup.get_expected_size().map_or(0.0, |s| s.y);
+    let flip = need > pref && other > pref;
+    let align = if flip { align.flip_y() } else { align };
+    popup.align(align).align_alternatives(&[])
 }
 
 /// A dropdown menu opened by clicking `trigger`, below it and lined up with its end
@@ -84,9 +126,9 @@ pub fn dropdown<R>(
     let max_h = room(trigger, side, 4.0, 4.0);
     let popup = Popup::menu(trigger)
         .frame(paint::float_frame(&t, 4))
-        .align(rect_align(side, align))
         .gap(4.0)
         .close_behavior(PopupCloseBehavior::CloseOnClick);
+    let popup = clear_of_bars(popup, &trigger.ctx, rect_align(side, align), 4.0);
     sized(popup, trigger, max_h + 16.0, |popup| {
         popup.show(|ui| {
             dress(ui, &t, 176.0);
@@ -112,9 +154,12 @@ pub fn context<R>(target: &Response, add: impl FnOnce(&mut Ui) -> R) -> Option<I
     if let Some(at) = at {
         popup = popup.anchor(at);
     }
-    let popup = popup
+    let mut popup = popup
         .frame(paint::float_frame(&t, 4))
         .close_behavior(PopupCloseBehavior::CloseOnClick);
+    if at.is_some() {
+        popup = clear_of_bars(popup, &target.ctx, RectAlign::BOTTOM_START, 0.0);
+    }
     sized(popup, target, max_h + 16.0, |popup| {
         popup.show(|ui| {
             dress(ui, &t, 208.0);
@@ -136,9 +181,9 @@ pub fn popover<R>(
     let max_h = room(trigger, side, gap, 0.0);
     let popup = Popup::from_toggle_button_response(trigger)
         .frame(paint::float_frame(&t, 0))
-        .align(rect_align(side, align))
         .gap(gap)
         .close_behavior(PopupCloseBehavior::CloseOnClickOutside);
+    let popup = clear_of_bars(popup, &trigger.ctx, rect_align(side, align), gap);
     sized(popup, trigger, max_h + 16.0, |popup| {
         popup.show(|ui| {
             egui::ScrollArea::vertical()

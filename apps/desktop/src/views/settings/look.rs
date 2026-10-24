@@ -100,6 +100,9 @@ fn grid(ui: &mut Ui, cards: &[Card<'_>], worn: Option<&str>) -> Option<String> {
         let p = ui.painter();
         if on {
             p.add(paint::glow(&tk).as_shape(r, CornerRadius::same(size::RADIUS_MD)));
+            // The halo only outside (a CSS shadow is not drawn under its box): the
+            // panel's ground over it, then the tint, or the words drown in the glow.
+            p.rect_filled(r, CornerRadius::same(size::RADIUS_MD), tk.bg);
             paint::plate(p, r, size::RADIUS_MD, alpha(tk.accent, 0.08), tk.accent);
         } else {
             paint::plate(
@@ -579,6 +582,7 @@ fn follow_button(ui: &mut Ui, on: bool) -> bool {
     let p = ui.painter();
     if on {
         p.add(paint::glow(&tk).as_shape(r, CornerRadius::same(size::RADIUS_MD)));
+        p.rect_filled(r, CornerRadius::same(size::RADIUS_MD), tk.bg);
         paint::plate(p, r, size::RADIUS_MD, alpha(tk.accent, 0.08), tk.accent);
     } else {
         paint::plate(

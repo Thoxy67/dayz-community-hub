@@ -347,7 +347,7 @@ fn edit_dialog(ctx: &egui::Context, cx: &mut Ctx, st: &mut DialogsState) {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
                     let add = t("favorites", "addLabel");
-                    let add_w = ph(ui, add, font(Face::SansMedium, size::TEXT_XS)).size().x + 44.0;
+                    let add_w = Button::new(add).icon(lucide::PLUS).natural_width(ui);
                     let input_w =
                         (ui.available_width() - swatches_width() - add_w - 12.0).max(80.0);
                     let r = ui.add(
@@ -407,7 +407,7 @@ fn edit_dialog(ctx: &egui::Context, cx: &mut Ctx, st: &mut DialogsState) {
                             .label(t("favorites", "group")),
                     );
                     let add = t("favorites", "addGroup");
-                    let add_w = ph(ui, add, font(Face::SansMedium, size::TEXT_XS)).size().x + 44.0;
+                    let add_w = Button::new(add).icon(lucide::PLUS).natural_width(ui);
                     let input_w = (ui.available_width() - add_w - 6.0).max(80.0);
                     let r = ui.add(
                         Input::new(&mut f.new_group)
@@ -544,7 +544,8 @@ fn organize_dialog(
             organize_open,
             |ui, _| {
                 ui.set_max_width(ui.available_width());
-                let icon_w = size::CONTROL;
+                // The icon buttons' side, taller in the pad density.
+                let icon_w = size::control();
                 // Groups.
                 heading(ui, t("favorites", "groups"));
                 if groups.is_empty() {
@@ -610,7 +611,9 @@ fn organize_dialog(
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
                     let add = t("favorites", "addGroup");
-                    let add_w = ph(ui, add, font(Face::SansMedium, size::TEXT_XS)).size().x + 44.0;
+                    // The button as wide as it is drawn: the field ends where the rows
+                    // above end.
+                    let add_w = Button::new(add).icon(lucide::PLUS).natural_width(ui);
                     let input_w = (ui.available_width() - add_w - 6.0).max(80.0);
                     let r = ui.add(
                         Input::new(new_group)
@@ -694,7 +697,9 @@ fn organize_dialog(
                     ui.spacing_mut().item_spacing.x = 6.0;
                     swatches(ui, "org-new", new_color);
                     let add = t("favorites", "addLabel");
-                    let add_w = ph(ui, add, font(Face::SansMedium, size::TEXT_XS)).size().x + 44.0;
+                    // The button as wide as it is drawn: the field ends where the rows
+                    // above end.
+                    let add_w = Button::new(add).icon(lucide::PLUS).natural_width(ui);
                     let input_w = (ui.available_width() - add_w - 6.0).max(80.0);
                     let r = ui.add(
                         Input::new(new_label)

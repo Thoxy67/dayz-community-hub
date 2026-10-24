@@ -301,17 +301,30 @@ fn cards(
                 .map(|s| s.game_port())
                 .filter(|p| *p != 0)
                 .unwrap_or(p.port);
+            // The address and the time share the line: the time keeps its width while the
+            // address has more than half; past that both are cut (pad density, zoom).
+            let when = p.ts.map(format::relative);
+            let when_w = when.as_deref().map_or(0.0, |w| {
+                paint::galley(ui, w, mono.clone(), tk.fg_faint).size().x + 8.0
+            });
             let addr = paint::galley_trunc(
                 ui,
                 &format!("{}:{port}", p.ip),
                 mono.clone(),
                 tk.fg_faint,
-                inner * 0.6,
+                (inner - when_w).max(inner * 0.55),
             );
+            let addr_w = addr.size().x;
             let painter = ui.painter();
             painter.galley(Pos2::new(l, cy), addr, tk.fg_faint);
-            if let Some(ts) = p.ts {
-                let g = paint::galley(ui, &format::relative(ts), mono.clone(), tk.fg_faint);
+            if let Some(when) = when {
+                let g = paint::galley_trunc(
+                    ui,
+                    &when,
+                    mono.clone(),
+                    tk.fg_faint,
+                    (inner - addr_w - 8.0).max(10.0),
+                );
                 ui.painter()
                     .galley(Pos2::new(r - g.size().x, cy), g, tk.fg_faint);
             }

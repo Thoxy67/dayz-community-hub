@@ -42,8 +42,11 @@ type Run = Vec<(&'static str, Value)>;
 const A2S_AFTER: f64 = 0.150;
 const METRICS_AFTER: f64 = 0.250;
 const LONG_AFTER: f64 = 0.400;
-/// The panel's foot: `py-2` around a large control, and its rule.
-const FOOT_H: f32 = 8.0 + size::CONTROL_LG + 8.0 + 1.0;
+/// The panel's foot: `py-2` around a large control (taller in the pad density), and its
+/// rule.
+fn foot_h() -> f32 {
+    8.0 + size::control_lg() + 8.0 + 1.0
+}
 
 /// Which tab is open: kept across servers, so comparing rules or player lists does not
 /// mean clicking the tab each time (`tab.svelte.ts`).
@@ -341,7 +344,7 @@ fn draw_panel(
     let top = v.cursor().top();
     let body = Rect::from_min_max(
         Pos2::new(full.left(), top),
-        Pos2::new(full.right(), (full.bottom() - FOOT_H).max(top)),
+        Pos2::new(full.right(), (full.bottom() - foot_h()).max(top)),
     );
     let mut bui = v.new_child(
         UiBuilder::new()
@@ -377,7 +380,7 @@ fn draw_panel(
         }
     }
 
-    let foot = Rect::from_min_max(Pos2::new(full.left(), full.bottom() - FOOT_H), full.max);
+    let foot = Rect::from_min_max(Pos2::new(full.left(), full.bottom() - foot_h()), full.max);
     action_bar(ui, st, m, foot, run);
 }
 
@@ -908,7 +911,8 @@ fn action_bar(ui: &mut Ui, st: &mut DetailState, m: &Model, foot: Rect, run: &mu
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     c.spacing_mut().item_spacing.x = 6.0;
-    let rest = size::CONTROL_LG + 3.0 * size::CONTROL + 4.0 * 6.0;
+    // The star's square, three icon buttons and the gaps (taller in the pad density).
+    let rest = size::control_lg() + 3.0 * size::control() + 4.0 * 6.0;
     let join_w = (inner.width() - rest).max(60.0);
     if c.add(JoinButton::new().size(Size::Lg).width(join_w))
         .clicked()
@@ -916,7 +920,7 @@ fn action_bar(ui: &mut Ui, st: &mut DetailState, m: &Model, foot: Rect, run: &mu
         run.push(("list.join", target_args(m)));
     }
     // The star in a bordered square as tall as Join.
-    let (sq, _) = c.allocate_exact_size(Vec2::splat(size::CONTROL_LG), Sense::hover());
+    let (sq, _) = c.allocate_exact_size(Vec2::splat(size::control_lg()), Sense::hover());
     c.painter().rect_stroke(
         sq,
         CornerRadius::same(size::RADIUS_SM),

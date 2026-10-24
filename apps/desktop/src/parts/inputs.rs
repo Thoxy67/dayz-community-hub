@@ -229,12 +229,18 @@ impl egui::Widget for ColorToken<'_> {
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .tip_kbd(self.label, "", Side::Top);
         let mut picked = srgb;
+        let mut picker_moved = false;
         let mut lch = *self.value;
-        egui::Popup::from_toggle_button_response(&swatch)
+        let popup_id = egui::Popup::default_response_id(&swatch);
+        let was_open = egui::Popup::is_id_open(ui.ctx(), popup_id);
+        let popup = egui::Popup::from_toggle_button_response(&swatch)
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-            .frame(paint::float_frame(&tk, 8))
-            .show(|ui| {
-                egui::color_picker::color_picker_color32(
+            .frame(paint::float_frame(&tk, 8));
+        crate::kit::menu::clear_of_bars(popup, ui.ctx(), egui::RectAlign::BOTTOM_START, 4.0).show(
+            |ui| {
+                // Only a move counts: shown, the picker's own round trip can nudge the
+                // colour by a unit, which would rewrite the token on opening it.
+                picker_moved = egui::color_picker::color_picker_color32(
                     ui,
                     &mut picked,
                     egui::color_picker::Alpha::Opaque,
@@ -242,11 +248,20 @@ impl egui::Widget for ColorToken<'_> {
                 // The same colour as three sliders, which arrows and a controller move
                 // (the square above is for a pointer).
                 lch_sliders(ui, &mut lch);
-            });
+            },
+        );
+        // Closed by Escape (a controller's B): the focus goes back to the swatch, not to
+        // whatever the window would land on next.
+        if was_open
+            && !egui::Popup::is_id_open(ui.ctx(), popup_id)
+            && ui.input(|i| i.key_pressed(egui::Key::Escape))
+        {
+            swatch.request_focus();
+        }
         if lch != *self.value {
             *self.value = lch;
             resp.mark_changed();
-        } else if picked != srgb {
+        } else if picker_moved && picked != srgb {
             *self.value = oklch(picked);
             resp.mark_changed();
         }

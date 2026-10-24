@@ -151,12 +151,12 @@ impl<V: PartialEq + Clone> Widget for Select<'_, V> {
             .layout(egui::Layout::top_down_justified(egui::Align::Min))
             .close_behavior(PopupCloseBehavior::CloseOnClick)
             .frame(paint::float_frame(&t, 4))
-            .align(RectAlign::BOTTOM_START)
             .gap(4.0)
             .width(w.max(128.0) - 8.0);
+        let popup = super::menu::clear_of_bars(popup, ui.ctx(), RectAlign::BOTTOM_START, 4.0);
         // The list flips above the trigger when there is more room there; either way it
         // stops 8 points short of the window's edge.
-        let screen = ui.ctx().content_rect();
+        let screen = super::menu::bounds(ui.ctx());
         let room = (screen.bottom() - rect.bottom()).max(rect.top() - screen.top()) - 4.0 - 26.0;
         let max_h = (320.0 - 10.0_f32).min(room).max(size::menu_row() * 3.0);
         popup.show(|ui| {

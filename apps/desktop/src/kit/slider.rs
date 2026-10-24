@@ -120,21 +120,25 @@ impl Widget for Slider<'_> {
                 });
                 let v = *self.value;
                 let next = if l {
-                    v - step
+                    Some(v - step)
                 } else if r {
-                    v + step
+                    Some(v + step)
                 } else if pu {
-                    v + step * 10.0
+                    Some(v + step * 10.0)
                 } else if pd {
-                    v - step * 10.0
+                    Some(v - step * 10.0)
                 } else if home {
-                    self.min
+                    Some(self.min)
                 } else if end {
-                    self.max
+                    Some(self.max)
                 } else {
-                    v
+                    None
                 };
-                *self.value = self.snap(next);
+                // Only a key moves it: the focus alone must not snap a finer value (a
+                // colour's lightness) to the step and so change it.
+                if let Some(next) = next {
+                    *self.value = self.snap(next);
+                }
             }
         }
         #[allow(clippy::float_cmp)]

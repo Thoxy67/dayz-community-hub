@@ -569,8 +569,8 @@ impl HubApp {
             ctx.all_styles_mut(|s| s.interaction.interact_radius = reach);
         }
         // The density already enlarges what a controller drives by about the default pad
-        // scale (115 %): the zoom is only what the player asked beyond it. Never below 1:
-        // a smaller scale would draw the window smaller than with a mouse.
+        // scale (115 %, the scale's least, `prefs::PAD_SCALE_DEFAULT`): the zoom is only
+        // what the player asked beyond it.
         let zoom = p.scale
             * if pad {
                 (p.ui.pad_scale / crate::prefs::PAD_SCALE_DEFAULT).clamp(1.0, 3.0)
