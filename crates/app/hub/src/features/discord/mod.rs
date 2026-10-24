@@ -30,13 +30,13 @@ use crate::Hub;
 
 /// The Discord application the presence speaks as (its "Application ID", from
 /// <https://discord.com/developers/applications>). Its name is what Discord
-/// shows as the game ("Playing DayZ Community Hub"). Empty: no application
-/// was made yet, and the presence is unavailable (the settings say so).
-pub const DISCORD_APP_ID: &str = "";
+/// shows as the game ("Playing DayZ Community Hub"). Empty would mean no
+/// application, and the presence unavailable (the settings say so).
+pub const DISCORD_APP_ID: &str = "1563558675111481395";
 
 /// The art key, uploaded to the application's Rich Presence assets, shown as
-/// the large picture. Empty: no picture.
-const LARGE_IMAGE: &str = "";
+/// the large picture (the launcher's icon, 1024 px). Empty: no picture.
+const LARGE_IMAGE: &str = "logo";
 
 /// Discord refuses a text field longer than this (and shorter than 2).
 const MAX_TEXT: usize = 128;
