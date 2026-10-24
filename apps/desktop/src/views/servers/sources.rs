@@ -10,6 +10,7 @@ use crate::i18n::{format, t, tf};
 use crate::icons::lucide;
 use crate::kit::paint::{self, alpha};
 use crate::kit::{Align, Meter, MeterSize, Side, Spinner, TipExt, menu};
+use crate::parts::text::{baseline, draw_on};
 use crate::parts::{draw, ph, ph_trunc};
 use crate::theme::{Tokens, TokensExt, font, fonts::Face, size};
 use dz_hub::events::{SourcePhase as Phase, SourcesChanged};
@@ -89,6 +90,9 @@ pub fn bar(ui: &mut Ui, s: &SourcesChanged, open: bool) {
     let cy = rect.center().y;
     let small = font(Face::Sans, size::TEXT_2XS);
     let mono = font(Face::Mono, size::TEXT_2XS);
+    // One baseline for the whole bar: the words' when centred, which the stencilled
+    // names and the mono figures sit on too.
+    let base = line_base(ui, &small, cy);
     let now = now_s();
     let steam = &s.steam;
     let wait_left = steam.waiting_until.map(|w| (w - now).max(0));
@@ -133,7 +137,7 @@ pub fn bar(ui: &mut Ui, s: &SourcesChanged, open: bool) {
     let right_x = inner.right() - right_w;
     let mut x = right_x;
     for (g, c, gap) in &right.parts {
-        draw(ui.painter(), g, x, cy, *c);
+        draw_on(ui.painter(), g, x, base, *c);
         x += g.size().x + gap;
     }
     if !narrow && s.duplicates > 0 {
@@ -161,7 +165,7 @@ pub fn bar(ui: &mut Ui, s: &SourcesChanged, open: bool) {
             Rect::from_center_size(Pos2::new(dr.left() + 4.0 + 6.0, cy), Vec2::splat(12.0)),
             ink,
         );
-        draw(p, &dg, dr.left() + 20.0, cy, ink);
+        draw_on(p, &dg, dr.left() + 20.0, base, ink);
         if paint::keyboard_focus(ui, &dresp) {
             paint::focus_ring(p, dr, size::RADIUS_XS, &tk);
         }
@@ -297,8 +301,8 @@ pub fn bar(ui: &mut Ui, s: &SourcesChanged, open: bool) {
                     Vec2::new((ga.size().x + gr.size().x).min(room), BAR_H),
                     Sense::hover(),
                 );
-                draw(ui.painter(), &ga, r.left(), cy, tk.ok);
-                draw(ui.painter(), &gr, r.left() + ga.size().x, cy, tk.fg_muted);
+                draw_on(ui.painter(), &ga, r.left(), base, tk.ok);
+                draw_on(ui.painter(), &gr, r.left() + ga.size().x, base, tk.fg_muted);
                 let _ = resp.tip_kbd(&tip, "", Side::Bottom);
             }
         }
@@ -327,10 +331,17 @@ pub fn bar(ui: &mut Ui, s: &SourcesChanged, open: bool) {
     }
 }
 
+/// The baseline of `f`'s words centred on `cy`.
+fn line_base(ui: &Ui, f: &egui::FontId, cy: f32) -> f32 {
+    let g = ph(ui, "0", f.clone());
+    cy - g.size().y / 2.0 + baseline(&g)
+}
+
 fn text(ui: &mut Ui, s: &str, f: &egui::FontId, c: Color32) {
     let g = ph(ui, s, f.clone());
     let (r, _) = ui.allocate_exact_size(Vec2::new(g.size().x, BAR_H), Sense::hover());
-    draw(ui.painter(), &g, r.left(), r.center().y, c);
+    let base = line_base(ui, &font(Face::Sans, size::TEXT_2XS), r.center().y);
+    draw_on(ui.painter(), &g, r.left(), base, c);
 }
 
 /// A source's dot and stencilled name, with its hint.
@@ -342,14 +353,16 @@ fn cell(ui: &mut Ui, label: &str, phase: Phase, hint: &str) {
     let (r, resp) =
         ui.allocate_exact_size(Vec2::new(6.0 + 6.0 + g.size().x, BAR_H), Sense::hover());
     let p = ui.painter();
+    let base = line_base(ui, &font(Face::Sans, size::TEXT_2XS), r.center().y);
+    // The dot on the capitals' middle (cap height ≈ 0.7 em), not the box's.
     p.circle_filled(
-        Pos2::new(r.left() + 3.0, r.center().y),
+        Pos2::new(r.left() + 3.0, base - size::TEXT_2XS * 0.35),
         3.0,
         dot(&tk, phase),
     );
     p.galley(
-        Pos2::new(r.left() + 12.0, r.center().y - g.size().y / 2.0),
-        g,
+        Pos2::new(r.left() + 12.0, base - baseline(&g)),
+        Arc::clone(&g),
         tk.fg_muted,
     );
     let _ = resp.tip_kbd(hint, "", Side::Bottom);

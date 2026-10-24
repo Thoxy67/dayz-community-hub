@@ -24,6 +24,23 @@ pub fn draw(p: &Painter, g: &Arc<Galley>, x: f32, cy: f32, color: Color32) {
     p.galley(Pos2::new(x, cy - g.size().y / 2.0), Arc::clone(g), color);
 }
 
+/// A galley's first baseline, from its top.
+pub fn baseline(g: &Galley) -> f32 {
+    g.rows.first().map_or(g.size().y * 0.8, |r| {
+        r.pos.y
+            + r.row
+                .glyphs
+                .first()
+                .map_or(r.row.size.y * 0.8, |gl| gl.pos.y)
+    })
+}
+
+/// Draws `g` with its left edge at `x` and its first baseline on `base`: texts of
+/// different faces on one line (stencil, mono figures, words) read as one line.
+pub fn draw_on(p: &Painter, g: &Arc<Galley>, x: f32, base: f32, color: Color32) {
+    p.galley(Pos2::new(x, base - baseline(g)), Arc::clone(g), color);
+}
+
 /// Whether a galley was cut (its text is not all shown).
 pub fn is_cut(g: &Galley, text: &str) -> bool {
     g.text().len() != text.len()
