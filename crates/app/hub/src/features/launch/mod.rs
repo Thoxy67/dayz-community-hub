@@ -347,7 +347,7 @@ impl Hub {
 
     /// DayZ is running (started from here or not).
     pub async fn game_running(&self) -> Result<bool, String> {
-        mocked!(self => Ok(false));
+        mocked!(self => Ok(crate::mock::switch("game-running")));
         tokio::task::spawn_blocking(dz_steamcmd::DayzGame::is_running)
             .await
             .map_err(|e| format!("Task join error: {e}"))

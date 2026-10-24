@@ -804,6 +804,27 @@ fn yes(_: &Ctx) -> bool {
 }
 
 // argument readers
+/// `game.details`: what DayZ is playing, shown. A server's details (in History, where a
+/// join writes it), Offline mode for a mission, the play statistics otherwise.
+fn game_details(cx: &mut Ctx, _: &Value) {
+    use dz_hub::features::stats::PlayKind;
+    let Some(s) = cx.stores.game.session.clone() else {
+        cx.go(ViewId::Stats);
+        return;
+    };
+    match (s.kind, s.ip, s.port) {
+        (PlayKind::Server, Some(ip), Some(port)) => {
+            cx.go(ViewId::History);
+            let _ = cx.run(
+                "history.select",
+                &serde_json::json!({ "ip": ip, "port": port, "detail": true }),
+            );
+        }
+        (PlayKind::Offline, _, _) => cx.go(ViewId::Offline),
+        _ => cx.go(ViewId::Stats),
+    }
+}
+
 fn arg_str<'a>(a: &'a Value, k: &str) -> Option<&'a str> {
     a.get(k).and_then(Value::as_str)
 }
@@ -1062,6 +1083,13 @@ pub static COMMANDS: &[CommandSpec] = &[
             cx.stores.bus.confirm_then(req, |cx| cx.stores.game.close());
         },
         |cx| cx.stores.game.running && !cx.stores.game.closing
+    ),
+    cmd!(
+        "game.details",
+        ("nav", "gameDetails"),
+        "shell",
+        game_details,
+        |cx| cx.stores.game.running
     ),
     cmd!(
         "i18n.set_locale",

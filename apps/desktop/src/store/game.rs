@@ -6,9 +6,13 @@
 //! Also the installed game's version (`1.30.164200`), which server rows compare theirs
 //! with: read at start and asked again with BattlEye's state (the hub reads the
 //! executable only when it changed).
+//!
+//! While it runs, the session the hub's tracker has open (the server played, its start),
+//! asked when the game starts and again when the play log changes.
 
 use std::time::{Duration, Instant};
 
+use dz_hub::features::stats::SessionDto;
 use dz_hub::{Hub, HubEvent};
 
 use crate::rt::{self, Task};
@@ -29,6 +33,9 @@ pub struct Game {
     /// The installed game's version; `None` until known (or DayZ is not found).
     pub version: Option<String>,
     version_task: Option<Task<Option<String>>>,
+    /// What is being played while the game runs (`None` when unknown or stopped).
+    pub session: Option<SessionDto>,
+    session_task: Option<Task<Option<SessionDto>>>,
 }
 
 impl Game {
@@ -44,6 +51,8 @@ impl Game {
             kill: None,
             version: None,
             version_task: None,
+            session: None,
+            session_task: None,
         }
     }
 
@@ -71,9 +80,13 @@ impl Game {
 
     /// What the hub said: the tracker saw the game start or stop.
     pub fn on_event(&mut self, ev: &HubEvent) {
-        if let HubEvent::GameRunning(now) = ev {
-            self.set_running(*now);
-            self.ctx.request_repaint();
+        match ev {
+            HubEvent::GameRunning(now) => {
+                self.set_running(*now);
+                self.ctx.request_repaint();
+            }
+            HubEvent::PlaySessionsChanged(_) if self.running => self.read_session(),
+            _ => {}
         }
     }
 
@@ -85,6 +98,28 @@ impl Game {
         self.closing = true;
         let hub = self.hub.clone();
         self.kill = Some(rt::spawn(async move { hub.kill_game().await }));
+    }
+
+    /// Ask the hub what is being played (the tracker's open session).
+    fn read_session(&mut self) {
+        if self.session_task.is_some() {
+            return;
+        }
+        let hub = self.hub.clone();
+        self.session_task = Some(rt::spawn(
+            async move { hub.play_current().await.ok().flatten() },
+        ));
+    }
+
+    /// How long the game has run, in seconds: from the tracker's session when it was
+    /// measured, else from when it was seen to start after a launch from here.
+    pub fn played_secs(&self) -> Option<i64> {
+        if let Some(s) = self.session.as_ref().filter(|s| s.measured) {
+            let now = dz_common::time::now_secs() as i64;
+            return Some((now - s.start).max(0));
+        }
+        self.since
+            .map(|s| i64::try_from(s.elapsed().as_secs()).unwrap_or(0))
     }
 
     fn check_now(&mut self) {
@@ -105,9 +140,13 @@ impl Game {
         let watching = self.watch_until.is_some_and(|u| Instant::now() < u);
         if !now {
             self.since = None;
-        } else if !was && watching {
-            self.since = Some(Instant::now());
-            self.watch_until = None;
+            self.session = None;
+        } else if !was {
+            self.read_session();
+            if watching {
+                self.since = Some(Instant::now());
+                self.watch_until = None;
+            }
         }
         if !watching {
             self.watch_until = None;
@@ -124,7 +163,17 @@ impl Game {
             version_changed = self.version != v;
             self.version = v;
         }
-        self.poll_running() || version_changed
+        let mut session_changed = false;
+        if let Some(t) = &mut self.session_task
+            && let Some(s) = t.poll()
+        {
+            self.session_task = None;
+            // An answer that lands after the game stopped is stale.
+            let s = s.filter(|_| self.running);
+            session_changed = self.session != s;
+            self.session = s;
+        }
+        self.poll_running() || version_changed || session_changed
     }
 
     fn poll_running(&mut self) -> bool {

@@ -603,10 +603,18 @@ pub(crate) fn system_specs() -> SystemSpecsDto {
     }
 }
 
+/// The next patch release after the running copy: an offer is always newer.
 pub(crate) fn update_info() -> UpdateInfo {
+    let core = crate::VERSION.split(['-', '+']).next().unwrap_or("0.0.0");
+    let mut n = core.split('.').map(|p| p.parse::<u64>().unwrap_or(0));
+    let (major, minor, patch) = (
+        n.next().unwrap_or(0),
+        n.next().unwrap_or(0),
+        n.next().unwrap_or(0),
+    );
     UpdateInfo {
-        version: "0.5.0".to_string(),
-        current_version: "0.4.1".to_string(),
+        version: format!("{major}.{minor}.{}", patch.saturating_add(1)),
+        current_version: crate::VERSION.to_string(),
         body: Some("- New interface".to_string()),
         date: Some(iso(now_ms())),
     }
@@ -692,11 +700,36 @@ pub(crate) fn steam_me() -> SteamMeDto {
 /// The mock's installed game: the version its servers run.
 pub(crate) const GAME_VERSION: &str = "1.28.162391";
 
+/// BattlEye installed and idle; `DZCH_MOCK=battleye-running`, `battleye-missing`,
+/// `battleye-disabled` set its state, `battleye-proton` the Proton runtime's view.
 pub(crate) fn battleye() -> BattlEyeStatus {
+    let state = if super::switch("battleye-running") {
+        BattlEyeState::Running
+    } else if super::switch("battleye-missing") {
+        BattlEyeState::Missing
+    } else if super::switch("battleye-disabled") {
+        BattlEyeState::Disabled
+    } else {
+        BattlEyeState::Ready
+    };
     BattlEyeStatus {
-        state: BattlEyeState::Ready,
-        service: true,
+        state,
+        service: !super::switch("battleye-proton"),
     }
+}
+
+/// With `DZCH_MOCK=game-running`: the last session of the play log, open for the
+/// last 47 minutes (the game "runs" on it); otherwise nothing is played.
+pub(crate) fn play_current(now: i64) -> Option<crate::features::stats::SessionDto> {
+    if !super::switch("game-running") {
+        return None;
+    }
+    let mut s = crate::features::stats::with_log(|l| l.sessions.last().cloned()).flatten()?;
+    s.start = now - 47 * 60;
+    s.end = now;
+    s.open = true;
+    s.measured = true;
+    Some(crate::features::stats::dto(&s, now))
 }
 
 pub(crate) fn game_data_dirs() -> Vec<String> {

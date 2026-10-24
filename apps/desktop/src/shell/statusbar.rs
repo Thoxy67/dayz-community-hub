@@ -2,22 +2,33 @@
 //! panel in two groups. On the left, what is happening: the server list, the ping scan,
 //! the mods' downloads and their state, the offline mode's install, the launcher's own
 //! download; on the right, the state of things: the game, BattlEye, Steam, an update, the
-//! version. Every segment has the same anatomy ([`Segment`]); a narrow bar drops the words,
-//! then the least needed segments, by its own width.
+//! version.
+//!
+//! Every segment has the same anatomy ([`Segment`]): an icon, then pieces (figures in mono,
+//! words in sans, dots, meters) on **one baseline**, with one gap between pieces; running
+//! work shows an inline meter with its figures. Segments of one kind sit together; a thin
+//! separator marks where the group changes. A bar too narrow for everything drops pieces
+//! and then whole segments by rank ([`rank`]): the version first, then words, then the
+//! least needed segments; what still does not fit on the left is left out whole, never cut
+//! through a figure. Figures that count up keep their widest width, so nothing jumps.
 //!
 //! Nothing here ticks for nothing: ages and the game's time are re-read every 30 s (one
 //! repaint asked for then), the Steam client and BattlEye are asked with that clock while
-//! the window has focus (every 5 s for BattlEye while DayZ runs); a sweep or a pulse
-//! repaints at 30 fps only while it shows, and not at all with motion off.
+//! the window has focus (every 5 s for BattlEye while DayZ runs); a sweep repaints at
+//! 30 fps only while it shows, and not at all with motion off.
 
+use std::sync::Arc;
 use std::time::Duration;
 
-use egui::{Color32, CornerRadius, Id, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
+use egui::{
+    Color32, CornerRadius, CursorIcon, Galley, Id, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2,
+};
 
 use crate::app::{Ctx, reduced_motion};
 use crate::i18n::{format, t, tf};
 use crate::icons::{Icon, lucide};
 use crate::kit::{Align, Brand, MenuItem, Side, TipExt, menu, paint};
+use crate::parts::text::{baseline, draw_on};
 use crate::rt::{self, Task};
 use crate::store::mods::{ModOpPhase, ModOpVia};
 use crate::store::pad::InputMode;
@@ -26,6 +37,7 @@ use crate::store::updater::UpdateState;
 use crate::theme::{Tokens, TokensExt, font, fonts::Face, size};
 use crate::views::ViewId;
 use dz_game::battleye::BattlEyeState;
+use dz_hub::features::stats::PlayKind;
 use dz_hub::features::steamcmd::ModOpType;
 use dz_hub::features::steamworks::ModDownloaderDto;
 
@@ -39,11 +51,64 @@ const BE_GRACE: f64 = 20.0;
 const ARM_AFTER: f64 = 1.5;
 /// A flash's length (`animate-flash`).
 const FLASH: f64 = 0.9;
-/// Frames per second of a sweep or a pulse.
+/// Frames per second of a sweep.
 const ANIM_FPS: f32 = 30.0;
 
-/// Words go below this bar width; then segments, as `class` says.
-const WORDS_MIN: f32 = 1100.0;
+/// A segment's padding on each side, inside its hover.
+const PAD: f32 = 6.0;
+/// The icons' size.
+const ICON: f32 = 12.0;
+/// From the icon to the first piece.
+const ICON_GAP: f32 = 5.0;
+/// Between two pieces (a figure and its word, a word and a meter).
+const GAP: f32 = 4.0;
+/// Between two segments of one group.
+const SEG_GAP: f32 = 2.0;
+/// Between two groups (a separator in the middle).
+const GROUP_GAP: f32 = 13.0;
+/// The bar's ends.
+const EDGE: f32 = 6.0;
+/// A segment's hover, and a small button's side.
+const BODY_H: f32 = 22.0;
+const BUTTON: f32 = 20.0;
+/// A dot's diameter.
+const DOT: f32 = 6.0;
+/// An inline meter.
+const METER_W: f32 = 36.0;
+const METER_H: f32 = 4.0;
+/// A separator's height.
+const SEP_H: f32 = 14.0;
+/// Digits' height as a share of the size, for icons, dots and meters to sit on the
+/// middle of the figures rather than on the middle of the line box.
+const CAP: f32 = 0.72;
+
+/// When a piece or a segment is dropped from a narrow bar: lower goes first.
+mod rank {
+    pub const VERSION: u8 = 10;
+    pub const LIST_NOTE: u8 = 14;
+    pub const PING_AGAIN_WORD: u8 = 18;
+    pub const STEAM_WORD: u8 = 20;
+    pub const BE_WORD: u8 = 22;
+    pub const MOD_NAME: u8 = 24;
+    pub const GAME_WORD: u8 = 26;
+    pub const LIST_STEAM_WORD: u8 = 28;
+    pub const CHECKING_WORD: u8 = 30;
+    pub const BEHIND_WORD: u8 = 32;
+    pub const SERVERS_WORD: u8 = 34;
+    pub const UPDATE_WORD: u8 = 36;
+    pub const WORK_WORD: u8 = 40;
+    pub const PING_WORD: u8 = 42;
+    pub const GAME_NAME: u8 = 44;
+    pub const PING_AGAIN: u8 = 50;
+    pub const CHECKING: u8 = 52;
+    pub const STEAM: u8 = 54;
+    pub const BATTLEYE: u8 = 56;
+}
+
+/// The longest server name the game segment shows before `…`.
+const GAME_NAME_MAX: f32 = 220.0;
+/// The longest mod name a download shows before `…`.
+const MOD_NAME_MAX: f32 = 160.0;
 
 /// What the bar keeps between frames.
 #[derive(Default)]
@@ -73,7 +138,7 @@ enum Tone {
 impl Tone {
     fn icon(self, t: &Tokens) -> Color32 {
         match self {
-            Tone::Idle => t.fg_faint,
+            Tone::Idle => t.fg_muted,
             Tone::Accent => t.accent,
             Tone::Info => t.info,
             Tone::Ok => t.ok,
@@ -82,6 +147,8 @@ impl Tone {
         }
     }
 
+    /// Words' colour; figures are brighter on a calm segment (`fg`), in the tone's colour
+    /// on a loud one.
     fn text(self, t: &Tokens) -> Color32 {
         match self {
             Tone::Warn => t.warn,
@@ -90,26 +157,59 @@ impl Tone {
             _ => t.fg_muted,
         }
     }
+
+    fn figure(self, t: &Tokens) -> Color32 {
+        match self {
+            Tone::Warn | Tone::Err | Tone::Ok => self.text(t),
+            _ => t.fg,
+        }
+    }
+
+    /// A meter's fill.
+    fn fill(self, t: &Tokens) -> Color32 {
+        match self {
+            Tone::Idle => t.fg_muted,
+            other => other.icon(t),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
 enum SegIcon {
+    None,
     Icon(Icon),
     Steam,
 }
 
-/// One span of a segment's text.
+/// Work measured or not: a sweep (nothing to measure), or a fraction 0–1.
+#[derive(Clone, Copy, PartialEq)]
+enum Progress {
+    Sweep,
+    At(f32),
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Kind {
+    Text,
+    Dot(Color32),
+    Meter(Progress),
+    /// A faint `·` between the main figure and a note.
+    Sep,
+}
+
+/// One piece of a segment.
 struct Piece {
+    kind: Kind,
     text: String,
     mono: bool,
     /// Its own colour (else the segment's).
     color: Option<Color32>,
-    /// A word: hidden on a narrow bar.
-    word: bool,
-    /// Cut past this width.
+    /// Dropped from a narrow bar at this rank.
+    drop: Option<u8>,
+    /// Cut with `…` past this width.
     max_w: Option<f32>,
-    /// A dot rather than text.
-    dot: Option<Color32>,
+    /// Never narrower than this text (a figure that counts up does not jump).
+    room: Option<String>,
     /// Flashes since (egui time).
     flash: Option<f64>,
 }
@@ -117,12 +217,13 @@ struct Piece {
 impl Piece {
     fn text(s: impl Into<String>) -> Self {
         Self {
+            kind: Kind::Text,
             text: s.into(),
             mono: false,
             color: None,
-            word: false,
+            drop: None,
             max_w: None,
-            dot: None,
+            room: None,
             flash: None,
         }
     }
@@ -132,8 +233,26 @@ impl Piece {
             ..Self::text(s)
         }
     }
-    fn word(mut self) -> Self {
-        self.word = true;
+    fn dot(c: Color32) -> Self {
+        Self {
+            kind: Kind::Dot(c),
+            ..Self::text("")
+        }
+    }
+    fn meter(p: Progress) -> Self {
+        Self {
+            kind: Kind::Meter(p),
+            ..Self::text("")
+        }
+    }
+    fn sep() -> Self {
+        Self {
+            kind: Kind::Sep,
+            ..Self::text("·")
+        }
+    }
+    fn drop(mut self, rank: u8) -> Self {
+        self.drop = Some(rank);
         self
     }
     fn color(mut self, c: Color32) -> Self {
@@ -144,15 +263,16 @@ impl Piece {
         self.max_w = Some(w);
         self
     }
+    fn room(mut self, widest: impl Into<String>) -> Self {
+        self.room = Some(widest.into());
+        self
+    }
     fn flash(mut self, at: Option<f64>) -> Self {
         self.flash = at;
         self
     }
-    fn dot(c: Color32) -> Self {
-        Self {
-            dot: Some(c),
-            ..Self::text("")
-        }
+    fn shown(&self, level: u8) -> bool {
+        self.drop.is_none_or(|r| r > level)
     }
 }
 
@@ -170,39 +290,33 @@ enum Act {
     Command(&'static str),
 }
 
-/// Bar progress: none, a sweep (nothing to measure), or a fraction 0–1.
-#[derive(Clone, Copy, PartialEq)]
-enum Progress {
-    None,
-    Sweep,
-    At(f32),
-}
-
 struct Segment {
+    /// Its id among the bar's segments.
+    key: &'static str,
     icon: SegIcon,
     tone: Tone,
     tip: String,
     act: Option<Act>,
-    progress: Progress,
-    pulse: bool,
     pieces: Vec<Piece>,
-    /// Hidden below this bar width.
-    hide_below: f32,
+    /// Dropped from a narrow bar at this rank.
+    drop: Option<u8>,
+    /// Segments of one group sit together; a separator marks a change of group.
+    group: u8,
     /// Small icon buttons beside it: icon, label, action.
     actions: Vec<(Icon, &'static str, Act)>,
 }
 
 impl Segment {
-    fn new(icon: SegIcon, tone: Tone, tip: String) -> Self {
+    fn new(key: &'static str, icon: SegIcon, tone: Tone, tip: String) -> Self {
         Self {
+            key,
             icon,
             tone,
             tip,
             act: None,
-            progress: Progress::None,
-            pulse: false,
             pieces: Vec::new(),
-            hide_below: 0.0,
+            drop: None,
+            group: 0,
             actions: Vec::new(),
         }
     }
@@ -214,21 +328,48 @@ impl Segment {
         self.act = a;
         self
     }
-    fn progress(mut self, p: Progress) -> Self {
-        self.progress = p;
-        self
-    }
-    fn pulse(mut self, on: bool) -> Self {
-        self.pulse = on;
-        self
-    }
     fn piece(mut self, p: Piece) -> Self {
         self.pieces.push(p);
         self
     }
-    fn hide_below(mut self, w: f32) -> Self {
-        self.hide_below = w;
+    fn drop(mut self, rank: u8) -> Self {
+        self.drop = Some(rank);
         self
+    }
+    fn group(mut self, g: u8) -> Self {
+        self.group = g;
+        self
+    }
+    fn shown(&self, level: u8) -> bool {
+        self.drop.is_none_or(|r| r > level)
+    }
+    fn moving(&self) -> bool {
+        self.pieces
+            .iter()
+            .any(|p| p.kind == Kind::Meter(Progress::Sweep))
+    }
+}
+
+/// Where the line's pieces sit: the words' baseline, and the middle of the figures (for
+/// icons, dots and meters).
+#[derive(Clone, Copy)]
+struct Line {
+    base: f32,
+    mid: f32,
+}
+
+impl Line {
+    fn new(ui: &Ui, cy: f32) -> Self {
+        let g = ui.painter().layout_no_wrap(
+            "0".to_owned(),
+            font(Face::Sans, size::TEXT_2XS),
+            Color32::PLACEHOLDER,
+        );
+        let base = cy - g.size().y / 2.0 + baseline(&g);
+        Self {
+            base,
+            mid: (base - size::TEXT_2XS * CAP / 2.0).round(),
+        }
     }
 }
 
@@ -239,37 +380,41 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx, st: &mut StatusState) {
     // (The top border is the panel's separator line.)
     clock(ui, cx, st, now);
 
-    let bar_w = rect.width();
-    let words = bar_w >= WORDS_MIN;
-    let cy = rect.center().y - 0.5;
-
-    let left = left_segments(cx, st, now, &tk);
+    let line = Line::new(ui, rect.center().y);
+    let left = left_segments(cx, st, now);
     let right = right_segments(cx, st, now, &tk);
 
-    // Right group, from the right edge inwards; the version last.
-    let mut x = rect.right() - 4.0;
-    let mut acts: Vec<(Act, Rect)> = Vec::new();
-    if bar_w >= 1000.0 {
-        let v = tf("nav", "version", &[("version", &dz_hub::VERSION)]);
-        let g = paint::galley(ui, &v, font(Face::Mono, size::TEXT_2XS), tk.fg_faint);
-        x -= g.size().x + 16.0;
-        paint::text_at(ui.painter(), &g, x + 8.0, cy, tk.fg_faint);
-        x -= 2.0;
-    }
-    let shown_right: Vec<&Segment> = right.iter().filter(|s| bar_w >= s.hide_below).collect();
-    let mut widths = Vec::with_capacity(shown_right.len());
-    for s in &shown_right {
-        widths.push(width(ui, s, words));
-    }
+    // The level: how much a narrow bar drops (0: nothing).
+    let level = fit(ui, &left, &right, rect.width());
+
+    let mut acts: Vec<Act> = Vec::new();
+    let mut seps: Vec<f32> = Vec::new();
+    // Whether a drawn segment sweeps (a dropped one asks for no frame).
+    let mut sweeping = false;
+
+    // Right group, from the right edge inwards.
+    let shown_right = shown_widths(ui, &right, level);
+    let mut x = rect.right() - EDGE;
     let mut placed = Vec::with_capacity(shown_right.len());
-    for (s, w) in shown_right.iter().zip(&widths).rev() {
+    let mut prev_group: Option<u8> = None;
+    for &(i, w) in shown_right.iter().rev() {
+        let Some(s) = right.get(i) else { continue };
+        if let Some(g) = prev_group {
+            if g != s.group {
+                x -= GROUP_GAP;
+                seps.push(x + GROUP_GAP / 2.0);
+            } else {
+                x -= SEG_GAP;
+            }
+        }
+        prev_group = Some(s.group);
         x -= w;
-        placed.push((*s, x));
-        x -= 2.0;
+        placed.push((s, x));
     }
     let right_start = x;
     for (s, sx) in placed.into_iter().rev() {
-        let (a, resp) = draw(ui, s, sx, cy, words, now, &tk);
+        sweeping |= s.moving();
+        let (a, resp) = draw(ui, s, sx, line, level, now, &tk);
         acts.extend(a);
         if s.act == Some(Act::SteamMenu) {
             ui.ctx().data_mut(|d| {
@@ -281,34 +426,49 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx, st: &mut StatusState) {
             steam_menu(ui, cx, &resp);
         }
     }
-    // The divider.
-    let div_x = right_start - 9.0;
-    ui.painter().vline(
-        div_x + 0.5,
-        (cy - 7.0)..=(cy + 7.0),
-        Stroke::new(1.0, tk.border),
-    );
-    // Left group, clipped to what is left.
-    let clip = Rect::from_min_max(
-        pos2(rect.left(), rect.top()),
-        pos2(div_x - 4.0, rect.bottom()),
-    );
-    let mut lui = ui.new_child(egui::UiBuilder::new().max_rect(clip).id_salt("sb-left"));
-    lui.set_clip_rect(clip.intersect(ui.clip_rect()));
-    let mut x = rect.left() + 4.0;
-    for s in left.iter().filter(|s| bar_w >= s.hide_below) {
-        let w = width(&lui, s, words);
-        let (a, _) = draw(&mut lui, s, x, cy, words, now, &tk);
+    // The divider between the two halves.
+    let div_x = right_start - GROUP_GAP / 2.0;
+    seps.push(div_x);
+
+    // Left group, from the left edge: a segment that does not fit whole is left out
+    // (with the ones after it), never cut through.
+    let limit = div_x - GROUP_GAP / 2.0;
+    let mut x = rect.left() + EDGE;
+    let mut prev_group: Option<u8> = None;
+    for (i, w) in shown_widths(ui, &left, level) {
+        let Some(s) = left.get(i) else { continue };
+        let mut sx = x;
+        let mut sep = None;
+        if let Some(g) = prev_group {
+            if g != s.group {
+                sep = Some(sx + GROUP_GAP / 2.0);
+                sx += GROUP_GAP;
+            } else {
+                sx += SEG_GAP;
+            }
+        }
+        if sx + w > limit {
+            break;
+        }
+        seps.extend(sep);
+        prev_group = Some(s.group);
+        sweeping |= s.moving();
+        let (a, _) = draw(ui, s, sx, line, level, now, &tk);
         acts.extend(a);
-        x += w + 2.0;
+        x = sx + w;
     }
 
-    // Animations: a sweep or a pulse asks for its next frame; a flash until it fades.
-    let moving = !reduced_motion(ui.ctx())
-        && left
-            .iter()
-            .chain(right.iter())
-            .any(|s| s.progress == Progress::Sweep || s.pulse);
+    let p = ui.painter();
+    for sx in seps {
+        p.vline(
+            sx.round() + 0.5,
+            (line.mid - SEP_H / 2.0)..=(line.mid + SEP_H / 2.0),
+            Stroke::new(1.0, tk.border),
+        );
+    }
+
+    // Animations: a sweep asks for its next frame; a flash until it fades.
+    let moving = sweeping && !reduced_motion(ui.ctx());
     if moving {
         ui.ctx()
             .request_repaint_after(Duration::from_secs_f32(1.0 / ANIM_FPS));
@@ -322,8 +482,343 @@ pub(super) fn show(ui: &mut Ui, cx: &mut Ctx, st: &mut StatusState) {
         }
     }
 
-    for (a, _) in acts {
+    for a in acts {
         run(cx, a);
+    }
+}
+
+/// The segments shown at `level`, by index, with their widths.
+fn shown_widths(ui: &Ui, segs: &[Segment], level: u8) -> Vec<(usize, f32)> {
+    segs.iter()
+        .enumerate()
+        .filter(|(_, s)| s.shown(level))
+        .map(|(i, s)| (i, width(ui, s, level)))
+        .collect()
+}
+
+/// The lowest level at which both halves fit `bar_w` (the highest there is when nothing
+/// does: the left half is then cut by whole segments).
+fn fit(ui: &Ui, left: &[Segment], right: &[Segment], bar_w: f32) -> u8 {
+    let mut ranks: Vec<u8> = left
+        .iter()
+        .chain(right.iter())
+        .flat_map(|s| {
+            s.drop
+                .into_iter()
+                .chain(s.pieces.iter().filter_map(|p| p.drop))
+        })
+        .collect();
+    ranks.sort_unstable();
+    ranks.dedup();
+    let need = |level: u8| -> f32 {
+        let half = |segs: &[Segment]| {
+            let mut w = 0.0;
+            let mut prev: Option<u8> = None;
+            for s in segs.iter().filter(|s| s.shown(level)) {
+                if let Some(g) = prev {
+                    w += if g == s.group { SEG_GAP } else { GROUP_GAP };
+                }
+                prev = Some(s.group);
+                w += width(ui, s, level);
+            }
+            w
+        };
+        EDGE * 2.0 + half(left) + GROUP_GAP + half(right)
+    };
+    let mut level = 0;
+    for r in ranks {
+        if need(level) <= bar_w {
+            break;
+        }
+        level = r;
+    }
+    level
+}
+
+fn piece_font(p: &Piece, tone: Tone) -> egui::FontId {
+    // Mono for figures, medium on good news (`text-ok font-medium`).
+    let face = match (p.mono, tone == Tone::Ok) {
+        (true, true) => Face::MonoMedium,
+        (true, false) => Face::Mono,
+        (false, true) => Face::SansMedium,
+        (false, false) => Face::Sans,
+    };
+    font(face, size::TEXT_2XS)
+}
+
+/// A piece's text, laid out once in the placeholder colour (coloured when drawn).
+fn piece_galley(ui: &Ui, p: &Piece, tone: Tone) -> Arc<Galley> {
+    let f = piece_font(p, tone);
+    match p.max_w {
+        Some(w) => paint::galley_trunc(ui, &p.text, f, Color32::PLACEHOLDER, w.max(1.0)),
+        None => paint::galley(ui, &p.text, f, Color32::PLACEHOLDER),
+    }
+}
+
+fn piece_width(ui: &Ui, p: &Piece, tone: Tone) -> f32 {
+    match p.kind {
+        Kind::Dot(_) => DOT,
+        Kind::Meter(_) => METER_W,
+        Kind::Text | Kind::Sep => {
+            let w = piece_galley(ui, p, tone).size().x;
+            match &p.room {
+                Some(r) => w.max(
+                    paint::galley(ui, r, piece_font(p, tone), Color32::PLACEHOLDER)
+                        .size()
+                        .x,
+                ),
+                None => w,
+            }
+        }
+    }
+}
+
+fn actions_width(s: &Segment) -> f32 {
+    if s.actions.is_empty() {
+        0.0
+    } else {
+        BUTTON * s.actions.len() as f32
+    }
+}
+
+/// The segment's own width at `level` (its small buttons included).
+fn width(ui: &Ui, s: &Segment, level: u8) -> f32 {
+    let icon = !matches!(s.icon, SegIcon::None);
+    let mut w = PAD + if icon { ICON } else { 0.0 };
+    for (n, p) in s.pieces.iter().filter(|p| p.shown(level)).enumerate() {
+        w += match (n, icon) {
+            (0, true) => ICON_GAP,
+            (0, false) => 0.0,
+            _ => GAP,
+        };
+        w += piece_width(ui, p, s.tone);
+    }
+    w + PAD + actions_width(s)
+}
+
+/// Draws a segment with its left edge at `x`; returns the action clicked, with the
+/// segment's response (for a menu to open from).
+fn draw(
+    ui: &mut Ui,
+    s: &Segment,
+    x: f32,
+    line: Line,
+    level: u8,
+    now: f64,
+    tk: &Tokens,
+) -> (Option<Act>, egui::Response) {
+    let total_w = width(ui, s, level);
+    let body = Rect::from_min_size(
+        pos2(x, line.mid - BODY_H / 2.0),
+        vec2(total_w - actions_width(s), BODY_H),
+    );
+    let id = Id::new(("sb-seg", s.key));
+    let sense = if s.act.is_some() {
+        Sense::click()
+    } else {
+        Sense::hover()
+    };
+    let resp = ui.interact(body, id, sense);
+    let lit = s.act.is_some() && (resp.hovered() || menu::is_open(&resp));
+    let h = paint::ease(ui, id.with("h"), lit);
+    let still = reduced_motion(ui.ctx());
+    let p = ui.painter();
+    p.rect_filled(
+        body,
+        CornerRadius::same(size::RADIUS_XS),
+        paint::lerp(Color32::TRANSPARENT, tk.raised, h),
+    );
+    // Under the pointer, a clickable segment's words brighten.
+    let lift = |c: Color32| {
+        if s.act.is_some() {
+            paint::lerp(c, tk.fg, h)
+        } else {
+            c
+        }
+    };
+    let mut px = body.left() + PAD;
+    let mut first = true;
+    match s.icon {
+        SegIcon::None => {}
+        SegIcon::Icon(i) => {
+            i.paint(p, icon_rect(px, line), s.tone.icon(tk));
+            px += ICON;
+            first = false;
+        }
+        SegIcon::Steam => {
+            Brand::Steam.paint(p, icon_rect(px, line), s.tone.icon(tk));
+            px += ICON;
+            first = false;
+        }
+    }
+    let after_icon = !first;
+    for (n, piece) in s.pieces.iter().filter(|p| p.shown(level)).enumerate() {
+        if !first {
+            px += if after_icon && n == 0 { ICON_GAP } else { GAP };
+        }
+        first = false;
+        let pw = piece_width(ui, piece, s.tone);
+        match piece.kind {
+            Kind::Dot(c) => {
+                p.circle_filled(pos2(px + DOT / 2.0, line.mid), DOT / 2.0, c);
+            }
+            Kind::Meter(m) => meter(ui, id, m, px, line, s.tone, now, still, tk),
+            Kind::Text | Kind::Sep => {
+                let ink = match (piece.kind, piece.color) {
+                    (Kind::Sep, _) => tk.fg_faint,
+                    (_, Some(c)) => lift(c),
+                    (_, None) if piece.mono => lift(s.tone.figure(tk)),
+                    (_, None) => lift(s.tone.text(tk)),
+                };
+                let g = piece_galley(ui, piece, s.tone);
+                // A figure with room to spare keeps it after itself: it stays beside
+                // its meter or word, and what follows does not move as it counts.
+                let gx = px;
+                if let Some(at) = piece.flash {
+                    let k = ((now - at) / FLASH) as f32;
+                    if (0.0..1.0).contains(&k) && !still {
+                        let fr = Rect::from_center_size(
+                            pos2(gx + g.size().x / 2.0, line.mid),
+                            vec2(g.size().x + 4.0, BODY_H - 6.0),
+                        );
+                        p.rect_filled(
+                            fr,
+                            CornerRadius::same(size::RADIUS_XS),
+                            paint::alpha(tk.accent, 0.35 * (1.0 - k)),
+                        );
+                    }
+                }
+                draw_on(p, &g, gx, line.base, ink);
+            }
+        }
+        px += pw;
+    }
+    let mut clicked = None;
+    // The small buttons beside it.
+    let mut bx = body.right();
+    for (i, (icon, label, act)) in s.actions.iter().enumerate() {
+        let r = Rect::from_min_size(pos2(bx, line.mid - BUTTON / 2.0), Vec2::splat(BUTTON));
+        let b = ui
+            .interact(r, id.with(("act", i)), Sense::click())
+            .on_hover_cursor(CursorIcon::PointingHand);
+        let bh = paint::ease(ui, b.id, b.hovered());
+        let p = ui.painter();
+        p.rect_filled(
+            r,
+            CornerRadius::same(size::RADIUS_XS),
+            paint::lerp(Color32::TRANSPARENT, tk.raised, bh),
+        );
+        icon.paint(
+            p,
+            Rect::from_center_size(r.center(), Vec2::splat(ICON)),
+            paint::lerp(tk.fg_muted, tk.fg, bh),
+        );
+        super::ring(ui, &b, r, size::RADIUS_XS);
+        if b.tip_kbd(label, "", Side::Top).clicked() {
+            clicked = Some(*act);
+        }
+        bx += BUTTON;
+    }
+    super::ring(ui, &resp, body, size::RADIUS_XS);
+    let resp = if s.act.is_some() {
+        resp.on_hover_cursor(CursorIcon::PointingHand)
+    } else {
+        resp
+    };
+    let resp = if menu::is_open(&resp) {
+        resp
+    } else {
+        resp.tip_kbd(&s.tip, "", Side::Top)
+    };
+    if let (Some(a), true) = (s.act, resp.clicked())
+        && a != Act::SteamMenu
+    {
+        clicked = Some(a);
+    }
+    (clicked, resp)
+}
+
+/// An icon's square, on the line's middle.
+fn icon_rect(x: f32, line: Line) -> Rect {
+    Rect::from_min_size(pos2(x, line.mid - ICON / 2.0), Vec2::splat(ICON))
+}
+
+/// An inline meter: a track in the tone's colour, filled to the fraction, or a band
+/// sweeping across it when nothing can be measured.
+#[allow(clippy::too_many_arguments)]
+fn meter(
+    ui: &Ui,
+    id: Id,
+    m: Progress,
+    x: f32,
+    line: Line,
+    tone: Tone,
+    now: f64,
+    still: bool,
+    tk: &Tokens,
+) {
+    let track = Rect::from_min_size(pos2(x, line.mid - METER_H / 2.0), vec2(METER_W, METER_H));
+    let fill = tone.fill(tk);
+    let r = CornerRadius::same(size::RADIUS_XS);
+    let p = ui.painter();
+    p.rect_filled(track, r, paint::alpha(fill, 0.22));
+    match m {
+        Progress::At(f) => {
+            let f = ui.ctx().animate_value_with_time(
+                id.with("meter"),
+                f.clamp(0.0, 1.0),
+                crate::theme::motion::BASE,
+            );
+            let w = (track.width() * f).max(if f > 0.0 { METER_H } else { 0.0 });
+            if w > 0.0 {
+                p.rect_filled(Rect::from_min_size(track.min, vec2(w, METER_H)), r, fill);
+            }
+        }
+        Progress::Sweep => {
+            let band = track.width() / 3.0;
+            // `animate-sweep`: from -100% to 300% of the band in 1.6 s; still, a band
+            // in the middle.
+            let k = if still {
+                0.5
+            } else {
+                ((now % 1.6) / 1.6) as f32
+            };
+            let left = track.left() - band + k * (track.width() + band);
+            let band_r = Rect::from_min_max(
+                pos2(left.max(track.left()), track.top()),
+                pos2((left + band).min(track.right()), track.bottom()),
+            );
+            if band_r.width() > 0.0 {
+                p.rect_filled(band_r, r, fill);
+            }
+        }
+    }
+}
+
+fn run(cx: &mut Ctx, a: Act) {
+    match a {
+        Act::Refresh => {
+            let _ = cx.run("servers.refresh", &serde_json::Value::Null);
+        }
+        Act::GoServers => cx.go(ViewId::Servers),
+        Act::Scan => {
+            let _ = cx.run("servers.scan", &serde_json::Value::Null);
+        }
+        Act::ScanPause => {
+            let _ = cx.run("servers.scan_pause", &serde_json::Value::Null);
+        }
+        Act::ReopenOp => {
+            let _ = cx.run("mods.reopen_op", &serde_json::Value::Null);
+        }
+        Act::Go(v, Some(f)) => cx.go_focus(v, f),
+        Act::Go(v, None) => cx.go(v),
+        Act::RepairBe => {
+            let _ = cx.run("battleye.repair", &serde_json::Value::Null);
+        }
+        Act::Command(id) => {
+            let _ = cx.run(id, &serde_json::Value::Null);
+        }
+        Act::SteamMenu => {}
     }
 }
 
@@ -385,9 +880,20 @@ fn clock(ui: &Ui, cx: &mut Ctx, st: &mut StatusState, now: f64) {
     }
 }
 
-fn left_segments(cx: &Ctx, st: &StatusState, now: f64, tk: &Tokens) -> Vec<Segment> {
+/// `done/total` as the bar writes it, with the room its widest value takes.
+fn count(done: impl Into<f64>, total: impl Into<f64>) -> Piece {
+    let total = format::num(total.into());
+    Piece::mono(format!("{}/{total}", format::num(done.into()))).room(format!("{total}/{total}"))
+}
+
+/// A whole percent, with the room `100%` takes.
+fn percent(p: u32) -> Piece {
+    Piece::mono(format!("{p}%")).room("100%")
+}
+
+fn left_segments(cx: &Ctx, st: &StatusState, now: f64) -> Vec<Segment> {
     let mut out = Vec::with_capacity(4);
-    out.push(list_segment(cx, st, tk));
+    out.push(list_segment(cx, st));
     if let Some(s) = scan_segment(cx) {
         out.push(s);
     }
@@ -395,11 +901,12 @@ fn left_segments(cx: &Ctx, st: &StatusState, now: f64, tk: &Tokens) -> Vec<Segme
     if crate::views::offline::installing(cx.egui) {
         let tip = t("shell", "sbOfflineTip").to_string();
         out.push(
-            Segment::new(SegIcon::Icon(lucide::MAP), Tone::Info, tip)
+            Segment::new("offline", SegIcon::Icon(lucide::MAP), Tone::Info, tip)
                 .act(Act::Go(ViewId::Offline, None))
-                .progress(Progress::Sweep)
-                .piece(Piece::text(t("shell", "sbOffline")).word())
-                .piece(Piece::text(t("offline", "installing"))),
+                .group(2)
+                .piece(Piece::text(t("shell", "sbOffline")).drop(rank::WORK_WORD))
+                .piece(Piece::meter(Progress::Sweep))
+                .piece(Piece::text(t("offline", "installing")).drop(rank::WORK_WORD)),
         );
     }
     let u = &cx.stores.updater;
@@ -410,24 +917,25 @@ fn left_segments(cx: &Ctx, st: &StatusState, now: f64, tk: &Tokens) -> Vec<Segme
             "sbUpdatingTip",
             &[("version", &v), ("percent", &u.percent())],
         );
-        let mut s = Segment::new(SegIcon::Icon(lucide::DOWNLOAD), Tone::Info, tip)
+        let mut s = Segment::new("updating", SegIcon::Icon(lucide::DOWNLOAD), Tone::Info, tip)
             .act(Act::Command("about.open_update"))
-            .progress(if u.total > 0 {
-                Progress::At(u.percent() as f32 / 100.0)
-            } else {
-                Progress::Sweep
-            })
-            .piece(Piece::text(t("shell", "sbUpdating")).word());
+            .group(2)
+            .piece(Piece::text(t("shell", "sbUpdating")).drop(rank::WORK_WORD));
         if u.total > 0 {
-            s = s.piece(Piece::mono(format!("{}%", u.percent())));
+            s = s
+                .piece(Piece::meter(Progress::At(u.percent() as f32 / 100.0)))
+                .piece(percent(u.percent()));
+        } else {
+            s = s.piece(Piece::meter(Progress::Sweep));
         }
         out.push(s);
     }
     out
 }
 
-/// The server list, always there (= `ListSegment.svelte`).
-fn list_segment(cx: &Ctx, st: &StatusState, tk: &Tokens) -> Segment {
+/// The server list, always there (= `ListSegment.svelte`): the count, then what the list
+/// is doing (fetching, the Steam listing with its meter) or how old it is.
+fn list_segment(cx: &Ctx, st: &StatusState) -> Segment {
     let s = &cx.stores.servers;
     let down = s.list_error.is_some() && s.total == 0;
     let age = if s.last_refreshed > 0 {
@@ -448,32 +956,50 @@ fn list_segment(cx: &Ctx, st: &StatusState, tk: &Tokens) -> Segment {
         .as_ref()
         .filter(|n| n.steam.phase == dz_hub::events::SourcePhase::Running)
         .map(|n| (n.steam.requests_done, n.steam.requests_total, n.steam.added));
-    let (tone, tip, act, progress, note) = if s.refreshing {
-        (
+    let icon = SegIcon::Icon(if down {
+        lucide::CLOUD_OFF
+    } else {
+        lucide::SERVER
+    });
+    let count = |seg: Segment| {
+        seg.piece(Piece::mono(format::num(f64::from(s.total))).flash(st.flash_total.map(|f| f.1)))
+            .piece(Piece::text(t("shell", "sbServersWord")).drop(rank::SERVERS_WORD))
+    };
+    if down {
+        let e = s.list_error.clone().unwrap_or_default();
+        return Segment::new(
+            "list",
+            icon,
+            Tone::Err,
+            tf("shell", "sbListFailedTip", &[("error", &e)]),
+        )
+        .act(Act::Refresh)
+        .piece(Piece::text(t("nav", "sbListDown")));
+    }
+    if s.refreshing {
+        return count(Segment::new(
+            "list",
+            icon,
             Tone::Accent,
             t("shell", "sbFetchingTip").to_string(),
-            None,
-            Progress::Sweep,
-            t("shell", "sbFetching").to_string(),
+        ))
+        .piece(Piece::meter(Progress::Sweep))
+        .piece(Piece::text(t("shell", "sbFetching")).drop(rank::LIST_NOTE));
+    }
+    if let Some(e) = failed {
+        return count(
+            Segment::new(
+                "list",
+                icon,
+                Tone::Err,
+                tf("shell", "sbListFailedTip", &[("error", &e)]),
+            )
+            .act(Act::Refresh),
         )
-    } else if down {
-        let e = s.list_error.clone().unwrap_or_default();
-        (
-            Tone::Err,
-            tf("shell", "sbListFailedTip", &[("error", &e)]),
-            Some(Act::Refresh),
-            Progress::None,
-            t("nav", "sbListDown").to_string(),
-        )
-    } else if let Some(e) = failed {
-        (
-            Tone::Err,
-            tf("shell", "sbListFailedTip", &[("error", &e)]),
-            Some(Act::Refresh),
-            Progress::None,
-            t("shell", "sbListFailed").to_string(),
-        )
-    } else if let Some((done, total, added)) = steam {
+        .piece(Piece::sep().drop(rank::LIST_NOTE))
+        .piece(Piece::text(t("shell", "sbListFailed")).drop(rank::LIST_NOTE));
+    }
+    if let Some((done, total, added)) = steam {
         let tip = tf(
             "shell",
             "sbSteamListingTip",
@@ -483,55 +1009,30 @@ fn list_segment(cx: &Ctx, st: &StatusState, tk: &Tokens) -> Segment {
                 ("added", &format::num(f64::from(added))),
             ],
         );
-        let (progress, note) = if total > 0 {
-            let f = done as f32 / total as f32;
-            (
-                Progress::At(f),
-                format!("Steam {}%", (f * 100.0).floor() as u32),
-            )
+        let seg = count(Segment::new("list", icon, Tone::Accent, tip).act(Act::GoServers))
+            .piece(Piece::sep().drop(rank::LIST_STEAM_WORD))
+            .piece(Piece::text("Steam").drop(rank::LIST_STEAM_WORD));
+        return if total > 0 {
+            let f = (done as f32 / total as f32).clamp(0.0, 1.0);
+            seg.piece(Piece::meter(Progress::At(f)))
+                .piece(percent((f * 100.0).floor() as u32))
         } else {
-            (Progress::Sweep, "Steam".to_string())
+            seg.piece(Piece::meter(Progress::Sweep))
         };
-        (Tone::Accent, tip, Some(Act::GoServers), progress, note)
-    } else {
-        let stale = s.stale();
-        let key = if stale { "sbListStaleTip" } else { "sbListTip" };
-        let tip = tf(
-            "shell",
-            key,
-            &[("count", &format::num(f64::from(s.total))), ("age", &age)],
-        );
-        (
-            if stale { Tone::Warn } else { Tone::Idle },
-            tip,
-            Some(Act::Refresh),
-            Progress::None,
-            age,
-        )
-    };
-    let icon = if down {
-        lucide::CLOUD_OFF
-    } else {
-        lucide::SERVER
-    };
-    let mut seg = Segment::new(SegIcon::Icon(icon), tone, tip)
-        .act_if(act)
-        .progress(progress);
-    if !down {
-        seg = seg
-            .piece(Piece::mono(format::num(f64::from(s.total))).flash(st.flash_total.map(|f| f.1)))
-            .piece(Piece::text(t("shell", "sbServersWord")).word());
     }
-    if !note.is_empty() {
-        let mut p = if down {
-            Piece::text(note)
-        } else {
-            Piece::text(format!("· {note}")).word()
-        };
-        if tone == Tone::Idle {
-            p = p.color(tk.fg_faint);
-        }
-        seg = seg.piece(p);
+    let stale = s.stale();
+    let key = if stale { "sbListStaleTip" } else { "sbListTip" };
+    let tip = tf(
+        "shell",
+        key,
+        &[("count", &format::num(f64::from(s.total))), ("age", &age)],
+    );
+    let tone = if stale { Tone::Warn } else { Tone::Idle };
+    let mut seg = count(Segment::new("list", icon, tone, tip).act(Act::Refresh));
+    if !age.is_empty() {
+        seg = seg
+            .piece(Piece::sep().drop(rank::LIST_NOTE))
+            .piece(Piece::text(age).drop(rank::LIST_NOTE));
     }
     seg
 }
@@ -555,22 +1056,19 @@ fn scan_segment(cx: &Ctx) -> Option<Segment> {
             &args,
         );
         let mut seg = Segment::new(
+            "scan",
             SegIcon::Icon(lucide::RADAR),
             if paused { Tone::Warn } else { Tone::Accent },
             tip,
         )
-        .pulse(!paused)
-        .progress(if total > 0 {
-            Progress::At(done as f32 / total as f32)
-        } else {
-            Progress::None
-        })
-        .piece(Piece::text(t("nav", if paused { "scanPaused" } else { "sbPing" })).word())
-        .piece(Piece::mono(format!(
-            "{}/{}",
-            format::num(f64::from(done)),
-            format::num(f64::from(total))
-        )));
+        .piece(
+            Piece::text(t("nav", if paused { "scanPaused" } else { "sbPing" }))
+                .drop(rank::PING_WORD),
+        );
+        if total > 0 {
+            seg = seg.piece(Piece::meter(Progress::At(done as f32 / total as f32)));
+        }
+        seg = seg.piece(count(done, total));
         seg.actions = vec![
             if paused {
                 (lucide::PLAY, t("nav", "resumeScan"), Act::ScanPause)
@@ -583,12 +1081,14 @@ fn scan_segment(cx: &Ctx) -> Option<Segment> {
     } else if s.total > 0 && !s.refreshing {
         Some(
             Segment::new(
+                "scan",
                 SegIcon::Icon(lucide::RADAR),
                 Tone::Idle,
                 t("nav", "sbRescan").to_string(),
             )
             .act(Act::Scan)
-            .piece(Piece::text(t("nav", "sbPingAgain")).word()),
+            .drop(rank::PING_AGAIN)
+            .piece(Piece::text(t("nav", "sbPingAgain")).drop(rank::PING_AGAIN_WORD)),
         )
     } else {
         None
@@ -632,6 +1132,7 @@ fn mod_segments(cx: &Ctx, st: &StatusState, _now: f64) -> Vec<Segment> {
             )
         };
         let mut seg = Segment::new(
+            "modop",
             SegIcon::Icon(if waiting {
                 lucide::KEY_ROUND
             } else {
@@ -641,26 +1142,26 @@ fn mod_segments(cx: &Ctx, st: &StatusState, _now: f64) -> Vec<Segment> {
             tip,
         )
         .act(Act::ReopenOp)
-        .pulse(!waiting && op.total == 0)
-        .progress(if waiting {
-            Progress::None
-        } else if op.total > 0 {
-            Progress::At((op.ok + op.failed) as f32 / op.total as f32)
-        } else {
-            Progress::Sweep
-        });
+        .group(1);
         if waiting {
             seg = seg.piece(Piece::text(t("shell", "sbModWaiting")));
         } else {
-            seg = seg.piece(Piece::text(kind).word());
+            seg = seg.piece(Piece::text(kind).drop(rank::WORK_WORD));
             if op.total > 0 {
-                seg = seg.piece(Piece::mono(format!("{}/{}", op.current, op.total)));
+                let f = (op.ok + op.failed) as f32 / op.total as f32;
+                seg = seg
+                    .piece(Piece::meter(Progress::At(f)))
+                    .piece(count(op.current as f64, op.total as f64));
+            } else {
+                seg = seg.piece(Piece::meter(Progress::Sweep));
             }
-            seg = seg.piece(
-                Piece::text(op.current_name.clone())
-                    .max(160.0)
-                    .color(Color32::PLACEHOLDER),
-            );
+            if !op.current_name.is_empty() {
+                seg = seg.piece(
+                    Piece::text(op.current_name.clone())
+                        .max(MOD_NAME_MAX)
+                        .drop(rank::MOD_NAME),
+                );
+            }
         }
         out.push(seg);
     } else {
@@ -674,12 +1175,14 @@ fn mod_segments(cx: &Ctx, st: &StatusState, _now: f64) -> Vec<Segment> {
         if missing {
             out.push(
                 Segment::new(
+                    "steamcmd",
                     SegIcon::Icon(lucide::TRIANGLE_ALERT),
                     Tone::Warn,
                     t("shell", "sbSteamcmdMissingTip").to_string(),
                 )
                 .act(Act::Command("settings.open_steam"))
-                .piece(Piece::text(t("nav", "sbSteamcmdMissing")).word()),
+                .group(1)
+                .piece(Piece::text(t("nav", "sbSteamcmdMissing")).drop(rank::WORK_WORD)),
             );
         }
     }
@@ -687,56 +1190,37 @@ fn mod_segments(cx: &Ctx, st: &StatusState, _now: f64) -> Vec<Segment> {
     if mods.checking {
         out.push(
             Segment::new(
+                "mods",
                 SegIcon::Icon(lucide::PUZZLE),
                 Tone::Info,
                 t("shell", "sbModsCheckingTip").to_string(),
             )
-            .progress(Progress::Sweep)
-            .hide_below(800.0)
-            .piece(Piece::text(t("nav", "sbModsChecking")).word()),
+            .group(1)
+            .drop(rank::CHECKING)
+            .piece(Piece::meter(Progress::Sweep))
+            .piece(Piece::text(t("nav", "sbModsChecking")).drop(rank::CHECKING_WORD)),
         );
     } else if behind > 0 {
         let count = i64::try_from(behind).unwrap_or(i64::MAX);
         out.push(
             Segment::new(
+                "mods",
                 SegIcon::Icon(lucide::PUZZLE),
                 Tone::Warn,
                 tf("shell", "sbModsBehindTip", &[("count", &count)]),
             )
             .act(Act::Go(ViewId::Mods, None))
-            .hide_below(800.0)
+            .group(1)
             .piece(Piece::mono(behind.to_string()).flash(st.flash_behind.map(|f| f.1)))
-            .piece(Piece::text(t("shell", "sbModsBehind")).word()),
+            .piece(Piece::text(t("shell", "sbModsBehind")).drop(rank::BEHIND_WORD)),
         );
     }
     out
 }
 
 fn right_segments(cx: &Ctx, st: &StatusState, now: f64, tk: &Tokens) -> Vec<Segment> {
-    let mut out = Vec::with_capacity(4);
-    let pad = cx.stores.pad.mode(cx.prefs.get().ui.pad_mode) == InputMode::Gamepad;
-    // The game: an indicator only.
-    if cx.stores.game.running {
-        let played = cx
-            .stores
-            .game
-            .since
-            .map(|s| format::duration(i64::try_from(s.elapsed().as_secs()).unwrap_or(0)));
-        let first = match &played {
-            Some(p) => tf("shell", "sbGameFor", &[("time", p)]),
-            None => t("shell", "sbGameOn").to_string(),
-        };
-        let quit = t("shell", if pad { "sbGameQuitPad" } else { "sbGameQuit" });
-        let mut s = Segment::new(
-            SegIcon::Icon(lucide::GAMEPAD_2),
-            Tone::Ok,
-            format!("{first} {quit}"),
-        )
-        .piece(Piece::dot(tk.ok))
-        .piece(Piece::text("DayZ").word());
-        if let Some(p) = played {
-            s = s.piece(Piece::mono(p).color(tk.fg_muted));
-        }
+    let mut out = Vec::with_capacity(5);
+    if let Some(s) = game_segment(cx, tk) {
         out.push(s);
     }
     if let Some(s) = battleye_segment(cx, st, now, tk) {
@@ -754,28 +1238,119 @@ fn right_segments(cx: &Ctx, st: &StatusState, now: f64, tk: &Tokens) -> Vec<Segm
                 "sbUpdateElsewhereTip"
             };
             let tip = tf("shell", key, &[("version", &info.version)]);
-            out.push(
-                Segment::new(SegIcon::Icon(lucide::DOWNLOAD), Tone::Ok, tip)
-                    .act(Act::Command("about.open_update"))
-                    .piece(Piece::mono(tf(
+            let mut seg = Segment::new("update", SegIcon::Icon(lucide::DOWNLOAD), Tone::Ok, tip)
+                .act(Act::Command("about.open_update"))
+                .group(2);
+            // `v{version} available`: the version is a figure, the rest words (in the
+            // language's order).
+            let tpl = t("nav", "sbUpdate");
+            let figure = format!("v{}", info.version);
+            match tpl.split_once("v{version}") {
+                Some((pre, post)) => {
+                    if !pre.trim().is_empty() {
+                        seg = seg.piece(Piece::text(pre.trim()).drop(rank::UPDATE_WORD));
+                    }
+                    seg = seg.piece(Piece::mono(figure));
+                    if !post.trim().is_empty() {
+                        seg = seg.piece(Piece::text(post.trim()).drop(rank::UPDATE_WORD));
+                    }
+                }
+                None => {
+                    seg = seg.piece(Piece::mono(tf(
                         "nav",
                         "sbUpdate",
                         &[("version", &info.version)],
-                    ))),
-            );
+                    )));
+                }
+            }
+            out.push(seg);
         }
         (UpdateState::Done, _) => out.push(
             Segment::new(
+                "update",
                 SegIcon::Icon(lucide::REFRESH_CW),
                 Tone::Ok,
                 t("shell", "sbUpdateReadyTip").to_string(),
             )
             .act(Act::Command("about.open_update"))
-            .piece(Piece::text(t("shell", "sbUpdateReady")).word()),
+            .group(2)
+            .piece(Piece::text(t("shell", "sbUpdateReady")).drop(rank::UPDATE_WORD)),
         ),
         _ => {}
     }
+    // The version, last: a door to About.
+    let v = tf("nav", "version", &[("version", &dz_hub::VERSION)]);
+    out.push(
+        Segment::new(
+            "version",
+            SegIcon::None,
+            Tone::Idle,
+            tf("shell", "sbVersionTip", &[("version", &v)]),
+        )
+        .act(Act::Command("view.about"))
+        .group(2)
+        .drop(rank::VERSION)
+        .piece(Piece::mono(v).color(tk.fg_muted)),
+    );
     out
+}
+
+/// The game while it runs: what is played (the server's name, cut with `…`) and for how
+/// long; a click shows that server.
+fn game_segment(cx: &Ctx, tk: &Tokens) -> Option<Segment> {
+    let g = &cx.stores.game;
+    if !g.running {
+        return None;
+    }
+    let pad = cx.stores.pad.mode(cx.prefs.get().ui.pad_mode) == InputMode::Gamepad;
+    let played = g.played_secs().map(format::duration);
+    let session = g.session.as_ref();
+    let name = session
+        .filter(|s| s.kind != PlayKind::Unknown && !s.name.trim().is_empty())
+        .map(|s| s.name.trim().to_owned());
+    let mut tip = Vec::with_capacity(4);
+    match &name {
+        Some(n) => tip.push(tf("shell", "sbGameOnServer", &[("name", n)])),
+        None if played.is_none() => tip.push(t("shell", "sbGameOn").to_string()),
+        None => {}
+    }
+    if let Some(p) = &played {
+        tip.push(tf("shell", "sbGameFor", &[("time", p)]));
+    }
+    tip.push(
+        t(
+            "shell",
+            match session.map(|s| s.kind) {
+                Some(PlayKind::Server) if session.is_some_and(|s| s.ip.is_some()) => {
+                    "sbGameDetailsAction"
+                }
+                Some(PlayKind::Offline) => "sbGameOfflineAction",
+                _ => "sbGameStatsAction",
+            },
+        )
+        .to_string(),
+    );
+    tip.push(t("shell", if pad { "sbGameQuitPad" } else { "sbGameQuit" }).to_string());
+    let mut s = Segment::new(
+        "game",
+        SegIcon::Icon(lucide::GAMEPAD_2),
+        Tone::Ok,
+        tip.join(" "),
+    )
+    .act(Act::Command("game.details"));
+    s = match name {
+        Some(n) => s.piece(
+            Piece::text(n)
+                .max(GAME_NAME_MAX)
+                .color(tk.fg)
+                .drop(rank::GAME_NAME),
+        ),
+        None => s.piece(Piece::text("DayZ").drop(rank::GAME_WORD)),
+    };
+    if let Some(p) = played {
+        s = s.piece(Piece::mono(p));
+    }
+    Some(s)
 }
 
 /// BattlEye (= `BattlEyeSegment.svelte`).
@@ -839,21 +1414,22 @@ fn battleye_segment(cx: &Ctx, st: &StatusState, now: f64, tk: &Tokens) -> Option
         }
     };
     let acts = !repairing && be != BattlEyeState::Running && (service || broken);
-    let mut seg = Segment::new(SegIcon::Icon(icon), tone, tip)
+    let loud = not_started || broken;
+    let mut seg = Segment::new("battleye", SegIcon::Icon(icon), tone, tip)
         .act_if(acts.then_some(Act::RepairBe))
-        .progress(if repairing {
-            Progress::Sweep
-        } else {
-            Progress::None
-        })
-        .hide_below(if not_started || broken { 0.0 } else { 900.0 })
-        .piece(Piece::text("BattlEye").word());
-    seg = if not_started || broken {
+        .group(1)
+        .piece(Piece::text("BattlEye").drop(if loud { rank::WORK_WORD } else { rank::BE_WORD }));
+    if !loud && !repairing {
+        seg = seg.drop(rank::BATTLEYE);
+    }
+    seg = if repairing {
+        seg.piece(Piece::meter(Progress::Sweep))
+    } else if loud {
         seg.piece(Piece::text(t("shell", "sbBeOff")))
     } else if !service {
         // Under Proton the runtime being there is all that can be seen (not whether
         // BattlEye started with the game): installed is the good state.
-        seg.piece(Piece::text(t("shell", "sbBeRuntime")))
+        seg.piece(Piece::text(t("shell", "sbBeRuntime")).drop(rank::BE_WORD))
             .piece(Piece::dot(tk.ok))
     } else {
         seg.piece(Piece::dot(if be == BattlEyeState::Running {
@@ -895,253 +1471,25 @@ fn steam_segment(cx: &Ctx, st: &StatusState, tk: &Tokens) -> Segment {
     }
     tip.push(' ');
     tip.push_str(t("shell", "sbSteamAction"));
-    Segment::new(
+    let down = running == Some(false);
+    let mut seg = Segment::new(
+        "steam",
         SegIcon::Steam,
-        if running == Some(false) {
-            Tone::Warn
-        } else {
-            Tone::Idle
-        },
+        if down { Tone::Warn } else { Tone::Idle },
         tip,
     )
     .act(Act::SteamMenu)
-    .hide_below(900.0)
-    .piece(Piece::text(if via { "Steam" } else { "SteamCMD" }).word())
+    .group(1)
+    .piece(Piece::text(if via { "Steam" } else { "SteamCMD" }).drop(rank::STEAM_WORD))
     .piece(Piece::dot(match running {
         Some(true) => tk.ok,
         Some(false) => tk.warn,
         None => tk.fg_faint,
-    }))
-}
-
-fn piece_galley(ui: &Ui, p: &Piece, tone: Tone, ink: Color32) -> std::sync::Arc<egui::Galley> {
-    let f = font(piece_face(p, tone), size::TEXT_2XS);
-    match p.max_w {
-        Some(w) => paint::galley_trunc(ui, &p.text, f, ink, w),
-        None => paint::galley(ui, &p.text, f, ink),
+    }));
+    if !down {
+        seg = seg.drop(rank::STEAM);
     }
-}
-
-/// A piece's face: mono for figures, medium on good news (`text-ok font-medium`).
-fn piece_face(p: &Piece, tone: Tone) -> Face {
-    match (p.mono, tone == Tone::Ok) {
-        (true, true) => Face::MonoMedium,
-        (true, false) => Face::Mono,
-        (false, true) => Face::SansMedium,
-        (false, false) => Face::Sans,
-    }
-}
-
-/// The segment's own width (its small buttons included).
-fn width(ui: &Ui, s: &Segment, words: bool) -> f32 {
-    let mut w = 8.0 + 12.0;
-    for p in s.pieces.iter().filter(|p| words || !p.word) {
-        w += 6.0;
-        w += match p.dot {
-            Some(_) => 6.0,
-            None => piece_galley(ui, p, s.tone, Color32::WHITE).size().x,
-        };
-    }
-    w += 8.0;
-    if !s.actions.is_empty() {
-        w += 20.0 * s.actions.len() as f32 + 4.0;
-    }
-    w
-}
-
-/// Draws a segment with its left edge at `x`; returns the action clicked, with the
-/// segment's rect (for a menu to open from).
-fn draw(
-    ui: &mut Ui,
-    s: &Segment,
-    x: f32,
-    cy: f32,
-    words: bool,
-    now: f64,
-    tk: &Tokens,
-) -> (Option<(Act, Rect)>, egui::Response) {
-    let total_w = width(ui, s, words);
-    let actions_w = if s.actions.is_empty() {
-        0.0
-    } else {
-        20.0 * s.actions.len() as f32 + 4.0
-    };
-    let body = Rect::from_min_size(pos2(x, cy - 11.0), vec2(total_w - actions_w, 22.0));
-    let id = Id::new((
-        "sb-seg",
-        match s.icon {
-            SegIcon::Icon(i) => i.name,
-            SegIcon::Steam => "steam",
-        },
-    ));
-    let sense = if s.act.is_some() {
-        Sense::click()
-    } else {
-        Sense::hover()
-    };
-    let resp = ui.interact(body, id, sense);
-    let lit = s.act.is_some() && (resp.hovered() || menu::is_open(&resp));
-    let h = paint::ease(ui, id.with("h"), lit);
-    let p = ui.painter();
-    p.rect_filled(
-        body,
-        CornerRadius::same(size::RADIUS_XS),
-        paint::lerp(Color32::TRANSPARENT, tk.raised, h),
-    );
-    let still = reduced_motion(ui.ctx());
-    let pulse = if s.pulse && !still {
-        // `animate-pulse`: opacity 1 → .5 → 1 over 2 s.
-        let ph = (now % 2.0) / 2.0;
-        1.0 - 0.5 * (std::f64::consts::PI * ph).sin().powi(2) as f32
-    } else {
-        1.0
-    };
-    let icon_ink = s.tone.icon(tk).gamma_multiply(pulse);
-    let text_ink = if s.act.is_some() {
-        paint::lerp(s.tone.text(tk), tk.fg, h)
-    } else {
-        s.tone.text(tk)
-    };
-    let mut px = body.left() + 8.0;
-    let ir = Rect::from_min_size(pos2(px, cy - 6.0), Vec2::splat(12.0));
-    match s.icon {
-        SegIcon::Icon(i) => i.paint(p, ir, icon_ink),
-        SegIcon::Steam => Brand::Steam.paint(p, ir, icon_ink),
-    }
-    px += 12.0;
-    for piece in s.pieces.iter().filter(|p| words || !p.word) {
-        px += 6.0;
-        if let Some(c) = piece.dot {
-            p.circle_filled(pos2(px + 3.0, cy), 3.0, c);
-            px += 6.0;
-            continue;
-        }
-        let ink = match piece.color {
-            Some(c) if c == Color32::PLACEHOLDER => tk.fg_faint,
-            Some(c) => c,
-            None => text_ink,
-        };
-        let g = piece_galley(ui, piece, s.tone, ink);
-        if let Some(at) = piece.flash {
-            let k = ((now - at) / FLASH) as f32;
-            if (0.0..1.0).contains(&k) && !still {
-                let fr = Rect::from_min_size(
-                    pos2(px - 2.0, cy - g.size().y / 2.0),
-                    g.size() + vec2(4.0, 0.0),
-                );
-                p.rect_filled(
-                    fr,
-                    CornerRadius::same(size::RADIUS_XS),
-                    paint::alpha(tk.accent, 0.35 * (1.0 - k)),
-                );
-            }
-        }
-        paint::text_at(p, &g, px, cy, ink);
-        px += g.size().x;
-    }
-    // The bar along the foot.
-    let bar = Rect::from_min_max(
-        pos2(x + 8.0, cy + 11.0 - 2.0),
-        pos2(x + total_w - 8.0, cy + 11.0),
-    );
-    let fill = match s.tone {
-        Tone::Idle => tk.fg_faint,
-        other => other.icon(tk),
-    };
-    match s.progress {
-        Progress::None => {}
-        Progress::At(f) => {
-            p.rect_filled(bar, CornerRadius::same(1), tk.raised);
-            let f = ui.ctx().animate_value_with_time(
-                id.with("bar"),
-                f.clamp(0.0, 1.0),
-                crate::theme::motion::BASE,
-            );
-            let r = Rect::from_min_size(bar.min, vec2(bar.width() * f, bar.height()));
-            p.rect_filled(r, CornerRadius::same(1), fill);
-        }
-        Progress::Sweep => {
-            p.rect_filled(bar, CornerRadius::same(1), tk.raised);
-            let band = bar.width() / 3.0;
-            // `animate-sweep`: from -100% to 300% of the band in 1.6 s.
-            let k = if still {
-                0.0
-            } else {
-                ((now % 1.6) / 1.6) as f32
-            };
-            let left = bar.left() - band + k * (bar.width() + band);
-            let r = Rect::from_min_max(
-                pos2(left.max(bar.left()), bar.top()),
-                pos2((left + band).min(bar.right()), bar.bottom()),
-            );
-            if r.width() > 0.0 {
-                p.rect_filled(r, CornerRadius::same(1), fill);
-            }
-        }
-    }
-    let mut clicked = None;
-    // The small buttons beside it (`size-5`, icons 12).
-    let mut bx = body.right();
-    for (i, (icon, label, act)) in s.actions.iter().enumerate() {
-        let r = Rect::from_min_size(pos2(bx, cy - 10.0), Vec2::splat(20.0));
-        let b = ui.interact(r, id.with(("act", i)), Sense::click());
-        let bh = paint::ease(ui, b.id, b.hovered());
-        let p = ui.painter();
-        p.rect_filled(
-            r,
-            CornerRadius::same(size::RADIUS_XS),
-            paint::lerp(Color32::TRANSPARENT, tk.raised, bh),
-        );
-        icon.paint(
-            p,
-            Rect::from_center_size(r.center(), Vec2::splat(12.0)),
-            paint::lerp(tk.fg_faint, tk.fg, bh),
-        );
-        super::ring(ui, &b, r, size::RADIUS_XS);
-        if b.tip_kbd(label, "", Side::Top).clicked() {
-            clicked = Some((*act, r));
-        }
-        bx += 20.0;
-    }
-    super::ring(ui, &resp, body, size::RADIUS_XS);
-    let resp = if menu::is_open(&resp) {
-        resp
-    } else {
-        resp.tip_kbd(&s.tip, "", Side::Top)
-    };
-    if let (Some(a), true) = (s.act, resp.clicked())
-        && a != Act::SteamMenu
-    {
-        clicked = Some((a, body));
-    }
-    (clicked, resp)
-}
-
-fn run(cx: &mut Ctx, a: Act) {
-    match a {
-        Act::Refresh => {
-            let _ = cx.run("servers.refresh", &serde_json::Value::Null);
-        }
-        Act::GoServers => cx.go(ViewId::Servers),
-        Act::Scan => {
-            let _ = cx.run("servers.scan", &serde_json::Value::Null);
-        }
-        Act::ScanPause => {
-            let _ = cx.run("servers.scan_pause", &serde_json::Value::Null);
-        }
-        Act::ReopenOp => {
-            let _ = cx.run("mods.reopen_op", &serde_json::Value::Null);
-        }
-        Act::Go(v, Some(f)) => cx.go_focus(v, f),
-        Act::Go(v, None) => cx.go(v),
-        Act::RepairBe => {
-            let _ = cx.run("battleye.repair", &serde_json::Value::Null);
-        }
-        Act::Command(id) => {
-            let _ = cx.run(id, &serde_json::Value::Null);
-        }
-        Act::SteamMenu => {}
-    }
+    seg
 }
 
 /// The Steam segment's menu: what downloads the mods, and the Steam settings.

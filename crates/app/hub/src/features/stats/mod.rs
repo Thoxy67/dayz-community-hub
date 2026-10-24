@@ -4,6 +4,7 @@
 //! figures out of it for the stats view.
 
 mod compute;
+pub(crate) use compute::dto;
 pub(crate) mod tracker;
 
 use crate::{Hub, HubEvent};
@@ -120,6 +121,15 @@ impl Hub {
             total: 0,
             rows: Vec::new(),
         }))
+    }
+
+    /// The session being played while DayZ runs: what the tracker has open
+    /// (a server, an offline mission, or DayZ started elsewhere); `None` when
+    /// nothing runs.
+    pub async fn play_current(&self) -> Result<Option<SessionDto>, String> {
+        mocked!(self => Ok(crate::mock::fixtures::play_current(now())));
+        let now = now();
+        Ok(with_log(|l| l.open_mut().map(|s| compute::dto(s, now))).flatten())
     }
 
     /// Forget one session (not the one running). True when it was found.

@@ -185,6 +185,14 @@ impl Pending {
     }
 }
 
+/// An offer only when it is newer than the running copy: a release server (or a
+/// fixture) naming this version or an older one is no update.
+fn newer_only(info: Option<UpdateInfo>) -> Option<UpdateInfo> {
+    info.filter(|i| {
+        release::compare_versions(&i.version, crate::VERSION) == Some(std::cmp::Ordering::Greater)
+    })
+}
+
 impl Hub {
     /// Whether this copy can update itself.
     pub async fn update_support(&self) -> UpdateSupport {
@@ -195,7 +203,7 @@ impl Hub {
     /// Look for a newer version. `None` when this one is the latest. Works on
     /// every kind of copy, so a package user still learns a release is out.
     pub async fn check_for_update(&self) -> Result<Option<UpdateInfo>, String> {
-        mocked!(self => crate::mock::fixtures::check_update());
+        mocked!(self => crate::mock::fixtures::check_update().map(newer_only));
         #[cfg(windows)]
         windows::remove_leftovers();
         let installer = (kind() == UpdateKind::Appimage).then_some("appimage");
@@ -209,7 +217,7 @@ impl Hub {
             date: u.date.clone(),
         });
         self.inner.pending.set(update);
-        Ok(info)
+        Ok(info.and_then(|i| newer_only(Some(i))))
     }
 
     /// Download, verify and install the version `check_for_update` found.
@@ -489,6 +497,21 @@ fn spawn_detached(program: &std::path::Path, args: &[std::ffi::OsString]) -> std
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_newer_version_is_offered() {
+        let info = |v: &str| UpdateInfo {
+            version: v.to_owned(),
+            current_version: crate::VERSION.to_owned(),
+            body: None,
+            date: None,
+        };
+        assert!(newer_only(Some(info(crate::VERSION))).is_none());
+        assert!(newer_only(Some(info("0.0.1"))).is_none());
+        assert!(newer_only(Some(info("not a version"))).is_none());
+        assert!(newer_only(Some(info("999.0.0"))).is_some());
+        assert!(newer_only(None).is_none());
+    }
 
     #[test]
     fn a_dev_build_says_why_it_cannot_update() {

@@ -44,7 +44,9 @@ pub(crate) use generate::{MockMod, MockServer};
 /// launch (the setup wizard opens), `steamcmd-missing` hides SteamCMD from detection;
 /// `update-none`, `update-error`, `update-package`, `update-dev` set the updater's answers;
 /// `offline-empty` installs no offline mission, `offline-installing` never ends its install;
-/// `stats-empty` writes no play session.
+/// `stats-empty` writes no play session; `game-running` has DayZ run on the last session
+/// played; `battleye-running`, `battleye-missing`, `battleye-disabled` and
+/// `battleye-proton` set BattlEye's state.
 pub(crate) fn switch(name: &str) -> bool {
     std::env::var("DZCH_MOCK")
         .map(|v| v.split(',').any(|s| s.trim() == name))
