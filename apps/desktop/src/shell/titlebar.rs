@@ -505,7 +505,8 @@ fn profile(ui: &mut Ui, cx: &mut Ctx, right: f32, rect: Rect, win_w: f32) -> f32
     r.left()
 }
 
-/// The launcher's mark (`/icon.svg`, its own colours), rasterised once per size.
+/// The launcher's mark (`logo.svg`: the pin, its compass ticks and the stencil "DZ", drawn
+/// white), rasterised once per size and tinted with the theme's ink.
 pub(super) fn logo(ui: &Ui, rect: Rect) {
     static SVG: &[u8] = include_bytes!("logo.svg");
     let ctx = ui.ctx();
@@ -528,7 +529,7 @@ pub(super) fn logo(ui: &Ui, rect: Rect) {
             tex.id(),
             rect,
             Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
-            Color32::WHITE,
+            ui.tokens().fg,
         );
     }
 }
