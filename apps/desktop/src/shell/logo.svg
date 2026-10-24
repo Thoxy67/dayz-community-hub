@@ -1,8 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="17 25 222 222">
-<defs><mask id="cut" maskUnits="userSpaceOnUse" x="0" y="0" width="256" height="256"><rect width="256" height="256" fill="#fff"/><rect x="80" y="108.5" width="96" height="7" fill="#000"/></mask></defs>
 <g fill="none" stroke="#fff" stroke-linejoin="round" stroke-linecap="round">
 <path d="M128 236C128 236 50 160 50 112A78 78 0 0 1 206 112C206 160 128 236 128 236Z" stroke-width="13"/>
 <path d="M128 32V50M48 112H66M190 112H208" stroke-width="11"/>
 </g>
-<g fill="#fff" fill-rule="evenodd" mask="url(#cut)"><g transform="translate(128 112) scale(0.8) translate(-129 -132)"><path d="M78 104H102A28 28 0 0 1 102 160H78ZM90 116H102A16 16 0 0 1 102 148H90Z"/><path d="M140 104H180V116L154 148H180V160H140V148L166 116H140Z"/></g></g>
 </svg>

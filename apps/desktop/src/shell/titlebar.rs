@@ -505,20 +505,28 @@ fn profile(ui: &mut Ui, cx: &mut Ctx, right: f32, rect: Rect, win_w: f32) -> f32
     r.left()
 }
 
-/// The launcher's mark (`logo.svg`: the pin, its compass ticks and the stencil "DZ", drawn
-/// white), rasterised once per size and tinted with the theme's ink.
+/// The launcher's mark, rasterised once per size: the pin and its compass ticks
+/// (`logo.svg`) in the theme's ink, the stencil "DZ" (`logo-dz.svg`) in the accent, as the
+/// title's "Community Hub" is. Both are drawn white and tinted when painted.
 pub(super) fn logo(ui: &Ui, rect: Rect) {
-    static SVG: &[u8] = include_bytes!("logo.svg");
+    static PIN: &[u8] = include_bytes!("logo.svg");
+    static DZ: &[u8] = include_bytes!("logo-dz.svg");
+    let tk = ui.tokens();
+    layer(ui, rect, PIN, "pin", tk.fg);
+    layer(ui, rect, DZ, "dz", tk.accent);
+}
+
+fn layer(ui: &Ui, rect: Rect, svg: &'static [u8], key: &'static str, tint: Color32) {
     let ctx = ui.ctx();
     let px = (rect.width() * ctx.pixels_per_point())
         .round()
         .clamp(1.0, 256.0) as u32;
-    let id = egui::Id::new(("dzch.logo", px));
+    let id = egui::Id::new(("dzch.logo", key, px));
     let tex: Option<Option<egui::TextureHandle>> = ctx.data(|d| d.get_temp(id));
     let tex = match tex {
         Some(t) => t,
         None => {
-            let t = raster(SVG, px)
+            let t = raster(svg, px)
                 .map(|img| ctx.load_texture("dzch-logo", img, egui::TextureOptions::LINEAR));
             ctx.data_mut(|d| d.insert_temp(id, t.clone()));
             t
@@ -529,7 +537,7 @@ pub(super) fn logo(ui: &Ui, rect: Rect) {
             tex.id(),
             rect,
             Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
-            ui.tokens().fg,
+            tint,
         );
     }
 }
