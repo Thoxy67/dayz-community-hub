@@ -270,5 +270,6 @@ bundled subsets lack `→`. Fix in the shared widget, re-run `cargo xtask shots`
   its image run the Rust checks only; CLAUDE.md, AGENTS.md, README, docs/build.md and the
   CHANGELOG's Unreleased notes updated.
 - **Left for the owner:** rebuild the CI image (push `.forgejo/ci-image/Dockerfile`); move a
-  release `.env`, if one is kept, to the repository root; replace the README screenshot
-  (`.forgejo/assets/screenshot.png` shows the Svelte interface); the release checks of G23.
+  release `.env`, if one is kept, to the repository root; the release checks of G23. (The
+  README's Svelte screenshot was replaced by the egui views in `.forgejo/assets/screenshots/`
+  for 0.6.0.)
