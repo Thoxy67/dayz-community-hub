@@ -1176,7 +1176,7 @@ checksum = "be1e0bca6c3637f992fc1cc7cbc52a78c1ef6db076dbf1059c4323d6a2048376"
 
 [[package]]
 name = "dayz-community-hub"
-version = "0.5.4"
+version = "0.6.0"
 dependencies = [
  "base64",
  "chrono",
@@ -1347,7 +1347,7 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "dz-a2s"
-version = "0.5.4"
+version = "0.6.0"
 dependencies = [
  "async-a2s",
  "dz-common",
@@ -1359,7 +1359,7 @@ dependencies = [
 
 [[package]]
 name = "dz-api"
-version = "0.5.4"
+version = "0.6.0"
 dependencies = [
  "dz-common",
  "postcard",
@@ -1372,7 +1372,7 @@ dependencies = [
 
 [[package]]
 name = "dz-common"
-version = "0.5.4"
+version = "0.6.0"
 dependencies = [
  "reqwest",
  "serde_json",
@@ -1381,7 +1381,7 @@ dependencies = [
 
 [[package]]
 name = "dz-dayzmetrics"
-version = "0.5.4"
+version = "0.6.0"
 dependencies = [
  "dz-common",
  "futures-util",
@@ -1393,7 +1393,7 @@ dependencies = [
 
 [[package]]
 name = "dz-game"
-version = "0.5.4"
+version = "0.6.0"
 dependencies = [
  "dz-api",
  "dz-common",
@@ -1412,7 +1412,7 @@ dependencies = [
 
 [[package]]
 name = "dz-hub"
-version = "0.5.4"
+version = "0.6.0"
 dependencies = [
  "base64",
  "blake2",
@@ -1448,7 +1448,7 @@ dependencies = [
 
 [[package]]
 name = "dz-news"
-version = "0.5.4"
+version = "0.6.0"
 dependencies = [
  "bytes",
  "dz-common",
@@ -1464,7 +1464,7 @@ dependencies = [
 
 [[package]]
 name = "dz-profile"
-version = "0.5.4"
+version = "0.6.0"
 dependencies = [
  "dz-common",
  "serde",
@@ -1474,7 +1474,7 @@ dependencies = [
 
 [[package]]
 name = "dz-steamcmd"
-version = "0.5.4"
+version = "0.6.0"
 dependencies = [
  "dz-common",
  "portable-pty",
@@ -1488,7 +1488,7 @@ dependencies = [
 
 [[package]]
 name = "dz-steamworks"
-version = "0.5.4"
+version = "0.6.0"
 dependencies = [
  "dz-common",
  "dz-steamcmd",
@@ -6622,7 +6622,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 
 [[package]]
 name = "xtask"
-version = "0.5.4"
+version = "0.6.0"
 dependencies = [
  "base64",
  "dz-hub",

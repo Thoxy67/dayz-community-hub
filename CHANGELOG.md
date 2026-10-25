@@ -6,6 +6,8 @@ notes; without one, the notes are the commit titles since the last release.
 
 ## Unreleased
 
+## 0.6.0
+
 - **A native interface.** The launcher is now drawn by Rust itself (egui on
   the GPU) instead of a web view: it starts faster, scrolls the full server
   list smoothly, and needs no WebView2 on Windows or WebKitGTK on Linux. Every view, dialog, setting and shortcut is still
@@ -14,6 +16,22 @@ notes; without one, the notes are the commit titles since the last release.
   own choices (theme, language, rail and pane sizes, controller labels) lived
   in the web view's storage and start from the defaults once; the language
   follows the system's.
+- **A new look.** A new logo (a map pin around a compass and a stencilled
+  DZ) on the window, the tray and the shortcuts; one typeface for every
+  line of the interface, with the monospaced one kept for code and logs;
+  and rounded window corners while the window is not maximised (on Linux
+  and Windows 11; Settings → Appearance turns them off).
+- **Seasonal themes.** Pumpkin Night, with drifting fog and a spider on
+  the side bar, and Christmas Night and Powder, with falling snow. In
+  October and December the season's theme is worn over yours without
+  changing it, and picking another theme keeps it until the next season.
+  The effects run only while the launcher is focused and DayZ is not
+  running, stay still with reduced motion, and both the switch and the
+  effects can be turned off in Appearance.
+- **A clearer status bar.** Running work shows a meter with its figures,
+  every part says what a click does, the running game shows its server
+  and session time and opens its details, and a narrow window drops the
+  least useful parts first, never a warning.
 - **Controller support everywhere.** A gamepad (Steam Deck, Xbox,
   PlayStation) moves through every view and dialog, with a focus ring and
   a hint bar showing what each button does. While a controller is in use,
@@ -34,13 +52,14 @@ notes; without one, the notes are the commit titles since the last release.
 - **Favourites** take a note, coloured labels and groups, and each can
   have its own character name and launch arguments.
 - **Tray icon.** Closing the window keeps the launcher in the system tray
-  (when your desktop shows one); its menu brings the window back or quits.
+  (when your desktop shows one, Wayland included); its menu brings the
+  window back or quits.
   When the game starts the launcher can stay, minimise, hide or close,
   and come back when the game stops (Settings → Window).
 - **Notifications** when a mod download ends or fails, an update is ready
   or a join fails, while the launcher is in the background.
-- **Discord Rich Presence**, off by default: shows that you play DayZ and,
-  if you want, on which server.
+- **Discord Rich Presence**, off by default: shows that you play DayZ
+  through DayZ Community Hub and, if you want, on which server.
 - **Desktop shortcuts** that join a server in one click.
 - **The news works again.** dayz.com moved to a new site and the news
   view stopped loading. It now reads the new site: the latest 50
