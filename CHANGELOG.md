@@ -6,7 +6,7 @@ notes; without one, the notes are the commit titles since the last release.
 
 ## Unreleased
 
-## 0.6.0
+## 0.6.0 - 2026-10-25
 
 - **A native interface.** The launcher is now drawn by Rust itself (egui on
   the GPU) instead of a web view: it starts faster, scrolls the full server
