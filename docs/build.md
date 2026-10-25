@@ -82,6 +82,12 @@ the views. `cargo xtask visual-diff` compares them with `var/reference/`, the
 Svelte interface's screenshots kept as the visual record (files: nothing
 regenerates them now).
 
+The README's pictures are separate: `uv run --with pillow
+scripts/readme_shots.py` renders them (English, 1280 × 800 at 1.25 pixels per
+point, the mock's update offer off) into `.forgejo/assets/screenshots/`, with
+the theme and seasonal grids put together; name some (`servers themes`) to
+redo only those. Retake them when a view the README shows changes.
+
 ## Publish
 
 ```sh
